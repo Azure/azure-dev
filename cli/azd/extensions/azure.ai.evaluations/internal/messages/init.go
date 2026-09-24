@@ -118,3 +118,28 @@ func InitHandoffGuidance(simulation, hasTarget, hasDataset bool) string {
 		"  For unattended use, add --no-prompt " + flags +
 		". Choose these deployments independently of --generation-model.\n"
 }
+
+// InitHandoffManualPath preserves a path that cannot be safely quoted for every shell.
+func InitHandoffManualPath(configPath, agent, dataset, level, evaluator string) string {
+	text := fmt.Sprintf("  Next step: initialize an evaluation from the generated artifacts with azd ai eval init.\n"+
+		"  Supply --path with this exact configuration path (shown as an escaped string, not a shell argument): %q\n"+
+		"  Quote the path for your shell. "+
+		"No copyable command is shown because portable quoting cannot preserve this path.\n",
+		configPath)
+	if agent != "" {
+		text += fmt.Sprintf("  --target value: %q\n", agent)
+	}
+	if dataset != "" {
+		text += fmt.Sprintf("  --source value: \"dataset\"; --dataset value: %q\n", dataset)
+	}
+	if level != "" {
+		text += fmt.Sprintf("  --evaluation-level value: %q\n", level)
+	}
+	if level == "conversation" {
+		text += "  Select --conversation-mode simulation for the generated conversation seeds.\n"
+	}
+	if evaluator != "" {
+		text += fmt.Sprintf("  --evaluator values: \"builtin.task_completion\" and %q\n", evaluator)
+	}
+	return text
+}

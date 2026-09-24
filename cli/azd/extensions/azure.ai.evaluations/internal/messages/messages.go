@@ -4415,7 +4415,7 @@ func shellArg(v string) string {
 	}
 	// The three that cannot survive being wrapped: two expand, one breaks the
 	// quoting itself.
-	if strings.ContainsAny(v, "$`\"") {
+	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
 	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
@@ -4435,6 +4435,11 @@ const shellArgNeedsQuoting = "VALUE_NEEDS_QUOTING"
 // rule decides how every printed command quotes what it carries.
 func ShellArg(v string) string {
 	return shellArg(v)
+}
+
+// CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
+func CanInlineShellArg(v string) bool {
+	return !strings.ContainsAny(v, "$`\"")
 }
 
 // ConfirmDelete asks before removing something published.

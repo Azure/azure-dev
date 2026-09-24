@@ -6,8 +6,10 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,6 +105,60 @@ func TestNothingProducedPrintsNoHandoff(t *testing.T) {
 	assert.NotContains(t, out.String(), "Run this init command")
 }
 
+func TestGenerationHandoffDoesNotSubstituteSpecialConfigPaths(t *testing.T) {
+	for _, path := range []string{"$quality/custom.yaml", "quality`/custom.yaml", `quality"/custom.yaml`,
+		"$(unexpected)/custom.yaml"} {
+		t.Run(path, func(t *testing.T) {
+			outcomes := bothGenerated()
+			outcomes[0].plan.EvaluationLevel = project.EvaluationLevelConversation
+			require.Empty(t, initHandoff(outcomes, path), "do not present a command that targets a different path")
+			var out bytes.Buffer
+			writeGenerationCompleted(&out, outcomes, path)
+			text := out.String()
+			assert.NotContains(t, text, "VALUE_NEEDS_QUOTING")
+			assert.NotContains(t, text, "Next: azd ai eval init")
+			assert.Contains(t, text, fmt.Sprintf("%q", printablePath(path)))
+			assert.Contains(t, text, "not a shell argument")
+			assert.Contains(t, text, "No copyable command")
+			assert.Contains(t, text, "--simulation-model")
+			assert.Contains(t, text, `--target value: "hero-agent"`)
+			assert.Contains(t, text, `--dataset value: "hero-agent-turn-tests"`)
+			assert.Contains(t, text, `--evaluator values: "builtin.task_completion" and "hero-agent-evaluator"`)
+			assert.Contains(t, text, "Generation completed")
+		})
+	}
+}
+
+func TestSpecialPathManualHandoffRetainsRemoteTargetWithoutLocalAgent(t *testing.T) {
+	h := newInitHarness(t, nil)
+	dir := filepath.Join(h.dir, "$quality")
+	configPath := filepath.Join(dir, "custom.yaml")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"test_case_description\":\"Talk about a booking\"}\n"), 0o600))
+	require.NoError(t, project.ApplyScaffold(configPath, project.ScaffoldWrite{
+		Datasets: []project.DatasetDecl{{Name: "seeds", File: h.seedRows}},
+	}))
+	outcomes := []generationOutcome{{
+		plan: generationPlan{Kind: generateKindDataset, Agent: "remote-agent",
+			EvaluationLevel: project.EvaluationLevelConversation},
+		ref: &project.ArtifactRef{Name: "seeds"},
+	}}
+	var out bytes.Buffer
+	writeGenerationCompleted(&out, outcomes, configPath)
+	assert.Contains(t, out.String(), `--target value: "remote-agent"`)
+	assert.Contains(t, out.String(), `--dataset value: "seeds"`)
+	assert.Contains(t, out.String(), "--conversation-mode simulation")
+	_, err := executeConversationInit(t, "--path", configPath, "--target", "remote-agent", "--source", "dataset",
+		"--dataset", "seeds", "--evaluation-level", "conversation", "--conversation-mode", "simulation",
+		"--name", "quality", "--judge-model", "judge", "--simulation-model", "connection/simulator", "--no-prompt")
+	require.NoError(t, err)
+	cfg, err := project.OpenEvalConfig(configPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Evals, 1)
+	require.NotNil(t, cfg.Evals[0].Target)
+	assert.Equal(t, "remote-agent", cfg.Evals[0].Target.Name)
+}
+
 func TestGenerationHandoffExplainsInteractiveAndUnattendedModels(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -152,11 +208,16 @@ func TestGenerationHandoffGuidanceOnlyReachesCompletedHumanOutput(t *testing.T) 
 		name   string
 		format string
 		noWait bool
+		dir    string
 	}{
-		{"human completed", "", false},
-		{"JSON completed", "json", false},
-		{"human submitted", "", true},
-		{"JSON submitted", "json", true},
+		{"human completed", "", false, ""},
+		{"JSON completed", "json", false, ""},
+		{"human submitted", "", true, ""},
+		{"JSON submitted", "json", true, ""},
+		{"human special path", "", false, "$quality"},
+		{"JSON special path", "json", false, "$quality"},
+		{"human submitted special path", "", true, "$quality"},
+		{"JSON submitted special path", "json", true, "$quality"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +233,8 @@ func TestGenerationHandoffGuidanceOnlyReachesCompletedHumanOutput(t *testing.T) 
 			pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
 				&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
 			ec := &evalContext{evalClient: eval_api.NewEvalClientFromPipeline(server.URL, pipeline)}
-			dir := t.TempDir()
+			dir := filepath.Join(t.TempDir(), tc.dir)
+			require.NoError(t, os.MkdirAll(dir, 0o700))
 			cmd := &cobra.Command{}
 			cmd.SetContext(t.Context())
 			cmd.Flags().String("output", tc.format, "")
@@ -194,6 +256,12 @@ func TestGenerationHandoffGuidanceOnlyReachesCompletedHumanOutput(t *testing.T) 
 			} else {
 				assert.Contains(t, out.String(), "Run this init command interactively")
 				assert.Contains(t, out.String(), "--judge-model <judge-deployment>")
+				if tc.dir != "" {
+					assert.NotContains(t, out.String(), "VALUE_NEEDS_QUOTING")
+					assert.NotContains(t, out.String(), "Next: azd ai eval init")
+					assert.Contains(t, out.String(), "No copyable command")
+					assert.Contains(t, out.String(), "$quality")
+				}
 			}
 		})
 	}

@@ -311,6 +311,10 @@ Generation declares artifacts only; it does not attach them to an existing eval
 or replace its configuration. If a generated rubric declares an incompatible
 evaluation level, the handoff warns and uses the built-in default instead; the
 rubric remains in the catalogue.
+If the selected config path contains a dollar sign, backtick, or double quote,
+generation displays the exact escaped path and manual initialization guidance
+instead of a copyable command. Quote that path for your shell when supplying
+`--path`; generation never substitutes a different path into a runnable handoff.
 
 ### Repeated deploys do not create redundant versions
 

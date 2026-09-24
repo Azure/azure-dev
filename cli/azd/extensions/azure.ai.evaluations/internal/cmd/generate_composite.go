@@ -591,6 +591,10 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 	if next := initHandoff(outcomes, configPath); next != "" {
 		fmt.Fprint(out, messages.FirstNextStep(next))
 		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
+	} else if !messages.CanInlineShellArg(configPath) && initHandoff(outcomes, "") != "" {
+		agent, dataset, level, evaluator := initHandoffInputs(outcomes)
+		fmt.Fprint(out, messages.InitHandoffManualPath(printablePath(configPath), agent, dataset, level, evaluator))
+		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
 	}
 }
 
@@ -601,7 +605,21 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 // Known targets are included even though init can detect local services.
 // Guidance names unresolved target and dataset inputs without inventing them.
 func initHandoff(outcomes []generationOutcome, configPath string) string {
-	var agent, dataset, level, evaluator string
+	if !messages.CanInlineShellArg(configPath) {
+		return ""
+	}
+	agent, dataset, level, evaluator := initHandoffInputs(outcomes)
+	if dataset == "" && evaluator == "" {
+		return ""
+	}
+	next := messages.InitHandoffCommand(agent, dataset, level, evaluator)
+	if configPath != "" {
+		next += " --path " + quoteForShell(printablePath(configPath))
+	}
+	return next
+}
+
+func initHandoffInputs(outcomes []generationOutcome) (agent, dataset, level, evaluator string) {
 	incompatible := incompatibleHandoffEvaluator(outcomes)
 	for i := range outcomes {
 		o := &outcomes[i]
@@ -619,14 +637,7 @@ func initHandoff(outcomes []generationOutcome, configPath string) string {
 			}
 		}
 	}
-	if dataset == "" && evaluator == "" {
-		return ""
-	}
-	next := messages.InitHandoffCommand(agent, dataset, level, evaluator)
-	if configPath != "" {
-		next += " --path " + quoteForShell(printablePath(configPath))
-	}
-	return next
+	return agent, dataset, level, evaluator
 }
 
 func incompatibleHandoffEvaluator(outcomes []generationOutcome) *project.ArtifactRef {

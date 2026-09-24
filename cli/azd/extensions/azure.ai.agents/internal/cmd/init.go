@@ -610,7 +610,7 @@ func parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
 		return nil
 	}
 
-	if parsedURL.Host == "github.com" && strings.Contains(parsedURL.Path, "/blob/") {
+	if strings.EqualFold(parsedURL.Hostname(), "github.com") && strings.Contains(parsedURL.Path, "/blob/") {
 		parts := strings.SplitN(parsedURL.Path, "/blob/", 2)
 		if len(parts) != 2 {
 			return nil
@@ -1133,6 +1133,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return voiceInputErr
 				}
 			}
+			isPromptVoice := flags.manifestPointer == "" &&
+				strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+			if flags.image != "" {
+				if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
+					return err
+				}
+			}
+			if err := validateFastPathAgentName(flags, isPromptVoice); err != nil {
+				return err
+			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -1227,7 +1237,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// harness is an optional capability of kind: prompt, not a separate
 			// agent kind. Omitting --kind preserves the existing hosted flow.
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
-			isPromptVoice := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+			isPromptVoice = strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
 				return err
 			}
@@ -1244,10 +1254,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return promptOnlyInstructionsError()
 			}
 
-			// Track whether a project already exists so the cd hint is
-			// only shown for brand-new top-level project folders, not
-			// when a template adds a subfolder to an existing project.
-			existingProject := fileExists("azure.yaml")
+			// Project().Get discovers a parent azd project even when init runs
+			// from one of its subdirectories.
+			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 
 			// Validate --kind prompt-voice and its incompatible options before either
 			// synthesis branch. The image and prompt-voice fast paths both mutate
@@ -1272,28 +1281,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
-			if flags.image != "" {
-				if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
-					return err
-				}
-				if flags.agentName == "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--image requires --agent-name",
-						"pass --agent-name <name>",
-					)
-				}
-			}
-			if isPromptVoice {
-				if flags.agentName == "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--kind prompt-voice requires --agent-name",
-						"pass --agent-name <name>",
-					)
-				}
-			}
-
 			if err := validateRegistryConnectionFlag(
 				flags.registryConnection,
 				flags.image,
@@ -1306,14 +1293,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
 
 			if flags.image != "" {
-				targetDir := "."
-				var folderDisplay string
-				if !existingProject {
-					targetDir = sanitizeAgentName(flags.agentName)
-					if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
-						folderDisplay = filepath.ToSlash(targetDir)
-					}
-				}
+				targetDir, folderDisplay := fastPathProjectTarget(
+					projectResponse.GetProject(), projectErr, flags.agentName,
+				)
 				action := &InitFromCodeAction{
 					azdClient:         azdClient,
 					flags:             flags,
@@ -1326,21 +1308,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 			}
 			if isPromptVoice {
-				targetDir := "."
-				var folderDisplay string
-				if !existingProject {
-					targetDir = sanitizeAgentName(flags.agentName)
-					if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
-						folderDisplay = filepath.ToSlash(targetDir)
-					}
-				}
+				targetDir, folderDisplay := fastPathProjectTarget(
+					projectResponse.GetProject(), projectErr, flags.agentName,
+				)
 				if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay); err != nil {
 					return err
 				}
 				return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 			}
 
-			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 			if projectErr != nil || projectResponse.GetProject() == nil {
 				checkDir := flags.src
 				if checkDir == "" {
@@ -1487,6 +1463,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 
 					case TemplateTypeAzd:
+						if err := validateUnifiedInitFlags(cmd); err != nil {
+							return err
+						}
 						if err := runInitFromAzdTemplate(
 							ctx, flags, azdClient, selectedTemplate,
 						); err != nil {
@@ -1513,17 +1492,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					}
 					flags.agentName = resolvedName
 
-					targetDir := "."
-					var folderDisplay string
-					if !existingProject {
-						folderName := sanitizeAgentName(resolvedName)
-						_, statErr := os.Stat(folderName)
-						newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-						targetDir = folderName
-						if newlyCreated {
-							folderDisplay = filepath.ToSlash(folderName)
-						}
-					}
+					targetDir, folderDisplay := fastPathProjectTarget(
+						projectResponse.GetProject(), projectErr, resolvedName,
+					)
 					if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay); err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")
@@ -1650,9 +1621,48 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"full ARM resource ID. The policy must already exist; azd attaches it, it does not "+
 			"create it. When omitted, you are prompted to pick from the policies on the account; "+
 			"with --no-prompt no policy is attached. "+
-			"Ignored for hosted agents and when --manifest already declares policies.")
+			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting unified "+
+			"azure.yaml or a full repository template; declare policies in azure.yaml instead.")
 
 	return cmd
+}
+
+func fastPathProjectTarget(
+	projectConfig *azdext.ProjectConfig,
+	projectErr error,
+	agentName string,
+) (string, string) {
+	if projectErr == nil && projectConfig != nil {
+		return ".", ""
+	}
+	targetDir := sanitizeAgentName(agentName)
+	if _, err := os.Stat(targetDir); errors.Is(err, fs.ErrNotExist) {
+		return targetDir, filepath.ToSlash(targetDir)
+	}
+	return targetDir, ""
+}
+
+func validateFastPathAgentName(flags *initFlags, isPromptVoice bool) error {
+	if flags.image == "" && !isPromptVoice {
+		return nil
+	}
+	if flags.agentName == "" {
+		flag := "--image"
+		if isPromptVoice {
+			flag = "--kind prompt-voice"
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			flag+" requires --agent-name",
+			"pass --agent-name <name>",
+		)
+	}
+	validatedName, err := validateInitAgentName(flags.agentName)
+	if err != nil {
+		return err
+	}
+	flags.agentName = validatedName
+	return nil
 }
 
 func unusedInitVoiceError() error {
@@ -2643,7 +2653,7 @@ func checkNotDirectory(path string) error {
 
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
-		fmt.Sprintf("'%s' is a directory, not a unified azure.yaml file", path),
+		fmt.Sprintf("'%s' is a directory, not a unified azure.yaml file", safeInitSourceDisplay(path)),
 		"the --manifest flag must point to a unified azure.yaml file, not a directory",
 	)
 }
@@ -3466,10 +3476,7 @@ func (a *InitAction) addVoiceAgentToProject(
 		return err
 	}
 
-	fmt.Printf(
-		"\nAdded your voice agent as a service entry named '%s' under the file azure.yaml.\n",
-		voiceDef.Name,
-	)
+	fmt.Print(voiceAgentAddedMessage(a.serviceNameOverride))
 
 	var stateOpts []nextstep.Option
 	if a.createdFolderDisplay != "" {
@@ -3478,6 +3485,13 @@ func (a *InitAction) addVoiceAgentToProject(
 	state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	return nil
+}
+
+func voiceAgentAddedMessage(serviceName string) string {
+	return fmt.Sprintf(
+		"\nAdded your voice agent as a service entry named '%s' under the file azure.yaml.\n",
+		serviceName,
+	)
 }
 
 //nolint:gosec // env var key name, not a credential
@@ -3596,7 +3610,26 @@ func (a *InitAction) resolveCollisions(
 	targetDir string,
 	serviceName string,
 ) (string, string, error) {
-	dirExists := fileExists(targetDir)
+	return a.resolveCollisionsInternal(ctx, agentId, targetDir, serviceName, true)
+}
+
+func (a *InitAction) resolveServiceNameCollision(
+	ctx context.Context,
+	agentId string,
+	serviceName string,
+) (string, error) {
+	_, resolved, err := a.resolveCollisionsInternal(ctx, agentId, "", serviceName, false)
+	return resolved, err
+}
+
+func (a *InitAction) resolveCollisionsInternal(
+	ctx context.Context,
+	agentId string,
+	targetDir string,
+	serviceName string,
+	checkDirectory bool,
+) (string, string, error) {
+	dirExists := checkDirectory && fileExists(targetDir)
 
 	serviceExists := false
 	if a.projectConfig != nil {
@@ -3615,7 +3648,7 @@ func (a *InitAction) resolveCollisions(
 	// Find the next available name for use as the default suggestion
 	// (interactive) or the final answer (no-prompt).
 	suggestion, suggestionDir, suggestionSvc, err :=
-		a.nextAvailableName(agentId)
+		a.nextAvailableNameInDir(agentId, filepath.Dir(targetDir), checkDirectory)
 	if err != nil {
 		return "", "", err
 	}
@@ -3757,13 +3790,21 @@ func buildCollisionMessage(
 func (a *InitAction) nextAvailableName(
 	agentId string,
 ) (string, string, string, error) {
+	return a.nextAvailableNameInDir(agentId, "src", true)
+}
+
+func (a *InitAction) nextAvailableNameInDir(
+	agentId string,
+	parentDir string,
+	checkDirectory bool,
+) (string, string, string, error) {
 	const maxAttempts = 100
 	for i := 2; i <= maxAttempts; i++ {
 		candidate := fmt.Sprintf("%s-%d", agentId, i)
-		candidateDir := filepath.Join("src", candidate)
+		candidateDir := filepath.Join(parentDir, candidate)
 		candidateSvc := strings.ReplaceAll(candidate, " ", "")
 
-		if fileExists(candidateDir) {
+		if checkDirectory && fileExists(candidateDir) {
 			continue
 		}
 

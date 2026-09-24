@@ -506,6 +506,7 @@ type helpersPromptServer struct {
 	selectCalls atomic.Int32
 	promptCalls atomic.Int32
 	lastSelect  *azdext.SelectRequest
+	promptValue string
 }
 
 type helpersFailingEnvironmentServer struct {
@@ -549,6 +550,9 @@ func (s *helpersPromptServer) Prompt(
 	context.Context, *azdext.PromptRequest,
 ) (*azdext.PromptResponse, error) {
 	s.promptCalls.Add(1)
+	if s.promptValue != "" {
+		return &azdext.PromptResponse{Value: s.promptValue}, nil
+	}
 	return nil, status.Error(codes.Internal, "unexpected text prompt")
 }
 

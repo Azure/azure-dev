@@ -126,12 +126,55 @@ class ServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
             plan, settings = self.installed_fixture(root)
-            redirected = root / "other-binary"
+            redirected = root / ("other-binary.exe" if service.os.name == "nt" else "other-binary")
             redirected.write_bytes(b"unapproved binary, even if it reports an approved version")
             settings["extension"]["installed"]["azure.ai.evaluations"]["path"] = str(redirected.relative_to(root))
             (root / "config.json").write_text(json.dumps(settings))
-            with self.assertRaisesRegex(service.Blocked, "execution path"):
+            with self.assertRaisesRegex(service.Blocked, "approved bytes"):
                 service.verify_install(plan, root)
+
+    def test_legitimate_persisted_path_is_authoritative_not_a_conventional_filename(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            plan, settings = self.installed_fixture(root)
+            record = settings["extension"]["installed"]["azure.ai.evaluations"]
+            original = root / record["path"]
+            actual = root / "owned-tools" / ("custom-eval.exe" if service.os.name == "nt" else "custom-eval")
+            actual.parent.mkdir()
+            actual.write_bytes(original.read_bytes())
+            original.write_bytes(b"not the configured executable")
+            record["path"] = str(actual.relative_to(root))
+            (root / "config.json").write_text(json.dumps(settings))
+            self.assertEqual(service.verify_install(plan, root), (root / "azd").resolve())
+            self.assertEqual(settings["extension"]["installed"]["azure.ai.evaluations"]["path"],
+                             str(actual.relative_to(root)))
+
+    def test_redirected_or_missing_persisted_path_stops_before_any_command(self):
+        for alternate_exists in (True, False):
+            with self.subTest(alternate_exists=alternate_exists), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                plan, settings = self.installed_fixture(root)
+                record = settings["extension"]["installed"]["azure.ai.evaluations"]
+                approved_file = root / record["path"]
+                alternate = root / ("alternate.exe" if service.os.name == "nt" else "alternate")
+                if alternate_exists:
+                    alternate.write_bytes(b"unapproved executable")
+                record["path"] = str(alternate.relative_to(root))
+                (root / "config.json").write_text(json.dumps(settings))
+                plan_path = root / "plan.json"
+                plan_path.write_text(json.dumps(plan))
+                with mock.patch.object(service, "validate_plan", return_value={}), \
+                     mock.patch.object(service, "Driver") as driver:
+                    with self.assertRaises(service.Blocked):
+                        service.execute(plan_path, root / "evidence",
+                                        env={"AZD_SCENARIO_LIVE_AUTH_CONFIG": str(root)})
+                    driver.assert_not_called()
+                self.assertTrue(approved_file.is_file())
+                self.assertEqual(service.scenario.sha256(approved_file.read_bytes()),
+                                 plan["binarySha256"]["azure.ai.evaluations"])
+                report = json.loads((root / "evidence" / "service-status.json").read_text())
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["execution"], "NOT RUN")
 
     def test_install_rejects_unapproved_routes_and_escaping_paths(self):
         for field, value in (("namespace", "ai.other"), ("version", "not-approved"),
@@ -151,6 +194,24 @@ class ServiceTests(unittest.TestCase):
             (root / "config.json").write_text(json.dumps(settings))
             with self.assertRaisesRegex(service.Blocked, "exactly the two"):
                 service.verify_install(plan, root)
+
+    def test_resolved_reparse_target_outside_profile_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            profile = root / "profile"
+            profile.mkdir()
+            plan, settings = self.installed_fixture(profile)
+            configured = profile / settings["extension"]["installed"]["azure.ai.evaluations"]["path"]
+            outside = root / "outside.exe"
+            outside.write_bytes(configured.read_bytes())
+            resolve = Path.resolve
+
+            def resolved(path, *args, **kwargs):
+                return outside if path == configured else resolve(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "resolve", resolved):
+                with self.assertRaisesRegex(service.Blocked, "escapes"):
+                    service.verify_install(plan, profile)
 
     def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None):
         plan = self.plan()

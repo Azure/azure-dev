@@ -156,10 +156,10 @@ def verify_install(plan, config):
                 and not Path(raw_path).is_absolute() and not PureWindowsPath(raw_path).drive
                 and not PureWindowsPath(raw_path).root,
                 "Installed extension path must be relative to the isolated profile")
-        platform = "windows-amd64" if os.name == "nt" else "linux-amd64"
-        entry = extension.replace(".", "-") + "-" + platform + (".exe" if os.name == "nt" else "")
-        require(Path(raw_path) == Path("extensions") / extension / entry,
-                "Installed extension execution path differs from the approved package entry point")
+        require(".." not in Path(raw_path).parts and ".." not in PureWindowsPath(raw_path).parts
+                and ":" not in raw_path, "Installed extension path must be a contained executable path")
+        require(os.name != "nt" or Path(raw_path).suffix.lower() == ".exe",
+                "Windows installed extension paths must name an explicit executable")
         binary = (config / raw_path).resolve()
         require(binary.is_relative_to(config), "Installed extension path escapes the isolated profile")
         require(binary.is_file() and scenario.sha256(binary.read_bytes()) == expected[extension],

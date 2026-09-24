@@ -113,9 +113,11 @@ The implemented sequence is:
 1. Verify approved core/extension executable digests in the supplied isolated
    **CI service-auth** configuration. The profile must contain exactly the two
    approved extensions; each persisted ID/namespace/version and relative
-   execution path must match the approved package entry point, and the actual
-   resolved file that azd will execute is hashed. An approved conventional
-   filename elsewhere is not sufficient.
+   execution path is bound to its contained resolved executable and that file
+   is hashed. The persisted path is authoritative, including legitimate custom
+   locations; an approved conventional filename elsewhere is not sufficient.
+   Windows records must name an explicit `.exe` file rather than rely on
+   executable-extension lookup.
    Then require `auth status` to report the
    exact approved service-principal client ID. A native AI-scoped token is
    obtained privately to compare its client/tenant claims with the plan; this

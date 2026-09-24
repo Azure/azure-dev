@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -96,12 +97,21 @@ func resolveConversationMode(cmd *cobra.Command, explicit string) (string, error
 }
 
 func resolveSimulationModel(cmd *cobra.Command, explicit string) (string, error) {
-	if strings.TrimSpace(explicit) != "" {
-		return strings.TrimSpace(explicit), nil
+	model := strings.TrimSpace(explicit)
+	if model == "" {
+		if noPrompt(cmd) {
+			return "", messages.SimulationModelRequired()
+		}
+		var err error
+		model, err = promptInitModel(cmd, messages.SimulationModelPrompt(), messages.SimulationModelHelp(),
+			messages.SimulationModelRequired())
+		if err != nil {
+			return "", err
+		}
 	}
-	if noPrompt(cmd) {
-		return "", messages.SimulationModelRequired()
+	if err := (&project.Simulation{Model: model}).Validate(); err != nil {
+		return "", exterrors.Validation(exterrors.CodeInvalidParameter, fmt.Sprintf("--simulation-model: %v", err),
+			"Use connection-name/model-deployment for the simulated user, independently of the judge and generation models.")
 	}
-	return promptInitModel(cmd, messages.SimulationModelPrompt(), messages.SimulationModelHelp(),
-		messages.SimulationModelRequired())
+	return model, nil
 }

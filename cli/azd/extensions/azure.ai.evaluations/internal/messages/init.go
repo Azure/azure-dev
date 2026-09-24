@@ -53,15 +53,16 @@ func ConversationModeChoices() []string {
 func SimulationModelRequired() error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		"--simulation-model is required for --conversation-mode simulation",
-		"Name a deployed model for the simulated user, independently of --judge-model and the generation model.")
+		"Supply connection-name/model-deployment for the simulated user, independently of the judge and generation models.")
 }
 
 // SimulationModelPrompt asks for the simulated user's deployment, without guessing.
-func SimulationModelPrompt() string { return "Simulation model deployment" }
+func SimulationModelPrompt() string { return "Simulation model (connection-name/model-deployment)" }
 
 // SimulationModelHelp explains why the generation or judge model is not a default.
 func SimulationModelHelp() string {
-	return "Name a deployed model for the simulated user. This is separate from the generation model and --judge-model."
+	return "Use connection-name/model-deployment for the simulated user, such as model-connection/gpt-4.1-nano. " +
+		"This is separate from the generation model and --judge-model."
 }
 
 // JudgeModelPrompt asks for a deployment when local configuration has none.
@@ -80,7 +81,7 @@ func HandoffEvaluatorIncompatible(name string) string {
 func InitHandoffGuidance(simulation bool) string {
 	modelFlags := "--judge-model <judge-deployment>"
 	if simulation {
-		modelFlags += " --simulation-model <simulation-deployment>"
+		modelFlags += " --simulation-model <connection-name/model-deployment>"
 	}
 	return "  Run this init command interactively to resolve missing inputs.\n" +
 		"  For unattended use, add --no-prompt " + modelFlags +

@@ -53,12 +53,12 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 		{"static default", []string{"--source", "dataset", "--evaluation-level", "conversation"},
 			conversationModeStatic, 0, 0, false, false},
 		{"simulation defaults", []string{"--conversation-mode", "simulation", "--target", "agent",
-			"--simulation-model", "simulator"}, conversationModeSimulation, 1, 0, true, false},
+			"--simulation-model", "connection/simulator"}, conversationModeSimulation, 1, 0, true, false},
 		{"simulation minimum", []string{"--conversation-mode", "simulation", "--target", "agent",
-			"--simulation-model", "simulator", "--num-conversations", "1", "--max-turns", "1"},
+			"--simulation-model", "connection/simulator", "--num-conversations", "1", "--max-turns", "1"},
 			conversationModeSimulation, 1, 1, true, false},
 		{"simulation maximum", []string{"--conversation-mode", "simulation", "--target", "agent",
-			"--simulation-model", "simulator", "--num-conversations", "5", "--max-turns", "20"},
+			"--simulation-model", "connection/simulator", "--num-conversations", "5", "--max-turns", "20"},
 			conversationModeSimulation, 5, 20, true, false},
 		{"turn unchanged", []string{"--source", "dataset", "--target", "agent"}, "", 0, 0, true, false},
 		{"trace conversation unchanged", []string{"--source", "traces", "--target", "agent",
@@ -104,7 +104,7 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 			}
 			if tc.mode == conversationModeSimulation {
 				require.NotNil(t, eval.Simulation)
-				assert.Equal(t, "simulator", eval.Simulation.Model)
+				assert.Equal(t, "connection/simulator", eval.Simulation.Model)
 				assert.Equal(t, tc.count, eval.Simulation.NumConversations)
 				assert.Equal(t, tc.turns, eval.Simulation.MaxTurns)
 				assert.Equal(t, eval.Simulation, doc.Simulation)
@@ -245,7 +245,7 @@ func (s *conversationPromptServer) Prompt(
 	if req.GetOptions().GetMessage() == messages.JudgeModelPrompt() {
 		return &azdext.PromptResponse{Value: "judge"}, nil
 	}
-	return &azdext.PromptResponse{Value: "simulator"}, nil
+	return &azdext.PromptResponse{Value: "connection/simulator"}, nil
 }
 
 func (s *conversationPromptServer) MultiSelect(
@@ -284,7 +284,7 @@ func TestInitConversationInteractivePickerAndModelPrompt(t *testing.T) {
 				assert.Equal(t, messages.SimulationModelPrompt(), prompts.models[0].Message)
 				assert.Empty(t, prompts.models[0].DefaultValue, "never guess the simulator from the judge")
 				require.NotNil(t, cfg.Evals[0].Simulation)
-				assert.Equal(t, "simulator", cfg.Evals[0].Simulation.Model)
+				assert.Equal(t, "connection/simulator", cfg.Evals[0].Simulation.Model)
 				for _, want := range []string{"Simulation model", "simulator", "Judge model", "judge",
 					"Conversations per seed", "Maximum turns", "service default"} {
 					assert.Contains(t, text, want)
@@ -312,7 +312,7 @@ func TestInitSimulationPreservesExistingConfigAndUnknownFields(t *testing.T) {
 		"    future_eval_field: keep-final\n    evaluators:\n      - evaluator: custom\n"
 	require.NoError(t, os.WriteFile(configPath, []byte(existing), 0o600))
 	require.NoError(t, h.runInit(t, "--name", "simulation", "--conversation-mode", "simulation",
-		"--target", "agent", "--dataset", "seeds", "--simulation-model", "simulator", "--judge-model", "judge"))
+		"--target", "agent", "--dataset", "seeds", "--simulation-model", "connection/simulator", "--judge-model", "judge"))
 	raw, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	for _, want := range []string{"# keep this comment", "future_setting: keep-me", "future_dataset_field: keep-too",
@@ -321,7 +321,8 @@ func TestInitSimulationPreservesExistingConfigAndUnknownFields(t *testing.T) {
 	}
 	before := string(raw)
 	err = h.runInit(t, "--name", "simulation", "--conversation-mode", "simulation",
-		"--target", "agent", "--dataset", "replacement", "--simulation-model", "replacement", "--judge-model", "replacement")
+		"--target", "agent", "--dataset", "replacement", "--simulation-model", "connection/replacement",
+		"--judge-model", "replacement")
 	require.Error(t, err)
 	after, err := os.ReadFile(configPath)
 	require.NoError(t, err)
@@ -338,13 +339,13 @@ func TestGeneratedConversationHandoffRunsThroughInit(t *testing.T) {
 	assert.NotContains(t, command, "generation-only")
 	assert.NotContains(t, command, "--simulation-model")
 	args := strings.Fields(strings.TrimPrefix(command, "azd ai eval init "))
-	args = append(args, "--simulation-model", "simulator", "--judge-model", "judge")
+	args = append(args, "--simulation-model", "connection/simulator", "--judge-model", "judge")
 	require.NoError(t, h.runInit(t, args...))
 	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "quality"))
 	require.NoError(t, err)
 	require.Len(t, cfg.Evals, 1)
 	require.NotNil(t, cfg.Evals[0].Simulation)
-	assert.Equal(t, "simulator", cfg.Evals[0].Simulation.Model)
+	assert.Equal(t, "connection/simulator", cfg.Evals[0].Simulation.Model)
 	assert.Equal(t, "judge", cfg.Evals[0].Evaluators[0].InitializationParameters["model"])
 	assert.Equal(t, "hero-agent", cfg.Evals[0].Target.Name)
 }
@@ -359,6 +360,7 @@ func TestInitConversationHelpExplainsModeAndBounds(t *testing.T) {
 	assert.Contains(t, cmd.Flags().Lookup("num-conversations").Usage, "1-5")
 	assert.Contains(t, cmd.Flags().Lookup("max-turns").Usage, "1-20")
 	assert.Contains(t, cmd.Flags().Lookup("max-turns").Usage, "service default")
+	assert.Contains(t, cmd.Flags().Lookup("simulation-model").Usage, "Connection-name/model-deployment")
 	assert.Contains(t, cmd.Long, "--output json")
 	assert.Contains(t, cmd.Long, "best-effort")
 }
@@ -377,7 +379,7 @@ func TestGeneratedConversationHandoffPromptsForIndependentModels(t *testing.T) {
 	require.NoError(t, err)
 	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
 	require.NoError(t, err)
-	assert.Equal(t, "simulator", cfg.Evals[0].Simulation.Model)
+	assert.Equal(t, "connection/simulator", cfg.Evals[0].Simulation.Model)
 	assert.Equal(t, "judge", cfg.Evals[0].Evaluators[0].InitializationParameters["model"])
 	prompts.mu.Lock()
 	defer prompts.mu.Unlock()
@@ -394,7 +396,7 @@ func TestInitSimulationCancelledConfirmationWritesNothing(t *testing.T) {
 	prompts := &conversationPromptServer{decision: scaffoldCancel}
 	h := newInitHarness(t, nil, prompts)
 	text, err := executeConversationInit(t, "--name", "quality", "--conversation-mode", "simulation",
-		"--dataset", "seeds", "--target", "agent", "--simulation-model", "simulator", "--judge-model", "judge",
+		"--dataset", "seeds", "--target", "agent", "--simulation-model", "connection/simulator", "--judge-model", "judge",
 		"--num-conversations", "5", "--max-turns", "20")
 	require.NoError(t, err)
 	assert.Regexp(t, `Maximum turns:\s+20`, text)
@@ -417,11 +419,29 @@ func TestInitSimulationRefusesKnownIncompatibleEvaluatorBeforeWriting(t *testing
 	body := "evaluators:\n  - name: turn-only\n    supported_evaluation_levels: [turn]\n"
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	err := h.runInit(t, "--conversation-mode", "simulation", "--target", "agent",
-		"--dataset", "seeds", "--simulation-model", "simulator", "--judge-model", "judge", "--evaluator", "turn-only")
+		"--dataset", "seeds", "--simulation-model", "connection/simulator", "--judge-model", "judge",
+		"--evaluator", "turn-only")
 	require.ErrorContains(t, err, "--evaluator turn-only")
 	require.ErrorContains(t, err, "--evaluation-level conversation")
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, body, string(after))
 	assert.Zero(t, h.project.wiringAttempts())
+}
+
+func TestInitSimulationRejectsUnqualifiedModelBeforeWrites(t *testing.T) {
+	for _, model := range []string{"simulator", "/simulator", "connection/", "connection/model/extra", "connection/my model"} {
+		t.Run(model, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			before := initFileSnapshot(t, h.dir)
+			text, err := executeConversationInit(t, "--name", "quality", "--conversation-mode", "simulation",
+				"--target", "agent", "--dataset", "seeds", "--simulation-model", model,
+				"--judge-model", "judge", "--output", "json")
+			require.ErrorContains(t, err, "--simulation-model")
+			require.ErrorContains(t, err, "connection-name/model-deployment")
+			assert.Empty(t, text)
+			assert.Zero(t, h.project.wiringAttempts())
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+		})
+	}
 }

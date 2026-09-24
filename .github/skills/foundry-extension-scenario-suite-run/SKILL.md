@@ -2,34 +2,31 @@
 name: foundry-extension-scenario-suite-run
 license: MIT
 metadata:
-  version: "1.1"
+  version: "1.2"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or selection rules.
   # 1.0: initial split from the scenarios README's fleet prompt; full / tag / tier sweep that is
   # NOT tied to a PR diff. Per-scenario driving is delegated to the foundry-extension-scenario-worker agent and
   # specified once in the scenarios' driving-mechanics.md.
   # 1.1: close filtered Tier 2 selections over setup/teardown and assign run-unique
   # per-scenario instances.
+  # 1.2: shorten description to Copilot's 1,024-character limit; the INVOKES
+  # tool list moved to the body below.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios as
-  a **full or tag/tier-filtered sweep** that is *not* tied to a PR diff. Discovers scenarios via
-  list_scenarios, gates Azure cost, and schedules them through adaptive rolling concurrency,
-  then writes an aggregate report. Typically dispatched by the foundry-extension-scenario-orchestrator agent, but
-  can trigger directly.
+  a full or tag/tier-filtered sweep NOT tied to a PR diff (Tier 0 free; Tier 1b/2 cost-gated).
+  Discovers scenarios via list_scenarios, drives them concurrently via
+  foundry-extension-scenario-worker agents, then writes an aggregate report. Dispatched by
+  foundry-extension-scenario-orchestrator, or triggered directly.
 
-  INVOKES: cli-interactive-tester MCP tools (list_scenarios, load_scenario, run_pre_hooks,
-  start_session, send_action, finish_session, run_post_hooks), the foundry-extension-scenario-worker agent,
-  ask_user.
+  USE FOR: run the whole suite, run all scenarios, smoke-test the extension, a tag-filtered
+  sweep (e.g. "run every `init` scenario"), a tier sweep (e.g. "run all of Tier 0"), a
+  scheduled/periodic full regression not scoped to a diff.
 
-  USE FOR: run the whole scenario suite, run all scenarios, smoke-test the azure.ai.agents
-  extension end to end, a tag-filtered sweep (e.g. "run every `init` scenario", "run everything
-  tagged `parallel-safe`"), a tier sweep (e.g. "run all of Tier 0", "run Tier 2"), a scheduled /
-  periodic full regression not scoped to a diff.
-
-  DO NOT USE FOR: PR- or diff-scoped selection (use foundry-extension-scenario-pr-regression — it maps changed
-  files to impacted tags and comments on the PR), authoring or editing scenarios (use
-  foundry-extension-scenario-authoring), azd core preflight (use azd-preflight), changelog (use
-  changelog-generation), creating PRs (use pull-request), scenarios for any extension other than
-  azure.ai.agents.
+  DO NOT USE FOR: PR- or diff-scoped selection (foundry-extension-scenario-pr-regression maps
+  changed files to tags and comments on the PR), authoring/editing scenarios without running
+  them — no Azure cost (foundry-extension-scenario-authoring), azd core preflight
+  (azd-preflight), changelog (changelog-generation), creating PRs (pull-request), scenarios for
+  other extensions.
 ---
 
 # foundry-extension-scenario-suite-run
@@ -37,6 +34,10 @@ description: >-
 Runs the `azure.ai.agents` extension's interactive CLI scenarios as a **full or filtered
 sweep** and writes an aggregate report. Selection here is by **tag / tier**, not by a PR diff —
 that is the one thing that distinguishes this skill from `foundry-extension-scenario-pr-regression`.
+
+**Tools invoked**: cli-interactive-tester MCP tools (`list_scenarios`, `load_scenario`,
+`run_pre_hooks`, `start_session`, `send_action`, `finish_session`, `run_post_hooks`), the
+`foundry-extension-scenario-worker` agent, and `ask_user`.
 
 ## Overview
 

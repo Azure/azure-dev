@@ -17,6 +17,8 @@ import (
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var initIdentityDeclarations = map[string]string{
@@ -34,9 +36,11 @@ func initIdentityFixture(t *testing.T, declaration string, prompts *seedCorrecti
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 	}
 	for path, body := range map[string]string{
-		filepath.Join("original", "seeds.jsonl"):        `{"test_case_description":""}`,
-		filepath.Join("replacement", "seeds.jsonl"):     `{"test_case_description":"help","desired_num_turns":20}`,
-		filepath.Join("replacement", "corrected.jsonl"): `{"test_case_description":"help","desired_num_turns":20}`,
+		filepath.Join("original", "seeds.jsonl"): `{"test_case_description":""}`,
+		filepath.Join("replacement", "seeds.jsonl"): `{"test_case_description":"help",` +
+			`"simulation_configuration":{"desired_num_turns":20}}`,
+		filepath.Join("replacement", "corrected.jsonl"): `{"test_case_description":"help",` +
+			`"simulation_configuration":{"desired_num_turns":20}}`,
 		filepath.Join("evals", project.EvalConfigBase): "# Keep the original\nfuture_metadata: keep\ndatasets:\n" +
 			declaration + "  - name: unrelated\n    $ref: ./missing.yaml\n",
 		filepath.Join("evals", "parts", "dataset.yaml"): "$ref: ./inner/dataset.yaml\n",
@@ -111,7 +115,7 @@ func TestInitDatasetCollisionCorrection(t *testing.T) {
 				assert.Contains(t, text, "different filename stem")
 				if cancel {
 					require.Error(t, err)
-					assert.True(t, cancelled(err))
+					assert.Equal(t, codes.Canceled, status.Code(err))
 					prompts.mu.Lock()
 					assert.Empty(t, prompts.messages)
 					prompts.mu.Unlock()
@@ -133,7 +137,7 @@ func TestInitDatasetCollisionCorrection(t *testing.T) {
 					require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
 					require.Len(t, cfg.Evals, 1)
 					assert.Equal(t, "corrected", cfg.Evals[0].Dataset)
-					assert.Equal(t, &project.Simulation{Model: "simulator", NumConversations: 5, MaxTurns: 20},
+					assert.Equal(t, &project.Simulation{Model: "connection/simulator", NumConversations: 5, MaxTurns: 20},
 						cfg.Evals[0].Simulation)
 					assert.Equal(t, "judge", cfg.Evals[0].Evaluators[0].InitializationParameters["model"])
 					decl, err := project.ReadAuthoredDataset(filepath.Join(h.dir, "evals"), "corrected")
@@ -160,7 +164,8 @@ func TestInitDatasetReusesEquivalentFiles(t *testing.T) {
 				h := initIdentityFixture(t, initIdentityDeclarations[declaration], &seedCorrectionPromptServer{})
 				path := "./original/seeds.jsonl"
 				require.NoError(t, os.WriteFile(filepath.FromSlash(path),
-					[]byte(`{"test_case_description":"help","desired_num_turns":21}`), 0o600))
+					[]byte(`{"test_case_description":"help",`+
+						`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
 				switch spelling {
 				case "canonical":
 					path = "./original/../original/seeds.jsonl"
@@ -245,7 +250,8 @@ func TestInitDatasetIdentityUsesExactConfigPath(t *testing.T) {
 					func(t *testing.T) {
 						h := initIdentityFixture(t, initIdentityDeclarations[declaration], &seedCorrectionPromptServer{})
 						require.NoError(t, os.WriteFile(filepath.Join("original", "seeds.jsonl"),
-							[]byte(`{"test_case_description":"help","desired_num_turns":21}`), 0o600))
+							[]byte(`{"test_case_description":"help",`+
+								`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
 						require.NoError(t, os.Rename("evals", "config"))
 						config := filepath.Join("config", location.filename)
 						if location.filename != project.EvalConfigBase {

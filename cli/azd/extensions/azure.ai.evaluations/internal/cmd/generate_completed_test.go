@@ -137,7 +137,7 @@ func TestGenerationHandoffExplainsInteractiveAndUnattendedModels(t *testing.T) {
 			assert.NotContains(t, text, "generation-only", "never infer a judge or simulator from the generation model")
 			assert.NotContains(t, command, "<", "placeholders belong in guidance, not the copyable command")
 			if tc.simulation {
-				assert.Contains(t, text, "--simulation-model <simulation-deployment>")
+				assert.Contains(t, text, "--simulation-model <connection-name/model-deployment>")
 			} else {
 				assert.NotContains(t, text, "--simulation-model")
 			}

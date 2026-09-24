@@ -133,7 +133,8 @@ func newInitCommand() *cobra.Command {
 		"Conversation dataset mode: static scores completed messages without a target; simulation uses scenario "+
 			"seeds and an agent target. Prompts for conversation datasets; defaults to static without prompts.")
 	cmd.Flags().StringVar(&flags.simulationModel, "simulation-model", "",
-		"Model deployment for the simulated user. Required with simulation; independent of the generation and judge models.")
+		"Connection-name/model-deployment for the simulated user. Required with simulation; "+
+			"independent of the generation and judge models.")
 	cmd.Flags().IntVar(&flags.numConversations, "num-conversations", project.DefaultNumConversations,
 		fmt.Sprintf("Conversations per seed in simulation mode (%d-%d).",
 			project.MinNumConversations, project.MaxNumConversations))
@@ -787,6 +788,13 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// validation and the deploy fails on a file that never existed.
 				decl, err := resolveInitLocalDataset(cmp.Or(in.configPath, in.evalDir), in.dataset, cfg)
 				if err != nil {
+					return scaffold{}, err
+				}
+				// Deploy already refuses a file whose rows are not JSON objects.
+				// init is holding the file and needs nothing from the service to
+				// judge it, so accepting it here only moves the failure to a
+				// deploy, after a declaration nobody can use has been written.
+				if err := validateJSONL(in.dataset); err != nil {
 					return scaffold{}, err
 				}
 				// Deploy already refuses a file whose rows are not JSON objects.

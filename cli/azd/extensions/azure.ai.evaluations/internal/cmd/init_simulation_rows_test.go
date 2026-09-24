@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/messages"
@@ -23,7 +24,7 @@ import (
 
 func simulationInitArgs(dataset string) []string {
 	return []string{"--name", "simulation", "--conversation-mode", "simulation",
-		"--target", "agent", "--dataset", dataset, "--simulation-model", "simulator", "--judge-model", "judge"}
+		"--target", "agent", "--dataset", dataset, "--simulation-model", "connection/simulator", "--judge-model", "judge"}
 }
 
 func initFileSnapshot(t *testing.T, dir string) map[string]string {
@@ -60,19 +61,32 @@ func TestInitSimulationRefusesLocalRowsBeforeAnyWrites(t *testing.T) {
 		rows string
 		want string
 	}{
-		{"blank and zero", `{"test_case_description":"","desired_num_turns":0}`, "empty or non-text"},
-		{"missing description", `{"desired_num_turns":1}`, `no "test_case_description"`},
+		{"blank and zero", `{"test_case_description":"","simulation_configuration":{"desired_num_turns":0}}`,
+			"empty or non-text"},
+		{"missing description", `{"simulation_configuration":{"desired_num_turns":1}}`, `no "test_case_description"`},
 		{"whitespace", `{"test_case_description":" \t\r\n "}`, "empty or non-text"},
 		{"null description", `{"test_case_description":null}`, "empty or non-text"},
 		{"number description", `{"test_case_description":42}`, "empty or non-text"},
 		{"boolean description", `{"test_case_description":true}`, "empty or non-text"},
-		{"zero turns", `{"test_case_description":"help","desired_num_turns":0}`, "positive whole number"},
-		{"negative turns", `{"test_case_description":"help","desired_num_turns":-1}`, "positive whole number"},
-		{"fractional turns", `{"test_case_description":"help","desired_num_turns":1.5}`, "positive whole number"},
-		{"string turns", `{"test_case_description":"help","desired_num_turns":"1"}`, "positive whole number"},
-		{"null turns", `{"test_case_description":"help","desired_num_turns":null}`, "positive whole number"},
-		{"boolean turns", `{"test_case_description":"help","desired_num_turns":true}`, "positive whole number"},
-		{"over explicit cap", `{"test_case_description":"help","desired_num_turns":21}`, "max_turns is 20"},
+		{"too long", `{"test_case_description":"` + strings.Repeat("a", 2501) + `"}`, "maximum is 2500"},
+		{"flat turns", `{"test_case_description":"help","desired_num_turns":1}`, "outside simulation_configuration"},
+		{"null settings", `{"test_case_description":"help","simulation_configuration":null}`, "non-object"},
+		{"zero turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":0}}`,
+			"positive whole number"},
+		{"negative turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":-1}}`,
+			"positive whole number"},
+		{"fractional turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":1.5}}`,
+			"positive whole number"},
+		{"string turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":"1"}}`,
+			"positive whole number"},
+		{"null turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":null}}`,
+			"positive whole number"},
+		{"boolean turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":true}}`,
+			"positive whole number"},
+		{"over explicit cap", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":21}}`,
+			"max_turns is 20"},
+		{"zero per-row maximum", `{"test_case_description":"help","simulation_configuration":{"max_num_turns":0}}`,
+			"positive whole number"},
 		{"completed messages", `{"test_case_description":"help","messages":[]}`, `carries "messages"`},
 		{"query field", `{"test_case_description":"help","query":"hello"}`, `carries "query"`},
 		{"empty query", `{"test_case_description":"help","query":""}`, `carries "query"`},
@@ -119,7 +133,7 @@ func TestInitSimulationChecksDeclaredLocalFilesAndNestedRefs(t *testing.T) {
 	} {
 		for _, row := range []string{
 			`{"test_case_description":""}`,
-			`{"test_case_description":"help","desired_num_turns":0}`,
+			`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":0}}`,
 		} {
 			t.Run(declaration+row, func(t *testing.T) {
 				h := newInitHarness(t, nil)
@@ -148,6 +162,18 @@ func TestInitSimulationChecksDeclaredLocalFilesAndNestedRefs(t *testing.T) {
 	}
 }
 
+func TestInitSimulationRejectsServiceDefaultSeedOverflow(t *testing.T) {
+	h := newInitHarness(t, nil)
+	require.NoError(t, os.WriteFile(h.seedRows,
+		[]byte(`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":21}}`), 0o600))
+	before := initFileSnapshot(t, h.dir)
+	text, err := executeConversationInit(t, append(simulationInitArgs(h.seedRows), "--output", "json")...)
+	require.ErrorContains(t, err, "effective simulation.max_turns is 20")
+	assert.Empty(t, text)
+	assert.Zero(t, h.project.wiringAttempts())
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+}
+
 func TestInitSimulationLocalRowsPreserveValidBounds(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -156,9 +182,15 @@ func TestInitSimulationLocalRowsPreserveValidBounds(t *testing.T) {
 		max  int
 	}{
 		{"omitted turns", `{"test_case_description":"help"}`, nil, 0},
-		{"minimum", `{"test_case_description":"help","desired_num_turns":1}`, []string{"--max-turns", "1"}, 1},
-		{"maximum", `{"test_case_description":"help","desired_num_turns":20}`, []string{"--max-turns", "20"}, 20},
-		{"no invented ceiling", `{"test_case_description":"help","desired_num_turns":21}`, nil, 0},
+		{"minimum", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":1}}`,
+			[]string{"--max-turns", "1"}, 1},
+		{"maximum", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":20}}`,
+			[]string{"--max-turns", "20"}, 20},
+		{"service default", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":20}}`, nil, 0},
+		{"per-row maximum overrides run", `{"test_case_description":"help",` +
+			`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`, []string{"--max-turns", "1"}, 1},
+		{"per-row maximum overrides default", `{"test_case_description":"help",` +
+			`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`, nil, 0},
 		{"BOM and blanks", "\xef\xbb\xbf\n\n{\"test_case_description\":\"help\"}\n \n", nil, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -173,7 +205,7 @@ func TestInitSimulationLocalRowsPreserveValidBounds(t *testing.T) {
 			require.Len(t, cfg.Evals, 1)
 			require.NotNil(t, cfg.Evals[0].Simulation)
 			assert.Equal(t, tc.max, cfg.Evals[0].Simulation.MaxTurns)
-			assert.Equal(t, "simulator", cfg.Evals[0].Simulation.Model)
+			assert.Equal(t, "connection/simulator", cfg.Evals[0].Simulation.Model)
 			assert.Equal(t, "judge", cfg.Evals[0].Evaluators[0].InitializationParameters["model"])
 		})
 	}
@@ -188,7 +220,7 @@ func TestInitSimulationValidatesAfterInteractiveModeAndModel(t *testing.T) {
 	text, err := executeConversationInit(t, "--name", "simulation", "--source", "dataset",
 		"--evaluation-level", "conversation", "--target", "agent", "--dataset", h.seedRows, "--judge-model", "judge")
 	require.Error(t, err)
-	assert.True(t, cancelled(err))
+	assert.Equal(t, codes.Canceled, status.Code(err))
 	assert.Contains(t, text, "empty or non-text")
 	prompts.mu.Lock()
 	defer prompts.mu.Unlock()
@@ -229,11 +261,11 @@ func TestInitSimulationCorrectsInvalidDatasetBeforeConfirmation(t *testing.T) {
 			h := newInitHarness(t, nil, prompts)
 			require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":" "}`), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "zero.jsonl"),
-				[]byte(`{"test_case_description":"help","desired_num_turns":0}`), 0o600))
+				[]byte(`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":0}}`), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "mixed.jsonl"),
 				[]byte(`{"test_case_description":"help","query":null}`), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "corrected.jsonl"),
-				[]byte(`{"test_case_description":"help","desired_num_turns":1}`), 0o600))
+				[]byte(`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":1}}`), 0o600))
 
 			dir := filepath.Join(h.dir, "evals")
 			require.NoError(t, os.MkdirAll(dir, 0o700))
@@ -250,7 +282,7 @@ func TestInitSimulationCorrectsInvalidDatasetBeforeConfirmation(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 			prompts.datasets = []string{"./zero.jsonl", "./mixed.jsonl", "./corrected.jsonl"}
 			args := []string{"--name", "simulation", "--conversation-mode", "simulation",
-				"--target", "agent", "--simulation-model", "simulator", "--judge-model", "judge"}
+				"--target", "agent", "--simulation-model", "connection/simulator", "--judge-model", "judge"}
 			if input == "prompted path" || input == "default declaration" {
 				if input == "prompted path" {
 					prompts.datasets = append([]string{"./seed.jsonl"}, prompts.datasets...)
@@ -272,7 +304,7 @@ func TestInitSimulationCorrectsInvalidDatasetBeforeConfirmation(t *testing.T) {
 			assert.Equal(t, "simulation", group.Name)
 			assert.Equal(t, "corrected", group.Dataset)
 			require.NotNil(t, group.Simulation)
-			assert.Equal(t, &project.Simulation{Model: "simulator", NumConversations: 3, MaxTurns: 5},
+			assert.Equal(t, &project.Simulation{Model: "connection/simulator", NumConversations: 3, MaxTurns: 5},
 				group.Simulation)
 			assert.Equal(t, "judge", group.Evaluators[0].InitializationParameters["model"])
 			after, err := os.ReadFile(path)
@@ -312,7 +344,7 @@ func TestInitSimulationCorrectionCancellationPreservesFiles(t *testing.T) {
 			defer prompts.mu.Unlock()
 			if cancelAt == "correction" {
 				require.Error(t, err)
-				assert.True(t, cancelled(err))
+				assert.Equal(t, codes.Canceled, status.Code(err))
 				assert.Empty(t, prompts.messages)
 			} else {
 				require.NoError(t, err)
@@ -331,7 +363,8 @@ func TestInitSimulationCorrectionRetriesAreBounded(t *testing.T) {
 	t.Setenv("AZD_NO_PROMPT", "false")
 	prompts := &seedCorrectionPromptServer{}
 	h := newInitHarness(t, nil, prompts)
-	require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":"help","desired_num_turns":0}`), 0o600))
+	require.NoError(t, os.WriteFile(h.seedRows,
+		[]byte(`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":0}}`), 0o600))
 	for range 8 {
 		prompts.datasets = append(prompts.datasets, "./seed.jsonl")
 	}

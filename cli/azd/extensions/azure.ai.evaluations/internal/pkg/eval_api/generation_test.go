@@ -359,17 +359,28 @@ func TestGenerationJobDecodesTheEchoedSubmission(t *testing.T) {
 	assert.Equal(t, "gpt-4.1-nano", job.Inputs.Options.ModelOptions.Model)
 	require.Len(t, job.Inputs.Sources, 2)
 	assert.Equal(t, "support-agent", job.Inputs.Sources[1].AgentName)
+
+	encoded, err := json.Marshal(job)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), `"inputs"`)
+	assert.NotContains(t, string(encoded), "be helpful")
+	assert.NotContains(t, string(encoded), "support-agent")
 }
 
 // A response without the echo is the older shape, and it has to decode to no
 // type rather than to the zero value of a real one. Reading "" as simple_qna
 // would relabel a conversation dataset as a turn dataset.
 func TestGenerationJobWithoutInputsStatesNoType(t *testing.T) {
-	var job GenerationJob
-	require.NoError(t, json.Unmarshal([]byte(`{"id":"datagen-1","status":"running"}`), &job))
+	for _, body := range []string{
+		`{"id":"datagen-1","status":"running"}`,
+		`{"id":"datagen-1","status":"running","inputs":null}`,
+	} {
+		job := GenerationJob{Inputs: &DataGenerationInputs{Options: DataGenerationOptions{Type: "simulation_seed"}}}
+		require.NoError(t, json.Unmarshal([]byte(body), &job))
 
-	assert.Nil(t, job.Inputs)
-	assert.Empty(t, job.GenerationType())
+		assert.Nil(t, job.Inputs)
+		assert.Empty(t, job.GenerationType())
+	}
 }
 
 // The evaluator request sends the name twice, under two keys the service reads

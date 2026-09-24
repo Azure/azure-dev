@@ -3,7 +3,12 @@
 
 package project
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+)
+
+var simulationModelReference = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
 
 // Simulation declares that an eval creates its conversations rather than
 // scoring ones it was given.
@@ -15,7 +20,7 @@ import "fmt"
 type Simulation struct {
 	// Model is the deployment the simulated user speaks with. It is not the
 	// judge model an evaluator initializes, and not the model that generated
-	// the seeds -- three separate choices that happen to be models.
+	// the seeds. It uses the connection-name/model-deployment reference format.
 	Model string `yaml:"model,omitempty"             json:"model,omitempty"`
 
 	// NumConversations is how many conversations to create per scenario.
@@ -27,9 +32,10 @@ type Simulation struct {
 	MaxTurns int `yaml:"max_turns,omitempty"         json:"max_turns,omitempty"`
 }
 
-// Bounds on the simulation parameters, from ConversationGenerationParams in
-// the REST contract. They are checked locally so an out-of-range value is
-// refused before anything is created rather than after a run is billed.
+// Bounds for authored simulation defaults, retained from the CLI feature
+// specification. These are local authoring limits, not service maxima: the
+// published preview contract permits larger values. Per-case settings follow
+// that contract separately.
 const (
 	MinNumConversations = 1
 	MaxNumConversations = 5
@@ -52,9 +58,8 @@ const (
 // Presence is read here, where it still exists, rather than by making the
 // fields pointers: 0-means-unset is the convention every other optional number
 // in this package follows, and one struct disagreeing is its own trap.
-// The callback form works with each YAML package used by the host and extension,
-// and retains the calling decoder's strict-field checks. A package-specific Node
-// signature was silently ignored by the production configuration loader.
+// The callback works with both YAML packages and preserves the calling decoder's
+// strict-field checks.
 func (s *Simulation) UnmarshalYAML(unmarshal func(any) error) error {
 	type simulationYAML Simulation
 	var decoded simulationYAML
@@ -96,6 +101,9 @@ func (s *Simulation) Validate() error {
 
 	if s.Model == "" {
 		return fmt.Errorf("simulation.model is required: it names the deployment the simulated user speaks with")
+	}
+	if !simulationModelReference.MatchString(s.Model) {
+		return fmt.Errorf("simulation.model must use connection-name/model-deployment format")
 	}
 
 	if s.NumConversations != 0 &&

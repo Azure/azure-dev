@@ -547,8 +547,6 @@ Reviewed first-party extension usage events currently include:
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
-| `azure.ai.dataset` | `dataset.published` | `azure.ai.dataset` writes a dataset version (a `create` or `update` publish) | `ext.operation`: `create`, `update`, or `unknown` |
-| `azure.ai.evaluations` | `init.completed` | `azure.ai.evaluations` `init` scaffolds an evaluation config; emitted once after it is written | `ext.source`: `traces`, `dataset`, or `unknown` |
 
 Source-category fields are classified from the configured source type and location, not the user-defined source name.
 Raw source names, URLs, paths, and hosts are not emitted in those fields.

@@ -696,7 +696,9 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 	// in extensions/telemetry. The dynamic ExtensionUsageAttribute factory is also
 	// allowed because it only applies the runtime ext.* namespace.
 	sanctionedFieldsKeyLit := map[ast.Node]bool{}
-	if pkgPath == fieldsPkgPath || pkgPath == extensionTelemetryFieldsPkgPath {
+	isExtensionTelemetryRegistryFile := pkgPath == extensionTelemetryFieldsPkgPath &&
+		filepath.Base(rel) == "fields.go"
+	if pkgPath == fieldsPkgPath || isExtensionTelemetryRegistryFile {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
@@ -757,8 +759,8 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 			// classifier-visible source registries as an exported package-level var,
 			// plus the runtime-only ExtensionUsageAttribute namespace helper.
 			if isFieldsAttributeKeyType(clType) {
-				isRegistryPackage := pkgPath == fieldsPkgPath || pkgPath == extensionTelemetryFieldsPkgPath
-				if !isRegistryPackage {
+				isRegistrySource := pkgPath == fieldsPkgPath || isExtensionTelemetryRegistryFile
+				if !isRegistrySource {
 					violations = append(violations, fmt.Sprintf(
 						"  %s:%d: fields.AttributeKey{...} constructed outside a telemetry field "+
 							"registry (its key is not in the classifier catalog; reference a registered "+
@@ -867,10 +869,10 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 // bare attribute.Key(k) conversion (which does not build a KeyValue), a write to
 // an unrelated Key field, and non-KeyValue uses of a key (e.g. a map lookup) are
 // not. The in-package
-// exemptions — the core and extension field registry vars,
-// ExtensionUsageAttribute, the fields/baggage KeyValue plumbing, and
-// internal/cmd's error.* re-keying — are keyed on package path and so are
-// exercised by the module walk rather than these package-p fixtures. Fixtures are
+// exemptions — the core field registry vars, ExtensionUsageAttribute, the
+// fields/baggage KeyValue plumbing, and internal/cmd's error.* re-keying — are
+// keyed on package path and exercised by the module walk. The extension registry's
+// fields.go boundary is pinned below with package/path overrides. Fixtures are
 // type-checked against the real attribute and fields packages via go/packages, so
 // the guard runs with the same type information it uses on the module.
 func TestRawTelemetryAttributeScanner(t *testing.T) {
@@ -882,6 +884,8 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 	cases := []struct {
 		name          string
 		src           string
+		scanPkgPath   string
+		rel           string
 		wantViolation bool
 	}{
 		{
@@ -1198,6 +1202,32 @@ func f() {
 			wantViolation: true,
 		},
 		{
+			name: "exported extension registry field in fields.go",
+			src: `package p
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+var Registered = fields.AttributeKey{Key: attribute.Key("ext.registered")}
+`,
+			scanPkgPath:   extensionTelemetryFieldsPkgPath,
+			rel:           "extensions/telemetry/fields.go",
+			wantViolation: false,
+		},
+		{
+			name: "exported extension field outside fields.go",
+			src: `package p
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+var Rogue = fields.AttributeKey{Key: attribute.Key("ext.rogue")}
+`,
+			scanPkgPath:   extensionTelemetryFieldsPkgPath,
+			rel:           "extensions/telemetry/fields_extra.go",
+			wantViolation: true,
+		},
+		{
 			name: "shadowed classified key across scopes",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
@@ -1259,7 +1289,15 @@ var _ = 1
 			if !ok {
 				continue
 			}
-			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, pkg.PkgPath, cases[idx].name)) > 0
+			scanPkgPath := pkg.PkgPath
+			if cases[idx].scanPkgPath != "" {
+				scanPkgPath = cases[idx].scanPkgPath
+			}
+			rel := cases[idx].name
+			if cases[idx].rel != "" {
+				rel = cases[idx].rel
+			}
+			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, scanPkgPath, rel)) > 0
 			checked[idx] = true
 		}
 	}

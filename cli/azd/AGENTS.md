@@ -298,8 +298,8 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   across first-party extensions; reuse an existing key only when its meaning, allowed values,
   classification, and purpose are identical. Run
   `go test ./extensions/telemetry`; repository validation rejects undeclared or dynamically keyed
-  fields, missing classification/purpose/endpoint metadata, and measurements. `CustomerContent` is
-  permitted but requires a privacy review before merge.
+  fields, missing classification/purpose/endpoint metadata, measurements, and `CustomerContent`.
+  If a value would require `CustomerContent`, do not report it.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
   contains `Event` (end it with `Prefix` for a prefix-match group) so repository metadata tooling

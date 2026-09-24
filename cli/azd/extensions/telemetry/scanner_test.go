@@ -372,9 +372,11 @@ var _ = azdext.ReportUsageRequest(Usage{Attributes: map[string]string{"undeclare
 	usages, diagnostics := scanExtensionTelemetry(root)
 
 	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "do not alias or redefine telemetry payload types")
-	require.Contains(t, diagnostics[0], "type Usage)")
+	require.Len(t, diagnostics, 2)
+	joined := strings.Join(diagnostics, "\n")
+	require.Contains(t, joined, "do not alias or redefine telemetry payload types")
+	require.Contains(t, joined, "type Usage)")
+	require.Contains(t, joined, "not conversions from another type")
 }
 
 // A chain of defined types reaches the payload through its base type, so every
@@ -396,10 +398,42 @@ var _ = azdext.ReportUsageRequest(Report{Attributes: map[string]string{"undeclar
 	usages, diagnostics := scanExtensionTelemetry(root)
 
 	require.Empty(t, usages)
-	require.Len(t, diagnostics, 2)
+	require.Len(t, diagnostics, 3)
 	joined := strings.Join(diagnostics, "\n")
 	require.Contains(t, joined, "type Usage)")
 	require.Contains(t, joined, "type Report)")
+	require.Contains(t, joined, "not conversions from another type")
+}
+
+// A structurally identical local type can be converted directly to a telemetry
+// payload without declaring a payload alias. Reject the conversion itself so a
+// dynamic Attributes map cannot bypass key discovery.
+func TestScanRejectsPayloadConversionFromLocalStruct(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+type localEvent struct {
+	Name       string
+	Attributes map[string]string
+}
+
+func build(name string, attributes map[string]string) foundryTelemetry.Event {
+	return foundryTelemetry.Event(localEvent{
+		Name:       name,
+		Attributes: attributes,
+	})
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "not conversions from another type")
 }
 
 // A chain of aliases resolves to a payload, so each alias declaration is rejected.

@@ -162,7 +162,13 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 					diagnostics = append(diagnostics, scanPayloadTypeDeclarations(
 						fset, extensionRoot, source, pkg, value)...)
 				case *ast.CallExpr:
-					if isTelemetrySinkCall(value, source) && !sinkPayloadIsInlineLiteral(value, source) {
+					if isTelemetryPayloadType(value.Fun, source) {
+						diagnostics = append(diagnostics, fmt.Sprintf(
+							"%s:%d: construct telemetry payloads as concrete keyed literals, "+
+								"not conversions from another type, so attribute keys stay discoverable",
+							displayPath(extensionRoot, source.path),
+							fset.Position(value.Pos()).Line))
+					} else if isTelemetrySinkCall(value, source) && !sinkPayloadIsInlineLiteral(value, source) {
 						diagnostics = append(diagnostics, fmt.Sprintf(
 							"%s:%d: pass the telemetry payload to ReportUsage as an inline keyed "+
 								"literal so its attribute keys are scanned; a variable, parameter, or "+

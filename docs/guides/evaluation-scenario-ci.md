@@ -69,7 +69,7 @@ The main and dedicated validation branches' scenario files and shared harness/ma
 changes also run it. A candidate-pin change is a configuration-validation round,
 not proof of a newly promoted Latest release; the receipt must still identify
 the release actually selected. A release publisher
-can invoke the same dispatch after publishing/promoting a new package. The
+can invoke the same dispatch after publishing/promoting a new package.
 The shared offline jobs do not restrict execution to the validation fork.
 After adoption on `Azure/azure-dev` main, manual or repository dispatch uses
 the same offline entry point there. The `azd-bugbash-published` event requires

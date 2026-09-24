@@ -96,7 +96,7 @@ Mark missing live authorization `BLOCKED` and continue useful local coverage.
 6. Update this inventory, the version-specific receipt, and installation pins
    together. Retain old receipts without relabeling them as new executions.
 
-**Current build 42 scope decision:** prioritize a smaller package of independently
+**Historical build 42 scope decision:** prioritize a smaller package of independently
 validated fixes and defer changes needing live proof. The intended baseline is
 build 41 plus the proven cancellation correction, with an isolated race fix only
 if independently validated and explicitly included by the integration owner.

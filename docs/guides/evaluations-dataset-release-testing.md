@@ -230,7 +230,7 @@ change on the same commands.
 | [5640927][bug-5640927], invalid simulation init | Invalid local/nested seeds fail before authored/private writes; valid controls and interactive correction still work. | Reported Done. Build 40 local/terminal proof and build 41 hosted seed checks exist. Repeat on each new package; do not equate source validation with installed behavior. |
 | [5631330][bug-5631330], generation sample/cost cap, P1 | The actual service generation path honors the requested bound and billed work; client truncation is not a fix. | Reported New, backend ownership unresolved. Historical request 15 produced 16 on the reported path. New live reproduction is `BLOCKED` without explicit budget and a relevant service change. Client repackaging does not close it. |
 | [5595070][bug-5595070], failed-run follow-ups | Failed/errored runs print usable immutable-ID inspection/export guidance; zero output rows remain diagnosable. | Reported Done. Build 40 has a naturally failed responses-backed run and executed follow-ups, beyond earlier synthetic HTTP proof. No blanket real errored-row or build 41 rerun claim. |
-| [5595119][bug-5595119], agent guidance | The separately delivered agent artifact gives correct current evaluation/dataset guidance and usable commands. | Distinct artifact from these two packages; original source work is [#10042](https://github.com/Azure/azure-dev/pull/10042). Delivery must be checked with its owner. Two-package success is not its acceptance. |
+| [5595119][bug-5595119], agent guidance | The separately delivered agent artifact gives correct current evaluation/dataset guidance and usable commands. | Distinct artifact from these two packages; original source work is [#10042](https://github.com/Azure/azure-dev/pull/10042). The owner reports the targeted deploy-note unit test, production build, and isolated local install/version at `4780cd608b16a0ebe1b479e531ea08b66c096da9` passed. Actual deployed-note acceptance and public delivery remain unverified; no closure or lifted release hold is implied. |
 | [5571322][bug-5571322], cancellation | For the corrected picker contract, Ctrl+C exits 1 and explicit Cancel exits 0, with no unintended mutation; ambiguity in no-prompt/JSON exits nonzero. | Original item reported Done. The later [#10113](https://github.com/Azure/azure-dev/pull/10113) development artifact has separate terminal proof and is not build 41. Repeat against the combined new package; true Windows console-signal delivery is a separate unverified case. |
 | [5572139][bug-5572139], terminal generation-job deletion, P2 | Supported deletion of an owned terminal job succeeds with correct empty-response handling and local cleanup. | Reported New, backend HTTP 409 remains unresolved. No verified retention TTL or client-package fix. Do not loop DELETE against known failures. |
 | [5530209][bug-5530209], editable rubric shape, P2 | Download/edit/republish preserves `type`, `dimensions`, `pass_threshold`, declaration metadata and version behavior; unchanged repetition remains stable. | New residual tracked with [#10148](https://github.com/Azure/azure-dev/pull/10148). Earlier metadata/version passes through create/reconcile do not establish the complete editable round trip or live `azd up`. |
@@ -292,6 +292,31 @@ assessed against the documented contract without a command rerun. This is not
 a newly discovered product defect or a reason to reopen 5640927.
 
 ## Peer-extension parity
+
+The bounded source audit completed on **2026-09-24** at build 41 source
+`8ef8b6df77336950c60506ab2966037f579d92cd`: 19 peers plus the two targets,
+13 cross-cutting areas, and 88 exact-SHA source path/line references. It established
+**no new actionable defect**. The cleanup concern matched existing 5572011;
+current recurrence still needs proof. This was static inspection, not test
+execution, installed-package verification, or live-service acceptance.
+
+The complete peer inventory includes executable extensions and dependency-only
+packs:
+
+| Peer group | Every inventoried extension |
+| --- | --- |
+| Foundry-related executable peers | `azure.ai.agents`, `azure.ai.connections`, `azure.ai.finetune`, `azure.ai.inspector`, `azure.ai.models`, `azure.ai.projects`, `azure.ai.rle`, `azure.ai.routines`, `azure.ai.skills`, `azure.ai.toolboxes`, `azure.ai.training` |
+| Other executable peers | `azure.appservice`, `azure.coding-agent`, `microsoft.azd.ai.builder`, `microsoft.azd.concurx`, `microsoft.azd.demo`, `microsoft.azd.extensions` |
+| Dependency-only packs | `azd.internal.pack`, `microsoft.foundry` |
+
+Source evidence shows applicable authentication wiring, telemetry/privacy gates,
+flag checks, non-interactive/JSON handling, injected writers, cancellation,
+pagination, redaction, configuration, and packaging safeguards in the inspected
+targets. This is not certification of every command combination. Remaining
+installed-boundary coverage includes guest-tenant behavior, opt-out/source
+rejection, synthetic credential-bearing diagnostics, and final-candidate
+cancellation/state preservation. Explicit per-request time budgets and shared
+helper consolidation are optional recommendations, not new release requirements.
 
 Maintain one bounded, evidence-linked inventory of **all** repository peer
 extensions at a named source SHA. Compare applicable requirements from the

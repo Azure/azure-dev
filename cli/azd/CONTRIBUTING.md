@@ -174,6 +174,13 @@ Launch `azd` separately, then attach:
 
 ## Submitting a change
 
+Keep related fixes that deliver one coherent behavior in a single pull request.
+When combining parallel work, designate one integration writer to preserve each
+contributor's changes and attribution without competing edits. Link the original
+pull requests and carry forward their review feedback. Before closing a superseded
+draft, verify that its replacement includes the intended fixes and regression
+coverage, and account for any remaining feedback.
+
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and ensure tests pass
 1. Submit a pull request: `gh pr create --web` (install [gh cli][gh cli] if needed). Select "Create a fork" to set up a fork for the first time if prompted for.

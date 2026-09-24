@@ -18,7 +18,7 @@ on:
         options: [offline, live]
         default: offline
       service_plan:
-        description: Reviewed static-service plan path; empty means BLOCKED (no live authorization)
+        description: Reviewed service plan path; empty means BLOCKED (no live authorization)
         type: string
         default: ""
   # GitHub delivers repository_dispatch only to workflows on the default branch.
@@ -135,7 +135,7 @@ jobs:
   live-service:
     if: inputs.mode == 'live' && needs.live-prerequisites.outputs.environment_name != ''
     needs: live-prerequisites
-    name: Optional gated static service lifecycle
+    name: Optional gated evaluation lifecycle
     environment:
       name: ${{ needs.live-prerequisites.outputs.environment_name }}
     runs-on: ubuntu-24.04

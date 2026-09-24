@@ -78,7 +78,7 @@ jobs:
 
   - ${{ if eq(parameters.mode, 'live') }}:
       - job: LivePrerequisites
-        displayName: Optional gated static service lifecycle
+        displayName: Optional gated evaluation lifecycle
         pool:
           vmImage: ubuntu-24.04
         timeoutInMinutes: 30

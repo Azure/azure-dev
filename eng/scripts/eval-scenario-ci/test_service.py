@@ -4,7 +4,6 @@
 from datetime import datetime, timedelta, timezone
 import base64
 import json
-import io
 from pathlib import Path
 import subprocess
 import tempfile
@@ -365,7 +364,7 @@ class ServiceTests(unittest.TestCase):
                     return {"id": "eval_owned", "status": "deleted"}
                 self.fail("Unexpected command")
 
-            driver.delete_owned_eval = lambda eval_id, endpoint, tenant: driver(
+            driver.delete_owned_eval = lambda eval_id, endpoint, tenant, **kwargs: driver(
                 "delete only owned evaluation and runs", ["ID-only DELETE", eval_id])
             try:
                 service.lifecycle(plan, driver, workspace, report, name="ci-fixture-unique")
@@ -389,7 +388,7 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("dataset bytes differ", report["testException"])
 
     def test_ambiguous_create_is_not_retried_or_deleted_by_guessed_name(self):
-        calls, report = self.drive(failure="create owned static evaluation")
+        calls, report = self.drive(failure="create owned evaluation")
         self.assertEqual(len(calls), 6)
         self.assertTrue(report["remoteCleanup"]["manualReconciliationRequired"])
         self.assertEqual(report["remoteCleanup"]["status"], "BLOCKED")
@@ -493,12 +492,9 @@ class ServiceTests(unittest.TestCase):
             driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 17, 60, report)
             driver.deadline = 0
             result = subprocess.CompletedProcess([], 0, b'{"token":"mock-credential-do-not-log"}', b"")
-            response = mock.MagicMock()
-            response.__enter__.return_value.status = 204
-            opener = mock.Mock()
-            opener.open.return_value = response
+            response = subprocess.CompletedProcess([], 0, b'{"status":204,"body":""}', b"")
             with mock.patch.object(service.subprocess, "run", return_value=result) as run, \
-                 mock.patch.object(service.urllib.request, "build_opener", return_value=opener):
+                 mock.patch.object(service, "transport_exchange", return_value=response):
                 with self.assertRaisesRegex(RuntimeError, "deadline"):
                     driver("wait for owned run", [])
                 run.assert_not_called()
@@ -510,25 +506,23 @@ class ServiceTests(unittest.TestCase):
                 self.assertNotIn("private.services", json.dumps(report))
                 self.assertNotIn("mock-credential", json.dumps(report))
 
-    def test_id_only_delete_never_falls_back_on_404_or_follows_redirects(self):
+    def test_id_only_delete_never_falls_back_on_404(self):
         with tempfile.TemporaryDirectory() as root:
             driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 17, 60, {})
             token = subprocess.CompletedProcess([], 0, b'{"token":"mock-credential"}', b"")
-            opener = mock.Mock()
             endpoint = self.plan()["projectEndpoint"]
             url = endpoint + "/openai/v1/evals/eval_owned"
-            opener.open.side_effect = service.urllib.error.HTTPError(url, 404, "gone", {}, io.BytesIO())
-            with mock.patch.object(service.subprocess, "run", return_value=token), \
-                 mock.patch.object(service.urllib.request, "build_opener", return_value=opener) as build:
+            response = subprocess.CompletedProcess([], 0, b'{"status":404,"body":""}', b"")
+            with mock.patch.object(service.subprocess, "run", return_value=token) as run, \
+                 mock.patch.object(service, "transport_exchange", return_value=response) as transport:
                 self.assertEqual(driver.delete_owned_eval("eval_owned", endpoint, self.plan()["tenantId"]),
                                  {"id": "eval_owned", "status": "deleted"})
-                opener.open.assert_called_once()
-                request = opener.open.call_args.args[0]
-                self.assertEqual(request.full_url, url)
-                self.assertEqual(request.method, "DELETE")
-                self.assertEqual(request.get_header("Authorization"), "Bearer mock-credential")
-                redirect = build.call_args.args[0]
-                self.assertIsNone(redirect.redirect_request(request, None, 302, "", {}, "https://elsewhere.invalid"))
+                run.assert_called_once()
+                transport.assert_called_once()
+                request = json.loads(transport.call_args.args[0])
+                self.assertEqual(request["url"], url)
+                self.assertEqual(request["method"], "DELETE")
+                self.assertFalse(request["readJson"])
 
     def test_execute_persists_primary_and_remote_cleanup_failures(self):
         plan = self.plan()

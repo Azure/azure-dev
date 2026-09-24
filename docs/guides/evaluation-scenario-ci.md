@@ -93,7 +93,8 @@ does not establish an automatic webhook or schedule.
 
 [Pipeline](../../eng/pipelines/eval-scenario-ci.yml) uses the same resolver and
 runner, a single frozen manifest, and Linux/Windows Microsoft-hosted images.
-It has no PR/continuous trigger and no service connection or secret variables.
+It has no PR/continuous trigger and creates no service connection or secret
+variables; the optional service path references values supplied by its operator.
 Register/queue it only in a user-authorized target with existing approved
 repository access and capacity. The documented `azure-sdk/internal` pipeline
 location is not an execution grant, and this standalone YAML is not a request
@@ -131,7 +132,7 @@ service job after the native gate. Offline jobs do not need live configuration.
 Mock/schema checks prove the wiring, not actual deployment approval or live
 activation.
 
-The implemented sequence is:
+The existing `static-evaluation` mode retains this sequence:
 
 1. Verify approved core/extension executable digests in the supplied isolated
    **CI service-auth** configuration. The profile must contain exactly the two
@@ -168,16 +169,105 @@ The implemented sequence is:
    ambiguous outcome, do not retry the POST or guess an identity to delete;
    report manual reconciliation required.
 
+### Owned prompt version and manual dataset
+
+The `owned-prompt-evaluation` mode adds executable code, not a status-only
+placeholder. It uses the same protected entry and validation above, then:
+
+1. Validate an approved local UTF-8 JSONL file before identity or resource
+   actions. It must have no byte-order mark and contain exactly one object with
+   nonempty plain-text `query` and `ground_truth` values. Its raw SHA256 must
+   match the approved plan. No dataset generation runs.
+2. Generate a unique owned agent name and require its exact GET to return404.
+   A present agent is never adopted or edited. Submit one minimal prompt-version
+   POST using the existing approved model deployment and instructions, with
+   `draft: false` and no tools, hosted, voice or A2A configuration.
+3. Preserve the actual returned `name`, string `version` and `id` (`name:version`).
+   No version1/latest value is invented. An ambiguous POST or missing identity
+   is not retried and triggers manual reconciliation rather than guessed deletion.
+4. Create a unique owned dataset using
+   `azd ai dataset create <name> --from-file <copied-row.jsonl> --version <version>`.
+   Confirm the returned name/version, download that exact version and recheck
+   the approved bytes before creating an evaluation.
+5. Run the existing evaluation create/run/wait/export sequence with
+   `target: {type: agent, name: <owned-name>}`. The published067 config has no
+   `target.version` field and its builder supplies no explicit agent version.
+   This path creates only one version under a fresh owned name and records its
+   identity; it does **not** claim an explicit version pin on the evaluation wire.
+6. Attempt cleanup for every confirmed owned resource in dependency order:
+   evaluation ID, dataset name/version, then agent name/version. All cleanup
+   calls share one deadline. A failure in one cleanup does not prevent attempts
+   on the others, and primary/cleanup errors are retained separately.
+
+The prompt contract is the public AI Projects2.7.0
+[`AgentsOperations.create_version`/`delete_version` API][agent-operations],
+with a [pinned public reference][agent-operations-pinned]:
+`POST /agents/{name}/versions?api-version=v1`, body
+`{"definition":{"kind":"prompt","model":"<existing-deployment>","instructions":"<approved-text>"},"draft":false}`.
+Version cleanup targets only
+`DELETE /agents/{returned-name}/versions/{returned-version}?api-version=v1`,
+never a name search, whole-agent delete, force cascade or guessed latest.
+Empty successful deletion is handled without JSON decoding; unsupported or
+failed deletion is reported, not broadened to whole-agent cleanup. A nonempty
+JSON `null`/array/scalar is not an empty success; a nonempty deletion object
+must confirm the exact returned name/version and `deleted: true`.
+
+Dataset create/delete flags and JSON identities are verified against
+[the exact public067 command source][dataset-command-contract].
+`delete <returned-name> --version <returned-version> --force` removes only that
+registered version. Physical blob retention, empty agent-container retention and
+stopped billing are not proven by logical version deletion. The executor records
+those limitations explicitly. Historical live prompt creation/whole-owned-agent
+cleanup informed contract discovery, but does not count as new version-delete,
+pipeline or package execution proof.
+
+The owned mode replaces `datasetName` with `datasetFile`, and additionally
+requires `agentModel` and `agentInstructions`. `datasetVersion` and
+`datasetSha256` remain mandatory. Supplying the existing-dataset name in this
+mode is rejected rather than ignored. Its exact `authorizedOperations` set adds
+`agent-version-create`, `agent-version-delete`, `dataset-create`, and
+`dataset-delete` to the existing five operations.
+
+### Executor implementation matrix
+
+All service rows below are default-off and **actual execution NOT RUN** for this
+contribution. Unit/mock coverage is not native approval or live acceptance.
+
+| Operation | `executorImplemented` and verified entry | Mock coverage | GitHub Actions / Azure DevOps wiring |
+| --- | --- | --- | --- |
+| Static workflow | Yes: `service.lifecycle`, existing registered row | Existing success, refusal, result and cleanup tests | Both call `service.py --plan`; GitHub additionally binds an existing protected environment |
+| Agent version create | Yes: `owned_prompt_lifecycle`, public v1 prompt-version POST | Existing-name refusal, exact minimal body, returned version9, ambiguous/missing identity | Both select `owned-prompt-evaluation` through the approved plan |
+| Agent infrastructure deploy | **No**: no separate deploy command is part of this minimal prompt-version contract | No hosted/deployment proof | Not wired. `azd deploy` with an agent service would require an approved code/image artifact, service definition, compute/registry/infra and teardown contract; hosted/A2A/voice infrastructure is outside this scope |
+| Manual dataset create | Yes: published `ai dataset create --from-file --version` | Exact copied bytes/returned version, uncertain write, round-trip mismatch | Both use the same owned-mode executor |
+| Eval create | Yes: published `ai eval create --from-file` | Exact target/catalog, unique name, returned eval ID | Both use the same executor |
+| Run/wait | Yes: published `run start --no-wait`, `run show --wait` | Returned ID binding, terminal status, one command, failure paths | Both use the same executor |
+| Export | Yes: published `run output export --format json --output-file -` | Exact item/run/approved-row binding; wrong/null shapes and numeric types | Both use the same executor |
+| Owned cleanup | Yes, scoped identities: eval ID DELETE, dataset version CLI DELETE, agent-version API DELETE | No guessed identity, empty response, one shared budget, all cleanup attempts and retained primary failures | Both use the same executor; no broad project/agent/infrastructure deletion |
+
 The real subprocess driver uses fixed argument lists, `--no-prompt`, JSON,
 per-command timeouts and a total observation deadline. Cleanup receives its own
 bounded command budget even after that deadline; the token request and ID-only
-HTTP delete share it. Provider job limits are 30 minutes, covering the maximum
+HTTP operations and dataset-version deletion share it. Provider job limits are 30 minutes, covering the maximum
 15-minute observation plus 10-minute cleanup and setup overhead. These are
 observation/time bounds, not monetary enforcement. Service payloads are parsed
 in memory but not uploaded: receipts contain command timing, output digests,
 owned IDs and known assertions. The project endpoint and pre-existing dataset
 name/version are redacted from public command receipts without changing the
 actual command arguments.
+
+Authenticated HTTP runs in a short-lived owned Python transport process.
+The parent enforces one remaining absolute deadline across pipe writes/reads,
+connection, headers, body consumption and child exit, and terminates/reaps only
+that owned process on timeout or a communication failure. A slowly
+arriving body cannot extend the cleanup window through socket-read timeouts.
+Tokens and payloads travel only through private captured pipes, not command
+arguments, environment variables, files or public receipts. Response metadata
+is limited to one MiB as a harness safety bound, not an Azure API limit.
+Local regressions stall input, mocked headers/body and process exit, and cover
+a crashing child with private diagnostics. They verify owned-process cleanup
+without any network or authentication operation.
+Client termination does not establish that a remote POST stopped or was
+rolled back, so ambiguous outcomes remain failures requiring reconciliation.
 
 The plan must contain all fields checked by `validate_plan`: provider, run ID,
 workflow revision, expiry, approval reference, resource owner, client/tenant IDs,
@@ -208,11 +298,16 @@ The wrapper bounds its own command submissions, not hidden SDK retries or
 service-side billing. Those behaviors and the monetary control must be verified
 before activation; a one-command/one-row assertion is not a spending fence.
 
-Agent creation/deployment, dataset creation, generated data, authentication
-bootstrap, and verified service-side monetary enforcement remain **NOT
-IMPLEMENTED**. They require additional pinned agent artifacts and verified
-resource/lifecycle/cost contracts. The restricted static sequence must not be
-reported as complete agent lifecycle E2E or a live test pass.
+Infrastructure deployment, generated data, authentication bootstrap and verified
+service-side monetary enforcement remain **NOT IMPLEMENTED**. Prompt-version
+creation and manual dataset creation are implemented as described above; missing
+runtime identity is an execution block, not a claim those code paths are absent.
+No service execution, hosted/A2A/voice deployment, or complete live E2E pass is
+claimed.
+
+[agent-operations]: https://learn.microsoft.com/en-us/python/api/azure-ai-projects/azure.ai.projects.operations.agentsoperations?view=azure-python
+[agent-operations-pinned]: https://github.com/MicrosoftDocs/azure-docs-sdk-python/blob/7b985631332617f11a4d7e965fa06021f7cf52b0/docs-ref-autogen/azure-ai-projects/azure.ai.projects.operations.AgentsOperations.yml
+[dataset-command-contract]: https://github.com/m7md7sien/azure-dev/blob/067b2fd5622494db2dc6ac3a2e9bc19e871ed9e7/cli/azd/extensions/azure.ai.dataset/internal/cmd/dataset.go
 
 ## Local reproduction
 

@@ -193,8 +193,8 @@ def live_status():
     return {
         "status": "BLOCKED", "execution": "NOT RUN",
         "executorSelected": False,
-        "implementedServiceModes": ["static-evaluation"],
-        "unimplementedServiceOperations": ["agent-create", "agent-deploy", "dataset-create", "generation"],
+        "implementedServiceModes": ["static-evaluation", "owned-prompt-evaluation"],
+        "unimplementedServiceOperations": ["agent-infrastructure-deploy", "generation"],
         "operations": ["agent-create", "agent-deploy", "dataset-create",
                        "eval-create", "eval-run", "eval-export"],
         "blockers": [

@@ -361,7 +361,7 @@ This is not live Azure or full-core authentication.
 
 Phase-C rubric metadata, first-publication, and delete-cleanup acceptance
 ([5530209][bug-5530209], [5645184][bug-5645184], [5572011][bug-5572011])
-remain `NOT RUN` until their own exact-package receipts arrive. The current
+did not reach whole-lifecycle acceptance for this proposal. The current
 inclusion map is authoritative; superseded source preparations are not evidence
 for the selected bytes. No broad new model/simulation contract is inferred.
 After the phase-C deadline, Track1 selected a required-only successor based on
@@ -370,6 +370,17 @@ delete-lifecycle changes are excluded from that fallback. The historical
 local2d4/reg21c receipts remain available, but no prior acceptance carries over
 to the new bytes. The required-only public receipt above follows fresh
 acceptance, not a relabeling of that proposal.
+
+A later bounded state-free study ended with six actual CLI cases: five complete
+and one capture gap. Public067 first-publication remained `RED`
+(one GET, zero POST, exit1), and a bare metadata update omitted four fields.
+The unpublished2d4 development binary captured an absence guard
+(six GET, zero POST, exit1), four-field inheritance and explicit-empty override.
+Its first-create case remains `INCOMPLETE_CAPTURE` after Decimal receipt
+serialization; no PASS or rerun is inferred. Testing reported the bounded
+1028.785-second duration and owned loopback/process guards. This is not stateful
+SDK/delete/reconcile/native-up proof, release acceptance or issue closure.
+Any capture-recovery execution needs its separately agreed scope.
 
 The exact required-only43 hosted run is **35969288265**, head
 `e8d07ded9163562976a14b9eb9b61952829bd36e`. Both manifest source fields pin067b;
@@ -457,7 +468,7 @@ work. Do not create a different runner or owner for each CI provider.
 | CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `PASS`: resolver pin and both OS artifact sets downloaded; commands, state, cleanup, runtime versions, archive/binary digests and blocked-live receipts verified |
 | CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `PASS` at `d6818868d81ee59b5782c0a0a12413d008cbb9ff`; live branch was not requested and is not counted as a pass |
 | CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED`: YAML/local validation passed, but scoped native metadata discovery found no matching authorized scenario-pipeline tuple; no Azure DevOps execution claimed |
-| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED` execution: an opt-in static eval create/run/export/delete executor with existing registered input and service identity is implemented and tested only with mocked commands. Agent/deployment/data generation, authentication bootstrap and monetary enforcement remain `NOT IMPLEMENTED`; no approved live tuple/control exists. See the [runner guide][scenario-guide]. |
+| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED` execution, implemented code: static evaluation plus an opt-in owned prompt-version/manual one-row dataset create/eval/run/export/identity-specific-cleanup sequence. Only mock validation is claimed. Infrastructure deployment, generation, auth/plan bootstrap and monetary enforcement remain `NOT IMPLEMENTED`; see the exact [executor matrix][scenario-guide]. |
 
 The first new scenario producer resolved build 41 at
 **2026-09-24T03:14:18.582604Z**, before build 42's Latest promotion. Its manifest

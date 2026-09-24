@@ -113,6 +113,10 @@ overrides:
           - appservice
           - concurx
           - finetune
+    - filename: docs/guides/evaluation-scenario-ci.md
+      words:
+          - bugbash
+          - sien
     - filename: docs/guides/**/*.md
       words:
           - azdext

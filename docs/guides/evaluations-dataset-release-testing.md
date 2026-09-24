@@ -39,26 +39,34 @@ different evidence types and must never substitute for one another.
 
 ## Isolation, cadence, and spending
 
-Each of the two ongoing testers owns a separate `AZD_CONFIG_DIR`, scenario
+Each of the six ongoing testers owns a separate `AZD_CONFIG_DIR`, scenario
 directory, artifact/coverage ledger, and resource prefix. Never mutate the normal
 global registry/configuration or another tester's agents, runs, files, or sessions.
 Follow the [repository testing rules][agent-rules] for `NO_COLOR=1`,
 `AZD_FORCE_TTY=false`, and `AZURE_DEV_COLLECT_TELEMETRY=no`. Set these variables in
 the same process environment as the tested commands.
 
-The practical tester covers realistic user journeys. The edge-case tester covers
-negative inputs, recovery, automation contracts, and confusing UX. Each maintains
-its own native 30-minute session automation, with immediate bounded cycles allowed
-when a package-ready message arrives. Verify the saved schedule by reading it back.
+The six roles are practical, edge-case, docs-only novice, docs-only adversarial,
+stateful, and metamorphic. The practical/edge pair covers realistic journeys,
+negative inputs, recovery, automation contracts, and confusing UX. The stateful
+tester checks sequences and recovery; the metamorphic tester checks invariants
+across equivalent inputs and environment variations. Keep the docs-only pair
+free of source and prior-finding hints.
+
+Each maintains a replenishing backlog and runs back-to-back bounded, novel
+current-package batches under the latest explicit user authorization, with an
+owned native five-minute watchdog. Verify the saved schedule by reading it back.
 A configured schedule proves neither that a scheduled invocation occurred nor
 that any test passed.
 
-At each cycle, resolve Latest afresh, persist its immutable identity, compare
-previous artifact/coverage, and select one bounded useful scenario or regression.
-If there is no new artifact or uncovered useful case, return idle. Do not poll
-other inboxes, run an infinite loop, create duplicate workers, or repeatedly run
-costly cloud cases against unchanged bytes. Pause the cadence when requested or
-when execution becomes unsafe.
+At each batch, resolve Latest afresh, persist its immutable identity, compare
+previous artifact/coverage, and select useful new scenarios or regressions.
+An unchanged digest is not an idle condition: replenish local cases rather than
+repeat the same assertions. Coordinate ownership so batches do not duplicate
+coverage or overlap stress work. Use bounded batches and native watchdogs, not
+an unbounded shell loop or broker inbox polling. Pause when requested, when no
+safe novel work can be identified, or when execution becomes unsafe. These
+cadences do not authorize repeated costly cloud cases.
 
 Scheduled cycles are **local/offline by default**. Before a live case, obtain an
 explicit authorization record covering the existing project, resource owner,
@@ -246,6 +254,26 @@ bug filings:
 | [5572011][bug-5572011], stale local evaluation state after remote deletion | Scoped deduplication matched the peer-audit observation to this existing Done item, revision 13, priority 2, severity 3 - Medium, and comment 8226717. This is not a new P3 bug or the terminal-job HTTP 409 issue. After the audit, the existing lifecycle owner reported a local recurrence and accepted a minimal fix with command tests; repaired installed-package acceptance and a fresh work-item state receipt remain pending. Reconciliation already recovers after service 404. |
 | [5631310][bug-5631310], built-in evaluator validation | Existing best-effort catalog behavior is already in build 41. Exact-package init checks for invalid explicit IDs, a valid ID outside the initial offered choices, and offline preservation remain queued. Network/auth/empty-catalog fallback is not authoritative offline ID validation. Do not substitute create/up or source CI for the init cases. |
 
+New installed-package regressions were subsequently filed and read back by the
+authorized issue owner. Both are New, priority 2, severity 3 - Medium, revision 2,
+classified as internal testing, and human-unassigned. Their artifact identity is
+the exact public [build 41 package][build41] and registry/executable hashes
+recorded below, not the unpublished build 42 package.
+
+| Work item | Required per-release regression | Current disposition |
+| --- | --- | --- |
+| [5645048][bug-5645048], new custom YAML path becomes a directory | With a previously nonexistent filename passed to init `--path`, verify the promised file/directory interpretation, actual file type, selected configuration, and reattachment. File existence or a matching substring alone is not sufficient. | Independent public-build-41 reports observed `quality/custom.eval.yaml` becoming a directory containing `azure.eval.yaml`. Source changes are reported under [#10149](https://github.com/Azure/azure-dev/pull/10149), not included in smaller build 42. Repaired installed-package retest is pending. |
+| [5645047][bug-5645047], unsupported init output format is ignored | Explicit unsupported output formats must fail clearly, with correct exit/output and no unintended authored changes. Do not equate an unsupported-format observation with an unproven file-mutation claim. | Confirmed on the same public build 41 identity; source work is reported under [#10149](https://github.com/Azure/azure-dev/pull/10149), not a published repair or smaller-build-42 inclusion. Repaired installed-package retest is pending. |
+
+The separate initial mutation claim was disproved by its snapshots and was not
+filed. Keep that correction with the original observation; do not coach blind
+testers with the source diagnosis or treat source fixes as closed regressions.
+The reported [source repair head][init-source-repairs] also contains an
+explicit-empty-evaluator correction whose issue deduplication is still pending.
+That main-based development artifact includes deferred simulation contracts;
+it is neither repaired feed 41/42 proof nor an automatically approved next
+feed candidate.
+
 For new defects, first deduplicate in the relevant project against these records
 and known linked fixes. File through the authorized [evaluation bug channel][bug-channel]
 with impact-based severity, exact identity, reproducible commands, expected/actual
@@ -264,7 +292,32 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | --- | --- | --- |
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
 | 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Published Latest. Historical targeted package acceptance and four hosted jobs `PASS`; newly installed Windows identity/help checks also `PASS`. Broad live reruns, all platforms, and all seven regressions are not claimed. |
-| 42 candidate | Integration owner reports frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42], a direct build 41 child with the picker correction, isolated SDK initialization fix, and test-assertion alignment only. Exact package tuple/receipt not yet supplied. | `NOT RUN` for new package acceptance. Preserve 160 baseline CLI checks per OS and target included fixes. Live/new-contract expansion is deferred by explicit user decision, not an active 42 gate. Source checks are not package proof. |
+| 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Published non-Latest prerelease. Both local Windows acceptance scopes and all four [hosted jobs][hosted42] are `PASS`; both hosted OS artifact sets were downloaded and verified. Latest promotion is a separate decision, not implied by this receipt. No new live/cloud-contract acceptance claim. |
+
+The local build 42 practical receipt covers six cases and 25 assertions: three
+init/reattachment journeys and three help-only cases. Its 16 records include
+14 azd commands and two Go metadata checks, including one preserved input typo
+and its correction. Help checks are not runtime create/run/export proof.
+The edge receipt covers eight first-attempt cases across create/run-start:
+ConPTY byte `0x03` exits 1, explicit Cancel exits 0, and no-prompt/JSON ambiguity
+exits 1. JSON-mode terminal checks produced one error object and empty stderr.
+Owned processes and fixtures were cleaned, no denied network connection was
+observed, and file state remained unchanged except the allowed empty core lock.
+Both testers used fresh isolated configurations and independently rehashed both
+installed executables against the local tuple. The coordinator's receipt review
+adds no cases. This is not Windows `CTRL_C_EVENT`, public installation, live
+service, hosted CI, or overall release proof.
+
+The separate final hosted build 42 run is **35949654046**, workflow revision
+`421a464525f280bb63dc0c69a9c52f7a852b5cd3`. Its workflow and harness are
+byte-identical to the build 41 gate; only candidate source/version/release/hash
+pins changed. Both source fields pin `d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`.
+Downloaded Linux and Windows artifacts each retain all 160 unique command
+identities/outcomes, 50 seed refusals (four exact zero-byte cold locks and
+46 unchanged snapshots), and 36 binding checks (12 strict refusals and
+24 preservation successes). Both full Linux race logs confirm Go 1.26.4 and
+the unreduced command above. This satisfies the agreed hosted candidate gate;
+it does not turn local terminal evidence into hosted interactive/cloud proof.
 
 Build 41 registry SHA256 is
 `aff0d6f456e3fb08773b1c888136eed12ec8a06bd2eba0addda0383142ae7d79`.
@@ -348,14 +401,25 @@ instruction-based access restrictions are **not an OS sandbox**.
 | BLIND-02 | Follow discovery/install/setup/no-prompt authoring and the documented create/run/results/export journey within approved permissions. | Preserve original commands, observations, failures, and interpretation before recovery or coaching. Help is not runtime proof. |
 | BLIND-03 | The adversarial profile tries plausible input/path/flag variations and recovery using only docs/help and safe local fixtures. | Distinguish product defect, doc gap, authentication/environment prerequisite, and mistaken user/model interpretation. |
 | BLIND-04 | Send the original finding to the coordinator before historical-issue deduplication; independently repeat the same reproduction on repaired published bytes. | Do not rewrite initial evidence after receiving an explanation or leak the prior answer into the first attempt. |
-| BLIND-05 | Persist coverage and use a bounded 60-minute native cadence for meaningful package/docs changes or a specifically uncovered local case. | Read back schedule configuration; report actual scheduled invocations separately. Return idle when there is no useful new case. |
+| BLIND-05 | Persist coverage, replenish novel current-package cases, and execute back-to-back bounded batches with an owned five-minute native watchdog. | Read back schedule configuration; report actual invocations separately. An unchanged digest alone is not a reason to idle or repeat old assertions. Preserve the original docs-only input boundary. |
 
-The two existing package testers retain their 30-minute cadences. The coordinator
-may use a 45-minute native check-in to advance actionable pipeline/finding work,
-without broker inbox polling, duplicate workers, busy loops, or repeated paid
-attempts. While the user is away, choose safe local work and queue missing
-approvals instead of asking new questions. Publication authorization does not
-authorize cloud testing or remove exact-package acceptance requirements.
+The latest explicit user override expands the pool to six roles: the existing
+practical/edge pair, the docs-only novice/adversarial pair, and the new
+stateful/metamorphic pair. It supersedes the earlier finite-sweep/change-only
+30/60-minute tester cadence, not the identity and spending restrictions.
+Coordinate bounded batches without broker inbox polling, duplicate workers,
+overlapping stress, or repeated paid attempts. While the user is away, choose
+safe local work and queue missing approvals instead of asking new questions.
+Publication authorization does not authorize cloud testing or remove
+exact-package acceptance requirements.
+
+The testing coordinator confirmed saved five-minute watchdog configuration for
+all six roles; configuration alone is not a test result. The first separately
+observed novice watchdog invocation at **2026-09-24T02:44:52.494Z** executed six
+new cases, nine CLI commands, and 27 assertions. Preserve that receipt separately
+from the earlier novice sweep and schedule setup. The four fresh contexts report
+the same `gpt-6-astra` runtime model; their distinct profiles are not evidence of
+model-capability diversity.
 
 For a later artifact that actually includes the fixes, the practical tester will
 check the editable rubric shape, declaration metadata, version behavior, and
@@ -422,7 +486,10 @@ optional recommendations.
 [build41]: https://github.com/m7md7sien/azd-foundry-feed/blob/6e33b893f1ba4e5f96c84a55f9cad21a26efdf32/Build-41-Verification.md
 [closure40]: https://github.com/m7md7sien/azd-foundry-feed/blob/cd28caf02ec54c5354d2157f75d3602b88fb622b/Build-40-Verification.md
 [hosted41]: https://github.com/m7md7sien/azure-dev/actions/runs/35851410814
+[hosted42]: https://github.com/m7md7sien/azure-dev/actions/runs/35949654046
+[release42]: https://github.com/m7md7sien/azd-foundry-feed/releases/tag/extensions-2026-09-24-42
 [source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6
+[init-source-repairs]: https://github.com/m7md7sien/azure-dev/commit/32ff9bc772e7500b37ba99709401709e9bda1165
 [agent-rules]: ../../cli/azd/AGENTS.md#testing-best-practices
 [extension-style]: ../../cli/azd/docs/extensions/extensions-style-guide.md
 [bug-channel]: https://aka.ms/evalsbug
@@ -435,3 +502,5 @@ optional recommendations.
 [bug-5530209]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5530209
 [bug-5572011]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5572011
 [bug-5631310]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5631310
+[bug-5645048]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645048
+[bug-5645047]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645047

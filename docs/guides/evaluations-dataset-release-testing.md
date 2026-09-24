@@ -117,7 +117,10 @@ The same exact lock allowance applies to 12 cold-entry binding refusals. Do not
 replace digest comparisons with broad ignored directories. Packaging six
 platforms does not establish macOS/ARM runtime coverage. Offline hosted checks
 do not establish terminal interaction, live Azure evaluation, or cloud quality
-gates. Real authenticated GitHub Actions/ADO scenario CI remains deferred.
+gates. Scenario CI implementation in GitHub Actions and Azure DevOps is now
+authorized as a separate effort. Actual service-backed execution still
+requires an approved identity/resource/budget tuple; pipeline implementation
+does not grant that permission or add a new blocker to the smaller release.
 
 ### Deferred contract-expansion plan
 
@@ -240,7 +243,7 @@ bug filings:
 
 | Existing item | Evidence and required follow-up |
 | --- | --- |
-| [5572011][bug-5572011], stale local evaluation state after remote deletion | Scoped deduplication matched the peer-audit observation to this existing Done item, revision 13, priority 2, severity 3 - Medium, and comment 8226717. This is not a new P3 bug or the terminal-job HTTP 409 issue. Confirm a current recurrence with a bounded regression before reopening; reconciliation already recovers after service 404. |
+| [5572011][bug-5572011], stale local evaluation state after remote deletion | Scoped deduplication matched the peer-audit observation to this existing Done item, revision 13, priority 2, severity 3 - Medium, and comment 8226717. This is not a new P3 bug or the terminal-job HTTP 409 issue. After the audit, the existing lifecycle owner reported a local recurrence and accepted a minimal fix with command tests; repaired installed-package acceptance and a fresh work-item state receipt remain pending. Reconciliation already recovers after service 404. |
 | [5631310][bug-5631310], built-in evaluator validation | Existing best-effort catalog behavior is already in build 41. Exact-package init checks for invalid explicit IDs, a valid ID outside the initial offered choices, and offline preservation remain queued. Network/auth/empty-catalog fallback is not authoritative offline ID validation. Do not substitute create/up or source CI for the init cases. |
 
 For new defects, first deduplicate in the relevant project against these records
@@ -261,7 +264,7 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | --- | --- | --- |
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
 | 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Published Latest. Historical targeted package acceptance and four hosted jobs `PASS`; newly installed Windows identity/help checks also `PASS`. Broad live reruns, all platforms, and all seven regressions are not claimed. |
-| 42 candidate | Smaller independently validated scope; no combined frozen source, archive tuple, or version-specific receipt supplied at this snapshot | `NOT RUN` for new package acceptance. Preserve baseline checks and target included fixes. Live/new-contract expansion is deferred by explicit user decision, not an active 42 gate. Source PR CI success is not package proof. |
+| 42 candidate | Integration owner reports frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42], a direct build 41 child with the picker correction, isolated SDK initialization fix, and test-assertion alignment only. Exact package tuple/receipt not yet supplied. | `NOT RUN` for new package acceptance. Preserve 160 baseline CLI checks per OS and target included fixes. Live/new-contract expansion is deferred by explicit user decision, not an active 42 gate. Source checks are not package proof. |
 
 Build 41 registry SHA256 is
 `aff0d6f456e3fb08773b1c888136eed12ec8a06bd2eba0addda0383142ae7d79`.
@@ -291,13 +294,86 @@ incorrectly expected empty stdout and no lock; the retained observation was
 assessed against the documented contract without a command rerun. This is not
 a newly discovered product defect or a reason to reopen 5640927.
 
+## Overnight scenario CI and docs-only testing
+
+The new work baseline is **2026-09-24T02:15:05Z**. Earlier build 41 checks,
+schedule configuration, peer audit, and document commits are existing evidence,
+not newly completed overnight scenarios. Record only subsequent cases, findings,
+fixes, retests, package/doc versions, implementation changes, and actual run links
+as new progress.
+
+### One scenario implementation, two CI systems
+
+The existing hosted-proof owner also owns one coherent scenario-CI contribution
+with shared fixtures for GitHub Actions and Azure DevOps. Keep the smaller
+release's frozen workflow, fixture contract, and pins separate from this new
+work. Do not create a different runner or owner for each CI provider.
+
+| ID | Required behavior and evidence | Current execution status |
+| --- | --- | --- |
+| CI-01 | Resolve Latest once, freeze a job manifest with exact release/source/versions/registry/archive/executable digests, and install those bytes in an isolated configuration. Parallel jobs use that same resolved identity, not a moving Latest URL. | `NOT RUN` for the new scenario pipelines |
+| CI-02 | Execute actual no-prompt CLI authoring and recovery cases, checking commands, JSON, exit codes, errors, cancellation semantics, reproducible environment/configuration, and state preservation. Record limits of non-terminal cancellation checks. | `NOT RUN` for the new scenario pipelines |
+| CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `NOT RUN` |
+| CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `NOT RUN` |
+| CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED` until that execution tuple is verified; YAML/local validation may proceed |
+| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED`; no approved live identity/resource/cost tuple |
+
+No exported developer credentials, new IAM grants, shared public-runner
+registration, unapproved Azure spending, or generation jobs are authorized by
+this implementation work. An offline job may pass while the accompanying live
+case is blocked; keep both results visible. Publish real failures as failures,
+not successful skips or fallback outputs. Retain the monetary-control limits
+described above.
+
+### Fresh black-box contexts
+
+Two additional contexts test only intended public user docs and published
+extension bytes: a novice, strictly procedure-following profile and an
+advanced/adversarial profile. They are not forks of the investigation and are
+separate from the two existing package testers. Preserve configured model
+preferences and record each actual runtime model and profile independently;
+profile contrast does not prove different model capability.
+
+Their allowed product inputs are the public feed README, public bug-bash user
+instructions, user-documentation pages those directly reference, the published
+registry/packages, and installed help/output/metadata. Do not give them this
+ledger, internal recipes, private issue lists, source code/tests, other agents'
+findings, or solution hints. Record any mandatory safety/governance instructions
+as a separate unavoidable input. Stage allowed inputs in owned directories;
+instruction-based access restrictions are **not an OS sandbox**.
+
+| ID | Required attempt or assertion | Evidence boundary |
+| --- | --- | --- |
+| BLIND-01 | Record allowed inputs, public doc revision/content hashes, actual model/profile, package identity, and access restrictions before testing. | No claim of fresh blindness if prior findings or implementation were consulted. |
+| BLIND-02 | Follow discovery/install/setup/no-prompt authoring and the documented create/run/results/export journey within approved permissions. | Preserve original commands, observations, failures, and interpretation before recovery or coaching. Help is not runtime proof. |
+| BLIND-03 | The adversarial profile tries plausible input/path/flag variations and recovery using only docs/help and safe local fixtures. | Distinguish product defect, doc gap, authentication/environment prerequisite, and mistaken user/model interpretation. |
+| BLIND-04 | Send the original finding to the coordinator before historical-issue deduplication; independently repeat the same reproduction on repaired published bytes. | Do not rewrite initial evidence after receiving an explanation or leak the prior answer into the first attempt. |
+| BLIND-05 | Persist coverage and use a bounded 60-minute native cadence for meaningful package/docs changes or a specifically uncovered local case. | Read back schedule configuration; report actual scheduled invocations separately. Return idle when there is no useful new case. |
+
+The two existing package testers retain their 30-minute cadences. The coordinator
+may use a 45-minute native check-in to advance actionable pipeline/finding work,
+without broker inbox polling, duplicate workers, busy loops, or repeated paid
+attempts. While the user is away, choose safe local work and queue missing
+approvals instead of asking new questions. Publication authorization does not
+authorize cloud testing or remove exact-package acceptance requirements.
+
+For a later artifact that actually includes the fixes, the practical tester will
+check the editable rubric shape, declaration metadata, version behavior, and
+unchanged-repeat behavior. The edge tester will check local evaluation-state
+cleanup after deletion by service ID, name, and configuration scope. A local
+fake-service test is useful only if its evidence says whether it drove the
+installed package or a source test. Do not relabel source fixtures as shipped
+behavior, spend Azure funds to fill the gap, or add these unrelated fixes to
+the smaller build 42 scope.
+
 ## Peer-extension parity
 
 The bounded source audit completed on **2026-09-24** at build 41 source
 `8ef8b6df77336950c60506ab2966037f579d92cd`: 19 peers plus the two targets,
 13 cross-cutting areas, and 88 exact-SHA source path/line references. It established
 **no new actionable defect**. The cleanup concern matched existing 5572011;
-current recurrence still needs proof. This was static inspection, not test
+recurrence was unproven in that audit. The later owner-reported local confirmation
+is recorded above, separately from repaired-package acceptance. This was static inspection, not test
 execution, installed-package verification, or live-service acceptance.
 
 The complete peer inventory includes executable extensions and dependency-only
@@ -346,6 +422,7 @@ optional recommendations.
 [build41]: https://github.com/m7md7sien/azd-foundry-feed/blob/6e33b893f1ba4e5f96c84a55f9cad21a26efdf32/Build-41-Verification.md
 [closure40]: https://github.com/m7md7sien/azd-foundry-feed/blob/cd28caf02ec54c5354d2157f75d3602b88fb622b/Build-40-Verification.md
 [hosted41]: https://github.com/m7md7sien/azure-dev/actions/runs/35851410814
+[source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6
 [agent-rules]: ../../cli/azd/AGENTS.md#testing-best-practices
 [extension-style]: ../../cli/azd/docs/extensions/extensions-style-guide.md
 [bug-channel]: https://aka.ms/evalsbug

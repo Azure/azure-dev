@@ -1324,11 +1324,14 @@ func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
 func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	status := strings.ToLower(run.Status)
 	operationalFailure := status == "failed" || status == "error" || runFailureMessage(run) != ""
-	failed, errored := false, false
-	if counts := run.ResultCounts; counts != nil {
-		failed = counts.Failed > 0
-		unscored, _ := unscoredSplit(counts, counts.Passed+counts.Failed)
-		errored = counts.Errored > 0 || unscored > 0
+	counts := run.ReportedResultCounts()
+	failed, errored := counts["failed"] > 0, counts["errored"] > 0
+	total, totalKnown := counts["total"]
+	passed, passedKnown := counts["passed"]
+	failedCount, failedKnown := counts["failed"]
+	skipped, skippedKnown := counts["skipped"]
+	if totalKnown && passedKnown && failedKnown && skippedKnown {
+		errored = errored || total-passed-failedCount-skipped > 0
 	}
 	if !terminalRunStates[status] && !operationalFailure && !failed && !errored {
 		return

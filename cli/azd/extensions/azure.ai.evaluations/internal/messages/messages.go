@@ -553,12 +553,12 @@ func NoRowsScored() string {
 
 // FilteredItemCount names only the rows displayed, not the run's total failures.
 func FilteredItemCount(shown int, status string) string {
-	return fmt.Sprintf("\nShowing %d %s test cases on this page.\n", shown, status)
+	return fmt.Sprintf("\nShowing %s on this page.\n", countOf(shown, status+" test case"))
 }
 
 // FilteredRunTotal distinguishes the service's matching and full-run totals.
 func FilteredRunTotal(matching, total int, status string) string {
-	return fmt.Sprintf("Full run: %d %s of %d total test cases (service-reported).\n", matching, status, total)
+	return fmt.Sprintf("Full run: %d %s of %s (service-reported).\n", matching, status, countOf(total, "total test case"))
 }
 
 // UnknownItemStatus reports a --status value that names no outcome.

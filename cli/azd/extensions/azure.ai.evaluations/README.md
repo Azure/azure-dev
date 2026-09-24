@@ -242,7 +242,8 @@ listings, and detail views that have not fetched all rows, do not supply this
 block. No additional output fetch or transcript-based turn inference is used.
 
 JSON retains the service's run fields, including unrecognized nested fields;
-it does not add estimated conversation or turn counts. Newly submitted
+missing or null result-count members remain missing or null. It does not add
+estimated conversation or turn counts. Newly submitted
 simulation runs record configuration under `metadata.azd_simulation_*`, with
 `metadata.azd_run_mode` identifying the simulation mode. The JSON handoff from
 `run start --no-wait` is unchanged; read `run show -o json` for the run object.

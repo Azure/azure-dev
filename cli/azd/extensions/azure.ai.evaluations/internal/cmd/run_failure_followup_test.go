@@ -388,3 +388,74 @@ func TestRunFailureRedactsAdjacentURLs(t *testing.T) {
 		assert.Equal(t, message, run.Error.Message, "human redaction must not rewrite the service response")
 	}
 }
+
+func TestPartialServiceCountsDoNotInventErroredFollowUps(t *testing.T) {
+	for _, tc := range []struct {
+		name, counts string
+		errored      bool
+	}{
+		{"only total", `{"total":2}`, false},
+		{"null passed", `{"total":2,"passed":null,"failed":0,"skipped":0}`, false},
+		{"missing failed", `{"total":2,"passed":0,"skipped":0}`, false},
+		{"missing skipped", `{"total":2,"passed":0,"failed":0}`, false},
+		{"explicit errored", `{"errored":1}`, true},
+		{"known remainder", `{"total":2,"passed":1,"failed":0,"skipped":0}`, true},
+		{"fully scored", `{"total":2,"passed":2,"failed":0,"skipped":0}`, false},
+		{"negative member", `{"total":2,"passed":-1,"failed":0,"skipped":0}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var run eval_api.OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(`{
+				"id":"run_partial","eval_id":"eval_partial","status":"completed",
+				"result_counts":`+tc.counts+`}`), &run))
+			for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{
+				renderRunDetail,
+				func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) },
+			} {
+				var out bytes.Buffer
+				require.NoError(t, render(&out, &run))
+				assert.Equal(t, tc.errored, strings.Contains(out.String(), "--status errored"))
+				assert.NotContains(t, out.String(), "--failed-only")
+				assert.Contains(t, out.String(), "--eval eval_partial --run run_partial")
+				assert.Contains(t, out.String(), "run output export")
+			}
+		})
+	}
+}
+
+func TestRunShowPreservesPartialServiceCounts(t *testing.T) {
+	for _, counts := range []string{
+		`"result_counts":null`,
+		`"result_counts":{}`,
+		`"result_counts":{"total":2}`,
+		`"result_counts":{"total":2,"passed":null,"failed":null,"future_count":7}`,
+		`"result_counts":{"total":0,"passed":0,"failed":0}`,
+		`"other_field":"no result_counts"`,
+	} {
+		for _, format := range []string{"json", "table"} {
+			t.Run(format+"/"+counts, func(t *testing.T) {
+				response := `{"id":"run_partial","status":"completed",` + counts + `}`
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.True(t, strings.HasSuffix(r.URL.Path, "/runs/run_partial"))
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, response)
+				}))
+				t.Cleanup(srv.Close)
+				var out bytes.Buffer
+				command := jsonCmd(t, format)
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				action := &runShowAction{cmd: command, runID: "run_partial", flags: &runShowFlags{}}
+				require.NoError(t, action.show(t.Context(), evalContextFor(srv), "eval_partial", gate{}))
+				if format == "json" {
+					assert.JSONEq(t, response, out.String())
+				} else {
+					assert.NotContains(t, out.String(), "--status errored")
+					assert.NotContains(t, out.String(), "--failed-only")
+					assert.Contains(t, out.String(), "--eval eval_partial --run run_partial")
+					assert.Contains(t, out.String(), "run output export")
+				}
+			})
+		}
+	}
+}

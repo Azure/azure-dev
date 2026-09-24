@@ -62,7 +62,7 @@ func TestFilteredResultCountsDoNotInventMissingServiceTotals(t *testing.T) {
 		run := &eval_api.OpenAIEvalRun{ID: "evalrun_counts", ResultCounts: counts}
 		var out bytes.Buffer
 		require.NoError(t, renderResults(&out, "eval_counts", run, []eval_api.OutputItem{failingItem("row")}, true))
-		assert.Contains(t, out.String(), "Showing 1 failed test cases on this page.")
+		assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
 		if counts == nil {
 			assert.NotContains(t, out.String(), "Full run:")
 		} else {
@@ -92,7 +92,7 @@ func TestFilteredResultFooterRequiresReportedCounters(t *testing.T) {
 					"result_counts":`+tc.counts+`}`), &run))
 			var out bytes.Buffer
 			require.NoError(t, renderResults(&out, "eval_partial", &run, []eval_api.OutputItem{failingItem("1")}, true))
-			assert.Contains(t, out.String(), "Showing 1 failed test cases on this page.")
+			assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
 			assert.Equal(t, tc.wantTotal, strings.Contains(out.String(), "Full run:"))
 			if tc.wantTotal {
 				assert.Contains(t, out.String(), "Full run: 0 failed of 0 total test cases (service-reported).")

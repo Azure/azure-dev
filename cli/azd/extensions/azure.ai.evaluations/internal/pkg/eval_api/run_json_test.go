@@ -73,3 +73,44 @@ func TestRunJSONDoesNotLeakSubmissionOnlySeedCount(t *testing.T) {
 	assert.NotContains(t, string(body), "seed_count")
 	assert.NotContains(t, string(body), "max_num_turns")
 }
+
+func TestRunJSONPreservesResultCountPresence(t *testing.T) {
+	for _, counts := range []string{
+		`null`,
+		`{}`,
+		`{"total":2}`,
+		`{"total":2,"passed":null,"failed":null,"errored":1}`,
+		`{"total":0,"passed":0,"failed":0,"errored":0,"skipped":0}`,
+		`{"total":null,"passed":null,"failed":null,"errored":null,"skipped":null}`,
+		`{"total":2,"failed":null,"future_count":9007199254740993}`,
+	} {
+		t.Run(counts, func(t *testing.T) {
+			response := `{"id":"run_partial","result_counts":` + counts + `}`
+			var run OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(response), &run))
+			before := run.ReportedResultCounts()
+			encoded, err := json.Marshal(run)
+			require.NoError(t, err)
+			assert.JSONEq(t, response, string(encoded))
+
+			var decoded OpenAIEvalRun
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.Equal(t, before, decoded.ReportedResultCounts(), "a JSON round trip must not invent reported counters")
+		})
+	}
+}
+
+func TestRunJSONUpdatesReportedCountsWithoutOverwritingUnknownCounts(t *testing.T) {
+	var run OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"id":"run_partial","result_counts":{"total":2,"passed":1,"failed":null,"future_count":7}
+	}`), &run))
+	run.ResultCounts.Passed = 2
+	run.PortalURL = "https://ai.azure.com/run_partial"
+	encoded, err := json.Marshal(run)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"id":"run_partial","result_counts":{"total":2,"passed":2,"failed":null,"future_count":7},
+		"portal_url":"https://ai.azure.com/run_partial"
+	}`, string(encoded))
+}

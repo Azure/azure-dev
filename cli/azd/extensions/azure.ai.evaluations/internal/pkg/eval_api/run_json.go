@@ -54,6 +54,30 @@ func (r OpenAIEvalRun) MarshalJSON() ([]byte, error) {
 	if err != nil || len(r.raw) == 0 {
 		return typed, err
 	}
+	// Do not let typed zero defaults overwrite absent or null service members.
+	if r.ResultCounts != nil && r.reportedCounts != nil {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(typed, &fields); err != nil {
+			return nil, err
+		}
+		var counts map[string]json.RawMessage
+		if err := json.Unmarshal(fields["result_counts"], &counts); err != nil {
+			return nil, err
+		}
+		for key := range counts {
+			if !r.reportedCounts[key] {
+				delete(counts, key)
+			}
+		}
+		fields["result_counts"], err = json.Marshal(counts)
+		if err != nil {
+			return nil, err
+		}
+		typed, err = json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return mergeServiceJSON(r.raw, typed)
 }
 

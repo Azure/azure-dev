@@ -193,6 +193,8 @@ When the source **is** changing (for example installing a bundle build over a re
 
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
+When `--version` is explicitly supplied in non-interactive mode, a downgrade or source change that requires confirmation **fails with a nonzero exit code** instead of skipping the requested version. The installed version and files are unchanged. Add `--force` to authorize replacement. To confirm interactively, use an interactive terminal without `--no-prompt` and set `AZD_NON_INTERACTIVE=false` to opt out of automatic non-interactive mode. Same-source, same-version installs remain successful no-ops.
+
 For registry-backed installs, a required dependency must resolve from the parent's source or the main `azd` registry. For self-contained bundles, it must resolve from the bundle itself. If the dependency is not already installed and cannot be resolved from the applicable sources, the install fails with actionable guidance.
 
 ## Uninstall flow

@@ -294,6 +294,55 @@ agents:
 	assert.Equal(t, want, got)
 }
 
+func TestResolveFileRefs_ExactlyOneObject(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    map[string]any
+	}{
+		{name: "adjacent JSON objects", content: `{"name":"first"} {"name":"second"}`},
+		{name: "newline JSON objects", content: "{\"name\":\"first\"}\n{\"name\":\"second\"}"},
+		{name: "trailing invalid JSON", content: `{"name":"first"} garbage`},
+		{name: "multiple YAML documents", content: "name: first\n---\nname: second\n"},
+		{name: "empty second document", content: "name: first\n---\n"},
+		{name: "malformed second document", content: "name: first\n---\n["},
+		{name: "array", content: `[{"name":"first"}]`},
+		{name: "scalar", content: "first"},
+		{name: "null", content: "null"},
+		{name: "empty", content: ""},
+		{name: "JSON object", content: "{\"name\":\"first\"}\n  ", want: map[string]any{"name": "first"}},
+		{name: "empty object", content: "{}", want: map[string]any{}},
+		{
+			name: "YAML types and aliases",
+			content: "name: &name first\nalias: *name\ncount: 2\nenabled: true\n" +
+				"items: [one, two]\noptional: null\n...\n# trailing comment\n",
+			want: map[string]any{
+				"name": "first", "alias": "first", "count": 2, "enabled": true,
+				"items": []any{"one", "two"}, "optional": nil,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, root, "selected.yaml", tt.content)
+			writeFile(t, root, "unselected.yaml", `{"name":"unused"} {"name":"invalid"}`)
+
+			got, err := ResolveFileRefs(map[string]any{refKey: "./selected.yaml"}, root)
+			if tt.want == nil {
+				requireFileRefError(t, err, "selected.yaml")
+				assert.Nil(t, got)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+			content, readErr := os.ReadFile(filepath.Join(root, "selected.yaml"))
+			require.NoError(t, readErr)
+			assert.Equal(t, tt.content, string(content))
+		})
+	}
+}
+
 func TestResolveFileRefs_MissingFile(t *testing.T) {
 	root := t.TempDir()
 	cfg := parseYAML(t, `

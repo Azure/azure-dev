@@ -4,6 +4,7 @@
 package copilot
 
 import (
+	"context"
 	"testing"
 
 	copilot "github.com/github/copilot-sdk/go"
@@ -172,5 +173,15 @@ func (m *mockUserConfigManager) Load() (config.Config, error) {
 }
 
 func (m *mockUserConfigManager) Save(_ config.Config) error {
+	return nil
+}
+
+func (m *mockUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+	_, err := mutation(ctx, m.config)
+	return err
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.config = replacement
 	return nil
 }

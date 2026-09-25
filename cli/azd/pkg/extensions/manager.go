@@ -581,13 +581,30 @@ func (m *Manager) ResolveVersion(
 
 // ListInstalled retrieves a list of installed extensions
 func (m *Manager) ListInstalled() (map[string]*Extension, error) {
-	var extensions map[string]*Extension
-
+	// Cached entries also carry process-local runtime state that is not persisted,
+	// including streams, readiness signals, and reported errors.
 	if m.installed != nil {
 		return m.installed, nil
 	}
 
-	ok, err := m.userConfig.GetSection(installedConfigKey, &extensions)
+	userConfig, err := m.configManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load user config: %w", err)
+	}
+
+	extensions, err := installedExtensionsFromConfig(userConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	m.installed = extensions
+	return m.installed, nil
+}
+
+func installedExtensionsFromConfig(userConfig config.Config) (map[string]*Extension, error) {
+	var extensions map[string]*Extension
+
+	ok, err := userConfig.GetSection(installedConfigKey, &extensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extensions section: %w", err)
 	}
@@ -596,9 +613,7 @@ func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 		extensions = map[string]*Extension{}
 	}
 
-	m.installed = extensions
-
-	return m.installed, nil
+	return extensions, nil
 }
 
 // GetInstalled retrieves an installed extension by filter criteria
@@ -654,36 +669,28 @@ func (m *Manager) UpdateInstalled(extension *Extension) error {
 
 // updateInstalled transforms freshly decoded metadata and invalidates the cache after saving.
 func (m *Manager) updateInstalled(id string, update func(*Extension) *Extension) error {
-	var installed map[string]*Extension
-	_, err := m.userConfig.GetSection(installedConfigKey, &installed)
-	if err != nil {
-		return fmt.Errorf("failed to list installed extensions: %w", err)
-	}
-
-	current, exists := installed[id]
-	if !exists {
-		return ErrInstalledExtensionNotFound
-	}
-
-	installed[id] = update(current)
-	previous, _ := m.userConfig.Get(installedConfigKey)
-	if err := m.userConfig.Set(installedConfigKey, installed); err != nil {
-		return fmt.Errorf("failed to set extensions section: %w", err)
-	}
-
-	if err := m.configManager.Save(m.userConfig); err != nil {
-		if restoreErr := m.userConfig.Set(installedConfigKey, previous); restoreErr != nil {
-			return errors.Join(
-				fmt.Errorf("failed to save user config: %w", err),
-				fmt.Errorf("failed to restore installed extension metadata: %w", restoreErr),
-			)
+	if err := m.configManager.Mutate(context.Background(), func(_ context.Context, userConfig config.Config) (bool, error) {
+		extensions, err := installedExtensionsFromConfig(userConfig)
+		if err != nil {
+			return false, err
+		}
+		current, exists := extensions[id]
+		if !exists {
+			return false, ErrInstalledExtensionNotFound
+		}
+		extensions[id] = update(current)
+		if err := userConfig.Set(installedConfigKey, extensions); err != nil {
+			return false, err
+		}
+		return true, nil
+	}); err != nil {
+		if errors.Is(err, ErrInstalledExtensionNotFound) {
+			return ErrInstalledExtensionNotFound
 		}
 		return fmt.Errorf("failed to save user config: %w", err)
 	}
 
-	// Invalidate cache so subsequent calls reflect the updated extension
 	m.installed = nil
-
 	return nil
 }
 
@@ -984,12 +991,7 @@ func (m *Manager) installInternal(
 	}
 
 	// Step 7: Update the user config with the installed extension
-	extensions, err := m.ListInstalled()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list installed extensions: %w", err)
-	}
-
-	extensions[extension.Id] = &Extension{
+	installedExtension := &Extension{
 		Id:             extension.Id,
 		Capabilities:   selectedVersion.Capabilities,
 		Namespace:      extension.Namespace,
@@ -1008,12 +1010,21 @@ func (m *Manager) installInternal(
 		InstalledAsDependency: asDependency,
 	}
 
-	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
-		return nil, fmt.Errorf("failed to set extensions section: %w", err)
-	}
-
-	if err := m.configManager.Save(m.userConfig); err != nil {
+	if err := m.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		extensions, err := installedExtensionsFromConfig(userConfig)
+		if err != nil {
+			return false, err
+		}
+		extensions[extension.Id] = installedExtension
+		if err := userConfig.Set(installedConfigKey, extensions); err != nil {
+			return false, err
+		}
+		return true, nil
+	}); err != nil {
 		return nil, fmt.Errorf("failed to save user config: %w", err)
+	}
+	if m.installed != nil {
+		m.installed[extension.Id] = installedExtension
 	}
 
 	log.Printf(
@@ -1024,7 +1035,6 @@ func (m *Manager) installInternal(
 	)
 
 	// Fetch and cache metadata if extension supports it
-	installedExtension := extensions[extension.Id]
 	if installedExtension.HasCapability(MetadataCapability) {
 		if err := m.fetchAndCacheMetadata(ctx, installedExtension); err != nil {
 			// Log warning but don't fail installation
@@ -1059,19 +1069,24 @@ func (m *Manager) Uninstall(ctx context.Context, id string) error {
 	}
 
 	// Update the user config
-	extensions, err := m.ListInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to list installed extensions: %w", err)
-	}
-
-	delete(extensions, id)
-
-	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
-		return fmt.Errorf("failed to set extensions section: %w", err)
-	}
-
-	if err := m.configManager.Save(m.userConfig); err != nil {
+	if err := m.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		extensions, err := installedExtensionsFromConfig(userConfig)
+		if err != nil {
+			return false, err
+		}
+		if _, exists := extensions[id]; !exists {
+			return false, nil
+		}
+		delete(extensions, id)
+		if err := userConfig.Set(installedConfigKey, extensions); err != nil {
+			return false, err
+		}
+		return true, nil
+	}); err != nil {
 		return fmt.Errorf("failed to save user config: %w", err)
+	}
+	if m.installed != nil {
+		delete(m.installed, id)
 	}
 
 	log.Printf("Extension '%s' uninstalled successfully\n", id)
@@ -1609,11 +1624,7 @@ func (tm *Manager) InvalidateSourceCache() {
 	tm.sources = nil
 }
 
-// ReloadUserConfig re-reads the user configuration from disk into the manager's
-// cached copy. This is required when the configuration is mutated out-of-band
-// within the same process (e.g. registering a bundle source during install);
-// without it, a subsequent install save would persist the manager's stale
-// snapshot and clobber the externally added changes.
+// ReloadUserConfig verifies that the latest user configuration can be loaded.
 func (tm *Manager) ReloadUserConfig() error {
 	userConfig, err := tm.configManager.Load()
 	if err != nil {

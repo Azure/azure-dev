@@ -96,7 +96,7 @@ func TestConfigGetAction(t *testing.T) {
 		require.NoError(t, err)
 		err = cfg.Set("test.key", "test-value")
 		require.NoError(t, err)
-		err = userConfigManager.Save(cfg)
+		err = userConfigManager.Replace(t.Context(), cfg)
 		require.NoError(t, err)
 
 		action := newConfigGetAction(
@@ -150,7 +150,7 @@ func TestConfigUnsetAction(t *testing.T) {
 	require.NoError(t, err)
 	err = cfg.Set("my.setting", "myvalue")
 	require.NoError(t, err)
-	err = userConfigManager.Save(cfg)
+	err = userConfigManager.Replace(t.Context(), cfg)
 	require.NoError(t, err)
 
 	action := newConfigUnsetAction(
@@ -176,7 +176,7 @@ func TestConfigResetAction_WithForce(t *testing.T) {
 	require.NoError(t, err)
 	err = cfg.Set("some.key", "some-value")
 	require.NoError(t, err)
-	err = userConfigManager.Save(cfg)
+	err = userConfigManager.Replace(t.Context(), cfg)
 	require.NoError(t, err)
 
 	action := newConfigResetAction(
@@ -211,7 +211,7 @@ func TestConfigResetAction_UserDeclines(t *testing.T) {
 	require.NoError(t, err)
 	err = cfg.Set("keep.me", "important")
 	require.NoError(t, err)
-	err = userConfigManager.Save(cfg)
+	err = userConfigManager.Replace(t.Context(), cfg)
 	require.NoError(t, err)
 
 	action := newConfigResetAction(

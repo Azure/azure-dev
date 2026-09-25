@@ -65,10 +65,10 @@ type PromptServiceClient interface {
 	// Effective location is defined by filter.locations.
 	// If filter.locations is empty, models are considered across subscription locations.
 	// If quota is set:
-	//   - one location in filter.locations: quota is evaluated at that location.
-	//   - multiple locations in filter.locations: quota is evaluated for each location and
-	//     models are kept when quota is sufficient in at least one location.
-	//   - empty filter.locations: quota is evaluated across model-declared locations.
+	// - one location in filter.locations: quota is evaluated at that location.
+	// - multiple locations in filter.locations: quota is evaluated for each location and
+	//   models are kept when quota is sufficient in at least one location.
+	// - empty filter.locations: quota is evaluated across model-declared locations.
 	PromptAiModel(ctx context.Context, in *PromptAiModelRequest, opts ...grpc.CallOption) (*PromptAiModelResponse, error)
 	// PromptAiDeployment prompts for version, SKU, and capacity sequentially.
 	// This is the primary interactive primitive for model deployment selection.
@@ -248,10 +248,10 @@ type PromptServiceServer interface {
 	// Effective location is defined by filter.locations.
 	// If filter.locations is empty, models are considered across subscription locations.
 	// If quota is set:
-	//   - one location in filter.locations: quota is evaluated at that location.
-	//   - multiple locations in filter.locations: quota is evaluated for each location and
-	//     models are kept when quota is sufficient in at least one location.
-	//   - empty filter.locations: quota is evaluated across model-declared locations.
+	// - one location in filter.locations: quota is evaluated at that location.
+	// - multiple locations in filter.locations: quota is evaluated for each location and
+	//   models are kept when quota is sufficient in at least one location.
+	// - empty filter.locations: quota is evaluated across model-declared locations.
 	PromptAiModel(context.Context, *PromptAiModelRequest) (*PromptAiModelResponse, error)
 	// PromptAiDeployment prompts for version, SKU, and capacity sequentially.
 	// This is the primary interactive primitive for model deployment selection.

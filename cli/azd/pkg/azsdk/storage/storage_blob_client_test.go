@@ -90,6 +90,21 @@ func (m *mockUserConfigManager) Load() (config.Config, error) {
 	return args.Get(0).(config.Config), args.Error(1)
 }
 
+func (m *mockUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := mutation(ctx, cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(cfg)
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
+}
+
 func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
 	mockTenantResolver := &mockSubscriptionResolver{}

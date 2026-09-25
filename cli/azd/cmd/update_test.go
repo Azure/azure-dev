@@ -89,7 +89,7 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		}
 
 		cfg := config.NewEmptyConfig()
-		err := action.persistNonChannelFlags(cfg)
+		err := action.persistNonChannelFlags(t.Context(), cfg)
 		require.NoError(t, err)
 	})
 
@@ -104,7 +104,7 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		}
 
 		cfg := config.NewEmptyConfig()
-		err := action.persistNonChannelFlags(cfg)
+		err := action.persistNonChannelFlags(t.Context(), cfg)
 		require.NoError(t, err)
 
 		// Verify the interval was saved
@@ -421,13 +421,13 @@ func Test_UpdateAction_PersistNonChannelFlags(t *testing.T) {
 		configManager: &simpleConfigMgr{},
 	}
 	cfg := config.NewEmptyConfig()
-	err := a.persistNonChannelFlags(cfg)
+	err := a.persistNonChannelFlags(t.Context(), cfg)
 	require.NoError(t, err)
 
 	// Test with zero check interval
 	a2 := &updateAction{flags: &updateFlags{checkIntervalHours: 0}}
 	cfg2 := config.NewEmptyConfig()
-	err = a2.persistNonChannelFlags(cfg2)
+	err = a2.persistNonChannelFlags(t.Context(), cfg2)
 	require.NoError(t, err)
 }
 

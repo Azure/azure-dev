@@ -730,33 +730,21 @@ func promptInitType(
 		return initAppTemplate, nil
 	case 2:
 		if !featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
-			azdConfig, err := configManager.Load()
-			if err != nil {
-				return initUnknown, fmt.Errorf("failed to load config: %w", err)
-			}
-
-			err = azdConfig.Set("alpha.llm", "on")
-			if err != nil {
-				return initUnknown, fmt.Errorf("failed to set alpha.llm config: %w", err)
-			}
-
-			err = configManager.Save(azdConfig)
+			err = configManager.Mutate(ctx, func(_ context.Context, azdConfig config.Config) (bool, error) {
+				if err := azdConfig.Set("alpha.llm", "on"); err != nil {
+					return false, fmt.Errorf("failed to set alpha.llm config: %w", err)
+				}
+				if err := azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot"); err != nil {
+					return false, fmt.Errorf("failed to set %s config: %w", agentcopilot.ConfigKeyModelType, err)
+				}
+				return true, nil
+			})
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
 			console.Message(ctx, fmt.Sprintf("\n%s has been enabled to support this new experience."+
 				" To turn off in the future run `azd config unset alpha.llm`.", agentcopilot.DisplayTitle))
-
-			err = azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot")
-			if err != nil {
-				return initUnknown, fmt.Errorf("failed to set %s config: %w", agentcopilot.ConfigKeyModelType, err)
-			}
-
-			err = configManager.Save(azdConfig)
-			if err != nil {
-				return initUnknown, fmt.Errorf("failed to save config: %w", err)
-			}
 
 			console.Message(ctx, fmt.Sprintf(
 				"\n%s has been enabled to support this new experience."+

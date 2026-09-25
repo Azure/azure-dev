@@ -4,11 +4,12 @@
 package config
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -22,6 +23,9 @@ type FileConfigManager interface {
 	// Path is automatically created if it does not exist
 	Save(config Config, filePath string) error
 
+	// SaveWithContext saves the azd configuration to the specified file path.
+	SaveWithContext(ctx context.Context, config Config, filePath string) error
+
 	// Loads azd configuration from the specified file path
 	Load(filePath string) (Config, error)
 }
@@ -34,19 +38,16 @@ func NewFileConfigManager(configManager Manager) FileConfigManager {
 }
 
 type fileConfigManager struct {
-	mu      sync.Mutex
 	manager Manager
 }
 
 func (m *fileConfigManager) Load(filePath string) (Config, error) {
-	file, err := os.Open(filePath)
+	data, err := osutil.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed opening azd configuration file: %w", err)
+		return nil, fmt.Errorf("failed reading azd configuration file: %w", err)
 	}
 
-	defer file.Close()
-
-	azdConfig, err := m.manager.Load(file)
+	azdConfig, err := m.manager.Load(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -77,29 +78,18 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 }
 
 func (m *fileConfigManager) Save(c Config, filePath string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return m.saveLocked(c, filePath)
+	return m.SaveWithContext(context.Background(), c, filePath)
 }
 
-// saveLocked performs the actual save logic. It must be called while m.mu is held.
-// This is separated from Save to allow the recursive vault save without deadlocking
-// on the non-reentrant mutex.
-func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
+func (m *fileConfigManager) SaveWithContext(ctx context.Context, c Config, filePath string) error {
 	folderPath := filepath.Dir(filePath)
 	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("failed creating config directory: %w", err)
 	}
 
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, osutil.PermissionFile)
-	if err != nil {
-		return fmt.Errorf("saving file config: %w", err)
-	}
-	defer file.Close()
-
-	if err := m.manager.Save(c, file); err != nil {
-		return fmt.Errorf("saving file config: %w", err)
+	var rootData bytes.Buffer
+	if err := m.manager.Save(c, &rootData); err != nil {
+		return fmt.Errorf("serializing file config: %w", err)
 	}
 
 	baseConfig, ok := c.(*config)
@@ -107,19 +97,30 @@ func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 		return fmt.Errorf("failed casting azd configuration to config")
 	}
 
-	// If the configuration contains a vault, then also save the vault configuration
-	// Vault configuration always gets saved in a separate file in the users HOME directory.
 	if baseConfig.vaultId != "" {
 		vaultPath, err := resolveVaultPath(baseConfig.vaultId)
 		if err != nil {
 			return err
+		}
+		if baseConfig.vault == nil {
+			return fmt.Errorf("vault configuration '%s' is not loaded", baseConfig.vaultId)
 		}
 
 		if err = os.MkdirAll(filepath.Dir(vaultPath), osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("failed creating vaults directory: %w", err)
 		}
 
-		return m.saveLocked(baseConfig.vault, vaultPath)
+		var vaultData bytes.Buffer
+		if err := m.manager.Save(baseConfig.vault, &vaultData); err != nil {
+			return fmt.Errorf("serializing vault configuration: %w", err)
+		}
+		if err := osutil.WriteFileAtomic(ctx, vaultPath, vaultData.Bytes(), 0); err != nil {
+			return fmt.Errorf("saving vault configuration: %w", err)
+		}
+	}
+
+	if err := osutil.WriteFileAtomic(ctx, filePath, rootData.Bytes(), 0); err != nil {
+		return fmt.Errorf("saving file config: %w", err)
 	}
 
 	return nil

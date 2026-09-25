@@ -37,14 +37,20 @@ type Config interface {
 	GetSection(path string, section any) (bool, error)
 	// GetMap retrieves the map stored at the specified path
 	GetMap(path string) (map[string]any, bool)
+	// GetRawMapEntry retrieves an entry from a map without resolving vault references.
+	GetRawMapEntry(path string, key string) (any, bool, error)
 	// GetSlice retrieves the slice stored at the specified path
 	GetSlice(path string) ([]any, bool)
 	// Set stores the value at the specified path
 	Set(path string, value any) error
+	// SetRawMapEntry stores an entry under an opaque map key without interpreting the key as a path.
+	SetRawMapEntry(path string, key string, value any) error
 	// SetSecret stores the secrets at the specified path within a local user vault
 	SetSecret(path string, value string) error
 	// Unset removes the value stored at the specified path
 	Unset(path string) error
+	// DeleteRawMapEntry removes an opaque map key without interpreting the key as a path.
+	DeleteRawMapEntry(path string, key string) error
 	// IsEmpty returns a value indicating whether the configuration is empty
 	IsEmpty() bool
 }
@@ -250,6 +256,64 @@ func (c *config) GetMap(path string) (map[string]any, bool) {
 
 	node, ok := value.(map[string]any)
 	return node, ok
+}
+
+func (c *config) GetRawMapEntry(path string, key string) (any, bool, error) {
+	node, found, err := c.rawMap(path, false)
+	if err != nil || !found {
+		return nil, false, err
+	}
+
+	value, found := node[key]
+	return value, found, nil
+}
+
+func (c *config) SetRawMapEntry(path string, key string, value any) error {
+	node, _, err := c.rawMap(path, true)
+	if err != nil {
+		return err
+	}
+
+	node[key] = value
+	return nil
+}
+
+func (c *config) DeleteRawMapEntry(path string, key string) error {
+	node, found, err := c.rawMap(path, false)
+	if err != nil || !found {
+		return err
+	}
+
+	delete(node, key)
+	return nil
+}
+
+func (c *config) rawMap(path string, create bool) (map[string]any, bool, error) {
+	if path == "" {
+		return c.data, true, nil
+	}
+
+	currentNode := c.data
+	for part := range strings.SplitSeq(path, ".") {
+		value, exists := currentNode[part]
+		if !exists || value == nil {
+			if !create {
+				return nil, false, nil
+			}
+			node := map[string]any{}
+			currentNode[part] = node
+			currentNode = node
+			continue
+		}
+
+		node, ok := value.(map[string]any)
+		if !ok {
+			return nil, false, fmt.Errorf("failed converting node at path '%s' to map", part)
+		}
+		currentNode = node
+	}
+
+	return currentNode, true, nil
 }
 
 // GetSlice retrieves the slice stored at the specified path

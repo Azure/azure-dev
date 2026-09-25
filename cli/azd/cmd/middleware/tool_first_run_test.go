@@ -397,7 +397,7 @@ func TestToolFirstRunMiddleware_MarkCompleted_PersistsKey(t *testing.T) {
 		configManager: ucm,
 	}
 
-	m.markCompleted()
+	m.markCompleted(t.Context())
 
 	got, ok := cfg.Get(configKeyFirstRunCompleted)
 	require.True(t, ok, "markCompleted must persist the firstRunCompleted key")
@@ -420,7 +420,7 @@ func TestToolFirstRunMiddleware_MarkCompleted_LoadError(t *testing.T) {
 
 	// Should not panic; should silently swallow the load error.
 	require.NotPanics(t, func() {
-		m.markCompleted()
+		m.markCompleted(t.Context())
 	})
 }
 

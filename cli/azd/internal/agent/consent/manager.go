@@ -275,26 +275,20 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 
 // addGlobalRule adds a rule to the global configuration
 func (cm *consentManager) addGlobalRule(ctx context.Context, rule ConsentRule) error {
-	userConfig, err := cm.userConfigManager.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load user config: %w", err)
-	}
+	return cm.userConfigManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		var consentConfig ConsentConfig
+		if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
+			return false, fmt.Errorf("failed to get consent config: %w", err)
+		} else if !exists {
+			consentConfig = ConsentConfig{}
+		}
 
-	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
-		return fmt.Errorf("failed to get consent config: %w", err)
-	} else if !exists {
-		consentConfig = ConsentConfig{}
-	}
-
-	// Add or update the rule
-	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
-
-	if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
-		return fmt.Errorf("failed to set consent config: %w", err)
-	}
-
-	return cm.userConfigManager.Save(userConfig)
+		consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
+		if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
+			return false, fmt.Errorf("failed to set consent config: %w", err)
+		}
+		return true, nil
+	})
 }
 
 // addOrUpdateRule adds a new rule or updates an existing one
@@ -439,33 +433,33 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 
 // removeGlobalRule removes a specific rule from global configuration
 func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) error {
-	userConfig, err := cm.userConfigManager.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load user config: %w", err)
-	}
-
-	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
-		return fmt.Errorf("failed to get consent config: %w", err)
-	} else if !exists {
-		return nil // Nothing to remove
-	}
-
-	// Filter out the rule to remove
-	filtered := make([]ConsentRule, 0, len(consentConfig.Rules))
-	for _, rule := range consentConfig.Rules {
-		if rule.Target != target {
-			filtered = append(filtered, rule)
+	return cm.userConfigManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		var consentConfig ConsentConfig
+		if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
+			return false, fmt.Errorf("failed to get consent config: %w", err)
+		} else if !exists {
+			return false, nil
 		}
-	}
 
-	consentConfig.Rules = filtered
+		filtered := make([]ConsentRule, 0, len(consentConfig.Rules))
+		changed := false
+		for _, rule := range consentConfig.Rules {
+			if rule.Target != target {
+				filtered = append(filtered, rule)
+			} else {
+				changed = true
+			}
+		}
+		if !changed {
+			return false, nil
+		}
+		consentConfig.Rules = filtered
 
-	if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
-		return fmt.Errorf("failed to update consent config: %w", err)
-	}
-
-	return cm.userConfigManager.Save(userConfig)
+		if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
+			return false, fmt.Errorf("failed to update consent config: %w", err)
+		}
+		return true, nil
+	})
 }
 
 // checkUnifiedRules checks rules using the new unified matching logic

@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -577,16 +578,26 @@ type backfillSaveFailure struct {
 	err         error
 }
 
-func (m *backfillSaveFailure) Save(cfg config.Config) error {
-	var installed map[string]*Extension
-	if _, err := cfg.GetSection(installedConfigKey, &installed); err != nil {
-		return err
-	}
-	if record := installed[m.extensionID]; record != nil &&
-		(len(record.Dependencies) > 0 || !record.InstalledAsDependency) && m.err != nil {
-		return m.err
-	}
-	return m.UserConfigManager.Save(cfg)
+func (m *backfillSaveFailure) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	return m.UserConfigManager.Mutate(ctx, func(ctx context.Context, cfg config.Config) (bool, error) {
+		changed, err := mutation(ctx, cfg)
+		if err != nil || !changed {
+			return changed, err
+		}
+
+		var installed map[string]*Extension
+		if _, err := cfg.GetSection(installedConfigKey, &installed); err != nil {
+			return false, err
+		}
+		if record := installed[m.extensionID]; record != nil &&
+			(len(record.Dependencies) > 0 || !record.InstalledAsDependency) && m.err != nil {
+			return false, m.err
+		}
+		return true, nil
+	})
 }
 
 func Test_InstalledMetadata_SaveFailurePreservesState(t *testing.T) {
@@ -597,7 +608,7 @@ func Test_InstalledMetadata_SaveFailurePreservesState(t *testing.T) {
 				"test.child": installedRecord("test.child", "1.0.0", true),
 			}))
 			persistent := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-			require.NoError(t, persistent.Save(manager.userConfig))
+			require.NoError(t, persistent.Replace(t.Context(), manager.userConfig))
 			saveErr := errors.New("metadata write failed")
 			failing := &backfillSaveFailure{UserConfigManager: persistent, extensionID: "test.child", err: saveErr}
 			manager.configManager = failing
@@ -663,7 +674,7 @@ func Test_ReconcileDependencies_ReportsChildBackfillSaveFailure(t *testing.T) {
 				child.Id: installedRecord(child.Id, "1.0.0", true),
 			}))
 			persistent := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-			require.NoError(t, persistent.Save(manager.userConfig))
+			require.NoError(t, persistent.Replace(t.Context(), manager.userConfig))
 			saveErr := errors.New("child metadata write failed")
 			manager.configManager = &backfillSaveFailure{
 				UserConfigManager: persistent, extensionID: child.Id, err: saveErr,

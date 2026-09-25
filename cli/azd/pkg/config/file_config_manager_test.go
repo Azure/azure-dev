@@ -4,7 +4,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +14,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
+
+type failingConfigSerializer struct {
+	failFor Config
+}
+
+func (m *failingConfigSerializer) Save(cfg Config, writer io.Writer) error {
+	if cfg == m.failFor {
+		return errors.New("serialization failed")
+	}
+	return NewManager().Save(cfg, writer)
+}
+
+func (m *failingConfigSerializer) Load(reader io.Reader) (Config, error) {
+	return NewManager().Load(reader)
+}
 
 func Test_FileConfigManager_SaveAndLoadConfig(t *testing.T) {
 	var azdConfig Config = NewConfig(
@@ -46,6 +63,41 @@ func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
 	existingConfig, err := configManager.Load(configFilePath)
 	require.NoError(t, err)
 	require.NotNil(t, existingConfig)
+}
+
+func Test_FileConfigManager_SerializationFailurePreservesExistingFile(t *testing.T) {
+	configFilePath := filepath.Join(t.TempDir(), "config.json")
+	require.NoError(t, os.WriteFile(configFilePath, []byte(`{"existing":true}`), 0o600))
+
+	cfg := NewConfig(map[string]any{"replacement": true})
+	configManager := NewFileConfigManager(&failingConfigSerializer{failFor: cfg})
+	err := configManager.Save(cfg, configFilePath)
+	require.ErrorContains(t, err, "serialization failed")
+
+	contents, readErr := os.ReadFile(configFilePath)
+	require.NoError(t, readErr)
+	require.JSONEq(t, `{"existing":true}`, string(contents))
+}
+
+func Test_FileConfigManager_VaultSerializationFailurePreservesExistingRoot(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	configFilePath := filepath.Join(configDir, "config.json")
+	require.NoError(t, os.WriteFile(configFilePath, []byte(`{"existing":true}`), 0o600))
+
+	vault := NewConfig(map[string]any{"secret": "value"})
+	cfg := &config{
+		vaultId: "vault-id",
+		vault:   vault,
+		data:    map[string]any{vaultKeyName: "vault-id"},
+	}
+	configManager := NewFileConfigManager(&failingConfigSerializer{failFor: vault})
+	err := configManager.Save(cfg, configFilePath)
+	require.ErrorContains(t, err, "serialization failed")
+
+	contents, readErr := os.ReadFile(configFilePath)
+	require.NoError(t, readErr)
+	require.JSONEq(t, `{"existing":true}`, string(contents))
 }
 
 func Test_FileConfigManager_GetSetSecrets(t *testing.T) {

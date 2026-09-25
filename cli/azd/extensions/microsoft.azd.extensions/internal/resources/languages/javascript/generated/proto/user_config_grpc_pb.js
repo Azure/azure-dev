@@ -5,6 +5,39 @@ var grpc = require('@grpc/grpc-js');
 var user_config_pb = require('./user_config_pb.js');
 var models_pb = require('./models_pb.js');
 
+function serialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryRequest(arg) {
+  if (!(arg instanceof user_config_pb.CompareExchangeUserConfigMapEntryRequest)) {
+    throw new Error('Expected argument of type azd.extensions.v1.CompareExchangeUserConfigMapEntryRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryRequest(buffer_arg) {
+  return user_config_pb.CompareExchangeUserConfigMapEntryRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryResponse(arg) {
+  if (!(arg instanceof user_config_pb.CompareExchangeUserConfigMapEntryResponse)) {
+    throw new Error('Expected argument of type azd.extensions.v1.CompareExchangeUserConfigMapEntryResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryResponse(buffer_arg) {
+  return user_config_pb.CompareExchangeUserConfigMapEntryResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_azd_extensions_v1_DeleteUserConfigMapEntryRequest(arg) {
+  if (!(arg instanceof user_config_pb.DeleteUserConfigMapEntryRequest)) {
+    throw new Error('Expected argument of type azd.extensions.v1.DeleteUserConfigMapEntryRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_azd_extensions_v1_DeleteUserConfigMapEntryRequest(buffer_arg) {
+  return user_config_pb.DeleteUserConfigMapEntryRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_azd_extensions_v1_EmptyResponse(arg) {
   if (!(arg instanceof models_pb.EmptyResponse)) {
     throw new Error('Expected argument of type azd.extensions.v1.EmptyResponse');
@@ -14,6 +47,28 @@ function serialize_azd_extensions_v1_EmptyResponse(arg) {
 
 function deserialize_azd_extensions_v1_EmptyResponse(buffer_arg) {
   return models_pb.EmptyResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_azd_extensions_v1_GetUserConfigMapEntryRequest(arg) {
+  if (!(arg instanceof user_config_pb.GetUserConfigMapEntryRequest)) {
+    throw new Error('Expected argument of type azd.extensions.v1.GetUserConfigMapEntryRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_azd_extensions_v1_GetUserConfigMapEntryRequest(buffer_arg) {
+  return user_config_pb.GetUserConfigMapEntryRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_azd_extensions_v1_GetUserConfigMapEntryResponse(arg) {
+  if (!(arg instanceof user_config_pb.GetUserConfigMapEntryResponse)) {
+    throw new Error('Expected argument of type azd.extensions.v1.GetUserConfigMapEntryResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_azd_extensions_v1_GetUserConfigMapEntryResponse(buffer_arg) {
+  return user_config_pb.GetUserConfigMapEntryResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_azd_extensions_v1_GetUserConfigRequest(arg) {
@@ -80,6 +135,17 @@ function serialize_azd_extensions_v1_GetUserConfigStringResponse(arg) {
 
 function deserialize_azd_extensions_v1_GetUserConfigStringResponse(buffer_arg) {
   return user_config_pb.GetUserConfigStringResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_azd_extensions_v1_SetUserConfigMapEntryRequest(arg) {
+  if (!(arg instanceof user_config_pb.SetUserConfigMapEntryRequest)) {
+    throw new Error('Expected argument of type azd.extensions.v1.SetUserConfigMapEntryRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_azd_extensions_v1_SetUserConfigMapEntryRequest(buffer_arg) {
+  return user_config_pb.SetUserConfigMapEntryRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_azd_extensions_v1_SetUserConfigRequest(arg) {
@@ -165,6 +231,54 @@ unset: {
     requestDeserialize: deserialize_azd_extensions_v1_UnsetUserConfigRequest,
     responseSerialize: serialize_azd_extensions_v1_EmptyResponse,
     responseDeserialize: deserialize_azd_extensions_v1_EmptyResponse,
+  },
+  // GetMapEntry retrieves a value under an opaque key in a map.
+getMapEntry: {
+    path: '/azd.extensions.v1.UserConfigService/GetMapEntry',
+    requestStream: false,
+    responseStream: false,
+    requestType: user_config_pb.GetUserConfigMapEntryRequest,
+    responseType: user_config_pb.GetUserConfigMapEntryResponse,
+    requestSerialize: serialize_azd_extensions_v1_GetUserConfigMapEntryRequest,
+    requestDeserialize: deserialize_azd_extensions_v1_GetUserConfigMapEntryRequest,
+    responseSerialize: serialize_azd_extensions_v1_GetUserConfigMapEntryResponse,
+    responseDeserialize: deserialize_azd_extensions_v1_GetUserConfigMapEntryResponse,
+  },
+  // SetMapEntry sets a value under an opaque key in a map.
+setMapEntry: {
+    path: '/azd.extensions.v1.UserConfigService/SetMapEntry',
+    requestStream: false,
+    responseStream: false,
+    requestType: user_config_pb.SetUserConfigMapEntryRequest,
+    responseType: models_pb.EmptyResponse,
+    requestSerialize: serialize_azd_extensions_v1_SetUserConfigMapEntryRequest,
+    requestDeserialize: deserialize_azd_extensions_v1_SetUserConfigMapEntryRequest,
+    responseSerialize: serialize_azd_extensions_v1_EmptyResponse,
+    responseDeserialize: deserialize_azd_extensions_v1_EmptyResponse,
+  },
+  // DeleteMapEntry removes an opaque key from a map.
+deleteMapEntry: {
+    path: '/azd.extensions.v1.UserConfigService/DeleteMapEntry',
+    requestStream: false,
+    responseStream: false,
+    requestType: user_config_pb.DeleteUserConfigMapEntryRequest,
+    responseType: models_pb.EmptyResponse,
+    requestSerialize: serialize_azd_extensions_v1_DeleteUserConfigMapEntryRequest,
+    requestDeserialize: deserialize_azd_extensions_v1_DeleteUserConfigMapEntryRequest,
+    responseSerialize: serialize_azd_extensions_v1_EmptyResponse,
+    responseDeserialize: deserialize_azd_extensions_v1_EmptyResponse,
+  },
+  // CompareExchangeMapEntry conditionally updates an opaque map entry.
+compareExchangeMapEntry: {
+    path: '/azd.extensions.v1.UserConfigService/CompareExchangeMapEntry',
+    requestStream: false,
+    responseStream: false,
+    requestType: user_config_pb.CompareExchangeUserConfigMapEntryRequest,
+    responseType: user_config_pb.CompareExchangeUserConfigMapEntryResponse,
+    requestSerialize: serialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryRequest,
+    requestDeserialize: deserialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryRequest,
+    responseSerialize: serialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryResponse,
+    responseDeserialize: deserialize_azd_extensions_v1_CompareExchangeUserConfigMapEntryResponse,
   },
 };
 

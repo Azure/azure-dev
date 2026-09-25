@@ -36,61 +36,9 @@ import (
 // Returns an error if the directory does not exist, the temp file cannot be
 // created, data cannot be written, or the rename fails.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-
-	// Validate that the target directory exists.
-	if _, err := os.Stat(dir); err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: target directory: %w", err)
+	if err := osutil.WriteFileAtomic(context.Background(), path, data, perm); err != nil {
+		return fmt.Errorf("azdext.WriteFileAtomic: %w", err)
 	}
-
-	// If perm is zero and the target exists, preserve existing permissions.
-	if perm == 0 {
-		if fi, err := os.Stat(path); err == nil {
-			perm = fi.Mode().Perm()
-		} else {
-			perm = 0o644
-		}
-	}
-
-	// Create temp file in the same directory (same filesystem = atomic rename).
-	tmp, err := os.CreateTemp(dir, ".azdext-atomic-*")
-	if err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: create temp: %w", err)
-	}
-	tmpPath := tmp.Name()
-
-	// Ensure cleanup on any failure path.
-	success := false
-	defer func() {
-		if !success {
-			_ = tmp.Close()
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	// Write data and sync to disk.
-	if _, err := tmp.Write(data); err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: write: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: sync: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: close: %w", err)
-	}
-
-	// Set permissions on temp file before rename.
-	//nolint:gosec // G703: tmpPath is constructed internally
-	if err := os.Chmod(tmpPath, perm); err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: chmod: %w", err)
-	}
-
-	// Atomic rename into place.
-	if err := osutil.Rename(context.Background(), tmpPath, path); err != nil {
-		return fmt.Errorf("azdext.WriteFileAtomic: rename: %w", err)
-	}
-
-	success = true
 	return nil
 }
 

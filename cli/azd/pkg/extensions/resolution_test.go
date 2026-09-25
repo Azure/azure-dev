@@ -363,9 +363,9 @@ func Test_ManagerCompatibilityDefaultsAndOptOut(t *testing.T) {
 				},
 			},
 		}
-		require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		setInstalledExtensions(t, manager, map[string]*Extension{
 			"test.child": {Id: "test.child", Version: "1.0.0"},
-		}))
+		})
 		manager.installed = nil
 		return manager, extension
 	}
@@ -397,9 +397,9 @@ func Test_ManagerCompatibilityDefaultsAndOptOut(t *testing.T) {
 				},
 			},
 		}
-		require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		setInstalledExtensions(t, manager, map[string]*Extension{
 			"test.child": {Id: "test.child", Version: "1.0.0"},
-		}))
+		})
 		manager.installed = nil
 
 		version, err := manager.InstallWithOptions(t.Context(), extension, InstallOptions{})

@@ -216,14 +216,12 @@ func (a *subFilterSetAction) Run(
 	}
 	slices.Sort(selectedIds)
 
-	// Save filter
-	if err := prompt.SaveSubscriptionFilter(
-		cfg, tenantId, selectedIds,
-	); err != nil {
-		return nil, fmt.Errorf("saving subscription filter: %w", err)
-	}
-
-	if err := a.userConfigManager.Save(cfg); err != nil {
+	if err := a.userConfigManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := prompt.SaveSubscriptionFilter(cfg, tenantId, selectedIds); err != nil {
+			return false, fmt.Errorf("saving subscription filter: %w", err)
+		}
+		return true, nil
+	}); err != nil {
 		return nil, fmt.Errorf("saving user config: %w", err)
 	}
 
@@ -364,14 +362,12 @@ func (a *subFilterRemoveAction) Run(
 		return nil, nil
 	}
 
-	// Remove filter
-	if err := prompt.RemoveSubscriptionFilter(cfg, tenantId); err != nil {
-		return nil, fmt.Errorf(
-			"removing subscription filter: %w", err,
-		)
-	}
-
-	if err := a.userConfigManager.Save(cfg); err != nil {
+	if err := a.userConfigManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := prompt.RemoveSubscriptionFilter(cfg, tenantId); err != nil {
+			return false, fmt.Errorf("removing subscription filter: %w", err)
+		}
+		return true, nil
+	}); err != nil {
 		return nil, fmt.Errorf("saving user config: %w", err)
 	}
 

@@ -1491,6 +1491,20 @@ func (m *testConfigManager) Save(cfg config.Config) error {
 	return m.saveErr
 }
 
+func (m *testConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+	if m.loadErr != nil {
+		return m.loadErr
+	}
+	if changed, err := mutation(ctx, m.loadCfg); err != nil || !changed {
+		return err
+	}
+	return m.saveErr
+}
+
+func (m *testConfigManager) Replace(_ context.Context, _ config.Config) error {
+	return m.saveErr
+}
+
 // setDefaultEnvHelper sets the default environment in the AzdContext
 func setDefaultEnvHelper(t *testing.T, azdCtx *azdcontext.AzdContext, envName string) {
 	t.Helper()

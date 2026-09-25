@@ -117,7 +117,7 @@ func TestSubFilterRemoveAction_ConfirmedRemoval(t *testing.T) {
 	require.NoError(t, err)
 	err = prompt.SaveSubscriptionFilter(cfg, "t1", []string{"sub-1"})
 	require.NoError(t, err)
-	err = ucm.Save(cfg)
+	err = ucm.Replace(t.Context(), cfg)
 	require.NoError(t, err)
 
 	mockAccount := &mockaccount.MockAccountManager{
@@ -158,7 +158,7 @@ func TestSubFilterRemoveAction_CancelledRemoval(t *testing.T) {
 	require.NoError(t, err)
 	err = prompt.SaveSubscriptionFilter(cfg, "t1", []string{"sub-1"})
 	require.NoError(t, err)
-	err = ucm.Save(cfg)
+	err = ucm.Replace(t.Context(), cfg)
 	require.NoError(t, err)
 
 	mockAccount := &mockaccount.MockAccountManager{
@@ -255,7 +255,7 @@ func TestSubFilterRemoveAction_MultiTenant_RemovesCorrectTenant(
 	require.NoError(t, err)
 	err = prompt.SaveSubscriptionFilter(cfg, "t2", []string{"sub-2"})
 	require.NoError(t, err)
-	err = ucm.Save(cfg)
+	err = ucm.Replace(t.Context(), cfg)
 	require.NoError(t, err)
 
 	mockAccount := &mockaccount.MockAccountManager{

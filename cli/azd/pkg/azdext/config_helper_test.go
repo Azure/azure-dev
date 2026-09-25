@@ -15,13 +15,18 @@ import (
 // --- Stub UserConfigService ---
 
 type stubUserConfigService struct {
-	getResp       *GetUserConfigResponse
-	getStringResp *GetUserConfigStringResponse
-	getSectionErr error
-	getErr        error
-	getStringErr  error
-	setErr        error
-	unsetErr      error
+	getResp                *GetUserConfigResponse
+	getStringResp          *GetUserConfigStringResponse
+	getMapEntryResp        *GetUserConfigMapEntryResponse
+	compareExchangeResp    *CompareExchangeUserConfigMapEntryResponse
+	setMapEntryRequest     *SetUserConfigMapEntryRequest
+	deleteMapEntryRequest  *DeleteUserConfigMapEntryRequest
+	compareExchangeRequest *CompareExchangeUserConfigMapEntryRequest
+	getSectionErr          error
+	getErr                 error
+	getStringErr           error
+	setErr                 error
+	unsetErr               error
 }
 
 func (s *stubUserConfigService) Get(
@@ -52,6 +57,33 @@ func (s *stubUserConfigService) Unset(
 	_ context.Context, _ *UnsetUserConfigRequest, _ ...grpc.CallOption,
 ) (*EmptyResponse, error) {
 	return &EmptyResponse{}, s.unsetErr
+}
+
+func (s *stubUserConfigService) GetMapEntry(
+	_ context.Context, _ *GetUserConfigMapEntryRequest, _ ...grpc.CallOption,
+) (*GetUserConfigMapEntryResponse, error) {
+	return s.getMapEntryResp, nil
+}
+
+func (s *stubUserConfigService) SetMapEntry(
+	_ context.Context, req *SetUserConfigMapEntryRequest, _ ...grpc.CallOption,
+) (*EmptyResponse, error) {
+	s.setMapEntryRequest = req
+	return &EmptyResponse{}, nil
+}
+
+func (s *stubUserConfigService) DeleteMapEntry(
+	_ context.Context, req *DeleteUserConfigMapEntryRequest, _ ...grpc.CallOption,
+) (*EmptyResponse, error) {
+	s.deleteMapEntryRequest = req
+	return &EmptyResponse{}, nil
+}
+
+func (s *stubUserConfigService) CompareExchangeMapEntry(
+	_ context.Context, req *CompareExchangeUserConfigMapEntryRequest, _ ...grpc.CallOption,
+) (*CompareExchangeUserConfigMapEntryResponse, error) {
+	s.compareExchangeRequest = req
+	return s.compareExchangeResp, nil
 }
 
 // --- Stub EnvironmentService ---
@@ -159,6 +191,73 @@ func TestNewConfigHelper_Success(t *testing.T) {
 
 	if ch == nil {
 		t.Fatal("expected non-nil ConfigHelper")
+	}
+}
+
+func TestConfigHelper_UserMapEntryOperations(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubUserConfigService{
+		getMapEntryResp: &GetUserConfigMapEntryResponse{
+			Value:    []byte(`{"id":"session-1"}`),
+			Found:    true,
+			Revision: "rev-1",
+		},
+		compareExchangeResp: &CompareExchangeUserConfigMapEntryResponse{
+			Value:     []byte(`{"id":"session-2"}`),
+			Found:     true,
+			Revision:  "rev-2",
+			Exchanged: false,
+		},
+	}
+	helper := &ConfigHelper{client: &AzdClient{userConfigClient: stub}}
+
+	var value map[string]string
+	revision, found, err := helper.GetUserMapEntryJSON(
+		t.Context(),
+		"extensions.ai-agents.sessions",
+		"endpoint/agents/name.with.dots",
+		&value,
+	)
+	if err != nil {
+		t.Fatalf("GetUserMapEntryJSON returned error: %v", err)
+	}
+	if !found || revision != "rev-1" || value["id"] != "session-1" {
+		t.Fatalf("unexpected map entry result: found=%t revision=%q value=%v", found, revision, value)
+	}
+
+	if err := helper.SetUserMapEntryJSON(t.Context(), "entries", "opaque.key", map[string]string{"id": "one"}); err != nil {
+		t.Fatalf("SetUserMapEntryJSON returned error: %v", err)
+	}
+	if stub.setMapEntryRequest.GetKey() != "opaque.key" {
+		t.Fatalf("set key = %q", stub.setMapEntryRequest.GetKey())
+	}
+
+	var current map[string]string
+	exchanged, revision, found, err := helper.CompareExchangeSetUserMapEntryJSON(
+		t.Context(),
+		"entries",
+		"opaque.key",
+		"rev-1",
+		map[string]string{"id": "three"},
+		&current,
+	)
+	if err != nil {
+		t.Fatalf("CompareExchangeSetUserMapEntryJSON returned error: %v", err)
+	}
+	if exchanged || !found || revision != "rev-2" || current["id"] != "session-2" {
+		t.Fatalf("unexpected compare-exchange result: exchanged=%t found=%t revision=%q current=%v",
+			exchanged, found, revision, current)
+	}
+	if stub.compareExchangeRequest.GetExpectedRevision() != "rev-1" {
+		t.Fatalf("expected revision = %q", stub.compareExchangeRequest.GetExpectedRevision())
+	}
+
+	if err := helper.DeleteUserMapEntry(t.Context(), "entries", "opaque.key"); err != nil {
+		t.Fatalf("DeleteUserMapEntry returned error: %v", err)
+	}
+	if stub.deleteMapEntryRequest.GetKey() != "opaque.key" {
+		t.Fatalf("delete key = %q", stub.deleteMapEntryRequest.GetKey())
 	}
 }
 

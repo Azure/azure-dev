@@ -5,54 +5,58 @@
 # everything else not listed below -- no need for a separate /cli/ rule.
 
 # ── Default (core team) ──────────────────────────────────────────────────────
-/**                                         @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/**                                                      @Azure/azure-dev-core
 
 # ── CLI installer ─────────────────────────────────────────────────────────────
-/cli/installer/                             @danieljurek @vhvb1989 @tg-msft @RickWinter
+/cli/installer/                                          @danieljurek @vhvb1989 @tg-msft @RickWinter
 
-# ── CLI extensions registry and test snapshots - anyone added to this can approve extension publishing, provided they pass the `ext-registry-check` workflow.
-/cli/azd/extensions/registry.json           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
-/cli/azd/extensions/registry.dev.json       @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
-/cli/azd/cmd/testdata/TestFigSpec.ts        @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
+# ── CLI extension publishing and shared metadata ──────────────────────────────
+# Anyone listed here can approve extension publishing after the `ext-registry-check` workflow passes.
+/cli/azd/extensions/registry.json                        @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/extensions/registry.dev.json                    @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/cmd/testdata/TestFigSpec.ts                     @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/cmd/testdata/TestUsage-azd-ai.snap              @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/cmd/testdata/TestUsage-azd-ai-*.snap            @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/.vscode/cspell-github-user-aliases.txt                  @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
-/cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/test/functional/ai_agents/         @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.dataset/       @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.evaluations/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
-/cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @therealjohn @anchenyi @XiaofuHuang
-/cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
-/cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.rle/            @JeffreyCA @ksujit @omkarm
-/cli/azd/extensions/azure.ai.routines/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.skills/        @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.training/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
-/cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.agents/                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/test/functional/ai_agents/                      @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.connections/                @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.dataset/                    @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.evaluations/                @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.finetune/                   @Azure/azure-dev-core @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.inspector/                  @Azure/azure-dev-core @glharper @trangevi @therealjohn @anchenyi @XiaofuHuang
+/cli/azd/extensions/azure.ai.models/                     @Azure/azure-dev-core @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.projects/                   @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.rle/                        @Azure/azure-dev-core @ksujit @omkarm
+/cli/azd/extensions/azure.ai.routines/                   @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.skills/                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.toolboxes/                  @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.training/                   @Azure/azure-dev-core @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
+/cli/azd/extensions/microsoft.foundry/                   @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 
 # ── Extensions ────────────────────────────────────────────────────────────────
-/ext/                                       @vhvb1989 @tg-msft @RickWinter
-/ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @RickWinter
-/ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @RickWinter
-/ext/vscode/                                @vhvb1989 @tg-msft @RickWinter @bwateratmsft
+/ext/                                                    @vhvb1989 @tg-msft @RickWinter
+/ext/azuredevops/                                        @vhvb1989 @hemarina @tg-msft @RickWinter
+/ext/devcontainer/                                       @vhvb1989 @hemarina @tg-msft @RickWinter
+/ext/vscode/                                             @vhvb1989 @tg-msft @RickWinter @bwateratmsft
 
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
-/.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
-/.github/agents/foundry-extension-scenario-*.agent.md @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/.github/skills/                            @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
-/.github/skills/foundry-extension-scenario-*/         @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/eng/                                       @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
-/.config/1espt/                             @Azure/azure-sdk-eng
+/.github/                                                @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
+/.github/agents/foundry-extension-scenario-*.agent.md    @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/.github/skills/                                         @Azure/azure-dev-core
+/.github/skills/foundry-extension-scenario-*/            @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/eng/                                                    @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
+/.config/1espt/                                          @Azure/azure-sdk-eng
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-/schemas/                                   @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/schemas/                                                @Azure/azure-dev-core
 
 # ── Stable extension protobuf contract ────────────────────────────────────────
-/cli/azd/grpc/proto/azd/extensions/v1/      @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
-/cli/azd/pkg/azdext/contracts/v1/           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
-/cli/azd/pkg/azdext/contracts_v1_aliases.go @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/cli/azd/grpc/proto/azd/extensions/v1/                   @Azure/azure-dev-core
+/cli/azd/pkg/azdext/contracts/v1/                        @Azure/azure-dev-core
+/cli/azd/pkg/azdext/contracts_v1_aliases.go              @Azure/azure-dev-core
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
-/.github/CODEOWNERS                         @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng
+/.github/CODEOWNERS                                      @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng

@@ -65,3 +65,29 @@ func Test_WriteFileAtomic_PreservesSymlink(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "new", string(contents))
 }
+
+func Test_WriteFileAtomic_PreservesDanglingSymlinkChain(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.json")
+	intermediatePath := filepath.Join(dir, "intermediate.json")
+	linkPath := filepath.Join(dir, "config.json")
+	if err := os.Symlink(filepath.Base(targetPath), intermediatePath); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("creating symlink requires additional Windows privileges: %v", err)
+		}
+		require.NoError(t, err)
+	}
+	require.NoError(t, os.Symlink(filepath.Base(intermediatePath), linkPath))
+
+	require.NoError(t, WriteFileAtomic(t.Context(), linkPath, []byte("new"), 0))
+
+	for _, path := range []string{linkPath, intermediatePath} {
+		linkInfo, err := os.Lstat(path)
+		require.NoError(t, err)
+		require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+	}
+
+	contents, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, "new", string(contents))
+}

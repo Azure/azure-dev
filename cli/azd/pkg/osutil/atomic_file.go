@@ -17,17 +17,11 @@ func WriteFileAtomic(ctx context.Context, path string, data []byte, perm os.File
 		return err
 	}
 
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			resolvedPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return fmt.Errorf("resolving target file symlink: %w", err)
-			}
-			path = resolvedPath
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stating target file: %w", err)
+	resolvedPath, err := resolveFileSymlink(path)
+	if err != nil {
+		return fmt.Errorf("resolving target file symlink: %w", err)
 	}
+	path = resolvedPath
 
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); err != nil {
@@ -79,4 +73,30 @@ func WriteFileAtomic(ctx context.Context, path string, data []byte, perm os.File
 
 	removeTemp = false
 	return nil
+}
+
+func resolveFileSymlink(path string) (string, error) {
+	for range 255 {
+		info, err := os.Lstat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return path, nil
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return path, nil
+		}
+
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		path = target
+	}
+
+	return "", fmt.Errorf("too many symlinks")
 }

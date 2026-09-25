@@ -13,15 +13,15 @@ import (
 )
 
 // fixtureTemplates returns a small but representative mix used across the
-// init-list tests: featured/recommended Python agent, featured C# agent,
-// non-featured Python azd-type, and a recommended-only Python agent.
+// init-list tests: featured/recommended Python azure.yaml, featured C#
+// azure.yaml, non-featured Python azd repo, and a recommended-only azure.yaml.
 func fixtureTemplates() []AgentTemplate {
 	return []AgentTemplate{
 		{
 			Title:         "Echo Agent",
 			Description:   "An agent that echoes input.",
 			Languages:     []string{"python"},
-			Source:        "https://github.com/org/repo/blob/main/echo/agent.yaml",
+			Source:        "https://github.com/org/repo/blob/main/echo/azure.yaml",
 			ExtensionTags: []string{"featured", "recommended"},
 			TemplateType:  "extension.ai.agent",
 		},
@@ -29,7 +29,7 @@ func fixtureTemplates() []AgentTemplate {
 			Title:         "Calculator Agent",
 			Description:   "A calculator agent.",
 			Languages:     []string{"dotnetCsharp"},
-			Source:        "https://github.com/org/repo/blob/main/calc/agent.manifest.yaml",
+			Source:        "https://github.com/org/repo/blob/main/calc/azure.yaml",
 			ExtensionTags: []string{"featured"},
 			TemplateType:  "extension.ai.agent",
 		},
@@ -45,7 +45,7 @@ func fixtureTemplates() []AgentTemplate {
 			Title:         "Recommended Only",
 			Description:   "Marked recommended without featured.",
 			Languages:     []string{"python"},
-			Source:        "https://example.com/agents/rec/agent.yaml",
+			Source:        "https://example.com/agents/rec/azure.yaml",
 			ExtensionTags: []string{"recommended"},
 			TemplateType:  "extension.ai.agent",
 		},
@@ -63,9 +63,10 @@ func TestValidateSampleListFlags(t *testing.T) {
 	}{
 		{name: "all empty is valid", flags: sampleListFlags{}, wantErr: false},
 		{name: "known language", flags: sampleListFlags{language: "python"}, wantErr: false},
-		{name: "known type agent", flags: sampleListFlags{templateType: TemplateTypeAgent}, wantErr: false},
+		{name: "known type azure.yaml", flags: sampleListFlags{templateType: TemplateTypeAzureYaml}, wantErr: false},
 		{name: "known type azd", flags: sampleListFlags{templateType: TemplateTypeAzd}, wantErr: false},
 		{name: "unknown language", flags: sampleListFlags{language: "rust"}, wantErr: true, errMsg: `unknown language "rust"`},
+		{name: "legacy type agent", flags: sampleListFlags{templateType: "agent"}, wantErr: true, errMsg: `unknown template type "agent"`},
 		{name: "unknown type", flags: sampleListFlags{templateType: "bogus"}, wantErr: true, errMsg: `unknown template type "bogus"`},
 	}
 
@@ -83,16 +84,17 @@ func TestValidateSampleListFlags(t *testing.T) {
 	}
 }
 
-func TestMapAgentTemplateToDTO_AgentType(t *testing.T) {
+func TestMapAgentTemplateToDTO_AzureYamlType(t *testing.T) {
 	t.Parallel()
 
-	src := "https://github.com/org/repo/blob/main/echo/agent.yaml"
+	src := "https://github.com/org/repo/blob/main/echo/azure.yaml"
 	in := AgentTemplate{
 		Title:         "Echo Agent",
 		Description:   "An agent that echoes input.",
 		Languages:     []string{"python"},
 		Source:        src,
 		ExtensionTags: []string{"featured", "recommended"},
+		TemplateType:  "extension.ai.agent",
 	}
 
 	got := mapAgentTemplateToDTO(in)
@@ -100,9 +102,9 @@ func TestMapAgentTemplateToDTO_AgentType(t *testing.T) {
 	require.Equal(t, "Echo Agent", got.Title)
 	require.Equal(t, "An agent that echoes input.", got.Description)
 	require.Equal(t, []string{"python"}, got.Languages)
-	require.Equal(t, TemplateTypeAgent, got.Type)
+	require.Equal(t, TemplateTypeAzureYaml, got.Type)
 	require.Equal(t, src, got.ManifestURL)
-	require.Empty(t, got.RepoURL, "RepoURL must be empty for agent type")
+	require.Empty(t, got.RepoURL, "RepoURL must be empty for azure.yaml type")
 	require.Equal(t, []string{"featured", "recommended"}, got.Tags)
 	require.True(t, got.Featured)
 	require.True(t, got.Recommended)
@@ -192,10 +194,10 @@ func TestBuildTemplateListItems_FeaturedOnly(t *testing.T) {
 func TestBuildTemplateListItems_TypeFilter(t *testing.T) {
 	t.Parallel()
 
-	agentItems := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{templateType: TemplateTypeAgent})
-	require.Len(t, agentItems, 3)
-	for _, it := range agentItems {
-		require.Equal(t, TemplateTypeAgent, it.Type)
+	azureYamlItems := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{templateType: TemplateTypeAzureYaml})
+	require.Len(t, azureYamlItems, 3)
+	for _, it := range azureYamlItems {
+		require.Equal(t, TemplateTypeAzureYaml, it.Type)
 		require.NotEmpty(t, it.ManifestURL)
 	}
 
@@ -211,7 +213,7 @@ func TestBuildTemplateListItems_CombinedFilters(t *testing.T) {
 	items := buildTemplateListItems(fixtureTemplates(), &sampleListFlags{
 		language:     "python",
 		featuredOnly: true,
-		templateType: TemplateTypeAgent,
+		templateType: TemplateTypeAzureYaml,
 	})
 
 	require.Len(t, items, 1)
@@ -229,6 +231,22 @@ func TestBuildTemplateListItems_EmptyResultIsValid(t *testing.T) {
 
 	require.Empty(t, items)
 	require.NotNil(t, items, "must return [] not nil so JSON is templates:[]")
+}
+
+func TestBuildTemplateListItems_FiltersUnsupportedSources(t *testing.T) {
+	t.Parallel()
+
+	templates := append(fixtureTemplates(), AgentTemplate{
+		Title:        "Legacy manifest",
+		Source:       "https://example.com/legacy/agent.yaml",
+		TemplateType: "extension.ai.agent",
+	})
+	items := buildTemplateListItems(templates, &sampleListFlags{})
+
+	require.Len(t, items, len(fixtureTemplates()))
+	for _, item := range items {
+		require.NotEqual(t, "Legacy manifest", item.Title)
+	}
 }
 
 func TestSampleListJSONShape_EmptyEnvelopeUsesArray(t *testing.T) {
@@ -299,8 +317,8 @@ func TestPrintSampleListText_FormatContract(t *testing.T) {
 		{
 			Title:       "Echo Agent",
 			Description: "An agent that echoes input.",
-			Type:        TemplateTypeAgent,
-			ManifestURL: "https://example.com/echo/agent.yaml",
+			Type:        TemplateTypeAzureYaml,
+			ManifestURL: "https://example.com/echo/azure.yaml",
 		},
 		{
 			Title:       "Full Stack Starter",
@@ -315,7 +333,7 @@ func TestPrintSampleListText_FormatContract(t *testing.T) {
 	got := buf.String()
 
 	// The exact paragraph for the first item, in order.
-	require.Contains(t, got, "Sample: Echo Agent\nDescription: An agent that echoes input.\nManifest: https://example.com/echo/agent.yaml\n\n")
+	require.Contains(t, got, "Sample: Echo Agent\nDescription: An agent that echoes input.\nManifest: https://example.com/echo/azure.yaml\n\n")
 
 	// The azd-type item uses RepoURL in the Manifest line.
 	require.Contains(t, got, "Sample: Full Stack Starter\nDescription: A full azd template repo.\nManifest: Azure-Samples/azd-agent-starter\n\n")
@@ -336,12 +354,12 @@ func TestPrintSampleListText_EmptyShowsMessage(t *testing.T) {
 func TestPrintSampleListText_OmitsDescriptionWhenEmpty(t *testing.T) {
 	t.Parallel()
 	items := []TemplateListItem{
-		{Title: "Bare", Type: TemplateTypeAgent, ManifestURL: "https://x/y.yaml"},
+		{Title: "Bare", Type: TemplateTypeAzureYaml, ManifestURL: "https://x/azure.yaml"},
 	}
 	var buf strings.Builder
 	require.NoError(t, printSampleListText(&buf, items))
 	got := buf.String()
-	require.Contains(t, got, "Sample: Bare\nManifest: https://x/y.yaml\n\n")
+	require.Contains(t, got, "Sample: Bare\nManifest: https://x/azure.yaml\n\n")
 	require.NotContains(t, got, "Description:")
 }
 
@@ -358,9 +376,9 @@ func TestBuildTemplateListItems_InitCommandIsReadyToExecute(t *testing.T) {
 		require.False(t, strings.Contains(it.InitCommand, "<"),
 			"InitCommand must not contain placeholders like <url>: %q", it.InitCommand)
 		switch it.Type {
-		case TemplateTypeAgent:
+		case TemplateTypeAzureYaml:
 			require.True(t, strings.HasPrefix(it.InitCommand, "azd ai agent init -m "),
-				"agent-type InitCommand must use 'azd ai agent init -m': %q", it.InitCommand)
+				"azure.yaml InitCommand must use 'azd ai agent init -m': %q", it.InitCommand)
 		case TemplateTypeAzd:
 			require.True(t, strings.HasPrefix(it.InitCommand, "azd init -t "),
 				"azd-type InitCommand must use 'azd init -t': %q", it.InitCommand)
@@ -387,22 +405,22 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 		want string
 	}{
 		{
-			name: "agent type quotes the manifest URL",
+			name: "azure.yaml type quotes the manifest URL",
 			in: AgentTemplate{
-				Source:        "https://example.com/path with space/agent.yaml",
+				Source:        "https://example.com/path with space/azure.yaml",
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: `azd ai agent init -m "https://example.com/path with space/agent.yaml"`,
+			want: `azd ai agent init -m "https://example.com/path with space/azure.yaml"`,
 		},
 		{
-			name: "agent type quotes a clean URL too",
+			name: "azure.yaml type quotes a clean URL too",
 			in: AgentTemplate{
-				Source:        "https://example.com/clean/agent.yaml",
+				Source:        "https://example.com/clean/azure.yaml",
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: `azd ai agent init -m "https://example.com/clean/agent.yaml"`,
+			want: `azd ai agent init -m "https://example.com/clean/azure.yaml"`,
 		},
 		{
 			name: "azd type quotes the repo slug",
@@ -416,11 +434,11 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 		{
 			name: "embedded double quotes are escaped via %q",
 			in: AgentTemplate{
-				Source:        `https://x/y "evil" path/agent.yaml`,
+				Source:        `https://x/y "evil" path/azure.yaml`,
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: fmt.Sprintf(`azd ai agent init -m %q`, `https://x/y "evil" path/agent.yaml`),
+			want: fmt.Sprintf(`azd ai agent init -m %q`, `https://x/y "evil" path/azure.yaml`),
 		},
 	}
 

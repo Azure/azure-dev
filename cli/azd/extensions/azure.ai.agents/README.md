@@ -106,10 +106,9 @@ to `azure.ai.connection` services and attach them through `uses`. Agent
 remain unsupported. To reuse an external toolbox, set `endpoint` on
 its split toolbox service instead of setting a legacy MCP environment marker.
 Run `azd deploy --all` to reconcile these dependencies before their agents;
-`azd provision` does not create Connections or Toolboxes. Agent manifest
-Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
-which generates split services. Agent runtime `toolConnections` and environment
-references remain agent-owned.
+`azd provision` does not create Connections or Toolboxes. Unified projects must
+declare Connection and Toolbox resources as sibling services. Agent runtime
+`toolConnections` and environment references remain agent-owned.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 sibling `azure.ai.connection` service names. These are references, not resource
@@ -129,15 +128,14 @@ still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration
 path in the Agent command tree.
 
-For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
-project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
-directory and deployment settings. The definition can be inline or referenced
-using `$ref`, following the service schema; declare core-owned fields such as
-`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
-not by a definition-file path. A sibling `toolbox.yaml` is not automatically
-deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
-first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
-dependencies automatically.
+For an existing standalone agent, declare an `azure.ai.agent` service in
+`azure.yaml` with its source directory and deployment settings. The definition
+can be inline or referenced using `$ref`, following the service schema; declare
+core-owned fields such as `host`, `project`, `language`, and `uses` in
+`azure.yaml`. Deploy by **service name**, not by a definition-file path. A
+sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
+and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
+targeted Agent deployment does not deploy its dependencies automatically.
 
 ## Invoke latency diagnostics
 

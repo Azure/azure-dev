@@ -25,15 +25,18 @@ import (
 )
 
 type InitFromCodeAction struct {
-	azdClient         *azdext.AzdClient
-	flags             *initFlags
-	projectConfig     *azdext.ProjectConfig
-	azureContext      *azdext.AzureContext
-	environment       *azdext.Environment
-	credential        azcore.TokenCredential
-	deploymentDetails []project.Deployment
-	needsProvision    bool
-	httpClient        *http.Client
+	azdClient           *azdext.AzdClient
+	flags               *initFlags
+	projectConfig       *azdext.ProjectConfig
+	azureContext        *azdext.AzureContext
+	environment         *azdext.Environment
+	credential          azcore.TokenCredential
+	deploymentDetails   []project.Deployment
+	needsProvision      bool
+	httpClient          *http.Client
+	projectTargetDir    string
+	createdFolderPath   string
+	serviceNameOverride string
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -44,6 +47,23 @@ type InitFromCodeAction struct {
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
+	srcDir := a.flags.src
+	if srcDir == "" {
+		srcDir = "."
+	}
+	if a.flags.image == "" {
+		projectResponse, projectErr := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if projectErr != nil || projectResponse.GetProject() == nil {
+			existing, err := findExistingAgentYaml(srcDir)
+			if err != nil {
+				return err
+			}
+			if existing != "" {
+				return legacyInitSourceError(existing)
+			}
+		}
+	}
+
 	var err error
 	a.projectConfig, err = a.ensureProject(ctx)
 	if err != nil {
@@ -77,13 +97,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	// Default src to current directory when not specified
-	srcDir := a.flags.src
+	srcDir = a.flags.src
 	if srcDir == "" {
 		srcDir = "."
-	}
-
-	if err := a.confirmExistingDefinitionOverwrite(ctx, srcDir); err != nil {
-		return err
 	}
 
 	// No manifest pointer provided - process local agent code
@@ -94,11 +110,29 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
+		if strings.TrimSpace(localDefinition.Image) != "" {
+			resolver := &InitAction{
+				azdClient:     a.azdClient,
+				projectConfig: a.projectConfig,
+				flags:         a.flags,
+			}
+			serviceName, err := resolver.resolveServiceNameCollision(
+				ctx,
+				localDefinition.Name,
+				strings.ReplaceAll(localDefinition.Name, " ", ""),
+			)
+			if err != nil {
+				return err
+			}
+			a.serviceNameOverride = serviceName
+		}
 
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
-		if err := a.writeAgentIgnoreToSrcDir(srcDir); err != nil {
-			return fmt.Errorf("failed to write .agentignore: %w", err)
+		if strings.TrimSpace(localDefinition.Image) == "" {
+			if err := a.writeAgentIgnoreToSrcDir(srcDir); err != nil {
+				return fmt.Errorf("failed to write .agentignore: %w", err)
+			}
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
@@ -125,60 +159,22 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// terminate with the deploy hint. State-assembly errors are
 		// intentionally ignored: the resolver degrades gracefully on
 		// partial state per the design spec.
-		state, _ := nextstep.AssembleState(ctx, a.azdClient)
+		var stateOpts []nextstep.Option
+		if a.createdFolderPath != "" {
+			stateOpts = append(stateOpts, nextstep.WithCreatedFolder(a.createdFolderPath))
+		}
+		state, _ := nextstep.AssembleState(ctx, a.azdClient, stateOpts...)
 		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
 	}
 
 	return nil
 }
 
-func (a *InitFromCodeAction) confirmExistingDefinitionOverwrite(ctx context.Context, srcDir string) error {
-	existing, err := findExistingAgentYaml(srcDir)
-	if err != nil || existing == "" {
-		return nil
-	}
-
-	displayPath, relErr := filepath.Rel(srcDir, existing)
-	if relErr != nil || displayPath == "" {
-		displayPath = existing
-	}
-
-	if a.flags.force {
-		log.Printf("--force: overwriting existing agent definition %q", existing)
-		return nil
-	}
-	if a.flags.noPrompt {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("%s already exists at %q", displayPath, existing),
-			fmt.Sprintf(
-				"pass --force to overwrite, delete or move the existing %s, "+
-					"or run interactively to confirm overwrite",
-				displayPath,
-			),
-		)
-	}
-
-	confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
-			DefaultValue: new(false),
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("overwrite confirmation was cancelled")
-		}
-		return fmt.Errorf("prompting for overwrite confirmation: %w", err)
-	}
-	if confirmResp.Value == nil || !*confirmResp.Value {
-		return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
-	}
-
-	return nil
-}
-
 func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.ProjectConfig, error) {
+	if a.projectTargetDir != "" {
+		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
+	}
+
 	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		fmt.Println("Let's get your project initialized.")
@@ -304,7 +300,18 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		srcDir, _ = os.Getwd()
 	}
 	showCodeDeploy := supportsCodeDeploy(srcDir)
-	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy, a.flags.deployMode, false)
+	requestedDeployMode := a.flags.deployMode
+	if strings.TrimSpace(a.flags.image) != "" {
+		requestedDeployMode = "container"
+	}
+	deployMode, err := promptDeployMode(
+		ctx,
+		a.azdClient,
+		a.flags.noPrompt,
+		showCodeDeploy,
+		requestedDeployMode,
+		strings.TrimSpace(a.flags.image) != "",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +371,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.credential = newCred
 
-		skipACR := deployMode == "code"
+		skipACR := deployMode == "code" || strings.TrimSpace(a.flags.image) != ""
 		filterHostedRegions := true // code and container deploy modes both create hosted agents.
 		proj, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
@@ -441,7 +448,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
 				a.flags.acrConnection,
-				deployMode == "code",
+				deployMode == "code" || strings.TrimSpace(a.flags.image) != "",
 				deployMode == "code", // filterHostedRegions: code deploy targets hosted agents
 				true,                 // bicepless
 			)
@@ -596,8 +603,27 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			Name: agentName,
 			Kind: agentKind,
 		},
-		Protocols:         protocols,
-		CodeConfiguration: codeConfig,
+		Protocols:            protocols,
+		CodeConfiguration:    codeConfig,
+		Image:                strings.TrimSpace(a.flags.image),
+		RegistryConnectionID: strings.TrimSpace(a.flags.registryConnection),
+	}
+	if definition.Image != "" {
+		description := fmt.Sprintf("Hosted container agent using pre-built image %s", definition.Image)
+		definition.Description = &description
+		if err := validateHostedContainerImage(definition.Image); err != nil {
+			return nil, err
+		}
+	}
+	if definition.RegistryConnectionID != "" && selectedProject != nil {
+		if err := verifyRegistryConnectionOnProject(
+			ctx,
+			a.credential,
+			*selectedProject,
+			definition.RegistryConnectionID,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	// An activity agent additionally advertises the friendly "activity" endpoint
@@ -845,6 +871,9 @@ func (a *InitFromCodeAction) addToProject(
 ) error {
 	agentName := definition.Name
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
+	if a.serviceNameOverride != "" {
+		agentServiceName = a.serviceNameOverride
+	}
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
 	if targetDir == "." {

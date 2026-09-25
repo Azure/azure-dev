@@ -44,6 +44,54 @@ type azureYamlManifestInfo struct {
 	hasUnresolvedRefs bool
 }
 
+type authenticatedManifestReader func(context.Context, string) ([]byte, error)
+
+func safeInitSourceDisplay(source string) string {
+	if !strings.Contains(source, "://") {
+		return source
+	}
+
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return "provided URL"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func safeInitSourceError(err error, source string) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.ReplaceAll(err.Error(), source, safeInitSourceDisplay(source))
+	parsed, parseErr := url.Parse(source)
+	if parseErr != nil {
+		return text
+	}
+	if parsed.User != nil {
+		if password, ok := parsed.User.Password(); ok && password != "" {
+			text = strings.ReplaceAll(text, password, "[redacted]")
+		}
+		if username := parsed.User.Username(); username != "" {
+			text = strings.ReplaceAll(text, username, "[redacted]")
+		}
+	}
+	for key, values := range parsed.Query() {
+		text = strings.ReplaceAll(text, key, "[redacted]")
+		for _, value := range values {
+			if value != "" {
+				text = strings.ReplaceAll(text, value, "[redacted]")
+			}
+		}
+	}
+	if parsed.Fragment != "" {
+		text = strings.ReplaceAll(text, parsed.Fragment, "[redacted]")
+	}
+	return text
+}
+
 func (i azureYamlManifestInfo) promptOnly() bool {
 	return i.hasPromptAgent && !i.hasNonPromptAgent && !i.hasUnresolvedRefs
 }
@@ -123,6 +171,7 @@ func hasAzureYamlFileRef(value any) bool {
 }
 
 func missingAgentServiceError(manifestPointer string) error {
+	manifestPointer = safeInitSourceDisplay(manifestPointer)
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
 		fmt.Sprintf(
@@ -130,10 +179,242 @@ func missingAgentServiceError(manifestPointer string) error {
 			manifestPointer,
 		),
 		fmt.Sprintf(
-			"add a service with host: %s, or pass an agent manifest",
+			"add a service with host: %s directly in azure.yaml, or use a root $ref from that service",
 			AiAgentHost,
 		),
 	)
+}
+
+func loadExplicitAzureYaml(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	httpClient *http.Client,
+) ([]byte, error) {
+	if err := checkNotDirectory(flags.manifestPointer); err != nil {
+		return nil, err
+	}
+
+	content, err := readExplicitManifestContent(
+		ctx,
+		flags.manifestPointer,
+		httpClient,
+		func(ctx context.Context, pointer string) ([]byte, error) {
+			return readAuthenticatedManifestContent(ctx, azdClient, pointer)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	display := safeInitSourceDisplay(flags.manifestPointer)
+	projectRoot := ""
+	if isLocalFilePath(flags.manifestPointer) {
+		projectRoot = filepath.Dir(flags.manifestPointer)
+	}
+	info, err := inspectAzureYaml(content, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if info.hasServices {
+		if !info.hasAgentService && !info.hasUnresolvedRefs {
+			return nil, missingAgentServiceError(flags.manifestPointer)
+		}
+		return content, nil
+	}
+
+	var document map[string]any
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("parsing unified azure.yaml from %q: %s", display, err),
+			"Provide a valid azure.yaml project document with an azure.ai.agent service.",
+		)
+	}
+	if _, hasTemplate := document["template"]; hasTemplate {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"AgentManifest documents with a top-level 'template:' field are no longer accepted by init",
+			"Extract the template into an azure.ai.agent service in azure.yaml, "+
+				"or reference the direct definition from that service with $ref.",
+		)
+	}
+	if kind := strings.TrimSpace(fmt.Sprint(document["kind"])); kind != "" && kind != "<nil>" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("standalone agent definition with kind %q is no longer accepted by init", kind),
+			"Create an azure.yaml project document and place the definition on an azure.ai.agent service, "+
+				"or reference the direct definition from that service with $ref.",
+		)
+	}
+
+	return nil, exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("%q is not a unified azure.yaml project document", display),
+		"Provide an azure.yaml document with a services mapping and at least one azure.ai.agent service.",
+	)
+}
+
+func readExplicitManifestContent(
+	ctx context.Context,
+	manifestPointer string,
+	httpClient *http.Client,
+	readAuthenticated authenticatedManifestReader,
+) ([]byte, error) {
+	display := safeInitSourceDisplay(manifestPointer)
+	if !strings.HasPrefix(manifestPointer, "http://") &&
+		!strings.HasPrefix(manifestPointer, "https://") {
+		//nolint:gosec // the path is an explicit user-provided init source
+		content, err := os.ReadFile(manifestPointer)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidManifestPointer,
+				fmt.Sprintf("could not read unified azure.yaml from %q: %s", display, err),
+				"Provide an existing local azure.yaml path.",
+			)
+		}
+		return content, nil
+	}
+
+	if content, cached := readCachedTemplateManifest(manifestPointer); cached {
+		return content, nil
+	}
+
+	if content, recognized, err := readPublicGitHubManifest(ctx, manifestPointer, httpClient); err == nil {
+		return content, nil
+	} else if exterrors.IsCancellation(err) {
+		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+	} else if !recognized {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("%q is not a supported GitHub azure.yaml URL", display),
+			"Provide an existing local azure.yaml path or a supported public/private GitHub azure.yaml URL.",
+		)
+	}
+
+	if readAuthenticated == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("could not download unified azure.yaml from %q", display),
+			"Verify the URL and authenticate with `gh auth login` if the repository is private.",
+		)
+	}
+	content, err := readAuthenticated(ctx, manifestPointer)
+	if err == nil {
+		return content, nil
+	}
+	if exterrors.IsCancellation(err) {
+		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return nil, localErr
+	}
+	return nil, exterrors.Dependency(
+		exterrors.CodeGitHubDownloadFailed,
+		fmt.Sprintf(
+			"could not download unified azure.yaml from %q: %s",
+			display,
+			safeInitSourceError(err, manifestPointer),
+		),
+		"Verify the URL, repository access, and GitHub CLI authentication with `gh auth status`.",
+	)
+}
+
+func readPublicGitHubManifest(
+	ctx context.Context,
+	manifestPointer string,
+	httpClient *http.Client,
+) ([]byte, bool, error) {
+	urlInfo := parseGitHubUrlNaive(manifestPointer)
+	if urlInfo == nil {
+		return nil, false, nil
+	}
+	if httpClient == nil {
+		return nil, true, errors.New("HTTP client is unavailable")
+	}
+
+	contentsURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	if urlInfo.Branch != "" {
+		contentsURL += "?ref=" + url.QueryEscape(urlInfo.Branch)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, contentsURL, nil)
+	if err != nil {
+		return nil, true, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3.raw")
+
+	//nolint:gosec // URL is constrained to the GitHub contents API
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, true, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, true, fmt.Errorf("GitHub returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	return body, true, err
+}
+
+func readAuthenticatedManifestContent(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	manifestPointer string,
+) ([]byte, error) {
+	if azdClient == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			"authenticated GitHub download is unavailable",
+			"Run this command through azd and authenticate with `gh auth login`.",
+		)
+	}
+	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
+	console := input.NewConsole(
+		false,
+		true,
+		input.Writers{Output: io.Discard},
+		input.ConsoleHandles{Stderr: io.Discard, Stdin: os.Stdin, Stdout: io.Discard},
+		nil,
+		nil,
+	)
+	ghCli := github.NewGitHubCli(console, commandRunner)
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, err
+		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			"GitHub CLI is required to read a private azure.yaml",
+			"Install GitHub CLI from https://cli.github.com and run `gh auth login`.",
+		)
+	}
+
+	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
+	if err != nil {
+		return nil, err
+	}
+	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	if urlInfo.Branch != "" {
+		apiPath += "?ref=" + url.QueryEscape(urlInfo.Branch)
+	}
+	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, err
+		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf(
+				"GitHub could not download the requested azure.yaml: %s",
+				safeInitSourceError(err, manifestPointer),
+			),
+			"Verify repository access and GitHub CLI authentication with `gh auth status`.",
+		)
+	}
+	return []byte(content), nil
 }
 
 func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
@@ -148,8 +429,69 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 	if err != nil {
 		return err
 	}
-	if !info.hasServices || !info.hasAgentService {
+	if !info.hasServices || (!info.hasAgentService && !info.hasUnresolvedRefs) {
 		return missingAgentServiceError(manifestPointer)
+	}
+
+	var document struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return fmt.Errorf("parsing staged azure.yaml: %w", err)
+	}
+	for name, service := range document.Services {
+		resolvedService := service
+		if hasAzureYamlFileRef(service) {
+			resolvedService, err = foundry.ResolveFileRefs(service, stagingDir)
+			if err != nil {
+				return fmt.Errorf("resolving $ref includes for service %q: %w", name, err)
+			}
+		}
+
+		host, _ := resolvedService["host"].(string)
+		if strings.TrimSpace(host) != AiAgentHost {
+			continue
+		}
+		if config, hasConfig := resolvedService["config"]; hasConfig && config != nil {
+			configMap, ok := config.(map[string]any)
+			if !ok {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("agent service %q has a malformed nested config value", name),
+					"Remove config or replace it with direct azure.ai.agent service properties.",
+				)
+			}
+			if len(configMap) > 0 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("agent service %q uses the unsupported nested config block", name),
+					"Move the direct agent definition to the azure.ai.agent service properties.",
+				)
+			}
+		}
+
+		// Let the runtime-compatible resolver validate agent services so
+		// implicit disk definitions cannot pass staging validation.
+		props, err := structpb.NewStruct(service)
+		if err != nil {
+			return fmt.Errorf("encoding agent service %q: %w", name, err)
+		}
+		svc := &azdext.ServiceConfig{
+			Name:                 name,
+			Host:                 host,
+			AdditionalProperties: props,
+		}
+		probe, err := probeAgentDefinitionForInit(svc, stagingDir)
+		if err != nil {
+			return fmt.Errorf("validating agent service %q: %w", name, err)
+		}
+		if !probe.found {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q does not contain a direct or root-$ref definition", name),
+				"Put the agent definition directly on the azure.ai.agent service or use a root $ref.",
+			)
+		}
 	}
 
 	return nil
@@ -441,8 +783,7 @@ func runInitFromAzureYaml(
 			fmt.Sprintf("a project azure.yaml already exists in %q, so the sample's "+
 				"unified azure.yaml cannot be adopted there", targetDir),
 			"run this command in an empty directory (or pass a new target directory) to "+
-				"adopt the sample, or add an individual agent to this project with "+
-				"'azd ai agent init -m <agent.manifest.yaml>'",
+				"adopt the sample, or add the agent service directly to this project's azure.yaml",
 		)
 	}
 	// Stage the sample as a local template directory (azure.yaml at its root
@@ -480,6 +821,125 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	return finalizeAdoptedProject(
+		ctx,
+		flags,
+		azdClient,
+		envName,
+		folderDisplay,
+		promptOnly,
+		agentNameOverride,
+	)
+}
+
+func runInitFromAzdTemplate(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	selectedTemplate *AgentTemplate,
+) error {
+	targetDir := strings.TrimSpace(flags.src)
+	if targetDir == "" {
+		targetDir = folderNameStrippingParenSuffix(selectedTemplate.Title)
+	}
+	if targetDir == "" {
+		targetDir = "."
+	}
+	if projectManifestExists(targetDir) {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("a project azure.yaml already exists in %q", targetDir),
+			"Choose an empty target directory for the repository template.",
+		)
+	}
+
+	folderDisplay := ""
+	if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
+		folderDisplay = filepath.ToSlash(targetDir)
+	}
+	envName := deriveEnvName(flags, targetDir)
+	if err := preflightAzdTemplate(ctx, azdClient, selectedTemplate.Source); err != nil {
+		return err
+	}
+	if err := scaffoldProject(ctx, azdClient, targetDir, selectedTemplate.Source, envName); err != nil {
+		return err
+	}
+	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
+		return err
+	}
+	content, err := os.ReadFile("azure.yaml")
+	if err != nil {
+		return fmt.Errorf("reading scaffolded azure.yaml: %w", err)
+	}
+	info, err := inspectAzureYaml(content, ".")
+	if err != nil {
+		return err
+	}
+
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		if err := validateAdoptedAgentNameOverride(content, "."); err != nil {
+			return err
+		}
+	}
+
+	return finalizeAdoptedProject(
+		ctx,
+		flags,
+		azdClient,
+		envName,
+		folderDisplay,
+		info.promptOnly(),
+		agentNameOverride,
+	)
+}
+
+func preflightAzdTemplate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	templateSource string,
+) error {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolving the current directory before template preflight: %w", err)
+	}
+	preflightRoot, err := os.MkdirTemp("", "azd-agent-template-preflight-*")
+	if err != nil {
+		return fmt.Errorf("creating template preflight directory: %w", err)
+	}
+	defer os.RemoveAll(preflightRoot)
+	defer func() { _ = os.Chdir(originalDir) }()
+
+	if err := os.Chdir(preflightRoot); err != nil {
+		return fmt.Errorf("entering template preflight directory: %w", err)
+	}
+	if err := scaffoldProject(
+		ctx,
+		azdClient,
+		"project",
+		templateSource,
+		"azd-agent-template-preflight",
+	); err != nil {
+		return err
+	}
+	if err := validateStagedAzureYaml(".", safeInitSourceDisplay(templateSource)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func finalizeAdoptedProject(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	envName string,
+	folderDisplay string,
+	promptOnly bool,
+	agentNameOverride string,
+) error {
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
@@ -499,6 +959,7 @@ func runInitFromAzureYaml(
 	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		// Environment should exist after scaffoldProject; if not, create one.
+		var err error
 		env, err = createNewEnvironment(ctx, azdClient, envName)
 		if err != nil {
 			return err
@@ -1180,10 +1641,17 @@ func parseGitHubUrlForAdopt(
 		Url: pointer,
 	})
 	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, err
+		}
 		return nil, exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
-			fmt.Sprintf("parsing GitHub URL: %s", err),
-			"verify the URL points to a file in a GitHub repository",
+			fmt.Sprintf(
+				"could not parse GitHub source %q: %s",
+				safeInitSourceDisplay(pointer),
+				safeInitSourceError(err, pointer),
+			),
+			"verify the URL points to an azure.yaml file in a GitHub repository",
 		)
 	}
 	return &GitHubUrlInfo{
@@ -1411,9 +1879,10 @@ func adoptedExternalRegistryConnections(
 			if err != nil {
 				return nil, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
 			}
-			if probe.found {
-				connectionRef = strings.TrimSpace(probe.definition.RegistryConnectionID)
+			if !probe.found {
+				return nil, fmt.Errorf("reading adopted agent service %q: agent definition not found", serviceName)
 			}
+			connectionRef = strings.TrimSpace(probe.definition.RegistryConnectionID)
 		}
 		if connectionRef == "" {
 			continue

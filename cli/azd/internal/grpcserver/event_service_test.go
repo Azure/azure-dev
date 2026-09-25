@@ -115,19 +115,19 @@ func (m *noOpEnvironmentManager) Get(ctx context.Context, name string) (*environ
 	return nil, nil
 }
 
-func (m *noOpEnvironmentManager) Save(ctx context.Context, env *environment.Environment) error {
+func (m *noOpEnvironmentManager) Save(ctx context.Context, env environment.Env) error {
 	return nil
 }
 
 func (m *noOpEnvironmentManager) SaveWithOptions(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	options *environment.SaveOptions,
 ) error {
 	return nil
 }
 
-func (m *noOpEnvironmentManager) Reload(ctx context.Context, env *environment.Environment) error {
+func (m *noOpEnvironmentManager) Reload(ctx context.Context, env environment.Env) error {
 	return nil
 }
 
@@ -135,11 +135,11 @@ func (m *noOpEnvironmentManager) Delete(ctx context.Context, name string) error 
 	return nil
 }
 
-func (m *noOpEnvironmentManager) EnvPath(env *environment.Environment) string {
+func (m *noOpEnvironmentManager) EnvPath(env environment.Env) string {
 	return ""
 }
 
-func (m *noOpEnvironmentManager) ConfigPath(env *environment.Environment) string {
+func (m *noOpEnvironmentManager) ConfigPath(env environment.Env) string {
 	return ""
 }
 

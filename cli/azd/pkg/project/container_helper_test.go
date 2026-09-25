@@ -391,7 +391,7 @@ func Test_ResolveDockerBuildArgs(t *testing.T) {
 	env := environment.NewWithValues("dev", map[string]string{
 		"FROM_ENV": "env-value",
 	})
-	require.NoError(t, env.Config.Set("infra.parameters.param", "param-value"))
+	require.NoError(t, env.Config().Set("infra.parameters.param", "param-value"))
 
 	args, err := resolveDockerBuildArgs([]osutil.ExpandableString{
 		osutil.NewExpandableString("FROM_ENV=${FROM_ENV}"),
@@ -491,7 +491,7 @@ func Test_ContainerHelper_RunRemoteBuild_PassesBuildArgs(t *testing.T) {
 	env := environment.NewWithValues("dev", map[string]string{
 		"FROM_ENV": "env-value",
 	})
-	require.NoError(t, env.Config.Set("infra.parameters.param", "param-value"))
+	require.NoError(t, env.Config().Set("infra.parameters.param", "param-value"))
 
 	var scheduleRunBody []byte
 	mockContext.HttpClient.When(func(request *http.Request) bool {

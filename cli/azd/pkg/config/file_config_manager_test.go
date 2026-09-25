@@ -36,27 +36,37 @@ func Test_FileConfigManager_SaveAndLoadConfig(t *testing.T) {
 }
 
 func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
-	configFilePath := filepath.Join(t.TempDir(), "config.json")
+	for _, tt := range []struct {
+		name  string
+		value Config
+	}{
+		{name: "empty", value: NewEmptyConfig()},
+		{name: "nil"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			configFilePath := filepath.Join(t.TempDir(), "config.json")
+			configManager := NewFileConfigManager(NewManager())
+			require.NoError(t, configManager.Save(tt.value, configFilePath))
 
-	configManager := NewFileConfigManager(NewManager())
-	azdConfig := NewConfig(nil)
-	err := configManager.Save(azdConfig, configFilePath)
-	require.NoError(t, err)
-
-	existingConfig, err := configManager.Load(configFilePath)
-	require.NoError(t, err)
-	require.NotNil(t, existingConfig)
+			existingConfig, err := configManager.Load(configFilePath)
+			require.NoError(t, err)
+			require.NotNil(t, existingConfig)
+			require.True(t, existingConfig.IsEmpty())
+		})
+	}
 }
 
-func TestFileConfigManagerRejectsUnsupportedConfigWithoutTruncating(t *testing.T) {
-	type wrappedConfig struct{ Config }
+func TestFileConfigManagerSaveCloneErrorPreservesFile(t *testing.T) {
+	type rawConfig struct{ Config }
+	wrapped := rawConfig{NewConfig(map[string]any{"unsupported": make(chan string)})}
+
 	path := filepath.Join(t.TempDir(), "config.json")
 	manager := NewFileConfigManager(NewManager())
-	require.NoError(t, manager.Save(NewConfig(map[string]any{"original": true}), path))
+	require.NoError(t, manager.Save(NewConfig(map[string]any{"existing": true}), path))
 	before, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	require.ErrorContains(t, manager.Save(wrappedConfig{NewEmptyConfig()}, path), "failed casting")
+	require.ErrorContains(t, manager.Save(wrapped, path), "unsupported configuration value")
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, before, after)

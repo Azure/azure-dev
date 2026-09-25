@@ -3605,7 +3605,7 @@ func (p *BicepProvider) ensureParameters(
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
 
-		if v, has := p.env.Config.Get(configKey); has {
+		if v, has := p.env.Config().Get(configKey); has {
 			if isValueAssignableToParameterType(parameterType, v) {
 				configuredParameters[key] = azure.ArmParameter{
 					Value: v,
@@ -3614,7 +3614,7 @@ func (p *BicepProvider) ensureParameters(
 			} else {
 				// The saved value is no longer valid (perhaps the user edited their template to change the type of a)
 				// parameter and then re-ran `azd provision`. Forget the saved value (if we can) and prompt for a new one.
-				_ = p.env.Config.Unset("infra.parameters.%s")
+				_ = p.env.Config().Unset("infra.parameters.%s")
 			}
 		}
 
@@ -3631,7 +3631,7 @@ func (p *BicepProvider) ensureParameters(
 			configuredParameters[key] = azure.ArmParameter{
 				Value: genValue,
 			}
-			mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
+			mustSetParamAsConfig(key, genValue, p.env.Config(), param.Secure())
 			configModified = true
 			continue
 		}
@@ -3669,7 +3669,7 @@ func (p *BicepProvider) ensureParameters(
 			for _, prompt := range parameterPrompts {
 				key := prompt.key
 				value := values[prompt.key]
-				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
+				mustSetParamAsConfig(key, value, p.env.Config(), prompt.param.Secure())
 				configModified = true
 				configuredParameters[key] = azure.ArmParameter{
 					Value: value,
@@ -3688,7 +3688,7 @@ func (p *BicepProvider) ensureParameters(
 				if key != "location" {
 					// location param is special.
 					// It is not persisted in config, it is set in the .env directly
-					mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
+					mustSetParamAsConfig(key, value, p.env.Config(), prompt.param.Secure())
 				}
 				configModified = true
 				configuredParameters[key] = azure.ArmParameter{
@@ -3887,7 +3887,7 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 			continue
 		}
 
-		_, isPrompt := p.env.Config.Get(fmt.Sprintf("infra.parameters.%s", key))
+		_, isPrompt := p.env.Config().Get(fmt.Sprintf("infra.parameters.%s", key))
 		singleMapping := len(parametersInfo.envMapping[key]) == 1
 		usingEnvVarMapping := false
 		if singleMapping {

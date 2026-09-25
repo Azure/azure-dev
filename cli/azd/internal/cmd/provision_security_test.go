@@ -20,16 +20,16 @@ type mockEnvManager struct {
 	saveCalls   atomic.Int32
 	maxConcur   atomic.Int32
 	curConcur   atomic.Int32
-	saveFunc    func(ctx context.Context, env *environment.Environment) error
+	saveFunc    func(ctx context.Context, env environment.Env) error
 	saveOptFunc func(
 		ctx context.Context,
-		env *environment.Environment,
+		env environment.Env,
 		opts *environment.SaveOptions,
 	) error
 }
 
 func (m *mockEnvManager) Save(
-	ctx context.Context, env *environment.Environment,
+	ctx context.Context, env environment.Env,
 ) error {
 	cur := m.curConcur.Add(1)
 	defer m.curConcur.Add(-1)
@@ -52,7 +52,7 @@ func (m *mockEnvManager) Save(
 
 func (m *mockEnvManager) SaveWithOptions(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	opts *environment.SaveOptions,
 ) error {
 	cur := m.curConcur.Add(1)
@@ -83,7 +83,7 @@ type syncEnvManager struct {
 }
 
 func (s *syncEnvManager) Save(
-	ctx context.Context, env *environment.Environment,
+	ctx context.Context, env environment.Env,
 ) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -92,7 +92,7 @@ func (s *syncEnvManager) Save(
 
 func (s *syncEnvManager) SaveWithOptions(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	options *environment.SaveOptions,
 ) error {
 	s.mu.Lock()
@@ -111,7 +111,7 @@ func TestProvisionSecurity_syncEnvManager_serializesSaves(
 			// Add a small busy-wait in the mock to increase the
 			// chance of detecting unserialized access.
 			mock.saveFunc = func(
-				_ context.Context, _ *environment.Environment,
+				_ context.Context, _ environment.Env,
 			) error {
 				sum := 0
 				for i := range 10000 {
@@ -156,7 +156,7 @@ func TestProvisionSecurity_syncEnvManager_serializesSaves(
 			mock := &mockEnvManager{}
 			mock.saveOptFunc = func(
 				_ context.Context,
-				_ *environment.Environment,
+				_ environment.Env,
 				_ *environment.SaveOptions,
 			) error {
 				sum := 0
@@ -199,7 +199,7 @@ func TestProvisionSecurity_syncEnvManager_serializesSaves(
 		func(t *testing.T) {
 			mock := &mockEnvManager{}
 			mock.saveFunc = func(
-				_ context.Context, _ *environment.Environment,
+				_ context.Context, _ environment.Env,
 			) error {
 				sum := 0
 				for i := range 5000 {
@@ -210,7 +210,7 @@ func TestProvisionSecurity_syncEnvManager_serializesSaves(
 			}
 			mock.saveOptFunc = func(
 				_ context.Context,
-				_ *environment.Environment,
+				_ environment.Env,
 				_ *environment.SaveOptions,
 			) error {
 				sum := 0

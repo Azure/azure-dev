@@ -438,12 +438,12 @@ type MockDataStore struct {
 	mock.Mock
 }
 
-func (m *MockDataStore) EnvPath(env *Environment) string {
+func (m *MockDataStore) EnvPath(env Env) string {
 	args := m.Called(env)
 	return args.String(0)
 }
 
-func (m *MockDataStore) ConfigPath(env *Environment) string {
+func (m *MockDataStore) ConfigPath(env Env) string {
 	args := m.Called(env)
 	return args.String(0)
 }
@@ -464,12 +464,12 @@ func (m *MockDataStore) Get(ctx context.Context, name string) (*Environment, err
 	return nil, args.Error(1)
 }
 
-func (m *MockDataStore) Reload(ctx context.Context, env *Environment) error {
+func (m *MockDataStore) Reload(ctx context.Context, env Env) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)
 }
 
-func (m *MockDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
+func (m *MockDataStore) Save(ctx context.Context, env Env, options *SaveOptions) error {
 	args := m.Called(ctx, env, options)
 	return args.Error(0)
 }

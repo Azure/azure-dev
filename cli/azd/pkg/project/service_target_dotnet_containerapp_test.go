@@ -194,7 +194,7 @@ func Test_ContainerAppTemplateManifestFuncs_Parameter(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{})
 		cfg := config.NewEmptyConfig()
 		cfg.Set("infra.parameters.someParam", "config-value")
-		env.Config = cfg
+		require.NoError(t, env.ReplaceState(environment.EnvironmentState{Dotenv: env.Dotenv(), Config: cfg}))
 
 		fns := &containerAppTemplateManifestFuncs{
 			env: env,
@@ -224,7 +224,7 @@ func Test_ContainerAppTemplateManifestFuncs_Parameter(t *testing.T) {
 		env := environment.NewWithValues("test", nil)
 		cfg := config.NewEmptyConfig()
 		cfg.Set("infra.parameters.numericParam", 42)
-		env.Config = cfg
+		require.NoError(t, env.ReplaceState(environment.EnvironmentState{Dotenv: env.Dotenv(), Config: cfg}))
 
 		fns := &containerAppTemplateManifestFuncs{
 			env: env,

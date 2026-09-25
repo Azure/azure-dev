@@ -474,7 +474,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			if azdCtx != nil && localEnvStore != nil {
 				if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
 					if env, err := localEnvStore.Get(ctx, defaultEnvName); err == nil {
-						if cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath); exists {
+						if cloudConfigurationNode, exists := env.Config().Get(cloud.ConfigPath); exists {
 							if value, err := cloud.ParseCloudConfig(cloudConfigurationNode); err == nil {
 								cloudConfig, err := cloud.NewCloud(value)
 								if err == nil {

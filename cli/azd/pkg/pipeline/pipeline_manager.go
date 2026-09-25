@@ -265,7 +265,7 @@ func (pm *PipelineManager) Configure(
 	if err != nil {
 		return result, fmt.Errorf("loading user configuration: %w", err)
 	}
-	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
+	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.Config(), userConfig)
 	if smr != nil {
 		if _, err := uuid.Parse(*smr); err != nil {
 			return result, fmt.Errorf("Invalid service management reference %s: %w", *smr, err)

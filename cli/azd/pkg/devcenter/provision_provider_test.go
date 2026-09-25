@@ -39,7 +39,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 		env := environment.New("test")
 		configMap, err := convert.ToMap(config)
 		require.NoError(t, err)
-		_ = env.Config.Set("platform.config", configMap)
+		_ = env.Config().Set("platform.config", configMap)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
 		err = provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{})
@@ -58,7 +58,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 		env := environment.New("test")
 		configMap, err := convert.ToMap(config)
 		require.NoError(t, err)
-		_ = env.Config.Set("platform.config", configMap)
+		_ = env.Config().Set("platform.config", configMap)
 
 		selectedEnvironmentTypeIndex := 1
 		selectedEnvironmentType := mockEnvironmentTypes[selectedEnvironmentTypeIndex]
@@ -73,7 +73,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 		err = provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{})
 		require.NoError(t, err)
 
-		actualEnvironmentType, ok := env.Config.Get(DevCenterEnvTypePath)
+		actualEnvironmentType, ok := env.Config().Get(DevCenterEnvTypePath)
 		require.True(t, ok)
 		require.Equal(t, selectedEnvironmentType.Name, actualEnvironmentType)
 	})

@@ -163,6 +163,14 @@ type mockConfig struct {
 	unsetFn func(path string) error
 }
 
+func (m *mockConfig) Clone() (config.Config, error) {
+	data, err := config.CloneValue(m.data)
+	if err != nil {
+		return nil, err
+	}
+	return &mockConfig{data: data, unsetFn: m.unsetFn}, nil
+}
+
 func (m *mockConfig) Get(path string) (any, bool) {
 	v, ok := m.data[path]
 	return v, ok

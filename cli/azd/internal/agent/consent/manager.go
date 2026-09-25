@@ -257,7 +257,7 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
+	if exists, err := env.Config().GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -266,7 +266,7 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 	// Add or update the rule
 	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
 
-	if err := env.Config.Set(ConfigKeyConsent, consentConfig); err != nil {
+	if err := env.Config().Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to set consent config in environment: %w", err)
 	}
 
@@ -343,7 +343,7 @@ func (cm *consentManager) getProjectRules(ctx context.Context) ([]ConsentRule, e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
+	if exists, err := env.Config().GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return nil, fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		return []ConsentRule{}, nil
@@ -414,7 +414,7 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
+	if exists, err := env.Config().GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		return nil // Nothing to remove
@@ -430,7 +430,7 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 
 	consentConfig.Rules = filtered
 
-	if err := env.Config.Set(ConfigKeyConsent, consentConfig); err != nil {
+	if err := env.Config().Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to update consent config in environment: %w", err)
 	}
 

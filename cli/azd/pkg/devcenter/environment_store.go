@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -46,12 +47,12 @@ func NewEnvironmentStore(
 }
 
 // EnvPath returns the path for the environment
-func (s *EnvironmentStore) EnvPath(env *environment.Environment) string {
+func (s *EnvironmentStore) EnvPath(env environment.Env) string {
 	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name())
 }
 
 // ConfigPath returns the path for the environment configuration
-func (s *EnvironmentStore) ConfigPath(env *environment.Environment) string {
+func (s *EnvironmentStore) ConfigPath(env environment.Env) string {
 	return ""
 }
 
@@ -111,9 +112,17 @@ func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.E
 }
 
 // Reload reloads the environment from the remote data store
-func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environment) error {
+func (s *EnvironmentStore) Reload(ctx context.Context, env environment.Env) error {
+	name := env.Name()
+	if err := environment.ValidateEnvironmentName(name); err != nil {
+		return err
+	}
+	state, err := env.SnapshotState()
+	if err != nil {
+		return err
+	}
 	filter := func(e *devcentersdk.Environment) bool {
-		return s.envDefFilter(e) && strings.EqualFold(e.Name, env.Name())
+		return s.envDefFilter(e) && strings.EqualFold(e.Name, name)
 	}
 
 	envList, err := s.matchingEnvironments(ctx, filter)
@@ -125,32 +134,39 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 		return environment.ErrNotFound
 	}
 
-	environment, err := s.devCenterClient.
+	remoteEnv, err := s.devCenterClient.
 		DevCenterByName(s.config.Name).
 		ProjectByName(s.config.Project).
 		EnvironmentsByUser(envList[0].User).
-		EnvironmentByName(env.Name()).
+		EnvironmentByName(name).
 		Get(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to get devcenter environment: %w", err)
 	}
 
-	resolvedConfig, err := s.syncEnvironment(env, environment)
+	// Keep the environment and shared platform settings unchanged until everything has loaded.
+	resolvedConfig, err := s.syncEnvironmentConfig(state.Config, remoteEnv)
 	if err != nil {
 		return fmt.Errorf("failed to sync devcenter environment to azd environment: %w", err)
 	}
 
-	outputs, err := s.manager.Outputs(ctx, resolvedConfig, environment)
+	outputs, err := s.manager.Outputs(ctx, resolvedConfig, remoteEnv)
 	if err != nil {
 		return fmt.Errorf("failed to get environment outputs: %w", err)
 	}
 
 	// Set the environment variables for the environment
+	if state.Dotenv == nil {
+		state.Dotenv = make(map[string]string)
+	}
 	for key, outputParam := range outputs {
-		env.DotenvSet(key, fmt.Sprintf("%v", outputParam.Value))
+		state.Dotenv[key] = fmt.Sprintf("%v", outputParam.Value)
 	}
 
+	if err := env.ReplaceState(state); err != nil {
+		return err
+	}
 	*s.config = *resolvedConfig
 	s.cachedConfig = nil
 	return nil
@@ -159,18 +175,21 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 // Save saves the environment to the remote data store
 // DevCenter doesn't implement any APIs for saving environment configuration / metadata
 // outside of the environment definition itself or the ARM deployment outputs
-func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environment, options *environment.SaveOptions) error {
+func (s *EnvironmentStore) Save(ctx context.Context, env environment.Env, options *environment.SaveOptions) error {
+	if err := environment.ValidateEnvironmentName(env.Name()); err != nil {
+		return err
+	}
 	// Only save the project and environment type configuration for existing environment
 	if !options.IsNew {
 		// Only persis project & environment type for existing local environments
 		if s.config.Project != "" {
-			if err := env.Config.Set(DevCenterProjectPath, s.config.Project); err != nil {
+			if err := env.Config().Set(DevCenterProjectPath, s.config.Project); err != nil {
 				return err
 			}
 		}
 
 		if s.config.EnvironmentType != "" {
-			if err := env.Config.Set(DevCenterEnvTypePath, s.config.EnvironmentType); err != nil {
+			if err := env.Config().Set(DevCenterEnvTypePath, s.config.EnvironmentType); err != nil {
 				return err
 			}
 		}
@@ -228,8 +247,7 @@ func (s *EnvironmentStore) ensureDevCenterConfig(ctx context.Context) error {
 	if err := s.config.EnsureValid(); err != nil {
 		// Cache the originally loaded config for later comparison when determining if the config has changed.
 		if s.cachedConfig == nil {
-			temp := *s.config
-			s.cachedConfig = &temp
+			s.cachedConfig = new(*s.config)
 		}
 
 		err := s.prompter.PromptForConfig(ctx, s.config)
@@ -241,77 +259,77 @@ func (s *EnvironmentStore) ensureDevCenterConfig(ctx context.Context) error {
 	return nil
 }
 
-// Syncs the devcenter environment to the azd environment
-func (s *EnvironmentStore) syncEnvironment(
-	env *environment.Environment, environment *devcentersdk.Environment,
+// syncEnvironmentConfig updates the caller-owned config snapshot and returns
+// staged platform settings. Reload commits both after output retrieval succeeds.
+func (s *EnvironmentStore) syncEnvironmentConfig(
+	cfg config.Config, remoteEnv *devcentersdk.Environment,
 ) (*Config, error) {
-	var currentConfig Config
-	if s.cachedConfig == nil {
-		currentConfig = *s.config
-	} else {
-		currentConfig = *s.cachedConfig
+	// Keep the pre-prompt baseline until commit so retries still persist prompted settings.
+	currentConfig := s.config
+	if s.cachedConfig != nil {
+		currentConfig = s.cachedConfig
 	}
-
 	resolvedConfig := new(*s.config)
-	// Stage discovered settings until output retrieval succeeds.
+
+	// Set missing configuration values from the environment
 	if resolvedConfig.Catalog == "" {
-		resolvedConfig.Catalog = environment.CatalogName
+		resolvedConfig.Catalog = remoteEnv.CatalogName
 	}
 
 	if resolvedConfig.EnvironmentType == "" {
-		resolvedConfig.EnvironmentType = environment.EnvironmentType
+		resolvedConfig.EnvironmentType = remoteEnv.EnvironmentType
 	}
 
 	if resolvedConfig.EnvironmentDefinition == "" {
-		resolvedConfig.EnvironmentDefinition = environment.EnvironmentDefinitionName
+		resolvedConfig.EnvironmentDefinition = remoteEnv.EnvironmentDefinitionName
 	}
 
 	if resolvedConfig.User == "" {
-		resolvedConfig.User = environment.User
+		resolvedConfig.User = remoteEnv.User
 	}
 
 	// Set any missing config values in environment configuration for future use
 	// Some values are set at the global / project level so we only want to set missing values in the environment config
 	if currentConfig.Name == "" {
-		if err := env.Config.Set(DevCenterNamePath, resolvedConfig.Name); err != nil {
+		if err := cfg.Set(DevCenterNamePath, resolvedConfig.Name); err != nil {
 			return nil, err
 		}
 	}
 
 	if currentConfig.Project == "" {
-		if err := env.Config.Set(DevCenterProjectPath, resolvedConfig.Project); err != nil {
+		if err := cfg.Set(DevCenterProjectPath, resolvedConfig.Project); err != nil {
 			return nil, err
 		}
 	}
 
 	if currentConfig.Catalog == "" {
-		if err := env.Config.Set(DevCenterCatalogPath, resolvedConfig.Catalog); err != nil {
+		if err := cfg.Set(DevCenterCatalogPath, resolvedConfig.Catalog); err != nil {
 			return nil, err
 		}
 	}
 
 	if currentConfig.EnvironmentType == "" {
-		if err := env.Config.Set(DevCenterEnvTypePath, resolvedConfig.EnvironmentType); err != nil {
+		if err := cfg.Set(DevCenterEnvTypePath, resolvedConfig.EnvironmentType); err != nil {
 			return nil, err
 		}
 	}
 
 	if currentConfig.EnvironmentDefinition == "" {
-		if err := env.Config.Set(DevCenterEnvDefinitionPath, resolvedConfig.EnvironmentDefinition); err != nil {
+		if err := cfg.Set(DevCenterEnvDefinitionPath, resolvedConfig.EnvironmentDefinition); err != nil {
 			return nil, err
 		}
 	}
 
 	if currentConfig.User == "" {
-		if err := env.Config.Set(DevCenterUserPath, resolvedConfig.User); err != nil {
+		if err := cfg.Set(DevCenterUserPath, resolvedConfig.User); err != nil {
 			return nil, err
 		}
 	}
 
 	// Set the environment definition parameters
-	for key, value := range environment.Parameters {
+	for key, value := range remoteEnv.Parameters {
 		path := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
-		if err := env.Config.Set(path, value); err != nil {
+		if err := cfg.Set(path, value); err != nil {
 			return nil, fmt.Errorf("failed setting config value %s: %w", path, err)
 		}
 	}

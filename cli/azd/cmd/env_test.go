@@ -788,7 +788,7 @@ func Test_EnvConfigGetAction_Success(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "myenv"}))
 
 	env := environment.NewWithValues("myenv", nil)
-	env.Config.Set("mykey", "myval")
+	env.Config().Set("mykey", "myval")
 
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, "myenv").Return(env, nil)
@@ -850,7 +850,7 @@ func Test_EnvConfigGetAction_WithFlagOverride(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "default"}))
 
 	env := environment.NewWithValues("other", nil)
-	env.Config.Set("a.b", "nested")
+	env.Config().Set("a.b", "nested")
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, "other").Return(env, nil)
 
@@ -881,7 +881,7 @@ func Test_EnvConfigSetAction_Success(t *testing.T) {
 	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
-	val, ok := env.Config.Get("path.key")
+	val, ok := env.Config().Get("path.key")
 	require.True(t, ok)
 	require.Equal(t, "value1", val)
 }
@@ -915,7 +915,7 @@ func Test_EnvConfigSetAction_JsonValue(t *testing.T) {
 	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
-	val, ok := env.Config.Get("num")
+	val, ok := env.Config().Get("num")
 	require.True(t, ok)
 	require.Equal(t, float64(42), val) // JSON numbers become float64
 }
@@ -947,7 +947,7 @@ func Test_EnvConfigUnsetAction_Success(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "myenv"}))
 
 	env := environment.NewWithValues("myenv", nil)
-	env.Config.Set("remove.me", "val")
+	env.Config().Set("remove.me", "val")
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, "myenv").Return(env, nil)
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
@@ -956,7 +956,7 @@ func Test_EnvConfigUnsetAction_Success(t *testing.T) {
 	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
-	_, ok := env.Config.Get("remove.me")
+	_, ok := env.Config().Get("remove.me")
 	require.False(t, ok)
 }
 
@@ -981,7 +981,7 @@ func Test_EnvConfigUnsetAction_WithFlagOverride(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "default"}))
 
 	env := environment.NewWithValues("other", nil)
-	env.Config.Set("x", "y")
+	env.Config().Set("x", "y")
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, "other").Return(env, nil)
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
@@ -1947,7 +1947,7 @@ func Test_EnvConfigUnsetAction_SaveError(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "myenv"}))
 
 	env := environment.NewWithValues("myenv", nil)
-	env.Config.Set("x", "y")
+	env.Config().Set("x", "y")
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, "myenv").Return(env, nil)
 	mgr.On("Save", mock.Anything, mock.Anything).Return(errors.New("save failed"))
@@ -2565,7 +2565,7 @@ func Test_EnvConfigGetAction_FormatError(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "test"}))
 
 	env := environment.NewWithValues("test", nil)
-	require.NoError(t, env.Config.Set("mykey", "myval"))
+	require.NoError(t, env.Config().Set("mykey", "myval"))
 
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
@@ -2591,7 +2591,7 @@ func Test_EnvConfigGetAction_EnvFlagOverride(t *testing.T) {
 	// no default env set — flag should override
 
 	env := environment.NewWithValues("override-env", nil)
-	require.NoError(t, env.Config.Set("thekey", "theval"))
+	require.NoError(t, env.Config().Set("thekey", "theval"))
 
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
@@ -2615,7 +2615,7 @@ func Test_EnvConfigSetAction_SetError(t *testing.T) {
 
 	env := environment.NewWithValues("test", nil)
 	// set "a" to a scalar so "a.b" will fail in Config.Set
-	require.NoError(t, env.Config.Set("a", "scalar"))
+	require.NoError(t, env.Config().Set("a", "scalar"))
 
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
@@ -2633,7 +2633,7 @@ func Test_EnvConfigUnsetAction_UnsetError(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "test"}))
 
 	env := environment.NewWithValues("test", nil)
-	require.NoError(t, env.Config.Set("a", "scalar"))
+	require.NoError(t, env.Config().Set("a", "scalar"))
 
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
@@ -3208,7 +3208,7 @@ func Test_EnvConfigGetAction_JsonFormat(t *testing.T) {
 	require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "myenv"}))
 
 	env := environment.NewWithValues("myenv", nil)
-	env.Config.Set("mykey", "myval")
+	env.Config().Set("mykey", "myval")
 	mgr := newTestEnvManager()
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
 

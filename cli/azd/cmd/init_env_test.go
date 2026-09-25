@@ -417,7 +417,7 @@ func TestInitializeEnv(t *testing.T) {
 		action, azdCtx, envManager := setupInitializeEnvTest(t, mockContext, flags)
 		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "existing-dev", func(env *environment.Environment) {
 			env.DotenvSet("USER_KEY", "original")
-			require.NoError(t, env.Config.Set("user.config", "original"))
+			require.NoError(t, env.Config().Set("user.config", "original"))
 		})
 
 		metadata := templates.Metadata{
@@ -438,11 +438,11 @@ func TestInitializeEnv(t *testing.T) {
 		require.Equal(t, "original", dotenv["USER_KEY"], "user value must not be clobbered")
 		require.Equal(t, "templateValue", dotenv["TEMPLATE_KEY"], "absent template value should be added")
 
-		userConfig, ok := env.Config.Get("user.config")
+		userConfig, ok := env.Config().Get("user.config")
 		require.True(t, ok)
 		require.Equal(t, "original", userConfig, "user config must not be clobbered")
 
-		templateConfig, ok := env.Config.Get("template.config")
+		templateConfig, ok := env.Config().Get("template.config")
 		require.True(t, ok)
 		require.Equal(t, "templateValue", templateConfig, "absent template config should be added")
 

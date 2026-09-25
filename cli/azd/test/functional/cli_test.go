@@ -199,8 +199,8 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, envName, env.Name())
-	actualProjectName, _ := env.Config.Get(devcenter.DevCenterProjectPath)
-	repoUrl, _ := env.Config.Get("provision.parameters.repoUrl")
+	actualProjectName, _ := env.Config().Get(devcenter.DevCenterProjectPath)
+	repoUrl, _ := env.Config().Get("provision.parameters.repoUrl")
 	require.Equal(t, projectName, actualProjectName)
 	require.Equal(t, "https://github.com/wbreza/azd-hello-world", repoUrl)
 
@@ -213,7 +213,7 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	env, err = envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
-	actualEnvTypeName, _ := env.Config.Get(devcenter.DevCenterEnvTypePath)
+	actualEnvTypeName, _ := env.Config().Get(devcenter.DevCenterEnvTypePath)
 	require.Equal(t, environmentTypeName, actualEnvTypeName)
 
 	// azd down

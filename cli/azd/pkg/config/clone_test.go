@@ -95,15 +95,12 @@ func TestCloneValueNilAndScalars(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, value, cloned)
 	}
-	cloned, err := Clone(nil)
-	require.NoError(t, err)
-	require.True(t, cloned.IsEmpty())
 }
 
-func TestCloneRawConfig(t *testing.T) {
+func TestCloneEmbeddedConfig(t *testing.T) {
 	type rawConfig struct{ Config }
-	original := rawConfig{NewConfig(map[string]any{"nested": map[string]string{"key": "original"}})}
-	cloned, err := Clone(original)
+	var original Config = rawConfig{NewConfig(map[string]any{"nested": map[string]string{"key": "original"}})}
+	cloned, err := original.Clone()
 	require.NoError(t, err)
 	require.IsType(t, &config{}, cloned)
 	require.Equal(t, original.Raw(), cloned.Raw())
@@ -119,7 +116,7 @@ func TestClonePreservesConfigAndVault(t *testing.T) {
 	require.NoError(t, original.Set("nested", map[string][]int{"values": {1, 2}}))
 	require.NoError(t, original.SetSecret("secrets.password", "unsaved-secret"))
 
-	cloned, err := Clone(original)
+	cloned, err := original.Clone()
 	require.NoError(t, err)
 	require.IsType(t, &config{}, cloned)
 	require.Equal(t, original.Raw(), cloned.Raw())
@@ -151,7 +148,7 @@ func TestClonePreservesConfigAndVault(t *testing.T) {
 	require.Equal(t, "new-secret", password)
 	require.Equal(t, cloned.Raw()["secrets"], loaded.Raw()["secrets"])
 
-	loadedClone, err := Clone(loaded)
+	loadedClone, err := loaded.Clone()
 	require.NoError(t, err)
 	require.NoError(t, loadedClone.SetSecret("secrets.password", "replacement"))
 	password, exists = loaded.GetString("secrets.password")
@@ -191,7 +188,7 @@ func TestCloneRejectsUnsupportedValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := CloneValue(tt.value)
 			require.Error(t, err)
-			cloned, err := Clone(NewConfig(map[string]any{"nested": []any{tt.value}}))
+			cloned, err := NewConfig(map[string]any{"nested": []any{tt.value}}).Clone()
 			require.Error(t, err)
 			require.Nil(t, cloned)
 		})
@@ -211,13 +208,20 @@ func TestCloneValueShorterSubsliceWithSameStartAddressIsNotCycle(t *testing.T) {
 	require.Empty(t, subSlice)
 }
 
-func TestCloneRejectsVaultStateLoss(t *testing.T) {
+func TestCloneEmbeddedConfigPreservesVault(t *testing.T) {
 	type rawConfig struct{ Config }
-	original := rawConfig{NewEmptyConfig()}
+	var original Config = rawConfig{NewEmptyConfig()}
 	require.NoError(t, original.SetSecret("password", "secret"))
-	cloned, err := Clone(original)
-	require.ErrorContains(t, err, "preserve vault state")
-	require.Nil(t, cloned)
+	cloned, err := original.Clone()
+	require.NoError(t, err)
+	require.Equal(t, original.Raw(), cloned.Raw())
+	password, exists := cloned.GetString("password")
+	require.True(t, exists)
+	require.Equal(t, "secret", password)
+	require.NoError(t, cloned.SetSecret("password", "changed"))
+	password, exists = original.GetString("password")
+	require.True(t, exists)
+	require.Equal(t, "secret", password)
 }
 
 func TestCloneRejectsUnsupportedVault(t *testing.T) {
@@ -225,7 +229,7 @@ func TestCloneRejectsUnsupportedVault(t *testing.T) {
 		data:  map[string]any{},
 		vault: NewConfig(map[string]any{"unsupported": make(chan int)}),
 	}
-	cloned, err := Clone(original)
+	cloned, err := original.Clone()
 	require.ErrorContains(t, err, "cloning configuration vault")
 	require.Nil(t, cloned)
 }

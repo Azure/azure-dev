@@ -25,7 +25,7 @@ func TestCloneConsentConfig(t *testing.T) {
 		}},
 	}
 	original := config.NewConfig(map[string]any{"consent": value})
-	cloned, err := config.Clone(original)
+	cloned, err := original.Clone()
 	require.NoError(t, err)
 	actual, exists := cloned.Get("consent")
 	require.True(t, exists)

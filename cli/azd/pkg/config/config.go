@@ -26,6 +26,9 @@ var vaultPattern = regexp.MustCompile(
 // Azd configuration for the current user
 // Configuration data is stored in user's home directory @ ~/.azd/config.json
 type Config interface {
+	// Clone returns a detached copy, preserving raw values and unsaved vault secrets.
+	// The caller must synchronize access unless the implementation is thread-safe.
+	Clone() (Config, error)
 	Raw() map[string]any
 	// similar to Raw() but it will resolve any vault references
 	ResolvedRaw() map[string]any

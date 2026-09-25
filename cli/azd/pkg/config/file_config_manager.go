@@ -20,6 +20,7 @@ var validVaultIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 type FileConfigManager interface {
 	// Saves the azd configuration to the specified file path
 	// Path is automatically created if it does not exist
+	// A nil configuration is saved as an empty configuration.
 	Save(config Config, filePath string) error
 
 	// Loads azd configuration from the specified file path
@@ -77,10 +78,13 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 }
 
 func (m *fileConfigManager) Save(c Config, filePath string) error {
+	if c == nil {
+		c = NewEmptyConfig()
+	}
 	if _, ok := c.(*config); !ok {
 		// Views may take an environment lock. Snapshot them before taking the
 		// file-manager lock, since environment saves acquire those locks in that order.
-		snapshot, err := Clone(c)
+		snapshot, err := c.Clone()
 		if err != nil {
 			return fmt.Errorf("snapshotting configuration: %w", err)
 		}

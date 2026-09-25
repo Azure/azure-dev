@@ -26,7 +26,7 @@ type EnvironmentState struct {
 func (e *Environment) SnapshotState() (EnvironmentState, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	cfg, err := config.Clone(e.config)
+	cfg, err := e.config.Clone()
 	if err != nil {
 		return EnvironmentState{}, fmt.Errorf("snapshotting environment config: %w", err)
 	}
@@ -37,8 +37,12 @@ func (e *Environment) SnapshotState() (EnvironmentState, error) {
 // tracking. It clones the config before acquiring mu because state.Config may be
 // this environment's synchronized view, whose Clone method takes mu.RLock. The
 // environment identity and any retained variable/config views remain intact.
+// A nil state.Config installs an empty configuration.
 func (e *Environment) ReplaceState(state EnvironmentState) error {
-	cfg, err := config.Clone(state.Config)
+	if state.Config == nil {
+		state.Config = config.NewEmptyConfig()
+	}
+	cfg, err := state.Config.Clone()
 	if err != nil {
 		return fmt.Errorf("loading environment config: %w", err)
 	}
@@ -71,7 +75,7 @@ func (e *Environment) MergeAndSave(
 	for key := range e.deletedKeys {
 		delete(merged, key)
 	}
-	cfg, err := config.Clone(e.config)
+	cfg, err := e.config.Clone()
 	if err != nil {
 		return fmt.Errorf("snapshotting environment config: %w", err)
 	}

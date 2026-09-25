@@ -99,7 +99,7 @@ func (c *environmentConfig) IsEmpty() bool {
 func (c *environmentConfig) Clone() (config.Config, error) {
 	c.env.mu.RLock()
 	defer c.env.mu.RUnlock()
-	return config.Clone(c.env.config)
+	return c.env.config.Clone()
 }
 
 func cloneConfigValue[T any](value T) T {

@@ -9,28 +9,6 @@ import (
 	"time"
 )
 
-// Clone returns a detached configuration, including any unsaved secrets in its
-// in-memory vault. A nil configuration becomes an empty configuration.
-// Config implementations wrapping another configuration can implement
-// Clone() (Config, error) to preserve state not exposed by Raw.
-// The caller must synchronize access to configurations that are not thread-safe.
-func Clone(c Config) (Config, error) {
-	if c == nil {
-		return NewEmptyConfig(), nil
-	}
-	if cloner, ok := c.(interface{ Clone() (Config, error) }); ok {
-		return cloner.Clone()
-	}
-	data, err := CloneValue(c.Raw())
-	if err != nil {
-		return nil, err
-	}
-	if _, hasVault := data[vaultKeyName]; hasVault {
-		return nil, fmt.Errorf("configuration type %T must implement Clone to preserve vault state", c)
-	}
-	return NewConfig(data), nil
-}
-
 func (c *config) Clone() (Config, error) {
 	data, err := CloneValue(c.data)
 	if err != nil {
@@ -40,8 +18,9 @@ func (c *config) Clone() (Config, error) {
 		data:    data,
 		vaultId: c.vaultId,
 	}
+
 	if c.vault != nil {
-		cloned.vault, err = Clone(c.vault)
+		cloned.vault, err = c.vault.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("cloning configuration vault: %w", err)
 		}
@@ -70,7 +49,7 @@ func CloneValue[T any](value T) (T, error) {
 type cloneVisit struct {
 	typ    reflect.Type
 	ptr    uintptr
-	length int // Shorter subslices can share a start address without forming a cycle.
+	length int // Shorter slices can share a start address without forming a cycle.
 }
 
 func cloneValue(value reflect.Value, active map[cloneVisit]bool) (reflect.Value, error) {
@@ -80,13 +59,17 @@ func cloneValue(value reflect.Value, active map[cloneVisit]bool) (reflect.Value,
 		if value.IsNil() {
 			return reflect.Zero(value.Type()), nil
 		}
+
 		visit := cloneVisit{typ: value.Type(), ptr: value.Pointer()}
+
 		if value.Kind() == reflect.Slice {
 			visit.length = value.Len()
 		}
+
 		if active[visit] {
 			return reflect.Value{}, fmt.Errorf("cannot clone cyclic configuration value of type %s", value.Type())
 		}
+
 		active[visit] = true
 		defer delete(active, visit)
 	}
@@ -178,8 +161,8 @@ func immutableType(typ reflect.Type) bool {
 		if typ == reflect.TypeFor[time.Time]() {
 			return true
 		}
-		for i := range typ.NumField() {
-			if !immutableType(typ.Field(i).Type) {
+		for field := range typ.Fields() {
+			if !immutableType(field.Type) {
 				return false
 			}
 		}

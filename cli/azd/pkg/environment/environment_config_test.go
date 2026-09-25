@@ -133,7 +133,7 @@ func TestEnvironmentConfigErrorsAndSections(t *testing.T) {
 func TestEnvironmentConfigClonePreservesSecrets(t *testing.T) {
 	view := New("test").Config()
 	require.NoError(t, view.SetSecret("password", "unsaved-secret"))
-	cloned, err := config.Clone(view)
+	cloned, err := view.Clone()
 	require.NoError(t, err)
 	require.Equal(t, view.Raw(), cloned.Raw())
 	password, exists := cloned.GetString("password")
@@ -147,16 +147,21 @@ func TestEnvironmentConfigClonePreservesSecrets(t *testing.T) {
 
 func TestEnvironmentConfigFileRoundTrip(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
-		secret bool
+		name    string
+		secret  bool
+		wrapped bool
 	}{
 		{name: "plain value"},
 		{name: "unsaved secret", secret: true},
+		{name: "wrapped unsaved secret", secret: true, wrapped: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("AZD_CONFIG_DIR", filepath.Join(dir, "user"))
 			view := New("test").Config()
+			if tt.wrapped {
+				view = struct{ config.Config }{view}
+			}
 			if tt.secret {
 				require.NoError(t, view.SetSecret("value", "original-value"))
 			} else {
@@ -201,7 +206,7 @@ func TestEnvironmentConfigReadsShareLock(t *testing.T) {
 		var section map[string]any
 		_, err := view.GetSection("nested", &section)
 		if err == nil {
-			_, err = config.Clone(view)
+			_, err = view.Clone()
 		}
 		done <- err
 	}()
@@ -241,7 +246,7 @@ func TestEnvironmentConfigConcurrentAccess(t *testing.T) {
 				_, err := view.GetSection(key, &section)
 				require.NoError(t, err)
 				require.NoError(t, view.SetSecret(key+"Secret", "value"))
-				_, err = config.Clone(view)
+				_, err = view.Clone()
 				require.NoError(t, err)
 				require.NoError(t, view.Unset(key))
 			}

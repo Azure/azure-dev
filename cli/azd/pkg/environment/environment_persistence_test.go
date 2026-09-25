@@ -55,6 +55,10 @@ func TestEnvironmentSnapshotAndReplace(t *testing.T) {
 	env.DotenvSet("NEW", "value")
 	require.Equal(t, "value", env.Getenv("NEW"))
 	require.True(t, view.IsEmpty())
+	require.NoError(t, view.Set("new", "value"))
+	value, found = env.Config().GetString("new")
+	require.True(t, found)
+	require.Equal(t, "value", value)
 }
 
 func TestReplaceStateWithEnvironmentConfigView(t *testing.T) {

@@ -37,9 +37,9 @@ the user exactly what to fix — do **not** try to work around it.
 
 ### Profiles
 
-The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_sku}`,
-`{shared_agent_name}`, and `{foundry_project_name}` placeholders, plus optional `tenant`,
-per-scenario `instance`, and Tier 1b `prerequisite_scaffold_dir` session values.
+The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_version}`,
+`{model_sku}`, `{shared_agent_name}`, and `{foundry_project_name}` placeholders, plus optional
+`tenant`, per-scenario `instance`, and Tier 1b `prerequisite_scaffold_dir` session values.
 Tenant-aware goals deliberately avoid a literal `{tenant}` placeholder so a
 missing optional value does not prevent a scenario from loading. You must:
 
@@ -79,7 +79,7 @@ missing optional value does not prevent a scenario from loading. You must:
    prerequisite; never recompute it independently. Scenarios that do not create or reuse a
    Foundry project omit this value.
 8. Give each worker a per-scenario copy of the merged map. Include `run_id`,
-   `shared_agent_name`, `fixtures_dir`, and `model_sku`, plus `instance` and
+   `shared_agent_name`, `fixtures_dir`, `model_version`, and `model_sku`, plus `instance` and
    `foundry_project_name` when applicable, and pass
    that map unchanged as `session_vars` on **every** `load_scenario`, `run_pre_hooks`,
    `start_session`, and `run_post_hooks` call. Also pass the same value as `instance_id`

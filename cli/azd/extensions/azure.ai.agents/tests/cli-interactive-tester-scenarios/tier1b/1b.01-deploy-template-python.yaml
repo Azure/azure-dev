@@ -32,37 +32,8 @@ pre:
     cwd: "~/working"
     name: "assert tier 1 scaffold is complete"
   - run: |
-      if [ -n "{model}" ] && [ -n "{model_sku}" ]; then
-        DEPLOYMENT_NAME="$(azd env get-value AZURE_AI_MODEL_DEPLOYMENT_NAME)" || {
-          echo "ERROR: Could not resolve AZURE_AI_MODEL_DEPLOYMENT_NAME."
-          exit 1
-        }
-        if [ -z "$DEPLOYMENT_NAME" ]; then
-          echo "ERROR: AZURE_AI_MODEL_DEPLOYMENT_NAME is empty."
-          exit 1
-        fi
-        azd ai project deployment add --model "{model}" --name "$DEPLOYMENT_NAME" \
-          --sku "{model_sku}" --force --no-prompt --output none || {
-          echo "ERROR: Could not replace managed model deployment $DEPLOYMENT_NAME."
-          exit 1
-        }
-        VERIFY_JSON="$(azd ai project deployment add --model "{model}" --name "$DEPLOYMENT_NAME" \
-          --sku "{model_sku}" --force --no-prompt --output json)" || {
-          echo "ERROR: Could not verify managed model deployment $DEPLOYMENT_NAME."
-          exit 1
-        }
-        python3 - "$DEPLOYMENT_NAME" "{model}" "{model_sku}" "$VERIFY_JSON" <<'PY'
-      import json
-      import sys
-
-      data = json.loads(sys.argv[4])
-      expected = (sys.argv[1], sys.argv[2], sys.argv[3], "unchanged")
-      actual = (data["deploymentName"], data["model"]["name"], data["sku"]["name"], data["mutation"])
-      if actual != expected:
-          print("ERROR: azure.yaml deployment mismatch: expected %r, got %r" % (expected, actual), file=sys.stderr)
-          sys.exit(1)
-      PY
-      fi
+      bash "{fixtures_dir}/scripts/override-model-deployment.sh" \
+        "{model}" "{model_version}" "{model_sku}"
     cwd: "{prerequisite_scaffold_dir}"
     name: "override and verify managed model deployment"
     timeout: 300

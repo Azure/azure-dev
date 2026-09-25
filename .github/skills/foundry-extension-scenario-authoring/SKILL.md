@@ -2,7 +2,7 @@
 name: foundry-extension-scenario-authoring
 license: MIT
 metadata:
-  version: "1.3"
+  version: "1.4"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or authoring rules.
   # 1.0: initial authoring + validation skill for the azure.ai.agents cli-interactive-tester
   # scenarios. Taxonomy (tiers/tags/profile/hooks/fixtures/requires) is single-sourced in the
@@ -11,6 +11,7 @@ metadata:
   # 1.2: document the run-scoped identity placeholders supplied by orchestration.
   # 1.3: shorten description to Copilot's 1,024-character limit; procedural
   # detail (INVOKES tool list) moved to the body below.
+  # 1.4: recognize shared model version/SKU and bounded Foundry project placeholders.
 description: >-
   **WORKFLOW SKILL** — Authors and validates cli-interactive-tester scenarios for the
   azure.ai.agents extension: writes a new scenario YAML (or fixes an existing one) so it
@@ -118,7 +119,7 @@ Field references (do not restate these — link to them):
 - **`produces:`** — the verified Tier 1 scaffold handed to Tier 1b:
   [README § Producer/consumer scaffold handoff](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#producerconsumer-scaffold-handoff).
 - **Profile/session placeholders** (`{prefix}`, `{subscription}`, `{region}`, `{model}`,
-  `{model_sku}`, `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{foundry_project_name}`,
+  `{model_version}`, `{model_sku}`, `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{foundry_project_name}`,
   `{fixtures_dir}`, `{instance}`):
   [README § Profile / overrides](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#profile--overrides).
 - **Pre/post hooks** — semantics (host-side, sequential, fail-fast), fields, and the reset /
@@ -214,7 +215,8 @@ Validate **statically** — never `start_session`, never drive the scenario, nev
    `fixtures/<name>/` tree exists and the hook uses `{fixtures_dir}` (not a hardcoded path).
 5. **Placeholders only reference known variables.** Every `{name}`-shaped token in `command` /
    `cwd` / hooks / goals is processed as a placeholder and must be a documented
-   profile/session placeholder (including `{model_sku}` and `{foundry_project_name}`) or, for
+   profile/session placeholder (including `{model_version}`, `{model_sku}`, and
+   `{foundry_project_name}`) or, for
    Tier 1b, `{prerequisite_scaffold_dir}`. This includes embedded shell
    syntax: format an awk action as `{ print }`, not `{print}`, so it cannot be mistaken for an
    unknown placeholder. Reject every unknown brace-delimited token during static validation.

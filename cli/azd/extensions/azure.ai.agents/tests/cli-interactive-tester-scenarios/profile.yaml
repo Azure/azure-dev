@@ -19,6 +19,11 @@ region: "East US 2"
 # gpt-5.4-mini is cheap and fast — appropriate for tests.
 model: "gpt-5.4-mini"
 
+# Optional exact model version for Tier 1b/Tier 2 deployment replacement.
+# When empty, the deployment command resolves a version if the model and SKU
+# identify a unique candidate. Change or clear this when overriding model.
+model_version: "2026-03-17"
+
 # Optional. When both model and model_sku are set, Tier 1b deploy verification
 # and Tier 2 setup replace the adopted model deployment before provisioning.
 model_sku: ""

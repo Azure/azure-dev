@@ -34,9 +34,9 @@ shared), generates one run ID with seconds plus a short random suffix, derives
 `session_vars` on every `load_scenario`, `run_pre_hooks`, `start_session`, and
 `run_post_hooks` call**. For parallel-safe scenarios that map also includes the assigned
 `instance`, matching the `instance_id` passed to hooks and sessions. The scenario YAMLs
-reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_sku}`, `{tenant}`
-(optional), `{shared_agent_name}`, `{foundry_project_name}`, and `{instance}` placeholders. The step-by-step driving
-rules those agents follow live in
+reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_version}`,
+`{model_sku}`, `{tenant}` (optional), `{shared_agent_name}`, `{foundry_project_name}`, and
+`{instance}` placeholders. The step-by-step driving rules those agents follow live in
 [`driving-mechanics.md`](./driving-mechanics.md).
 
 Most scenarios here declare **`pre:` hooks** (host-side setup such as resetting
@@ -372,8 +372,10 @@ whose scaffold it deploys. The orchestrator **must** check this: if the
 prerequisite didn't PASS in the current run, the Tier 1b scenario is SKIPPED.
 When both `{model}` and `{model_sku}` are non-empty, each verifier replaces the
 scaffold's existing/default managed deployment with that model and SKU before
-provisioning, while preserving its deployment name. The replacement is skipped
-when either value is empty.
+provisioning, while preserving its deployment name. When `{model_version}` is
+non-empty, it also selects and verifies that exact version; otherwise the command
+resolves a version when the model and SKU identify one candidate. The replacement
+is skipped when either model or SKU is empty.
 
 ### Producer/consumer scaffold handoff
 
@@ -525,7 +527,7 @@ Two files in this directory drive the values:
 
 | File | Tracked? | Contents | Notes |
 |---|---|---|---|
-| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `model_sku`, `shared_agent_suffix` |
+| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `model_version`, `model_sku`, `shared_agent_suffix` |
 | `profile.local.yaml` | ❌ gitignored | per-developer / per-CI overrides | required: `prefix`, `subscription`. optional: `tenant` (no default) |
 | `profile.local.yaml.example` | ✅ checked in | starter template | copy to `profile.local.yaml` and edit |
 
@@ -538,6 +540,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{tenant}` | `profile.local.yaml` | optional, no default | scopes `az login` when provided and supplies product tenant pickers; when unset, omit `--tenant`, but fail without answering if a picker appears |
 | `{region}` | `profile.yaml` | `East US 2` | |
 | `{model}` | `profile.yaml` | `gpt-5.4-mini` | cheap/fast for tests |
+| `{model_version}` | `profile.yaml` | `2026-03-17` | optional exact version for Tier 1b/Tier 2 deployment replacement; clear it to allow unique-candidate resolution |
 | `{model_sku}` | `profile.yaml` | empty | optional Tier 1b/Tier 2 deployment SKU override |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
 | `{run_id}` | derived by orchestrator | 10-digit month/day/hour/minute/second timestamp plus 6 lowercase hexadecimal characters | Generated once per sweep and reused for artifacts, sessions, and resource identity. |
@@ -658,6 +661,15 @@ The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
 `fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,
 native on Linux/macOS) and passes it as a `session_var` alongside the other profile
 variables.
+
+### Managed deployment override helper
+
+[`fixtures/scripts/override-model-deployment.sh`](fixtures/scripts/override-model-deployment.sh)
+provides the shared Tier 1b/Tier 2 model deployment override. It preserves the
+scaffold's deployment name, applies the configured model and SKU, conditionally
+passes the optional model version, and verifies the command's JSON result without
+performing a second mutation. It exits successfully without calling `azd` when
+either the model or SKU is empty.
 
 ### Offline dependency composition fixture
 

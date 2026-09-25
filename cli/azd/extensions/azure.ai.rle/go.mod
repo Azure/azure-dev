@@ -7,6 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/azure/azure-dev/cli/azd v1.25.0
 	github.com/fatih/color v1.18.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.10.1
 )
 

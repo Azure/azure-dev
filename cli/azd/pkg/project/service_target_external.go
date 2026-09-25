@@ -30,8 +30,16 @@ type ExternalServiceTarget struct {
 	prompters  prompt.Prompter
 	lazyEnv    *lazy.Lazy[*environment.Environment]
 
-	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+	broker  *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+	preview ExternalPreviewFunc
 }
+
+// ExternalPreviewFunc forwards a deployment preview to the extension that registered the service target.
+// It returns ErrDeployPreviewNotSupported when the extension did not opt into deployment preview.
+type ExternalPreviewFunc func(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) (*ServiceDeployPreviewResult, error)
 
 type TargetResourceResolver interface {
 	ResolveTargetResource(
@@ -51,6 +59,7 @@ func NewExternalServiceTarget(
 	console input.Console,
 	prompters prompt.Prompter,
 	lazyEnv *lazy.Lazy[*environment.Environment],
+	preview ExternalPreviewFunc,
 ) ServiceTarget {
 	target := &ExternalServiceTarget{
 		extension:  extension,
@@ -60,9 +69,27 @@ func NewExternalServiceTarget(
 		prompters:  prompters,
 		lazyEnv:    lazyEnv,
 		broker:     broker,
+		preview:    preview,
 	}
 
 	return target
+}
+
+// Preview implements ServiceTargetPreviewer.
+func (est *ExternalServiceTarget) Preview(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
+	if est.preview == nil {
+		return nil, ErrDeployPreviewNotSupported
+	}
+
+	protoConfig, err := est.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return est.preview(ctx, protoConfig)
 }
 
 // toProtoServiceConfig converts a ServiceConfig to its proto representation, expanding

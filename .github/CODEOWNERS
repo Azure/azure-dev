@@ -25,7 +25,7 @@
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @therealjohn @anchenyi @XiaofuHuang
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.projects/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
-/cli/azd/extensions/azure.ai.rle/            @JeffreyCA @ksujit @omkarm
+/cli/azd/extensions/azure.ai.rle/            @JeffreyCA @sujit-kamireddy @omkarmore83
 /cli/azd/extensions/azure.ai.routines/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.skills/        @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.toolboxes/     @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212

@@ -7,6 +7,9 @@
 # ── Default (core team) ──────────────────────────────────────────────────────
 /**                                         @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
 
+# ── CLI shared packages (AI) ─────────────────────────────────────────────────
+/cli/azd/pkg/foundry/                       @JeffreyCA @glharper @trangevi @trrwilson @therealjohn @huimiu @hund030 @m5i-work @v1212
+
 # ── CLI installer ─────────────────────────────────────────────────────────────
 /cli/installer/                             @danieljurek @vhvb1989 @tg-msft @RickWinter
 

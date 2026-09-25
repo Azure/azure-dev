@@ -1,0 +1,24 @@
+# Tier 0 (offline) — State Store command discovery and local input validation; no Azure operations.
+name: "state-stores-help-validation"
+command: "azd ai agent state-stores --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:state-stores", "cmd:help", "negative-path", "parallel-safe"]
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+
+goals:
+  - "Confirm the initial help command exits with code 0 and lists list, select, show, and items. It must not advertise store create, update, or delete commands."
+  - "Run 'azd ai agent state-stores items --help'. Confirm it exits with code 0 and lists list, show, set, and delete, but not create."
+  - "Run 'azd ai agent state-stores list --help' and 'azd ai agent state-stores items list --help'. Each must exit with code 0, advertise --after, --limit, and --order, and not advertise --before. Confirm both explain using last_id when has_more is true and include first-page and next-page examples."
+  - "Confirm both list help screens show a default page limit of 20, descending order by default, and json as the default output with table also supported."
+  - "Run 'azd ai agent state-stores items set --help'. Confirm it exits with code 0 and documents --value, --value-file, --tag, and --if-match, requires a JSON object value, and explains that omitted tags are cleared. Confirm it states a preview value limit of 1048576 bytes (1 MiB) of serialized JSON and uses the same limit for raw input including whitespace, with guidance to compact larger formatted input first."
+  - "Run 'azd ai agent state-stores list --limit 0'. Confirm it exits non-zero with '--limit must be between 1 and 100'."
+  - "Run 'azd ai agent state-stores list --agent-endpoint https://example.services.ai.azure.com/api/projects/example/agents/worker/endpoint/protocols/invocations --environment prod'. Confirm it exits non-zero with '--agent-endpoint and --environment cannot be combined' before targeting Azure."
+  - "Run 'azd ai agent state-stores list --agent-endpoint wss://example.services.ai.azure.com/api/projects/example/agents/worker/endpoint/protocols/invocations_ws'. Confirm it exits non-zero and explains that WebSocket invocation URLs cannot target State Stores; it must not silently switch to HTTPS."
+  - "Run 'azd ai agent state-stores list --before cursor' and 'azd ai agent state-stores items list --before cursor'. Each must exit non-zero and reject --before as an unknown flag."
+  - "Run 'azd ai agent state-stores items set probe --value null'. Confirm it exits non-zero with 'item value must be a JSON object'."
+  - "Run 'azd ai agent state-stores select --no-prompt'. Confirm it exits non-zero with 'provide a store name when using --no-prompt'."
+  - "Confirm no agent/store picker, login prompt, deletion confirmation, or Azure operation is started. Execute only the help and invalid-input commands above; do not substitute valid values to get past validation."
+  - "Take a screenshot of the command-group help and validation output; capture failures are observations and do not block the remaining product checks."
+  - "Report a finding if a command or documented flag is missing, --before is accepted, the required help or validation messages differ, a command has the wrong exit status, or any unexpected product prompt or Azure operation occurs."

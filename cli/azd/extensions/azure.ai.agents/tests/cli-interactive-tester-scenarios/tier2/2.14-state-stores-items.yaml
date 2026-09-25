@@ -1,0 +1,37 @@
+# Tier 2 (cloud E2E) — narrow State Store read/write lifecycle on the shared agent.
+#
+# Opt-in prerequisite: AFTER 2.00 deploys the agent, create a disposable,
+# non-user-isolated store named azd-state-stores-{run_id} for that agent using
+# the Foundry SDK or other store-creation tooling. This extension cannot create
+# stores. Do not run this scenario against application checkpoints. See README.
+# Run before 2.18-delete and clean up the store with the creation tooling.
+name: "state-stores-items"
+command: "bash"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:state-stores", "serial-only", "manual-seed"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+pre:
+  - run: "test -f azure.yaml && azd ai agent state-stores show 'azd-state-stores-{run_id}' --output json"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "require deployed agent and externally seeded store (fail if absent)"
+
+# The item key is run-unique. The post hook removes only that item, even if a
+# product assertion fails. The store itself belongs to the external seed step.
+post:
+  - run: |
+      if azd ai agent state-stores show 'azd-state-stores-{run_id}' --output json >/dev/null; then
+        azd ai agent state-stores items delete 'azd-probe-{run_id}' --store 'azd-state-stores-{run_id}' --yes
+      fi
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "remove run-owned probe item"
+
+goals:
+  - "Run 'azd ai agent state-stores list --output json'. Confirm the seeded store 'azd-state-stores-{run_id}' appears; report failure if it does not."
+  - "Run 'azd ai agent state-stores show azd-state-stores-{run_id} --output json'. Confirm the returned name matches."
+  - "Run 'azd ai agent state-stores items set azd-probe-{run_id} --store azd-state-stores-{run_id} --value '{\"step\":1}' and confirm it succeeds."
+  - "Run 'azd ai agent state-stores items show azd-probe-{run_id} --store azd-state-stores-{run_id} --output json'. Confirm value.step is 1 and note the quoted ETag."
+  - "Run 'azd ai agent state-stores items set azd-probe-{run_id} --store azd-state-stores-{run_id} --value '{\"step\":2}' --if-match <quoted-etag>' using the exact ETag from show; confirm it succeeds."
+  - "Run 'azd ai agent state-stores items show azd-probe-{run_id} --store azd-state-stores-{run_id} --output json' again. Confirm value.step is 2."
+  - "Run 'azd ai agent state-stores items delete azd-probe-{run_id} --store azd-state-stores-{run_id} --yes' and confirm it succeeds. Repeat the exact delete and confirm the documented already-absent tombstone response is successful."
+  - "Report a finding for any unexpected error, missing seeded store, incorrect value, failed conditional write, or failed repeat delete. Do not interpret a missing store as a passing skip."

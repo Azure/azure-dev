@@ -697,10 +697,14 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 	t.Parallel()
 
 	const (
-		agentKey = "agent-key"
-		otherKey = "other-agent-key"
+		selectionKey = "acct.services.ai.azure.com/api/projects/project/agents/worker"
+		agentKey     = selectionKey + "/versions/1/remote"
+		otherKey     = "acct.services.ai.azure.com/api/projects/project/agents/other/versions/1/remote"
 	)
 	server := newInvokeUserConfigServer()
+	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{
+		selectionKey: "checkpoints", "another-agent": "other-store",
+	})
 	server.setJSON(t, configPath("sessions"), map[string]string{
 		agentKey: "sess_123",
 		otherKey: "sess_other",
@@ -720,6 +724,11 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 	client := newInvokeTestAzdClient(t, server)
 
 	require.True(t, cleanupAgentStateForKey(t.Context(), client, agentKey))
+
+	var selection map[string]string
+	server.getJSON(t, configPath(stateStoreConfigField), &selection)
+	assert.NotContains(t, selection, selectionKey)
+	assert.Equal(t, "other-store", selection["another-agent"])
 
 	var sessions map[string]string
 	server.getJSON(t, configPath("sessions"), &sessions)
@@ -747,8 +756,10 @@ func TestCleanupPromptAgentStateUsesInvocationKey(t *testing.T) {
 
 	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
 	agentKey := buildAgentKey(projectEndpoint, "prompt-agent", "", false)
+	selectionKey := normalizeEndpoint(projectEndpoint) + "/agents/prompt-agent"
 	wrongKey := buildRemoteAgentKeyFromEndpoint(projectEndpoint + "/openai/v1/responses")
 	server := newInvokeUserConfigServer()
+	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{selectionKey: "checkpoints"})
 	server.setJSON(t, configPath("conversations"), map[string]string{
 		agentKey: "resp_prompt",
 		wrongKey: "resp_other",
@@ -763,4 +774,7 @@ func TestCleanupPromptAgentStateUsesInvocationKey(t *testing.T) {
 	server.getJSON(t, configPath("conversations"), &conversations)
 	assert.NotContains(t, conversations, agentKey)
 	assert.Equal(t, "resp_other", conversations[wrongKey])
+	var selection map[string]string
+	server.getJSON(t, configPath(stateStoreConfigField), &selection)
+	assert.NotContains(t, selection, selectionKey)
 }

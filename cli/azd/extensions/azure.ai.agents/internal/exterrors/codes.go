@@ -50,6 +50,12 @@ const (
 	CodeInvalidInvocationState = "invalid_invocation_state"
 )
 
+// Error codes for State Store operations and locally saved selection.
+const (
+	CodeStateStoreOperation = "state_store_operation"
+	CodeStateStoreSelection = "state_store_selection"
+)
+
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
 const CodeInvalidEnvironmentVariableName = "invalid_environment_variable_name"

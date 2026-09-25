@@ -5,9 +5,8 @@ package doctor
 
 // NewRemoteChecks returns the canonical sequence of remote (network-
 // dependent) doctor checks in execution order. The slice today
-// contains four entries — `remote.auth` (P5.1 C11),
-// `remote.foundry-endpoint` (P5.1 C12), `remote.rbac` (P5.1 C16),
-// and `remote.agent-status` (P5.1 C17) — and is wired through
+// contains authentication, endpoint, developer RBAC, agent status,
+// connection, and project storage RBAC checks. All are wired through
 // `--local-only`, the runner's `Remote: true` gating
 // (runner.go:74-82), and `report.Remote` (set when any executed
 // check is Remote) so that downstream commits can append individual
@@ -89,5 +88,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 		newCheckRBAC(deps),
 		newCheckAgentStatus(deps),
 		newCheckConnections(deps),
+		newCheckProjectStorageRBAC(deps),
 	}
 }

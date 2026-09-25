@@ -349,33 +349,63 @@ func Test_TelemetryService_RejectsPollutedMainSource(t *testing.T) {
 	require.Empty(t, usageSpansIn(command.SpanContext().TraceID()))
 }
 
-func Test_TelemetryService_AppliesSourceGateBeforeValidation(t *testing.T) {
+func Test_TelemetryService_ValidatesBeforeSourceGate(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	oversized := &azdext.ReportUsageRequest{
+		EventName: "deploy.completed",
+		Attributes: map[string]string{
+			"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
+		},
+	}
 
 	extension := testExtension()
 	extension.Source = "dev"
 	service := newTelemetryService(stubExtensionLookup{extension: extension})
 
-	resp, err := callServiceWithContext(t, service, t.Context(), extension,
-		&azdext.ReportUsageRequest{
-			EventName: "deploy.completed",
-			Attributes: map[string]string{
-				"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
-			},
-		})
-	require.NoError(t, err)
-	require.False(t, resp.Accepted)
+	_, err := callServiceWithContext(t, service, t.Context(), extension, oversized)
+	requireCode(t, err, codes.InvalidArgument)
 	require.Zero(t, service.recorded.Load())
 	requireUsageDrop(t, unattributedExtensionId,
-		[]extensionUsageDropReason{extensionUsageDropReasonSourceIneligible}, 1)
+		[]extensionUsageDropReason{extensionUsageDropReasonAttributeValueTooLong}, 1)
 
-	resp, err = callServiceWithContext(t, service, t.Context(), extension,
+	resp, err := callServiceWithContext(t, service, t.Context(), extension,
 		&azdext.ReportUsageRequest{EventName: "deploy.completed"})
 	require.NoError(t, err)
 	require.False(t, resp.Accepted)
-	requireUsageDrop(t, unattributedExtensionId,
-		[]extensionUsageDropReason{extensionUsageDropReasonSourceIneligible}, 2)
+	requireUsageDropEntries(t, []string{
+		unattributedExtensionId + "@" + string(extensionUsageDropReasonAttributeValueTooLong),
+		unattributedExtensionId + "@" + string(extensionUsageDropReasonSourceIneligible),
+	}, 2)
+}
+
+func Test_TelemetryService_UnadmittedValidationFailuresAreUnattributed(t *testing.T) {
+	tests := map[string]stubExtensionLookup{
+		"not installed": {},
+		"lookup failed": {err: errors.New("failed to read installed config")},
+		"source check failed": {
+			extension: testExtension(),
+			sourceErr: errors.New("failed to read source config"),
+		},
+	}
+
+	for name, lookup := range tests {
+		t.Run(name, func(t *testing.T) {
+			tracing.ResetUsageAttributesForTest()
+			t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+			service := newTelemetryService(lookup)
+			ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
+				RegisteredClaims: jwt.RegisteredClaims{Subject: testExtensionId},
+			})
+
+			_, err := service.ReportUsage(ctx, &azdext.ReportUsageRequest{})
+			requireCode(t, err, codes.InvalidArgument)
+			requireUsageDrop(t, unattributedExtensionId,
+				[]extensionUsageDropReason{extensionUsageDropReasonEventNameInvalid}, 1)
+		})
+	}
 }
 
 func Test_TelemetryService_CapsEventsPerInvocation(t *testing.T) {

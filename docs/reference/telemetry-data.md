@@ -537,6 +537,9 @@ Service-target values are `service_target.initialize`, `service_target.package`,
 `service_target.publish`, `service_target.deploy`, `service_target.endpoints`,
 and `service_target.get_target_resource`.
 
+The dropped-report summary fields described below are `SystemMetadata` for
+`PerformanceAndHealth`.
+
 Each concrete first-party field has its own classification, purpose, and
 endpoint declaration. The currently declared fields are bounded enums
 classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
@@ -555,7 +558,8 @@ on the command span using `extension.usage.dropped` and
 the installed record passes the official-source check; earlier failures use the
 fixed `unattributed` value. It never contains caller-supplied event or attribute
 content. These fields stay on the hosting command span and are not copied to
-the synthetic phase spans emitted by `azd up` or to VS RPC spans.
+the synthetic phase spans emitted by `azd up`, to workflow step command spans,
+or to VS RPC spans.
 
 Reviewed first-party extension usage events currently include:
 

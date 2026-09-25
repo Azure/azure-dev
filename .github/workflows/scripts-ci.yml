@@ -8,6 +8,8 @@ on:
       # The script tests assert that the ext-registry-check workflow's inline registry
       # path list matches the script's, so changes to that workflow run them too.
       - ".github/workflows/ext-registry-check.yml"
+      # These tests execute the CODEOWNERS workflow's inline validation script.
+      - ".github/workflows/codeowners-validation.yml"
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
 concurrency:

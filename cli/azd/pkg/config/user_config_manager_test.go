@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,20 +22,30 @@ type countingFileConfigManager struct {
 	FileConfigManager
 	saveCount      int
 	waitForTimeout bool
+	loadErr        error
+	saveErr        error
 }
 
 type legacyUserConfigManager struct {
 	config    Config
 	saveCount int
+	loadErr   error
+	saveErr   error
 }
 
 var _ UserConfigManager = (*legacyUserConfigManager)(nil)
 
 func (m *legacyUserConfigManager) Load() (Config, error) {
+	if m.loadErr != nil {
+		return nil, m.loadErr
+	}
 	return m.config, nil
 }
 
 func (m *legacyUserConfigManager) Save(config Config) error {
+	if m.saveErr != nil {
+		return m.saveErr
+	}
 	m.config = config
 	m.saveCount++
 	return nil
@@ -52,8 +63,18 @@ func (m *legacyFileConfigManager) Save(config Config, filePath string) error {
 	return m.FileConfigManager.Save(config, filePath)
 }
 
+func (m *countingFileConfigManager) Load(filePath string) (Config, error) {
+	if m.loadErr != nil {
+		return nil, m.loadErr
+	}
+	return m.FileConfigManager.Load(filePath)
+}
+
 func (m *countingFileConfigManager) SaveWithContext(ctx context.Context, cfg Config, filePath string) error {
 	m.saveCount++
+	if m.saveErr != nil {
+		return m.saveErr
+	}
 	if m.waitForTimeout {
 		<-ctx.Done()
 		return ctx.Err()
@@ -81,6 +102,96 @@ func Test_UserConfigCompatibilityHelpers_LegacyManager(t *testing.T) {
 	require.Same(t, replacement, manager.config)
 }
 
+func Test_UserConfigCompatibilityHelpers_LegacyManagerFailures(t *testing.T) {
+	t.Run("nil mutation", func(t *testing.T) {
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+		err := MutateUserConfig(t.Context(), manager, nil)
+		require.ErrorContains(t, err, "must not be nil")
+	})
+
+	t.Run("canceled before load", func(t *testing.T) {
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		err := MutateUserConfig(ctx, manager, func(_ context.Context, _ Config) (bool, error) {
+			return true, nil
+		})
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("load failure", func(t *testing.T) {
+		expectedErr := errors.New("load failed")
+		manager := &legacyUserConfigManager{loadErr: expectedErr}
+
+		err := MutateUserConfig(t.Context(), manager, func(_ context.Context, _ Config) (bool, error) {
+			return true, nil
+		})
+		require.ErrorIs(t, err, expectedErr)
+	})
+
+	t.Run("mutation failure", func(t *testing.T) {
+		expectedErr := errors.New("mutation failed")
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+
+		err := MutateUserConfig(t.Context(), manager, func(_ context.Context, _ Config) (bool, error) {
+			return false, expectedErr
+		})
+		require.ErrorIs(t, err, expectedErr)
+		require.Zero(t, manager.saveCount)
+	})
+
+	t.Run("unchanged", func(t *testing.T) {
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+
+		err := MutateUserConfig(t.Context(), manager, func(_ context.Context, _ Config) (bool, error) {
+			return false, nil
+		})
+		require.NoError(t, err)
+		require.Zero(t, manager.saveCount)
+	})
+
+	t.Run("canceled after mutation", func(t *testing.T) {
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+		ctx, cancel := context.WithCancel(t.Context())
+
+		err := MutateUserConfig(ctx, manager, func(_ context.Context, _ Config) (bool, error) {
+			cancel()
+			return true, nil
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		require.Zero(t, manager.saveCount)
+	})
+
+	t.Run("save failure", func(t *testing.T) {
+		expectedErr := errors.New("save failed")
+		manager := &legacyUserConfigManager{
+			config:  NewEmptyConfig(),
+			saveErr: expectedErr,
+		}
+
+		err := MutateUserConfig(t.Context(), manager, func(_ context.Context, _ Config) (bool, error) {
+			return true, nil
+		})
+		require.ErrorIs(t, err, expectedErr)
+	})
+
+	t.Run("nil replacement", func(t *testing.T) {
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+		err := ReplaceUserConfig(t.Context(), manager, nil)
+		require.ErrorContains(t, err, "must not be nil")
+	})
+
+	t.Run("canceled replacement", func(t *testing.T) {
+		manager := &legacyUserConfigManager{config: NewEmptyConfig()}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		err := ReplaceUserConfig(ctx, manager, NewEmptyConfig())
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
 func Test_UserConfigManager_LegacyFileManager(t *testing.T) {
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 	fileManager := &legacyFileConfigManager{
@@ -100,6 +211,84 @@ func Test_UserConfigManager_LegacyFileManager(t *testing.T) {
 	value, found := loaded.Get("legacy")
 	require.True(t, found)
 	require.Equal(t, true, value)
+}
+
+func Test_UserConfigManager_RejectsInvalidOperations(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := NewUserConfigManager(NewFileConfigManager(NewManager())).(*userConfigManager)
+
+	require.ErrorContains(t, manager.Mutate(t.Context(), nil), "must not be nil")
+
+	nestedCtx := context.WithValue(t.Context(), userConfigMutationContextKey{}, true)
+	err := manager.Mutate(nestedCtx, func(_ context.Context, _ Config) (bool, error) {
+		return true, nil
+	})
+	require.ErrorContains(t, err, "must not be nested")
+
+	require.ErrorContains(t, manager.Replace(t.Context(), nil), "must not be nil")
+	err = manager.Replace(t.Context(), &configWithoutRawMapEntries{Config: NewEmptyConfig()})
+	require.ErrorContains(t, err, "failed casting")
+}
+
+func Test_UserConfigManager_PropagatesFileManagerFailures(t *testing.T) {
+	expectedErr := errors.New("file manager failed")
+
+	t.Run("load", func(t *testing.T) {
+		t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+		fileManager := &countingFileConfigManager{
+			FileConfigManager: NewFileConfigManager(NewManager()),
+			loadErr:           expectedErr,
+		}
+		manager := NewUserConfigManager(fileManager)
+
+		err := MutateUserConfig(t.Context(), manager, func(_ context.Context, _ Config) (bool, error) {
+			return true, nil
+		})
+		require.ErrorIs(t, err, expectedErr)
+	})
+
+	t.Run("mutation save", func(t *testing.T) {
+		t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+		fileManager := &countingFileConfigManager{
+			FileConfigManager: NewFileConfigManager(NewManager()),
+			saveErr:           expectedErr,
+		}
+		manager := NewUserConfigManager(fileManager)
+
+		err := MutateUserConfig(t.Context(), manager, func(_ context.Context, _ Config) (bool, error) {
+			return true, nil
+		})
+		require.ErrorIs(t, err, expectedErr)
+		require.ErrorContains(t, err, "failed saving configuration")
+	})
+
+	t.Run("replacement save", func(t *testing.T) {
+		t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+		fileManager := &countingFileConfigManager{
+			FileConfigManager: NewFileConfigManager(NewManager()),
+			saveErr:           expectedErr,
+		}
+		manager := NewUserConfigManager(fileManager)
+
+		err := ReplaceUserConfig(t.Context(), manager, NewEmptyConfig())
+		require.ErrorIs(t, err, expectedErr)
+		require.ErrorContains(t, err, "failed replacing configuration")
+	})
+}
+
+func Test_UserConfigManager_SaveSupportsVaultBackedConfig(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := NewUserConfigManager(NewFileConfigManager(NewManager()))
+	cfg := NewEmptyConfig()
+	require.NoError(t, cfg.SetSecret("secret", "value"))
+
+	require.NoError(t, manager.Save(cfg))
+
+	loaded, err := manager.Load()
+	require.NoError(t, err)
+	value, found := loaded.GetString("secret")
+	require.True(t, found)
+	require.Equal(t, "value", value)
 }
 
 func Test_UserConfigManager_MutationPublication(t *testing.T) {

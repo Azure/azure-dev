@@ -4,6 +4,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,10 @@ type failingConfigSerializer struct {
 	failFor Config
 }
 
+type nonContextualFileConfigManager struct {
+	FileConfigManager
+}
+
 func (m *failingConfigSerializer) Save(cfg Config, writer io.Writer) error {
 	if cfg == m.failFor {
 		return errors.New("serialization failed")
@@ -29,6 +34,17 @@ func (m *failingConfigSerializer) Save(cfg Config, writer io.Writer) error {
 
 func (m *failingConfigSerializer) Load(reader io.Reader) (Config, error) {
 	return NewManager().Load(reader)
+}
+
+func Test_SaveFileConfig_NonContextualManagerHonorsCancellation(t *testing.T) {
+	manager := &nonContextualFileConfigManager{
+		FileConfigManager: NewFileConfigManager(NewManager()),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := saveFileConfig(ctx, manager, NewEmptyConfig(), filepath.Join(t.TempDir(), "config.json"))
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func Test_FileConfigManager_SaveAndLoadConfig(t *testing.T) {
@@ -51,6 +67,80 @@ func Test_FileConfigManager_SaveAndLoadConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, existingConfig)
 	require.Equal(t, azdConfig, existingConfig)
+}
+
+func Test_FileConfigManager_SaveFailures(t *testing.T) {
+	t.Run("config directory", func(t *testing.T) {
+		blockingFile := filepath.Join(t.TempDir(), "blocking")
+		require.NoError(t, os.WriteFile(blockingFile, []byte("file"), 0o600))
+
+		manager := NewFileConfigManager(NewManager())
+		err := manager.Save(NewEmptyConfig(), filepath.Join(blockingFile, "config.json"))
+		require.ErrorContains(t, err, "failed creating config directory")
+	})
+
+	t.Run("unsupported config implementation", func(t *testing.T) {
+		manager := NewFileConfigManager(NewManager())
+		cfg := &configWithoutRawMapEntries{Config: NewEmptyConfig()}
+
+		err := manager.Save(cfg, filepath.Join(t.TempDir(), "config.json"))
+		require.ErrorContains(t, err, "failed casting")
+	})
+
+	t.Run("missing vault config", func(t *testing.T) {
+		t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+		manager := NewFileConfigManager(NewManager())
+		cfg := &config{
+			vaultId: "vault-id",
+			data:    map[string]any{vaultKeyName: "vault-id"},
+		}
+
+		err := manager.Save(cfg, filepath.Join(t.TempDir(), "config.json"))
+		require.ErrorContains(t, err, "is not loaded")
+	})
+
+	t.Run("vault directory", func(t *testing.T) {
+		configDir := t.TempDir()
+		t.Setenv("AZD_CONFIG_DIR", configDir)
+		require.NoError(t, os.WriteFile(filepath.Join(configDir, "vaults"), []byte("file"), 0o600))
+
+		manager := NewFileConfigManager(NewManager())
+		cfg := &config{
+			vaultId: "vault-id",
+			vault:   NewEmptyConfig(),
+			data:    map[string]any{vaultKeyName: "vault-id"},
+		}
+
+		err := manager.Save(cfg, filepath.Join(configDir, "config.json"))
+		require.ErrorContains(t, err, "failed creating vaults directory")
+	})
+
+	t.Run("canceled vault publication", func(t *testing.T) {
+		configDir := t.TempDir()
+		t.Setenv("AZD_CONFIG_DIR", configDir)
+		manager := NewFileConfigManager(NewManager()).(ContextualFileConfigManager)
+		cfg := &config{
+			vaultId: "vault-id",
+			vault:   NewEmptyConfig(),
+			data:    map[string]any{vaultKeyName: "vault-id"},
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		err := manager.SaveWithContext(ctx, cfg, filepath.Join(configDir, "config.json"))
+		require.ErrorIs(t, err, context.Canceled)
+		require.ErrorContains(t, err, "saving vault configuration")
+	})
+
+	t.Run("canceled root publication", func(t *testing.T) {
+		manager := NewFileConfigManager(NewManager()).(ContextualFileConfigManager)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		err := manager.SaveWithContext(ctx, NewEmptyConfig(), filepath.Join(t.TempDir(), "config.json"))
+		require.ErrorIs(t, err, context.Canceled)
+		require.ErrorContains(t, err, "saving file config")
+	})
 }
 
 func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {

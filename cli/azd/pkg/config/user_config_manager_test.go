@@ -319,6 +319,24 @@ func Test_UserConfigManager_LockWaitHonorsCancellation(t *testing.T) {
 	require.NoError(t, <-firstDone)
 }
 
+func Test_UserConfigManager_AlreadyCanceledContextDoesNotEnterMutation(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := NewUserConfigManager(NewFileConfigManager(NewManager()))
+
+	mutationCalls := 0
+	for range 100 {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		err := MutateUserConfig(ctx, manager, func(_ context.Context, _ Config) (bool, error) {
+			mutationCalls++
+			return true, nil
+		})
+		require.ErrorIs(t, err, context.Canceled)
+	}
+	require.Zero(t, mutationCalls)
+}
+
 func Test_UserConfigManager_FileLockWaitHonorsCancellation(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)

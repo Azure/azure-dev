@@ -253,6 +253,9 @@ func (m *userConfigManager) withLock(
 		return fmt.Errorf("waiting for local user config lock: %w", err)
 	}
 	defer gate.release()
+	if err := lockCtx.Err(); err != nil {
+		return fmt.Errorf("waiting for local user config lock: %w", err)
+	}
 
 	fileLock := flock.New(filepath.Join(filepath.Dir(userConfigFilePath), userConfigLockFileName))
 	locked, err := fileLock.TryLockContext(lockCtx, userConfigLockRetry)

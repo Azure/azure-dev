@@ -143,14 +143,17 @@ describe('CODEOWNERS validation workflow', () => {
     await run();
 
     expect(core.error).toHaveBeenCalledTimes(2);
-    for (const error of errors) {
-      expect(core.error).toHaveBeenCalledWith(error.message, {
-        file: error.path, startLine: error.line, startColumn: error.column, title: error.kind,
-      });
-    }
-    expect(core.setFailed).toHaveBeenCalledWith(
-      'GitHub reported 2 CODEOWNERS error(s). Fix the annotated entries. ' +
+    expect(core.error).toHaveBeenNthCalledWith(1, 'Invalid pattern on line 2.', {
+      file: '.github/CODEOWNERS', startLine: 2, startColumn: 1, title: 'Invalid pattern',
+    });
+    expect(core.error).toHaveBeenNthCalledWith(
+      2,
+      'Confirm the owner has write access.\n\n' +
       'Owners who need write access should request membership in @Azure/azure-dev-write.',
+      { file: '.github/CODEOWNERS', startLine: 7, startColumn: 12, title: 'Unknown owner' },
+    );
+    expect(core.setFailed).toHaveBeenCalledWith(
+      'GitHub reported 2 CODEOWNERS error(s). Fix the annotated entries.',
     );
     expect(github.rest.repos.getContent).not.toHaveBeenCalled();
     expect(core.info).not.toHaveBeenCalled();

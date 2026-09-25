@@ -50,7 +50,10 @@ jobs:
               throw new Error('GitHub returned an invalid CODEOWNERS validation response.');
             }
             for (const error of data.errors) {
-              core.error(error.message, {
+              const message = error.kind === 'Unknown owner'
+                ? `${error.message}\n\nOwners who need write access should request membership in @Azure/azure-dev-write.`
+                : error.message;
+              core.error(message, {
                 file: error.path,
                 startLine: error.line,
                 startColumn: error.column,
@@ -58,10 +61,7 @@ jobs:
               });
             }
             if (data.errors.length > 0) {
-              core.setFailed(
-                `GitHub reported ${data.errors.length} CODEOWNERS error(s). Fix the annotated entries. ` +
-                'Owners who need write access should request membership in @Azure/azure-dev-write.',
-              );
+              core.setFailed(`GitHub reported ${data.errors.length} CODEOWNERS error(s). Fix the annotated entries.`);
               return;
             }
 

@@ -163,6 +163,8 @@ type CatalogField struct {
 	Key   string
 	Value string
 	List  []string
+	// OnlyIfMissing preserves authored values, including explicit empty values.
+	OnlyIfMissing bool
 }
 
 // empty reports a field with nothing to write.
@@ -175,7 +177,7 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 	return UpsertCatalogFields(evalDir, kind, name, []CatalogField{{Key: field, Value: value}})
 }
 
-// UpsertCatalogFields adds or updates a catalog entry, setting every field.
+// UpsertCatalogFields adds or updates a catalog entry using each field's replacement policy.
 //
 // kind is the top-level sequence (`datasets` or `evaluators`). Reports whether
 // anything changed, and whether the file had to be created.
@@ -358,6 +360,9 @@ func setCatalogField(entry *yaml.Node, f CatalogField) (bool, error) {
 			return false, err
 		}
 		key = leaf
+	}
+	if f.OnlyIfMissing && nodeUnder(mapping, key) != nil {
+		return false, nil
 	}
 	if len(f.List) > 0 {
 		return setMappingSequence(mapping, key, f.List)

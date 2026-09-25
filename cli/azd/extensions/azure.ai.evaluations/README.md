@@ -176,7 +176,7 @@ to have:
 ```
 
 Only `test_case_description` is required; it is the scenario the simulator opens
-with and must contain 1 to 2,500 Unicode characters. Per-row turn settings belong
+with and must contain non-whitespace text of 1 to 2,500 Unicode characters. Per-row turn settings belong
 inside `simulation_configuration`, matching
 the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
 The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
@@ -204,6 +204,12 @@ The simulated eval's graded `messages` column is a required array of message
 objects, not a string. Ordinary static dataset schemas keep their existing
 optional-column behavior.
 
+Local seed files are checked row by row before `create` or `azd up` publishes
+dependencies; the run checks registered seed rows as well. Completed `messages`
+and turn-level `query`/`response` fields cannot be mixed with simulation seeds,
+even when those fields are empty or null. Keep these dataset modes in separate
+evaluations.
+
 Seed rows carry no `query` or `response`, because nobody has asked anything yet.
 That is why the evaluators bind `messages` — the transcript the run produces —
 and why a run over seed rows whose target reads a column the seeds do not have
@@ -214,17 +220,101 @@ shape and tags the registered dataset so a later run knows what it holds.
 
 ### Repeated deploys do not create redundant versions
 
+Before publishing dependencies, `azd ai eval create <name>` validates the selected
+eval, its local JSONL/rubric files, and its registered dataset/evaluator references,
+including version pins. An unavailable reference lookup is an error, not a reason
+to publish optimistically. A valid, complete empty evaluator-version listing
+allows the first publication of a local rubric; it does not create an evaluator
+for an existing-only reference. Missing or malformed list data and failed
+continuation pages remain errors. Unrelated invalid evals do not block this targeted
+command; `azd up` validates the entire evaluation service before publishing any
+of its dependencies. Validation does not write private reconciliation state.
+Local rows used to invoke an agent or model must carry the `query` field the
+target reads. Static dataset-only evaluations do not impose this target
+requirement. Rubric dimension weights, when supplied, must be whole numbers
+from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
+These authored parameters are validated before any dependency is published.
+
+This is not a transaction across Foundry resources. If a later service operation
+fails, successfully published shared versions are retained, not deleted. Fix the
+reported error and repeat the same command to reuse unchanged artifacts.
+For a partial `create -o json` failure, the single output document includes
+`status: "failed"`, the resolved `artifacts` with their versions and `published`
+flags, the error, and a `recovery_command`. The command still exits nonzero.
+
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
 deploy. Evaluator definitions are compared against the service, but only on the
 keys you authored — the service adds `data_schema`, `init_parameters` and
 `metrics` of its own.
 
+An evaluator reference inherits an explicit `version` from its catalog entry
+unless the reference sets its own version. Changing or removing that inherited
+pin changes the immutable eval criteria and creates a new eval. An unchanged
+effective pin keeps the same eval, including when the pin moves between the
+catalog and reference. With neither pin set, the evaluator continues tracking
+the service's latest version without recreating the eval on each new version.
+Whole-service deployment rejects identical effective eval definitions, including
+when equivalent pins are spelled in different places. Targeted create still
+validates only its selected declaration and reserves the other evals' IDs.
+Renaming before older pin fingerprints have been migrated can reuse the prior
+eval only when its stored criteria confirm the same effective pins and no other
+declared eval owns it.
+
+After a local rubric is reconciled, its evaluator contract is read from that
+exact service version rather than a potentially stale discovery listing.
+This contract read does not add an authored version pin. An unavailable or
+malformed contract is an error, not permission to reuse an older schema.
+Preflight uses the same digest-aware reuse decision: when the rubric will not
+be republished, its existing service contract wins over authored metadata
+overrides. A genuine edit that will publish a new version keeps authored
+metadata precedence.
+
+Registered dataset references are checked against the JSONL rows of the settled
+version before publication. This uses the existing read-credential/content
+path and requires permission to read those rows; unavailable or malformed
+content is not treated as an unknown schema that accepts every binding.
+Required evaluator columns must be present in every row. Reconciliation keeps
+the inspected version even if a newer version appears during the command.
+
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's
   own private state (`eval.state`) so repeat runs stay comparable. That is not
   an azd environment value: it does not appear in `azd env get-values`, which
   shows only what you put there.
+
+### Recovering partial generation
+
+Dataset and evaluator generation are independent. If one fails, a successful
+artifact remains registered, downloaded, and declared in the catalog. A failed
+catalog update is reported separately from a failed generation or download;
+it does not discard the downloaded artifact.
+Recollecting an existing evaluator artifact without `--force` preserves its
+authored catalog metadata, including explicit empty values, while filling
+missing metadata from the job. `--force` replaces the artifact and refreshes
+those catalog fields.
+
+Use the printed `azd ai eval job show <job-id> --dataset` or `--evaluator`
+command to inspect or collect the existing job without starting another one.
+The recovery command preserves the configuration path, output directory,
+project endpoint, and environment. If submission returned no job ID, inspect
+the printed `job list` command first: a lost response does not prove that the
+service never accepted the job. If a new generation is needed, repeat the
+original command with **only the failed artifact selector**, keeping that
+artifact's original input flags. Do not regenerate the successful artifact.
+
+With `-o json`, generation emits one document keyed by `dataset` and `evaluator`,
+including each outcome's `status`, `job_id`, and, on failure, `error`,
+`recovery_command`, and `retry_guidance`. Status is `submitted`, `succeeded`,
+`failed`, or `catalog_failed`. Any failed outcome makes the command exit nonzero.
+
+Generation changes catalog declarations, not an existing eval's references.
+When an existing eval does not reference a generated artifact, the command
+explains that it remains declaration-only. Use `init` to create a new eval or
+deliberately edit a compatible eval's references. A trace-backed eval cannot
+also consume a dataset; keep it unchanged and create a separate dataset-backed
+eval instead.
+
 ## Commands
 
 | Group | Commands |
@@ -241,6 +331,12 @@ auto-increments and nothing mutates in place.
 `delete` asks before removing anything and takes `--force` to skip the
 question, which is what a pipeline passes. `job delete` is the exception: it
 discards a record of finished work, not the artifact the job produced.
+
+After a successful eval deletion, the command removes its local named aliases,
+fingerprints, and scoped identity references, including when given a service ID.
+Unrelated eval scopes and shared dataset/evaluator versions are preserved.
+Failed or ambiguous deletes do not clear state. If local cleanup fails after
+the service has deleted the eval, a warning reports that failure separately.
 
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
@@ -288,6 +384,33 @@ A custom rubric is a JSON list of weighted dimensions:
 
 `weight` is an **integer from 1 to 10**. Weights do not need to sum to
 anything.
+
+### Editing a registered rubric
+
+Download a version, edit its dimensions or pass threshold, then publish the edit:
+
+```bash
+azd ai eval evaluator download support-quality --version 3 --output-file ./support-quality.json
+azd ai eval evaluator update support-quality --from-file ./support-quality.json
+```
+
+A rubric download uses the same editable JSON shape as generation: `type`,
+`dimensions`, and `pass_threshold`, plus any additional editable definition
+fields. It omits the service envelope and generated wiring such as
+`data_schema`, `init_parameters`, `metrics`, and `prompt_text`. Other evaluator
+kinds retain their full document. To inspect or export the full service response,
+use `azd ai eval evaluator show support-quality --version 3 -o json`.
+
+Standalone `evaluator update` preserves the existing display name, description,
+categories, and supported evaluation levels. A full input document can explicitly
+replace those fields. The download does not modify configuration or attach the
+evaluator to an eval. When using the downloaded rubric as a declaration's
+`source`, keep `display_name`, `categories`, and `supported_evaluation_levels`
+on that declaration: `azd up` carries them into later versions and leaves an
+unchanged rubric unpublished.
+
+Omitting `--version` downloads the latest version and reports which one was used.
+Existing files are not replaced unless `--force` is supplied.
 
 ## Choosing a project
 

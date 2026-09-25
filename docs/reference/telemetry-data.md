@@ -524,8 +524,10 @@ extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
 the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
 hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
-enclosing `cmd.*` span. The whole class is classified as `SystemMetadata` for
-`FeatureInsight`. Extension authors are responsible
+enclosing `cmd.*` span. These accepted-usage and lifecycle fields are
+classified as `SystemMetadata` for `FeatureInsight`. The dropped-report
+summary fields described below are `SystemMetadata` for
+`PerformanceAndHealth`. Extension authors are responsible
 for keeping usage values low cardinality and free of customer content, and for
 having them privacy reviewed with their extension.
 
@@ -540,7 +542,8 @@ calls are summarized on the command span using `extension.usage.dropped` and
 the installed record passes the official-source check; earlier failures use the
 fixed `unattributed` value. It never contains caller-supplied event or attribute
 content. These fields stay on the hosting command span and are not copied to
-the synthetic phase spans emitted by `azd up` or to VS RPC spans.
+the synthetic phase spans emitted by `azd up`, to workflow step command spans,
+or to VS RPC spans.
 
 Reviewed first-party extension usage events currently include:
 

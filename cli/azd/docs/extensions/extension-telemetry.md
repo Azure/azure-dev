@@ -129,8 +129,13 @@ runnable with `azd demo telemetry`.
 | Recorded events per `azd` invocation | 100 |
 
 There are no charset rules. Exceeding a per-event bound rejects the whole call
-and records nothing, so a partially-valid event never lands as a
-complete-looking one. The per-invocation budget behaves differently: see
+with `InvalidArgument`, for every install source, and records no `ext.usage`
+span, so a partially-valid event never lands as a complete-looking one. Only
+the bounded summary described in
+[Diagnosing dropped reports](#diagnosing-dropped-reports) is recorded. Bounds
+are checked before the source gate, so extensions installed with `--source dev`
+or from a file path still get validation errors during local development. The
+per-invocation budget behaves differently: see
 [When your event is not recorded](#when-your-event-is-not-recorded).
 
 ## Your responsibility for content
@@ -155,8 +160,8 @@ extension author:
 | Status | Cause |
 |---|---|
 | `Unauthenticated` | The request did not carry the host-issued extension token |
+| `InvalidArgument` | The event name is missing, or a per-event bound was exceeded. Checked before installation and source eligibility |
 | `PermissionDenied` | The calling extension is not installed |
-| `InvalidArgument` | The event name is missing, or a per-event bound was exceeded |
 | `Unimplemented` | The `azd` host predates this service |
 
 Error messages do not echo attribute values. When a valid key has an oversized
@@ -233,7 +238,7 @@ requests
 To inspect total volume separately, sum
 `customMeasurements["extension.usage.dropped.count"]`. The fields appear only
 on the command span that hosted the extension; synthetic phase spans created by
-`azd up` and VS RPC spans do not copy them. The count covers all reasons in an invocation, so do
+`azd up`, workflow step command spans, and VS RPC spans do not copy them. The count covers all reasons in an invocation, so do
 not assign it to one reason when the list contains several values.
 
 Accepted `ext.usage` spans and the command span share `operation_Id`. Use that

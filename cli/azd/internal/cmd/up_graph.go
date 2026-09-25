@@ -187,49 +187,8 @@ func (u *UpGraphAction) Run(
 	// span even though graphResult is nil on those early-return paths (#9054).
 	var provisionSetupErr error
 	defer func() {
-		// Apply usage attributes (e.g. EnvNameKey) at end so they include
-		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
-		// applied automatically by wrapperSpan.End().
-		usageAttrs := tracing.GetSecondaryUsageAttributes()
-
-		// Reflect the real package-phase outcome. Before this, the synthetic
-		// span always closed with an Unset status (=> Success in the AppInsights
-		// exporter), masking package failures under `azd up` (issue #9054).
-		// phaseOutcomeError surfaces a genuine package failure, or a user
-		// cancellation when the whole run was aborted while packaging; MapError
-		// stamps the same status + ResultCode a stand-alone `azd package` would.
-		packageSpan.SetAttributes(usageAttrs...)
-		if err := phaseOutcomeError(graphResult, "package"); err != nil {
-			MapError(err, packageSpan)
-		}
-		packageSpan.End()
-
-		// Reflect the real provision-phase outcome (same rationale as package).
-		// The raw provision-step error is used directly — not the wrapped error
-		// returned by wrapProvisionError — so the ARM/Bicep ResultCodes
-		// (service.arm.deployment.failed, tool.bicep.failed, …) land on the
-		// span, and so wrapProvisionError's side effects (JSON state dump,
-		// console messages) are not re-triggered here.
-		provisionSpan.SetAttributes(usageAttrs...)
-		// Prefer a pre-graph provision failure (layer analysis / validation),
-		// which runs before graphResult is populated; otherwise fall back to the
-		// executed provision steps (genuine failure or user cancellation).
-		provisionErr := provisionSetupErr
-		if provisionErr == nil {
-			provisionErr = phaseOutcomeError(graphResult, "provision")
-		}
-		if provisionErr != nil {
-			MapError(provisionErr, provisionSpan)
-		}
-		provisionSpan.End()
-
-		// Emit a synthetic cmd.deploy span carrying the deploy/publish outcome,
-		// but only when the deploy phase meaningfully ran. Under FailFast a
-		// provision/package failure tears down the deploy phase, and legacy
-		// `azd up` likewise never launched the deploy sub-command in that case —
-		// so emitting nothing keeps the cmd.deploy population (and its success
-		// rate) faithful rather than inflating it with a no-op Success span.
-		emitDeploySpan(ctx, graphResult, parentChangedFlags, usageAttrs)
+		finishUpPhaseSpans(
+			ctx, packageSpan, provisionSpan, graphResult, provisionSetupErr, parentChangedFlags)
 	}()
 
 	// 1. Analyze provision layer dependencies. Empty layers → empty graph.
@@ -1246,6 +1205,61 @@ func deployPhaseSpanTiming(
 // earlier provision/package failure contributes no cmd.deploy row. The span is
 // time-boxed to the real deploy phase and, on failure or cancellation, carries
 // the same status + ResultCode a stand-alone `azd deploy` would via MapError.
+// finishUpPhaseSpans stamps usage attributes and real outcomes onto the
+// synthetic cmd.package and cmd.provision spans, ends them, and emits cmd.deploy
+// when the deploy phase ran. Usage attributes are read here, at the end of Run,
+// so they include values set during the graph. Invocation-wide drop aggregates
+// are excluded because the hosting cmd.up span already carries them.
+func finishUpPhaseSpans(
+	ctx context.Context,
+	packageSpan tracing.Span,
+	provisionSpan tracing.Span,
+	graphResult *exegraph.RunResult,
+	provisionSetupErr error,
+	parentChangedFlags []string,
+) {
+	usageAttrs := tracing.GetSecondaryUsageAttributes()
+
+	// Reflect the real package-phase outcome. Before this, the synthetic
+	// span always closed with an Unset status (=> Success in the AppInsights
+	// exporter), masking package failures under `azd up` (issue #9054).
+	// phaseOutcomeError surfaces a genuine package failure, or a user
+	// cancellation when the whole run was aborted while packaging; MapError
+	// stamps the same status + ResultCode a stand-alone `azd package` would.
+	packageSpan.SetAttributes(usageAttrs...)
+	if err := phaseOutcomeError(graphResult, "package"); err != nil {
+		MapError(err, packageSpan)
+	}
+	packageSpan.End()
+
+	// Reflect the real provision-phase outcome (same rationale as package).
+	// The raw provision-step error is used directly — not the wrapped error
+	// returned by wrapProvisionError — so the ARM/Bicep ResultCodes
+	// (service.arm.deployment.failed, tool.bicep.failed, …) land on the
+	// span, and so wrapProvisionError's side effects (JSON state dump,
+	// console messages) are not re-triggered here.
+	provisionSpan.SetAttributes(usageAttrs...)
+	// Prefer a pre-graph provision failure (layer analysis / validation),
+	// which runs before graphResult is populated; otherwise fall back to the
+	// executed provision steps (genuine failure or user cancellation).
+	provisionErr := provisionSetupErr
+	if provisionErr == nil {
+		provisionErr = phaseOutcomeError(graphResult, "provision")
+	}
+	if provisionErr != nil {
+		MapError(provisionErr, provisionSpan)
+	}
+	provisionSpan.End()
+
+	// Emit a synthetic cmd.deploy span carrying the deploy/publish outcome,
+	// but only when the deploy phase meaningfully ran. Under FailFast a
+	// provision/package failure tears down the deploy phase, and legacy
+	// `azd up` likewise never launched the deploy sub-command in that case —
+	// so emitting nothing keeps the cmd.deploy population (and its success
+	// rate) faithful rather than inflating it with a no-op Success span.
+	emitDeploySpan(ctx, graphResult, parentChangedFlags, usageAttrs)
+}
+
 func emitDeploySpan(
 	ctx context.Context,
 	result *exegraph.RunResult,

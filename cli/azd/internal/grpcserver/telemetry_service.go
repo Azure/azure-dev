@@ -99,10 +99,12 @@ func newTelemetryService(lookup installedExtensionLookup) *telemetryService {
 // Accepted: false and no span. Reporting is best effort, so an author
 // runs the same code path whether or not the event was kept.
 //
-// A malformed request is an error, and fails closed on the whole
-// request: exceeding any bound records nothing, because dropping the
-// offending attribute alone would ship data that looks complete but is
-// not. Rejected caller text is never echoed back.
+// A malformed request is an error for every install source, and fails
+// closed on the whole request: exceeding any bound suppresses the ext.usage
+// span and caller payload, because dropping the offending attribute alone
+// would ship data that looks complete but is not. Only the bounded drop
+// summary is recorded on the command span. Rejected caller text is never
+// echoed back.
 func (s *telemetryService) ReportUsage(
 	ctx context.Context,
 	req *v1beta.ReportUsageRequest,
@@ -111,6 +113,11 @@ func (s *telemetryService) ReportUsage(
 	if err != nil {
 		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonUnauthenticated)
 		return nil, status.Error(codes.Unauthenticated, "validated extension claims are required")
+	}
+
+	if reason, err := validateUsageRequest(req); err != nil {
+		recordExtensionUsageDrop(s.admittedExtensionId(ctx, claims.Subject), reason)
+		return nil, err
 	}
 
 	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: claims.Subject})
@@ -140,11 +147,6 @@ func (s *telemetryService) ReportUsage(
 			extension.Id, extension.Source)
 
 		return &v1beta.ReportUsageResponse{Accepted: false}, nil
-	}
-
-	if reason, err := validateUsageRequest(req); err != nil {
-		recordExtensionUsageDrop(extension.Id, reason)
-		return nil, err
 	}
 
 	attributes := []attribute.KeyValue{
@@ -180,6 +182,23 @@ func (s *telemetryService) ReportUsage(
 	span.End()
 
 	return &v1beta.ReportUsageResponse{Accepted: true}, nil
+}
+
+// admittedExtensionId returns the installed extension ID only when its source
+// passes the official registry gate. Any other outcome is unattributed so an
+// unverified identity never enters the drop signal.
+func (s *telemetryService) admittedExtensionId(ctx context.Context, subject string) string {
+	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: subject})
+	if err != nil {
+		return unattributedExtensionId
+	}
+
+	official, err := s.extensions.IsOfficialRegistrySource(ctx, extension.Source)
+	if err != nil || !official {
+		return unattributedExtensionId
+	}
+
+	return extension.Id
 }
 
 func recordExtensionUsageDrop(extensionId string, reason extensionUsageDropReason) {

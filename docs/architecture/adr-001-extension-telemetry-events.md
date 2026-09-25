@@ -73,9 +73,11 @@ records events from extensions admitted to the official registry.**
   in production instead of having to swallow an error that only appears in one
   of them. The reason is written to the `azd` log, visible with `--debug`.
 - Rejected and dropped calls are summarized on the command span as a unique,
-  bounded set of `<extension-id>@<reason>` values plus a total count. The host
-  chooses the reason from a fixed enum and never copies caller-controlled event
-  or attribute content into the signal.
+  bounded set of `<extension-id-or-unattributed>@<reason>` values plus a total
+  count. The extension ID appears only after the installed record passes the
+  official-source check; earlier failures use the fixed `unattributed` value.
+  The host chooses the reason from a fixed enum and never copies
+  caller-controlled event or attribute content into the signal.
 - `extension.source` is still recorded on the span. Once the verified source
   gate has passed it is a useful dimension rather than a filter.
 - Accepted events are recorded on an `ext.usage` span rather than being appended
@@ -175,7 +177,7 @@ affected users while a separate bounded measurement preserves total volume.
 The extension ID is included only after the installed record passes the
 official-source gate; failures before admission use a fixed `unattributed`
 identity. The aggregate remains on the hosting command span rather than being
-copied to synthetic `azd up` phase spans or VS RPC spans, which prevents one invocation from
+copied to synthetic `azd up` phase spans, workflow step command spans, or VS RPC spans, which prevents one invocation from
 multiplying its count downstream.
 
 **Make telemetry a capability.** Rejected per review feedback: capabilities

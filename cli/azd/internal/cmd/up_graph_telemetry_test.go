@@ -641,7 +641,9 @@ func TestEmitDeploySpan_ErrorPath(t *testing.T) {
 	assert.True(t, end.Equal(span.EndTime()), "end = %s, want %s", span.EndTime(), end)
 }
 
-func TestSyntheticUpUsageAttributesExcludeExtensionDrops(t *testing.T) {
+func TestUpPhaseSpansExcludeExtensionDrops(t *testing.T) {
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
 	tracing.ResetUsageAttributesForTest()
 	t.Cleanup(tracing.ResetUsageAttributesForTest)
 
@@ -652,15 +654,31 @@ func TestSyntheticUpUsageAttributesExcludeExtensionDrops(t *testing.T) {
 		fields.ExtensionUsageDroppedCount.Int64(1),
 	)
 
-	attrs := tracing.GetSecondaryUsageAttributes()
-	indexed := map[attribute.Key]attribute.Value{}
-	for _, attr := range attrs {
-		indexed[attr.Key] = attr.Value
-	}
+	now := time.Now()
+	result := &exegraph.RunResult{Steps: []exegraph.StepTiming{
+		{
+			Name: "deploy-web", Status: exegraph.StepDone, Tags: []string{"deploy"},
+			Start: now, End: now.Add(time.Second),
+		},
+	}}
 
-	require.Contains(t, indexed, retainedKey)
-	assert.NotContains(t, indexed, fields.ExtensionUsageDropped.Key)
-	assert.NotContains(t, indexed, fields.ExtensionUsageDroppedCount.Key)
+	_, packageSpan := tracing.Start(t.Context(), "cmd.package")
+	_, provisionSpan := tracing.Start(t.Context(), "cmd.provision")
+	finishUpPhaseSpans(t.Context(), packageSpan, provisionSpan, result, nil, nil)
+
+	spans := newSpans()
+	for _, name := range []string{"cmd.package", "cmd.provision", "cmd.deploy"} {
+		span := findSpan(spans, name)
+		require.NotNil(t, span, "%s span must be emitted", name)
+
+		indexed := map[attribute.Key]attribute.Value{}
+		for _, attr := range span.Attributes() {
+			indexed[attr.Key] = attr.Value
+		}
+		require.Contains(t, indexed, retainedKey, name)
+		assert.NotContains(t, indexed, fields.ExtensionUsageDropped.Key, name)
+		assert.NotContains(t, indexed, fields.ExtensionUsageDroppedCount.Key, name)
+	}
 }
 
 // TestEmitDeploySpan_OmittedWhenDeployDidNotRun verifies the other half of the

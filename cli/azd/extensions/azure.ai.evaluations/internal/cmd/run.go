@@ -134,7 +134,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 			"Must satisfy the eval's column schema.")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
-		"Cap local, unregistered dataset rows. Registered dataset versions cannot be capped.")
+		"Cap local, unregistered dataset rows. On ordinary dataset evals, 0 disables a configured cap; "+
+			"positive caps are rejected for registered datasets. Any explicit value is rejected for source-backed runs "+
+			"and reruns by eval ID.")
 	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
 	addFailOnFlag(cmd, &flags.failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
@@ -153,7 +155,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 func (a *runStartAction) Run() error {
 	ctx := a.cmd.Context()
-	out := a.cmd.OutOrStdout()
 
 	// Parsed before any network work, so a malformed threshold costs
 	// nothing to find out about.
@@ -180,6 +181,11 @@ func (a *runStartAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.start(ctx, ec, threshold)
+}
+
+func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold gate) error {
+	out := a.cmd.OutOrStdout()
 	// One flag takes a name or an id. A declared name also brings the
 	// declaration, which is what says where rows come from; a bare id
 	// has none, so the pairing comes from the eval's previous run.
@@ -201,41 +207,32 @@ func (a *runStartAction) Run() error {
 		return err
 	}
 	evalID := ref.ID
-	group := ref.Eval
 	configPath := ref.ConfigPath
 
-	if a.flags.datasetName != "" {
-		if !ref.Declared() {
-			return messages.DatasetOverrideNeedsDeclaredEval()
-		}
-		if _, ok := ref.Config.DatasetDeclaration(a.flags.datasetName); !ok {
-			return messages.DatasetNotInCatalog(
-				a.flags.datasetName, filepath.ToSlash(configPath))
-		}
-		// The eval keeps its own declaration; only this run reads elsewhere.
-		overridden := *group
-		overridden.Dataset = a.flags.datasetName
-		overridden.Source = nil
-		group = &overridden
+	group, err := withRunDatasetOverride(ref, a.flags.datasetName)
+	if err != nil {
+		return err
 	}
 
+	maxSamples, err := runMaxSamples(a.cmd, a.flags.maxSamples, group)
+	if err != nil {
+		return err
+	}
 	if ref.Declared() {
 		if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
 			return err
 		}
 	}
-
 	var dataSource *eval_api.EvalRunDataSource
 	var datasetVersion string
-	// The level a bare id runs at comes from its previous run, for the same
-	// reason the data source does: there is no declaration to read it from.
-	var reusedLevel string
+	// A bare-ID rerun repeats both the source and the attribution needed to
+	// validate it on subsequent reruns.
+	metadata := map[string]string{}
 	switch {
 	case group == nil:
-		dataSource, reusedLevel, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+		dataSource, metadata, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 	default:
-		dataSource, datasetVersion, err = ec.buildRunDataSource(
-			ctx, group, configPath, resolveMaxSamples(a.flags.maxSamples, group))
+		dataSource, datasetVersion, err = ec.buildRunDataSource(ctx, group, configPath, maxSamples)
 	}
 	if err != nil {
 		return err
@@ -252,12 +249,11 @@ func (a *runStartAction) Run() error {
 		runName = fmt.Sprintf("%s-%s", base, time.Now().UTC().Format("20060102-150405"))
 	}
 
-	metadata := map[string]string{}
 	// The declaration says it when there is one; a bare id repeats what its
 	// previous run recorded.
 	level := resolveLevel(group)
 	if level == "" {
-		level = reusedLevel
+		level = metadata[metaEvaluationLevel]
 	}
 	if level != "" {
 		metadata[metaEvaluationLevel] = level
@@ -347,6 +343,23 @@ func (a *runStartAction) Run() error {
 	return nil
 }
 
+func withRunDatasetOverride(ref evalRef, override string) (*project.Eval, error) {
+	if override == "" {
+		return ref.Eval, nil
+	}
+	if !ref.Declared() {
+		return nil, messages.DatasetOverrideNeedsDeclaredEval()
+	}
+	if _, ok := ref.Config.DatasetDeclaration(override); !ok {
+		return nil, messages.DatasetNotInCatalog(override, filepath.ToSlash(ref.ConfigPath))
+	}
+	// The eval keeps its own declaration; only this run reads elsewhere.
+	overridden := *ref.Eval
+	overridden.Dataset = override
+	overridden.Source = nil
+	return &overridden, nil
+}
+
 // checkDatasetRegistered fails when the group's local dataset has edits that
 // were never deployed.
 //
@@ -404,7 +417,7 @@ func (ec *evalContext) checkDatasetRegistered(
 func (ec *evalContext) reuseDataSourceFromLastRun(
 	ctx context.Context,
 	evalID string,
-) (*eval_api.EvalRunDataSource, string, error) {
+) (*eval_api.EvalRunDataSource, map[string]string, error) {
 	// The service promises no order, so one row is not the most recent run --
 	// it is whichever the listing happened to put first. Restarting from it
 	// scored a stale dataset or target on any eval with more than one run.
@@ -418,18 +431,46 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 		if eval_api.IsNotFound(err) {
 			// The eval itself is missing, which is worth saying plainly rather
 			// than as forty lines of the 404 that discovered it.
-			return nil, "", messages.EvalNotFound(evalID)
+			return nil, nil, messages.EvalNotFound(evalID)
 		}
-		return nil, "", messages.ReadingPreviousRuns(evalID, err)
+		return nil, nil, messages.ReadingPreviousRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 {
-		return nil, "", messages.EvalHasNoPreviousRun(evalID)
+		return nil, nil, messages.EvalHasNoPreviousRun(evalID)
 	}
 	newest := newestRunIn(list.Data)
 	if newest.DataSource == nil {
-		return nil, "", messages.EvalHasNoPreviousRun(evalID)
+		return nil, nil, messages.EvalHasNoPreviousRun(evalID)
 	}
-	return pinReusedTraceWindow(newest.DataSource), reusedEvaluationLevel(newest), nil
+	if source := newest.DataSource.Source; source != nil &&
+		source.Type == eval_api.EvalRunDataContentTypeFileContent &&
+		newest.Metadata[metaDataset] != "" {
+		version, err := ec.resolveRunDatasetVersion(
+			ctx, newest.Metadata[metaDataset], newest.Metadata[metaDatasetVersion], true)
+		if err != nil {
+			return nil, nil, err
+		}
+		if version != "" {
+			return nil, nil, exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				fmt.Sprintf("eval %q: the previous run used inline data attributed to a registered dataset %q",
+					evalID, newest.Metadata[metaDataset]),
+				"Start the declared eval by name to bind its registered dataset version. "+
+					"Remove the cap, or pass --max-samples 0 for an ordinary dataset eval. "+
+					"The previous inline rows may be a subset and cannot safely be replaced by the whole version.",
+			)
+		}
+	}
+	metadata := map[string]string{}
+	for _, key := range []string{metaDataset, metaDatasetVersion} {
+		if value := newest.Metadata[key]; value != "" {
+			metadata[key] = value
+		}
+	}
+	if level := reusedEvaluationLevel(newest); level != "" {
+		metadata[metaEvaluationLevel] = level
+	}
+	return pinReusedTraceWindow(newest.DataSource), metadata, nil
 }
 
 // reusedEvaluationLevel is the level a rerun repeats.
@@ -622,6 +663,9 @@ func (ec *evalContext) buildRunDataSource(
 	}
 
 	if group.Source != nil {
+		if maxSamples > 0 {
+			return nil, "", messages.SourceSampleConflict(group.Name)
+		}
 		var ds *eval_api.EvalRunDataSource
 		var err error
 		switch group.Source.Type {
@@ -669,8 +713,9 @@ func (ec *evalContext) buildRunDataSource(
 				exterrors.CodeConflictingArguments,
 				fmt.Sprintf("eval %q: --max-samples or max_samples (%d) conflicts with registered dataset %q version %q",
 					group.Name, maxSamples, group.Dataset, version),
-				"Registered datasets retain their version identity; this run API has no supported row-subset option. "+
-					"Remove the cap, or publish a smaller dataset and select it.",
+				"Registered datasets must retain their version identity; this run API has no supported row-subset option. "+
+					"Remove the cap (or pass --max-samples 0), or explicitly publish a smaller dataset and select it. "+
+					"No temporary dataset is published automatically.",
 			)
 		}
 		id, err := ec.datasetResourceID(ctx, group.Dataset, version)
@@ -821,6 +866,22 @@ func (ec *evalContext) resolveRunDatasetVersion(
 	if version != "" {
 		return version, nil
 	}
+	version, err := ec.lookupRunDatasetVersion(ctx, name)
+	if _, absent := errors.AsType[*unregisteredDatasetError](err); absent && allowLocal {
+		return "", nil
+	}
+	return version, err
+}
+
+// unregisteredDatasetError distinguishes verified absence from an unreadable
+// registry. It does not manufacture an HTTP error for a successful empty listing.
+type unregisteredDatasetError struct{ name string }
+
+func (e *unregisteredDatasetError) Error() string {
+	return messages.DatasetHasNoVersionsToRead(e.name).Error()
+}
+
+func (ec *evalContext) lookupRunDatasetVersion(ctx context.Context, name string) (string, error) {
 	if ec.datasetClient == nil {
 		return "", messages.ReadingDataset(name, errors.New("dataset client is unavailable"))
 	}
@@ -831,6 +892,8 @@ func (ec *evalContext) resolveRunDatasetVersion(
 	if versions != nil && len(versions.Value) > 0 {
 		return dataset_api.LatestVersion(versions.Value), nil
 	}
+	// Foundry returns a successful empty list for unknown datasets. Probe the
+	// first publish versions as well, because the listing can lag publication.
 	for _, first := range firstDatasetVersions {
 		_, getErr := ec.datasetClient.GetDataset(ctx, name, first, ProjectEndpointAPIVersion)
 		if getErr == nil {
@@ -840,10 +903,7 @@ func (ec *evalContext) resolveRunDatasetVersion(
 			return "", messages.ReadingDatasetVersion(name, first, getErr)
 		}
 	}
-	if allowLocal {
-		return "", nil
-	}
-	return "", messages.DatasetHasNoVersionsToRead(name)
+	return "", &unregisteredDatasetError{name: name}
 }
 
 func (ec *evalContext) readDatasetVersion(
@@ -1027,6 +1087,22 @@ func resolveMaxSamples(flag int, group *project.Eval) int {
 		return group.MaxSamples
 	}
 	return 0
+}
+
+func runMaxSamples(cmd *cobra.Command, flag int, group *project.Eval) (int, error) {
+	if cmd.Flags().Changed("max-samples") {
+		if group == nil {
+			return 0, exterrors.Validation(exterrors.CodeConflictingArguments,
+				"--max-samples cannot change a data source reused by eval id",
+				"Run a declared eval by name to select its dataset and cap, "+
+					"or omit --max-samples to repeat the previous source.")
+		}
+		if group.Source != nil {
+			return 0, messages.SourceSampleConflict(group.Name)
+		}
+		return flag, nil
+	}
+	return resolveMaxSamples(flag, group), nil
 }
 
 // errWaitBudgetSpent says the run outlived the wait, not that anything failed.

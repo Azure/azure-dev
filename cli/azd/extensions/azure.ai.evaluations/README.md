@@ -95,12 +95,25 @@ Run metadata records that same resolved version.
 
 Registered versions cannot be sampled by this run API. A positive `max_samples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
-rows. Remove the cap, or publish and select a smaller dataset.
+rows. Remove the cap, pass `--max-samples 0` to override a configured cap on an
+ordinary dataset eval, or publish and select a smaller dataset. The CLI does not
+publish temporary subset datasets automatically. A simulation declaration must
+not contain a positive `max_samples:` cap, even when the flag is zero.
 
 Genuinely unregistered local files still run inline and support a cap, but only
 after a complete empty version listing (or a not-found response) and not-found
 first-version probes confirm absence. Permissions, transient failures, and
 malformed listings fail the run instead of silently selecting local data.
+
+Source-backed runs reject positive configured `max_samples:` and explicitly supplied
+`--max-samples` flags; use `source.max_traces` for trace limits or select
+`source.response_ids` explicitly. Reruns selected by eval ID also reject an
+explicit `--max-samples`, including zero, because they repeat the previous source.
+
+Reruns retain a previous registered `file_id` unchanged. A legacy run with inline
+rows attributed to a now-registered dataset must instead be started from its
+declared eval by name: replacing those possibly capped rows with a whole version
+would silently change what gets scored.
 
 `job show --dataset` recovers the registered evaluation level even when the local
 artifact already exists. It preserves edited bytes unless `--force` is given,

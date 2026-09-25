@@ -619,10 +619,10 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 	return cfg, nil
 }
 
-// ServiceConfigProps returns the agent service's service-level (inline)
-// properties when present, otherwise the deprecated config-nested struct. It is
-// the single accessor for code that needs the raw property struct regardless of
-// which shape a project uses.
+// ServiceConfigProps returns non-empty AdditionalProperties first.
+// An azure.ai.agent service never falls back to its nested Config and returns
+// nil when service-level properties are absent. Other providers may fall back
+// to Config.
 func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	if s := svc.GetAdditionalProperties(); s != nil && len(s.GetFields()) > 0 {
 		return s
@@ -645,8 +645,8 @@ func ResolveServiceConfigProps(
 	return resolveServiceProps(props, svc.GetName(), projectRoot)
 }
 
-// ResolveServiceConfigInPlace expands local file references in both
-// service-level properties and legacy config. It also normalizes
+// ResolveServiceConfigInPlace expands local file references in service-level
+// properties and, for non-agent providers, Config. It also normalizes
 // environment scalars so consumers receive an effective config.
 func ResolveServiceConfigInPlace(
 	svc *azdext.ServiceConfig,

@@ -266,7 +266,7 @@ var duplicateAgentNameWarnOnce sync.Once
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
-	if err := project.ValidateRuntimeAgentSources(svc); err != nil {
+	if err := validateRuntimeAgentServices(args.Project); err != nil {
 		return err
 	}
 

@@ -1140,10 +1140,10 @@ func checkVocabulary(t *testing.T, e docExample, name string, svc map[string]any
 			"Fix the example so it can be copied into azure.yaml as-is.", e, name, location)
 }
 
-// activeDocAgentConfig mirrors ServiceConfigProps: inline extension properties
-// win unless they omit kind and the deprecated config block declares it. Since
-// the locations are never merged, documenting both would make one silently
-// ineffective and is therefore rejected.
+// activeDocAgentConfig validates both current inline examples and deprecated
+// config examples that remain in documentation during the staged migration.
+// Since the locations are never merged, documenting both would make one
+// silently ineffective and is therefore rejected.
 func activeDocAgentConfig(inline, config map[string]any) (map[string]any, string, error) {
 	if len(inline) == 0 && len(config) == 0 {
 		return map[string]any{}, "inline", nil

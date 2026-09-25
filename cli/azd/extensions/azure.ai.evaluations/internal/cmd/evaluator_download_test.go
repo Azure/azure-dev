@@ -141,3 +141,71 @@ func TestEvaluatorDownloadRefusesAVersionThatIsNotAPathComponent(t *testing.T) {
 	}
 	require.Error(t, a.download(t.Context(), ec))
 }
+
+const downloadedEvaluator = `{
+	"name":"quality",
+	"version":"3",
+	"display_name":"Support quality",
+	"description":"Grades support conversations",
+	"categories":["quality","agents"],
+	"supported_evaluation_levels":["turn","conversation"],
+	"created_at":"2026-09-17T00:00:00Z",
+	"definition":{
+		"type":"rubric",
+		"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5}],
+		"pass_threshold":0.6,
+		"future_option":{"count":9007199254740993},
+		"init_parameters":{"model":"judge"},
+		"metrics":[{"name":"score"}],
+		"data_schema":{"query":"string"},
+		"prompt_text":"Generated prompt",
+		"initParameters":{"model":"judge"},
+		"dataSchema":{"query":"string"},
+		"promptText":"Generated prompt"
+	}
+}`
+
+func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
+	dir := t.TempDir()
+	cmd := evaluatorDownloadCmd(t)
+	cmd.Flags().String("output", "json", "")
+	var output strings.Builder
+	cmd.SetOut(&output)
+	ec := evaluatorServing(t, []string{"3"}, downloadedEvaluator)
+	a := &evaluatorDownloadAction{cmd: cmd, name: "quality", version: "3", outputDir: dir}
+	require.NoError(t, a.download(t.Context(), ec))
+
+	path := filepath.Join(dir, "quality-3.json")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var rubric map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &rubric))
+	require.Equal(t, json.RawMessage(`"rubric"`), rubric["type"])
+	require.JSONEq(t, `[{"id":"accuracy","description":"Is it correct?","weight":5}]`, string(rubric["dimensions"]))
+	require.Equal(t, json.RawMessage(`0.6`), rubric["pass_threshold"])
+	require.JSONEq(t, `{"count":9007199254740993}`, string(rubric["future_option"]))
+	require.Contains(t, string(raw), "9007199254740993", "unknown editable values retain their exact numeric precision")
+	for _, key := range append([]string{"name", "version", "definition", "display_name", "created_at"},
+		rubricOwnedByTheService...) {
+		require.NotContains(t, rubric, key)
+	}
+	encodedPath, err := json.Marshal(path)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"evaluator":"quality","version":"3","path":`+string(encodedPath)+`}`, output.String())
+}
+
+func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
+	for _, raw := range []string{
+		`{"definition":{"type":"prompt","prompt_text":"Authored prompt","dimensions":[{"id":"not_a_rubric"}]}}`,
+		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`,
+		`{"future_shape":{"value":9007199254740993}}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			downloaded := evaluatorDocument(json.RawMessage(raw))
+			require.JSONEq(t, raw, string(downloaded))
+			if strings.Contains(raw, "9007199254740993") {
+				require.Contains(t, string(downloaded), "9007199254740993")
+			}
+		})
+	}
+}

@@ -7,8 +7,28 @@ import (
 	"errors"
 	"net/http"
 
+	"azureaieval/internal/messages"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
+
+type noEvaluatorVersionsError struct{ name string }
+
+func (e *noEvaluatorVersionsError) Error() string {
+	return messages.EvaluatorHasNoVersions(e.name).Error()
+}
+
+// IsEvaluatorAbsent recognizes a 404 or a valid, complete empty version listing.
+// Failures part-way through pagination are never evidence of absence.
+func IsEvaluatorAbsent(err error) bool {
+	if _, walking := errors.AsType[pageWalkError](err); walking {
+		return false
+	}
+	if _, empty := errors.AsType[*noEvaluatorVersionsError](err); empty {
+		return true
+	}
+	return IsNotFound(err)
+}
 
 // IsConflict reports whether the service refused because the resource is busy.
 func IsConflict(err error) bool {

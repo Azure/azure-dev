@@ -197,8 +197,13 @@ func planCriterion(
 	// declare, whether or not inference found it.
 	for field, binding := range ref.DataMapping {
 		plan.dataMapping[field] = binding
-		if column, ok := itemColumn(binding); ok && !contains(plan.itemFields, column) {
-			plan.itemFields = append(plan.itemFields, column)
+		if column, ok := itemColumn(binding); ok {
+			if datasetColumns != nil && !datasetColumns[column] {
+				return nil, messages.EvaluatorNeedsFields(ref.Evaluator, []string{column})
+			}
+			if !contains(plan.itemFields, column) {
+				plan.itemFields = append(plan.itemFields, column)
+			}
 		}
 	}
 
@@ -399,7 +404,10 @@ func buildEvalRequest(
 	itemFields := map[string]bool{}
 
 	for _, ref := range group.Evaluators {
-		schema := schemas[ref.Evaluator]
+		schema := schemas[evaluatorSchemaKey(ref.Evaluator, ref.Version)]
+		if schema == nil {
+			schema = schemas[ref.Evaluator]
+		}
 		if schema == nil {
 			schema = &eval_api.EvaluatorSummary{Name: ref.Evaluator}
 		}
@@ -444,6 +452,11 @@ func buildEvalRequest(
 	}
 	if simulated {
 		req.DataSourceConfig.ItemSchema["required"] = []string{conversationField}
+	}
+	if isResponsesEval(group) {
+		req.DataSourceConfig = &eval_api.DataSourceConfig{
+			Type: "azure_ai_source", Scenario: "responses",
+		}
 	}
 
 	return req, nil

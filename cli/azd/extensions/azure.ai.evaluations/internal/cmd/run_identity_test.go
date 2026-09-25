@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -39,14 +41,15 @@ type identityRequest struct {
 }
 
 type identityService struct {
-	listBody    string
-	listStatus  int
-	getStatus   int
-	id          string
-	version     string
-	wantVersion string
-	rows        string
-	blobStatus  int
+	listBody     string
+	listStatus   int
+	getStatus    int
+	id           string
+	version      string
+	wantVersion  string
+	rows         string
+	blobStatus   int
+	responseEval bool
 }
 
 func identityRunContext(t *testing.T, service identityService) (*evalContext, <-chan identityRequest) {
@@ -62,6 +65,10 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 		case strings.HasSuffix(r.URL.Path, "/runs"):
 			assert.Equal(t, http.MethodPost, r.Method)
 			_, _ = io.WriteString(w, `{"id":"evalrun_new","status":"queued"}`)
+		case service.responseEval && strings.HasSuffix(r.URL.Path, "/eval_1"):
+			assert.Equal(t, http.MethodGet, r.Method)
+			_, _ = io.WriteString(w,
+				`{"id":"eval_1","data_source_config":{"type":"azure_ai_source","scenario":"responses"}}`)
 		case strings.HasSuffix(r.URL.Path, "/versions"):
 			if service.listStatus != 0 {
 				w.WriteHeader(service.listStatus)
@@ -323,4 +330,233 @@ func TestRegisteredRunValidatesPublishedRows(t *testing.T) {
 	}, writeCatalog(t, "golden.jsonl", "1"), 0)
 	require.ErrorContains(t, err, `"query"`)
 	assert.Nil(t, ds)
+}
+
+func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
+	for _, sourceType := range []string{"azure_ai_traces", "azure_ai_trace_data_source_preview"} {
+		for _, cap := range []string{"", "0", "1"} {
+			t.Run(sourceType+"/"+cap, func(t *testing.T) {
+				reads, posts := 0, 0
+				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
+				if sourceType == "azure_ai_trace_data_source_preview" {
+					source = map[string]any{
+						"type": sourceType,
+						"trace_source": map[string]any{
+							"type": "agent_filter", "agent_name": "agent", "start_time": 1, "end_time": 2,
+						},
+					}
+				}
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
+						reads++
+						assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": []any{
+							map[string]any{"id": "previous", "data_source": source},
+						}}))
+					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/eval_trace/runs"):
+						posts++
+						_, err := io.WriteString(w, `{"id":"run_trace","status":"queued"}`)
+						assert.NoError(t, err)
+					default:
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+						w.WriteHeader(http.StatusBadRequest)
+					}
+				}))
+				t.Cleanup(srv.Close)
+				var out bytes.Buffer
+				command := buildRunCommand("start", "")
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				command.Flags().String("output", "json", "")
+				if cap != "" {
+					require.NoError(t, command.Flags().Set("max-samples", cap))
+				}
+				flag, err := command.Flags().GetInt("max-samples")
+				require.NoError(t, err)
+				action := &runStartAction{
+					cmd: command, flags: &runStartFlags{
+						groupName: "eval_trace", evalPath: t.TempDir(), maxSamples: flag,
+					},
+					newContext: func(context.Context, string) (*evalContext, error) {
+						return evalContextFor(srv), nil
+					},
+				}
+				err = action.Run()
+				if cap == "" {
+					require.NoError(t, err)
+					assert.Equal(t, 1, reads)
+					assert.Equal(t, 1, posts)
+				} else {
+					require.ErrorContains(t, err, "max-samples")
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					assert.Zero(t, reads)
+					assert.Zero(t, posts)
+					assert.Empty(t, out.String())
+				}
+			})
+		}
+	}
+}
+
+func TestRunStartSampleCapContracts(t *testing.T) {
+	for _, mode := range []string{"traces", "responses", "dataset", "simulation"} {
+		for _, tc := range []struct {
+			name string
+			cap  int
+			flag string
+		}{
+			{name: "configured zero"},
+			{name: "configured cap", cap: 1},
+			{name: "explicit zero", flag: "0"},
+			{name: "zero overrides configured cap", cap: 1, flag: "0"},
+			{name: "explicit positive", flag: "1"},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				group := project.Eval{Name: "quality", MaxSamples: tc.cap}
+				service := identityService{id: "issued", rows: oneRow, wantVersion: "1"}
+				switch mode {
+				case "traces":
+					group.Source = &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent", MaxTraces: 2}
+				case "responses":
+					group.Source = &project.SourceDecl{Type: project.SourceTypeResponses, ResponseIDs: []string{"response"}}
+					service.responseEval = true
+				case "dataset":
+					group.Dataset = "golden"
+				case "simulation":
+					group = *runnableSimulation()
+					group.Name, group.Dataset, group.MaxSamples = "quality", "golden", tc.cap
+					service.rows = seedRows
+				}
+				eval := struct {
+					project.Eval
+					MaxSamples int `json:"max_samples"`
+				}{group, tc.cap}
+				body, err := json.Marshal(map[string]any{
+					"datasets": []project.DatasetDecl{{Name: "golden", Version: "1"}},
+					"evals":    []any{eval},
+				})
+				require.NoError(t, err)
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
+				ec, requests := identityRunContext(t, service)
+				ec.state = map[string]string{idKey("eval", "quality"): "eval_1"}
+				cmd := buildRunCommand("start", "")
+				cmd.SetContext(t.Context())
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				if tc.flag != "" {
+					require.NoError(t, cmd.Flags().Set("max-samples", tc.flag))
+				}
+				flag, err := cmd.Flags().GetInt("max-samples")
+				require.NoError(t, err)
+				action := &runStartAction{
+					cmd: cmd, flags: &runStartFlags{
+						groupName: "quality", evalPath: dir, maxSamples: flag, wait: false,
+					},
+					newContext: func(context.Context, string) (*evalContext, error) { return ec, nil },
+				}
+				err = action.Run()
+				recorded := recordedIdentityRequests(requests)
+				wantErr := tc.cap > 0 || flag > 0
+				switch mode {
+				case "traces", "responses":
+					wantErr = tc.cap > 0 || tc.flag != ""
+				case "dataset":
+					wantErr = flag > 0 || (tc.cap > 0 && tc.flag == "")
+				}
+				if wantErr {
+					require.ErrorContains(t, err, "max")
+					if mode != "simulation" {
+						local, ok := errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok)
+						assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					}
+					assert.Empty(t, recorded, "reject caps before any service call")
+					return
+				}
+				require.NoError(t, err)
+				var posted *eval_api.CreateOpenAIEvalRunRequest
+				posts := 0
+				for _, request := range recorded {
+					if request.method == http.MethodPost && strings.HasSuffix(request.path, "/runs") {
+						require.NoError(t, json.Unmarshal(request.body, &posted))
+						posts++
+					}
+				}
+				assert.Equal(t, 1, posts)
+				require.NotNil(t, posted)
+				require.NotNil(t, posted.DataSource)
+				switch mode {
+				case "traces":
+					assert.Equal(t, eval_api.EvalRunDataSourceTypeTracePreview, posted.DataSource.Type)
+					require.NotNil(t, posted.DataSource.TraceSource)
+					assert.Equal(t, 2, posted.DataSource.TraceSource.MaxTraces)
+				case "responses":
+					assert.Equal(t, eval_api.EvalRunDataSourceTypeResponses, posted.DataSource.Type)
+					require.NotNil(t, posted.DataSource.ItemGenerationParams)
+					require.NotNil(t, posted.DataSource.ItemGenerationParams.Source)
+					assert.Equal(t, []map[string]any{{"item": map[string]any{"response_id": "response"}}},
+						posted.DataSource.ItemGenerationParams.Source.Content)
+				default:
+					require.NotNil(t, posted.DataSource.Source)
+					assert.Equal(t, eval_api.EvalRunDataContentTypeFileID, posted.DataSource.Source.Type)
+					assert.Equal(t, "issued", posted.DataSource.Source.ID)
+					if mode == "simulation" {
+						assert.Equal(t, eval_api.EvalRunDataSourceTypeUserConversationSimulation, posted.DataSource.Type)
+						require.NotNil(t, posted.DataSource.DefaultSimulationConfiguration)
+						assert.Equal(t, group.Simulation.MaxTurns,
+							posted.DataSource.DefaultSimulationConfiguration.MaxNumTurns)
+						assert.Equal(t, group.Simulation.Conversations(),
+							posted.DataSource.DefaultSimulationConfiguration.ConversationRepetitions)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRunDatasetOverrideCanHonorExplicitCap(t *testing.T) {
+	dir := t.TempDir()
+	cfg := project.EvalConfig{
+		Datasets: []project.DatasetDecl{{Name: "golden", File: "rows.jsonl"}},
+		Evals: []project.Eval{{
+			Name: "quality", Source: &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent"},
+		}},
+	}
+	body, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(oneRow+oneRow), 0o600))
+	ec, requests := identityRunContext(t, identityService{listStatus: http.StatusNotFound, getStatus: http.StatusNotFound})
+	ec.state = map[string]string{idKey("eval", "quality"): "eval_1"}
+	cmd := buildRunCommand("start", "")
+	cmd.SetContext(t.Context())
+	cmd.SetOut(io.Discard)
+	require.NoError(t, cmd.Flags().Set("dataset", "golden"))
+	require.NoError(t, cmd.Flags().Set("max-samples", "1"))
+	action := &runStartAction{
+		cmd: cmd, flags: &runStartFlags{
+			groupName: "quality", datasetName: "golden", evalPath: dir, maxSamples: 1,
+		},
+		newContext: func(context.Context, string) (*evalContext, error) { return ec, nil },
+	}
+	require.NoError(t, action.Run())
+	var posted *eval_api.CreateOpenAIEvalRunRequest
+	posts := 0
+	for _, request := range recordedIdentityRequests(requests) {
+		if request.method == http.MethodPost && strings.HasSuffix(request.path, "/runs") {
+			require.NoError(t, json.Unmarshal(request.body, &posted))
+			posts++
+		}
+	}
+	assert.Equal(t, 1, posts)
+	require.NotNil(t, posted)
+	require.NotNil(t, posted.DataSource)
+	require.NotNil(t, posted.DataSource.Source)
+	assert.Equal(t, eval_api.EvalRunDataContentTypeFileContent, posted.DataSource.Source.Type)
+	assert.Len(t, posted.DataSource.Source.Content, 1)
+	assert.Nil(t, posted.DataSource.TraceSource)
 }

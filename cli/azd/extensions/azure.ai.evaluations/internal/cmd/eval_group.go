@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"cmp"
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -79,7 +81,7 @@ func (a *evalCreateAction) Run() error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateForLookup(); err != nil {
 		return err
 	}
 
@@ -103,6 +105,24 @@ func (a *evalCreateAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.create(ec, cfg, eval, path)
+}
+
+func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval *project.Eval, path string) error {
+	ctx := a.cmd.Context()
+	selected := &project.EvalConfig{Evals: []project.Eval{*eval}}
+	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
+		selected.Datasets = append(selected.Datasets, *decl)
+	}
+	for _, decl := range cfg.Evaluators {
+		for _, ref := range eval.Evaluators {
+			if ref.Evaluator == decl.Name {
+				selected.Evaluators = append(selected.Evaluators, decl)
+				break
+			}
+		}
+	}
+
 	// Local sources resolve against the file, not the working directory,
 	// so the columns are read from where the declaration points.
 	baseDir := filepath.Dir(path)
@@ -112,17 +132,26 @@ func (a *evalCreateAction) Run() error {
 	}
 
 	reconciler := &evalReconciler{ec: ec}
-	// Every eval the file declares, not only the one being created: an
-	// eval another declaration already owns must not be adopted here.
-	reconciler.ReserveDeclared(ctx, cfg.Evals)
-	out := a.cmd.OutOrStdout()
-
-	// Before anything is pushed. Publishing is not free -- a dataset
-	// version is immutable and the number climbs on every attempt -- so
-	// a declaration the evaluators cannot satisfy is refused first.
-	if err := checkEvaluatorRequirements(eval, ec.evaluatorSchemas(ctx)); err != nil {
+	if err := reconciler.Validate(ctx, selected, baseDir); err != nil {
 		return err
 	}
+	// Every eval the file declares, not only the one being created: an
+	// eval another declaration already owns must not be adopted here.
+	declared := make([]project.Eval, len(cfg.Evals))
+	for i, group := range cfg.Evals {
+		declared[i] = withCatalogEvaluatorPins(group, cfg)
+	}
+	reconciler.ReserveDeclared(ctx, declared)
+	out := a.cmd.OutOrStdout()
+
+	var artifacts []reconciledArtifact
+	failed := func(err error) error {
+		if len(artifacts) == 0 {
+			return err
+		}
+		return errors.Join(err, reportCreatePartial(a.cmd, ec, eval.Name, path, artifacts, err))
+	}
+
 	// Reported per artifact, because "publishes nothing when nothing
 	// changed" is the contract a reader is checking here and a single
 	// closing line cannot show it. Silent under -o json.
@@ -145,8 +174,9 @@ func (a *evalCreateAction) Run() error {
 	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 		version, changed, err := reconciler.EnsureDataset(ctx, *decl, datasetPath)
 		if err != nil {
-			return messages.DatasetProblem(decl.Name, err)
+			return failed(messages.DatasetProblem(decl.Name, err))
 		}
+		artifacts = append(artifacts, reconciledArtifact{"dataset", decl.Name, version, changed})
 		say("dataset", decl.Name, version, changed)
 	}
 	for _, ref := range eval.Evaluators {
@@ -162,14 +192,15 @@ func (a *evalCreateAction) Run() error {
 		}
 		version, changed, err := reconciler.EnsureEvaluator(ctx, *decl, local)
 		if err != nil {
-			return messages.EvaluatorProblem(decl.Name, err)
+			return failed(messages.EvaluatorProblem(decl.Name, err))
 		}
+		artifacts = append(artifacts, reconciledArtifact{"evaluator", decl.Name, version, changed})
 		say("evaluator", decl.Name, version, changed)
 	}
 
 	id, created, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
 	if err != nil {
-		return err
+		return failed(err)
 	}
 
 	return reportEvalCreated(a.cmd, eval.Name, id, created, ec.portalPrefix(ctx))
@@ -333,9 +364,10 @@ func filterEvalsByName(evals []eval_api.OpenAIEval, name string) []eval_api.Open
 
 // evalShowAction reports one eval definition.
 type evalShowAction struct {
-	cmd      *cobra.Command
-	endpoint string
-	evalID   string
+	cmd        *cobra.Command
+	endpoint   string
+	evalID     string
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 func newEvalShowCommand() *cobra.Command {
@@ -356,7 +388,11 @@ func newEvalShowCommand() *cobra.Command {
 
 func (a *evalShowAction) Run() error {
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	newContext := a.newContext
+	if newContext == nil {
+		newContext = newEvalContext
+	}
+	ec, err := newContext(ctx, a.endpoint)
 	if err != nil {
 		return err
 	}
@@ -394,16 +430,18 @@ func (a *evalShowAction) Run() error {
 	if graders := evalGraders(group); graders != "" {
 		detail = append(detail, field{"Evaluators", graders})
 	}
+	// A custom schema does not identify a row source; non-custom scenarios do.
+	if source, _ := group.DataSourceConfig["type"].(string); source != "" && source != "custom" {
+		detail = append(detail, field{"Data Source", source})
+		if scenario, _ := group.DataSourceConfig["scenario"].(string); scenario != "" {
+			detail = append(detail, field{"Scenario", scenario})
+		}
+	}
 	return emitDetail(a.cmd.OutOrStdout(), detail)
 }
 
 // evalGraders lists the evaluators the eval grades with, preferring the
 // reference a caller would recognize over the criterion label.
-//
-// data_source_config is deliberately not shown beside it: every eval this
-// extension creates carries type "custom", which describes the item schema
-// rather than where the rows come from, so a "Source" row would read as an
-// answer while always saying the same thing.
 func evalGraders(group *eval_api.OpenAIEval) string {
 	if group == nil {
 		return ""

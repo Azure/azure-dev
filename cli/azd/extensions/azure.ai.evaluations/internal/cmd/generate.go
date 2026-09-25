@@ -347,16 +347,22 @@ func (ec *evalContext) collectRubric(
 	}
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
+	ref := &project.ArtifactRef{
+		Name:    name,
+		Source:  relativeSource(baseDir, path),
+		Version: version,
+		// Recovered declarations need the same metadata even when the rubric
+		// was already collected and must be preserved for local edits.
+		DisplayName:               completed.ResultString("display_name"),
+		Categories:                completed.ResultStringList("categories"),
+		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
+	}
 	// A rubric is meant to be edited -- that is what the local file is for -- and
 	// `job show` is documented as safe to re-run while polling. Collecting again
 	// over an edited file made those two claims contradict each other.
 	if !replaceExisting && artifactAlreadyCollected(path) {
 		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
-		return &project.ArtifactRef{
-			Name:    name,
-			Source:  relativeSource(baseDir, path),
-			Version: version,
-		}, nil
+		return ref, nil
 	}
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
@@ -364,18 +370,7 @@ func (ec *evalContext) collectRubric(
 	fmt.Fprint(out, messages.WroteArtifact(path))
 	writeJobWarnings(out, "evaluator", completed, path)
 
-	return &project.ArtifactRef{
-		Name:    name,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Catalog metadata, preserved exactly as the service returned it. The
-		// declaration is what `azd up` republishes from, and a version published
-		// without these arrives with a blank catalog name and narrower level
-		// compatibility than the one before it.
-		DisplayName:               completed.ResultString("display_name"),
-		Categories:                completed.ResultStringList("categories"),
-		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
-	}, nil
+	return ref, nil
 }
 
 // writeJobWarnings reports what the service said about a job it completed.

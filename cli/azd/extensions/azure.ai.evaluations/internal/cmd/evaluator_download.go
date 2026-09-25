@@ -28,18 +28,20 @@ type evaluatorDownloadAction struct {
 
 // newEvaluatorDownloadCommand builds `evaluator download <name>`.
 //
-// `show --output-file` writes the same document, but it is the adoption path:
-// reconciliation points it at a file to overwrite, so it replaces what it finds.
-// A download is the opposite promise -- it refuses to destroy what is already
-// there without --force -- and it names the file itself, which is what makes
-// fetching several evaluators in one directory work.
+// Unlike show's complete service document, a rubric download contains the
+// editable definition. It refuses to replace an existing file without --force.
 func newEvaluatorDownloadCommand() *cobra.Command {
 	a := &evaluatorDownloadAction{}
 
 	cmd := &cobra.Command{
 		Use:   "download <name>",
-		Short: "Download a registered evaluator version's definition.",
-		Args:  requiredArgs(1),
+		Short: "Download an editable evaluator rubric.",
+		Long: "Download an editable evaluator rubric.\n\n" +
+			"Rubrics contain dimensions, weights, and the pass threshold, without service-generated wiring.\n" +
+			"Other evaluator kinds retain their complete document.\n" +
+			"Use evaluator show -o json for the full service response.\n" +
+			"Publishing with evaluator update preserves existing catalog metadata unless the input explicitly replaces it.",
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a.cmd, a.name = cmd, args[0]
 			return a.Run()
@@ -143,19 +145,26 @@ func (a *evaluatorDownloadAction) destination(version string) (string, error) {
 	return filepath.Join(dir, leaf), nil
 }
 
-// evaluatorDocument is the service's document, indented when it is JSON.
-//
-// Only the indentation is this command's: a field this CLI does not model is
-// still the evaluator's, and dropping it would hand back something that no
-// longer round-trips through `evaluator update`.
+// evaluatorDocument uses the same editable rubric shape as generation.
+// Unrecognized definitions retain their complete document.
 func evaluatorDocument(raw json.RawMessage) []byte {
-	var pretty any
-	if err := json.Unmarshal(raw, &pretty); err != nil {
+	var envelope struct {
+		Definition json.RawMessage `json:"definition"`
+	}
+	if json.Unmarshal(raw, &envelope) == nil {
+		var definition struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(envelope.Definition, &definition) == nil &&
+			(definition.Type == "" || definition.Type == rubricDefinitionType) {
+			if editable, ok := editableRubric(envelope.Definition); ok {
+				return editable
+			}
+		}
+	}
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, raw, "", "  "); err != nil {
 		return raw
 	}
-	indented, err := json.MarshalIndent(pretty, "", "  ")
-	if err != nil {
-		return raw
-	}
-	return append(indented, '\n')
+	return append(indented.Bytes(), '\n')
 }

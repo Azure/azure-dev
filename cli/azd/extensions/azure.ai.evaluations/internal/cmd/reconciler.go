@@ -30,12 +30,18 @@ import (
 type evalReconciler struct {
 	ec *evalContext
 
+	// Requests prepared by the side-effect-free validation pass. The published
+	// contract is resolved per reference, including explicit version pins.
+	prepared map[string]preparedEval
+
+	// Reconciled service versions identify contracts, not authored identity pins.
+	evaluatorVersions map[string]string
+
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
-	// Substance keys are never removed from the environment, so one left behind
-	// by an earlier edit still points at a live eval -- and adopting it renames
-	// that eval and leaves the declaration that asked for it sharing the other
-	// one's runs.
+	// A substance key left behind by an edit can still point at a live eval.
+	// Adopting it without ownership checks would rename that eval and leave
+	// both declarations sharing its runs.
 	//
 	// The owner is recorded rather than a bare flag because every declaration
 	// reserves its own id up front: "already claimed" is the normal case, and
@@ -106,13 +112,20 @@ func (r *evalReconciler) ownedByAnother(id, name string) bool {
 func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
 	r.reserveExplicitIDs(groups)
 	for i := range groups {
-		decision, err := r.decide(ctx, groups[i])
-		if err != nil {
-			// Nothing decided, so nothing skipped. The error surfaces from
-			// EnsureEval, where it can fail the deploy.
+		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		if _, selected := r.prepared[groups[i].Name]; len(r.prepared) > 0 && !selected {
+			// Targeted create cannot release an unselected sibling's history:
+			// that sibling will not be reconciled, even if its pin changed.
+			r.claim(id, groups[i].Name)
 			continue
 		}
-		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		decision, err := r.decide(ctx, groups[i])
+		if err != nil {
+			// An unreadable decision is not evidence that an owner abandoned
+			// its eval. EnsureEval still reports the error for this declaration.
+			r.claim(id, groups[i].Name)
+			continue
+		}
 		if id == "" || decision.recreate {
 			continue
 		}
@@ -166,6 +179,10 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	if decided, ok := r.decided[group.Name]; ok {
 		return decided, nil
 	}
+	prepared, validated := r.prepared[group.Name]
+	if validated {
+		group = prepared.group
+	}
 
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
@@ -182,10 +199,37 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	definition = fingerprintEra + definition
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
+	recreate := substanceChanged(prior, definition, digest)
+	if recreate && validated {
+		legacyDigest, err := project.FingerprintGroup(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		legacyDefinition, err := project.FingerprintDefinition(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if digest != legacyDigest && !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest) {
+			// Earlier builds fingerprinted the reference before inheriting its
+			// catalog pin. Re-baseline an unchanged stored pin without forking
+			// history, but do not mistake a real catalog edit for migration.
+			id := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
+			if id != "" {
+				remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
+				if err != nil && !eval_api.IsNotFound(err) {
+					return evalDecision{}, err
+				}
+				if err == nil {
+					recreate = !matchingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
+				}
+			}
+		}
+	}
+
 	decided := evalDecision{
 		digest:     digest,
 		definition: definition,
-		recreate:   substanceChanged(prior, definition, digest),
+		recreate:   recreate,
 	}
 	if r.decided == nil {
 		r.decided = map[string]evalDecision{}
@@ -272,30 +316,14 @@ func (r *evalReconciler) EnsureDataset(
 	decl project.DatasetDecl,
 	localPath string,
 ) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	// No local source means the dataset is already registered; just confirm it.
 	if localPath == "" {
-		version := decl.Version
-		if version == "" {
-			list, err := r.ec.datasetClient.ListDatasetVersions(
-				ctx, decl.Name, ProjectEndpointAPIVersion,
-			)
-			if err != nil {
-				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
-			}
-			if len(list.Value) == 0 {
-				return "", false, messages.DatasetNotLocalNorRegistered(decl.Name)
-			}
-			version = dataset_api.LatestVersion(list.Value)
-		} else if _, err := r.ec.datasetClient.GetDataset(
-			ctx, decl.Name, version, ProjectEndpointAPIVersion,
-		); err != nil {
-			// Only a 404 means the version is not there. Every other failure was
-			// reported as "no such version", which sent a reader looking for a
-			// version that exists and that they simply cannot read.
-			if !dataset_api.IsNotFound(err) {
-				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
-			}
-			return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, version)
+		version, err := r.datasetReference(ctx, decl)
+		if err != nil {
+			return "", false, err
 		}
 
 		// Recorded so a run reads the version reconciliation settled on. Without
@@ -315,7 +343,7 @@ func (r *evalReconciler) EnsureDataset(
 	// A malformed row is only noticed once the service tries to evaluate it,
 	// by which point a version has been published and the eval points at
 	// it. Reading the file here costs nothing and names the offending line.
-	if err := validateJSONL(localPath); err != nil {
+	if _, err := inspectJSONL(ctx, localPath, nil); err != nil {
 		return "", false, messages.DatasetProblem(decl.Name, err)
 	}
 
@@ -480,10 +508,18 @@ func tagsAlreadyApplied(have, want map[string]string) bool {
 // registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
+	_, err := inspectJSONL(context.Background(), path, nil)
+	return err
+}
+
+// inspectJSONL validates every row and returns the columns every row supplies.
+func inspectJSONL(
+	ctx context.Context, path string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
 	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	defer f.Close()
 
@@ -492,7 +528,11 @@ func validateJSONL(path string) error {
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
 	rows := 0
+	var columns map[string]bool
 	for line := 1; scanner.Scan(); line++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		text := scanner.Text()
 		if line == 1 {
 			// PowerShell's `>` and Set-Content write a byte order mark, so a
@@ -508,20 +548,37 @@ func validateJSONL(path string) error {
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return messages.JSONLRowInvalid(path, line, err)
+			return nil, messages.JSONLRowInvalid(path, line, err)
 		}
 		if len(row) == 0 {
-			return messages.JSONLRowEmpty(path, line)
+			return nil, messages.JSONLRowEmpty(path, line)
+		}
+		if validateRow != nil {
+			if err := validateRow(row, rows); err != nil {
+				return nil, err
+			}
+		}
+		if columns == nil {
+			columns = make(map[string]bool, len(row))
+			for field := range row {
+				columns[field] = true
+			}
+		} else {
+			for field := range columns {
+				if _, ok := row[field]; !ok {
+					delete(columns, field)
+				}
+			}
 		}
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	if rows == 0 {
-		return messages.JSONLNoRows(path)
+		return nil, messages.JSONLNoRows(path)
 	}
-	return nil
+	return columns, ctx.Err()
 }
 
 func (r *evalReconciler) checkDatasetDrift(
@@ -585,51 +642,26 @@ func (r *evalReconciler) EnsureEvaluator(
 	decl project.EvaluatorDecl,
 	localPath string,
 ) (string, bool, error) {
-	var body json.RawMessage
-	var digest string
-
-	switch {
-	case decl.Definition != nil:
-		// Also how a `$ref` to a rubric file arrives: resolution has already
-		// spliced the file's keys in, so there is nothing left to read.
-		raw, err := json.Marshal(decl.Definition)
-		if err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		digest = project.FingerprintBytes(body)
-
-	case localPath == "":
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if r.evaluatorVersions == nil {
+		r.evaluatorVersions = map[string]string{}
+	}
+	if !decl.CarriesItsRubric() && localPath == "" {
 		raw, err := r.ec.evalClient.GetEvaluatorRaw(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
 		)
 		if err != nil {
 			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
-		return versionFromRaw(raw, decl.Version), false, nil
-
-	default:
-		if _, err := os.Stat(localPath); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
-			}
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		raw, err := project.ReadFileNoBOM(localPath)
-		if err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-
-		if digest, err = project.Fingerprint(localPath); err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
+		version := versionFromRaw(raw, decl.Version)
+		r.evaluatorVersions[decl.Name] = version
+		return version, false, nil
+	}
+	body, digest, err := localEvaluator(decl, localPath)
+	if err != nil {
+		return "", false, err
 	}
 
 	// The author's own definition decides whether there is anything to publish.
@@ -639,7 +671,6 @@ func (r *evalReconciler) EnsureEvaluator(
 	// still there to be found, and the deletion never publishes.
 	digestKey := project.FingerprintKey("evaluator", decl.Name)
 	prior := r.ec.privateValue(ctx, digestKey)
-	authorEdited := prior != "" && prior != digest
 
 	// Compare against the definition already on the service.
 	var known json.RawMessage
@@ -648,13 +679,13 @@ func (r *evalReconciler) EnsureEvaluator(
 	)
 	// A read that failed is not a read that found nothing: falling through
 	// publishes a new version with no drift check, over whatever is already
-	// there. Only a confirmed absence is a first publish.
-	if err != nil && !eval_api.IsNotFound(err) {
+	// there. A 404 or a complete, valid empty version list permits first publish.
+	if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 		return "", false, messages.CheckingEvaluatorExists(decl.Name, err)
 	}
 	if err == nil {
 		remote := versionFromRaw(existing, "")
-		if !authorEdited && sameDefinition(existing, body) {
+		if canReuseEvaluator(prior, digest, existing, body) {
 			// Nothing to publish, but the version is still worth recording:
 			// it is what a later deploy compares against to notice that
 			// someone moved the evaluator on from here.
@@ -662,7 +693,9 @@ func (r *evalReconciler) EnsureEvaluator(
 				r.ec.remember(ctx, versionKey("evaluator", decl.Name), remote)
 			}
 			r.ec.remember(ctx, digestKey, digest)
-			return versionFromRaw(existing, decl.Version), false, nil
+			version := versionFromRaw(existing, decl.Version)
+			r.evaluatorVersions[decl.Name] = version
+			return version, false, nil
 		}
 
 		// The definitions differ, which means either the local file changed
@@ -699,6 +732,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
 	r.ec.remember(ctx, digestKey, digest)
+	r.evaluatorVersions[decl.Name] = created.Version
 	return created.Version, true, nil
 }
 
@@ -817,17 +851,24 @@ func (r *evalReconciler) EnsureEval(
 	group project.Eval,
 	datasetPath string,
 ) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	if group.ID != "" {
 		// An explicit id skips every read below, so nothing here noticed when it
 		// named an eval that had been deleted or was simply mistyped: the deploy
 		// reported success and the first run against it answered 404. One point
 		// read settles it, and it is the same confirmation an external dataset
 		// or evaluator reference gets.
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
 			if eval_api.IsNotFound(err) {
 				return "", false, messages.EvalNotFound(group.ID)
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if !responseSchemaMatches(&group, remote) {
+			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
@@ -847,13 +888,41 @@ func (r *evalReconciler) EnsureEval(
 	// dataset's columns, so it happens before the reuse decision: a dataset can
 	// lose a column an evaluator needs without the eval's own declaration
 	// changing, and reusing the eval would let that reach a run unreported.
-	req, err := buildEvalRequest(
-		&group,
-		r.ec.evaluatorSchemas(ctx),
-		datasetColumnsFromPath(datasetPath),
-	)
-	if err != nil {
-		return "", false, err
+	prepared, validated := r.prepared[group.Name]
+	req := prepared.request
+	if validated && len(prepared.localEvaluators) > 0 {
+		// Publishing a rubric can add a schema that the authored file does not
+		// carry. Refresh only these local, unpinned references; every other
+		// contract, including version pins, stays the one validated earlier.
+		schemas := maps.Clone(prepared.schemas)
+		for _, name := range prepared.localEvaluators {
+			version := r.evaluatorVersions[name]
+			if version == "" {
+				return "", false, fmt.Errorf("evaluator %q has no reconciled version to read", name)
+			}
+			raw, err := r.ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
+			if err != nil {
+				return "", false, messages.ReadingEvaluator(name, err)
+			}
+			schema, err := evaluatorContract(raw)
+			if err != nil {
+				return "", false, messages.EvaluatorProblem(name, err)
+			}
+			schemas[name] = schema
+		}
+		req, err = buildEvalRequest(&prepared.group, schemas, prepared.columns)
+		if err != nil {
+			return "", false, err
+		}
+	} else if !validated {
+		req, err = buildEvalRequest(
+			&group,
+			r.ec.evaluatorSchemas(ctx),
+			datasetColumnsFromPath(datasetPath),
+		)
+		if err != nil {
+			return "", false, err
+		}
 	}
 
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
@@ -871,7 +940,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest)
+		adopted, err := r.adoptRenamed(ctx, group, digest, req.TestingCriteria)
 		if err != nil {
 			return "", false, err
 		}
@@ -888,7 +957,9 @@ func (r *evalReconciler) EnsureEval(
 			// this lookup exists to keep.
 			return "", false, err
 		}
-		if err == nil {
+		if err == nil &&
+			(!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) &&
+			responseSchemaMatches(&group, remote) {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -918,6 +989,44 @@ func (r *evalReconciler) EnsureEval(
 	return created.ID, true, nil
 }
 
+// conflictingEvaluatorPins repairs state from builds that sent inherited pins
+// but omitted them from fingerprints. Only an actual stored pin disagreement
+// is evidence to recreate; unrelated server enrichment is not compared.
+func conflictingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	pin := func(version string) string {
+		if version == "latest" {
+			return ""
+		}
+		return version
+	}
+	for _, desired := range want {
+		for _, stored := range have {
+			if stored.Name == desired.Name && stored.EvaluatorName == desired.EvaluatorName &&
+				pin(stored.EvaluatorVersion) != pin(desired.EvaluatorVersion) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchingEvaluatorPins requires positive evidence before a legacy digest can
+// adopt an eval: that index did not distinguish inherited catalog versions.
+func matchingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	if len(want) == 0 || len(have) != len(want) || conflictingEvaluatorPins(have, want) {
+		return false
+	}
+	for _, desired := range want {
+		if !slices.ContainsFunc(have, func(stored eval_api.TestingCriterion) bool {
+			return stored.Type == desired.Type && stored.Name == desired.Name &&
+				stored.EvaluatorName == desired.EvaluatorName
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
 // adoptRenamed reclaims the eval this declaration used to be called, so a
 // rename keeps the id and every run under it rather than forking the history.
 //
@@ -927,8 +1036,22 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
+	criteria []eval_api.TestingCriterion,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
+	legacy := false
+	if id == "" {
+		if prepared, ok := r.prepared[group.Name]; ok {
+			legacyDigest, err := project.FingerprintGroup(prepared.declared)
+			if err != nil {
+				return "", err
+			}
+			if legacyDigest != digest {
+				id = r.ec.scopedValue(ctx, digestIDKey(legacyDigest), r.scope)
+				legacy = id != ""
+			}
+		}
+	}
 	if id == "" {
 		return "", nil
 	}
@@ -946,6 +1069,11 @@ func (r *evalReconciler) adoptRenamed(
 			return "", nil
 		}
 		return "", err
+	}
+	if conflictingEvaluatorPins(remote.TestingCriteria, criteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, criteria)) ||
+		!responseSchemaMatches(&group, remote) {
+		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil
@@ -998,6 +1126,12 @@ func withDescription(held map[string]string, description string) map[string]stri
 		merged[metaDescription] = description
 	}
 	return merged
+}
+
+// canReuseEvaluator is shared with preflight so authored metadata cannot mask
+// the published contract of a version that reconciliation will leave unchanged.
+func canReuseEvaluator(prior, digest string, existing, body []byte) bool {
+	return (prior == "" || prior == digest) && sameDefinition(existing, body)
 }
 
 // sameDefinition reports whether the locally authored definition already

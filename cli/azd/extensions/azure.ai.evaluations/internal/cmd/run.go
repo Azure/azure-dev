@@ -109,8 +109,9 @@ type runStartFlags struct {
 
 // runStartAction starts a run and, unless asked not to, waits for its verdict.
 type runStartAction struct {
-	cmd   *cobra.Command
-	flags *runStartFlags
+	cmd        *cobra.Command
+	flags      *runStartFlags
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 func buildRunCommand(use, short string) *cobra.Command {
@@ -134,7 +135,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 			"Must satisfy the eval's column schema.")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
-		"Cap local, unregistered dataset rows. Registered dataset versions cannot be capped.")
+		"Cap local, unregistered dataset rows. Registered versions, trace/response sources, "+
+			"and eval-ID reruns cannot be capped. Use 0 to clear an ordinary dataset eval's configured cap.")
 	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
 	addFailOnFlag(cmd, &flags.failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
@@ -174,7 +176,11 @@ func (a *runStartAction) Run() error {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
 	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	newContext := a.newContext
+	if newContext == nil {
+		newContext = newEvalContext
+	}
+	ec, err := newContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -219,6 +225,11 @@ func (a *runStartAction) Run() error {
 		group = &overridden
 	}
 
+	maxSamples, err := runMaxSamples(a.cmd, a.flags.maxSamples, group)
+	if err != nil {
+		return err
+	}
+
 	if ref.Declared() {
 		if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
 			return err
@@ -235,9 +246,13 @@ func (a *runStartAction) Run() error {
 		dataSource, reusedLevel, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 	default:
 		dataSource, datasetVersion, err = ec.buildRunDataSource(
-			ctx, group, configPath, resolveMaxSamples(a.flags.maxSamples, group))
+			ctx, group, configPath, maxSamples)
 	}
 	if err != nil {
+		return err
+	}
+
+	if err := ec.validateResponsesRun(ctx, evalID, dataSource); err != nil {
 		return err
 	}
 
@@ -628,6 +643,9 @@ func (ec *evalContext) buildRunDataSource(
 		case project.SourceTypeTraces:
 			ds, err = tracesDataSource(group)
 		default:
+			if maxSamples > 0 {
+				return nil, "", messages.SourceSampleConflict(group.Name)
+			}
 			ds, err = responsesDataSource(group)
 		}
 		return ds, "", err
@@ -1013,8 +1031,8 @@ func resolveLevel(group *project.Eval) string {
 	return ""
 }
 
-// resolveMaxSamples prefers the flag, then the eval's own declaration, matching
-// how the evaluation level resolves.
+// resolveMaxSamples prefers a positive flag value, then the declared cap.
+// runMaxSamples separately handles an explicitly supplied zero.
 //
 // Without this, max_samples parsed and did nothing: an eval that caps its
 // sample count in config would send the whole dataset, and only a flag on every
@@ -1027,6 +1045,22 @@ func resolveMaxSamples(flag int, group *project.Eval) int {
 		return group.MaxSamples
 	}
 	return 0
+}
+
+func runMaxSamples(cmd *cobra.Command, flag int, group *project.Eval) (int, error) {
+	if cmd.Flags().Changed("max-samples") {
+		if group == nil {
+			return 0, exterrors.Validation(exterrors.CodeConflictingArguments,
+				"--max-samples cannot change a data source reused by eval id",
+				"Run a declared eval by name to select its dataset and cap, "+
+					"or omit --max-samples to repeat the previous source.")
+		}
+		if group.Source != nil {
+			return 0, messages.SourceSampleConflict(group.Name)
+		}
+		return flag, nil
+	}
+	return resolveMaxSamples(flag, group), nil
 }
 
 // errWaitBudgetSpent says the run outlived the wait, not that anything failed.

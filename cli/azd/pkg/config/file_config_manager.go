@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -52,6 +53,7 @@ func NewFileConfigManager(configManager Manager) FileConfigManager {
 }
 
 type fileConfigManager struct {
+	mu      sync.Mutex
 	manager Manager
 }
 
@@ -96,6 +98,14 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 }
 
 func (m *fileConfigManager) SaveWithContext(ctx context.Context, c Config, filePath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	baseConfig, ok := c.(*config)
+	if !ok {
+		return fmt.Errorf("failed casting azd configuration to config")
+	}
+
 	folderPath := filepath.Dir(filePath)
 	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("failed creating config directory: %w", err)
@@ -106,11 +116,8 @@ func (m *fileConfigManager) SaveWithContext(ctx context.Context, c Config, fileP
 		return fmt.Errorf("serializing file config: %w", err)
 	}
 
-	baseConfig, ok := c.(*config)
-	if !ok {
-		return fmt.Errorf("failed casting azd configuration to config")
-	}
-
+	// If the configuration contains a vault, then also save the vault configuration
+	// Vault configuration always gets saved in a separate file in the users HOME directory.
 	if baseConfig.vaultId != "" {
 		vaultPath, err := resolveVaultPath(baseConfig.vaultId)
 		if err != nil {

@@ -13,7 +13,41 @@ package urlsafe
 import (
 	"errors"
 	"net/url"
+	"regexp"
+	"strings"
 )
+
+const urlStartPattern = `(?i)(?:https?:[/\\]*|\b[a-z][a-z0-9+.-]*:[/\\]{1,2}|[/\\]{2})`
+
+var (
+	embeddedURL = regexp.MustCompile(urlStartPattern + `[^\s]+`)
+	urlStart    = regexp.MustCompile(urlStartPattern)
+)
+
+// Text removes URL credentials from prose such as a service error message.
+// A malformed URL is hidden entirely rather than risking a partial redaction.
+func Text(text string) string {
+	return embeddedURL.ReplaceAllStringFunc(text, func(raw string) string {
+		// Adjacent URLs can be parsed as one URL whose path contains another
+		// authority. Hide the ambiguous token instead of leaking its userinfo.
+		if len(urlStart.FindAllStringIndex(raw, 2)) > 1 {
+			return "<redacted-url>"
+		}
+		drivePath := len(raw) >= 3 && raw[1] == ':' && (raw[2] == '\\' || raw[2] == '/')
+		if (drivePath || strings.HasPrefix(raw, `\\`)) && !strings.ContainsAny(raw, "@?#") {
+			return raw
+		}
+		// Quotes can be valid inside userinfo or a query. Only peel trailing
+		// prose punctuation, never split a credential-bearing URL at a quote.
+		candidate := strings.TrimRight(raw, `"'.,;)}>`)
+		suffix := strings.TrimPrefix(raw, candidate)
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed.Host == "" {
+			return "<redacted-url>" + suffix
+		}
+		return URL(parsed) + suffix
+	})
+}
 
 // URL renders a URL with its credentials, query and fragment removed, keeping
 // the scheme, host and path so the log still says where the request went.

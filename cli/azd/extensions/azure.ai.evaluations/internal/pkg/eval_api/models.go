@@ -543,6 +543,9 @@ type EvalRunDataSource struct {
 	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
 	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
 	DataMapping                    map[string]string        `json:"data_mapping,omitempty"`
+	// SimulationSeedCount is captured from the validated dataset at submission,
+	// not sent as an unsupported service data-source field.
+	SimulationSeedCount *int `json:"-"`
 }
 
 // ItemGenerationParams says how the service should turn a source into the items
@@ -765,6 +768,8 @@ type OpenAIEvalRun struct {
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
 	Error              *JobError               `json:"error,omitempty"`
+	raw                json.RawMessage
+	reportedCounts     map[string]bool
 }
 
 // Failure returns why the run failed, or "" when it did not.
@@ -822,6 +827,7 @@ type OutputItem struct {
 	Status         string         `json:"status"`
 	DataSourceItem map[string]any `json:"datasource_item,omitempty"`
 	Results        []OutputResult `json:"results,omitempty"`
+	raw            json.RawMessage
 }
 
 // OutputResult is one evaluator's verdict on one row.
@@ -846,6 +852,9 @@ type OutputResult struct {
 	// Reason is the judge's explanation, which is the part a failing row is
 	// actually looked at for.
 	Reason string `json:"reason,omitempty"`
+	// Properties includes service-specific details such as rubric dimension
+	// scores. Retained verbatim; human views interpret only known fields.
+	Properties json.RawMessage `json:"properties,omitempty"`
 }
 
 // OutputSample is the evaluator's record of the call it made.

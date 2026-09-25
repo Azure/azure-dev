@@ -16,6 +16,7 @@ import (
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -184,8 +185,8 @@ func failAs(cmd *cobra.Command, err error) error {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
-		Message:    err.Error(),
-		Suggestion: azdext.ErrorSuggestion(err),
+		Message:    urlsafe.Text(err.Error()),
+		Suggestion: urlsafe.Text(azdext.ErrorSuggestion(err)),
 	}})
 	exitProcess(1)
 	return err
@@ -259,14 +260,21 @@ func reportFailuresAsJSON(root *cobra.Command) {
 				return failAs(cmd, preRun(cmd, args))
 			}
 		}
-		// Argument validation runs instead of RunE, not before it, so a wrapper
-		// around RunE alone never sees it. An unquoted shell variable holding a
-		// name with spaces arrives as several arguments and fails here -- a
-		// scripting mistake, reported to a script, which is the case that most
-		// needs an answer it can read.
-		if validate := c.Args; validate != nil {
+		// Cobra's required/group checks otherwise run after hooks and outside
+		// RunE. Check parsed flags here so local rejection stays JSON and
+		// precedes hooks that can read auth or change project state. Keep nil
+		// Args on groups: Cobra uses it when rejecting unknown commands.
+		if validate := c.Args; validate != nil || c.Runnable() {
 			c.Args = func(cmd *cobra.Command, args []string) error {
-				return failAs(cmd, validate(cmd, args))
+				if validate != nil {
+					if err := validate(cmd, args); err != nil {
+						return failAs(cmd, err)
+					}
+				}
+				if err := cmd.ValidateRequiredFlags(); err != nil {
+					return failAs(cmd, err)
+				}
+				return failAs(cmd, cmd.ValidateFlagGroups())
 			}
 		}
 		if run := c.RunE; run != nil {
@@ -285,7 +293,7 @@ func reportFailuresAsJSON(root *cobra.Command) {
 					// where azd would put it. `run --gate-on-status` reaches
 					// here: the run it reported is the answer, and why that run
 					// is a failure belongs beside it rather than inside it.
-					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+err.Error())
+					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+urlsafe.Text(err.Error()))
 					exitProcess(1)
 					return err
 				}

@@ -283,6 +283,11 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
+// ExportAvailableResults offers a snapshot without claiming a moving run is complete.
+func ExportAvailableResults(eval, runID string) string {
+	return "\nExport available results:\n" + exportRunCommand(eval, runID)
+}
+
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
@@ -348,6 +353,12 @@ func RunMustBeNamed(evalID string) error {
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
 		evalID, shellArg(evalID))
+}
+
+// ListedRunMissingID refuses to guess an identifier omitted by the service.
+func ListedRunMissingID(evalID string) error {
+	return fmt.Errorf("the service omitted the newest run ID for eval %q; "+
+		"supply --run with a known run ID instead of selecting the latest run", evalID)
 }
 
 // ReadingRun reports a failure to read the run the caller named.
@@ -551,22 +562,14 @@ func NoRowsScored() string {
 	return "\nNo rows have been scored yet.\n"
 }
 
-// SamplesNeedingALook closes a --failed-only listing, holding the rows that
-// failed apart from the rows nothing managed to score.
-//
-// One count covering both contradicted the totals printed two lines above it,
-// which is what a reader compares it with: a run reporting 5 failed and 8
-// errored closed with "13 sample(s) failed at least one evaluator".
-// FilteredItemCount closes a filtered listing by naming the filter it applied.
-//
-// --failed-only used to keep rows nothing had scored and then count them as
-// failures, so the footer contradicted the totals directly above it.
-//
-// Phrased as "6 of 15 test cases failed" rather than "are failed": the status
-// reads as the verb, which is what the results spec prints and what a reader
-// says out loud.
-func FilteredItemCount(shown, total int, status string) string {
-	return fmt.Sprintf("\n%d of %d test cases %s\n", shown, total, status)
+// FilteredItemCount names only the rows displayed, not the run's total failures.
+func FilteredItemCount(shown int, status string) string {
+	return fmt.Sprintf("\nShowing %s on this page.\n", countOf(shown, status+" test case"))
+}
+
+// FilteredRunTotal distinguishes the service's matching and full-run totals.
+func FilteredRunTotal(matching, total int, status string) string {
+	return fmt.Sprintf("Full run: %d %s of %s (service-reported).\n", matching, status, countOf(total, "total test case"))
 }
 
 // UnknownItemStatus reports a --status value that names no outcome.

@@ -39,9 +39,7 @@ func TestSuggestedCommandsNameTheEvalEvenWhenTheRunDoesNot(t *testing.T) {
 	}
 }
 
-// What the run itself declares still wins: it is the name the reader
-// recognizes, and the caller's identifier may be a service id.
-func TestTheRunsOwnNameIsPreferredOverTheResolvedOne(t *testing.T) {
+func TestSuggestedCommandsPreferResolvedIDOverMutableName(t *testing.T) {
 	run := &eval_api.OpenAIEvalRun{
 		ID:       "evalrun_1",
 		Status:   "completed",
@@ -52,8 +50,8 @@ func TestTheRunsOwnNameIsPreferredOverTheResolvedOne(t *testing.T) {
 	require.NoError(t, renderResults(&out, "eval_abc123", run,
 		[]eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}, false))
 
-	assert.Contains(t, out.String(), "--eval declared-name")
-	assert.NotContains(t, out.String(), "eval_abc123")
+	assert.Contains(t, out.String(), "--eval eval_abc123")
+	assert.NotContains(t, out.String(), "--eval declared-name")
 }
 
 // The export is the whole run, so it is the answer to "nothing here matched,

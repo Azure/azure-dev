@@ -212,6 +212,42 @@ is refused instead of scored against the seeded text.
 `azd ai eval generate --evaluation-level conversation` writes seeds in this
 shape and tags the registered dataset so a later run knows what it holds.
 
+Simulation run summaries, `run show`, and `run output list` retain the run's
+dataset name and version and distinguish **requested configuration** from
+**observed results**:
+
+- Seed scenarios count the validated dataset rows submitted to the run.
+- Repetitions are the requested conversations per seed, not completed conversations.
+- Maximum turns is a requested ceiling. An omitted ceiling leaves the service
+  default and is not an observed conversation length.
+- Conversation evaluation results use the service's `result_counts`, keeping
+  failed verdicts separate from errored and skipped evaluations.
+
+The CLI has no verified service counters for generated conversations, completed
+conversations, or actual turns. These are shown as **not
+reported**, never calculated by multiplying seeds and repetitions or treating
+evaluation totals as successful generation. Older runs without recorded
+settings also show **not reported** for those settings. Static conversation
+and turn-level runs keep their existing output.
+
+When a waited `run start` successfully reads all output rows for its mean-score
+summary, it also shows **observed conversation output**. This block counts
+unique `datasource_item.id` values and the associated output-item lifecycle
+statuses, not generated or completed conversations. A completed output item can
+still have failed evaluation verdicts. Duplicate conversation IDs count once;
+conflicting or unknown statuses and rows without conversation IDs are reported
+separately. These observations describe all rows returned by that listing, not
+a guarantee that every requested conversation produced output. Paged or filtered
+listings, and detail views that have not fetched all rows, do not supply this
+block. No additional output fetch or transcript-based turn inference is used.
+
+JSON retains the service's run fields, including unrecognized nested fields;
+missing or null result-count members remain missing or null. It does not add
+estimated conversation or turn counts. Newly submitted
+simulation runs record configuration under `metadata.azd_simulation_*`, with
+`metadata.azd_run_mode` identifying the simulation mode. The JSON handoff from
+`run start --no-wait` is unchanged; read `run show -o json` for the run object.
+
 ### Repeated deploys do not create redundant versions
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
@@ -244,6 +280,79 @@ discards a record of finished work, not the artifact the job produced.
 
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
+
+Known-command flag-validation failures also return one JSON error document
+under `-o json`, including mutually exclusive flags such as `--wait --no-wait`
+and missing required flag groups. They still fail without running command hooks
+or writing evaluation artifacts.
+
+`azd ai eval run output list --failed-only` displays a page of failing test
+cases, not the full run's failure count. Its footer separates the number shown
+on that page from the service-reported failures and total test cases for the
+whole run once it reaches a terminal state. While a run is still moving, partial
+counters are not labeled as full-run totals and export guidance describes the
+available results, not a completed run. For example, a page of 10 failures can
+belong to a run with 12 failures among 18 test cases. Follow the printed page token to read the rest,
+or use `run output export` to save the complete results. Errored rows remain
+separate from failed verdicts and can be selected with `--status errored`.
+
+After a terminal run, waited `run start` summaries and `run show` details
+include an unfiltered output-list command and a JSON export command, both with
+the resolved eval and run identities. Suggested commands use the immutable eval
+ID when known, rather than a friendly name that might point to a different
+eval after a later deployment. Friendly labels remain in the human run header;
+service JSON is not rewritten. A failed-only listing is additional
+guidance when the service reports failed verdicts, not a replacement for the
+unfiltered listing. Errored rows get a separate `--status errored` command;
+they are not included by `--failed-only`.
+
+For older responses without a status, reported counters still provide useful
+available-result guidance, including all-passed and explicit-zero counts,
+without asserting that the run has completed. If a run lookup omits its `id`,
+follow-up requests retain the explicit or remembered lookup ID separately;
+JSON and exports preserve the original service fields.
+
+Human summaries, run details, and listings also distinguish unreported counters
+from explicit zeros. Partial counters are marked `not reported` rather than
+inventing a failure/error split or a pass rate without known operands.
+Waited summaries also show a complete set of explicitly reported zero counters;
+their pass rate is `-` because no rows were scored.
+
+An operationally failed run can have no result counts or output rows. Its
+follow-up commands inspect **available** output and export the run's diagnostics
+plus any available results; they do not imply that grading succeeded or that
+failing rows exist. `run show` also prints the service's run-level failure
+message when one was returned, removing URL credentials, query strings, and
+fragments from the human message. `--output json` keeps its existing document
+shape and exit behavior without appending human guidance.
+
+CLI-generated JSON error envelopes, accompanying stderr diagnostics, and the
+run's known `error.code`/`error.message` fields in JSON and exports also redact
+embedded URL credentials, including malformed HTTP(S) URLs concatenated to
+identifiers without a separator. This projection does not mutate the service response
+or rewrite dataset/output content and unknown fields. Those other fields can
+still contain sensitive source data; keep exported files private.
+
+`run output show <item>` uses the lookup ID from the listing in its human
+header. The service may return a result-version URI as the detail object's
+`id`; JSON keeps that returned identity rather than replacing it with the
+lookup ID.
+
+For rubric results, the detail view displays returned
+`properties.dimension_scores` alongside the overall evaluator score. Each
+dimension can include its score, applicability, weight, and full reason.
+Applicability is not a pass/fail verdict, and missing values are not treated
+as zero or false. Separate dimension metrics in `results` remain supported.
+The CLI does not derive dimension results from the rubric definition when
+they are absent from the response.
+
+Output-item JSON preserves unrecognized nested service fields, including
+evaluator `properties` and `sample` details; modeled scores keep their existing
+numeric normalization. Numeric dataset values retain their precision rather
+than being rounded through floating-point decoding. These fields can contain
+prompts, answers, and other sensitive evaluation content. Prefer a private destination with
+`run output list --output-file` or `run output export --output-file` over
+writing JSON into shared terminal or CI logs.
 
 A command that needs an eval and was not told which one offers a picker.
 Selecting **Cancel** is an answer, not a failure: the command says the selection

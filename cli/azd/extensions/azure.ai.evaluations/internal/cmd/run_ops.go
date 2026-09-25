@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -103,7 +105,10 @@ func (a *runListAction) Run() error {
 		var runs []eval_api.OpenAIEvalRun
 		cursor := ""
 		if list != nil {
-			runs = list.Data
+			runs = make([]eval_api.OpenAIEvalRun, len(list.Data))
+			for i := range list.Data {
+				runs[i] = *runForJSON(&list.Data[i])
+			}
 			if list.HasMore {
 				cursor = list.LastID
 			}
@@ -122,8 +127,8 @@ func (a *runListAction) Run() error {
 			runDataset(run.Metadata),
 			timestampString(run.CreatedAt),
 			run.Status,
-			sampleCount(run.ResultCounts),
-			runPassRate(run.ResultCounts),
+			reportedSampleCount(&run),
+			reportedRunPassRate(&run),
 		})
 	}
 	if err := emitTable(a.cmd.OutOrStdout(),
@@ -203,11 +208,16 @@ func (a *runShowAction) Run() error {
 		return err
 	}
 
-	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
+	return a.show(ctx, ec, evalID, threshold)
+}
+
+func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string, threshold gate) error {
+	run, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
 	if err != nil {
 		return err
 	}
 	run = ec.withPortalLink(ctx, evalID, run)
+	display := runForDisplay(run, evalID, runID)
 
 	// Reattaching to a run started asynchronously: the pipeline that
 	// gates on it is often not the one that started it.
@@ -222,7 +232,7 @@ func (a *runShowAction) Run() error {
 	if a.flags.wait {
 		// Into a second variable: pollRun answers the budget with a nil
 		// run, and the run read above is what still names it.
-		final, pollErr := ec.pollRun(ctx, evalID, run.ID, a.cmd.OutOrStdout(), isJSON(a.cmd))
+		final, pollErr := ec.pollRun(ctx, evalID, runID, a.cmd.OutOrStdout(), isJSON(a.cmd))
 		if errors.Is(pollErr, errWaitBudgetSpent) {
 			// The wait ran out; the run is still going server-side.
 			// `run start` answers this with a reattach line, and a gate
@@ -230,12 +240,12 @@ func (a *runShowAction) Run() error {
 			// what this command is, so it says the same things rather
 			// than surfacing the sentinel's own text.
 			if threshold.set {
-				return messages.GateOutlivedTheWait(run.ID, waitBudget)
+				return messages.GateOutlivedTheWait(display.ID, waitBudget)
 			}
 			if isJSON(a.cmd) {
-				return emitJSON(a.cmd.OutOrStdout(), run)
+				return emitJSON(a.cmd.OutOrStdout(), runForJSON(run))
 			}
-			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(run.ID, waitBudget))
+			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(display.ID, waitBudget))
 			return nil
 		}
 		if pollErr != nil {
@@ -246,29 +256,46 @@ func (a *runShowAction) Run() error {
 		// waited path lost it. `run start` decorates after its poll for the
 		// same reason.
 		run = ec.withPortalLink(ctx, evalID, final)
+		display = runForDisplay(run, evalID, runID)
 	}
 
 	// The spec puts --fail-on on the commands that wait. Gating a run
 	// that is still moving would read partial counts; ignoring the flag
 	// would leave a pipeline believing it is gated when it is not.
 	if threshold.set && !runIsTerminal(run) {
-		return messages.GateNeedsATerminalRun(run.ID, run.Status)
+		return messages.GateNeedsATerminalRun(display.ID, display.Status)
 	}
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(a.cmd.OutOrStdout(), run); err != nil {
+		if err := emitJSON(a.cmd.OutOrStdout(), runForJSON(run)); err != nil {
 			return err
 		}
 		if gateOnStatus {
-			if err := runCompleted(run); err != nil {
+			if err := runCompleted(display); err != nil {
 				return err
 			}
 		}
-		applyGate(a.cmd, threshold, run)
+		applyGate(a.cmd, threshold, display)
 		return nil
 	}
 
 	out := a.cmd.OutOrStdout()
+	if err := renderRunDetail(out, display); err != nil {
+		return err
+	}
+	if gateOnStatus {
+		if err := runCompleted(display); err != nil {
+			return err
+		}
+	}
+	applyGate(a.cmd, threshold, display)
+	return nil
+}
+
+func renderRunDetail(out io.Writer, run *eval_api.OpenAIEvalRun) error {
+	if isSimulationRun(run) {
+		return renderRun(out, run, nil)
+	}
 	if err := emitDetail(out, []field{
 		{"Run", run.ID},
 		{"Name", run.Name},
@@ -277,17 +304,13 @@ func (a *runShowAction) Run() error {
 		// a run the service sent none for says that rather than losing
 		// the row and reading as a renderer that forgot it.
 		{"Status", reportedStatus(run.Status)},
-		{"Results", summarizeCounts(run.ResultCounts)},
+		{"Results", summarizeCounts(run)},
 	}); err != nil {
 		return err
 	}
+	renderRunFailure(out, run)
+	renderRunFollowUp(out, run)
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
-	if gateOnStatus {
-		if err := runCompleted(run); err != nil {
-			return err
-		}
-	}
-	applyGate(a.cmd, threshold, run)
 	return nil
 }
 
@@ -366,7 +389,7 @@ func (a *runCancelAction) Run() error {
 
 	// Cancelling changes a run, so this settles for the one named or the
 	// one this environment started, and never the newest one listed.
-	target, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, false)
+	target, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, false)
 	if err != nil {
 		return err
 	}
@@ -374,21 +397,21 @@ func (a *runCancelAction) Run() error {
 	// since the service reports success either way. Lowercased to match
 	// the polling path: the service's casing is not guaranteed.
 	if terminalRunStates[strings.ToLower(target.Status)] {
-		return messages.RunAlreadyFinished(target.ID, target.Status)
+		return messages.RunAlreadyFinished(runID, target.Status)
 	}
 
-	canceled, err := ec.evalClient.CancelOpenAIEvalRun(ctx, evalID, target.ID)
+	canceled, err := ec.evalClient.CancelOpenAIEvalRun(ctx, evalID, runID)
 	if err != nil {
-		return messages.CancellingRun(target.ID, err)
+		return messages.CancellingRun(runID, err)
 	}
 	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), canceled)
+		return emitJSON(a.cmd.OutOrStdout(), runForJSON(canceled))
 	}
 	status := canceled.Status
 	if status == "" {
 		status = "cancelling"
 	}
-	fmt.Fprint(a.cmd.OutOrStdout(), messages.RunIsNow(target.ID, status))
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.RunIsNow(runID, status))
 	return nil
 }
 
@@ -473,11 +496,26 @@ func (a *runDeleteAction) Run() error {
 	return nil
 }
 
-func summarizeCounts(counts *eval_api.EvalRunResultCounts) string {
-	if counts == nil {
+func summarizeCounts(run *eval_api.OpenAIEvalRun) string {
+	if run == nil || run.ResultCounts == nil {
 		return ""
 	}
-	return messages.CountsSummary(counts.Passed, counts.Failed, counts.Errored)
+	counts := run.ReportedResultCounts()
+	passed, passedKnown := counts["passed"]
+	failed, failedKnown := counts["failed"]
+	errored, erroredKnown := counts["errored"]
+	if passedKnown && failedKnown && erroredKnown {
+		return messages.CountsSummary(passed, failed, errored)
+	}
+	parts := make([]string, 0, 3)
+	for _, name := range []string{"passed", "failed", "errored"} {
+		if count, ok := counts[name]; ok {
+			parts = append(parts, fmt.Sprintf("%d %s", count, name))
+		} else {
+			parts = append(parts, name+" not reported")
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // metaDataset and metaDatasetVersion record which rows a run scored. The run's

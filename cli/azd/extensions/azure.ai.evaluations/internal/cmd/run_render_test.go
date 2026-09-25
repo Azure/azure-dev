@@ -84,8 +84,9 @@ func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	assert.NotContains(t, text, "Answered a different question.",
 		"the reason is one evaluator's account of the row, and lives in `output show`")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
-	assert.Contains(t, text, "1 of 2 test cases failed",
-		"the status reads as the verb, which is what a reader says out loud")
+	assert.Contains(t, text, "Showing 1 failed test case on this page.",
+		"the number shown is not the full run's failure count")
+	assert.NotContains(t, text, "Full run:", "no service counts were reported")
 }
 
 // --failed-only means failed.
@@ -154,9 +155,9 @@ func TestListingPrintsItsFollowUpCommandsResolved(t *testing.T) {
 	text := out.String()
 
 	assert.Contains(t, text,
-		"azd ai eval run output show oi_first --eval support-agent-dataset-eval --run evalrun_1",
+		"azd ai eval run output show oi_first --eval an-eval --run evalrun_1",
 		"the detail command names a row from the table above it:\n%s", text)
-	assert.Contains(t, text, "azd ai eval run output export --eval support-agent-dataset-eval --run evalrun_1")
+	assert.Contains(t, text, "azd ai eval run output export --eval an-eval --run evalrun_1")
 	assert.NotContains(t, text, "<item>",
 		"a line with a placeholder in it reads like a command and is not one")
 }
@@ -213,7 +214,7 @@ func TestRenderRunHeaderNamesTheEval(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, run, map[string]float64{"relevance": 4.1}))
+	require.NoError(t, renderRun(&out, run, &runOutputSummary{means: map[string]float64{"relevance": 4.1}}))
 	text := out.String()
 
 	assert.Contains(t, text, "Run        evalrun_9")
@@ -247,7 +248,7 @@ func TestRenderRunOmitsTheScoreColumnWithoutMeans(t *testing.T) {
 	assert.NotContains(t, without.String(), "MEAN SCORE")
 
 	var with bytes.Buffer
-	require.NoError(t, renderRun(&with, run, map[string]float64{"relevance": 4.15}))
+	require.NoError(t, renderRun(&with, run, &runOutputSummary{means: map[string]float64{"relevance": 4.15}}))
 	assert.Contains(t, with.String(), "MEAN SCORE")
 	assert.Contains(t, with.String(), "4.2", "the mean is shown to one decimal")
 }

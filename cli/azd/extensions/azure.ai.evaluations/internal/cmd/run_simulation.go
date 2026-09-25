@@ -77,6 +77,7 @@ func (ec *evalContext) simulationDataSource(
 		group.Simulation.MaxTurns,
 	)
 	ds.SetFileID(id)
+	ds.SimulationSeedCount = new(len(items))
 	return ds, version, nil
 }
 

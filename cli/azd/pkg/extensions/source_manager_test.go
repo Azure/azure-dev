@@ -317,6 +317,41 @@ func TestSourceManager_List_PreservesConcurrentExplicitSources(t *testing.T) {
 	require.False(t, found)
 }
 
+func TestSourceManager_AddRejectsConcurrentCaseInsensitiveDuplicate(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	staleConfig := config.NewEmptyConfig()
+	latestConfig := config.NewEmptyConfig()
+	otherSource := SourceConfig{
+		Name:     "other",
+		Type:     SourceKindUrl,
+		Location: "https://example.com/other.json",
+	}
+	existingSource := SourceConfig{
+		Name:     "Private",
+		Type:     SourceKindUrl,
+		Location: "https://example.com/private.json",
+	}
+	require.NoError(t, staleConfig.Set("extension.sources.other", otherSource))
+	require.NoError(t, latestConfig.Set("extension.sources.Private", existingSource))
+
+	configManager := &staleSourceListConfigManager{
+		staleConfig:  staleConfig,
+		latestConfig: latestConfig,
+	}
+	sourceManager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+	duplicate := &SourceConfig{
+		Name:     "private",
+		Type:     SourceKindUrl,
+		Location: "https://example.com/duplicate.json",
+	}
+
+	err := sourceManager.Add(t.Context(), "private", duplicate)
+	require.ErrorIs(t, err, ErrSourceExists)
+
+	_, found := latestConfig.Get("extension.sources.private")
+	require.False(t, found)
+}
+
 func TestValidateSourceName(t *testing.T) {
 	t.Parallel()
 

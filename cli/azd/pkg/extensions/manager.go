@@ -1075,10 +1075,10 @@ func (m *Manager) Uninstall(ctx context.Context, id string) error {
 		if err != nil {
 			return false, err
 		}
-		if _, exists := extensions[id]; !exists {
+		if _, exists := extensions[extension.Id]; !exists {
 			return false, nil
 		}
-		delete(extensions, id)
+		delete(extensions, extension.Id)
 		if err := userConfig.Set(installedConfigKey, extensions); err != nil {
 			return false, err
 		}
@@ -1087,7 +1087,7 @@ func (m *Manager) Uninstall(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to save user config: %w", err)
 	}
 	if m.installed != nil {
-		delete(m.installed, id)
+		delete(m.installed, extension.Id)
 	}
 
 	log.Printf("Extension '%s' uninstalled successfully\n", id)

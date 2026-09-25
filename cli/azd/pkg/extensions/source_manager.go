@@ -293,10 +293,28 @@ func (sm *SourceManager) ensureDefaultSource(ctx context.Context, source *Source
 // addInternal adds a new extension source to the user configuration.
 func (sm *SourceManager) addInternal(ctx context.Context, source *SourceConfig) error {
 	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
-		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Name)
-		if _, exists := userConfig.Get(path); exists {
-			return false, fmt.Errorf("extension source '%s' already exists, %w", source.Name, ErrSourceExists)
+		if rawSources, exists := userConfig.Get(baseConfigKey); exists {
+			sourceMap, ok := rawSources.(map[string]any)
+			if !ok {
+				return false, fmt.Errorf("unable to parse extension sources")
+			}
+			entries, err := configuredSourceEntries(sourceMap)
+			if err != nil {
+				return false, err
+			}
+			for _, entry := range entries {
+				if strings.EqualFold(entry.name, source.Name) ||
+					entry.config != nil && strings.EqualFold(entry.config.Name, source.Name) {
+					return false, fmt.Errorf(
+						"extension source '%s' already exists, %w",
+						source.Name,
+						ErrSourceExists,
+					)
+				}
+			}
 		}
+
+		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Name)
 		if err := userConfig.Set(path, source); err != nil {
 			return false, fmt.Errorf("unable to add extension source '%s': %w", source.Name, err)
 		}

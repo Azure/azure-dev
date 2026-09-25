@@ -196,8 +196,8 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.Greater(t, len(installed), 0)
 	require.Equal(t, SourceCategoryAzd, installed[extensions[0].Id].SourceCategory)
 
-	// Uninstall the first extension
-	err = manager.Uninstall(t.Context(), extensions[0].Id)
+	// Uninstall the first extension using different casing.
+	err = manager.Uninstall(t.Context(), strings.ToUpper(extensions[0].Id))
 	require.NoError(t, err)
 
 	// List installed extensions (expect 0)

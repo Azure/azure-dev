@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/google/uuid"
@@ -63,6 +64,49 @@ func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
 	existingConfig, err := configManager.Load(configFilePath)
 	require.NoError(t, err)
 	require.NotNil(t, existingConfig)
+}
+
+func Test_FileConfigManager_NewRootAndVaultUseOwnerOnlyPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix file permission bits")
+	}
+
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	configFilePath := filepath.Join(configDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+	azdConfig := NewConfig(nil)
+	require.NoError(t, azdConfig.SetSecret("secret", "value"))
+
+	require.NoError(t, configManager.Save(azdConfig, configFilePath))
+
+	rootInfo, err := os.Stat(configFilePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), rootInfo.Mode().Perm())
+
+	baseConfig := azdConfig.(*config)
+	vaultPath, err := resolveVaultPath(baseConfig.vaultId)
+	require.NoError(t, err)
+	vaultInfo, err := os.Stat(vaultPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), vaultInfo.Mode().Perm())
+}
+
+func Test_FileConfigManager_PreservesExistingPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix file permission bits")
+	}
+
+	configFilePath := filepath.Join(t.TempDir(), "config.json")
+	//nolint:gosec // This test intentionally verifies preservation of a broader existing mode.
+	require.NoError(t, os.WriteFile(configFilePath, []byte(`{"old":true}`), 0o640))
+	configManager := NewFileConfigManager(NewManager())
+
+	require.NoError(t, configManager.Save(NewConfig(map[string]any{"new": true}), configFilePath))
+
+	info, err := os.Stat(configFilePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o640), info.Mode().Perm())
 }
 
 func Test_FileConfigManager_SerializationFailurePreservesExistingFile(t *testing.T) {

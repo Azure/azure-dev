@@ -128,16 +128,26 @@ func (m *fileConfigManager) SaveWithContext(ctx context.Context, c Config, fileP
 		if err := m.manager.Save(baseConfig.vault, &vaultData); err != nil {
 			return fmt.Errorf("serializing vault configuration: %w", err)
 		}
-		if err := osutil.WriteFileAtomic(ctx, vaultPath, vaultData.Bytes(), 0); err != nil {
+		if err := writeUserConfigFileAtomic(ctx, vaultPath, vaultData.Bytes()); err != nil {
 			return fmt.Errorf("saving vault configuration: %w", err)
 		}
 	}
 
-	if err := osutil.WriteFileAtomic(ctx, filePath, rootData.Bytes(), 0); err != nil {
+	if err := writeUserConfigFileAtomic(ctx, filePath, rootData.Bytes()); err != nil {
 		return fmt.Errorf("saving file config: %w", err)
 	}
 
 	return nil
+}
+
+func writeUserConfigFileAtomic(ctx context.Context, path string, data []byte) error {
+	perm := osutil.PermissionFileOwnerOnly
+	if _, err := os.Stat(path); err == nil {
+		perm = 0
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stating config target file: %w", err)
+	}
+	return osutil.WriteFileAtomic(ctx, path, data, perm)
 }
 
 // resolveVaultPath validates a vault ID and returns the full path to the vault JSON file.

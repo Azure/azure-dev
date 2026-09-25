@@ -200,7 +200,7 @@ func (sm *sourceManager) Remove(ctx context.Context, key string) error {
 		return fmt.Errorf("template source '%s' not found, %w", key, err)
 	}
 
-	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		path := fmt.Sprintf("%s.%s", baseConfigKey, key)
 		if _, ok := userConfig.Get(path); !ok {
 			return false, nil
@@ -209,7 +209,8 @@ func (sm *sourceManager) Remove(ctx context.Context, key string) error {
 			return false, fmt.Errorf("unable to remove template source '%s': %w", key, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
@@ -250,7 +251,7 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 }
 
 func (sm *sourceManager) ensureDefaultSource(ctx context.Context, source *SourceConfig) error {
-	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		if _, exists := userConfig.Get(baseConfigKey); exists {
 			return false, nil
 		}
@@ -259,7 +260,8 @@ func (sm *sourceManager) ensureDefaultSource(ctx context.Context, source *Source
 			return false, fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
@@ -267,7 +269,7 @@ func (sm *sourceManager) ensureDefaultSource(ctx context.Context, source *Source
 }
 
 func (sm *sourceManager) addInternal(ctx context.Context, source *SourceConfig) error {
-	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
 		if _, exists := userConfig.Get(path); exists {
 			return false, fmt.Errorf("template source '%s' already exists, %w", source.Key, ErrSourceExists)
@@ -276,7 +278,8 @@ func (sm *sourceManager) addInternal(ctx context.Context, source *SourceConfig) 
 			return false, fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 

@@ -582,7 +582,7 @@ func (m *backfillSaveFailure) Mutate(
 	ctx context.Context,
 	mutation func(context.Context, config.Config) (bool, error),
 ) error {
-	return m.UserConfigManager.Mutate(ctx, func(ctx context.Context, cfg config.Config) (bool, error) {
+	return config.MutateUserConfig(ctx, m.UserConfigManager, func(ctx context.Context, cfg config.Config) (bool, error) {
 		changed, err := mutation(ctx, cfg)
 		if err != nil || !changed {
 			return changed, err
@@ -608,7 +608,7 @@ func Test_InstalledMetadata_SaveFailurePreservesState(t *testing.T) {
 				"test.child": installedRecord("test.child", "1.0.0", true),
 			}))
 			persistent := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-			require.NoError(t, persistent.Replace(t.Context(), manager.userConfig))
+			require.NoError(t, config.ReplaceUserConfig(t.Context(), persistent, manager.userConfig))
 			saveErr := errors.New("metadata write failed")
 			failing := &backfillSaveFailure{UserConfigManager: persistent, extensionID: "test.child", err: saveErr}
 			manager.configManager = failing
@@ -674,7 +674,7 @@ func Test_ReconcileDependencies_ReportsChildBackfillSaveFailure(t *testing.T) {
 				child.Id: installedRecord(child.Id, "1.0.0", true),
 			}))
 			persistent := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-			require.NoError(t, persistent.Replace(t.Context(), manager.userConfig))
+			require.NoError(t, config.ReplaceUserConfig(t.Context(), persistent, manager.userConfig))
 			saveErr := errors.New("child metadata write failed")
 			manager.configManager = &backfillSaveFailure{
 				UserConfigManager: persistent, extensionID: child.Id, err: saveErr,

@@ -37,22 +37,51 @@ type Config interface {
 	GetSection(path string, section any) (bool, error)
 	// GetMap retrieves the map stored at the specified path
 	GetMap(path string) (map[string]any, bool)
-	// GetRawMapEntry retrieves an entry from a map without resolving vault references.
-	GetRawMapEntry(path string, key string) (any, bool, error)
 	// GetSlice retrieves the slice stored at the specified path
 	GetSlice(path string) ([]any, bool)
 	// Set stores the value at the specified path
 	Set(path string, value any) error
-	// SetRawMapEntry stores an entry under an opaque map key without interpreting the key as a path.
-	SetRawMapEntry(path string, key string, value any) error
 	// SetSecret stores the secrets at the specified path within a local user vault
 	SetSecret(path string, value string) error
 	// Unset removes the value stored at the specified path
 	Unset(path string) error
-	// DeleteRawMapEntry removes an opaque map key without interpreting the key as a path.
-	DeleteRawMapEntry(path string, key string) error
 	// IsEmpty returns a value indicating whether the configuration is empty
 	IsEmpty() bool
+}
+
+// RawMapEntryConfig is an optional Config capability for accessing map entries
+// without interpreting entry keys as configuration paths.
+type RawMapEntryConfig interface {
+	GetRawMapEntry(path string, key string) (any, bool, error)
+	SetRawMapEntry(path string, key string, value any) error
+	DeleteRawMapEntry(path string, key string) error
+}
+
+// GetRawMapEntry retrieves an opaque map entry without resolving vault references.
+func GetRawMapEntry(config Config, path string, key string) (any, bool, error) {
+	rawConfig, ok := config.(RawMapEntryConfig)
+	if !ok {
+		return nil, false, fmt.Errorf("config type %T does not support raw map entries", config)
+	}
+	return rawConfig.GetRawMapEntry(path, key)
+}
+
+// SetRawMapEntry stores an entry without interpreting its key as a configuration path.
+func SetRawMapEntry(config Config, path string, key string, value any) error {
+	rawConfig, ok := config.(RawMapEntryConfig)
+	if !ok {
+		return fmt.Errorf("config type %T does not support raw map entries", config)
+	}
+	return rawConfig.SetRawMapEntry(path, key, value)
+}
+
+// DeleteRawMapEntry removes an entry without interpreting its key as a configuration path.
+func DeleteRawMapEntry(config Config, path string, key string) error {
+	rawConfig, ok := config.(RawMapEntryConfig)
+	if !ok {
+		return fmt.Errorf("config type %T does not support raw map entries", config)
+	}
+	return rawConfig.DeleteRawMapEntry(path, key)
 }
 
 // NewEmptyConfig creates a empty configuration object.

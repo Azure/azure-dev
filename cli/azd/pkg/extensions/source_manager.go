@@ -141,7 +141,7 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 			"'%s' is reserved and cannot be removed, %w",
 			MainRegistryName, ErrSourceReserved)
 	}
-	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		rawSources, ok := userConfig.Get(baseConfigKey)
 		if !ok {
 			return false, fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
@@ -168,7 +168,8 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 			return false, fmt.Errorf("unable to remove extension source '%s': %w", name, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
@@ -272,7 +273,7 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 }
 
 func (sm *SourceManager) ensureDefaultSource(ctx context.Context, source *SourceConfig) error {
-	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		if _, exists := userConfig.Get(baseConfigKey); exists {
 			return false, nil
 		}
@@ -281,7 +282,8 @@ func (sm *SourceManager) ensureDefaultSource(ctx context.Context, source *Source
 			return false, fmt.Errorf("unable to add extension source '%s': %w", source.Name, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
@@ -290,7 +292,7 @@ func (sm *SourceManager) ensureDefaultSource(ctx context.Context, source *Source
 
 // addInternal adds a new extension source to the user configuration.
 func (sm *SourceManager) addInternal(ctx context.Context, source *SourceConfig) error {
-	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Name)
 		if _, exists := userConfig.Get(path); exists {
 			return false, fmt.Errorf("extension source '%s' already exists, %w", source.Name, ErrSourceExists)
@@ -299,7 +301,8 @@ func (sm *SourceManager) addInternal(ctx context.Context, source *SourceConfig) 
 			return false, fmt.Errorf("unable to add extension source '%s': %w", source.Name, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 

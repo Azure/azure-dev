@@ -121,7 +121,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		})
 
 		// Write a default channel so HasUpdateConfig returns true next time.
-		if err := a.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := config.MutateUserConfig(ctx, a.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 			if update.HasUpdateConfig(cfg) {
 				return false, nil
 			}
@@ -293,12 +293,16 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Treat save failures as non-fatal since the binary was already updated successfully.
 	// Guide the user to manually persist the channel if saving fails.
 	if channelChanged {
-		if err := a.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
-			if err := update.SetChannel(userConfig, cfg.Channel); err != nil {
-				return false, err
-			}
-			return true, nil
-		}); err != nil {
+		if err := config.MutateUserConfig(
+			ctx,
+			a.configManager,
+			func(_ context.Context, userConfig config.Config) (bool, error) {
+				if err := update.SetChannel(userConfig, cfg.Channel); err != nil {
+					return false, err
+				}
+				return true, nil
+			},
+		); err != nil {
 			log.Printf("warning: update succeeded but failed to save channel config: %v", err)
 			a.console.Message(ctx, output.WithWarningFormat(
 				"WARNING: failed to save channel preference. "+
@@ -356,12 +360,16 @@ func (a *updateAction) persistNonChannelFlags(ctx context.Context, cfg config.Co
 			return err
 		}
 
-		if err := a.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
-			if err := update.SetCheckIntervalHours(userConfig, a.flags.checkIntervalHours); err != nil {
-				return false, err
-			}
-			return true, nil
-		}); err != nil {
+		if err := config.MutateUserConfig(
+			ctx,
+			a.configManager,
+			func(_ context.Context, userConfig config.Config) (bool, error) {
+				if err := update.SetCheckIntervalHours(userConfig, a.flags.checkIntervalHours); err != nil {
+					return false, err
+				}
+				return true, nil
+			},
+		); err != nil {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 			return fmt.Errorf("failed to save config: %w", err)
 		}

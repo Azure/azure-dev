@@ -221,7 +221,7 @@ func TestInstallEmitsSourceCategoryTelemetry(t *testing.T) {
 		Type:     SourceKindUrl,
 		Location: extensionRegistryUrl,
 	}))
-	require.NoError(t, userConfigManager.Replace(t.Context(), userConfig))
+	require.NoError(t, config.ReplaceUserConfig(t.Context(), userConfigManager, userConfig))
 
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
 	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
@@ -2113,12 +2113,13 @@ func newTestManagerWithOptions(t *testing.T, options ManagerOptions) *Manager {
 func setInstalledExtensions(t *testing.T, manager *Manager, extensions map[string]*Extension) {
 	t.Helper()
 
-	err := manager.configManager.Mutate(t.Context(), func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		if err := userConfig.Set(installedConfigKey, extensions); err != nil {
 			return false, err
 		}
 		return true, nil
-	})
+	}
+	err := config.MutateUserConfig(t.Context(), manager.configManager, mutation)
 	require.NoError(t, err)
 }
 

@@ -511,7 +511,7 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 func (uc *UpdateChecker) MarkNotificationShown(
 	ctx context.Context,
 ) error {
-	if err := uc.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, uc.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := cfg.Set(
 			configKeyLastNotificationShown,
 			time.Now().UTC().Format(time.RFC3339),
@@ -605,7 +605,7 @@ func (uc *UpdateChecker) loadConfiguredInterval() int {
 // recordCheckTimestamp persists the current UTC time as the
 // last-update-check timestamp in the user config.
 func (uc *UpdateChecker) recordCheckTimestamp(ctx context.Context) error {
-	if err := uc.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, uc.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := cfg.Set(
 			configKeyLastUpdateCheck,
 			time.Now().UTC().Format(time.RFC3339),

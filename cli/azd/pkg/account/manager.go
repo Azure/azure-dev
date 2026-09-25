@@ -147,7 +147,7 @@ func (m *manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 		return nil, fmt.Errorf("failed getting account for id '%s'", subscriptionId)
 	}
 
-	err = m.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	err = config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := cfg.Set(defaultSubscriptionKeyPath, subscription.Id); err != nil {
 			return false, err
 		}
@@ -181,7 +181,7 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 
 	matchingLocation := locations[index]
 
-	err = m.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	err = config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := cfg.Set(defaultLocationKeyPath, matchingLocation.Name); err != nil {
 			return false, err
 		}
@@ -218,7 +218,7 @@ func (m *manager) HasDefaultLocation() bool {
 
 // Clears any persisted defaults in the azd config
 func (m *manager) Clear(ctx context.Context) error {
-	err := m.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	err := config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if _, exists := cfg.Get("defaults"); !exists {
 			return false, nil
 		}

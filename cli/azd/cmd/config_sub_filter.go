@@ -216,7 +216,7 @@ func (a *subFilterSetAction) Run(
 	}
 	slices.Sort(selectedIds)
 
-	if err := a.userConfigManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, a.userConfigManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := prompt.SaveSubscriptionFilter(cfg, tenantId, selectedIds); err != nil {
 			return false, fmt.Errorf("saving subscription filter: %w", err)
 		}
@@ -362,7 +362,7 @@ func (a *subFilterRemoveAction) Run(
 		return nil, nil
 	}
 
-	if err := a.userConfigManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, a.userConfigManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := prompt.RemoveSubscriptionFilter(cfg, tenantId); err != nil {
 			return false, fmt.Errorf("removing subscription filter: %w", err)
 		}

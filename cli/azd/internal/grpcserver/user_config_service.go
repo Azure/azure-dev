@@ -114,7 +114,7 @@ func (s *userConfigService) Set(ctx context.Context, req *azdext.SetUserConfigRe
 		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
 	}
 
-	if err := s.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
 		currentValue, exists := userConfig.Get(req.Path)
 		if exists && reflect.DeepEqual(currentValue, value) {
 			return false, nil
@@ -131,7 +131,7 @@ func (s *userConfigService) Set(ctx context.Context, req *azdext.SetUserConfigRe
 }
 
 func (s *userConfigService) Unset(ctx context.Context, req *azdext.UnsetUserConfigRequest) (*azdext.EmptyResponse, error) {
-	if err := s.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
 		if err := userConfig.Unset(req.Path); err != nil {
 			return false, fmt.Errorf("failed to unset value: %w", err)
 		}
@@ -152,7 +152,7 @@ func (s *userConfigService) GetMapEntry(
 		return nil, fmt.Errorf("failed to load user config: %w", err)
 	}
 
-	value, found, err := userConfig.GetRawMapEntry(req.Path, req.Key)
+	value, found, err := config.GetRawMapEntry(userConfig, req.Path, req.Key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get map entry: %w", err)
 	}
@@ -178,15 +178,15 @@ func (s *userConfigService) SetMapEntry(
 		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
 	}
 
-	if err := s.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
-		currentValue, found, err := userConfig.GetRawMapEntry(req.Path, req.Key)
+	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
+		currentValue, found, err := config.GetRawMapEntry(userConfig, req.Path, req.Key)
 		if err != nil {
 			return false, err
 		}
 		if found && reflect.DeepEqual(currentValue, value) {
 			return false, nil
 		}
-		if err := userConfig.SetRawMapEntry(req.Path, req.Key, value); err != nil {
+		if err := config.SetRawMapEntry(userConfig, req.Path, req.Key, value); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -201,15 +201,15 @@ func (s *userConfigService) DeleteMapEntry(
 	ctx context.Context,
 	req *azdext.DeleteUserConfigMapEntryRequest,
 ) (*azdext.EmptyResponse, error) {
-	if err := s.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
-		_, found, err := userConfig.GetRawMapEntry(req.Path, req.Key)
+	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
+		_, found, err := config.GetRawMapEntry(userConfig, req.Path, req.Key)
 		if err != nil {
 			return false, err
 		}
 		if !found {
 			return false, nil
 		}
-		if err := userConfig.DeleteRawMapEntry(req.Path, req.Key); err != nil {
+		if err := config.DeleteRawMapEntry(userConfig, req.Path, req.Key); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -236,8 +236,8 @@ func (s *userConfigService) CompareExchangeMapEntry(
 	}
 
 	response := &azdext.CompareExchangeUserConfigMapEntryResponse{}
-	if err := s.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
-		currentValue, found, err := userConfig.GetRawMapEntry(req.Path, req.Key)
+	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
+		currentValue, found, err := config.GetRawMapEntry(userConfig, req.Path, req.Key)
 		if err != nil {
 			return false, err
 		}
@@ -258,7 +258,7 @@ func (s *userConfigService) CompareExchangeMapEntry(
 		case azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET:
 			changed = !found || !reflect.DeepEqual(currentValue, setValue)
 			if changed {
-				if err := userConfig.SetRawMapEntry(req.Path, req.Key, setValue); err != nil {
+				if err := config.SetRawMapEntry(userConfig, req.Path, req.Key, setValue); err != nil {
 					return false, err
 				}
 			}
@@ -267,7 +267,7 @@ func (s *userConfigService) CompareExchangeMapEntry(
 		case azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE:
 			changed = found
 			if changed {
-				if err := userConfig.DeleteRawMapEntry(req.Path, req.Key); err != nil {
+				if err := config.DeleteRawMapEntry(userConfig, req.Path, req.Key); err != nil {
 					return false, err
 				}
 			}

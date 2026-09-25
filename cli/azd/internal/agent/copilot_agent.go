@@ -1167,7 +1167,7 @@ func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *ini
 		reasoningEffort = ""
 	}
 
-	if err := a.configManager.Mutate(ctx, func(_ context.Context, azdConfig config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, a.configManager, func(_ context.Context, azdConfig config.Config) (bool, error) {
 		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, modelID); err != nil {
 			return false, fmt.Errorf("failed to save model: %w", err)
 		}

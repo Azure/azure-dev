@@ -201,8 +201,9 @@ file on disk.
 
 ## `pkg/config.UserConfigManager`
 
-Partial user configuration updates use `Mutate` instead of saving a previously
-loaded `Config` snapshot:
+Partial user configuration updates use `config.MutateUserConfig` instead of
+saving a previously loaded `Config` snapshot. The built-in manager implements
+the optional `TransactionalUserConfigManager` capability used by the helper:
 
 ```text
 1. acquire the path-shared in-process gate
@@ -219,22 +220,24 @@ changes.
 
 **Mutation contract**:
 
-- Use `Mutate` for all partial UserConfig updates. The callback must only
-  change the supplied `Config`; prompts, network calls, subprocesses, and other
-  long-running work belong outside the transaction.
+- Use `config.MutateUserConfig` for all partial UserConfig updates. The
+  callback must only change the supplied `Config`; prompts, network calls,
+  subprocesses, and other long-running work belong outside the transaction.
 - The callback returns `(changed, err)`. Return `false, nil` when the requested
   state is already present or a conditional update does not match. Unchanged
   mutations release the locks without serializing or publishing either file.
 - Propagate the callback context to helpers invoked inside the transaction.
-  Nested `Mutate`/`Replace` calls using that context are rejected instead of
-  deadlocking. Discarding it and using a new background context violates the
-  contract and can wait on the transaction's own lock.
+  Nested `MutateUserConfig`/`ReplaceUserConfig` calls using that context are
+  rejected instead of deadlocking. Discarding it and using a new background
+  context violates the contract and can wait on the transaction's own lock.
 - Lock acquisition observes caller cancellation and has a separate 30-second
   wait bound. After the lock is acquired, the short mutation and publication
   phase uses an independent 30-second context that ignores caller cancellation.
   The commit timeout and I/O failures can still stop publication.
-- Use `Replace` only when intentionally replacing the complete, non-vault-
-  backed UserConfig. Normal writers must not use it.
+- Use `config.ReplaceUserConfig` only when intentionally replacing the
+  complete, non-vault-backed UserConfig. Normal writers must not use it.
+- `UserConfigManager.Save` remains available for SDK compatibility but
+  replaces a complete snapshot and is deprecated for partial updates.
 
 `config.lock` is a stable companion file and must never be deleted after use.
 File-lock coordination is tied to the lock file's underlying identity;
@@ -252,7 +255,10 @@ reads briefly retry sharing contention from a concurrent replacement. A
 missing `config.json` means empty UserConfig, but a present root that
 references a missing vault is an error.
 
-These guarantees apply only to writers that use `UserConfigManager`. Older azd
+These guarantees apply to the built-in transactional UserConfig and contextual
+FileConfig managers. Compatibility fallbacks for third-party implementations
+of the legacy interfaces use their existing `Load`/`Save` behavior and cannot
+add locking or atomic publication on the implementation's behalf. Older azd
 binaries and code that writes `config.json` directly do not participate in
 `config.lock` coordination.
 

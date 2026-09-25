@@ -713,7 +713,7 @@ func TestMode(t *testing.T) {
 		cfg, err := ucm.Load()
 		require.NoError(t, err)
 		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-		require.NoError(t, ucm.Replace(t.Context(), cfg))
+		require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 		m := Manager{
 			userConfigManager: ucm,
@@ -751,7 +751,7 @@ func TestSetBuiltInAuthMode(t *testing.T) {
 		cfg, err := ucm.Load()
 		require.NoError(t, err)
 		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-		require.NoError(t, ucm.Replace(t.Context(), cfg))
+		require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 		m := Manager{
 			userConfigManager: ucm,
@@ -805,7 +805,7 @@ func TestGetLoggedInServicePrincipalTenantID(t *testing.T) {
 		cfg, err := ucm.Load()
 		require.NoError(t, err)
 		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-		require.NoError(t, ucm.Replace(t.Context(), cfg))
+		require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 		m := Manager{
 			userConfigManager: ucm,
@@ -903,7 +903,7 @@ func TestCredentialForCurrentUser_LegacyAuth_Error(t *testing.T) {
 	cfg, err := ucm.Load()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-	require.NoError(t, ucm.Replace(t.Context(), cfg))
+	require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 	m := Manager{
 		userConfigManager: ucm,
@@ -921,7 +921,7 @@ func TestCredentialForCurrentUser_LegacyAuthWithTenant(t *testing.T) {
 	cfg, err := ucm.Load()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-	require.NoError(t, ucm.Replace(t.Context(), cfg))
+	require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 	m := Manager{
 		userConfigManager: ucm,

@@ -669,7 +669,7 @@ func (m *Manager) UpdateInstalled(extension *Extension) error {
 
 // updateInstalled transforms freshly decoded metadata and invalidates the cache after saving.
 func (m *Manager) updateInstalled(id string, update func(*Extension) *Extension) error {
-	if err := m.configManager.Mutate(context.Background(), func(_ context.Context, userConfig config.Config) (bool, error) {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
 		extensions, err := installedExtensionsFromConfig(userConfig)
 		if err != nil {
 			return false, err
@@ -683,7 +683,8 @@ func (m *Manager) updateInstalled(id string, update func(*Extension) *Extension)
 			return false, err
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(context.Background(), m.configManager, mutation); err != nil {
 		if errors.Is(err, ErrInstalledExtensionNotFound) {
 			return ErrInstalledExtensionNotFound
 		}
@@ -1010,7 +1011,7 @@ func (m *Manager) installInternal(
 		InstalledAsDependency: asDependency,
 	}
 
-	if err := m.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
 		extensions, err := installedExtensionsFromConfig(userConfig)
 		if err != nil {
 			return false, err
@@ -1069,7 +1070,7 @@ func (m *Manager) Uninstall(ctx context.Context, id string) error {
 	}
 
 	// Update the user config
-	if err := m.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
 		extensions, err := installedExtensionsFromConfig(userConfig)
 		if err != nil {
 			return false, err

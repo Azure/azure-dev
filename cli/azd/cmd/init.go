@@ -730,15 +730,19 @@ func promptInitType(
 		return initAppTemplate, nil
 	case 2:
 		if !featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
-			err = configManager.Mutate(ctx, func(_ context.Context, azdConfig config.Config) (bool, error) {
-				if err := azdConfig.Set("alpha.llm", "on"); err != nil {
-					return false, fmt.Errorf("failed to set alpha.llm config: %w", err)
-				}
-				if err := azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot"); err != nil {
-					return false, fmt.Errorf("failed to set %s config: %w", agentcopilot.ConfigKeyModelType, err)
-				}
-				return true, nil
-			})
+			err = config.MutateUserConfig(
+				ctx,
+				configManager,
+				func(_ context.Context, azdConfig config.Config) (bool, error) {
+					if err := azdConfig.Set("alpha.llm", "on"); err != nil {
+						return false, fmt.Errorf("failed to set alpha.llm config: %w", err)
+					}
+					if err := azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot"); err != nil {
+						return false, fmt.Errorf("failed to set %s config: %w", agentcopilot.ConfigKeyModelType, err)
+					}
+					return true, nil
+				},
+			)
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}

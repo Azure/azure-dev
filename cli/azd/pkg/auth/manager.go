@@ -1282,7 +1282,7 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 		return nil, err
 	}
 
-	if err := m.userConfigManager.Mutate(context.Background(), func(_ context.Context, cfg config.Config) (bool, error) {
+	mutation := func(_ context.Context, cfg config.Config) (bool, error) {
 		currentData, exists := cfg.Get(currentUserKey)
 		if !exists || !reflect.DeepEqual(currentData, curUserData) {
 			return false, nil
@@ -1291,7 +1291,8 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 			return false, err
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(context.Background(), m.userConfigManager, mutation); err != nil {
 		return nil, err
 	}
 
@@ -1645,7 +1646,7 @@ func (m *Manager) SetBuiltInAuthMode() error {
 		return fmt.Errorf("Unexpected mode found: %s", currentMode)
 	}
 
-	if err := m.userConfigManager.Mutate(context.Background(), func(_ context.Context, cfg config.Config) (bool, error) {
+	mutation := func(_ context.Context, cfg config.Config) (bool, error) {
 		if _, exists := cfg.Get(useAzCliAuthKey); !exists {
 			return false, nil
 		}
@@ -1653,7 +1654,8 @@ func (m *Manager) SetBuiltInAuthMode() error {
 			return false, fmt.Errorf("unsetting %s: %w", useAzCliAuthKey, err)
 		}
 		return true, nil
-	}); err != nil {
+	}
+	if err := config.MutateUserConfig(context.Background(), m.userConfigManager, mutation); err != nil {
 		return fmt.Errorf("saving user config: %w", err)
 	}
 

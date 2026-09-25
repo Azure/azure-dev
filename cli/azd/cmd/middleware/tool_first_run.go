@@ -481,7 +481,7 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 // markCompleted persists a timestamp in the user config so the
 // first-run experience is not shown again.
 func (m *ToolFirstRunMiddleware) markCompleted(ctx context.Context) {
-	if err := m.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+	if err := config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
 		if err := cfg.Set(configKeyFirstRunCompleted, time.Now().Format(time.RFC3339)); err != nil {
 			return false, fmt.Errorf("setting config key: %w", err)
 		}

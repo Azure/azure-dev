@@ -23,11 +23,25 @@ type FileConfigManager interface {
 	// Path is automatically created if it does not exist
 	Save(config Config, filePath string) error
 
-	// SaveWithContext saves the azd configuration to the specified file path.
-	SaveWithContext(ctx context.Context, config Config, filePath string) error
-
 	// Loads azd configuration from the specified file path
 	Load(filePath string) (Config, error)
+}
+
+// ContextualFileConfigManager is an optional FileConfigManager capability for
+// context-aware persistence.
+type ContextualFileConfigManager interface {
+	FileConfigManager
+	SaveWithContext(ctx context.Context, config Config, filePath string) error
+}
+
+func saveFileConfig(ctx context.Context, manager FileConfigManager, config Config, filePath string) error {
+	if contextualManager, ok := manager.(ContextualFileConfigManager); ok {
+		return contextualManager.SaveWithContext(ctx, config, filePath)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return manager.Save(config, filePath)
 }
 
 // NewFileConfigManager creates a new FileConfigManager instance

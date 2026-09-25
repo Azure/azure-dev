@@ -51,9 +51,77 @@ func (g *userConfigGate) release() {
 }
 
 type UserConfigManager interface {
+	// Save replaces the complete user configuration.
+	// Deprecated: use MutateUserConfig for partial updates or ReplaceUserConfig
+	// for an intentional complete replacement.
+	Save(Config) error
 	Load() (Config, error)
+}
+
+// UserConfigMutator is an optional UserConfigManager capability for coordinated
+// partial updates.
+type UserConfigMutator interface {
+	UserConfigManager
 	Mutate(ctx context.Context, mutation func(context.Context, Config) (bool, error)) error
+}
+
+// UserConfigReplacer is an optional UserConfigManager capability for
+// coordinated complete replacements.
+type UserConfigReplacer interface {
+	UserConfigManager
 	Replace(ctx context.Context, replacement Config) error
+}
+
+// TransactionalUserConfigManager supports coordinated partial updates and
+// complete replacements.
+type TransactionalUserConfigManager interface {
+	UserConfigMutator
+	UserConfigReplacer
+}
+
+// MutateUserConfig applies a partial update using transactional semantics when
+// the manager supports them. Legacy managers fall back to Load, mutate, Save.
+func MutateUserConfig(
+	ctx context.Context,
+	manager UserConfigManager,
+	mutation func(context.Context, Config) (bool, error),
+) error {
+	if mutator, ok := manager.(UserConfigMutator); ok {
+		return mutator.Mutate(ctx, mutation)
+	}
+	if mutation == nil {
+		return errors.New("user config mutation must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	userConfig, err := manager.Load()
+	if err != nil {
+		return err
+	}
+	changed, err := mutation(ctx, userConfig)
+	if err != nil || !changed {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return manager.Save(userConfig)
+}
+
+// ReplaceUserConfig replaces the complete configuration using transactional
+// semantics when the manager supports them. Legacy managers fall back to Save.
+func ReplaceUserConfig(ctx context.Context, manager UserConfigManager, replacement Config) error {
+	if replacer, ok := manager.(UserConfigReplacer); ok {
+		return replacer.Replace(ctx, replacement)
+	}
+	if replacement == nil {
+		return errors.New("replacement user config must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return manager.Save(replacement)
 }
 
 type userConfigManager struct {
@@ -77,6 +145,10 @@ func (m *userConfigManager) Load() (Config, error) {
 	}
 
 	return m.load(configFilePath)
+}
+
+func (m *userConfigManager) Save(userConfig Config) error {
+	return m.replace(context.Background(), userConfig, true)
 }
 
 func (m *userConfigManager) load(configFilePath string) (Config, error) {
@@ -126,7 +198,7 @@ func (m *userConfigManager) Mutate(
 			return nil
 		}
 
-		if err := m.manager.SaveWithContext(commitCtx, azdConfig, userConfigFilePath); err != nil {
+		if err := saveFileConfig(commitCtx, m.manager, azdConfig, userConfigFilePath); err != nil {
 			return fmt.Errorf("failed saving configuration: %w", err)
 		}
 
@@ -135,6 +207,10 @@ func (m *userConfigManager) Mutate(
 }
 
 func (m *userConfigManager) Replace(ctx context.Context, replacement Config) error {
+	return m.replace(ctx, replacement, false)
+}
+
+func (m *userConfigManager) replace(ctx context.Context, replacement Config, allowVault bool) error {
 	if replacement == nil {
 		return errors.New("replacement user config must not be nil")
 	}
@@ -145,7 +221,7 @@ func (m *userConfigManager) Replace(ctx context.Context, replacement Config) err
 	if !ok {
 		return fmt.Errorf("failed casting replacement user configuration to config")
 	}
-	if baseConfig.vaultId != "" {
+	if !allowVault && baseConfig.vaultId != "" {
 		return errors.New("replacing user configuration with vault-backed data is not supported")
 	}
 
@@ -155,7 +231,7 @@ func (m *userConfigManager) Replace(ctx context.Context, replacement Config) err
 	}
 
 	return m.withLock(ctx, userConfigFilePath, func(commitCtx context.Context) error {
-		if err := m.manager.SaveWithContext(commitCtx, replacement, userConfigFilePath); err != nil {
+		if err := saveFileConfig(commitCtx, m.manager, replacement, userConfigFilePath); err != nil {
 			return fmt.Errorf("failed replacing configuration: %w", err)
 		}
 

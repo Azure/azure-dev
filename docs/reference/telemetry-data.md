@@ -492,6 +492,8 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
+| `extension.usage.dropped` | string[] | Unique `<extension-id-or-unattributed>@<reason>` entries for extension usage reports dropped during the invocation |
+| `extension.usage.dropped.count` | measurement | Total extension usage reports dropped during the invocation |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
@@ -522,17 +524,26 @@ extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
 the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
 hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
-enclosing `cmd.*` span. The whole class is classified as `SystemMetadata` for
-`FeatureInsight`. Extension authors are responsible
+enclosing `cmd.*` span. These accepted-usage and lifecycle fields are
+classified as `SystemMetadata` for `FeatureInsight`. The dropped-report
+summary fields described below are `SystemMetadata` for
+`PerformanceAndHealth`. Extension authors are responsible
 for keeping usage values low cardinality and free of customer content, and for
 having them privacy reviewed with their extension.
 
 Only extensions whose configured `azd` source matches the verified official
 registry name, type, and normalized URL produce these spans, which is what ties
 the recorded values to that privacy review. A report from any other install
-source succeeds but records nothing, as does any report past the limit of 100
-spans per `azd` invocation. This is a configuration-based admission check, not
-a cryptographic provenance guarantee.
+source succeeds without producing an `ext.usage` span, as does any report past
+the limit of 100 spans per `azd` invocation. This is a configuration-based
+admission check, not a cryptographic provenance guarantee. Rejected and dropped
+calls are summarized on the command span using `extension.usage.dropped` and
+`extension.usage.dropped.count`. The list contains an extension ID only after
+the installed record passes the official-source check; earlier failures use the
+fixed `unattributed` value. It never contains caller-supplied event or attribute
+content. These fields stay on the hosting command span and are not copied to
+the synthetic phase spans emitted by `azd up`, to workflow step command spans,
+or to VS RPC spans.
 
 Reviewed first-party extension usage events currently include:
 

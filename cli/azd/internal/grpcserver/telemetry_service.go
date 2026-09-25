@@ -43,6 +43,23 @@ const (
 	maxUsageEventsPerInvocation = 100
 )
 
+type extensionUsageDropReason string
+
+const (
+	extensionUsageDropReasonEventNameInvalid       extensionUsageDropReason = "event_name_invalid"
+	extensionUsageDropReasonAttributeCountExceeded extensionUsageDropReason = "attribute_count_exceeded"
+	extensionUsageDropReasonAttributeKeyInvalid    extensionUsageDropReason = "attribute_key_invalid"
+	extensionUsageDropReasonAttributeValueTooLong  extensionUsageDropReason = "attribute_value_too_long"
+	extensionUsageDropReasonNotInstalled           extensionUsageDropReason = "not_installed"
+	extensionUsageDropReasonLookupFailed           extensionUsageDropReason = "lookup_failed"
+	extensionUsageDropReasonSourceCheckFailed      extensionUsageDropReason = "source_check_failed"
+	extensionUsageDropReasonSourceIneligible       extensionUsageDropReason = "source_ineligible"
+	extensionUsageDropReasonBudgetExhausted        extensionUsageDropReason = "budget_exhausted"
+	extensionUsageDropReasonUnauthenticated        extensionUsageDropReason = "unauthenticated"
+
+	unattributedExtensionId = "unattributed"
+)
+
 // installedExtensionLookup resolves the installed extension record for a
 // signed extension id. *extensions.Manager satisfies it.
 type installedExtensionLookup interface {
@@ -82,34 +99,41 @@ func newTelemetryService(lookup installedExtensionLookup) *telemetryService {
 // Accepted: false and no span. Reporting is best effort, so an author
 // runs the same code path whether or not the event was kept.
 //
-// A malformed request is an error, and fails closed on the whole
-// request: exceeding any bound records nothing, because dropping the
-// offending attribute alone would ship data that looks complete but is
-// not. Rejected caller text is never echoed back.
+// A malformed request is an error for every install source, and fails
+// closed on the whole request: exceeding any bound suppresses the ext.usage
+// span and caller payload, because dropping the offending attribute alone
+// would ship data that looks complete but is not. Only the bounded drop
+// summary is recorded on the command span. Rejected caller text is never
+// echoed back.
 func (s *telemetryService) ReportUsage(
 	ctx context.Context,
 	req *v1beta.ReportUsageRequest,
 ) (*v1beta.ReportUsageResponse, error) {
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonUnauthenticated)
 		return nil, status.Error(codes.Unauthenticated, "validated extension claims are required")
 	}
 
-	if err := validateUsageRequest(req); err != nil {
+	if reason, err := validateUsageRequest(req); err != nil {
+		recordExtensionUsageDrop(s.admittedExtensionId(ctx, claims.Subject), reason)
 		return nil, err
 	}
 
 	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: claims.Subject})
 	if err != nil {
 		if errors.Is(err, extensions.ErrInstalledExtensionNotFound) {
+			recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonNotInstalled)
 			return nil, status.Error(codes.PermissionDenied, "extension is not installed")
 		}
 
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonLookupFailed)
 		return nil, status.Error(codes.Internal, "failed to verify installed extension")
 	}
 
 	official, err := s.extensions.IsOfficialRegistrySource(ctx, extension.Source)
 	if err != nil {
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonSourceCheckFailed)
 		log.Printf(
 			"telemetry: failed to verify source %q for %s: %v",
 			extension.Source, extension.Id, err)
@@ -117,6 +141,7 @@ func (s *telemetryService) ReportUsage(
 	}
 
 	if !official {
+		recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonSourceIneligible)
 		log.Printf(
 			"telemetry: dropping usage event from %s installed from source %q",
 			extension.Id, extension.Source)
@@ -141,6 +166,7 @@ func (s *telemetryService) ReportUsage(
 	// a container singleton, which makes it a per-invocation budget
 	// even when a composite command such as up runs several actions.
 	if s.recorded.Add(1) > maxUsageEventsPerInvocation {
+		recordExtensionUsageDrop(extension.Id, extensionUsageDropReasonBudgetExhausted)
 		log.Printf(
 			"telemetry: dropping usage event %q from %s, limit of %d reached",
 			req.EventName, extension.Id, maxUsageEventsPerInvocation)
@@ -158,31 +184,57 @@ func (s *telemetryService) ReportUsage(
 	return &v1beta.ReportUsageResponse{Accepted: true}, nil
 }
 
-func validateUsageRequest(req *v1beta.ReportUsageRequest) error {
+// admittedExtensionId returns the installed extension ID only when its source
+// passes the official registry gate. Any other outcome is unattributed so an
+// unverified identity never enters the drop signal.
+func (s *telemetryService) admittedExtensionId(ctx context.Context, subject string) string {
+	extension, err := s.extensions.GetInstalled(extensions.FilterOptions{Id: subject})
+	if err != nil {
+		return unattributedExtensionId
+	}
+
+	official, err := s.extensions.IsOfficialRegistrySource(ctx, extension.Source)
+	if err != nil || !official {
+		return unattributedExtensionId
+	}
+
+	return extension.Id
+}
+
+func recordExtensionUsageDrop(extensionId string, reason extensionUsageDropReason) {
+	tracing.AppendUsageAttributeUnique(
+		fields.ExtensionUsageDropped.String(extensionId + "@" + string(reason)),
+	)
+	tracing.IncrementUsageAttribute(fields.ExtensionUsageDroppedCount.Int64(1))
+}
+
+func validateUsageRequest(req *v1beta.ReportUsageRequest) (extensionUsageDropReason, error) {
 	if req == nil || req.EventName == "" || len(req.EventName) > maxUsageEventNameBytes {
-		return status.Errorf(codes.InvalidArgument,
+		return extensionUsageDropReasonEventNameInvalid, status.Errorf(codes.InvalidArgument,
 			"event name is required and must be at most %d UTF-8 bytes",
 			maxUsageEventNameBytes)
 	}
 
 	if len(req.Attributes) > maxUsageAttributes {
-		return status.Errorf(codes.InvalidArgument,
+		return extensionUsageDropReasonAttributeCountExceeded, status.Errorf(codes.InvalidArgument,
 			"event declares more than %d attributes", maxUsageAttributes)
 	}
 
-	for key, value := range req.Attributes {
+	for key := range req.Attributes {
 		if key == "" || len(key) > maxUsageKeyBytes {
-			return status.Errorf(codes.InvalidArgument,
+			return extensionUsageDropReasonAttributeKeyInvalid, status.Errorf(codes.InvalidArgument,
 				"attribute keys are required and must be at most %d UTF-8 bytes",
 				maxUsageKeyBytes)
 		}
+	}
 
+	for key, value := range req.Attributes {
 		if len(value) > maxUsageValueBytes {
-			return status.Errorf(codes.InvalidArgument,
+			return extensionUsageDropReasonAttributeValueTooLong, status.Errorf(codes.InvalidArgument,
 				"attribute value for key %q must be at most %d UTF-8 bytes",
 				key, maxUsageValueBytes)
 		}
 	}
 
-	return nil
+	return "", nil
 }

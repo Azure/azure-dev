@@ -452,16 +452,31 @@ func Test_Server_Start(t *testing.T) {
 	})
 
 	t.Run("TelemetryMissingToken", func(t *testing.T) {
-		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
-		require.NoError(t, err)
-
-		_, err = client.Telemetry().ReportUsage(
-			t.Context(),
-			&v1beta.ReportUsageRequest{EventName: "deploy.completed"},
+		connection, err := grpc.NewClient(
+			serverInfo.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.Unauthenticated, st.Code())
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, connection.Close()) })
+
+		for name, method := range map[string]string{
+			"beta":   v1beta.TelemetryService_ReportUsage_FullMethodName,
+			"legacy": "/azdext.TelemetryService/ReportUsage",
+		} {
+			t.Run(name, func(t *testing.T) {
+				tracing.ResetUsageAttributesForTest()
+				t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+				err := connection.Invoke(t.Context(), method,
+					&v1beta.ReportUsageRequest{EventName: "deploy.completed"},
+					new(v1beta.ReportUsageResponse))
+				st, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.Unauthenticated, st.Code())
+				requireUsageDrop(t, unattributedExtensionId,
+					[]extensionUsageDropReason{extensionUsageDropReasonUnauthenticated}, 1)
+			})
+		}
 	})
 }
 

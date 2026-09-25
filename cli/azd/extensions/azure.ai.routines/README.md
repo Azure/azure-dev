@@ -19,7 +19,11 @@ reporter.Report(ctx, telemetry.Event{
 
 The example is illustrative; this extension does not currently emit a product
 usage event. Add an event only after its product question, bounded values,
-documentation, and privacy review are agreed.
+documentation, and privacy review are agreed. Before emitting, declare each
+`ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
+declaration only when its meaning, allowed values, classification, and purpose are
+identical, otherwise declare a distinct key — as enforced by
+`go test ./extensions/telemetry`.
 
 `Report` has no return value and never changes command or service-target
 behavior. It uses a one-second timeout, does not retry, and does not log

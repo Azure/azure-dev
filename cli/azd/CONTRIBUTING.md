@@ -186,6 +186,28 @@ Launch `azd` separately, then attach:
 
 ## Submitting a change
 
+Prefer small, cohesive pull requests that can be reviewed and landed independently.
+Group closely related fixes for one behavior rather than creating a pull request
+for every minor bug or combining unrelated work to minimize the number of pull
+requests. State dependencies explicitly. When integration is needed, designate one
+writer to preserve each contributor's changes and attribution without competing
+edits. Link the original pull requests and carry forward their review feedback.
+Before closing a superseded draft, verify that its replacement includes the intended
+fixes and regression coverage, and account for any remaining feedback.
+
+Use multiple complementary, bounded reviews for substantive changes. Address valid,
+actionable feedback, including minor clarity, naming, documentation, help, error,
+test, style, and correctness improvements; explain any rejected or deferred
+suggestions. Record actual GitHub Copilot review evidence separately from local
+agent reviews rather than treating one as proof of the other.
+
+Before marking a pull request ready for human review or changing its draft state,
+recheck the actual base and head, merge conflicts, a genuine closing issue link,
+accurate internal-testing versus customer-facing classification, and actual GitHub
+Copilot review status. If required tracking is missing, deduplicate and create an
+authorized, relevant issue, then update the description against its latest revision
+before the ready transition; never link an unrelated issue or bypass the gate.
+
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and ensure tests pass
 1. Submit a pull request: `gh pr create --web` (install [gh cli][gh cli] if needed). Select "Create a fork" to set up a fork for the first time if prompted for.

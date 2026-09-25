@@ -1,0 +1,110 @@
+# Standalone offline pipeline for an explicitly authorized Azure DevOps target.
+# This is not a grant to use the repository's documented shared Azure SDK pools.
+trigger: none
+pr: none
+
+parameters:
+  - name: mode
+    type: string
+    default: offline
+    values: [offline, live]
+  - name: servicePlan
+    type: string
+    default: ""
+
+jobs:
+  - ${{ if eq(parameters.mode, 'offline') }}:
+      - job: Resolve
+        displayName: Freeze Latest once
+        pool:
+          vmImage: ubuntu-24.04
+        timeoutInMinutes: 5
+        steps:
+          - checkout: self
+            persistCredentials: false
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+          - pwsh: |
+              if (-not [string]::IsNullOrWhiteSpace($env:SERVICE_PLAN)) {
+                throw "servicePlan requires mode=live"
+              }
+              python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            displayName: Validate the shared scenario runner
+            env:
+              SERVICE_PLAN: ${{ parameters.servicePlan }}
+          - pwsh: |
+              python eng/scripts/eval-scenario-ci/scenario.py resolve --output "$(Build.ArtifactStagingDirectory)/scenario-pin/candidate.json"
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              Write-Host "##vso[task.setvariable variable=manifestArtifact;isOutput=true]scenario-pin-$env:SYSTEM_JOBATTEMPT"
+            name: freeze
+            displayName: Resolve the public Latest release into immutable pins
+            env:
+              AZD_SCENARIO_APPROVAL_REPOSITORY: $(ScenarioApprovalRepository)
+              AZD_SCENARIO_APPROVED_COMMIT: $(ScenarioApprovedCommit)
+          - publish: $(Build.ArtifactStagingDirectory)/scenario-pin
+            artifact: scenario-pin-$(System.JobAttempt)
+            condition: always()
+            displayName: Publish the single frozen manifest
+
+      - job: Offline
+        displayName: Installed offline scenarios
+        dependsOn: Resolve
+        variables:
+          pinArtifact: $[ dependencies.Resolve.outputs['freeze.manifestArtifact'] ]
+        strategy:
+          matrix:
+            Linux:
+              imageName: ubuntu-24.04
+            Windows:
+              imageName: windows-2025
+        pool:
+          vmImage: $(imageName)
+        timeoutInMinutes: 15
+        steps:
+          - checkout: self
+            persistCredentials: false
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+          - download: current
+            artifact: $(pinArtifact)
+            displayName: Download the run's frozen manifest
+          - pwsh: |
+              python eng/scripts/eval-scenario-ci/scenario.py offline --manifest "$(Pipeline.Workspace)/$(pinArtifact)/candidate.json" --output "$(Build.ArtifactStagingDirectory)/scenario-evidence"
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            displayName: Exercise actual installed bytes without Azure credentials
+            env:
+              AZD_SCENARIO_APPROVAL_REPOSITORY: $(ScenarioApprovalRepository)
+              AZD_SCENARIO_APPROVED_COMMIT: $(ScenarioApprovedCommit)
+          - publish: $(Build.ArtifactStagingDirectory)/scenario-evidence
+            artifact: scenario-offline-$(imageName)-$(System.JobAttempt)
+            condition: always()
+            displayName: Publish sanitized offline evidence and live blockers
+
+  - ${{ if eq(parameters.mode, 'live') }}:
+      - job: LivePrerequisites
+        displayName: Optional gated evaluation lifecycle
+        pool:
+          vmImage: ubuntu-24.04
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+            persistCredentials: false
+          - pwsh: |
+              if ([string]::IsNullOrWhiteSpace($env:SERVICE_PLAN)) {
+                python eng/scripts/eval-scenario-ci/scenario.py live --output "$(Build.ArtifactStagingDirectory)/scenario-service-evidence"
+              } else {
+                python eng/scripts/eval-scenario-ci/service.py --plan "$env:SERVICE_PLAN" --output "$(Build.ArtifactStagingDirectory)/scenario-service-evidence"
+              }
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            displayName: Validate approval or report blocked prerequisites
+            env:
+              SERVICE_PLAN: ${{ parameters.servicePlan }}
+              AZD_SCENARIO_LIVE_APPROVAL_SHA256: $(ScenarioLiveApprovalSha256)
+              AZD_SCENARIO_LIVE_AUTH_CONFIG: $(ScenarioLiveAuthConfig)
+          - publish: $(Build.ArtifactStagingDirectory)/scenario-service-evidence
+            artifact: scenario-service-$(System.JobAttempt)
+            condition: always()
+            displayName: Publish service lifecycle or blocked evidence

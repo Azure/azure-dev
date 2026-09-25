@@ -21,6 +21,8 @@ Task-oriented how-tos for common contributor workflows.
 - [Contributing](../CONTRIBUTING.md) — How to build, test, lint, and submit changes
 - [Adding a New Command](guides/adding-a-new-command.md) — End-to-end walkthrough for new CLI commands
 - [Creating an Extension](guides/creating-an-extension.md) — How to build and publish an azd extension
+- [Evaluations and Dataset Release Testing](guides/evaluations-dataset-release-testing.md) - Package acceptance, regression inventory, and evidence boundaries
+- [Installed Evaluation Scenario CI](guides/evaluation-scenario-ci.md) - Shared installed-package offline checks for GitHub Actions and Azure DevOps
 - [Observability and Tracing](guides/observability.md) — Adding telemetry, traces, and debugging
 - [Feature Telemetry Guide](guides/feature-telemetry.md) — End-to-end guide for instrumenting telemetry in new features
 - [Telemetry Overview](guides/telemetry-overview.md) — Product-facing overview of azd telemetry metrics

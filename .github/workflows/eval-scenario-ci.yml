@@ -1,0 +1,166 @@
+name: Installed evaluation scenarios (offline)
+
+on:
+  push:
+    branches: [main, m7md7sien-evaluation-github-actions-proof]
+    paths:
+      - .github/workflows/eval-scenario-ci.yml
+      - eng/scripts/eval-scenario-ci/**
+      - eng/scripts/eval-candidate-proof/verify.py
+      - eng/scripts/eval-candidate-proof/checks.json
+      - eng/scripts/eval-candidate-proof/candidate.json
+      - eng/pipelines/eval-scenario-ci.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Offline proof, or a fail-closed report of blocked live prerequisites
+        type: choice
+        options: [offline, live]
+        default: offline
+      service_plan:
+        description: Reviewed service plan path; empty means BLOCKED (no live authorization)
+        type: string
+        default: ""
+  # GitHub delivers repository_dispatch only to workflows on the default branch.
+  # Until adopted there, a release publisher can dispatch this workflow on its ref.
+  repository_dispatch:
+    types: [azd-bugbash-published]
+
+permissions:
+  contents: read
+
+env:
+  AZD_SCENARIO_APPROVAL_REPOSITORY: ${{ github.repository }}
+  AZD_SCENARIO_APPROVED_COMMIT: ${{ vars.AZD_SCENARIO_APPROVED_COMMIT }}
+
+jobs:
+  resolve:
+    if: inputs.mode != 'live'
+    name: Freeze Latest once
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      artifact_name: ${{ steps.freeze.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Test resolution, redaction and fail-closed live boundary
+        env:
+          SERVICE_PLAN: ${{ inputs.service_plan }}
+        run: |
+          if [ -n "$SERVICE_PLAN" ]; then
+            echo "::error::service_plan requires mode=live"
+            exit 1
+          fi
+          python -m unittest discover -s eng/scripts/eval-scenario-ci -p 'test_*.py' -v
+      - name: Resolve the public Latest release into immutable pins
+        id: freeze
+        env:
+          PIN_ARTIFACT: scenario-pin-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python eng/scripts/eval-scenario-ci/scenario.py resolve --output "${{ runner.temp }}/scenario-pin/candidate.json"
+          echo "artifact_name=$PIN_ARTIFACT" >> "$GITHUB_OUTPUT"
+      - name: Share the single frozen manifest with both OS jobs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-pin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scenario-pin/
+          if-no-files-found: error
+          retention-days: 14
+
+  offline:
+    name: Installed offline scenarios / ${{ matrix.os }}
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.resolve.outputs.artifact_name }}
+          path: ${{ runner.temp }}/scenario-pin/
+      - name: Exercise actual installed bytes without Azure credentials
+        shell: pwsh
+        run: |
+          python eng/scripts/eval-scenario-ci/scenario.py offline --manifest "$env:RUNNER_TEMP/scenario-pin/candidate.json" --output "$env:RUNNER_TEMP/scenario-evidence"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish sanitized offline results and explicit live blockers
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-offline-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scenario-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  live-prerequisites:
+    if: inputs.mode == 'live'
+    name: Verify existing protected environment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      environment_name: ${{ steps.gate.outputs.environment_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fail closed unless an existing reviewer-protected environment is confirmed
+        id: gate
+        env:
+          SERVICE_PLAN: ${{ inputs.service_plan }}
+          AZD_SCENARIO_LIVE_ENVIRONMENT: ${{ vars.AZD_SCENARIO_LIVE_ENVIRONMENT }}
+          GH_TOKEN: ${{ github.token }}
+        run: python eng/scripts/eval-scenario-ci/scenario.py github-live-gate --output "${{ runner.temp }}/scenario-environment-gate"
+      - name: Publish environment metadata gate outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-environment-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scenario-environment-gate/
+          if-no-files-found: error
+          retention-days: 14
+
+  live-service:
+    if: inputs.mode == 'live' && needs.live-prerequisites.outputs.environment_name != ''
+    needs: live-prerequisites
+    name: Optional gated evaluation lifecycle
+    environment:
+      name: ${{ needs.live-prerequisites.outputs.environment_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate approval or report blocked prerequisites
+        env:
+          SERVICE_PLAN: ${{ inputs.service_plan }}
+          AZD_SCENARIO_LIVE_APPROVAL_SHA256: ${{ secrets.AZD_SCENARIO_LIVE_APPROVAL_SHA256 }}
+          AZD_SCENARIO_LIVE_AUTH_CONFIG: ${{ vars.AZD_SCENARIO_LIVE_AUTH_CONFIG }}
+        run: |
+          python eng/scripts/eval-scenario-ci/service.py --plan "$SERVICE_PLAN" --output "${{ runner.temp }}/scenario-service-evidence"
+      - name: Publish service lifecycle or blocked evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-service-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scenario-service-evidence/
+          if-no-files-found: error
+          retention-days: 14

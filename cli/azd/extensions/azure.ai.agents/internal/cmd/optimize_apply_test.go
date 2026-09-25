@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
@@ -53,7 +55,7 @@ func TestNewOptimizeApplyCommand_CandidateIsRequired(t *testing.T) {
 	assert.Contains(t, err.Error(), "candidate")
 }
 
-func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
+func TestPersistInlineAgentEnvironmentRejectsNestedConfig(t *testing.T) {
 	props, err := projectpkg.AgentDefinitionToServiceProperties(
 		agent_yaml.ContainerAgent{
 			AgentDefinition: agent_yaml.AgentDefinition{
@@ -83,25 +85,21 @@ func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
 
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
-	require.NoError(t, persistInlineAgentEnvironment(
+	err = persistInlineAgentEnvironment(
 		t.Context(),
 		client,
 		svc,
 		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
-	))
+	)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.added)
-	require.Equal(
-		t,
-		[]string{"config.environmentVariables"},
-		server.unsetPaths,
-	)
-	require.Equal(t, map[string]any{
-		"LEGACY_KEY":                "${LEGACY_KEY}",
-		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
-	}, server.env["basic-agent"])
+	require.Empty(t, server.unsetPaths)
+	require.Empty(t, server.env)
 }
 
 // TestPersistInlineAgentEnvironmentPreservesTopLevelEnv verifies a
@@ -320,7 +318,7 @@ func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
 func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 	t.Parallel()
 
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, instructionKey := range []string{"system_prompt", "systemPrompt", "instructions"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, instructionKey), func(t *testing.T) {
 				t.Parallel()
@@ -360,7 +358,7 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 	t.Parallel()
 
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, toolsCase := range []string{"missing", "null", "empty"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, toolsCase), func(t *testing.T) {
 				t.Parallel()
@@ -568,24 +566,18 @@ func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
 
 func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 	tests := []struct {
-		name     string
-		kind     string
-		legacy   bool
-		disk     bool
-		override bool
+		name string
+		kind string
 	}{
 		{name: "prompt", kind: "prompt"},
-		{name: "legacy prompt", kind: "prompt", legacy: true},
 		{name: "hosted", kind: "hosted"},
-		{name: "hosted with override", kind: "hosted", override: true},
 		{name: "voice", kind: "prompt-voice"},
-		{name: "file-backed hosted", kind: "hosted", disk: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")
 			t.Setenv("AGENT_DEFINITION_PATH", "")
-			svc := newPromptCandidateTestService(t, tt.legacy)
+			svc := newPromptCandidateTestService(t, false)
 			svc.RelativePath = "."
 			if tt.kind != "prompt" {
 				values := map[string]any{"kind": tt.kind, "name": svc.Name}
@@ -598,18 +590,7 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			}
 			svc.Environment = map[string]string{"CUSTOM_SETTING": "keep"}
 			root := t.TempDir()
-			if tt.disk {
-				svc.AdditionalProperties = nil
-				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
-					[]byte("kind: hosted\nname: prompt-agent\n"), 0600))
-			}
-			var overridePath string
-			if tt.override {
-				overridePath = filepath.Join(root, "override.yaml")
-				require.NoError(t, os.WriteFile(overridePath, []byte("kind: hosted\nname: override-agent\n"), 0600))
-				t.Setenv("AGENT_DEFINITION_PATH", overridePath)
-			}
-			projectServer, path := newPromptCandidateTestServer(t, svc, tt.legacy)
+			projectServer, path := newPromptCandidateTestServer(t, svc, false)
 			projectServer.rawEnv = map[string]map[string]any{svc.Name: {"CUSTOM_SETTING": "${CUSTOM_SETTING}"}}
 			expected := projectServer.rawSections[svc.Name][path].AsMap()
 			if tt.kind == "prompt" {
@@ -668,12 +649,6 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			require.Equal(t, "candidate-1", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
 			require.Contains(t, out.String(), "applied to")
 			require.Equal(t, map[string]string{"CUSTOM_SETTING": "keep"}, svc.Environment)
-			if tt.override {
-				content, err := os.ReadFile(overridePath)
-				require.NoError(t, err)
-				require.Equal(t, "kind: hosted\nname: override-agent\n", string(content))
-			}
-
 			projectServer.mu.Lock()
 			defer projectServer.mu.Unlock()
 			require.Empty(t, projectServer.configValues)
@@ -693,12 +668,6 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 				require.Equal(t, expected, projectServer.configSections[0].Section.AsMap())
 				require.Empty(t, projectServer.env)
 				require.Empty(t, projectServer.unsetPaths)
-			} else if tt.disk {
-				content, err := os.ReadFile(filepath.Join(root, "agent.yaml"))
-				require.NoError(t, err)
-				require.Contains(t, string(content), "OPTIMIZATION_LOCAL_DIR")
-				require.Contains(t, string(content), "candidate-1")
-				require.Empty(t, projectServer.configSections)
 			} else {
 				require.Empty(t, projectServer.configSections)
 				require.Equal(t, map[string]any{
@@ -706,6 +675,77 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 					"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
 					"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
 				}, projectServer.env[svc.Name])
+			}
+		})
+	}
+}
+
+func TestOptimizeApplyRejectsUnsupportedSourcesBeforeMutation(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*testing.T, string) *azdext.ServiceConfig
+		wantCode   string
+		legacyFile string
+	}{
+		{
+			name: "nested config",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				return newPromptCandidateTestService(t, true)
+			},
+			wantCode: exterrors.CodeDeprecatedAgentServiceConfig,
+		},
+		{
+			name: "definition path",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				path := filepath.Join(root, "override.yaml")
+				require.NoError(t, os.WriteFile(path, []byte("kind: hosted\n"), 0o600))
+				t.Setenv("AGENT_DEFINITION_PATH", path)
+				return newPromptCandidateTestService(t, false)
+			},
+			wantCode: exterrors.CodeUnsupportedAgentDefinitionPath,
+		},
+		{
+			name: "implicit agent yaml",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{
+					Name:         "legacy",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				}
+			},
+			wantCode:   exterrors.CodeAgentDefinitionNotFound,
+			legacyFile: "agent.yaml",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", "")
+			root := t.TempDir()
+			svc := tt.setup(t, root)
+			action := &OptimizeApplyAction{
+				flags: &optimizeApplyFlags{candidate: "candidate-1"},
+			}
+			err := action.apply(
+				t.Context(),
+				nil,
+				svc,
+				&azdext.ProjectConfig{Path: root},
+				&bytes.Buffer{},
+				color.New(color.Bold),
+			)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
+			if tt.legacyFile != "" {
+				content, readErr := os.ReadFile(filepath.Join(root, tt.legacyFile))
+				require.NoError(t, readErr)
+				require.Equal(t, "kind: hosted\nname: legacy\n", string(content))
 			}
 		})
 	}
@@ -772,7 +812,7 @@ func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
 }
 
 func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, failure := range []string{"read", "missing file", "invalid YAML", "missing section", "nil section", "write"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, failure), func(t *testing.T) {
 				t.Setenv("AGENT_DEFINITION_PATH", "")
@@ -868,7 +908,7 @@ func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 }
 
 func TestOptimizeApply_RejectsUnsupportedPromptDefinition(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, override := range []string{"prompt", "hosted", "missing file", "whitespace", "dotted service"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, override), func(t *testing.T) {
 				root := t.TempDir()
@@ -917,10 +957,10 @@ func TestOptimizeApply_RejectsUnsupportedPromptDefinition(t *testing.T) {
 				if override == "dotted service" {
 					require.ErrorContains(t, err, "dots in service names")
 				} else {
-					require.ErrorContains(t, err, "uses AGENT_DEFINITION_PATH")
-					require.ErrorContains(t, err, "unset AGENT_DEFINITION_PATH")
-					require.ErrorContains(t, err, "manually update model, instructions, and tools")
-					require.NotContains(t, err.Error(), "OPTIMIZATION_")
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
+					require.Contains(t, localErr.Suggestion, "azure.yaml")
 				}
 				if override == "prompt" || override == "hosted" {
 					content, err := os.ReadFile(definitionPath)
@@ -950,7 +990,13 @@ func TestOptimizeApply_ReferencedDefinitionGuidance(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
-			definition := fmt.Sprintf("kind: %s\nname: assistant\nmodel: gpt-5\ninstructions: Be helpful.\n", kind)
+			model := "gpt-5"
+			if kind == "hosted" {
+				model = "\n  id: gpt-5"
+			}
+			definition := fmt.Sprintf(
+				"kind: %s\nname: assistant\nmodel: %s\ninstructions: Be helpful.\n",
+				kind, model)
 			definitionPath := filepath.Join(root, "assistant.yaml")
 			require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
 			props, err := structpb.NewStruct(map[string]any{"$ref": "assistant.yaml"})

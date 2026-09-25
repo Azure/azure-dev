@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,47 +13,86 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
+func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 	tests := []struct {
-		name         string
-		inlineKind   string
-		overrideKind string
-		wantPrompt   bool
-		source       string
+		name        string
+		properties  map[string]any
+		referenced  bool
+		staleLegacy bool
+		wantPrompt  bool
 	}{
-		{"prompt with hosted override", "prompt", "hosted", true, "inline"},
-		{"hosted with prompt override", "hosted", "prompt", false, "inline"},
-		{"prompt without override", "prompt", "", true, "inline"},
-		{"hosted without override", "hosted", "", false, "inline"},
-		{"legacy prompt with hosted override", "prompt", "hosted", true, "config"},
-		{"legacy hosted with prompt override", "hosted", "prompt", false, "config"},
-		{"referenced prompt with hosted override", "prompt", "hosted", true, "$ref"},
-		{"referenced hosted with prompt override", "hosted", "prompt", false, "$ref"},
+		{"prompt", map[string]any{"kind": "prompt"}, false, false, true},
+		{"hosted", map[string]any{"kind": "hosted", "name": "hosted-agent"}, false, false, false},
+		{
+			"voice",
+			map[string]any{
+				"kind": "voice",
+				"name": "voice-wrapper",
+				"conversationEngine": map[string]any{
+					"type": "hosted_agent", "name": "voice-target", "version": "deployed",
+				},
+			},
+			false,
+			false,
+			false,
+		},
+		{
+			"prompt voice",
+			map[string]any{
+				"kind": "prompt-voice", "name": "voice-agent", "modelType": "managed",
+				"model": map[string]any{"id": "gpt-realtime"},
+			},
+			false,
+			false,
+			false,
+		},
+		{"referenced prompt", map[string]any{"kind": "prompt"}, true, false, true},
+		{"referenced hosted", map[string]any{"kind": "hosted", "name": "hosted-agent"}, true, false, false},
+		{
+			"hosted with stale legacy file",
+			map[string]any{"kind": "hosted", "name": "hosted-agent"},
+			false,
+			true,
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			props, err := structpb.NewStruct(map[string]any{"kind": tt.inlineKind})
+			props, err := structpb.NewStruct(tt.properties)
 			require.NoError(t, err)
 			svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
-			switch tt.source {
-			case "config":
-				svc.Config = props
-				svc.AdditionalProperties = nil
-			case "$ref":
-				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
-					[]byte("kind: "+tt.inlineKind+"\n"), 0600))
-				svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{"$ref": "agent.yaml"})
+			if tt.referenced {
+				definition := "kind: " + tt.properties["kind"].(string) + "\n"
+				if name, ok := tt.properties["name"].(string); ok {
+					definition += "name: " + name + "\n"
+				}
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "definition.yaml"),
+					[]byte(definition),
+					0o600,
+				))
+				svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{"$ref": "definition.yaml"})
 				require.NoError(t, err)
+			}
+			if tt.staleLegacy {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("not: [valid"),
+					0o600,
+				))
 			}
 			server := &recordingProjectServer{
 				projectPath: root,
@@ -65,12 +105,7 @@ func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
 				},
 			}
 			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
-			override := ""
-			if tt.overrideKind != "" {
-				override = filepath.Join(root, "override.yaml")
-				require.NoError(t, os.WriteFile(override, []byte("kind: "+tt.overrideKind+"\n"), 0600))
-			}
-			t.Setenv("AGENT_DEFINITION_PATH", override)
+			t.Setenv("AGENT_DEFINITION_PATH", "")
 
 			resolved, err := resolveOptimizeAgent(t.Context(), "assistant", "dev", true)
 			require.NoError(t, err)
@@ -101,6 +136,152 @@ func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
 			require.Len(t, cfg.Options.OptimizationConfig, 5)
 		})
 	}
+}
+
+func TestResolveOptimizeAgent_RejectsUnsupportedProjectDefinition(t *testing.T) {
+	missingSuggestion := "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
+		"or add a service-level $ref to a direct agent definition"
+	legacySuggestion := "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+		"or move any env, project, language, image, or docker fields onto the service before adding " +
+		"a service-level $ref to the remaining direct definition"
+	nestedSuggestion := "move the agent definition to service-level properties in azure.yaml, " +
+		"or add a service-level $ref to a direct agent definition"
+	overrideSuggestion := "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
+		"the azure.ai.agent service in azure.yaml, or add a service-level $ref to a direct agent definition"
+
+	tests := []struct {
+		name           string
+		definitionPath string
+		setup          func(*testing.T, string) *azdext.ServiceConfig
+		wantCode       string
+		wantSuggestion string
+		wantMessage    string
+	}{
+		{
+			name: "implicit agent yaml",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("not: [valid"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, RelativePath: "."}
+			},
+			wantCode:       exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: legacySuggestion,
+			wantMessage:    "found legacy file agent.yaml",
+		},
+		{
+			name: "missing definition",
+			setup: func(*testing.T, string) *azdext.ServiceConfig {
+				return &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost}
+			},
+			wantCode:       exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: missingSuggestion,
+			wantMessage:    `agent definition not found for service "assistant"`,
+		},
+		{
+			name: "nested config",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				config, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, Config: config}
+			},
+			wantCode:       exterrors.CodeDeprecatedAgentServiceConfig,
+			wantSuggestion: nestedSuggestion,
+			wantMessage:    `service "assistant" uses the unsupported nested config block`,
+		},
+		{
+			name:           "definition path",
+			definitionPath: "missing.yaml",
+			setup:          optimizeTestDirectService,
+			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
+			wantSuggestion: overrideSuggestion,
+			wantMessage:    "AGENT_DEFINITION_PATH is no longer supported",
+		},
+		{
+			name:           "whitespace definition path",
+			definitionPath: "   ",
+			setup:          optimizeTestDirectService,
+			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
+			wantSuggestion: overrideSuggestion,
+			wantMessage:    "AGENT_DEFINITION_PATH is no longer supported",
+		},
+		{
+			name: "missing root ref",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				props, err := structpb.NewStruct(map[string]any{"$ref": "missing.yaml"})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
+			},
+			wantCode:    foundry.CodeInvalidFileRef,
+			wantMessage: "missing.yaml",
+		},
+		{
+			name: "malformed root ref",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "definition.yaml"),
+					[]byte("kind: ["),
+					0o600,
+				))
+				props, err := structpb.NewStruct(map[string]any{"$ref": "definition.yaml"})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
+			},
+			wantCode:    foundry.CodeInvalidFileRef,
+			wantMessage: "definition.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", tt.definitionPath)
+			root := t.TempDir()
+			svc := tt.setup(t, root)
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+				values: map[string]map[string]string{
+					"dev": {"AGENT_ASSISTANT_NAME": "stale-deployed-agent"},
+				},
+			}
+			server := &recordingProjectServer{
+				projectPath: root,
+				existing:    map[string]*azdext.ServiceConfig{"assistant": svc},
+			}
+			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+
+			_, _, _, authoritativeErr := projectpkg.LoadAgentDefinition(svc, root)
+			require.Error(t, authoritativeErr)
+			resolved, err := resolveOptimizeAgent(t.Context(), "assistant", "dev", true)
+			require.Nil(t, resolved)
+			require.Equal(t, authoritativeErr, err, "optimize must return the authoritative source error unchanged")
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			if tt.wantSuggestion != "" {
+				require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+			}
+			require.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
+}
+
+func TestResolveOptimizeAgent_NoProjectUsesStandaloneAgentName(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	t.Setenv("AZD_SERVER", newProjectRecorderServer(t, &recordingProjectServer{nilProject: true}))
+
+	resolved, err := resolveOptimizeAgent(t.Context(), "remote-agent", "dev", true)
+	require.NoError(t, err)
+	require.Equal(t, &optimizeAgentContext{agentName: "remote-agent"}, resolved)
+}
+
+func optimizeTestDirectService(t *testing.T, _ string) *azdext.ServiceConfig {
+	t.Helper()
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "hosted-agent"})
+	require.NoError(t, err)
+	return &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
 }
 
 func TestOptimizeCommand_HasExpectedSubCommands(t *testing.T) {

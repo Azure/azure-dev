@@ -5,9 +5,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -106,8 +109,10 @@ func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 	}
 
 	_, isPrompt, err := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
-	require.NoError(t, err)
 	require.False(t, isPrompt)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 }
 
 // TestPromptAgentNameForServicePrefersDefinition asserts the down handlers

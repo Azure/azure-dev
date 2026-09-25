@@ -224,7 +224,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AZD_AI_AGENT_MANIFEST_PARAMETER_<NAME>` | Supplies a value for the `<NAME>` agent manifest parameter. When unset, init uses the declared default, the first enum value, or an empty value for optional parameters; unresolved required parameters fail. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
-| `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
+| `AGENT_DEFINITION_PATH` | Unsupported for AI agent runtime workflows. Non-empty values are rejected; put the definition on the `azure.ai.agent` service in `azure.yaml` or use its explicit root `$ref`. |
 
 ### azure.ai.routines
 

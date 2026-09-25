@@ -21,7 +21,6 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
@@ -1334,11 +1333,11 @@ func applyDeployModeToAdoptedProjectWithSources(
 }
 
 func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
-	kind, err := agentkind.Kind(svc, projectRoot, "")
+	kind, err := probeAgentKindForInit(svc, projectRoot)
 	if err != nil {
 		return "", fmt.Errorf("resolving adopted agent kind for service %q: %w", svc.GetName(), err)
 	}
-	return kind, nil
+	return string(kind), nil
 }
 
 func finalizeAdoptedSourceContainerNetwork(
@@ -1408,14 +1407,12 @@ func adoptedExternalRegistryConnections(
 		}
 		connectionRef := flagConnection
 		if connectionRef == "" {
-			resolvedAgent, _, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(
-				service, projectConfig.GetPath(),
-			)
+			probe, err := probeAgentDefinitionForInit(service, projectConfig.GetPath())
 			if err != nil {
 				return nil, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
 			}
-			if hasDefinition {
-				connectionRef = strings.TrimSpace(resolvedAgent.RegistryConnectionID)
+			if probe.found {
+				connectionRef = strings.TrimSpace(probe.definition.RegistryConnectionID)
 			}
 		}
 		if connectionRef == "" {
@@ -1439,19 +1436,19 @@ func applyDeployModeToService(
 	serviceName string,
 	svc *azdext.ServiceConfig,
 ) (bool, error) {
-	resolvedAgent, isHosted, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(svc, projectPath)
+	probe, err := probeAgentDefinitionForInit(svc, projectPath)
 	if err != nil {
 		return false, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
 	}
 	hasCodeConfig := adoptedServiceHasCodeConfig(svc) ||
-		(hasDefinition && resolvedAgent.CodeConfiguration != nil)
+		(probe.found && probe.definition.CodeConfiguration != nil)
 
 	effectiveImage := strings.TrimSpace(flags.image)
 	if effectiveImage == "" {
 		effectiveImage = strings.TrimSpace(svc.GetImage())
 	}
-	if effectiveImage == "" && hasDefinition {
-		effectiveImage = strings.TrimSpace(resolvedAgent.Image)
+	if effectiveImage == "" && probe.found {
+		effectiveImage = strings.TrimSpace(probe.definition.Image)
 	}
 
 	connectionRef := strings.TrimSpace(flags.registryConnection)
@@ -1463,7 +1460,7 @@ func applyDeployModeToService(
 				"provide the name or ID of an existing Foundry project connection",
 			)
 		}
-		if hasDefinition && !isHosted {
+		if probe.found && !probe.isHosted {
 			return false, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"a registry connection is only valid for hosted container agents",

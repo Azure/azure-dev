@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
@@ -24,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestDetectStartupCommand(t *testing.T) {
@@ -584,6 +586,122 @@ func newHelpersTestAzdClient(
 	return azdClient
 }
 
+func TestResolveServiceRunContext_RejectsMissingRuntimeDefinitions(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		legacyFile     string
+		wantSuggestion string
+	}{
+		{
+			name: "missing definition",
+			wantSuggestion: "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
+				"or add a service-level $ref to a direct agent definition",
+		},
+		{
+			name:       "unreferenced legacy definition",
+			legacyFile: "agent.yaml",
+			wantSuggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if tt.legacyFile != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, tt.legacyFile),
+					[]byte("this content is intentionally not parsed"),
+					0o600,
+				))
+			}
+			svc := &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					svc.Name: svc,
+				},
+			}}, &helpersPromptServer{})
+
+			runContext, err := resolveServiceRunContext(t.Context(), client, "", true)
+
+			require.Nil(t, runContext)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeAgentDefinitionNotFound, localErr.Code)
+			require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+		})
+	}
+}
+
+func TestResolveServiceRunContext_SupportedDefinitions(t *testing.T) {
+	hostedProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "hosted-agent",
+		},
+	}, nil)
+	require.NoError(t, err)
+	promptProps, err := projectpkg.PromptAgentDefinitionToServiceProperties(agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPrompt,
+			Name: "prompt-agent",
+		},
+		Model: "gpt-4.1-mini",
+	})
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name           string
+		properties     *structpb.Struct
+		referencedYAML string
+		wantDefinition bool
+	}{
+		{name: "direct hosted", properties: hostedProps, wantDefinition: true},
+		{
+			name:           "referenced hosted",
+			referencedYAML: "kind: hosted\nname: referenced-agent\n",
+			wantDefinition: true,
+		},
+		{name: "direct prompt", properties: promptProps},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			properties := tt.properties
+			if tt.referencedYAML != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "definition.yaml"),
+					[]byte(tt.referencedYAML),
+					0o600,
+				))
+				properties, err = structpb.NewStruct(map[string]any{"$ref": "definition.yaml"})
+				require.NoError(t, err)
+			}
+			svc := &azdext.ServiceConfig{
+				Name:                 "agent",
+				Host:                 AiAgentHost,
+				RelativePath:         ".",
+				AdditionalProperties: properties,
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					svc.Name: svc,
+				},
+			}}, &helpersPromptServer{})
+
+			runContext, err := resolveServiceRunContext(t.Context(), client, "", true)
+
+			require.NoError(t, err)
+			require.NotNil(t, runContext)
+			if tt.wantDefinition {
+				require.NotNil(t, runContext.Definition)
+			} else {
+				require.Nil(t, runContext.Definition)
+			}
+		})
+	}
+}
+
 // TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProject
 // is a regression test for #9109. Brownfield init writes the hosted agent
 // definition inline and points the used azure.ai.project service at an existing
@@ -979,10 +1097,13 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T)
 func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 	t.Parallel()
 
-	// Create a temp dir with a hosted agent.yaml declaring the "responses" protocol.
 	svcDir := t.TempDir()
-	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
-	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "my-agent",
+		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0"}},
+	})
+	require.NoError(t, err)
 
 	tests := []struct {
 		name        string
@@ -995,7 +1116,10 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "single service auto-resolved",
 			inputName: "",
 			services: map[string]*azdext.ServiceConfig{
-				"my-agent": {Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
+				"my-agent": {
+					Name: "my-agent", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			wantName: "my-agent",
 		},
@@ -1003,8 +1127,14 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "explicit name returns that service",
 			inputName: "agent-b",
 			services: map[string]*azdext.ServiceConfig{
-				"agent-a": {Name: "agent-a", Host: AiAgentHost, RelativePath: "."},
-				"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "."},
+				"agent-a": {
+					Name: "agent-a", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"agent-b": {
+					Name: "agent-b", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			wantName: "agent-b",
 		},
@@ -1012,8 +1142,14 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "multiple services prompt selects first",
 			inputName: "",
 			services: map[string]*azdext.ServiceConfig{
-				"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "."},
-				"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "."},
+				"alpha": {
+					Name: "alpha", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"beta": {
+					Name: "beta", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			selectIndex: 0,
 			wantName:    "alpha",
@@ -1022,8 +1158,14 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "multiple services prompt selects second",
 			inputName: "",
 			services: map[string]*azdext.ServiceConfig{
-				"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "."},
-				"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "."},
+				"alpha": {
+					Name: "alpha", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"beta": {
+					Name: "beta", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			selectIndex: 1,
 			wantName:    "beta",
@@ -1061,15 +1203,25 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	t.Parallel()
 
 	svcDir := t.TempDir()
-	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
-	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "my-agent",
+		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0"}},
+	})
+	require.NoError(t, err)
 
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{
 			Path: svcDir,
 			Services: map[string]*azdext.ServiceConfig{
-				"svc-a": {Name: "svc-a", Host: AiAgentHost, RelativePath: "."},
-				"svc-b": {Name: "svc-b", Host: AiAgentHost, RelativePath: "."},
+				"svc-a": {
+					Name: "svc-a", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"svc-b": {
+					Name: "svc-b", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 		},
 	}

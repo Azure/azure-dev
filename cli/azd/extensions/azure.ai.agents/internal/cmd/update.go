@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -49,8 +50,8 @@ func newEndpointUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Update an agent's endpoint and card configuration without deploying a new version.
 
 This command reads the agentEndpoint and agentCard fields from the azure.ai.agent
-service in azure.yaml, or agent_endpoint and agent_card from a legacy agent.yaml,
-and patches the existing agent with those values. No new agent version is created.
+service in azure.yaml, directly or through its explicit root $ref, and patches
+the existing agent with those values. No new agent version is created.
 
 The agent must already exist (i.e., it must have been previously deployed).`,
 		Example: `  # Update endpoint/card for the default agent service
@@ -96,11 +97,15 @@ func runEndpointUpdate(
 		return fmt.Errorf("failed to resolve service config: %w", err)
 	}
 
-	// Resolve the agent definition (inline on the service entry, or a legacy
-	// agent.yaml on disk).
+	// Resolve the agent definition from the service entry or its explicit root $ref.
 	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return fmt.Errorf("failed to resolve agent definition: %w", err)
+		return exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			"failed to resolve agent definition",
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 	if source.IsLegacy() {
 		project.WarnLegacyAgentShape(source)
@@ -109,8 +114,7 @@ func runEndpointUpdate(
 	// Validate that endpoint or card is defined.
 	if agentDef.AgentEndpoint == nil && agentDef.AgentCard == nil {
 		return fmt.Errorf(
-			"agent service %q does not define agentEndpoint or agentCard in azure.yaml "+
-				"(or agent_endpoint or agent_card in legacy agent.yaml) — nothing to update",
+			"agent service %q does not define agentEndpoint or agentCard in azure.yaml — nothing to update",
 			svc.Name,
 		)
 	}

@@ -32,11 +32,11 @@ const (
 	// AgentDefinitionSourceInline means the definition was read from the agent
 	// service entry's service-level (inline) properties — the unified shape.
 	AgentDefinitionSourceInline AgentDefinitionSource = iota
-	// AgentDefinitionSourceLegacyConfig means the definition was read from the
-	// deprecated config-nested shape (a populated `config:` on the service).
+	// AgentDefinitionSourceLegacyConfig is retained for compatibility with
+	// callers that report historical source shapes. Runtime loading rejects it.
 	AgentDefinitionSourceLegacyConfig
-	// AgentDefinitionSourceDisk means the definition was read from a legacy
-	// agent.yaml/agent.yml file on disk (the deprecated file-based shape).
+	// AgentDefinitionSourceDisk is retained for compatibility with callers that
+	// report historical source shapes. Runtime loading rejects it.
 	AgentDefinitionSourceDisk
 )
 
@@ -381,11 +381,39 @@ func structKind(s *structpb.Struct) string {
 	return v.GetStringValue()
 }
 
+func validateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
+	if svc != nil && svc.GetHost() != "" && svc.GetHost() != "azure.ai.agent" {
+		return nil
+	}
+	if value := os.Getenv("AGENT_DEFINITION_PATH"); value != "" {
+		return exterrors.Validation(
+			exterrors.CodeUnsupportedAgentDefinitionPath,
+			"AGENT_DEFINITION_PATH is no longer supported for agent runtime configuration",
+			"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
+				"or add a service-level $ref to a direct agent definition",
+		)
+	}
+	if svc != nil && svc.GetHost() == "azure.ai.agent" &&
+		svc.GetConfig() != nil && len(svc.GetConfig().GetFields()) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeDeprecatedAgentServiceConfig,
+			fmt.Sprintf("service %q uses the unsupported nested config block", svc.GetName()),
+			"move the agent definition to service-level properties in azure.yaml, "+
+				"or add a service-level $ref to a direct agent definition",
+		)
+	}
+	return nil
+}
+
+// ValidateRuntimeAgentSources rejects runtime definition sources that are no
+// longer supported before lifecycle hooks normalize or mutate service config.
+func ValidateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
+	return validateRuntimeAgentSources(svc)
+}
+
 // LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
-// service. It prefers the unified inline shape (service-level properties), falls
-// back to the deprecated config-nested shape, and finally to a legacy
-// agent.yaml/agent.yml file on disk so older projects keep building and
-// deploying during the deprecation window.
+// service. The definition must be carried by service-level properties, either
+// directly or through the existing root $ref behavior.
 //
 // It returns the parsed ContainerAgent, whether it is a hosted agent (false for
 // other kinds), and the source the definition came from (see
@@ -394,6 +422,9 @@ func LoadAgentDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceInline, err
+	}
 	ca, isHosted, found, source, err :=
 		AgentDefinitionFromResolvedService(svc, projectRoot)
 	if err != nil {
@@ -417,52 +448,60 @@ func AgentDefinitionFromResolvedService(
 	AgentDefinitionSource,
 	error,
 ) {
-	candidates := []struct {
-		props  *structpb.Struct
-		source AgentDefinitionSource
-	}{
-		{svc.GetAdditionalProperties(), AgentDefinitionSourceInline},
-		{svc.GetConfig(), AgentDefinitionSourceLegacyConfig},
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
 	}
-	for _, candidate := range candidates {
-		if candidate.props == nil ||
-			len(candidate.props.GetFields()) == 0 {
-			continue
-		}
-		resolved, err := resolveServiceProps(
-			candidate.props,
-			svc.GetName(),
-			projectRoot,
-		)
-		if err != nil {
-			return agent_yaml.ContainerAgent{},
-				false,
-				false,
-				candidate.source,
-				err
-		}
-		if !structHasKind(resolved) {
-			continue
-		}
-		image := svc.GetImage()
-		if image == "" {
-			if value := resolved.GetFields()["image"]; value != nil {
-				image = value.GetStringValue()
-			}
-		}
-		ca, isHosted, err := agentDefinitionFromStruct(
-			resolved,
-			image,
-			svc.GetEnvironment(),
-		)
-		return ca, isHosted, true, candidate.source, err
-	}
+	return agentDefinitionFromResolvedService(svc, projectRoot)
+}
 
-	return agent_yaml.ContainerAgent{},
-		false,
-		false,
-		AgentDefinitionSourceInline,
-		nil
+// AgentDefinitionFromResolvedServiceForInit preserves init-only compatibility
+// with legacy service shapes while runtime commands enforce unified sources.
+func AgentDefinitionFromResolvedServiceForInit(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	return agentDefinitionFromResolvedService(svc, projectRoot)
+}
+
+func agentDefinitionFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, nil
+	}
+	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
+	}
+	if !structHasKind(resolved) {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, nil
+	}
+	image := svc.GetImage()
+	if image == "" {
+		if value := resolved.GetFields()["image"]; value != nil {
+			image = value.GetStringValue()
+		}
+	}
+	ca, isHosted, err := agentDefinitionFromStruct(
+		resolved,
+		image,
+		svc.GetEnvironment(),
+	)
+	return ca, isHosted, true, AgentDefinitionSourceInline, err
 }
 
 // AgentDefinitionUsesFileRef reports whether a root $ref supplies the
@@ -471,47 +510,39 @@ func AgentDefinitionUsesFileRef(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (bool, error) {
-	for _, props := range []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
-	} {
-		if props == nil || props.GetFields()["$ref"] == nil {
-			continue
-		}
-		refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
-			"$ref": props.GetFields()["$ref"],
-		}}
-		resolved, err := resolveServiceProps(
-			refOnly,
-			svc.GetName(),
-			projectRoot,
-		)
-		if err != nil {
-			return false, err
-		}
-		if structHasKind(resolved) {
-			return true, nil
-		}
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return false, err
 	}
-	return false, nil
+	props := svc.GetAdditionalProperties()
+	if props == nil || props.GetFields()["$ref"] == nil {
+		return false, nil
+	}
+	refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"$ref": props.GetFields()["$ref"],
+	}}
+	resolved, err := resolveServiceProps(
+		refOnly,
+		svc.GetName(),
+		projectRoot,
+	)
+	if err != nil {
+		return false, err
+	}
+	return structHasKind(resolved), nil
 }
 
-// AgentDefinitionFromService returns the agent definition carried inline on the
-// service entry — the unified service-level shape, or the deprecated
-// config-nested shape. found is false when the entry carries no inline
-// definition, in which case callers fall back to a legacy agent.yaml on disk.
+// AgentDefinitionFromService returns the direct agent definition carried on the
+// service entry. It does not resolve a root $ref.
 func AgentDefinitionFromService(
 	svc *azdext.ServiceConfig,
 ) (agent_yaml.ContainerAgent, bool, bool, AgentDefinitionSource, error) {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
+	}
 	inlineStruct := svc.GetAdditionalProperties()
 	source := AgentDefinitionSourceInline
 	if !structHasKind(inlineStruct) {
-		if cfg := svc.GetConfig(); structHasKind(cfg) {
-			inlineStruct = cfg
-			source = AgentDefinitionSourceLegacyConfig
-		} else {
-			return agent_yaml.ContainerAgent{}, false, false, source, nil
-		}
+		return agent_yaml.ContainerAgent{}, false, false, source, nil
 	}
 
 	ca, isHosted, err := agentDefinitionFromStruct(
@@ -525,7 +556,7 @@ func AgentDefinitionFromService(
 // LoadServiceTargetAgentConfig reads the agent service's deploy/provision config
 // (container settings, tool resources, tool connections, startup command, and —
 // for pre-split projects — bundled deployments) from the
-// service-level properties, falling back to the deprecated config-nested shape.
+// service-level properties.
 // Callers resolve file references before loading the effective configuration.
 // Connections and toolbox definitions belong to standalone services, not agents.
 // Prompt connection names stay on the definition for its own validation graph;
@@ -588,18 +619,16 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 	return cfg, nil
 }
 
-// ServiceConfigProps returns the agent service's service-level (inline)
-// properties when present, otherwise the deprecated config-nested struct. It is
-// the single accessor for code that needs the raw property struct regardless of
-// which shape a project uses.
+// ServiceConfigProps returns non-empty AdditionalProperties first.
+// An azure.ai.agent service never falls back to its nested Config and returns
+// nil when service-level properties are absent. Other providers may fall back
+// to Config.
 func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	if s := svc.GetAdditionalProperties(); s != nil && len(s.GetFields()) > 0 {
-		if svc.GetHost() == "azure.ai.agent" &&
-			!structHasKind(s) &&
-			structHasKind(svc.GetConfig()) {
-			return svc.GetConfig()
-		}
 		return s
+	}
+	if svc.GetHost() == "azure.ai.agent" {
+		return nil
 	}
 	return svc.GetConfig()
 }
@@ -616,13 +645,16 @@ func ResolveServiceConfigProps(
 	return resolveServiceProps(props, svc.GetName(), projectRoot)
 }
 
-// ResolveServiceConfigInPlace expands local file references in both
-// service-level properties and legacy config. It also normalizes
+// ResolveServiceConfigInPlace expands local file references in service-level
+// properties and, for non-agent providers, Config. It also normalizes
 // environment scalars so consumers receive an effective config.
 func ResolveServiceConfigInPlace(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return err
+	}
 	if props := svc.GetAdditionalProperties(); props != nil &&
 		len(props.GetFields()) > 0 {
 		resolved, err := resolveServiceProps(
@@ -635,17 +667,20 @@ func ResolveServiceConfigInPlace(
 		}
 		svc.AdditionalProperties = resolved
 	}
-	if config := svc.GetConfig(); config != nil &&
-		len(config.GetFields()) > 0 {
-		resolved, err := resolveServiceProps(
-			config,
-			svc.GetName(),
-			projectRoot,
-		)
-		if err != nil {
-			return err
+	if svc.GetHost() != "azure.ai.agent" {
+		config := svc.GetConfig()
+		if config != nil &&
+			len(config.GetFields()) > 0 {
+			resolved, err := resolveServiceProps(
+				config,
+				svc.GetName(),
+				projectRoot,
+			)
+			if err != nil {
+				return err
+			}
+			svc.Config = resolved
 		}
-		svc.Config = resolved
 	}
 	return nil
 }
@@ -823,8 +858,12 @@ func SetAgentContainerSettings(
 	svc *azdext.ServiceConfig,
 	container *ContainerSettings,
 ) error {
-	props := ServiceConfigProps(svc)
-	legacy := props != nil && props == svc.GetConfig()
+	props := svc.GetAdditionalProperties()
+	legacy := false
+	if props == nil || (!structHasKind(props) && structHasKind(svc.GetConfig())) {
+		props = svc.GetConfig()
+		legacy = props != nil
+	}
 	if props == nil {
 		props = &structpb.Struct{}
 	}
@@ -1010,15 +1049,42 @@ func validateAgentServiceDefinition(definition any) error {
 	return nil
 }
 
-// agentDefinitionFromDisk reads a legacy agent.yaml/agent.yml from the service
-// directory. This is the deprecation fallback for projects written before the
-// definition moved into azure.yaml.
+// agentDefinitionFromDisk detects known legacy filenames using metadata only
+// and returns migration guidance. Runtime never reads these files.
 func agentDefinitionFromDisk(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	for _, name := range []string{"agent.yaml", "agent.yml"} {
-		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
+	type legacyFile struct {
+		name       string
+		suggestion string
+	}
+	files := []legacyFile{
+		{
+			name: "agent.yaml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
+		},
+		{
+			name: "agent.yml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
+		},
+		{
+			name: "agent.manifest.yaml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+		},
+		{
+			name: "agent.manifest.yml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+		},
+	}
+	for _, legacy := range files {
+		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), legacy.name)
 		if err != nil {
 			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
@@ -1026,150 +1092,42 @@ func agentDefinitionFromDisk(
 				"update azure.yaml so the agent service path stays within the project directory",
 			)
 		}
-		data, err := os.ReadFile(defPath) //nolint:gosec // path derived from azd project config
-		if err != nil {
+		if _, err := os.Stat(defPath); err != nil {
 			continue
 		}
-		ca, isHosted, err := parseContainerAgentYAML(data)
-		return ca, isHosted, AgentDefinitionSourceDisk, err
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
+			exterrors.CodeAgentDefinitionNotFound,
+			fmt.Sprintf("service %q has no runtime definition in azure.yaml; found legacy file %s",
+				svc.GetName(), legacy.name),
+			legacy.suggestion,
+		)
 	}
 
 	return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Dependency(
 		exterrors.CodeAgentDefinitionNotFound,
 		fmt.Sprintf("agent definition not found for service %q", svc.GetName()),
-		"re-run `azd ai agent init` to write the agent definition into azure.yaml",
+		"add the direct agent definition to the azure.ai.agent service in azure.yaml, "+
+			"or add a service-level $ref to a direct agent definition",
 	)
 }
 
-// parseContainerAgentYAML validates and parses agent.yaml bytes into a
-// ContainerAgent, mirroring the on-disk loader used before the unified shape.
-func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, error) {
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return agent_yaml.ContainerAgent{}, false, nil
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
-			"fix the agent.yaml to match the hosted agent schema",
-		)
-	}
-
-	if agentDef.Image != "" && !containerref.IsValid(agentDef.Image) {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
-			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
-		)
-	}
-
-	return agentDef, true, nil
-}
-
-// voiceAgentFromDefinitionFile reads an agent definition file (an
-// AGENT_DEFINITION_PATH override) and reports whether it declares a prompt-voice
-// agent, returning the parsed VoiceAgent when it does. A non-voice (e.g. hosted)
-// definition returns found=false with no error so the caller can fall through to
-// the container path, mirroring VoiceAgentFromResolvedService's contract. This
-// lets an explicit override drive the voice/container dispatch with the same
-// precedence loadContainerAgentDefinition documents.
-func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) &&
-		kind != string(agent_yaml.AgentKindVoice) {
-		// Not a voice definition; let the container path handle the override.
-		return agent_yaml.VoiceAgent{}, false, nil
-	}
-
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var va agent_yaml.VoiceAgent
-	if err := yaml.Unmarshal(data, &va); err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for a voice agent: %s", err),
-			"fix the agent.yaml to match the prompt-voice schema",
-		)
-	}
-
-	return va, true, nil
-}
-
 // resolveVoiceAgentForDeploy determines whether the service should deploy a
-// prompt-voice agent, honoring the AGENT_DEFINITION_PATH override precedence: an
-// explicit override file wins over the service entry (matching
-// loadContainerAgentDefinition). When agentDefinitionPath is empty the resolved
-// service entry is inspected instead. A non-voice result returns found=false so
-// the caller falls through to the container deploy path unchanged.
+// prompt-voice agent from its azure.yaml service definition. A non-voice result
+// returns found=false so the caller falls through to the container path.
 //
 // The voice/non-voice decision is delegated to the shared agentkind lookup so
 // deploy, Endpoints, and next-step all classify a service identically; this
 // function then parses the definition from whichever source agentkind matched.
 func resolveVoiceAgentForDeploy(
-	agentDefinitionPath string,
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.VoiceAgent, bool, error) {
-	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, agentDefinitionPath)
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot)
 	if err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
 	}
 	if !isVoice {
 		return agent_yaml.VoiceAgent{}, false, nil
-	}
-	if agentDefinitionPath != "" {
-		return voiceAgentFromDefinitionFile(agentDefinitionPath)
 	}
 	return VoiceAgentFromResolvedService(svc, projectRoot)
 }
@@ -1240,7 +1198,7 @@ func VoiceAgentDefinitionToServiceProperties(
 }
 
 // VoiceAgentFromResolvedService resolves a prompt-voice agent definition from a
-// service entry's inline (preferred) or legacy config properties. It returns the
+// service entry's direct or root-$ref service-level properties. It returns the
 // parsed VoiceAgent and whether a prompt-voice definition was found. Non-voice
 // (or absent) definitions return found=false with no error so callers can fall
 // through to the container path unchanged.
@@ -1248,40 +1206,35 @@ func VoiceAgentFromResolvedService(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.VoiceAgent, bool, error) {
-	candidates := []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
 	}
-	for _, props := range candidates {
-		if props == nil || len(props.GetFields()) == 0 {
-			continue
-		}
-		resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
-		if err != nil {
-			return agent_yaml.VoiceAgent{}, false, err
-		}
-		if !structHasKind(resolved) {
-			continue
-		}
-		kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
-		if !agent_yaml.IsVoiceAgentKind(kind) {
-			// A definition is present but it is not a voice agent.
-			return agent_yaml.VoiceAgent{}, false, nil
-		}
-
-		var inline AgentDefinitionInline
-		if err := UnmarshalStruct(resolved, &inline); err != nil {
-			return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("voice agent service config is not valid: %s", err),
-				"re-run `azd ai agent init` to regenerate the agent service entry",
-			)
-		}
-		if err := validateVoiceInlineAgent(inline); err != nil {
-			return agent_yaml.VoiceAgent{}, false, err
-		}
-		return inline.toVoiceAgent(), true, nil
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
+	if err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	if !structHasKind(resolved) {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
+	if !agent_yaml.IsVoiceAgentKind(kind) {
+		return agent_yaml.VoiceAgent{}, false, nil
 	}
 
-	return agent_yaml.VoiceAgent{}, false, nil
+	var inline AgentDefinitionInline
+	if err := UnmarshalStruct(resolved, &inline); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("voice agent service config is not valid: %s", err),
+			"re-run `azd ai agent init` to regenerate the agent service entry",
+		)
+	}
+	if err := validateVoiceInlineAgent(inline); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	return inline.toVoiceAgent(), true, nil
 }

@@ -47,11 +47,10 @@ func TestDeclaredAgentDefinitionRef(t *testing.T) {
 			want: "./agent.yaml",
 		},
 		{
-			name: "config-level ref",
+			name: "config-level ref is not a runtime source",
 			svc: &azdext.ServiceConfig{
 				Config: mustStruct(t, map[string]any{"$ref": "./nested.yaml"}),
 			},
-			want: "./nested.yaml",
 		},
 		{
 			name: "service-level wins over config-level",

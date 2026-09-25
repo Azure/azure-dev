@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,12 +14,14 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -41,26 +45,7 @@ func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 			wantMemory: "0.5Gi",
 		},
 		{
-			name:   "legacy explicit resources",
-			legacy: true,
-			resources: map[string]any{
-				"cpu":    "0.25",
-				"memory": "0.5Gi",
-			},
-			wantCPU:    "0.25",
-			wantMemory: "0.5Gi",
-		},
-		{
 			name: "inline missing memory",
-			resources: map[string]any{
-				"cpu": "1",
-			},
-			wantCPU:    "1",
-			wantMemory: project.DefaultMemory,
-		},
-		{
-			name:   "legacy missing memory",
-			legacy: true,
 			resources: map[string]any{
 				"cpu": "1",
 			},
@@ -107,6 +92,48 @@ func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 				project.ServiceConfigProps(svc).GetFields()["customField"].GetStringValue())
 		})
 	}
+}
+
+func TestPrepareContainerSettings_RejectsNestedAgentConfigBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "agent",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:   "agent",
+		Host:   AiAgentHost,
+		Config: config,
+	}
+	before := config.AsMap()
+
+	err = prepareContainerSettings(svc, t.TempDir())
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
+	require.Equal(t, before, svc.GetConfig().AsMap())
+	require.Nil(t, svc.GetAdditionalProperties())
+}
+
+func TestValidateRuntimeAgentSources_PreservesNonAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"custom": "value",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:   "web",
+		Host:   "containerapp",
+		Config: config,
+	}
+	before := config.AsMap()
+
+	require.NoError(t, project.ValidateRuntimeAgentSources(svc))
+	require.Equal(t, before, svc.GetConfig().AsMap())
 }
 
 // TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil
@@ -453,13 +480,7 @@ func TestKindEnvUpdate_NoAgentYaml_IsNoOp(t *testing.T) {
 			"see test-results-bicepless.md Finding #3 for the bug this guards against")
 }
 
-// TestKindEnvUpdate_PresentInvalidYaml_StillErrors locks in the
-// behavior that a *present* agent.yaml is still validated. The
-// missing-file tolerance from the previous test must not weaken
-// the validator: a malformed on-disk agent.yaml is still a hard
-// error from preprovision because downstream service-target code
-// will choke on it.
-func TestKindEnvUpdate_PresentInvalidYaml_StillErrors(t *testing.T) {
+func TestKindEnvUpdate_UnreferencedInvalidYamlIsIgnored(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -476,10 +497,7 @@ func TestKindEnvUpdate_PresentInvalidYaml_StillErrors(t *testing.T) {
 	proj := &azdext.ProjectConfig{Path: projectRoot}
 
 	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "agent.yaml is not valid",
-		"a present-but-invalid agent.yaml is still a hard error -- "+
-			"the missing-file tolerance must not bypass validation")
+	require.NoError(t, err)
 }
 
 func TestParseConnectionIDs(t *testing.T) {
@@ -673,9 +691,9 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 			}
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 			agent := agentService(t, "agent", project.ToolConnection{Name: "runtime", Target: "${AGENT_ENDPOINT}"})
-			agent.Config.Fields["kind"] = structpb.NewStringValue("prompt-voice")
-			agent.Config.Fields["name"] = structpb.NewStringValue("agent")
-			agent.Config.Fields["model"], _ = structpb.NewValue(map[string]any{"id": "gpt-realtime"})
+			agent.AdditionalProperties.Fields["kind"] = structpb.NewStringValue("prompt-voice")
+			agent.AdditionalProperties.Fields["name"] = structpb.NewStringValue("agent")
+			agent.AdditionalProperties.Fields["model"], _ = structpb.NewValue(map[string]any{"id": "gpt-realtime"})
 			connection := connectionService(t, "search", project.Connection{
 				Name: "search", Target: "${SEARCH_ENDPOINT}", Credentials: map[string]any{"key": "${SEARCH_KEY}"},
 			})
@@ -702,6 +720,503 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 	}
 }
 
+func TestPreprovisionValidatesAllAgentServicesBeforeEnvironmentMutation(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	activityProps, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "activity-agent",
+		"protocols": []any{
+			map[string]any{"protocol": "activity", "version": "2.0.0"},
+		},
+	})
+	require.NoError(t, err)
+	invalidConfig, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "invalid-agent",
+	})
+	require.NoError(t, err)
+	nonAgentConfig, err := structpb.NewStruct(map[string]any{"custom": "preserved"})
+	require.NoError(t, err)
+
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AZURE_SUBSCRIPTION_ID": "sub",
+			"AZURE_RESOURCE_GROUP":  "rg",
+		}},
+	}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"a-activity": {
+				Name:                 "a-activity",
+				Host:                 AiAgentHost,
+				AdditionalProperties: activityProps,
+			},
+			"middle-web": {
+				Name:   "middle-web",
+				Host:   "containerapp",
+				Config: nonAgentConfig,
+			},
+			"z-invalid": {
+				Name:   "z-invalid",
+				Host:   AiAgentHost,
+				Config: invalidConfig,
+			},
+		},
+	}
+
+	err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj})
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
+	require.Empty(t, envServer.setKeys)
+	require.Zero(t, envServer.getCurrentCalls)
+	require.Zero(t, envServer.getValuesCalls)
+	require.Equal(t, map[string]any{"custom": "preserved"}, nonAgentConfig.AsMap())
+}
+
+func TestPredeployValidatesAllAgentServicesBeforeMutation(t *testing.T) {
+	const (
+		missingSuggestion = "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
+			"or add a service-level $ref to a direct agent definition"
+		nestedSuggestion = "move the agent definition to service-level properties in azure.yaml, " +
+			"or add a service-level $ref to a direct agent definition"
+		overrideSuggestion = "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
+			"the azure.ai.agent service in azure.yaml, or add a service-level $ref to a direct agent definition"
+		legacySuggestion = "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+			"or move any env, project, language, image, or docker fields onto the service before adding " +
+			"a service-level $ref to the remaining direct definition"
+	)
+
+	tests := []struct {
+		name           string
+		definitionPath string
+		setupInvalid   func(t *testing.T, root string) map[string]*azdext.ServiceConfig
+		wantCode       string
+		wantSuggestion string
+		wantMessage    string
+	}{
+		{
+			name: "missing definition",
+			setupInvalid: func(t *testing.T, _ string) map[string]*azdext.ServiceConfig {
+				t.Helper()
+				return map[string]*azdext.ServiceConfig{
+					"a-invalid": {Name: "a-invalid", Host: AiAgentHost},
+				}
+			},
+			wantCode:       exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: missingSuggestion,
+		},
+		{
+			name: "nested agent config",
+			setupInvalid: func(t *testing.T, _ string) map[string]*azdext.ServiceConfig {
+				t.Helper()
+				return map[string]*azdext.ServiceConfig{
+					"a-invalid": {
+						Name: "a-invalid",
+						Host: AiAgentHost,
+						Config: mustStruct(t, map[string]any{
+							"kind": "prompt", "name": "invalid", "model": "gpt-4.1",
+						}),
+					},
+				}
+			},
+			wantCode:       exterrors.CodeDeprecatedAgentServiceConfig,
+			wantSuggestion: nestedSuggestion,
+		},
+		{
+			name:           "definition path override",
+			definitionPath: "missing-override.yaml",
+			setupInvalid: func(t *testing.T, _ string) map[string]*azdext.ServiceConfig {
+				t.Helper()
+				return map[string]*azdext.ServiceConfig{
+					"a-invalid": {
+						Name: "a-invalid",
+						Host: AiAgentHost,
+						AdditionalProperties: mustStruct(t, map[string]any{
+							"kind": "prompt", "name": "invalid", "model": "gpt-4.1",
+						}),
+					},
+				}
+			},
+			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
+			wantSuggestion: overrideSuggestion,
+		},
+		{
+			name: "implicit legacy file",
+			setupInvalid: func(t *testing.T, root string) map[string]*azdext.ServiceConfig {
+				t.Helper()
+				legacyDir := filepath.Join(root, "legacy")
+				require.NoError(t, os.MkdirAll(legacyDir, 0o750))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(legacyDir, "agent.yaml"),
+					[]byte("kind: prompt\nname: invalid\nmodel: gpt-4.1\n"),
+					0o600,
+				))
+				return map[string]*azdext.ServiceConfig{
+					"a-invalid": {
+						Name: "a-invalid", Host: AiAgentHost, RelativePath: "legacy",
+					},
+				}
+			},
+			wantCode:       exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: legacySuggestion,
+		},
+		{
+			name: "malformed authoritative root ref",
+			setupInvalid: func(t *testing.T, root string) map[string]*azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "invalid.yaml"),
+					[]byte("kind: [not-valid"),
+					0o600,
+				))
+				return map[string]*azdext.ServiceConfig{
+					"a-invalid": {
+						Name: "a-invalid",
+						Host: AiAgentHost,
+						AdditionalProperties: mustStruct(t, map[string]any{
+							"$ref": "./invalid.yaml",
+						}),
+					},
+				}
+			},
+			wantMessage: "invalid.yaml",
+		},
+		{
+			name: "deterministic first failing service",
+			setupInvalid: func(t *testing.T, _ string) map[string]*azdext.ServiceConfig {
+				t.Helper()
+				return map[string]*azdext.ServiceConfig{
+					"a-missing": {Name: "a-missing", Host: AiAgentHost},
+					"z-nested": {
+						Name: "z-nested",
+						Host: AiAgentHost,
+						Config: mustStruct(t, map[string]any{
+							"kind": "prompt", "name": "invalid", "model": "gpt-4.1",
+						}),
+					},
+				}
+			},
+			wantCode:       exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: missingSuggestion,
+			wantMessage:    "a-missing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", tt.definitionPath)
+			root := t.TempDir()
+			current := &azdext.ServiceConfig{
+				Name: "m-current",
+				Host: AiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind": "prompt", "name": "current", "model": "gpt-4.1",
+				}),
+			}
+			nonAgentConfig := mustStruct(t, map[string]any{"custom": "preserved"})
+			services := map[string]*azdext.ServiceConfig{
+				"m-current": current,
+				"web": {
+					Name: "web", Host: "containerapp", Config: nonAgentConfig,
+				},
+			}
+			maps.Copy(services, tt.setupInvalid(t, root))
+			proj := &azdext.ProjectConfig{Path: root, Services: services}
+			before := proto.Clone(proj).(*azdext.ProjectConfig)
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values:  map[string]map[string]string{"dev": {}},
+			}
+			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+				Project: proj,
+				Service: current,
+			})
+
+			require.Error(t, err)
+			if tt.wantCode != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, tt.wantCode, localErr.Code)
+				require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+			}
+			if tt.wantMessage != "" {
+				require.ErrorContains(t, err, tt.wantMessage)
+			}
+			require.True(t, proto.Equal(before, proj))
+			require.Zero(t, envServer.getCurrentCalls)
+			require.Zero(t, envServer.getValuesCalls)
+			require.Empty(t, envServer.setKeys)
+			require.Equal(t, map[string]any{"custom": "preserved"}, nonAgentConfig.AsMap())
+		})
+	}
+}
+
+func TestPredeployAcceptsValidDirectAndRootRefServices(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "referenced.yaml"),
+		[]byte("kind: prompt\nname: referenced\nmodel: gpt-4.1\n"),
+		0o600,
+	))
+	current := &azdext.ServiceConfig{
+		Name: "direct",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "prompt", "name": "direct", "model": "gpt-4.1",
+		}),
+	}
+	referenced := &azdext.ServiceConfig{
+		Name: "referenced",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"$ref": "./referenced.yaml",
+		}),
+	}
+	nonAgentConfig := mustStruct(t, map[string]any{"custom": "preserved"})
+	proj := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"direct":     current,
+			"referenced": referenced,
+			"web": {
+				Name: "web", Host: "containerapp", Config: nonAgentConfig,
+			},
+		},
+	}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values:  map[string]map[string]string{"dev": {}},
+	}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj,
+		Service: current,
+	})
+
+	require.NoError(t, err)
+	require.Positive(t, envServer.getCurrentCalls)
+	require.Equal(t, map[string]any{"custom": "preserved"}, nonAgentConfig.AsMap())
+}
+
+func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {
+	tests := []struct {
+		name           string
+		definitionPath string
+		setup          func(t *testing.T, root string) *azdext.ServiceConfig
+		wantCode       string
+		wantSuggestion string
+	}{
+		{
+			name:           "definition path override",
+			definitionPath: "missing-override.yaml",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return &azdext.ServiceConfig{
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1",
+					}),
+				}
+			},
+			wantCode: exterrors.CodeUnsupportedAgentDefinitionPath,
+			wantSuggestion: "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
+				"the azure.ai.agent service in azure.yaml, or add a service-level $ref to a direct agent definition",
+		},
+		{
+			name: "nested config",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return &azdext.ServiceConfig{
+					Name: "agent",
+					Host: AiAgentHost,
+					Config: mustStruct(t, map[string]any{
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1",
+					}),
+				}
+			},
+			wantCode: exterrors.CodeDeprecatedAgentServiceConfig,
+			wantSuggestion: "move the agent definition to service-level properties in azure.yaml, " +
+				"or add a service-level $ref to a direct agent definition",
+		},
+		{
+			name: "implicit legacy file",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("kind: prompt\nname: agent\nmodel: gpt-4.1\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+			},
+			wantCode: exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
+		},
+		{
+			name: "missing definition",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost}
+			},
+			wantCode: exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
+				"or add a service-level $ref to a direct agent definition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", tt.definitionPath)
+			root := t.TempDir()
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+			}
+			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+			err := predownHandler(t.Context(), client, &azdext.ProjectEventArgs{
+				Project: &azdext.ProjectConfig{
+					Path: root,
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": tt.setup(t, root),
+					},
+				},
+			})
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+			require.Zero(t, envServer.getCurrentCalls)
+			require.Zero(t, envServer.getValuesCalls)
+			require.Empty(t, envServer.setKeys)
+		})
+	}
+}
+
+func TestPredownRejectsMalformedAuthoritativeRefBeforeCleanup(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "definition.yaml"),
+		[]byte("kind: [not-valid"),
+		0o600,
+	))
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+	}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	err := predownHandler(t.Context(), client, &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./definition.yaml",
+					}),
+				},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	require.Zero(t, envServer.getCurrentCalls)
+	require.Zero(t, envServer.getValuesCalls)
+	require.Empty(t, envServer.setKeys)
+}
+
+func TestPredownPreservesValidPromptAndActivityDefinitions(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, root string) *azdext.ServiceConfig
+	}{
+		{
+			name: "direct prompt",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return &azdext.ServiceConfig{
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1",
+					}),
+				}
+			},
+		},
+		{
+			name: "root ref prompt",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "definition.yaml"),
+					[]byte("kind: prompt\nname: agent\nmodel: gpt-4.1\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./definition.yaml",
+					}),
+				}
+			},
+		},
+		{
+			name: "direct activity",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return &azdext.ServiceConfig{
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted",
+						"name": "agent",
+						"protocols": []any{
+							map[string]any{"protocol": "activity", "version": "2.0.0"},
+						},
+					}),
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values:  map[string]map[string]string{"dev": {}},
+			}
+			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+			err := predownHandler(t.Context(), client, &azdext.ProjectEventArgs{
+				Project: &azdext.ProjectConfig{
+					Path: root,
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": tt.setup(t, root),
+					},
+				},
+			})
+			require.NoError(t, err)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // isHostedAgentService
 // ---------------------------------------------------------------------------
@@ -709,14 +1224,10 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 func TestIsHostedAgentService_HostedKind(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "agent.yaml"),
-		[]byte("kind: hosted\nname: my-agent\n"), 0600,
-	))
-
-	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
-	proj := &azdext.ProjectConfig{Path: dir}
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "my-agent"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "svc", AdditionalProperties: props}
+	proj := &azdext.ProjectConfig{Path: t.TempDir()}
 
 	assert.True(t, isHostedAgentService(svc, proj))
 }
@@ -724,14 +1235,10 @@ func TestIsHostedAgentService_HostedKind(t *testing.T) {
 func TestIsHostedAgentService_NonHostedKind(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "agent.yaml"),
-		[]byte("kind: local\nname: my-agent\n"), 0600,
-	))
-
-	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
-	proj := &azdext.ProjectConfig{Path: dir}
+	props, err := structpb.NewStruct(map[string]any{"kind": "local", "name": "my-agent"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "svc", AdditionalProperties: props}
+	proj := &azdext.ProjectConfig{Path: t.TempDir()}
 
 	assert.False(t, isHostedAgentService(svc, proj))
 }
@@ -779,14 +1286,11 @@ func TestIsHostedAgentService_SubDirectory(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	subDir := filepath.Join(dir, "agents", "bot")
-	require.NoError(t, os.MkdirAll(subDir, 0700))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(subDir, "agent.yaml"),
-		[]byte("kind: hosted\nname: bot\n"), 0600,
-	))
-
-	svc := &azdext.ServiceConfig{Name: "bot", RelativePath: "agents/bot"}
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "bot"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name: "bot", RelativePath: "agents/bot", AdditionalProperties: props,
+	}
 	proj := &azdext.ProjectConfig{Path: dir}
 
 	assert.True(t, isHostedAgentService(svc, proj))

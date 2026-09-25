@@ -101,10 +101,8 @@ YAML block declaring an `azure.ai.agent` service must:
 azd ignores unknown service properties at runtime, so an undocumented key
 deploys cleanly while doing nothing — the test blocks that in our docs.
 
-Snippets that are deliberately incomplete (for example, the network examples in
-`docs/private-networking.md`, which omit `kind` because azd falls back to the
-on-disk `agent.yaml`) opt out of the "must fully resolve" check with a marker on
-the line before the fence:
+Snippets that are deliberately incomplete opt out of the "must fully resolve"
+check with a marker on the line before the fence:
 
 ````markdown
 <!-- azd:doc-example partial -->

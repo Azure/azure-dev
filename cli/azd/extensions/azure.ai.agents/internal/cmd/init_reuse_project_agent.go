@@ -14,7 +14,6 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/paths"
-	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -93,16 +92,21 @@ func projectAgentServicesFrom(
 			continue
 		}
 
-		definition, _, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
+		probe, err := probeAgentDefinitionForInit(svc, projectRoot)
 		if err != nil {
 			diagnostics = append(diagnostics,
 				fmt.Sprintf("service %q: %v", serviceName, err))
 			continue
 		}
+		if !probe.found {
+			diagnostics = append(diagnostics,
+				fmt.Sprintf("service %q: agent definition not found", serviceName))
+			continue
+		}
 
 		agentName, _ := adoptedAgentNameConfig(svc)
 		if agentName == "" {
-			agentName = definition.Name
+			agentName = probe.definition.Name
 		}
 		if agentName == "" {
 			agentName = serviceName

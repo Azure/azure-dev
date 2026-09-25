@@ -291,28 +291,11 @@ launch.
 
 New Foundry agent projects keep the agent definition directly on the
 `azure.ai.agent` service entry in `azure.yaml`. Older projects may still have the
-definition in an `agent.yaml` file or under the service's `config:` block. Those
-legacy shapes continue to work during the migration window, but azd prints a
-deprecation warning when it loads them.
+definition in an `agent.yaml`/`agent.yml` file, an AgentManifest file, or under
+the service's `config:` block. Runtime commands reject those implicit and nested
+sources with migration guidance.
 
-To migrate, re-run `azd ai agent init` from the project root and keep the
-generated `azure.yaml` service entry. After confirming `azd deploy` still works,
-remove the old `agent.yaml` or nested `config:` definition.
-
-Before:
-
-```yaml
-services:
-  my-agent:
-    host: azure.ai.agent
-    project: .
-    config:
-      kind: hosted
-      name: my-agent
-      description: My hosted agent
-```
-
-After:
+Move a direct agent definition to service-level properties in `azure.yaml`:
 
 ```yaml
 services:
@@ -324,13 +307,20 @@ services:
     description: My hosted agent
 ```
 
+Alternatively, keep a direct definition in a separate file and reference it
+explicitly from the service with a root `$ref`. The basename can be anything,
+including a legacy-looking name such as `agent.yaml`, but prompt-agent references
+must use a `.yaml` or `.yml` extension. The file content must be a supported
+direct agent definition. An `agent.manifest.yaml` template wrapper must first be
+converted or extracted.
+
 ### Environment variables under `config:`
 
 Older projects could also set environment variables in an `env:` block nested
 under the service's `config:`. That position is no longer read: azd takes the
-service environment only from the service-level `env:`. A service that still
-carries `config: env:` gets a warning naming the affected variables on both
-`azd ai agent run` and `azd deploy`.
+service environment only from the service-level `env:`. Runtime commands fail
+when an agent service still carries a non-empty `config:` block. Move those
+environment values to the service-level `env:` before running the agent.
 
 Move them up one level to fix it:
 

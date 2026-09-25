@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestParseCommand(t *testing.T) {
@@ -526,15 +527,17 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 
 func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
 	projectDir := t.TempDir()
+	agentProps := testHostedAgentProps(t)
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{
 			Name: "test-project",
 			Path: projectDir,
 			Services: map[string]*azdext.ServiceConfig{
 				"agent": {
-					Name:         "agent",
-					Host:         AiAgentHost,
-					RelativePath: ".",
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					RelativePath:         ".",
+					AdditionalProperties: agentProps,
 				},
 			},
 		},
@@ -600,15 +603,17 @@ func runRunWithHelperProcess(t *testing.T, mode string, exitCode string) error {
 	t.Helper()
 
 	projectDir := t.TempDir()
+	agentProps := testHostedAgentProps(t)
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{
 			Name: "test-project",
 			Path: projectDir,
 			Services: map[string]*azdext.ServiceConfig{
 				"agent": {
-					Name:         "agent",
-					Host:         AiAgentHost,
-					RelativePath: ".",
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					RelativePath:         ".",
+					AdditionalProperties: agentProps,
 				},
 			},
 		},
@@ -647,6 +652,18 @@ func runRunWithHelperProcess(t *testing.T, mode string, exitCode string) error {
 		startCommand: startCommand,
 		noClient:     true,
 	}, true)
+}
+
+func testHostedAgentProps(t *testing.T) *structpb.Struct {
+	t.Helper()
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "agent",
+	})
+	if err != nil {
+		t.Fatalf("create hosted agent properties: %v", err)
+	}
+	return props
 }
 
 func TestRunRunHelperProcess(t *testing.T) {

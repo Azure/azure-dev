@@ -1493,7 +1493,8 @@ func versionTransitionVerb(installedVersion, targetVersion string) string {
 // confirmSourceChange prompts before replacing an already-installed extension
 // with one from a different source (e.g. a bundle build over a registry build),
 // since the artifacts may differ. In --no-prompt mode it skips with --force
-// guidance. It reports whether the install should proceed.
+// guidance unless --version was supplied, in which case it fails.
+// It reports whether the install should proceed.
 func (a *extensionInstallAction) confirmSourceChange(
 	ctx context.Context,
 	stepMessage string,
@@ -1520,7 +1521,8 @@ func (a *extensionInstallAction) confirmSourceChange(
 
 // confirmReplace prompts with the given question and reports whether to proceed,
 // managing spinner state and prompt spacing. In --no-prompt mode it does not
-// prompt: it skips with noPromptSkipSuffix appended to the step message.
+// prompt: an explicit --version fails rather than being ignored; otherwise it
+// skips with noPromptSkipSuffix appended to the step message.
 func (a *extensionInstallAction) confirmReplace(
 	ctx context.Context,
 	stepMessage string,
@@ -1528,6 +1530,17 @@ func (a *extensionInstallAction) confirmReplace(
 	noPromptSkipSuffix string,
 ) (bool, error) {
 	if a.flags.global.NoPrompt {
+		if a.flags.version != "" {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return false, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"cannot install --version %q in non-interactive mode%s",
+					a.flags.version, noPromptSkipSuffix,
+				),
+				Suggestion: "Repeat the command with --force to allow replacement, " +
+					"or use an interactive terminal without --no-prompt and set AZD_NON_INTERACTIVE=false.",
+			}
+		}
 		a.console.StopSpinner(ctx, stepMessage+output.WithGrayFormat(noPromptSkipSuffix), input.StepSkipped)
 		return false, nil
 	}

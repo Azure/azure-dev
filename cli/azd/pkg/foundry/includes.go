@@ -4,7 +4,10 @@
 package foundry
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -90,6 +93,7 @@ func WithPathKeys(keys ...string) ResolveOption {
 // trust level as azure.yaml itself.
 //
 // Path keys beyond the two core owns are rebased only when named with WithPathKeys.
+// Each referenced file must contain exactly one YAML or JSON object.
 func ResolveFileRefs(cfg map[string]any, projectRoot string, opts ...ResolveOption) (map[string]any, error) {
 	if cfg == nil {
 		return nil, nil
@@ -265,7 +269,8 @@ func loadRefFile(path string) (map[string]any, error) {
 	}
 
 	var out map[string]any
-	if err := yaml.Unmarshal(data, &out); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&out); err != nil {
 		return nil, fileRefValidation(
 			fmt.Sprintf("%s file %q is not a valid YAML or JSON object: %v", refKey, path, err),
 			"Fix the file so it parses as a YAML or JSON object.",
@@ -275,6 +280,13 @@ func loadRefFile(path string) (map[string]any, error) {
 		return nil, fileRefValidation(
 			fmt.Sprintf("%s file %q is empty or not a mapping", refKey, path),
 			"The referenced file must contain a YAML or JSON object.",
+		)
+	}
+	var trailing yaml.Node
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, fileRefValidation(
+			fmt.Sprintf("%s file %q must contain exactly one YAML or JSON object", refKey, path),
+			"Remove additional documents or trailing content from the referenced file.",
 		)
 	}
 	return out, nil

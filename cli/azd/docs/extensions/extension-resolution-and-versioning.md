@@ -33,6 +33,8 @@ azd extension source add -n local-dev -t file -l "/path/to/registry.json"
 azd extension source remove my-source
 ```
 
+File sources are saved with an absolute location so the registered name works from other directories. When adding a relative file location, `azd` first looks in the current working directory, then in the user configuration directory. Relative paths must stay within a searched directory; use an absolute path for a registry in a parent directory. Absolute file locations and URLs are kept as supplied. Existing relative entries are not automatically migrated because their original working directory is unknown. To repair one, remove and re-add the source from the directory where the relative path works, or use the registry's absolute path.
+
 ### Default Source
 
 When no sources are configured, `azd` automatically creates a default source:
@@ -192,6 +194,8 @@ When the source is **not** changing (same source as the installed extension):
 When the source **is** changing (for example installing a bundle build over a registry build, or vice versa), the artifacts may differ, so `azd` does not silently proceed, no-op, or block a downgrade. Instead it **prompts for confirmation** before replacing the installed extension. The prompt states the version transition explicitly — *Reinstall*, *Update to `<version>`*, or *Downgrade to `<version>`* — and the target source. Declining skips the install; confirming reinstalls and re-points the extension to the new source. In `--no-prompt` mode `azd` skips with guidance to pass `--force`, and `--force` proceeds without prompting.
 
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
+
+When `--version` is explicitly supplied in non-interactive mode, a downgrade or source change that requires confirmation **fails with a nonzero exit code** instead of skipping the requested version. The installed version and files are unchanged. Add `--force` to authorize replacement. To confirm interactively, use an interactive terminal without `--no-prompt` and set `AZD_NON_INTERACTIVE=false` to opt out of automatic non-interactive mode. Same-source, same-version installs remain successful no-ops.
 
 For registry-backed installs, a required dependency must resolve from the parent's source or the main `azd` registry. For self-contained bundles, it must resolve from the bundle itself. If the dependency is not already installed and cannot be resolved from the applicable sources, the install fails with actionable guidance.
 

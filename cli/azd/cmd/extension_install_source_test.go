@@ -329,6 +329,32 @@ func TestResolveSourceLocation_FilePersistsAbsolutePath(t *testing.T) {
 	require.Equal(t, registryPath, src.Location)
 }
 
+func TestResolveSourceLocation_ReusesSourceAddedFromRelativeLocation(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	registryPath := writeRegistryFile(t)
+	t.Chdir(filepath.Dir(registryPath))
+	action, _ := newBundleInstallTestAction(t)
+	add := &extensionSourceAddAction{
+		flags:         &extensionSourceAddFlags{name: "local-dev", kind: "file", location: "registry.json"},
+		console:       action.console,
+		sourceManager: action.sourceManager,
+	}
+	_, err := add.Run(t.Context())
+	require.NoError(t, err)
+	action.flags.global.NoPrompt = true
+	action.flags.source = "registry.json"
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "local-dev", action.flags.source)
+
+	t.Chdir(t.TempDir())
+	action.flags.source = registryPath
+	require.NoError(t, action.resolveSourceLocation(t.Context()))
+	require.Equal(t, "local-dev", action.flags.source)
+	stored, err := action.sourceManager.Get(t.Context(), "local-dev")
+	require.NoError(t, err)
+	require.Equal(t, registryPath, stored.Location)
+}
+
 func TestResolveSourceLocation_UrlAcceptedRegistersSource(t *testing.T) {
 	t.Parallel()
 

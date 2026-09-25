@@ -99,27 +99,6 @@ const (
 	ToolKindA2APreview      ToolKind = "a2a_preview"
 )
 
-// legacyToolKindAliases maps deprecated camelCase tool kind names to their
-// current snake_case equivalents so older direct definitions continue to parse.
-var legacyToolKindAliases = map[ToolKind]ToolKind{
-	"webSearch":       ToolKindWebSearch,
-	"bingGrounding":   ToolKindBingGrounding,
-	"fileSearch":      ToolKindFileSearch,
-	"codeInterpreter": ToolKindCodeInterpreter,
-	"azureAiSearch":   ToolKindAzureAiSearch,
-	"a2aPreview":      ToolKindA2APreview,
-	"openApi":         ToolKindOpenApi,
-}
-
-// NormalizeToolKind maps legacy camelCase tool kind values to the current
-// snake_case form. If the kind is already canonical it is returned unchanged.
-func NormalizeToolKind(kind ToolKind) ToolKind {
-	if canonical, ok := legacyToolKindAliases[kind]; ok {
-		return canonical
-	}
-	return kind
-}
-
 type ConnectionKind string
 
 const (
@@ -345,9 +324,9 @@ const (
 // determines how the content-safety proxy extracts the text it moderates. Both default to
 // InvocationContentTypeJSON when omitted.
 //
-// Keys in these structures follow the extension's dual-casing convention:
-// camelCase and snake_case are both accepted by direct/root-$ref definitions.
-// The values below are wire values and stay snake_case in both.
+// Public direct/root-$ref authoring follows the schema-canonical camelCase fields for
+// this block. Enum values such as non_streaming remain snake_case; internal YAML and
+// API tags are implementation details, not public aliases.
 const (
 	InvocationContentTypeJSON = "json"
 	InvocationContentTypeText = "text"

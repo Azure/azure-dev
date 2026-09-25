@@ -95,6 +95,106 @@ protocols:
 	}
 }
 
+func TestValidateAgentDefinition_ReportsCanonicalAuthoredPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		yaml string
+		want []string
+	}{
+		{
+			name: "kind",
+			yaml: "kind: invalid\nname: agent\n",
+			want: []string{"kind must be one of"},
+		},
+		{
+			name: "name",
+			yaml: "kind: hosted\nname: invalid_name\n",
+			want: []string{"name not in valid format"},
+		},
+		{
+			name: "prompt model",
+			yaml: "kind: prompt\nname: agent\ninstructions: Be helpful.\n",
+			want: []string{"model is required for prompt agents"},
+		},
+		{
+			name: "policy",
+			yaml: "kind: hosted\nname: agent\npolicies:\n  - type: rai_policy\n",
+			want: []string{"policies[0]", "raiPolicyName"},
+		},
+		{
+			name: "voice hosted-only fields",
+			yaml: `kind: voice
+name: voice-agent
+model:
+  id: gpt-realtime
+environment_variables:
+  - name: SAMPLE
+    value: value
+code_configuration:
+  runtime: python_3_13
+session_configuration:
+  idle_timeout_seconds: 600
+`,
+			want: []string{
+				"environmentVariables",
+				"codeConfiguration",
+				"sessionConfiguration",
+			},
+		},
+		{
+			name: "voice advanced fields",
+			yaml: `kind: voice
+name: voice-agent
+model:
+  id: gpt-realtime
+output_modalities: [""]
+parallel_tool_calls: true
+max_output_tokens: 0
+audio:
+  input:
+    noise_reduction:
+      type: ""
+    turn_detection:
+      type: ""
+      prefix_padding_ms: -1
+      silence_duration_ms: -1
+      speech_duration_ms: -1
+`,
+			want: []string{
+				"outputModalities[0]",
+				"parallelToolCalls",
+				"maxOutputTokens",
+				"audio.input.noiseReduction.type",
+				"audio.input.turnDetection.type",
+				"audio.input.turnDetection.prefixPaddingMs",
+				"audio.input.turnDetection.silenceDurationMs",
+				"audio.input.turnDetection.speechDurationMs",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateAgentDefinition([]byte(tt.yaml))
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain canonical path %q", err, want)
+				}
+			}
+			if strings.Contains(err.Error(), "template.") {
+				t.Errorf("error contains obsolete AgentManifest envelope path: %q", err)
+			}
+		})
+	}
+}
+
 func TestValidateAgentDefinition_InvocationsModeration(t *testing.T) {
 	t.Parallel()
 

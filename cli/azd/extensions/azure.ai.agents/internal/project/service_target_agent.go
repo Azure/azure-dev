@@ -1179,11 +1179,11 @@ func acrPermissionSuggestionFor(err error) string {
 		"  Learn more: https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-code\n\n" +
 		"  To switch (no need to re-run `azd ai agent init`):\n" +
 		"  1. Open the service's agent definition in azure.yaml (or its root $ref target)\n" +
-		"     and add a `code_configuration:` block under\n" +
+		"     and add a `codeConfiguration:` block under\n" +
 		"     the hosted agent, for example:\n" +
-		"        code_configuration:\n" +
+		"        codeConfiguration:\n" +
 		"          runtime: python_3_13          # or dotnet_10\n" +
-		"          entry_point: app.py            # or MyAgent.dll\n" +
+		"          entryPoint: app.py             # or MyAgent.dll\n" +
 		"  2. Run: azd env set AZD_AGENT_SKIP_ACR true\n" +
 		"     (subsequent provisioning will skip creating ACR; an already-provisioned\n" +
 		"     ACR is not deleted automatically)\n" +

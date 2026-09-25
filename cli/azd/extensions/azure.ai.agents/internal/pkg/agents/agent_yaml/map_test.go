@@ -2032,6 +2032,9 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 				if !strings.Contains(err.Error(), "idleTimeoutSeconds") {
 					t.Errorf("error = %q, want it to mention idleTimeoutSeconds", err)
 				}
+				if strings.Contains(err.Error(), "idle_timeout_seconds") {
+					t.Errorf("error = %q, must not mention the API wire field", err)
+				}
 				return
 			}
 			if err != nil {

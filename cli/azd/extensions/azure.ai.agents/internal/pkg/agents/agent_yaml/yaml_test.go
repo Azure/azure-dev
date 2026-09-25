@@ -8,6 +8,27 @@ import (
 	"testing"
 )
 
+func TestCanonicalToolKindValues(t *testing.T) {
+	t.Parallel()
+
+	for value, expected := range map[string]ToolKind{
+		"web_search":       ToolKindWebSearch,
+		"code_interpreter": ToolKindCodeInterpreter,
+	} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+
+			var tool Tool
+			if err := json.Unmarshal([]byte(`{"kind":"`+value+`","name":"test"}`), &tool); err != nil {
+				t.Fatalf("unmarshal canonical tool kind: %v", err)
+			}
+			if tool.Kind != expected {
+				t.Fatalf("kind = %q, want %q", tool.Kind, expected)
+			}
+		})
+	}
+}
+
 // TestArrayProperty_BasicSerialization tests basic JSON serialization
 func TestArrayProperty_BasicSerialization(t *testing.T) {
 	// Test that we can create and marshal a ArrayProperty

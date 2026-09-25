@@ -465,7 +465,54 @@ func TestCheckAgentDefinitionValid_InlineInvalidKind_Fails(
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
-	require.Contains(t, failures[0], "template.kind must be one of")
+	require.Contains(t, failures[0], "kind must be one of")
+	require.NotContains(t, failures[0], "template.")
+}
+
+func TestCheckAgentDefinitionValid_ReportsCanonicalPathsForDirectAndRootRef(t *testing.T) {
+	for _, source := range []string{"direct", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			projectPath := t.TempDir()
+			values := map[string]any{
+				"kind":             "voice",
+				"name":             "voice-agent",
+				"model":            map[string]any{"id": "gpt-realtime"},
+				"outputModalities": []any{""},
+			}
+			if source == "root-ref" {
+				writeYAML(t, projectPath, "definition.yaml",
+					"kind: voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\noutputModalities: [\"\"]\n")
+				values = map[string]any{"$ref": "./definition.yaml"}
+			}
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+
+			client := newTestAzdClient(t,
+				&fakeProjectServer{resp: &azdext.GetProjectResponse{
+					Project: &azdext.ProjectConfig{
+						Path: projectPath,
+						Services: map[string]*azdext.ServiceConfig{
+							"voice-agent": {
+								Name:                 "voice-agent",
+								Host:                 agentHost,
+								AdditionalProperties: props,
+							},
+						},
+					},
+				}},
+				&fakeEnvironmentServer{})
+			check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
+
+			got := check.Fn(t.Context(), Options{}, nil)
+
+			require.Equal(t, StatusFail, got.Status)
+			failures, ok := got.Details["failures"].([]string)
+			require.True(t, ok)
+			require.Len(t, failures, 1)
+			require.Contains(t, failures[0], "outputModalities[0] must not be blank")
+			require.NotContains(t, failures[0], "template.")
+		})
+	}
 }
 
 func TestCheckAgentDefinitionValid_InlineWinsOverStaleFile(

@@ -958,7 +958,10 @@ func (m *mockUserConfigManager) Save(c config.Config) error {
 	return nil
 }
 
-func (m *mockUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err

@@ -1491,7 +1491,10 @@ func (m *testConfigManager) Save(cfg config.Config) error {
 	return m.saveErr
 }
 
-func (m *testConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *testConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	if m.loadErr != nil {
 		return m.loadErr
 	}

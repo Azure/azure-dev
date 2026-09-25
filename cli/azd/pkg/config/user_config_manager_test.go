@@ -190,6 +190,7 @@ func Test_UserConfigManager_ConcurrentProcessesPreserveAllWrites(t *testing.T) {
 	commands := make([]*exec.Cmd, 0, writers)
 	for i := range writers {
 		key := fmt.Sprintf("key%d", i)
+		//nolint:gosec // os.Args[0] is the current test binary.
 		command := exec.Command(os.Args[0], "-test.run=^Test_UserConfigManager_SubprocessWorker$")
 		command.Env = append(
 			os.Environ(),

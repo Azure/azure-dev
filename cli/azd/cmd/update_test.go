@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -431,6 +432,36 @@ func Test_UpdateAction_PersistNonChannelFlags(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_UpdateAction_FirstUsePreservesConcurrentUpdateConfig(t *testing.T) {
+	setProdVersion(t)
+	clearCIEnv(t)
+
+	staleConfig := config.NewEmptyConfig()
+	latestConfig := config.NewEmptyConfig()
+	require.NoError(t, update.SetChannel(latestConfig, update.ChannelDaily))
+
+	configManager := &staleUpdateConfigManager{
+		staleConfig:  staleConfig,
+		latestConfig: latestConfig,
+	}
+	action := newTestUpdateAction(
+		&updateFlags{checkIntervalHours: 12},
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		&bytes.Buffer{},
+		configManager,
+		nil,
+	)
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	updateConfig := update.LoadUpdateConfig(latestConfig)
+	require.Equal(t, update.ChannelDaily, updateConfig.Channel)
+	require.Equal(t, 12, updateConfig.CheckIntervalHours)
+}
+
 func Test_NewUpdateFlags(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{Use: "test"}
@@ -454,4 +485,38 @@ func Test_UpdateAction_Run_NonProdVersion(t *testing.T) {
 	_, err := a.(*updateAction).Run(t.Context())
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, internal.ErrUnsupportedOperation))
+}
+
+type staleUpdateConfigManager struct {
+	staleConfig  config.Config
+	latestConfig config.Config
+	loadCount    int
+}
+
+func (m *staleUpdateConfigManager) Load() (config.Config, error) {
+	m.loadCount++
+	if m.loadCount == 1 {
+		return m.staleConfig, nil
+	}
+	return m.latestConfig, nil
+}
+
+func (m *staleUpdateConfigManager) Save(cfg config.Config) error {
+	m.latestConfig = cfg
+	return nil
+}
+
+func (m *staleUpdateConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	changed, err := mutation(ctx, m.latestConfig)
+	if err != nil || !changed {
+		return err
+	}
+	return m.Save(m.latestConfig)
+}
+
+func (m *staleUpdateConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
 }

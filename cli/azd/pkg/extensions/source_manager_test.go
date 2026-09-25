@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -291,6 +292,31 @@ func TestSourceManager_List(t *testing.T) {
 	require.Equal(t, expected, *sources[0])
 }
 
+func TestSourceManager_List_PreservesConcurrentExplicitSources(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	staleConfig := config.NewEmptyConfig()
+	latestConfig := config.NewEmptyConfig()
+	explicitSource := SourceConfig{
+		Name:     "private",
+		Type:     SourceKindUrl,
+		Location: "https://example.com/extensions.json",
+	}
+	require.NoError(t, latestConfig.Set("extension.sources.private", explicitSource))
+
+	configManager := &staleSourceListConfigManager{
+		staleConfig:  staleConfig,
+		latestConfig: latestConfig,
+	}
+	sourceManager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+
+	sources, err := sourceManager.List(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []*SourceConfig{&explicitSource}, sources)
+
+	_, found := latestConfig.Get("extension.sources." + MainRegistryName)
+	require.False(t, found)
+}
+
 func TestValidateSourceName(t *testing.T) {
 	t.Parallel()
 
@@ -329,6 +355,40 @@ func TestValidateSourceName(t *testing.T) {
 			require.ErrorIs(t, err, tt.targetErr)
 		})
 	}
+}
+
+type staleSourceListConfigManager struct {
+	staleConfig  config.Config
+	latestConfig config.Config
+	loadCount    int
+}
+
+func (m *staleSourceListConfigManager) Load() (config.Config, error) {
+	m.loadCount++
+	if m.loadCount == 1 {
+		return m.staleConfig, nil
+	}
+	return m.latestConfig, nil
+}
+
+func (m *staleSourceListConfigManager) Save(cfg config.Config) error {
+	m.latestConfig = cfg
+	return nil
+}
+
+func (m *staleSourceListConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	changed, err := mutation(ctx, m.latestConfig)
+	if err != nil || !changed {
+		return err
+	}
+	return m.Save(m.latestConfig)
+}
+
+func (m *staleSourceListConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
 }
 
 func TestSourceManager_ListRejectsInvalidConfiguration(t *testing.T) {

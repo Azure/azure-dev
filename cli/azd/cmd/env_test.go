@@ -1775,7 +1775,10 @@ func (m *simpleConfigMgr) Save(c config.Config) error {
 	return nil
 }
 
-func (m *simpleConfigMgr) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *simpleConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err
@@ -1806,7 +1809,10 @@ func (m *failSaveConfigMgr) Save(_ config.Config) error {
 	return errors.New("save failed")
 }
 
-func (m *failSaveConfigMgr) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *failSaveConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err
@@ -2435,7 +2441,10 @@ func (m *finishConfigMgr) Load() (config.Config, error) { return m.cfg, m.err }
 
 func (m *finishConfigMgr) Save(_ config.Config) error { return nil }
 
-func (m *finishConfigMgr) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *finishConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -2966,7 +2975,10 @@ func (m *testConfigMgr) Save(c config.Config) error {
 	return nil
 }
 
-func (m *testConfigMgr) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *testConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err
@@ -3326,7 +3338,10 @@ func (m *pushConfigMgr) Save(cfg config.Config) error {
 	return m.saveErr
 }
 
-func (m *pushConfigMgr) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *pushConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	if changed, err := mutation(ctx, m.cfg); err != nil || !changed {
 		return err
 	}
@@ -3348,7 +3363,10 @@ func (m *pushFailSaveConfigMgr) Save(cfg config.Config) error {
 	return errors.New("save error")
 }
 
-func (m *pushFailSaveConfigMgr) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *pushFailSaveConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err

@@ -45,12 +45,11 @@ func WriteFileAtomic(ctx context.Context, path string, data []byte, perm os.File
 		}
 	}()
 
-	//nolint:gosec // tmpPath is created in the trusted target directory.
-	if err := os.Chmod(tmpPath, perm); err != nil {
-		return fmt.Errorf("setting temporary file permissions: %w", err)
-	}
 	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("writing temporary file: %w", err)
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		return fmt.Errorf("setting temporary file permissions: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("syncing temporary file: %w", err)

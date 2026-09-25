@@ -4,11 +4,13 @@
 package project
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
@@ -84,8 +86,32 @@ func Test_CheckResourceType(t *testing.T) {
 }
 
 func Test_NewExternalServiceTarget(t *testing.T) {
-	target := NewExternalServiceTarget("test-target", ContainerAppTarget, nil, nil, nil, nil, nil)
+	target := NewExternalServiceTarget("test-target", ContainerAppTarget, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, target)
+}
+
+func Test_ExternalServiceTarget_Preview(t *testing.T) {
+	serviceConfig := &ServiceConfig{Name: "agent", Host: "azure.ai.agent", RelativePath: "src/agent"}
+
+	t.Run("not supported without preview registration", func(t *testing.T) {
+		target := NewExternalServiceTarget("agent", "azure.ai.agent", nil, nil, nil, nil, nil, nil)
+		_, err := target.(ServiceTargetPreviewer).Preview(t.Context(), serviceConfig)
+		require.ErrorIs(t, err, ErrDeployPreviewNotSupported)
+	})
+
+	t.Run("forwards service config", func(t *testing.T) {
+		want := &ServiceDeployPreviewResult{Message: "1 change"}
+		target := NewExternalServiceTarget("agent", "azure.ai.agent", nil, nil, nil, nil, nil,
+			func(ctx context.Context, protoConfig *azdext.ServiceConfig) (*ServiceDeployPreviewResult, error) {
+				assert.Equal(t, "agent", protoConfig.Name)
+				assert.Equal(t, "azure.ai.agent", protoConfig.Host)
+				return want, nil
+			})
+
+		result, err := target.(ServiceTargetPreviewer).Preview(t.Context(), serviceConfig)
+		require.NoError(t, err)
+		assert.Same(t, want, result)
+	})
 }
 
 // ---------- IgnoreFile method coverage for different targets ----------

@@ -1578,6 +1578,50 @@ if err := host.Run(ctx); err != nil {
 
 ```
 
+## Deployment Preview
+
+`azd deploy --preview` asks each selected service's target to describe the
+changes a deployment would make. Nothing is packaged, published, or deployed,
+service targets are not initialized, and deploy hooks do not run. Services whose
+host does not support preview are reported and skipped. The flag cannot be
+combined with `--from-package` or `--timeout`.
+
+Extension service targets opt in through the experimental, **v1beta-only**
+contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
+instead of `WithServiceTarget`, and implement `preview.ServiceTargetPreviewProvider`
+from `pkg/azdext/preview` alongside `azdext.ServiceTargetProvider`:
+
+```go
+host.WithBetaServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
+    return &MyProvider{}
+})
+
+func (p *MyProvider) Preview(
+    ctx context.Context,
+    serviceConfig *v1beta.ServiceConfig,
+) (*v1beta.ServiceDeployPreviewResult, error)
+```
+
+`WithBetaServiceTargetPreview` registers the host on the stable service target
+stream exactly like `WithServiceTarget`, so normal deployments are unchanged.
+It also registers the host on a dedicated v1beta stream that carries only
+`RegisterServiceTargetRequest` (with `supports_preview`) and the preview
+request and response messages. Registration does not invoke the factory.
+The preview registration is sent after the stable registration succeeds and is
+best effort: azd versions without deployment preview reject it, and the service
+target keeps working with preview reported as unsupported.
+
+For each preview request the SDK creates a fresh provider from the factory and
+calls only `Preview`; `Initialize` and the deployment instance cache are not used.
+`Preview` must not build, package, publish, deploy, or persist deployment state.
+`ServiceDeployPreviewResult` carries a human-readable `Message`, shown in text
+output, and a `Data` struct, returned under `services.<name>.data` with
+`--output json`. Redact secrets from both. Provider errors, missing `Preview`
+implementations, and nil results fail the command.
+
+These APIs may change during incubation. The stable `v1` contracts and the
+root `azdext` facade do not include preview types.
+
 ## Developer Artifacts
 
 `azd` uses versioned gRPC contracts for communication between core and

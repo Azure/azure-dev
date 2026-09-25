@@ -530,6 +530,26 @@ type BetaUserConfigServiceUnsetOverride interface {
 	Unset(context.Context, *v1beta.UnsetUserConfigRequest) (*v1beta.EmptyResponse, error)
 }
 
+// BetaUserConfigServiceGetMapEntryOverride overrides the beta UserConfigService.GetMapEntry method before stable adaptation.
+type BetaUserConfigServiceGetMapEntryOverride interface {
+	GetMapEntry(context.Context, *v1beta.GetUserConfigMapEntryRequest) (*v1beta.GetUserConfigMapEntryResponse, error)
+}
+
+// BetaUserConfigServiceSetMapEntryOverride overrides the beta UserConfigService.SetMapEntry method before stable adaptation.
+type BetaUserConfigServiceSetMapEntryOverride interface {
+	SetMapEntry(context.Context, *v1beta.SetUserConfigMapEntryRequest) (*v1beta.EmptyResponse, error)
+}
+
+// BetaUserConfigServiceDeleteMapEntryOverride overrides the beta UserConfigService.DeleteMapEntry method before stable adaptation.
+type BetaUserConfigServiceDeleteMapEntryOverride interface {
+	DeleteMapEntry(context.Context, *v1beta.DeleteUserConfigMapEntryRequest) (*v1beta.EmptyResponse, error)
+}
+
+// BetaUserConfigServiceCompareExchangeMapEntryOverride overrides the beta UserConfigService.CompareExchangeMapEntry method before stable adaptation.
+type BetaUserConfigServiceCompareExchangeMapEntryOverride interface {
+	CompareExchangeMapEntry(context.Context, *v1beta.CompareExchangeUserConfigMapEntryRequest) (*v1beta.CompareExchangeUserConfigMapEntryResponse, error)
+}
+
 func validateBetaUserConfigServiceOverride(override any) error {
 	return validateBetaServiceOverride(
 		"UserConfigService",
@@ -540,6 +560,10 @@ func validateBetaUserConfigServiceOverride(override any) error {
 		reflect.TypeFor[BetaUserConfigServiceGetSectionOverride](),
 		reflect.TypeFor[BetaUserConfigServiceSetOverride](),
 		reflect.TypeFor[BetaUserConfigServiceUnsetOverride](),
+		reflect.TypeFor[BetaUserConfigServiceGetMapEntryOverride](),
+		reflect.TypeFor[BetaUserConfigServiceSetMapEntryOverride](),
+		reflect.TypeFor[BetaUserConfigServiceDeleteMapEntryOverride](),
+		reflect.TypeFor[BetaUserConfigServiceCompareExchangeMapEntryOverride](),
 	)
 }
 
@@ -2053,6 +2077,74 @@ func (a *betaUserConfigServiceAdapter) Unset(
 		a.stable.Unset,
 		new(v1beta.EmptyResponse),
 		"UserConfigService.Unset",
+	)
+}
+
+func (a *betaUserConfigServiceAdapter) GetMapEntry(
+	ctx context.Context,
+	req *v1beta.GetUserConfigMapEntryRequest,
+) (*v1beta.GetUserConfigMapEntryResponse, error) {
+	if override, ok := a.override.(BetaUserConfigServiceGetMapEntryOverride); ok {
+		return override.GetMapEntry(ctx, req)
+	}
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetUserConfigMapEntryRequest),
+		a.stable.GetMapEntry,
+		new(v1beta.GetUserConfigMapEntryResponse),
+		"UserConfigService.GetMapEntry",
+	)
+}
+
+func (a *betaUserConfigServiceAdapter) SetMapEntry(
+	ctx context.Context,
+	req *v1beta.SetUserConfigMapEntryRequest,
+) (*v1beta.EmptyResponse, error) {
+	if override, ok := a.override.(BetaUserConfigServiceSetMapEntryOverride); ok {
+		return override.SetMapEntry(ctx, req)
+	}
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetUserConfigMapEntryRequest),
+		a.stable.SetMapEntry,
+		new(v1beta.EmptyResponse),
+		"UserConfigService.SetMapEntry",
+	)
+}
+
+func (a *betaUserConfigServiceAdapter) DeleteMapEntry(
+	ctx context.Context,
+	req *v1beta.DeleteUserConfigMapEntryRequest,
+) (*v1beta.EmptyResponse, error) {
+	if override, ok := a.override.(BetaUserConfigServiceDeleteMapEntryOverride); ok {
+		return override.DeleteMapEntry(ctx, req)
+	}
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.DeleteUserConfigMapEntryRequest),
+		a.stable.DeleteMapEntry,
+		new(v1beta.EmptyResponse),
+		"UserConfigService.DeleteMapEntry",
+	)
+}
+
+func (a *betaUserConfigServiceAdapter) CompareExchangeMapEntry(
+	ctx context.Context,
+	req *v1beta.CompareExchangeUserConfigMapEntryRequest,
+) (*v1beta.CompareExchangeUserConfigMapEntryResponse, error) {
+	if override, ok := a.override.(BetaUserConfigServiceCompareExchangeMapEntryOverride); ok {
+		return override.CompareExchangeMapEntry(ctx, req)
+	}
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.CompareExchangeUserConfigMapEntryRequest),
+		a.stable.CompareExchangeMapEntry,
+		new(v1beta.CompareExchangeUserConfigMapEntryResponse),
+		"UserConfigService.CompareExchangeMapEntry",
 	)
 }
 

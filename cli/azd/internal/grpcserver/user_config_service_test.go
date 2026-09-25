@@ -4,8 +4,11 @@
 package grpcserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -190,6 +193,15 @@ func (m *mockConfig) GetMap(path string) (map[string]any, bool) {
 	return mp, ok
 }
 
+func (m *mockConfig) GetRawMapEntry(path string, key string) (any, bool, error) {
+	mp, ok := m.GetMap(path)
+	if !ok {
+		return nil, false, nil
+	}
+	value, found := mp[key]
+	return value, found, nil
+}
+
 func (m *mockConfig) GetSlice(path string) ([]any, bool) {
 	v, ok := m.data[path]
 	if !ok {
@@ -204,6 +216,16 @@ func (m *mockConfig) Set(path string, value any) error {
 	return nil
 }
 
+func (m *mockConfig) SetRawMapEntry(path string, key string, value any) error {
+	mp, ok := m.GetMap(path)
+	if !ok {
+		mp = map[string]any{}
+		m.data[path] = mp
+	}
+	mp[key] = value
+	return nil
+}
+
 func (m *mockConfig) SetSecret(path string, value string) error {
 	m.data[path] = value
 	return nil
@@ -214,6 +236,14 @@ func (m *mockConfig) Unset(path string) error {
 		return m.unsetFn(path)
 	}
 	delete(m.data, path)
+	return nil
+}
+
+func (m *mockConfig) DeleteRawMapEntry(path string, key string) error {
+	mp, ok := m.GetMap(path)
+	if ok {
+		delete(mp, key)
+	}
 	return nil
 }
 
@@ -232,8 +262,9 @@ func (m *mockConfig) ResolvedRaw() map[string]any {
 // mockUserConfigManager implements config.UserConfigManager for testing.
 type mockUserConfigManager struct {
 	config.UserConfigManager
-	cfg    config.Config
-	saveFn func(config.Config) error
+	cfg       config.Config
+	saveFn    func(config.Config) error
+	saveCount int
 }
 
 func (m *mockUserConfigManager) Load() (config.Config, error) {
@@ -241,10 +272,23 @@ func (m *mockUserConfigManager) Load() (config.Config, error) {
 }
 
 func (m *mockUserConfigManager) Save(c config.Config) error {
+	m.saveCount++
 	if m.saveFn != nil {
 		return m.saveFn(c)
 	}
 	return nil
+}
+
+func (m *mockUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+	if changed, err := mutation(ctx, m.cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(m.cfg)
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return m.Save(replacement)
 }
 
 func TestNewUserConfigService(t *testing.T) {
@@ -253,6 +297,183 @@ func TestNewUserConfigService(t *testing.T) {
 	svc, err := NewUserConfigService(mgr)
 	require.NoError(t, err)
 	require.NotNil(t, svc)
+}
+
+func TestUserConfigService_MapEntryCompareExchange(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	service, err := NewUserConfigService(manager)
+	require.NoError(t, err)
+
+	const (
+		path = "extensions.ai-agents.sessions"
+		key  = "endpoint.example.com/agents/my.agent/versions/v1/remote"
+	)
+
+	getResponse, err := service.GetMapEntry(t.Context(), &azdext.GetUserConfigMapEntryRequest{
+		Path: path,
+		Key:  key,
+	})
+	require.NoError(t, err)
+	require.False(t, getResponse.Found)
+	require.Empty(t, getResponse.Revision)
+
+	setResponse, err := service.CompareExchangeMapEntry(
+		t.Context(),
+		&azdext.CompareExchangeUserConfigMapEntryRequest{
+			Path:             path,
+			Key:              key,
+			ExpectedRevision: getResponse.Revision,
+			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+			Value:            []byte(`"session-1"`),
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, setResponse.Exchanged)
+	require.True(t, setResponse.Found)
+	require.NotEmpty(t, setResponse.Revision)
+	require.JSONEq(t, `"session-1"`, string(setResponse.Value))
+
+	conflictResponse, err := service.CompareExchangeMapEntry(
+		t.Context(),
+		&azdext.CompareExchangeUserConfigMapEntryRequest{
+			Path:             path,
+			Key:              key,
+			ExpectedRevision: getResponse.Revision,
+			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+			Value:            []byte(`"session-2"`),
+		},
+	)
+	require.NoError(t, err)
+	require.False(t, conflictResponse.Exchanged)
+	require.True(t, conflictResponse.Found)
+	require.Equal(t, setResponse.Revision, conflictResponse.Revision)
+	require.JSONEq(t, `"session-1"`, string(conflictResponse.Value))
+
+	deleteResponse, err := service.CompareExchangeMapEntry(
+		t.Context(),
+		&azdext.CompareExchangeUserConfigMapEntryRequest{
+			Path:             path,
+			Key:              key,
+			ExpectedRevision: setResponse.Revision,
+			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE,
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, deleteResponse.Exchanged)
+	require.False(t, deleteResponse.Found)
+	require.Empty(t, deleteResponse.Revision)
+}
+
+func TestUserConfigService_UnchangedMapEntryOperationsSkipSave(t *testing.T) {
+	manager := &mockUserConfigManager{cfg: &mockConfig{data: map[string]any{}}}
+	service, err := NewUserConfigService(manager)
+	require.NoError(t, err)
+
+	const (
+		path = "entries"
+		key  = "opaque.key"
+	)
+	value := []byte(`"value"`)
+
+	_, err = service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+		Path:  path,
+		Key:   key,
+		Value: value,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, manager.saveCount)
+
+	_, err = service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+		Path:  path,
+		Key:   key,
+		Value: value,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, manager.saveCount)
+
+	response, err := service.CompareExchangeMapEntry(
+		t.Context(),
+		&azdext.CompareExchangeUserConfigMapEntryRequest{
+			Path:             path,
+			Key:              key,
+			ExpectedRevision: "",
+			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+			Value:            []byte(`"other"`),
+		},
+	)
+	require.NoError(t, err)
+	require.False(t, response.Exchanged)
+	require.Equal(t, 1, manager.saveCount)
+}
+
+func TestUserConfigService_MapEntryDistinguishesNullFromAbsent(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	service, err := NewUserConfigService(manager)
+	require.NoError(t, err)
+
+	_, err = service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+		Path:  "entries",
+		Key:   "key.with.dots",
+		Value: []byte("null"),
+	})
+	require.NoError(t, err)
+
+	response, err := service.GetMapEntry(t.Context(), &azdext.GetUserConfigMapEntryRequest{
+		Path: "entries",
+		Key:  "key.with.dots",
+	})
+	require.NoError(t, err)
+	require.True(t, response.Found)
+	require.JSONEq(t, "null", string(response.Value))
+	require.NotEmpty(t, response.Revision)
+
+	_, err = service.DeleteMapEntry(t.Context(), &azdext.DeleteUserConfigMapEntryRequest{
+		Path: "entries",
+		Key:  "key.with.dots",
+	})
+	require.NoError(t, err)
+	response, err = service.GetMapEntry(t.Context(), &azdext.GetUserConfigMapEntryRequest{
+		Path: "entries",
+		Key:  "key.with.dots",
+	})
+	require.NoError(t, err)
+	require.False(t, response.Found)
+	require.Empty(t, response.Revision)
+}
+
+func TestUserConfigService_ConcurrentSetsPreserveAllWrites(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	service, err := NewUserConfigService(manager)
+	require.NoError(t, err)
+
+	const writers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := range writers {
+		wg.Go(func() {
+			_, err := service.Set(t.Context(), &azdext.SetUserConfigRequest{
+				Path:  fmt.Sprintf("grpc.key%d", i),
+				Value: fmt.Appendf(nil, "%q", fmt.Sprintf("value%d", i)),
+			})
+			errs <- err
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	cfg, err := manager.Load()
+	require.NoError(t, err)
+	for i := range writers {
+		value, found := cfg.GetString(fmt.Sprintf("grpc.key%d", i))
+		require.True(t, found)
+		require.Equal(t, fmt.Sprintf("value%d", i), value)
+	}
 }
 
 func TestUserConfigService_Get_Found(t *testing.T) {

@@ -22,11 +22,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UserConfigService_Get_FullMethodName        = "/azd.extensions.v1.UserConfigService/Get"
-	UserConfigService_GetString_FullMethodName  = "/azd.extensions.v1.UserConfigService/GetString"
-	UserConfigService_GetSection_FullMethodName = "/azd.extensions.v1.UserConfigService/GetSection"
-	UserConfigService_Set_FullMethodName        = "/azd.extensions.v1.UserConfigService/Set"
-	UserConfigService_Unset_FullMethodName      = "/azd.extensions.v1.UserConfigService/Unset"
+	UserConfigService_Get_FullMethodName                     = "/azd.extensions.v1.UserConfigService/Get"
+	UserConfigService_GetString_FullMethodName               = "/azd.extensions.v1.UserConfigService/GetString"
+	UserConfigService_GetSection_FullMethodName              = "/azd.extensions.v1.UserConfigService/GetSection"
+	UserConfigService_Set_FullMethodName                     = "/azd.extensions.v1.UserConfigService/Set"
+	UserConfigService_Unset_FullMethodName                   = "/azd.extensions.v1.UserConfigService/Unset"
+	UserConfigService_GetMapEntry_FullMethodName             = "/azd.extensions.v1.UserConfigService/GetMapEntry"
+	UserConfigService_SetMapEntry_FullMethodName             = "/azd.extensions.v1.UserConfigService/SetMapEntry"
+	UserConfigService_DeleteMapEntry_FullMethodName          = "/azd.extensions.v1.UserConfigService/DeleteMapEntry"
+	UserConfigService_CompareExchangeMapEntry_FullMethodName = "/azd.extensions.v1.UserConfigService/CompareExchangeMapEntry"
 )
 
 // UserConfigServiceClient is the client API for UserConfigService service.
@@ -43,6 +47,14 @@ type UserConfigServiceClient interface {
 	Set(ctx context.Context, in *SetUserConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 	// Unset removes a value at a given path
 	Unset(ctx context.Context, in *UnsetUserConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	// GetMapEntry retrieves a value under an opaque key in a map.
+	GetMapEntry(ctx context.Context, in *GetUserConfigMapEntryRequest, opts ...grpc.CallOption) (*GetUserConfigMapEntryResponse, error)
+	// SetMapEntry sets a value under an opaque key in a map.
+	SetMapEntry(ctx context.Context, in *SetUserConfigMapEntryRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	// DeleteMapEntry removes an opaque key from a map.
+	DeleteMapEntry(ctx context.Context, in *DeleteUserConfigMapEntryRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	// CompareExchangeMapEntry conditionally updates an opaque map entry.
+	CompareExchangeMapEntry(ctx context.Context, in *CompareExchangeUserConfigMapEntryRequest, opts ...grpc.CallOption) (*CompareExchangeUserConfigMapEntryResponse, error)
 }
 
 type userConfigServiceClient struct {
@@ -103,6 +115,46 @@ func (c *userConfigServiceClient) Unset(ctx context.Context, in *UnsetUserConfig
 	return out, nil
 }
 
+func (c *userConfigServiceClient) GetMapEntry(ctx context.Context, in *GetUserConfigMapEntryRequest, opts ...grpc.CallOption) (*GetUserConfigMapEntryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUserConfigMapEntryResponse)
+	err := c.cc.Invoke(ctx, UserConfigService_GetMapEntry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userConfigServiceClient) SetMapEntry(ctx context.Context, in *SetUserConfigMapEntryRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmptyResponse)
+	err := c.cc.Invoke(ctx, UserConfigService_SetMapEntry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userConfigServiceClient) DeleteMapEntry(ctx context.Context, in *DeleteUserConfigMapEntryRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmptyResponse)
+	err := c.cc.Invoke(ctx, UserConfigService_DeleteMapEntry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userConfigServiceClient) CompareExchangeMapEntry(ctx context.Context, in *CompareExchangeUserConfigMapEntryRequest, opts ...grpc.CallOption) (*CompareExchangeUserConfigMapEntryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompareExchangeUserConfigMapEntryResponse)
+	err := c.cc.Invoke(ctx, UserConfigService_CompareExchangeMapEntry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserConfigServiceServer is the server API for UserConfigService service.
 // All implementations must embed UnimplementedUserConfigServiceServer
 // for forward compatibility.
@@ -117,6 +169,14 @@ type UserConfigServiceServer interface {
 	Set(context.Context, *SetUserConfigRequest) (*EmptyResponse, error)
 	// Unset removes a value at a given path
 	Unset(context.Context, *UnsetUserConfigRequest) (*EmptyResponse, error)
+	// GetMapEntry retrieves a value under an opaque key in a map.
+	GetMapEntry(context.Context, *GetUserConfigMapEntryRequest) (*GetUserConfigMapEntryResponse, error)
+	// SetMapEntry sets a value under an opaque key in a map.
+	SetMapEntry(context.Context, *SetUserConfigMapEntryRequest) (*EmptyResponse, error)
+	// DeleteMapEntry removes an opaque key from a map.
+	DeleteMapEntry(context.Context, *DeleteUserConfigMapEntryRequest) (*EmptyResponse, error)
+	// CompareExchangeMapEntry conditionally updates an opaque map entry.
+	CompareExchangeMapEntry(context.Context, *CompareExchangeUserConfigMapEntryRequest) (*CompareExchangeUserConfigMapEntryResponse, error)
 	mustEmbedUnimplementedUserConfigServiceServer()
 }
 
@@ -141,6 +201,18 @@ func (UnimplementedUserConfigServiceServer) Set(context.Context, *SetUserConfigR
 }
 func (UnimplementedUserConfigServiceServer) Unset(context.Context, *UnsetUserConfigRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Unset not implemented")
+}
+func (UnimplementedUserConfigServiceServer) GetMapEntry(context.Context, *GetUserConfigMapEntryRequest) (*GetUserConfigMapEntryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMapEntry not implemented")
+}
+func (UnimplementedUserConfigServiceServer) SetMapEntry(context.Context, *SetUserConfigMapEntryRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetMapEntry not implemented")
+}
+func (UnimplementedUserConfigServiceServer) DeleteMapEntry(context.Context, *DeleteUserConfigMapEntryRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteMapEntry not implemented")
+}
+func (UnimplementedUserConfigServiceServer) CompareExchangeMapEntry(context.Context, *CompareExchangeUserConfigMapEntryRequest) (*CompareExchangeUserConfigMapEntryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompareExchangeMapEntry not implemented")
 }
 func (UnimplementedUserConfigServiceServer) mustEmbedUnimplementedUserConfigServiceServer() {}
 func (UnimplementedUserConfigServiceServer) testEmbeddedByValue()                           {}
@@ -253,6 +325,78 @@ func _UserConfigService_Unset_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserConfigService_GetMapEntry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUserConfigMapEntryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserConfigServiceServer).GetMapEntry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserConfigService_GetMapEntry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserConfigServiceServer).GetMapEntry(ctx, req.(*GetUserConfigMapEntryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserConfigService_SetMapEntry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetUserConfigMapEntryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserConfigServiceServer).SetMapEntry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserConfigService_SetMapEntry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserConfigServiceServer).SetMapEntry(ctx, req.(*SetUserConfigMapEntryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserConfigService_DeleteMapEntry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteUserConfigMapEntryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserConfigServiceServer).DeleteMapEntry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserConfigService_DeleteMapEntry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserConfigServiceServer).DeleteMapEntry(ctx, req.(*DeleteUserConfigMapEntryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserConfigService_CompareExchangeMapEntry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompareExchangeUserConfigMapEntryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserConfigServiceServer).CompareExchangeMapEntry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserConfigService_CompareExchangeMapEntry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserConfigServiceServer).CompareExchangeMapEntry(ctx, req.(*CompareExchangeUserConfigMapEntryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UserConfigService_ServiceDesc is the grpc.ServiceDesc for UserConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -279,6 +423,22 @@ var UserConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Unset",
 			Handler:    _UserConfigService_Unset_Handler,
+		},
+		{
+			MethodName: "GetMapEntry",
+			Handler:    _UserConfigService_GetMapEntry_Handler,
+		},
+		{
+			MethodName: "SetMapEntry",
+			Handler:    _UserConfigService_SetMapEntry_Handler,
+		},
+		{
+			MethodName: "DeleteMapEntry",
+			Handler:    _UserConfigService_DeleteMapEntry_Handler,
+		},
+		{
+			MethodName: "CompareExchangeMapEntry",
+			Handler:    _UserConfigService_CompareExchangeMapEntry_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

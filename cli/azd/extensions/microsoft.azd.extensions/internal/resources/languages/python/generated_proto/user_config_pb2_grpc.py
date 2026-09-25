@@ -60,6 +60,26 @@ class UserConfigServiceStub(object):
                 request_serializer=user__config__pb2.UnsetUserConfigRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
+        self.GetMapEntry = channel.unary_unary(
+                '/azd.extensions.v1.UserConfigService/GetMapEntry',
+                request_serializer=user__config__pb2.GetUserConfigMapEntryRequest.SerializeToString,
+                response_deserializer=user__config__pb2.GetUserConfigMapEntryResponse.FromString,
+                _registered_method=True)
+        self.SetMapEntry = channel.unary_unary(
+                '/azd.extensions.v1.UserConfigService/SetMapEntry',
+                request_serializer=user__config__pb2.SetUserConfigMapEntryRequest.SerializeToString,
+                response_deserializer=models__pb2.EmptyResponse.FromString,
+                _registered_method=True)
+        self.DeleteMapEntry = channel.unary_unary(
+                '/azd.extensions.v1.UserConfigService/DeleteMapEntry',
+                request_serializer=user__config__pb2.DeleteUserConfigMapEntryRequest.SerializeToString,
+                response_deserializer=models__pb2.EmptyResponse.FromString,
+                _registered_method=True)
+        self.CompareExchangeMapEntry = channel.unary_unary(
+                '/azd.extensions.v1.UserConfigService/CompareExchangeMapEntry',
+                request_serializer=user__config__pb2.CompareExchangeUserConfigMapEntryRequest.SerializeToString,
+                response_deserializer=user__config__pb2.CompareExchangeUserConfigMapEntryResponse.FromString,
+                _registered_method=True)
 
 
 class UserConfigServiceServicer(object):
@@ -100,6 +120,34 @@ class UserConfigServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetMapEntry(self, request, context):
+        """GetMapEntry retrieves a value under an opaque key in a map.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetMapEntry(self, request, context):
+        """SetMapEntry sets a value under an opaque key in a map.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteMapEntry(self, request, context):
+        """DeleteMapEntry removes an opaque key from a map.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CompareExchangeMapEntry(self, request, context):
+        """CompareExchangeMapEntry conditionally updates an opaque map entry.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_UserConfigServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -127,6 +175,26 @@ def add_UserConfigServiceServicer_to_server(servicer, server):
                     servicer.Unset,
                     request_deserializer=user__config__pb2.UnsetUserConfigRequest.FromString,
                     response_serializer=models__pb2.EmptyResponse.SerializeToString,
+            ),
+            'GetMapEntry': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMapEntry,
+                    request_deserializer=user__config__pb2.GetUserConfigMapEntryRequest.FromString,
+                    response_serializer=user__config__pb2.GetUserConfigMapEntryResponse.SerializeToString,
+            ),
+            'SetMapEntry': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetMapEntry,
+                    request_deserializer=user__config__pb2.SetUserConfigMapEntryRequest.FromString,
+                    response_serializer=models__pb2.EmptyResponse.SerializeToString,
+            ),
+            'DeleteMapEntry': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteMapEntry,
+                    request_deserializer=user__config__pb2.DeleteUserConfigMapEntryRequest.FromString,
+                    response_serializer=models__pb2.EmptyResponse.SerializeToString,
+            ),
+            'CompareExchangeMapEntry': grpc.unary_unary_rpc_method_handler(
+                    servicer.CompareExchangeMapEntry,
+                    request_deserializer=user__config__pb2.CompareExchangeUserConfigMapEntryRequest.FromString,
+                    response_serializer=user__config__pb2.CompareExchangeUserConfigMapEntryResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -264,6 +332,114 @@ class UserConfigService(object):
             '/azd.extensions.v1.UserConfigService/Unset',
             user__config__pb2.UnsetUserConfigRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMapEntry(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azd.extensions.v1.UserConfigService/GetMapEntry',
+            user__config__pb2.GetUserConfigMapEntryRequest.SerializeToString,
+            user__config__pb2.GetUserConfigMapEntryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetMapEntry(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azd.extensions.v1.UserConfigService/SetMapEntry',
+            user__config__pb2.SetUserConfigMapEntryRequest.SerializeToString,
+            models__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteMapEntry(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azd.extensions.v1.UserConfigService/DeleteMapEntry',
+            user__config__pb2.DeleteUserConfigMapEntryRequest.SerializeToString,
+            models__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CompareExchangeMapEntry(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azd.extensions.v1.UserConfigService/CompareExchangeMapEntry',
+            user__config__pb2.CompareExchangeUserConfigMapEntryRequest.SerializeToString,
+            user__config__pb2.CompareExchangeUserConfigMapEntryResponse.FromString,
             options,
             channel_credentials,
             insecure,

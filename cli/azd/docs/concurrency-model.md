@@ -199,6 +199,81 @@ file on disk.
 
 ---
 
+## `pkg/config.UserConfigManager`
+
+Partial user configuration updates use `Mutate` instead of saving a previously
+loaded `Config` snapshot:
+
+```text
+1. acquire the path-shared in-process gate
+2. acquire <AZD_CONFIG_DIR>/config.lock
+3. reload config.json and its referenced vault
+4. run the mutation callback
+5. if the callback reports a change, atomically publish the vault, then config.json
+```
+
+Both locks cover the complete reload → mutate → publish cycle. Locking only
+the final write is insufficient because two processes could still mutate stale
+snapshots and the later writer would overwrite the earlier writer's unrelated
+changes.
+
+**Mutation contract**:
+
+- Use `Mutate` for all partial UserConfig updates. The callback must only
+  change the supplied `Config`; prompts, network calls, subprocesses, and other
+  long-running work belong outside the transaction.
+- The callback returns `(changed, err)`. Return `false, nil` when the requested
+  state is already present or a conditional update does not match. Unchanged
+  mutations release the locks without serializing or publishing either file.
+- Propagate the callback context to helpers invoked inside the transaction.
+  Nested `Mutate`/`Replace` calls using that context are rejected instead of
+  deadlocking. Discarding it and using a new background context violates the
+  contract and can wait on the transaction's own lock.
+- Lock acquisition observes caller cancellation and has a separate 30-second
+  wait bound. After the lock is acquired, the short mutation and publication
+  phase uses an independent 30-second context that ignores caller cancellation.
+  The commit timeout and I/O failures can still stop publication.
+- Use `Replace` only when intentionally replacing the complete, non-vault-
+  backed UserConfig. Normal writers must not use it.
+
+`config.lock` is a stable companion file and must never be deleted after use.
+File-lock coordination is tied to the lock file's underlying identity;
+replacing or deleting it can create independent lock domains for processes
+that opened different instances.
+
+`config.json` and vault files are written through sibling temporary files that
+are flushed, closed, and renamed into place. The vault is published first
+so a new root never becomes visible before its referenced vault data. The two
+renames are not a single multi-file atomic operation: a timeout or I/O failure
+after vault publication can leave the new vault with the previous root.
+Reads do not take the transaction lock; same-directory atomic replacement
+prevents them from observing a partially written individual file. Windows
+reads briefly retry sharing contention from a concurrent replacement. A
+missing `config.json` means empty UserConfig, but a present root that
+references a missing vault is an error.
+
+These guarantees apply only to writers that use `UserConfigManager`. Older azd
+binaries and code that writes `config.json` directly do not participate in
+`config.lock` coordination.
+
+### Extension-owned maps
+
+Extensions must not load a whole shared map, change one entry, and write the
+map back. Use the UserConfig map-entry RPCs so the host mutates one opaque key
+inside a UserConfig transaction:
+
+- `GetMapEntry`, `SetMapEntry`, and `DeleteMapEntry` for independent entries.
+- `CompareExchangeMapEntry` when a write depends on the previously observed
+  value.
+
+Map-entry keys are opaque: dots, slashes, and URLs are not interpreted as
+config paths. Entry values are read as raw JSON and do not resolve vault
+references. CAS revisions are SHA-256 hashes of the bytes produced by Go's
+`encoding/json`; the absent entry has an empty revision, while explicit JSON
+`null` has a nonempty revision.
+
+---
+
 ## `pkg/tools/kubectl.Cli`
 
 | Lock              | Protects                                  | Acquired by                                                   |
@@ -274,6 +349,17 @@ uses a three-level hierarchy:
 
 Every code path that persists or reloads environment state acquires these locks
 **in the order above**. Never acquire an outer lock while holding an inner one.
+
+UserConfig persistence has a separate two-level hierarchy:
+
+```text
+1. path-shared local gate     (serializes goroutines and manager instances)
+2. config.lock flock         (serializes cooperating azd processes)
+```
+
+The `Config` is freshly loaded for the transaction and must remain confined to
+its callback, so no additional in-memory map lock is needed. Never enter
+another UserConfig transaction while holding either lock.
 
 ### Why subprocess hooks cannot deadlock
 

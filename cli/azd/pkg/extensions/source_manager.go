@@ -129,7 +129,7 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 		return fmt.Errorf("checking extension source '%s': %w", name, err)
 	}
 
-	return sm.addInternal(source)
+	return sm.addInternal(ctx, source)
 }
 
 // Remove removes an extension source.
@@ -141,39 +141,34 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 			"'%s' is reserved and cannot be removed, %w",
 			MainRegistryName, ErrSourceReserved)
 	}
-	config, err := sm.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("unable to load user configuration: %w", err)
-	}
+	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		rawSources, ok := userConfig.Get(baseConfigKey)
+		if !ok {
+			return false, fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
+		}
 
-	rawSources, ok := config.Get(baseConfigKey)
-	if !ok {
-		return fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
-	}
+		sourceMap, ok := rawSources.(map[string]any)
+		if !ok {
+			return false, fmt.Errorf("unable to parse extension sources")
+		}
 
-	sourceMap, ok := rawSources.(map[string]any)
-	if !ok {
-		return fmt.Errorf("unable to parse extension sources")
-	}
+		matches := sourcePathsMatchingName(sourceMap, name, false)
+		if len(matches) == 0 {
+			matches = sourcePathsMatchingName(sourceMap, name, true)
+		}
+		if len(matches) == 0 {
+			return false, fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
+		}
+		if len(matches) > 1 {
+			return false, fmt.Errorf("extension source name '%s' matches multiple configured sources", name)
+		}
 
-	matches := sourcePathsMatchingName(sourceMap, name, false)
-	if len(matches) == 0 {
-		matches = sourcePathsMatchingName(sourceMap, name, true)
-	}
-	if len(matches) == 0 {
-		return fmt.Errorf("extension source '%s' not found, %w", name, ErrSourceNotFound)
-	}
-	if len(matches) > 1 {
-		return fmt.Errorf("extension source name '%s' matches multiple configured sources", name)
-	}
-
-	deleteSourcePath(sourceMap, matches[0])
-	if err := config.Set(baseConfigKey, sourceMap); err != nil {
-		return fmt.Errorf("unable to remove extension source '%s': %w", name, err)
-	}
-
-	err = sm.configManager.Save(config)
-	if err != nil {
+		deleteSourcePath(sourceMap, matches[0])
+		if err := userConfig.Set(baseConfigKey, sourceMap); err != nil {
+			return false, fmt.Errorf("unable to remove extension source '%s': %w", name, err)
+		}
+		return true, nil
+	}); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
@@ -213,7 +208,7 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 			Location: extensionRegistryUrl,
 		}
 
-		if err := sm.addInternal(defaultSource); err != nil {
+		if err := sm.addInternal(ctx, defaultSource); err != nil {
 			return nil, fmt.Errorf("unable to default template source '%s': %w", defaultSource.Name, err)
 		}
 
@@ -273,20 +268,17 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 }
 
 // addInternal adds a new extension source to the user configuration.
-func (sm *SourceManager) addInternal(source *SourceConfig) error {
-	config, err := sm.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("unable to load user configuration: %w", err)
-	}
-
-	path := fmt.Sprintf("%s.%s", baseConfigKey, source.Name)
-	err = config.Set(path, source)
-	if err != nil {
-		return fmt.Errorf("unable to add extension source '%s': %w", source.Name, err)
-	}
-
-	err = sm.configManager.Save(config)
-	if err != nil {
+func (sm *SourceManager) addInternal(ctx context.Context, source *SourceConfig) error {
+	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Name)
+		if _, exists := userConfig.Get(path); exists {
+			return false, fmt.Errorf("extension source '%s' already exists, %w", source.Name, ErrSourceExists)
+		}
+		if err := userConfig.Set(path, source); err != nil {
+			return false, fmt.Errorf("unable to add extension source '%s': %w", source.Name, err)
+		}
+		return true, nil
+	}); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 

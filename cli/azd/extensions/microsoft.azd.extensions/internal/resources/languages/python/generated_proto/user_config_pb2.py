@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11user_config.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"$\n\x14GetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"5\n\x15GetUserConfigResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"*\n\x1aGetUserConfigStringRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\";\n\x1bGetUserConfigStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"+\n\x1bGetUserConfigSectionRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\">\n\x1cGetUserConfigSectionResponse\x12\x0f\n\x07section\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"3\n\x14SetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\"&\n\x16UnsetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t2\xf0\x03\n\x11UserConfigService\x12X\n\x03Get\x12\'.azd.extensions.v1.GetUserConfigRequest\x1a(.azd.extensions.v1.GetUserConfigResponse\x12j\n\tGetString\x12-.azd.extensions.v1.GetUserConfigStringRequest\x1a..azd.extensions.v1.GetUserConfigStringResponse\x12m\n\nGetSection\x12..azd.extensions.v1.GetUserConfigSectionRequest\x1a/.azd.extensions.v1.GetUserConfigSectionResponse\x12P\n\x03Set\x12\'.azd.extensions.v1.SetUserConfigRequest\x1a .azd.extensions.v1.EmptyResponse\x12T\n\x05Unset\x12).azd.extensions.v1.UnsetUserConfigRequest\x1a .azd.extensions.v1.EmptyResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11user_config.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"$\n\x14GetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"5\n\x15GetUserConfigResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"*\n\x1aGetUserConfigStringRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\";\n\x1bGetUserConfigStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"+\n\x1bGetUserConfigSectionRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\">\n\x1cGetUserConfigSectionResponse\x12\x0f\n\x07section\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"3\n\x14SetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\"&\n\x16UnsetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"9\n\x1cGetUserConfigMapEntryRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\"O\n\x1dGetUserConfigMapEntryResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\x12\x10\n\x08revision\x18\x03 \x01(\t\"H\n\x1cSetUserConfigMapEntryRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\r\n\x05value\x18\x03 \x01(\x0c\"<\n\x1f\x44\x65leteUserConfigMapEntryRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\"\xb2\x01\n(CompareExchangeUserConfigMapEntryRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\x19\n\x11\x65xpected_revision\x18\x03 \x01(\t\x12\x41\n\toperation\x18\x04 \x01(\x0e\x32..azd.extensions.v1.UserConfigMapEntryOperation\x12\r\n\x05value\x18\x05 \x01(\x0c\"n\n)CompareExchangeUserConfigMapEntryResponse\x12\x11\n\texchanged\x18\x01 \x01(\x08\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\r\n\x05\x66ound\x18\x03 \x01(\x08\x12\x10\n\x08revision\x18\x04 \x01(\t*\xa3\x01\n\x1bUserConfigMapEntryOperation\x12/\n+USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED\x10\x00\x12\'\n#USER_CONFIG_MAP_ENTRY_OPERATION_SET\x10\x01\x12*\n&USER_CONFIG_MAP_ENTRY_OPERATION_DELETE\x10\x02\x32\xc3\x07\n\x11UserConfigService\x12X\n\x03Get\x12\'.azd.extensions.v1.GetUserConfigRequest\x1a(.azd.extensions.v1.GetUserConfigResponse\x12j\n\tGetString\x12-.azd.extensions.v1.GetUserConfigStringRequest\x1a..azd.extensions.v1.GetUserConfigStringResponse\x12m\n\nGetSection\x12..azd.extensions.v1.GetUserConfigSectionRequest\x1a/.azd.extensions.v1.GetUserConfigSectionResponse\x12P\n\x03Set\x12\'.azd.extensions.v1.SetUserConfigRequest\x1a .azd.extensions.v1.EmptyResponse\x12T\n\x05Unset\x12).azd.extensions.v1.UnsetUserConfigRequest\x1a .azd.extensions.v1.EmptyResponse\x12p\n\x0bGetMapEntry\x12/.azd.extensions.v1.GetUserConfigMapEntryRequest\x1a\x30.azd.extensions.v1.GetUserConfigMapEntryResponse\x12`\n\x0bSetMapEntry\x12/.azd.extensions.v1.SetUserConfigMapEntryRequest\x1a .azd.extensions.v1.EmptyResponse\x12\x66\n\x0e\x44\x65leteMapEntry\x12\x32.azd.extensions.v1.DeleteUserConfigMapEntryRequest\x1a .azd.extensions.v1.EmptyResponse\x12\x94\x01\n\x17\x43ompareExchangeMapEntry\x12;.azd.extensions.v1.CompareExchangeUserConfigMapEntryRequest\x1a<.azd.extensions.v1.CompareExchangeUserConfigMapEntryResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,6 +33,8 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'user_config_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
+  _globals['_USERCONFIGMAPENTRYOPERATION']._serialized_start=1024
+  _globals['_USERCONFIGMAPENTRYOPERATION']._serialized_end=1187
   _globals['_GETUSERCONFIGREQUEST']._serialized_start=54
   _globals['_GETUSERCONFIGREQUEST']._serialized_end=90
   _globals['_GETUSERCONFIGRESPONSE']._serialized_start=92
@@ -49,6 +51,18 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_SETUSERCONFIGREQUEST']._serialized_end=412
   _globals['_UNSETUSERCONFIGREQUEST']._serialized_start=414
   _globals['_UNSETUSERCONFIGREQUEST']._serialized_end=452
-  _globals['_USERCONFIGSERVICE']._serialized_start=455
-  _globals['_USERCONFIGSERVICE']._serialized_end=951
+  _globals['_GETUSERCONFIGMAPENTRYREQUEST']._serialized_start=454
+  _globals['_GETUSERCONFIGMAPENTRYREQUEST']._serialized_end=511
+  _globals['_GETUSERCONFIGMAPENTRYRESPONSE']._serialized_start=513
+  _globals['_GETUSERCONFIGMAPENTRYRESPONSE']._serialized_end=592
+  _globals['_SETUSERCONFIGMAPENTRYREQUEST']._serialized_start=594
+  _globals['_SETUSERCONFIGMAPENTRYREQUEST']._serialized_end=666
+  _globals['_DELETEUSERCONFIGMAPENTRYREQUEST']._serialized_start=668
+  _globals['_DELETEUSERCONFIGMAPENTRYREQUEST']._serialized_end=728
+  _globals['_COMPAREEXCHANGEUSERCONFIGMAPENTRYREQUEST']._serialized_start=731
+  _globals['_COMPAREEXCHANGEUSERCONFIGMAPENTRYREQUEST']._serialized_end=909
+  _globals['_COMPAREEXCHANGEUSERCONFIGMAPENTRYRESPONSE']._serialized_start=911
+  _globals['_COMPAREEXCHANGEUSERCONFIGMAPENTRYRESPONSE']._serialized_end=1021
+  _globals['_USERCONFIGSERVICE']._serialized_start=1190
+  _globals['_USERCONFIGSERVICE']._serialized_end=2153
 # @@protoc_insertion_point(module_scope)

@@ -3,7 +3,11 @@
 
 package mockconfig
 
-import "github.com/azure/azure-dev/cli/azd/pkg/config"
+import (
+	"context"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+)
 
 type MockConfigManager struct {
 	config config.Config
@@ -22,6 +26,10 @@ func (m *MockConfigManager) WithConfig(config config.Config) *MockConfigManager 
 
 func (m *MockConfigManager) Save(config config.Config, filePath string) error {
 	return nil
+}
+
+func (m *MockConfigManager) SaveWithContext(ctx context.Context, config config.Config, filePath string) error {
+	return m.Save(config, filePath)
 }
 
 func (m *MockConfigManager) Load(filePath string) (config.Config, error) {

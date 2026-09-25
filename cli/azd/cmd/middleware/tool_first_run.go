@@ -215,7 +215,7 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 			fields.ToolFirstRunOptInKey.Bool(false),
 			fields.ToolFirstRunOutcomeKey.String(outcomeDeclined),
 		)
-		m.markCompleted()
+		m.markCompleted(ctx)
 		return nil
 	}
 
@@ -293,7 +293,7 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	}
 
 	tracing.SetUsageAttributes(fields.ToolFirstRunOutcomeKey.String(finalOutcome))
-	m.markCompleted()
+	m.markCompleted(ctx)
 	return nil
 }
 
@@ -480,19 +480,13 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 
 // markCompleted persists a timestamp in the user config so the
 // first-run experience is not shown again.
-func (m *ToolFirstRunMiddleware) markCompleted() {
-	cfg, err := m.configManager.Load()
-	if err != nil {
-		log.Printf("tool first-run: failed to load config for marking complete: %v", err)
-		return
-	}
-
-	if err := cfg.Set(configKeyFirstRunCompleted, time.Now().Format(time.RFC3339)); err != nil {
-		log.Printf("tool first-run: failed to set config key: %v", err)
-		return
-	}
-
-	if err := m.configManager.Save(cfg); err != nil {
+func (m *ToolFirstRunMiddleware) markCompleted(ctx context.Context) {
+	if err := m.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := cfg.Set(configKeyFirstRunCompleted, time.Now().Format(time.RFC3339)); err != nil {
+			return false, fmt.Errorf("setting config key: %w", err)
+		}
+		return true, nil
+	}); err != nil {
 		log.Printf("tool first-run: failed to save config: %v", err)
 	}
 }

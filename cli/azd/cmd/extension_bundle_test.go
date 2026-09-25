@@ -559,7 +559,7 @@ func TestExtensionInstall_BundleReinstallDeclinedReturnsNoSuccessMessage(t *test
 			Source:  extensions.BundleSourceName,
 		},
 	}))
-	require.NoError(t, userConfigManager.Save(cfg))
+	require.NoError(t, userConfigManager.Replace(t.Context(), cfg))
 	require.NoError(t, action.extensionManager.ReloadUserConfig())
 
 	console, ok := action.console.(*mockinput.MockConsole)
@@ -1186,7 +1186,7 @@ func TestCleanupBundleInstall_RepointsInstalledToBundle(t *testing.T) {
 	require.NoError(t, cfg.Set("extension.installed", map[string]*extensions.Extension{
 		"test.ext": {Id: "test.ext", Version: "1.0.0", Source: action.bundleSourceName},
 	}))
-	require.NoError(t, userConfigManager.Save(cfg))
+	require.NoError(t, userConfigManager.Replace(t.Context(), cfg))
 	require.NoError(t, action.extensionManager.ReloadUserConfig())
 
 	action.cleanupBundleInstall(context.Background())
@@ -1230,7 +1230,7 @@ func TestExtensionList_SurfacesBundleInstalledExtension(t *testing.T) {
 			Source:      extensions.BundleSourceName,
 		},
 	}))
-	require.NoError(t, userConfigManager.Save(cfg))
+	require.NoError(t, userConfigManager.Replace(t.Context(), cfg))
 
 	manager, err := extensions.NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)

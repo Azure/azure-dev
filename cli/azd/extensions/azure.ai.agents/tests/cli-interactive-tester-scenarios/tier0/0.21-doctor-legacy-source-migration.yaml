@@ -14,9 +14,13 @@ pre:
   - run: "mkdir -p ~/working/azd-agents-doctor-legacy-{instance} && printf 'name: doctor-legacy\\nservices:\\n  legacy-agent:\\n    host: azure.ai.agent\\n    project: .\\n' > ~/working/azd-agents-doctor-legacy-{instance}/azure.yaml && printf 'kind: hosted\\nname: legacy-agent\\nprotocols:\\n  - protocol: responses\\n    version: 1.0.0\\n' > ~/working/azd-agents-doctor-legacy-{instance}/agent.yaml"
     cwd: "~/working"
     name: "seed unified project with unsupported implicit agent.yaml"
+  - run: "azd env new doctor-legacy-{instance} --no-prompt"
+    cwd: "~/working/azd-agents-doctor-legacy-{instance}"
+    name: "create and select isolated local environment"
 
 goals:
   - "Run doctor with --local-only and wait for the report to render."
+  - "Confirm local.environment-selected passes for the isolated local environment."
   - "Confirm local.agent-yaml-valid fails and reports the unsupported implicit agent.yaml file."
   - "Confirm remediation says to move the direct definition onto the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref."
   - "Confirm no check describes agent.yaml, nested agent config, or AGENT_DEFINITION_PATH as a supported runtime source."

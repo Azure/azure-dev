@@ -586,8 +586,6 @@ func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
 	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
 }
 
-// --- helpers for Package tests ---
-
 // stubContainerServer is a minimal ContainerServiceServer that returns
 // success responses for Build, Package, and Publish.
 type stubContainerServer struct {
@@ -3484,7 +3482,11 @@ func TestPublish_ACRPermissionGuidance(t *testing.T) {
 				fmt.Sprintf(`--role "%s"`, tt.expectedPrimaryRole),
 				"az command should not use the display name -- use the GUID instead")
 			require.Contains(t, localErr.Suggestion, "AZD_AGENT_SKIP_ACR")
-			require.Contains(t, localErr.Suggestion, "code_configuration")
+			require.Contains(t, localErr.Suggestion,
+				"codeConfiguration:\n          runtime: python_3_13")
+			require.Contains(t, localErr.Suggestion, "entryPoint: app.py")
+			require.NotContains(t, localErr.Suggestion, "code_configuration")
+			require.NotContains(t, localErr.Suggestion, "entry_point")
 			require.Contains(t, localErr.Suggestion, "azd up")
 			require.NotContains(t, localErr.Suggestion, "docker login")
 			require.NotContains(t, localErr.Suggestion, "allowlist the public outbound IP/CIDR")

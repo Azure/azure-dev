@@ -9,20 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
@@ -129,8 +125,8 @@ const (
 	// Container Apps.
 	AgentKindChoiceHosted agentKindChoice = "hosted"
 	// AgentKindChoicePrompt is the prompt agent path — the customer declares
-	// model + instructions and Foundry runs the agent. The scaffolded agent.yaml
-	// uses kind: prompt (see agent_yaml.AgentKindPrompt). Whether it also names
+	// model + instructions and Foundry runs the agent. The generated service
+	// definition uses kind: prompt. Whether it also names
 	// a `harness:` is decided separately, by --harness or the kind menu entry.
 	AgentKindChoicePrompt agentKindChoice = "prompt"
 )
@@ -139,10 +135,10 @@ const (
 // letting `--harness none` degrade a harnessed template to a plain prompt agent.
 const harnessNone = "none"
 
-// resolveInitHarness resolves the harness written to the scaffolded agent.yaml.
+// resolveInitHarness resolves the harness written to the generated definition.
 // An explicit --harness value always wins over impliedHarness — the harness the
 // context already suggests, whether that is the menu entry the user picked or
-// the `harness:` block of a supplied manifest. Both are validated the same way,
+// an adopted service's `harness:` block. Both are validated the same way,
 // so a harness that is no longer accepted is reported wherever it came from.
 func resolveInitHarness(harnessFlag, impliedHarness string) (string, error) {
 	requested := harnessFlag
@@ -560,74 +556,4 @@ func promptSelectTemplate(
 	}
 
 	return &templates[*resp.Value], nil
-}
-
-// findAgentManifest searches the directory tree rooted at dir for the first
-// agent.yaml or agent.manifest.yaml file. Returns the path if found, or empty string if not.
-func findAgentManifest(dir string) (string, error) {
-	manifestNames := map[string]bool{
-		"agent.yaml":          true,
-		"agent.manifest.yaml": true,
-	}
-
-	var found string
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // skip directories we can't read
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if manifestNames[strings.ToLower(d.Name())] {
-			found = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("searching for agent manifest: %w", err)
-	}
-
-	return found, nil
-}
-
-// detectLocalManifest checks only the immediate directory for an agent manifest file.
-// Returns the path to the found manifest (preferring agent.manifest.yaml over agent.yaml,
-// then .yml variants), or an empty string if none contain valid manifest content.
-// Returns a non-nil error for unexpected I/O failures (e.g. permission errors).
-func detectLocalManifest(dir string) (string, error) {
-	candidates := []string{
-		"agent.manifest.yaml",
-		"agent.yaml",
-		"agent.manifest.yml",
-		"agent.yml",
-	}
-
-	for _, name := range candidates {
-		candidate := filepath.Join(dir, name)
-		_, err := os.Stat(candidate)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return "", fmt.Errorf("checking for manifest %s: %w", candidate, err)
-		}
-		if isValidManifestFile(candidate) {
-			return candidate, nil
-		}
-	}
-	return "", nil
-}
-
-// isValidManifestFile reads the file and checks whether it can be loaded as
-// a valid AgentManifest via LoadAndValidateAgentManifest.
-func isValidManifestFile(path string) bool {
-	//nolint:gosec // path comes from a known filename in a user-controlled directory
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-
-	_, err = agent_yaml.LoadAndValidateAgentManifest(content)
-	return err == nil
 }

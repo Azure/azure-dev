@@ -520,46 +520,6 @@ func TestConvertYamlToolToApiTool_MCP(t *testing.T) {
 	}
 }
 
-func TestConvertYamlToolToApiTool_MCPTopLevelUrlAndConnection(t *testing.T) {
-	t.Parallel()
-	template := map[string]any{
-		"tools": []any{
-			map[string]any{
-				"kind": "mcp",
-				"name": "github-mcp-remote",
-				"connection": map[string]any{
-					"kind":     "remote",
-					"endpoint": "https://api.githubcopilot.com/mcp/",
-					"name":     "github-mcp-oauth",
-				},
-				"url": "https://api.githubcopilot.com/mcp/",
-			},
-		},
-	}
-
-	tools, err := ExtractToolsDefinitions(template)
-	if err != nil {
-		t.Fatalf("ExtractToolsDefinitions failed: %v", err)
-	}
-	if len(tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(tools))
-	}
-
-	result, err := convertYamlToolToApiTool(tools[0])
-	if err != nil {
-		t.Fatalf("convertYamlToolToApiTool failed: %v", err)
-	}
-	mcp, ok := result.(agent_api.MCPTool)
-	if !ok {
-		t.Fatalf("expected agent_api.MCPTool, got %T", result)
-	}
-	if mcp.ServerURL != "https://api.githubcopilot.com/mcp/" {
-		t.Errorf("ServerURL = %q", mcp.ServerURL)
-	}
-	if mcp.ProjectConnectionID == nil || *mcp.ProjectConnectionID != "github-mcp-oauth" {
-		t.Errorf("ProjectConnectionID mismatch")
-	}
-}
 func TestConvertYamlToolToApiTool_MCPNoOptions(t *testing.T) {
 	t.Parallel()
 	yamlTool := McpTool{
@@ -2071,6 +2031,9 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 				}
 				if !strings.Contains(err.Error(), "idleTimeoutSeconds") {
 					t.Errorf("error = %q, want it to mention idleTimeoutSeconds", err)
+				}
+				if strings.Contains(err.Error(), "idle_timeout_seconds") {
+					t.Errorf("error = %q, must not mention the API wire field", err)
 				}
 				return
 			}

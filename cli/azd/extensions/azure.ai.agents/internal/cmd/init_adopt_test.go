@@ -1151,20 +1151,6 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 			wantPath: "name",
 		},
 		{
-			name: "deprecated config-nested agent",
-			svc: &azdext.ServiceConfig{
-				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"docker": structpb.NewStructValue(&structpb.Struct{}),
-				}},
-				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-					"name": structpb.NewStringValue("legacy-agent"),
-				}},
-			},
-			wantName: "legacy-agent",
-			wantPath: "config.name",
-		},
-		{
 			name: "inline definition remains authoritative during partial migration",
 			svc: &azdext.ServiceConfig{
 				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
@@ -1192,7 +1178,8 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotName, gotPath := adoptedAgentNameConfig(tt.svc)
+			gotName, gotPath, err := adoptedAgentNameConfig(tt.svc, "")
+			require.NoError(t, err)
 			require.Equal(t, tt.wantName, gotName)
 			require.Equal(t, tt.wantPath, gotPath)
 		})
@@ -1341,36 +1328,45 @@ func TestUpdateAdoptedAgentNames_PersistsReplacement(t *testing.T) {
 	require.Equal(t, "replacement-agent", server.configValues["name"].value)
 }
 
-func TestUpdateAdoptedAgentNames_UsesLegacyConfigPath(t *testing.T) {
+func TestUpdateAdoptedAgentNames_PersistsReplacementForRootRef(t *testing.T) {
 	t.Parallel()
 
+	projectRoot := t.TempDir()
+	mustWriteFile(
+		t,
+		filepath.Join(projectRoot, "agent.yaml"),
+		"kind: hosted\nname: existing-agent\n",
+	)
 	server := &recordingProjectServer{
+		projectPath: projectRoot,
 		existing: map[string]*azdext.ServiceConfig{
 			"agent-service": {
 				Name: "agent-service",
 				Host: AiAgentHost,
-				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-					"name": structpb.NewStringValue("existing-agent"),
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"$ref": structpb.NewStringValue("./agent.yaml"),
 				}},
 			},
 		},
 	}
 	client := newProjectRecorderClient(t, server)
 
+	var checkedNames []string
 	err := updateAdoptedAgentNames(
 		t.Context(),
 		client,
-		func(_ context.Context, _ string) (string, error) {
+		func(_ context.Context, agentName string) (string, error) {
+			checkedNames = append(checkedNames, agentName)
 			return "replacement-agent", nil
 		},
 	)
 	require.NoError(t, err)
+	require.Equal(t, []string{"existing-agent"}, checkedNames)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	require.Equal(t, "agent-service", server.configValues["config.name"].serviceName)
-	require.Equal(t, "replacement-agent", server.configValues["config.name"].value)
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["name"].value)
 }
 
 func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {

@@ -5,6 +5,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -26,6 +27,9 @@ const agentHost = "azure.ai.agent"
 // Foundry project. Must stay in sync with the rest of the extension
 // (`agent_context.go`, `listen.go`, `service_target_agent.go`).
 const projectEndpointVar = "FOUNDRY_PROJECT_ENDPOINT"
+
+const genericAgentDefinitionSuggestion = "Fix the agent definition in azure.yaml or its " +
+	"explicitly referenced file, or re-run `azd ai agent init`."
 
 // newCheckAgentServiceDetected produces Check `local.agent-service-detected`.
 // It re-fetches the project config and counts services whose `host` is
@@ -194,16 +198,27 @@ func newCheckAgentDefinitionValid(deps Dependencies) Check {
 			agents := collectSortedAgentServices(resp.Project.Services)
 			validatedServices := make([]string, 0, len(agents))
 			var failures []string
+			var suggestions []string
+			var links []string
+			failureCodes := map[string]string{}
 			for _, svc := range agents {
 				_, _, _, err := project.LoadAgentDefinition(
 					svc,
 					resp.Project.Path,
 				)
 				if err != nil {
+					message, suggestion, code, errorLinks := describeAgentDefinitionError(err)
 					failures = append(
 						failures,
-						fmt.Sprintf("%s: %v", svc.Name, err),
+						fmt.Sprintf("%s: %s", svc.Name, message),
 					)
+					suggestions = appendUnique(suggestions, suggestion)
+					for _, link := range errorLinks {
+						links = appendUnique(links, link)
+					}
+					if code != "" {
+						failureCodes[svc.Name] = code
+					}
 					continue
 				}
 
@@ -211,17 +226,21 @@ func newCheckAgentDefinitionValid(deps Dependencies) Check {
 			}
 
 			if len(failures) > 0 {
+				details := map[string]any{
+					"failures":          failures,
+					"validatedServices": validatedServices,
+				}
+				if len(failureCodes) > 0 {
+					details["failureCodes"] = failureCodes
+				}
 				return Result{
 					Status: StatusFail,
 					Message: fmt.Sprintf(
 						"agent definition validation failed for %d service(s): %s",
 						len(failures), strings.Join(failures, "; ")),
-					Suggestion: "Fix the agent definition in azure.yaml or its " +
-						"explicitly referenced file, or re-run `azd ai agent init`.",
-					Details: map[string]any{
-						"failures":          failures,
-						"validatedServices": validatedServices,
-					},
+					Suggestion: strings.Join(suggestions, "\n"),
+					Links:      links,
+					Details:    details,
 				}
 			}
 
@@ -237,6 +256,33 @@ func newCheckAgentDefinitionValid(deps Dependencies) Check {
 			}
 		},
 	}
+}
+
+func describeAgentDefinitionError(err error) (message, suggestion, code string, links []string) {
+	message = err.Error()
+	suggestion = genericAgentDefinitionSuggestion
+
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		message = localErr.Message
+		code = localErr.Code
+		if localErr.Suggestion != "" {
+			suggestion = localErr.Suggestion
+		}
+		for _, link := range localErr.Links {
+			if link.URL != "" {
+				links = appendUnique(links, link.URL)
+			}
+		}
+	}
+
+	return message, suggestion, code, links
+}
+
+func appendUnique(values []string, value string) []string {
+	if value == "" || slices.Contains(values, value) {
+		return values
+	}
+	return append(values, value)
 }
 
 func collectSortedAgentServices(

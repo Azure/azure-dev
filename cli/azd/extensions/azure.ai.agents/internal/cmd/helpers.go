@@ -634,9 +634,8 @@ type AgentServiceInfo struct {
 	ProtocolEndpointsStale      bool
 	ProjectEndpoint             string // adopted project endpoint for brownfield fallback
 	// ServiceDir is the absolute path to the service's source directory
-	// (project.Path joined with svc.RelativePath). It points at the folder
-	// that contains the service's agent.yaml, when one was scaffolded by
-	// `azd ai agent init`. May be empty if the resolver could not compute it.
+	// (project.Path joined with svc.RelativePath). May be empty if the resolver
+	// could not compute it.
 	ServiceDir string
 }
 
@@ -1524,7 +1523,7 @@ func resolveStartupCommandForInit(
 	return strings.TrimSpace(resp.Value), nil
 }
 
-// resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
+// resolveAgentProtocol loads the service's agent definition and returns the
 // protocol that the agent implements (e.g. "responses", "invocations") along with
 // the resolved service name. The service name is useful for callers that need to
 // avoid a redundant resolveAgentService call (and its interactive prompt) later.
@@ -1665,9 +1664,9 @@ func protocolFromContainerAgent(
 		if p == "" {
 			return "", exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"agent.yaml declares a protocol entry, "+
+				"the agent definition declares a protocol entry, "+
 					"but its protocol field is empty",
-				"set a non-empty protocol value in agent.yaml",
+				"set a non-empty protocol value in the azure.yaml agent service",
 			)
 		}
 		if p.IsInvocable() {
@@ -1684,7 +1683,7 @@ func protocolFromContainerAgent(
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
-				"agent.yaml declares only non-invocable protocols: %s",
+				"the agent definition declares only non-invocable protocols: %s",
 				strings.Join(names, ", "),
 			),
 			"azd can only invoke agents using the responses, invocations, or a2a protocols",
@@ -1717,7 +1716,7 @@ func multiProtocolError(
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		fmt.Sprintf(
-			"agent.yaml declares multiple protocols (%s)",
+			"the agent definition declares multiple protocols (%s)",
 			strings.Join(names, ", "),
 		),
 		fmt.Sprintf(

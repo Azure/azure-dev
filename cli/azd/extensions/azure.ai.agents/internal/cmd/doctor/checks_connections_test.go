@@ -89,7 +89,7 @@ func TestCheckConnections_SkipsCascadeFromUpstream(t *testing.T) {
 
 // ---- State emptiness ----
 
-func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
+func TestCheckConnections_SkipsWhenNoConnectionServices(t *testing.T) {
 	t.Parallel()
 	var probeCalls int
 	deps := Dependencies{
@@ -104,7 +104,6 @@ func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
 	require.Contains(t, res.Message, "no enabled connection services")
-	require.Contains(t, res.Message, "legacy connection resources found")
 	require.Equal(t, 0, probeCalls)
 }
 
@@ -309,7 +308,7 @@ func TestCheckConnections_FailsWithMissing(t *testing.T) {
 	require.Contains(t, res.Suggestion, "azd deploy --all")
 	require.Contains(t, res.Suggestion, "azure.ai.connection services")
 	require.NotContains(t, res.Suggestion, "azd provision")
-	require.Contains(t, res.Suggestion, "Migrate bundled or legacy")
+	require.NotContains(t, res.Suggestion, "legacy")
 	require.Contains(t, res.Suggestion, "agent uses before deploying")
 	require.EqualValues(t, 1, res.Details["matchedCount"])
 }

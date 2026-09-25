@@ -627,14 +627,78 @@ func TestLoadAgentDefinition_ResolvedKindValidation(t *testing.T) {
 				require.ErrorContains(
 					t,
 					err,
-					"template.kind must be one of",
+					"kind must be one of",
 				)
+				require.NotContains(t, err.Error(), "template.")
 			} else {
 				require.NoError(t, err)
 			}
 			require.False(t, isHosted)
 			require.Equal(t, AgentDefinitionSourceInline, source)
 		})
+	}
+}
+
+func TestLoadAgentDefinition_ReportsCanonicalPathsForDirectAndRootRef(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]any
+		yaml   string
+		want   string
+	}{
+		{
+			name: "invalid name",
+			values: map[string]any{
+				"kind": "hosted",
+				"name": "invalid_name",
+			},
+			yaml: "kind: hosted\nname: invalid_name\n",
+			want: "name not in valid format",
+		},
+		{
+			name: "voice output modalities",
+			values: map[string]any{
+				"kind":             "voice",
+				"name":             "voice-agent",
+				"model":            map[string]any{"id": "gpt-realtime"},
+				"outputModalities": []any{""},
+			},
+			yaml: "kind: voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\noutputModalities: [\"\"]\n",
+			want: "outputModalities[0] must not be blank",
+		},
+	}
+
+	for _, tt := range tests {
+		for _, source := range []string{"direct", "root-ref"} {
+			t.Run(tt.name+"/"+source, func(t *testing.T) {
+				projectRoot := t.TempDir()
+				values := tt.values
+				if source == "root-ref" {
+					require.NoError(t, os.WriteFile(
+						filepath.Join(projectRoot, "definition.yaml"),
+						[]byte(tt.yaml),
+						0o600,
+					))
+					values = map[string]any{"$ref": "./definition.yaml"}
+				}
+
+				props, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				svc := &azdext.ServiceConfig{
+					Name:                 "agent-service",
+					Host:                 "azure.ai.agent",
+					AdditionalProperties: props,
+				}
+
+				_, _, _, err = LoadAgentDefinition(svc, projectRoot)
+
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+				require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+				require.Contains(t, localErr.Message, tt.want)
+				require.NotContains(t, localErr.Message, "template.")
+			})
+		}
 	}
 }
 

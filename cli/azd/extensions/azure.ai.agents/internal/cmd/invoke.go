@@ -591,7 +591,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	// Re-validate after protocol resolution: when --protocol was omitted the
-	// protocol may have been auto-detected as a2a (e.g. from agent.yaml). In
+	// protocol may have been auto-detected as a2a from the service definition. In
 	// that case the flag-parse guard above was skipped and clientHeaders was
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard

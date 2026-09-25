@@ -9,51 +9,9 @@ import (
 	"testing"
 )
 
-// TestExtractAgentDefinition_PromptVoice verifies a prompt-voice manifest parses
-// into a VoiceAgent with its author-facing fields populated.
-func TestExtractAgentDefinition_PromptVoice(t *testing.T) {
-	yamlContent := []byte(`
-name: voice-agent
-template:
-  kind: prompt-voice
-  name: voice-agent
-  model:
-    id: gpt-realtime
-  instructions: You are a friendly voice assistant.
-  voice: en-US-Ava:DragonHDLatestNeural
-  store: true
-`)
-
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed: %v", err)
-	}
-
-	voiceAgent, ok := agent.(VoiceAgent)
-	if !ok {
-		t.Fatalf("Expected VoiceAgent, got %T", agent)
-	}
-	if voiceAgent.Kind != AgentKindPromptVoice {
-		t.Errorf("Kind = %q, want prompt-voice", voiceAgent.Kind)
-	}
-	if voiceAgent.Model == nil || voiceAgent.Model.Id != "gpt-realtime" {
-		t.Errorf("Model = %+v", voiceAgent.Model)
-	}
-	if voiceAgent.Instructions == nil || *voiceAgent.Instructions != "You are a friendly voice assistant." {
-		t.Errorf("Instructions = %v", voiceAgent.Instructions)
-	}
-	if voiceAgent.Voice == nil || *voiceAgent.Voice != "en-US-Ava:DragonHDLatestNeural" {
-		t.Errorf("Voice = %v", voiceAgent.Voice)
-	}
-	if voiceAgent.Store == nil || !*voiceAgent.Store {
-		t.Errorf("Store = %v, want true", voiceAgent.Store)
-	}
-}
-
 // TestValidateAgentDefinition_PromptVoice_OK validates a minimal well-formed
-// prompt-voice manifest.
+// prompt-voice definition.
 func TestValidateAgentDefinition_PromptVoice_OK(t *testing.T) {
-	// ValidateAgentDefinition operates on the template body directly.
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-agent
@@ -65,7 +23,7 @@ model:
 	}
 }
 
-// TestValidateAgentDefinition_PromptVoice_MissingModel rejects a manifest with
+// TestValidateAgentDefinition_PromptVoice_MissingModel rejects a definition with
 // no model.id.
 func TestValidateAgentDefinition_PromptVoice_MissingModel(t *testing.T) {
 	yamlContent := []byte(`
@@ -130,8 +88,8 @@ model:
 model_type: unsupported
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "model_type 'unsupported' is not supported") {
-		t.Fatalf("expected invalid model_type error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "modelType 'unsupported' is not supported") {
+		t.Fatalf("expected invalid modelType error, got: %v", err)
 	}
 }
 
@@ -144,8 +102,8 @@ model:
 parallel_tool_calls: true
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "parallel_tool_calls is not currently supported") {
-		t.Fatalf("expected parallel_tool_calls validation error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "parallelToolCalls is not currently supported") {
+		t.Fatalf("expected parallelToolCalls validation error, got: %v", err)
 	}
 }
 
@@ -219,7 +177,7 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
     turn_detection:
       type: azure_semantic_vad
       speech_duration_ms: -1`,
-			want: "speech_duration_ms must be >= 0",
+			want: "speechDurationMs must be >= 0",
 		},
 		{
 			name: "nan threshold",
@@ -300,8 +258,8 @@ max_output_tokens: %s
 `, tt.valueYaml)
 			err := ValidateAgentDefinition(yamlContent)
 			if tt.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "max_output_tokens") {
-					t.Fatalf("expected max_output_tokens validation error, got: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "maxOutputTokens") {
+					t.Fatalf("expected maxOutputTokens validation error, got: %v", err)
 				}
 				return
 			}
@@ -486,7 +444,7 @@ conversation_engine:
   type: hosted_agent
   name: target
 `,
-			want: "cannot be combined with model_type",
+			want: "cannot be combined with modelType",
 		},
 		{
 			name: "target agent conflict",
@@ -509,7 +467,7 @@ name: voice-wrapper
 conversation_engine:
   type: hosted_agent
 `,
-			want: "conversation_engine.name is required",
+			want: "conversationEngine.name is required",
 		},
 		{
 			name: "invalid version",
@@ -521,7 +479,7 @@ conversation_engine:
   name: target
   version: typo
 `,
-			want: "conversation_engine.version must be 'deployed'",
+			want: "conversationEngine.version must be 'deployed'",
 		},
 	}
 	for _, test := range tests {
@@ -543,8 +501,8 @@ target_agent:
   service: target
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "model_type hosted_agent is not supported") ||
-		!strings.Contains(err.Error(), "target_agent is not supported") {
+	if err == nil || !strings.Contains(err.Error(), "modelType hosted_agent is not supported") ||
+		!strings.Contains(err.Error(), "targetAgent is not supported") {
 		t.Fatalf("expected hosted voice fields on hosted kind to fail, got: %v", err)
 	}
 }
@@ -578,8 +536,8 @@ func TestValidateAgentDefinition_LegacyTargetMigrationGuidance(t *testing.T) {
 			t.Run(kind+"/"+fields, func(t *testing.T) {
 				t.Parallel()
 				err := ValidateAgentDefinition([]byte("kind: " + kind + "\nname: wrapper\n" + fields))
-				if err == nil || !strings.Contains(err.Error(), "target_agent are not supported; use conversation_engine") {
-					t.Fatalf("expected conversation_engine migration guidance, got: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "targetAgent are not supported; use conversationEngine") {
+					t.Fatalf("expected conversationEngine migration guidance, got: %v", err)
 				}
 				if strings.Contains(err.Error(), "only valid when model_type is 'hosted_agent'") {
 					t.Fatalf("error recommends rejected authoring: %v", err)
@@ -620,7 +578,7 @@ outputSchema:
   properties: []
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "input_schema, output_schema") {
+	if err == nil || !strings.Contains(err.Error(), "inputSchema, outputSchema") {
 		t.Fatalf("expected target-owned schema validation error, got: %v", err)
 	}
 }
@@ -640,9 +598,9 @@ session_configuration:
   idleTimeoutMinutes: 10
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "environment_variables is not supported") ||
-		!strings.Contains(err.Error(), "code_configuration is not supported") ||
-		!strings.Contains(err.Error(), "session_configuration is not supported") {
+	if err == nil || !strings.Contains(err.Error(), "environmentVariables is not supported") ||
+		!strings.Contains(err.Error(), "codeConfiguration is not supported") ||
+		!strings.Contains(err.Error(), "sessionConfiguration is not supported") {
 		t.Fatalf("expected prompt voice code/session config validation errors, got: %v", err)
 	}
 }
@@ -688,7 +646,7 @@ model:
 policies: invalid
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "template.policies is not valid") {
+	if err == nil || !strings.Contains(err.Error(), "policies is not valid") {
 		t.Fatalf("expected malformed policy validation error, got: %v", err)
 	}
 }

@@ -15,15 +15,15 @@ import (
 //   - Inline on the azure.yaml service entry. Core azd parses azure.yaml, hands
 //     the service properties to the extension as protobuf, and the extension
 //     decodes them as JSON. The UnmarshalYAML methods in yaml.go never run.
-//   - From a file named by `$ref:` (or the legacy agent.yaml convention), which
-//     the deploy path reads and decodes as YAML.
+//   - From a file named by an explicit root `$ref:`, which the deploy path reads
+//     and decodes as YAML.
 //
 // Inline is the shape `azd ai agent init` scaffolds, so without the checks below
 // the common case would be the unchecked one: a `harness:` typo would silently
 // bind nothing and deploy an agent with capabilities the author believed they
 // had turned off. These functions apply the same rules to a decoded value that
 // [PromptHarness.UnmarshalYAML] and [PromptMemory.UnmarshalYAML] apply to a
-// yaml.Node, so both routes reject the same manifests with the same messages.
+// yaml.Node, so both routes reject the same definitions with the same messages.
 
 // ValidateInlinePromptAgent applies the authored-block rules to prompt-agent
 // properties that were decoded outside this package, such as the inline

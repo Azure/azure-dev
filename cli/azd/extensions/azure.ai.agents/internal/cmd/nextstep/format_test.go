@@ -202,8 +202,8 @@ func TestPrintAllNext(t *testing.T) {
 			// deploying. PrintAllNext must surface all three.
 			suggestions: []Suggestion{
 				{
-					Command:     "edit agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value",
-					Description: "agent configuration has unresolved manifest placeholders",
+					Command:     "edit agent definition: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+					Description: "agent definition has unresolved placeholders",
 					Priority:    5,
 				},
 				{
@@ -220,8 +220,8 @@ func TestPrintAllNext(t *testing.T) {
 			},
 			want: "\n" +
 				"Next:\n" +
-				"  edit agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value\n" +
-				"  agent configuration has unresolved manifest placeholders\n" +
+				"  edit agent definition: replace {{TOOLBOX_ENDPOINT}} with the actual value\n" +
+				"  agent definition has unresolved placeholders\n" +
 				"\n" +
 				"  azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>\n" +
 				"  supply the agent configuration variable\n" +
@@ -234,9 +234,9 @@ func TestPrintAllNext(t *testing.T) {
 			// Worst-case shape from ResolveAfterInit when both
 			// maxFixupLines caps are saturated.
 			suggestions: []Suggestion{
-				{Command: "edit agent configuration: replace {{A}} with the actual value", Description: "p1", Priority: 5},
-				{Command: "edit agent configuration: replace {{B}} with the actual value", Description: "p1", Priority: 6},
-				{Command: "edit agent configuration: replace {{C}} with the actual value", Description: "p1", Priority: 7},
+				{Command: "edit agent definition: replace {{A}} with the actual value", Description: "p1", Priority: 5},
+				{Command: "edit agent definition: replace {{B}} with the actual value", Description: "p1", Priority: 6},
+				{Command: "edit agent definition: replace {{C}} with the actual value", Description: "p1", Priority: 7},
 				{Command: "azd env set FOO <value>", Description: "p2", Priority: 8},
 				{Command: "azd env set BAR <value>", Description: "p2", Priority: 9},
 				{Command: "azd env set BAZ <value>", Description: "p2", Priority: 10},
@@ -244,13 +244,13 @@ func TestPrintAllNext(t *testing.T) {
 			},
 			want: "\n" +
 				"Next:\n" +
-				"  edit agent configuration: replace {{A}} with the actual value\n" +
+				"  edit agent definition: replace {{A}} with the actual value\n" +
 				"  p1\n" +
 				"\n" +
-				"  edit agent configuration: replace {{B}} with the actual value\n" +
+				"  edit agent definition: replace {{B}} with the actual value\n" +
 				"  p1\n" +
 				"\n" +
-				"  edit agent configuration: replace {{C}} with the actual value\n" +
+				"  edit agent definition: replace {{C}} with the actual value\n" +
 				"  p1\n" +
 				"\n" +
 				"  azd env set FOO <value>\n" +

@@ -13,9 +13,9 @@ import (
 )
 
 // TestActivityCoexistenceRegression is an end-to-end, offline regression for the
-// two ways an agent definition is produced — `azd ai agent init` from local code
-// and from a manifest — after Activity was allowed to coexist with other
-// protocols. It drives the real production helpers (IsActivityProtocol,
+// two ways an agent definition is produced — generated from local code and
+// decoded from direct service properties — after Activity was allowed to
+// coexist with other protocols. It drives the real production helpers (IsActivityProtocol,
 // ComposeActivityAgentEndpoint) and the real schema validation
 // (agent_yaml.ValidateAgentDefinition) so a regression in either path is caught
 // without needing Azure. Live Teams/bot provisioning is validated separately.
@@ -87,31 +87,28 @@ func TestActivityCoexistenceRegression(t *testing.T) {
 	t.Run("init-from-manifest", func(t *testing.T) {
 		// A manifest-authored coexistence definition is passed through verbatim:
 		// azd imposes no activity-exclusive restriction on the manifest path.
-		manifest := []byte(`
+		definition := []byte(`
+kind: hosted
 name: echo
-template:
-  kind: hosted
-  name: echo
-  image: myregistry.azurecr.io/echo:v1
+image: myregistry.azurecr.io/echo:v1
+protocols:
+  - protocol: responses
+    version: 2.0.0
+  - protocol: activity
+    version: 2.0.0
+agent_endpoint:
   protocols:
-    - protocol: responses
-      version: 2.0.0
-    - protocol: activity
-      version: 2.0.0
-  agent_endpoint:
-    protocols:
-      - responses
-      - activity
-    authorization_schemes:
-      - type: Entra
-        isolation_key_source:
-          kind: Header
-      - type: BotServiceRbac
+    - responses
+    - activity
+  authorization_schemes:
+    - type: Entra
+      isolation_key_source:
+        kind: Header
+    - type: BotServiceRbac
 `)
-		agent, err := agent_yaml.ExtractAgentDefinition(manifest)
-		require.NoError(t, err)
-		ca, ok := agent.(agent_yaml.ContainerAgent)
-		require.True(t, ok)
+		var ca agent_yaml.ContainerAgent
+		require.NoError(t, yaml.Unmarshal(definition, &ca))
+		require.NoError(t, agent_yaml.ValidateAgentDefinition(definition))
 
 		require.True(t, IsActivityProtocol(ca))
 		require.Equal(t, ActivityUseCaseSimple, ResolveActivityProfile(ca).UseCase)

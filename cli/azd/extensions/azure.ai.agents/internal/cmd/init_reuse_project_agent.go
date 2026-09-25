@@ -27,7 +27,7 @@ type projectAgentService struct {
 	AgentName   string
 	// RelativePath is the configured service source directory. It lets a
 	// positional `.` from that directory reuse the owning service rather than
-	// falling through to bare agent.yaml reuse.
+	// initializing another service.
 	RelativePath string
 }
 
@@ -44,9 +44,8 @@ type projectAgentDetection struct {
 // sees exactly the manifest every other azd command does, including when init
 // runs from a subdirectory of the project.
 //
-// The agent definition is carried inline on the service entry in the unified
-// format and nested under config: in older projects; adoptedAgentNameConfig
-// resolves the name from either shape.
+// The agent definition is carried directly on the service entry or through an
+// explicit root $ref.
 //
 // A project that cannot be loaded (none present, or a manifest azd rejects)
 // yields no detections, so init falls through to its normal prompts rather than
@@ -104,7 +103,12 @@ func projectAgentServicesFrom(
 			continue
 		}
 
-		agentName, _ := adoptedAgentNameConfig(svc)
+		agentName, _, err := adoptedAgentNameConfig(svc, projectRoot)
+		if err != nil {
+			diagnostics = append(diagnostics,
+				fmt.Sprintf("service %q: resolve agent name: %v", serviceName, err))
+			continue
+		}
 		if agentName == "" {
 			agentName = probe.definition.Name
 		}
@@ -204,9 +208,7 @@ func describeProjectAgentServices(services []projectAgentService) string {
 //
 // The definitions already live in the project manifest, so there is nothing to
 // write: this ensures an azd environment exists and then hands off to the shared
-// next-step resolver. It mirrors runReuseDefinition (issue #7268), which does
-// the same for a bare on-disk agent.yaml; the unified format moved the
-// definition inline, and this is the inline equivalent.
+// next-step resolver.
 //
 // The caller reaches this function only after detectProjectAgentServices has
 // loaded the project through the azd host, so no project setup is needed here.

@@ -449,7 +449,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 
 // TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
 // regression for the toolbox-sample bug end-to-end: the state contains
-// BOTH an unresolved manifest placeholder AND a manifest-declared
+// BOTH an unresolved definition placeholder AND a bundled
 // toolbox whose azd-injected endpoint env var is unset. The rendered
 // "Next:" block must surface the placeholder fix-up AND route the
 // missing toolbox endpoint to split-service migration (NOT to `azd env set`),
@@ -466,7 +466,11 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 		HasProjectEndpoint:     true,
 		UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 	}
 
@@ -475,12 +479,12 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"edit agent definition: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	// Historical bug: the resolver used to emit `azd env set` for
 	// toolbox-derived endpoint vars. Those vars are azd-managed
 	// outputs of `azd provision`, not operator-supplied, so the
@@ -494,7 +498,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 
 // TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal locks the
 // "happy path" for the toolbox-endpoint branch: when the only thing
-// blocking the user is a manifest-declared toolbox whose
+// blocking the user is a bundled toolbox whose
 // TOOLBOX_<NAME>_MCP_ENDPOINT var is unset (no placeholders, no
 // pending provision reasons), the resolver must render the full
 // post-init sequence:
@@ -513,7 +517,11 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	state := &State{
 		HasProjectEndpoint: true,
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 	}
 
@@ -521,10 +529,10 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	assert.Contains(t, rendered, "azd ai agent run",
 		"toolbox-endpoint branch should emit local run follow-up once deployment completes")
 	assert.Contains(t, rendered, "once toolbox migration and deployment complete",
@@ -857,7 +865,11 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	state := &State{
 		HasProjectEndpoint: true,
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 		MissingManualVars: []string{"MY_API_KEY"},
 	}
@@ -866,10 +878,10 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"coexistence: toolbox sub-branch must still emit doctor follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
 		"coexistence: manual sub-branch must surface the unrelated env-set line")
 	assert.Contains(t, rendered, "azd ai agent run",
@@ -896,7 +908,11 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 		HasProjectEndpoint:     true,
 		UnresolvedPlaceholders: []string{"AGENT_NAME"},
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 		MissingManualVars: []string{"MY_API_KEY"},
 	}
@@ -906,12 +922,12 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent configuration: replace {{AGENT_NAME}} with the actual value",
+		"edit agent definition: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"coexistence+placeholders: toolbox sub-branch must still emit doctor follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
 		"coexistence+placeholders: manual sub-branch must still surface env-set")
 	assert.NotContains(t, rendered, "azd ai agent run",
@@ -929,13 +945,13 @@ func TestRunFollowUpDescription(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                     string
-		hasToolboxEndpoint       bool
-		hasManualVars            bool
-		hasSplitToolboxEndpoint  bool
-		hasLegacyToolboxEndpoint bool
-		hasEndpointErrors        bool
-		want                     string
+		name                    string
+		hasToolboxEndpoint      bool
+		hasManualVars           bool
+		hasSplitToolboxEndpoint bool
+		hasEndpointErrors       bool
+		hasBundledToolbox       bool
+		want                    string
 	}{
 		{
 			name:               "both",
@@ -950,15 +966,16 @@ func TestRunFollowUpDescription(t *testing.T) {
 			want:                    "start the agent locally once deployment completes",
 		},
 		{
-			name:                     "mixed split and legacy toolboxes",
-			hasToolboxEndpoint:       true,
-			hasSplitToolboxEndpoint:  true,
-			hasLegacyToolboxEndpoint: true,
-			want:                     "start the agent locally once the steps above are complete",
+			name:                    "mixed split and bundled toolboxes",
+			hasToolboxEndpoint:      true,
+			hasSplitToolboxEndpoint: true,
+			hasBundledToolbox:       true,
+			want:                    "start the agent locally once deployment completes",
 		},
 		{
-			name:               "legacy toolbox only",
+			name:               "bundled toolbox only",
 			hasToolboxEndpoint: true,
+			hasBundledToolbox:  true,
 			want:               "start the agent locally once toolbox migration and deployment complete",
 		},
 		{
@@ -986,8 +1003,8 @@ func TestRunFollowUpDescription(t *testing.T) {
 				tc.hasToolboxEndpoint,
 				tc.hasManualVars,
 				tc.hasSplitToolboxEndpoint,
-				tc.hasLegacyToolboxEndpoint,
 				tc.hasEndpointErrors,
+				tc.hasBundledToolbox,
 			)
 			assert.Equal(t, tc.want, got)
 		})
@@ -1074,7 +1091,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 			for i, name := range tt.wantPlaceholders {
 				require.Less(t, i, len(out))
 				assert.Equal(t,
-					"edit agent configuration: replace {{"+name+"}} with the actual value",
+					"edit agent definition: replace {{"+name+"}} with the actual value",
 					out[i].Command,
 				)
 			}

@@ -417,9 +417,7 @@ func (r *runner) finishInit(ctx context.Context) error {
 	)
 }
 
-// isInitComplete reports whether the success marker is on screen. Source:
-// runInitFromManifest (init.go) prints "AI agent definition added to your azd
-// project successfully!" in green at the end.
+// isInitComplete reports whether an init success marker is on screen.
 func isInitComplete(screen string) bool {
 	return screenContains(screen, "added to your azd project") ||
 		screenContains(screen, "agent definition added")
@@ -440,10 +438,9 @@ func promptKey(prompt string) string {
 // is already lowercased (see activePrompt).
 //
 // Only a subset of these fire on the --agent-name template critical path
-// (language, template, Foundry project, subscription, location, the manifest
+// (language, template, Foundry project, subscription, location, the selected
 // model, deployment name, capacity/sku/version). The rest are kept as defensive
-// handlers because init auto-resolves them under userProvidedManifest=true (so
-// they normally do NOT prompt) or only surfaces them for specific runtime state.
+// handlers because they only surface for specific runtime state.
 func (r *runner) dispatchPrompt(screen, prompt string) error {
 	has := func(sub string) bool { return strings.Contains(prompt, sub) }
 
@@ -477,7 +474,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 		r.selectByText(screen, "Basic agent (Invocations")
 
 	// Foundry project hosting — "Select a Foundry project to host your agent..."
-	// (runInitFromManifest); choices "Use an existing..." / "Create a new...".
+	// choices "Use an existing..." / "Create a new...".
 	case has("foundry project to host"):
 		if r.createProject() {
 			r.selectByText(screen, "Create a new Foundry project")
@@ -495,7 +492,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 		}
 
 	// Subscription — the extension prints a descriptive preamble via fmt.Println
-	// (runInitFromManifest), but that line isn't the survey "?" line activePrompt
+	// but that line isn't the survey "?" line activePrompt
 	// reads. ensureSubscription passes an empty request, so the picker shows
 	// azd-core's default message "Select subscription" (promptSubscriptionMessage)
 	// — match that, not the preamble.

@@ -13,16 +13,16 @@ import (
 )
 
 const (
-	// ProtocolInvocations is the value of `agent.yaml#protocol` for
+	// ProtocolInvocations identifies
 	// JSON-body /invocations agents.
 	ProtocolInvocations = "invocations"
-	// ProtocolResponses is the value of `agent.yaml#protocol` for plain
+	// ProtocolResponses identifies plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
-	// ProtocolInvocationsWS is the value of `agent.yaml#protocol` for
+	// ProtocolInvocationsWS identifies
 	// bidirectional WebSocket /invocations_ws agents.
 	ProtocolInvocationsWS = "invocations_ws"
-	// ProtocolActivity is the value of `agent.yaml#protocol` for Activity Protocol agents.
+	// ProtocolActivity identifies Activity Protocol agents.
 	ProtocolActivity = "activity"
 	// ProtocolActivityLegacy is the legacy value accepted for Activity Protocol agents.
 	ProtocolActivityLegacy = "activity_protocol"
@@ -41,7 +41,7 @@ const (
 	// so the user has somewhere concrete to look for the real shape.
 	placeholderPayload = `'<payload>'`
 
-	// maxFixupLines caps the number of `azd env set` / `edit agent.yaml`
+	// maxFixupLines caps the number of `azd env set` / `edit azure.yaml`
 	// hints emitted by ResolveAfterInit per missing-input category so the
 	// block stays scannable even when an agent declares many manual
 	// variables or unresolved placeholders.
@@ -54,11 +54,11 @@ const (
 // Decision tree:
 //
 //   - UnresolvedPlaceholders (always shown first when present, regardless
-//     of other branches) → one "edit agent.yaml: replace {{NAME}}" line
+//     of other branches) → one "edit azure.yaml: replace {{NAME}}" line
 //     per unresolved Mustache placeholder (up to maxFixupLines). These
 //     are deploy-time landmines: the literal `{{NAME}}` would otherwise
 //     land in the container. They never reach `azd env set` because the
-//     value lives in agent.yaml itself, not the azd environment.
+//     value lives in azure.yaml itself, not the azd environment.
 //
 //   - len(PendingProvisionReasons) > 0 OR !HasProjectEndpoint OR
 //     MissingInfraVars → required Azure-context `azd env set` fixups,
@@ -69,11 +69,11 @@ const (
 //     project. When the endpoint is empty, provision has not yet
 //     populated the infra outputs (typical path: user selected
 //     "Deploy new models from the catalog" in init), so `azd
-//     provision` is the next step regardless of whether agent.yaml
+//     provision` is the next step regardless of whether azure.yaml
 //     directly references any Bicep-output variables.
 //     MissingInfraVars is still consulted to cover the
 //     post-provision re-provision case (a new `${VAR}` reference
-//     mapping to a Bicep output was added to agent.yaml after the
+//     mapping to a Bicep output was added to azure.yaml after the
 //     last provision run). PendingProvisionReasons is the explicit
 //     "init configured something provision still has to materialize"
 //     signal — every reason tag (project, model_deployment, acr,
@@ -85,7 +85,7 @@ const (
 //
 //   - MissingToolboxEndpoints OR MissingManualVars (or BOTH) → a
 //     combined "fix things before you can run locally" branch. The two
-//     sub-branches are additive (not mutually exclusive) so a manifest
+//     sub-branches are additive (not mutually exclusive) so a definition
 //     that declares a toolbox AND references an unrelated manual var
 //     (e.g. an API key) surfaces guidance for both — otherwise the
 //     toolbox sub-branch would silently swallow the `azd env set` lines
@@ -156,9 +156,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 
 	// Placeholder fix-ups come first when present: they are
 	// broken state in the agent configuration and block both `run` and
-	// `deploy`. The user has to edit the agent configuration (or define a
-	// matching parameter in agent.manifest.yaml) — `azd env set` cannot
-	// reach them.
+	// `deploy`. The user has to edit the direct/root-$ref agent definition;
+	// `azd env set` cannot reach them.
 	hasPlaceholders := len(state.UnresolvedPlaceholders) > 0
 	if hasPlaceholders {
 		placeholders := slices.Clone(state.UnresolvedPlaceholders)
@@ -166,8 +165,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		limit := min(len(placeholders), maxFixupLines)
 		for _, name := range placeholders[:limit] {
 			out = append(out, Suggestion{
-				Command:     fmt.Sprintf("edit agent configuration: replace {{%s}} with the actual value", name),
-				Description: "agent configuration has unresolved manifest placeholders",
+				Command:     fmt.Sprintf("edit agent definition: replace {{%s}} with the actual value", name),
+				Description: "agent definition has unresolved placeholders",
 				Priority:    priority,
 			})
 			priority++
@@ -183,9 +182,6 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		state.MissingToolboxEndpoints, ToolboxSourceSplit)
 	hasBundledToolboxEndpoints := hasMissingToolboxSource(
 		state.MissingToolboxEndpoints, ToolboxSourceBundled)
-	hasLegacyToolboxEndpoints := hasMissingLegacyToolbox(
-		state.MissingToolboxEndpoints)
-
 	needsProvision := len(state.PendingProvisionReasons) > 0 ||
 		!state.HasProjectEndpoint ||
 		len(state.MissingInfraVars) > 0
@@ -227,7 +223,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		hasToolboxDependencyErrors || hasToolboxLoadErrors || hasManualVars:
 		// Combined branch for the two "things the user has to fix before
 		// running locally" categories. They are intentionally additive
-		// (not mutually exclusive) so a manifest that declares a
+		// (not mutually exclusive) so a definition that declares a
 		// toolbox AND references an unrelated manual var (e.g. an API
 		// key) surfaces guidance for BOTH — otherwise the toolbox
 		// branch would silently swallow the `azd env set` lines and
@@ -262,20 +258,6 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 				state.MissingToolboxEndpoints,
 				priority,
 			)
-		}
-		if hasToolboxEndpoints && hasLegacyToolboxEndpoints {
-			out = append(out, Suggestion{
-				Command:     "edit azure.yaml: migrate legacy toolboxes to azure.ai.toolbox services and add them to agent uses",
-				Description: "set endpoint on a toolbox service to reuse an existing toolbox; then run 'azd deploy --all'",
-				Priority:    priority,
-			})
-			priority++
-			out = append(out, Suggestion{
-				Command:     "azd ai agent doctor",
-				Description: "(optional) check whether your legacy toolbox(es) already exist in Foundry",
-				Priority:    priority,
-			})
-			priority++
 		}
 		if hasToolboxEndpointErrors {
 			out = append(out, Suggestion{
@@ -332,7 +314,6 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 					hasToolboxEndpoints,
 					hasManualVars,
 					hasSplitToolboxEndpoints,
-					hasLegacyToolboxEndpoints,
 					hasToolboxEndpointErrors,
 					hasBundledToolboxEndpoints,
 				),
@@ -530,16 +511,6 @@ func hasMissingToolboxSource(toolboxes []ResourceRef, source ToolboxSource) bool
 	return false
 }
 
-func hasMissingLegacyToolbox(toolboxes []ResourceRef) bool {
-	for _, toolbox := range toolboxes {
-		if toolbox.ToolboxSource == ToolboxSourceLegacyManifest ||
-			toolbox.ToolboxSource == ToolboxSourceUnknown {
-			return true
-		}
-	}
-	return false
-}
-
 // qualifyCommandEnvironment targets an azd command at an explicitly selected
 // environment. Non-azd guidance (for example cd/edit/see commands) is returned
 // unchanged.
@@ -556,7 +527,7 @@ func qualifyCommandEnvironment(command, environmentName string) string {
 // still has to complete first.
 func runFollowUpDescription(
 	hasToolboxEndpoints, hasManualVars, hasSplitToolboxEndpoints,
-	hasLegacyToolboxEndpoints, hasToolboxEndpointErrors bool,
+	hasToolboxEndpointErrors bool,
 	bundledToolboxEndpoints ...bool,
 ) string {
 	hasBundledToolboxEndpoints := len(bundledToolboxEndpoints) > 0 &&
@@ -564,10 +535,6 @@ func runFollowUpDescription(
 	switch {
 	case hasToolboxEndpointErrors:
 		return "start the agent locally once toolbox endpoint checks pass"
-	case hasToolboxEndpoints &&
-		hasSplitToolboxEndpoints &&
-		hasLegacyToolboxEndpoints:
-		return "start the agent locally once the steps above are complete"
 	case hasSplitToolboxEndpoints && hasToolboxEndpoints && hasManualVars:
 		return "start the agent locally once deployment and env values are ready"
 	case hasToolboxEndpoints && hasManualVars:

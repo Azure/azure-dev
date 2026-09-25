@@ -37,6 +37,21 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
+Use --version-override to test a specific hosted agent version
+without reusing or changing saved CLI state.
+Each call starts a fresh session and, for Responses, a new conversation.
+Saved session, conversation, and operation IDs are neither reused nor replaced.
+It cannot be combined with --version, --session-id, or --conversation-id.
+Only remote hosted responses and invocations are supported.
+Version information is optional: missing or unusable version information produces
+a warning, not a failure. Inspect the agent's response to confirm the candidate's
+behavior before increasing traffic. An explicit service-reported fallback or a
+different concrete version still returns an error, as do HTTP and agent errors.
+An error does not undo work already executed. Known background operation IDs
+remain available for explicit follow/show/cancel without changing current state.
+Prefer a concrete version; latest follows the service's floating routing behavior.
+No override is sent unless requested. Raw output stays unchanged; warnings go to stderr.
+
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
 remote invokes it is sent as the x-ms-user-identity header.
@@ -56,7 +71,8 @@ Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
-suppressed in raw mode.
+suppressed in raw mode. Raw output still reports HTTP and protocol-level agent
+failures through a non-zero exit code, without adding formatted text to stdout.
 
 Platform Latency
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -95,6 +111,7 @@ Flags
   -t, --timeout int               : Request timeout in seconds (0 for no timeout) (default 1800)
       --user-identity string      : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
       --version string            : Agent version to invoke (creates or reuses a session backed by that version)
+      --version-override string   : Test a specific hosted agent version without reusing or changing saved session state
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -143,6 +160,9 @@ Examples
 
   Invoke a specific deployed agent version
     azd ai agent invoke --version 3 "Hello!"
+
+  Test a candidate version without reusing or changing saved session state
+    azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
 
   Dump the raw server response (status line, headers, body) for debugging
     azd ai agent invoke --output raw "Hello!"

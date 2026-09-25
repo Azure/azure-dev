@@ -98,6 +98,9 @@ const (
 	CodeAuthFailed               = "auth_failed"
 )
 
+// CodeAgentVersionRoutingFailed identifies an explicit hosted invocation override fallback or mismatch.
+const CodeAgentVersionRoutingFailed = "agent_version_routing_failed"
+
 // Error codes for compatibility errors.
 //
 // These are usually paired with [Compatibility] for version mismatches.

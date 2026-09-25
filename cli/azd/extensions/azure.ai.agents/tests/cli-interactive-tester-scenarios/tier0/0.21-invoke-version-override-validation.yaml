@@ -1,0 +1,65 @@
+# Tier 0 (offline) — version-override help and local validation only; no auth or agent execution.
+name: "invoke-version-override-validation"
+command: "azd ai agent invoke --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:invoke", "cmd:help", "negative-path", "parallel-safe"]
+
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts, authentication, network calls, local connections,
+    or agent execution are allowed. Use only the literal help and invalid invoke commands
+    below. Do not initialize a project, install extensions, log in, or repair a failed goal.
+  - >-
+    Confirm initial help exits with code 0 and lists --version-override. Confirm it describes
+    remote hosted responses/invocations only, fresh session/conversation state without saving
+    current IDs, and manual inspection of candidate behavior before increasing traffic.
+    Missing or unusable version metadata must be described as a warning, not a failure;
+    explicit service-reported fallback, a concrete resolved-version mismatch, and HTTP or agent
+    errors must still fail. Confirm raw output stays unchanged with warnings on stderr,
+    errors do not undo executed work, and known operation IDs remain available for explicit
+    follow/show/cancel without changing current state. Confirm concrete versions are preferred
+    over service-controlled floating latest, without promising the newest unpinned ready version
+    or requiring a strict verification flag. Confirm --version still describes creating or
+    reusing a version-backed session.
+  - >-
+    Run azd ai agent invoke --version-override "" "hello" and then
+    azd ai agent invoke --version-override "   " "hello". Each must exit non-zero with
+    '--version-override requires a non-empty agent version'.
+  - >-
+    Run azd ai agent invoke --version-override "bad/version" "hello". Confirm a non-zero exit
+    with an invalid --version-override value error explaining unsupported characters.
+  - >-
+    Run azd ai agent invoke --version-override 3 --version 2 "hello". Confirm a non-zero exit
+    with '--version-override cannot be combined with --version'.
+  - >-
+    Run azd ai agent invoke --version-override 3 --session-id saved-session "hello". Confirm a
+    non-zero exit with '--version-override cannot be combined with --session-id'. Repeat with
+    azd ai agent invoke --version-override 3 --session-id "" "hello" and confirm the same conflict.
+  - >-
+    Run azd ai agent invoke --version-override 3 --conversation-id saved-conversation "hello".
+    Confirm a non-zero exit with '--version-override cannot be combined with --conversation-id'.
+  - >-
+    Run azd ai agent invoke --version-override 3 --new-session=false "hello". Confirm a non-zero
+    exit with '--version-override cannot be combined with --new-session=false'.
+  - >-
+    Run azd ai agent invoke --version-override latest --new-conversation=false "hello". Confirm a
+    non-zero exit with '--version-override cannot be combined with --new-conversation=false'.
+  - >-
+    Run azd ai agent invoke --version-override 3 --local --protocol responses "hello" and then
+    azd ai agent invoke --version-override latest --local --protocol invocations "hello".
+    Each must exit non-zero with '--version-override requires a remote hosted agent using
+    responses or invocations', before attempting a local connection.
+  - >-
+    Run azd ai agent invoke --version-override latest --protocol a2a "hello". Confirm a non-zero
+    exit with '--version-override requires a remote hosted agent using responses or invocations',
+    before authentication or project resolution. Prompt-agent rejection is not executed here
+    because it requires resolving an agent project.
+  - "Take best-effort screenshots of help and validation output; capture failures are observations only."
+  - >-
+    Report a finding if help differs, any invalid input succeeds or reports a different error,
+    or any command prompts, authenticates, connects, executes an agent, hangs, or panics.

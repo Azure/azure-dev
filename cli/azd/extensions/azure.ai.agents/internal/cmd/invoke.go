@@ -47,6 +47,7 @@ type invokeFlags struct {
 	protocol        string
 	agentEndpoint   string
 	version         string
+	versionOverride string
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
@@ -61,7 +62,7 @@ func (f *invokeFlags) forceNewConversation() bool {
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
 // raw mode. In raw mode the full HTTP response (status line, headers, and body)
-// is dumped to stdout without any parsing or formatting, mirroring `curl -i`.
+// is dumped to stdout without reformatting the body, mirroring `curl -i`.
 const outputRaw = "raw"
 
 // outputDefault preserves the existing parsed/friendly behavior. It is the
@@ -134,6 +135,21 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
+Use --version-override to test a specific hosted agent version
+without reusing or changing saved CLI state.
+Each call starts a fresh session and, for Responses, a new conversation.
+Saved session, conversation, and operation IDs are neither reused nor replaced.
+It cannot be combined with --version, --session-id, or --conversation-id.
+Only remote hosted responses and invocations are supported.
+Version information is optional: missing or unusable version information produces
+a warning, not a failure. Inspect the agent's response to confirm the candidate's
+behavior before increasing traffic. An explicit service-reported fallback or a
+different concrete version still returns an error, as do HTTP and agent errors.
+An error does not undo work already executed. Known background operation IDs
+remain available for explicit follow/show/cancel without changing current state.
+Prefer a concrete version; latest follows the service's floating routing behavior.
+No override is sent unless requested. Raw output stays unchanged; warnings go to stderr.
+
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
 remote invokes it is sent as the x-ms-user-identity header.
@@ -153,7 +169,8 @@ Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
-suppressed in raw mode.
+suppressed in raw mode. Raw output still reports HTTP and protocol-level agent
+failures through a non-zero exit code, without adding formatted text to stdout.
 
 Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -208,6 +225,9 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke a specific deployed agent version
   azd ai agent invoke --version 3 "Hello!"
+
+	# Test a candidate version without reusing or changing saved session state
+  azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
 
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
@@ -284,6 +304,9 @@ This option does not provide crash recovery or automatic reconnection.`,
 			}
 
 			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
+				return err
+			}
+			if err := validateInvokeVersionOverrideFlags(cmd, flags); err != nil {
 				return err
 			}
 
@@ -423,6 +446,12 @@ This option does not provide crash recovery or automatic reconnection.`,
 		"",
 		"Agent version to invoke (creates or reuses a session backed by that version)",
 	)
+	cmd.Flags().StringVar(
+		&flags.versionOverride,
+		"version-override",
+		"",
+		"Test a specific hosted agent version without reusing or changing saved session state",
+	)
 	cmd.Flags().BoolVar(
 		&flags.longRunning,
 		"long-running",
@@ -545,6 +574,9 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if err := a.validateVersionOverrideRoute(agent_api.AgentProtocol(a.flags.protocol), false); err != nil {
+		return err
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -557,15 +589,29 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// explicitly targeted a local server (--local) or a full deployed agent
 	// endpoint (--agent-endpoint), in which case we honor that intent.
 	if a.endpoint == nil && !a.flags.local &&
-		(a.flags.protocol == "" || agent_api.AgentProtocol(a.flags.protocol) == agent_api.AgentProtocolResponses) {
+		(a.flags.protocol == "" || agent_api.AgentProtocol(a.flags.protocol) == agent_api.AgentProtocolResponses ||
+			a.flags.versionOverride != "") {
 		azdClient, err := azdext.NewAzdClient()
 		if err != nil {
 			return fmt.Errorf("failed to create azd client: %w", err)
 		}
 		defer azdClient.Close()
-		pctx, isPrompt, pErr := resolvePromptAgentService(
-			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+		svc, proj, pErr := resolveAgentService(
+			ctx, azdClient, a.serviceNameSelector(), a.noPrompt,
 		)
+		var pctx *promptServiceContext
+		var isPrompt bool
+		if pErr == nil {
+			// Preserve the service checked here when hosted resolution follows.
+			// Keep it separate from an explicit Foundry agent name so a service
+			// with missing deployment metadata cannot become a direct-name target.
+			if a.flags.name == "" {
+				a.protocolServiceName = svc.Name
+			}
+			pctx, isPrompt, pErr = promptAgentContextForService(
+				ctx, azdClient, svc, proj, withVoiceInvocationGuidance(),
+			)
+		}
 		if pErr != nil {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
 				return pErr
@@ -575,6 +621,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if err := a.validateVersionOverrideRoute(agent_api.AgentProtocolResponses, true); err != nil {
+				return err
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -584,6 +633,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
+		return err
+	}
+	if err := a.validateVersionOverrideRoute(protocol, false); err != nil {
+		a.closeResolvedRemoteContextClient()
 		return err
 	}
 
@@ -925,10 +978,22 @@ func remoteProtocolSelectionError(
 func (a *InvokeAction) resolveRemoteContextForInvoke(
 	ctx context.Context,
 ) (*remoteContext, error) {
-	if a.resolvedRemoteContext != nil {
-		return a.resolvedRemoteContext, nil
+	rc := a.resolvedRemoteContext
+	if rc == nil {
+		var err error
+		rc, err = a.resolveRemoteContext(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return a.resolveRemoteContext(ctx)
+	if a.flags.versionOverride != "" {
+		// Keep test sessions, conversations and operation IDs out of the ordinary
+		// per-agent store. Copy the context so protocol discovery retains its input.
+		isolated := *rc
+		isolated.agentKey = ""
+		return &isolated, nil
+	}
+	return rc, nil
 }
 
 func (a *InvokeAction) serviceNameSelector() string {
@@ -1403,6 +1468,11 @@ func (rc *remoteContext) legacyKeys() []string {
 }
 
 func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteContext) (string, error) {
+	if a.flags.versionOverride != "" {
+		// Let the endpoint create a session using the override, not a version_ref
+		// session or a stored session bound to an earlier version.
+		return "", nil
+	}
 	if rc.version == "" {
 		if rc.agentKey != "" && rc.azdClient != nil {
 			return resolveStoredID(
@@ -1529,7 +1599,7 @@ func ephemeralAuthError(ephemeral bool, err error) error {
 	)
 }
 
-func (a *InvokeAction) responsesRemote(ctx context.Context) error {
+func (a *InvokeAction) responsesRemote(ctx context.Context) (returnErr error) {
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
@@ -1544,7 +1614,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	agentKey := rc.agentKey
-	if agentKey == "" && rc.azdClient != nil {
+	if agentKey == "" && rc.azdClient != nil && a.flags.versionOverride == "" {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
 	}
 
@@ -1629,6 +1699,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	applyCustomHeaders(req, a.clientHeaders)
+	a.applyVersionOverride(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
@@ -1651,6 +1722,17 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	routingErr := a.reportVersionOverrideResponse(resp, os.Stdout, os.Stderr)
+	if routingErr != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+		if raw {
+			return errors.Join(routingErr, writeRawResponse(os.Stdout, resp))
+		}
+		return routingErr
+	}
+	defer func() {
+		returnErr = combineInvokeErrors(routingErr, returnErr)
+	}()
+
 	// Always capture session state from response headers (needed even in raw mode
 	// so subsequent invokes can reuse the session). Headers are read, not consumed.
 	latency.captureResponse(resp)
@@ -1661,7 +1743,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	if raw {
-		if dumpErr := writeRawResponse(os.Stdout, resp); dumpErr != nil {
+		if dumpErr := writeRawAgentResponse(ctx, os.Stdout, resp, agent_api.AgentProtocolResponses, rc.name); dumpErr != nil {
 			return dumpErr
 		}
 		if resp.StatusCode >= 400 {
@@ -1701,7 +1783,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 				if a.flags.noWait && tracker.saveErr != nil {
 					return tracker.saveErr
 				}
-				if a.flags.noWait {
+				if a.flags.noWait || (routingErr != nil && a.flags.longRunning) {
 					return errBackgroundNoWait
 				}
 				return nil
@@ -1710,11 +1792,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	)
 	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
 	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
-	if a.flags.noWait && tracker.responseID != "" {
+	if (a.flags.noWait || (routingErr != nil && a.flags.longRunning)) && tracker.responseID != "" {
 		if errors.Is(streamErr, errBackgroundNoWait) {
 			streamErr = nil
 		}
-		if streamErr == nil {
+		if streamErr == nil && routingErr == nil {
 			if err := latency.writeTo(os.Stdout); err != nil {
 				return err
 			}
@@ -1734,7 +1816,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err := latency.writeTo(os.Stdout); err != nil {
 		return err
 	}
-	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+	if routingErr == nil {
+		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+	}
 	return nil
 }
 
@@ -1853,7 +1937,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 // invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
-func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
+func (a *InvokeAction) invocationsRemote(ctx context.Context) (returnErr error) {
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
@@ -1868,7 +1952,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	agentKey := rc.agentKey
-	if agentKey == "" && rc.azdClient != nil {
+	if agentKey == "" && rc.azdClient != nil && a.flags.versionOverride == "" {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
 	}
 
@@ -1908,7 +1992,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
 	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
 	// the user is one-off targeting a remote endpoint.
-	if rc.azdClient != nil && a.endpoint == nil {
+	if rc.azdClient != nil && a.endpoint == nil && a.flags.versionOverride == "" {
 		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
 	}
 
@@ -1919,6 +2003,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	applyCustomHeaders(req, a.clientHeaders)
+	a.applyVersionOverride(req)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
@@ -1938,7 +2023,18 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	routingErr := a.reportVersionOverrideResponse(resp, os.Stdout, os.Stderr)
+	if routingErr != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+		if raw {
+			return errors.Join(routingErr, writeRawResponse(os.Stdout, resp))
+		}
+		return routingErr
+	}
+
 	invocationID, err := invocationIDFromResponse(resp)
+	defer func() {
+		returnErr = combineInvokeErrors(routingErr, returnErr)
+	}()
 	if err != nil {
 		return err
 	}
@@ -1953,6 +2049,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	if !raw && invocationID != "" {
 		fmt.Printf("Invocation:   %s\n", invocationID)
+	}
+	if routingErr != nil && resp.StatusCode == http.StatusAccepted {
+		if raw {
+			return writeRawResponse(os.Stdout, resp)
+		}
+		return nil // The ID is already displayed; return the routing failure without starting a poll.
 	}
 
 	// Always capture session state from response headers (needed even in raw mode
@@ -1995,7 +2097,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		if err := latency.writeTo(os.Stdout); err != nil {
 			return err
 		}
-		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+		if routingErr == nil {
+			a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+		}
 	}
 	return nil
 }
@@ -2004,9 +2108,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 // to the correct handler based on the HTTP status code and content type.
 //
 // When raw is true, the response is dumped verbatim (status line + headers + body)
-// to stdout instead of being parsed:
-//   - 2xx sync/SSE: the response is streamed through writeRawResponse so SSE
-//     events flow through unbuffered.
+// to stdout while also checking for protocol-level failures:
+//   - 2xx sync/SSE: the response is streamed verbatim while the protocol parser
+//     checks for agent failures without writing formatted output.
 //   - 202 LRO: the initial 202 is dumped, then polling continues silently until
 //     terminal state, then the terminal response is dumped after a "---"
 //     separator. Intermediate polls are not surfaced to avoid noise.
@@ -2029,7 +2133,7 @@ func handleInvocationResponse(
 		if resp.StatusCode == http.StatusAccepted {
 			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
 		}
-		if err := writeRawResponse(os.Stdout, resp); err != nil {
+		if err := writeRawAgentResponse(ctx, os.Stdout, resp, agent_api.AgentProtocolInvocations, agentName); err != nil {
 			return err
 		}
 		if resp.StatusCode >= 400 {
@@ -2075,6 +2179,10 @@ func handleInvocationResponse(
 
 // handleInvocationSync handles a synchronous (200 OK, immediate result) invocations response.
 func handleInvocationSync(body io.Reader, agentName string) error {
+	return handleInvocationSyncWithWriter(os.Stdout, body, agentName)
+}
+
+func handleInvocationSyncWithWriter(writer io.Writer, body io.Reader, agentName string) error {
 	respBody, err := io.ReadAll(body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
@@ -2102,13 +2210,13 @@ func handleInvocationSync(body io.Reader, agentName string) error {
 	if json.Valid(respBody) {
 		var pretty bytes.Buffer
 		if err := json.Indent(&pretty, respBody, "", "  "); err == nil {
-			fmt.Printf("[%s] %s\n", agentName, pretty.String())
-			return nil
+			_, err := fmt.Fprintf(writer, "[%s] %s\n", agentName, pretty.String())
+			return err
 		}
 	}
 
-	fmt.Printf("[%s] %s\n", agentName, string(respBody))
-	return nil
+	_, err = fmt.Fprintf(writer, "[%s] %s\n", agentName, string(respBody))
+	return err
 }
 
 // handleInvocationSSE handles a streaming (200 OK, text/event-stream) invocations response.
@@ -2118,11 +2226,22 @@ func handleInvocationSSE(w io.Writer, body io.Reader, agentName string) error {
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var printed bool
+	var eventName string
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" {
+			eventName = ""
+		}
+		if event, ok := strings.CutPrefix(line, "event:"); ok {
+			eventName = strings.TrimSpace(event)
+		}
 
-		if data, ok := strings.CutPrefix(line, "data: "); ok {
+		if data, ok := strings.CutPrefix(line, "data:"); ok {
+			data = strings.TrimPrefix(data, " ")
+			if eventName == "error" {
+				return fmt.Errorf("agent stream error: %s", data)
+			}
 			if data == "[DONE]" {
 				break
 			}

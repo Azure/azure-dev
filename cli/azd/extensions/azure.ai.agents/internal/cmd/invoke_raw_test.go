@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWriteRawResponse(t *testing.T) {
@@ -154,6 +159,109 @@ func TestWriteRawResponse(t *testing.T) {
 			t.Errorf("expected status line synthesized from StatusCode, got: %q", out)
 		}
 	})
+}
+
+func TestWriteRawAgentResponse(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		protocol agent_api.AgentProtocol
+		typeName string
+		body     string
+		wantErr  string
+	}{
+		{
+			name: "Responses JSON failure", protocol: agent_api.AgentProtocolResponses,
+			typeName: "application/json", body: " {\"error\":{\"message\":\"broken\"}}\n", wantErr: "agent error: broken",
+		},
+		{
+			name: "Responses JSON failure with charset", protocol: agent_api.AgentProtocolResponses,
+			typeName: "application/json; charset=utf-8",
+			body:     "{\"error\":{\"code\":\"failed\",\"message\":\"broken\"}}\r\n",
+			wantErr:  "agent error (failed): broken",
+		},
+		{
+			name: "Responses JSON success", protocol: agent_api.AgentProtocolResponses,
+			typeName: "application/json", body: "  {\"output\": [], \"error\": null}\r\n",
+		},
+		{
+			name: "Responses JSON failure without content type", protocol: agent_api.AgentProtocolResponses,
+			body: "{\"error\":{\"message\":\"broken\"}}", wantErr: "agent error: broken",
+		},
+		{
+			name: "Responses error with unread tail", protocol: agent_api.AgentProtocolResponses,
+			typeName: "text/event-stream", wantErr: "agent error (failed): broken",
+			body: "event: error\r\ndata: {\"code\":\"failed\",\"message\":\"broken\"}\r\n\r\n" +
+				strings.Repeat(": remaining bytes\r\n\r\n", 8192),
+		},
+		{
+			name: "Responses success with unread tail", protocol: agent_api.AgentProtocolResponses,
+			typeName: "text/event-stream", body: versionOverrideStream + strings.Repeat(": trailing\n\n", 8192),
+		},
+		{
+			name: "Invocations error with unread tail", protocol: agent_api.AgentProtocolInvocations,
+			typeName: "text/event-stream", wantErr: "agent stream error: broken",
+			body: "event:error\ndata:broken\n\n" + strings.Repeat(": remaining bytes\n\n", 8192),
+		},
+		{
+			name: "Invocations success", protocol: agent_api.AgentProtocolInvocations,
+			typeName: "application/json", body: "  {\"result\": \"success\"}\r\n",
+		},
+		{
+			name: "Invocations JSON failure", protocol: agent_api.AgentProtocolInvocations,
+			typeName: "application/json", body: " {\"error\":{\"message\":\"broken\"}}\n", wantErr: "agent error: broken",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}
+			resp.Header.Set("Content-Type", tt.typeName)
+			resp.Header.Add("X-Multiple", "first")
+			resp.Header.Add("X-Multiple", "second")
+			resp.Body = io.NopCloser(strings.NewReader(tt.body))
+			var expected bytes.Buffer
+			require.NoError(t, writeRawResponse(&expected, resp))
+			resp.Body = io.NopCloser(strings.NewReader(tt.body))
+			var actual bytes.Buffer
+			err := writeRawAgentResponse(t.Context(), &actual, resp, tt.protocol, "test-agent")
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+			assert.Equal(t, expected.String(), actual.String(), "preserve all bytes even after a terminal/error frame")
+		})
+	}
+}
+
+type rawProgressReader struct {
+	writer   *bytes.Buffer
+	observed bool
+}
+
+func (reader *rawProgressReader) Read([]byte) (int, error) {
+	reader.observed = strings.Contains(reader.writer.String(), "data: first chunk\n\n")
+	return 0, io.EOF
+}
+
+func TestWriteRawAgentResponseStreams(t *testing.T) {
+	var output bytes.Buffer
+	progress := &rawProgressReader{writer: &output}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+		Body: io.NopCloser(io.MultiReader(
+			strings.NewReader("data: first chunk\n\n"), progress,
+		)),
+	}
+	require.NoError(t, writeRawAgentResponse(t.Context(), &output, resp, agent_api.AgentProtocolInvocations, "test"))
+	assert.True(t, progress.observed, "emit chunks before waiting for subsequent reads")
+}
+
+func TestWriteRawAgentResponseWriterFailure(t *testing.T) {
+	failure := errors.New("raw output failed")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}
+	err := writeRawAgentResponse(t.Context(), versionOverrideFailingWriter{err: failure}, resp,
+		agent_api.AgentProtocolResponses, "test")
+	require.ErrorIs(t, err, failure)
 }
 
 // TestCaptureResponseSession_SilentInRawMode verifies that the empty-label

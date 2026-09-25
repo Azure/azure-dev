@@ -4,11 +4,16 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"slices"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 // writeRawResponse writes the response status line, alphabetically-sorted
@@ -63,4 +68,32 @@ func writeRawResponse(w io.Writer, resp *http.Response) error {
 		return fmt.Errorf("failed to write raw response body: %w", err)
 	}
 	return nil
+}
+
+// writeRawAgentResponse tees the original bytes to stdout while the normal
+// protocol parser checks for agent failures without emitting friendly output.
+// Drain bytes beyond a terminal/error event so raw output remains complete.
+func writeRawAgentResponse(
+	ctx context.Context, writer io.Writer, resp *http.Response, protocol agent_api.AgentProtocol, agentName string,
+) error {
+	if resp == nil || resp.Body == nil || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return writeRawResponse(writer, resp)
+	}
+	headers := *resp
+	headers.Body = nil
+	if err := writeRawResponse(writer, &headers); err != nil {
+		return err
+	}
+	body := io.TeeReader(resp.Body, writer)
+	var protocolErr error
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if mediaType != "text/event-stream" {
+		protocolErr = handleInvocationSyncWithWriter(io.Discard, body, agentName)
+	} else if protocol == agent_api.AgentProtocolResponses {
+		protocolErr = readResponsesSSE(ctx, body, io.Discard, agentName, responsesSSEOptions{})
+	} else {
+		protocolErr = handleInvocationSSE(io.Discard, body, agentName)
+	}
+	_, drainErr := io.Copy(io.Discard, body)
+	return errors.Join(protocolErr, drainErr)
 }

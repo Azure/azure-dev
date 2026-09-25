@@ -335,6 +335,7 @@ in any order, any time.
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
 | `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
 | `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
+| `tier0/0.21-invoke-version-override-validation.yaml` | `invoke --version-override` manual-verification and warning help, empty/invalid values, flag conflicts, and local/A2A rejection before auth |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -429,6 +430,7 @@ as their `cwd`.
 | `tier2/2.11-endpoint-update.yaml` | `endpoint update` |
 | `tier2/2.12-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
 | `tier2/2.13-invoke-latency.yaml` | Default-on platform latency, `--debug-latency=false`, and raw output against the shared Responses agent |
+| `tier2/2.14-invoke-version-override.yaml` | Exact/latest overrides, actual response checks, optional metadata warnings on stderr, service-dependent nonexistent-version outcomes, and isolated state on the shared code-deployed Responses agent |
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
@@ -438,6 +440,18 @@ as their `cwd`.
 The shared Tier 2 agent supports the Responses protocol only. The suite does not yet cover
 successful Invocations calls or their session-bound memory semantics; that requires a separate
 Invocations-capable setup and lifecycle.
+
+The version-override scenario records actual replies and checks their expected behavior;
+it does not certify a code revision from a successful exit or version metadata. Missing,
+invalid, or ambiguous metadata can produce warnings without failing a successful invoke,
+including raw calls whose stdout must remain unchanged. Explicit service-reported fallback
+or a concrete requested-version mismatch still requires an error; HTTP and agent errors
+remain failures. These are failures for valid-target goals, not observations to waive.
+A nonexistent-version probe can return a reply without evidence of fallback, so its outcome
+is service-dependent rather than guaranteed rejection. `latest` is service-controlled, not
+necessarily the newest unpinned ready version. Use explicit versions and manually inspect
+candidate feature behavior before increasing traffic; this scenario does not change traffic
+or verify promotion, background operations, or lifecycle follow/cancel.
 
 ## Tags
 

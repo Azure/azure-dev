@@ -920,7 +920,7 @@ func hasInvocationsModeration(policy map[string]any) bool {
 // same structural rules the Agents service applies at create time, so a misconfiguration is
 // caught locally instead of surfacing later as an opaque 'invalid_payload' response.
 //
-// It deliberately does not compile the JSONPath expressions; malformed paths are still
+// It deliberately does not compile the selector expressions; malformed paths are still
 // reported by the service.
 func validateInvocationsModeration(
 	index int,
@@ -984,6 +984,16 @@ func validateInvocationsModeration(
 		if strings.TrimSpace(selector.EventType) == "" {
 			errors = append(errors, fmt.Sprintf(
 				"%s.streamSelectors[%d].eventType is required and must be non-empty", prefix, i))
+		}
+
+		// textField names a field on the event payload; it is not a selector expression.
+		// A '$'-prefixed value matches no field, which yields no text and silently disables
+		// moderation for every frame the selector covers, so reject it rather than deploy it.
+		if strings.HasPrefix(strings.TrimSpace(selector.TextField), "$") {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].textField must be a field name such as 'delta', "+
+					"not a selector expression like '%s'",
+				prefix, i, strings.TrimSpace(selector.TextField)))
 		}
 	}
 

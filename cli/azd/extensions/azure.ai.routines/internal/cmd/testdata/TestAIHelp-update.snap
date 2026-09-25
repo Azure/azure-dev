@@ -1,0 +1,39 @@
+Update fields on an existing Foundry routine.
+
+Only the named flags change; all other fields are preserved verbatim.
+To change the trigger or action type, delete and recreate the routine.
+
+Usage
+  azd ai routine update <name> [flags]
+
+Flags
+      --agent-endpoint-id string : New agent endpoint ID
+      --agent-name string        : New project-scoped agent name
+      --at string                : New ISO 8601 datetime (timer trigger only)
+      --connection-id string     : New workspace connection ID (github-issue trigger only)
+      --conversation-id string   : New conversation to continue (preview)
+      --cron string              : New cron expression (recurring trigger only)
+      --description string       : New description for the routine
+      --event-name string        : New event name (custom trigger only)
+      --file string              : Path to a YAML/JSON manifest; merged fields win unless overridden by flags
+      --issue-event string       : New GitHub issue event: opened or closed (github-issue trigger only)
+      --owner string             : New GitHub owner (github-issue trigger only)
+      --parameters string        : New parameters JSON object (custom trigger only)
+      --provider string          : New external provider (custom trigger only)
+      --repository string        : New GitHub repository (github-issue trigger only)
+      --session-id string        : New session to continue
+      --time-zone string         : New time zone (recurring trigger only)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for update
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for remote operations only (not add, context, or version)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.
+
+Examples
+  Change the description while preserving other fields
+    azd ai routine update nightly-summary --description "Summarize the day's activity"

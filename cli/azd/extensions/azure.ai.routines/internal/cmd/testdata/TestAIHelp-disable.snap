@@ -1,0 +1,20 @@
+Disable a Foundry routine.
+
+This operation is idempotent: disabling an already-disabled routine is a no-op success.
+
+Usage
+  azd ai routine disable <name> [flags]
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for disable
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for remote operations only (not add, context, or version)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.
+
+Examples
+  Pause a routine without deleting it
+    azd ai routine disable nightly-summary

@@ -1,0 +1,69 @@
+Manage Foundry skills — reusable behavioral guidelines an agent can attach
+at runtime — from your terminal.
+
+Skills carry either inline JSON (description + Markdown instructions) or a
+packaged ZIP archive bundling SKILL.md plus any sibling assets. Use this
+command group to create, update, show, list, download, and delete skills in
+a Foundry project.
+
+Usage
+  azd ai skill [command]
+
+Available Commands
+  context  : Get the context of the azd project & environment.
+  create   : Create a new Foundry skill.
+  delete   : Delete a Foundry skill.
+  download : Download a Foundry skill package.
+  list     : List Foundry skills in the project.
+  show     : Show metadata for a Foundry skill.
+  update   : Create a new default version for a Foundry skill.
+  version  : Print the extension version.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for skill
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
+
+Examples
+  Create a reusable skill from a SKILL.md file
+    azd ai skill create greet-user --file ./SKILL.md
+
+  Download a skill for local editing
+    azd ai skill download greet-user
+
+Use azd ai skill [command] --help to view examples and more information about a specific command.
+
+Environments & Environment Variables
+  An azd environment stores deployment values in .azure/<environment>/.env.
+  Use 'azd env select <name>' to select the environment for endpoint lookup.
+  --environment (-e) does not override that persisted selection; use
+  --project-endpoint <endpoint> to override endpoint discovery for skill
+  operations (not context or version).
+  Values may contain secrets; do not share the output of
+  'azd env get-values' or commit .azure to source control.
+
+  --project-endpoint overrides endpoint discovery. Otherwise, with an
+  available azd environment, lookup checks FOUNDRY_PROJECT_ENDPOINT and
+  then legacy AZURE_AI_PROJECT_ENDPOINT. Each key uses its persisted value,
+  or the azd host's shell value if the key is absent from .env.
+  An explicitly empty persisted value skips that key without a shell fallback
+  at this stage. A non-empty shell value can therefore win before global
+  config, and a canonical shell value can win before a persisted legacy key.
+  If this lookup yields no endpoint (including when no environment is
+  available), commands try the global default saved by
+  'azd ai project set <endpoint>', then legacy skills and agents global
+  context, then the same shell keys in that order.
+  Skill commands read project context but do not change the global default.
+
+  --file reads skill content at invocation time; it is not a tracked
+  manifest. Download extracts to ./.agents/skills/<name>/ by default.
+  Edit the downloaded files and use 'azd ai skill update <name> --file <path>'
+  to create a new immutable version and make it the default.
+
+Learn More
+  Project context: 'azd ai project --help'
+  Environment commands: 'azd env --help'

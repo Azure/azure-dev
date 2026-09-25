@@ -362,10 +362,19 @@ layout that ` + "`azd ai skill download`" + ` writes by default.
 
 To repoint default_version at an existing version without uploading new
 content, pass --set-default-version <version>.`,
-		Example: `  azd ai skill update my-skill --description "Updated summary" --instructions "..."
+		Example: `  # Upload new inline instructions as the default version
+  azd ai skill update my-skill --description "Updated summary" --instructions "Greet the user by name."
+
+  # Upload a new version from a Markdown file
   azd ai skill update my-skill --file ./SKILL.md
+
+  # Upload a new version from an archive
   azd ai skill update my-skill --file ./skill.zip
+
+  # Upload a new version from an extracted directory
   azd ai skill update my-skill --file ./skill-src/
+
+  # Restore an existing version as the default
   azd ai skill update my-skill --set-default-version 1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

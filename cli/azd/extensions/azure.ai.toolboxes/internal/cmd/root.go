@@ -1,9 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore helpformat
 package cmd
 
 import (
+	"fmt"
+
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/helpformat"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -30,12 +36,22 @@ to promote a version.`,
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := validateRemoteFlags(cmd); err != nil {
+			return err
+		}
+		if sdkPreRun != nil {
+			return sdkPreRun(cmd, args)
+		}
+		return nil
+	}
+
 	// --output and --no-prompt are reserved azd globals and are inherited
 	// automatically; only the extension-specific flag is registered here.
 	rootCmd.PersistentFlags().String(
 		"project-endpoint", "",
-		"Foundry project endpoint URL. When unset, falls back to the active azd "+
-			"environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.",
+		"Foundry project endpoint URL for remote operations only (not local add or extension version).",
 	)
 	// Advertise the toolbox-specific --output allowed values + default on the
 	// root so `azd ai toolbox --help` shows them too. Leaf commands re-register
@@ -56,7 +72,34 @@ to promote a version.`,
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 
+	rootCmd.Example = `  # Create a toolbox from a local definition
+  azd ai toolbox create research --from-file ./toolbox.yaml
+
+  # Inspect its versions before promoting a default
+  azd ai toolbox versions list research
+  azd ai toolbox publish research 2`
+	helpformat.Install(rootCmd, "azd ai", toolboxHelpFooter)
+
 	return rootCmd
+}
+
+func validateRemoteFlags(cmd *cobra.Command) error {
+	command := cmd
+	for command.Parent() != nil && command.Parent().Parent() != nil {
+		command = command.Parent()
+	}
+	switch command.Name() {
+	case "create", "publish", "delete", "show", "list", "versions", "connection", "skill":
+		return nil
+	}
+	if cmd.Flags().Changed("project-endpoint") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("--project-endpoint is not supported by 'azd ai %s'", cmd.CommandPath()),
+			"remove --project-endpoint; this command does not use a project endpoint",
+		)
+	}
+	return nil
 }
 
 // configureExtensionHost is the listen callback. It registers the

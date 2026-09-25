@@ -1,0 +1,16 @@
+Get the context of the azd project & environment.
+
+Usage
+  azd ai project context [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for context
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Inspect local context (output may include secrets)
+    azd ai project context

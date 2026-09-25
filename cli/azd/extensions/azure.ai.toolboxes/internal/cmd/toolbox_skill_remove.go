@@ -35,11 +35,11 @@ func newToolboxSkillRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Comman
 Pass one or more skill short names as positionals. All removals are applied
 atomically: each invocation creates exactly one new toolbox version.
 
-Removing the last skill is allowed.
-
-Examples:
-
+Removing the last skill is allowed.`,
+		Example: `  # Remove a skill reference in a new toolbox version
   azd ai toolbox skill remove research my-skill
+
+  # Remove several skill references without confirmation
   azd ai toolbox skill remove research a b c --force
 `,
 		Args: cobra.MinimumNArgs(2),

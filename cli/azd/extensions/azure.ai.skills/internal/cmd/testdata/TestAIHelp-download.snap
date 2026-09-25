@@ -1,0 +1,33 @@
+Download the zip content for a skill and extract it into --output-dir
+(default `./.agents/skills/<name>/`). Pass --raw to write the unmodified
+zip archive instead of extracting it. Pass --version <ver> to download a
+specific version rather than the skill's default.
+
+Extraction enforces strict safety rules: no absolute paths, no '..' segments,
+no symlinks / non-regular entries, and a 10,000-entry / 512 MB cap on the
+total uncompressed size.
+
+Usage
+  azd ai skill download <name> [flags]
+
+Flags
+      --force             : Overwrite existing files in --output-dir
+      --output-dir string : Directory to write the extracted skill (default: ./.agents/skills/<name>/)
+      --raw               : Skip extraction; write the zip archive as-is to --output-dir
+      --version string    : Download a specific version (defaults to the skill's default_version)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for download
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
+
+Examples
+  Extract the default version for local editing
+    azd ai skill download greet-user
+
+  Download a specific version as a ZIP archive
+    azd ai skill download greet-user --version 1 --raw --output-dir ./downloads

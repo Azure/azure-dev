@@ -1,0 +1,72 @@
+Manage Microsoft Foundry Routines from your terminal. (Preview)
+
+Usage
+  azd ai routine [command]
+
+Available Commands
+  add      : Add or update a routine service in azure.yaml.
+  context  : Get the context of the azd project & environment.
+  create   : Create a new routine.
+  delete   : Delete a routine.
+  disable  : Disable a routine.
+  dispatch : Manually trigger a routine.
+  enable   : Enable a routine.
+  list     : List all routines in the Foundry project.
+  run      : Manage routine run history.
+  show     : Show details of a routine.
+  update   : Update an existing routine.
+  version  : Display the extension version
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for routine
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+  -p, --project-endpoint string : Foundry project endpoint URL for remote operations only (not add, context, or version)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.
+
+Examples
+  Create a routine from a manifest
+    azd ai routine create nightly-summary --file ./routine.yaml
+
+  Trigger it manually and inspect execution history
+    azd ai routine dispatch nightly-summary
+    azd ai routine run list nightly-summary
+
+Use azd ai routine [command] --help to view examples and more information about a specific command.
+
+Environments & Environment Variables
+  An azd environment stores deployment values in .azure/<environment>/.env.
+  Use 'azd env select <name>' to select the environment for endpoint lookup.
+  --environment (-e) does not override that persisted selection; use
+  --project-endpoint <endpoint> to override endpoint discovery for remote
+  routine operations. --project-endpoint and --timeout are not supported by
+  local add, context, or version commands.
+  Values may contain secrets; do not share the output of
+  'azd env get-values' or commit .azure to source control.
+
+  --project-endpoint overrides endpoint discovery. Otherwise, with an
+  available azd environment, commands look up AZURE_AI_PROJECT_ENDPOINT:
+  its persisted value wins, or the azd host's shell value is used if the key
+  is absent from .env. An explicitly empty persisted value prevents this
+  shell fallback at this stage.
+  If this lookup yields no endpoint (including when no environment is
+  available), commands try the global default saved by
+  'azd ai project set <endpoint>', then legacy agent global context, then
+  the FOUNDRY_PROJECT_ENDPOINT shell variable. A shell
+  AZURE_AI_PROJECT_ENDPOINT can therefore win before global config and
+  FOUNDRY_PROJECT_ENDPOINT when the persisted key is absent.
+  Use 'azd env set AZURE_AI_PROJECT_ENDPOINT <endpoint>' to persist the
+  endpoint this extension reads from the active environment.
+
+  'azd ai routine add' only updates an azure.ai.routine service in
+  azure.yaml. Run 'azd deploy <name>' or 'azd up' to apply that service.
+  'azd ai routine create' instead creates a routine immediately.
+  Routine execution is asynchronous; use 'azd ai routine run list <name>'
+  to inspect execution history after dispatch.
+
+Learn More
+  Project context: 'azd ai project --help'
+  Environment commands: 'azd env --help'

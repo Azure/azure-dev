@@ -1,11 +1,13 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore helpformat
 package cmd
 
 import (
 	"context"
 
+	"azure.ai.projects/internal/helpformat"
 	"azure.ai.projects/internal/provisioning"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -36,6 +38,13 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+
+	rootCmd.Example = `  # Configure a Foundry project in the current azd project
+  azd ai project add
+
+  # Inspect the resolved project endpoint
+  azd ai project show`
+	helpformat.Install(rootCmd, "azd ai", projectHelpFooter)
 
 	return rootCmd
 }

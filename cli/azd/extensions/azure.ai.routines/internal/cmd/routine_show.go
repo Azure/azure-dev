@@ -19,7 +19,9 @@ func newRoutineShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show details of a routine.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # Inspect a routine's trigger and action
+  azd ai routine show nightly-summary`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat
 			ctx := azdext.WithAccessToken(cmd.Context())

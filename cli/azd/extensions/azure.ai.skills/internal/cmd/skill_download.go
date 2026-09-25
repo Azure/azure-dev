@@ -231,6 +231,11 @@ specific version rather than the skill's default.
 Extraction enforces strict safety rules: no absolute paths, no '..' segments,
 no symlinks / non-regular entries, and a 10,000-entry / 512 MB cap on the
 total uncompressed size.`,
+		Example: `  # Extract the default version for local editing
+  azd ai skill download greet-user
+
+  # Download a specific version as a ZIP archive
+  azd ai skill download greet-user --version 1 --raw --output-dir ./downloads`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

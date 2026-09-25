@@ -479,6 +479,44 @@ func TestUserConfigService_ConcurrentSetsPreserveAllWrites(t *testing.T) {
 	}
 }
 
+func TestUserConfigService_ConcurrentMapEntrySetsPreserveAllWrites(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	service, err := NewUserConfigService(manager)
+	require.NoError(t, err)
+
+	const (
+		path    = "grpc.entries"
+		writers = 20
+	)
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := range writers {
+		wg.Go(func() {
+			_, err := service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+				Path:  path,
+				Key:   fmt.Sprintf("agent/%d.endpoint", i),
+				Value: fmt.Appendf(nil, "%q", fmt.Sprintf("value%d", i)),
+			})
+			errs <- err
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	cfg, err := manager.Load()
+	require.NoError(t, err)
+	for i := range writers {
+		value, found, err := config.GetRawMapEntry(cfg, path, fmt.Sprintf("agent/%d.endpoint", i))
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, fmt.Sprintf("value%d", i), value)
+	}
+}
+
 func TestUserConfigService_Get_Found(t *testing.T) {
 	t.Parallel()
 	mgr := &mockUserConfigManager{cfg: &mockConfig{data: map[string]any{"test.key": "value"}}}

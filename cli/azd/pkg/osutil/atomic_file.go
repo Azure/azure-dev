@@ -17,6 +17,18 @@ func WriteFileAtomic(ctx context.Context, path string, data []byte, perm os.File
 		return err
 	}
 
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			resolvedPath, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return fmt.Errorf("resolving target file symlink: %w", err)
+			}
+			path = resolvedPath
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stating target file: %w", err)
+	}
+
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); err != nil {
 		return fmt.Errorf("stating target directory: %w", err)

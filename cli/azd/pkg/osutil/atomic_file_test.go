@@ -42,3 +42,26 @@ func Test_WriteFileAtomic_CanceledContextPreservesContents(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "old", string(contents))
 }
+
+func Test_WriteFileAtomic_PreservesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.json")
+	linkPath := filepath.Join(dir, "config.json")
+	require.NoError(t, os.WriteFile(targetPath, []byte("old"), 0o600))
+	if err := os.Symlink(filepath.Base(targetPath), linkPath); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("creating symlink requires additional Windows privileges: %v", err)
+		}
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, WriteFileAtomic(t.Context(), linkPath, []byte("new"), 0))
+
+	linkInfo, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+
+	contents, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.Equal(t, "new", string(contents))
+}

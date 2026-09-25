@@ -35,6 +35,24 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	)
 }
 
+func TestServiceTargetPreviewIsBetaOnly(t *testing.T) {
+	t.Parallel()
+	stable := v1.File_azd_extensions_v1_service_target_proto
+	beta := v1beta.File_azd_extensions_v1beta_service_target_proto
+	for _, name := range []protoreflect.Name{
+		"ServiceTargetPreviewRequest", "ServiceTargetPreviewResponse", "ServiceDeployPreviewResult",
+	} {
+		require.Nil(t, stable.Messages().ByName(name), "%s must not graduate to v1 yet", name)
+		require.NotNil(t, beta.Messages().ByName(name))
+	}
+	for _, name := range []protoreflect.Name{"preview_request", "preview_response"} {
+		require.Nil(t, stable.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
+		require.NotNil(t, beta.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
+	}
+	require.Nil(t, stable.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
+	require.NotNil(t, beta.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
+}
+
 func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 	t.Parallel()
 

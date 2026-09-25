@@ -1412,7 +1412,10 @@ func (m *mockUserConfigManager) Save(_ config.Config) error {
 	return nil
 }
 
-func (m *mockUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	_, err := mutation(ctx, m.cfg)
 	return err
 }

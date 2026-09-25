@@ -591,7 +591,10 @@ func (m *memoryUserConfigManager) Save(cfg config.Config) error {
 	return nil
 }
 
-func (m *memoryUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *memoryUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	if changed, err := mutation(ctx, m.config); err != nil || !changed {
 		return err
 	}

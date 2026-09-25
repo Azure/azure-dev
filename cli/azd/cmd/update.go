@@ -121,16 +121,20 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		})
 
 		// Write a default channel so HasUpdateConfig returns true next time.
-		defaultChannel := update.LoadUpdateConfig(userConfig).Channel
-		if err := update.SetChannel(userConfig, defaultChannel); err != nil {
-			log.Printf("warning: failed to persist default update channel: %v", err)
-		} else if err := a.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
-			if err := update.SetChannel(cfg, defaultChannel); err != nil {
+		if err := a.configManager.Mutate(ctx, func(_ context.Context, cfg config.Config) (bool, error) {
+			if update.HasUpdateConfig(cfg) {
+				return false, nil
+			}
+			if err := update.SetChannel(cfg, update.LoadUpdateConfig(cfg).Channel); err != nil {
 				return false, err
 			}
 			return true, nil
 		}); err != nil {
 			log.Printf("warning: failed to save config after setting default channel: %v", err)
+		} else if latestConfig, err := a.configManager.Load(); err != nil {
+			log.Printf("warning: failed to reload config after setting default channel: %v", err)
+		} else {
+			userConfig = latestConfig
 		}
 	}
 

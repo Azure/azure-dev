@@ -177,44 +177,48 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 
 // List returns a list of extension sources.
 func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
-	config, err := sm.configManager.Load()
+	userConfig, err := sm.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("unable to load user configuration: %w", err)
 	}
 
-	allSourceConfigs := []*SourceConfig{}
-
-	rawSources, ok := config.Get(baseConfigKey)
-	if ok {
-		sourceMap, ok := rawSources.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("unable to parse extension sources")
-		}
-		sourceEntries, err := configuredSourceEntries(sourceMap)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range sourceEntries {
-			if err := validateConfiguredSource(entry.name, entry.config); err != nil {
-				return nil, err
-			}
-
-			allSourceConfigs = append(allSourceConfigs, entry.config)
-		}
-	} else {
+	if _, ok := userConfig.Get(baseConfigKey); !ok {
 		defaultSource := &SourceConfig{
 			Name:     MainRegistryName,
 			Type:     SourceKindUrl,
 			Location: extensionRegistryUrl,
 		}
 
-		if err := sm.addInternal(ctx, defaultSource); err != nil {
-			return nil, fmt.Errorf("unable to default template source '%s': %w", defaultSource.Name, err)
+		if err := sm.ensureDefaultSource(ctx, defaultSource); err != nil {
+			return nil, fmt.Errorf("unable to default extension source '%s': %w", defaultSource.Name, err)
 		}
-
-		allSourceConfigs = append(allSourceConfigs, defaultSource)
+		userConfig, err = sm.configManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("unable to reload user configuration: %w", err)
+		}
 	}
 
+	rawSources, ok := userConfig.Get(baseConfigKey)
+	if !ok {
+		return nil, fmt.Errorf("unable to load extension sources")
+	}
+
+	sourceMap, ok := rawSources.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unable to parse extension sources")
+	}
+	sourceEntries, err := configuredSourceEntries(sourceMap)
+	if err != nil {
+		return nil, err
+	}
+
+	allSourceConfigs := make([]*SourceConfig, 0, len(sourceEntries))
+	for _, entry := range sourceEntries {
+		if err := validateConfiguredSource(entry.name, entry.config); err != nil {
+			return nil, err
+		}
+		allSourceConfigs = append(allSourceConfigs, entry.config)
+	}
 	slices.SortFunc(allSourceConfigs, func(a, b *SourceConfig) int {
 		return strings.Compare(a.Name, b.Name)
 	})
@@ -265,6 +269,23 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	}
 
 	return newCategorizedSource(source, ClassifySource(config)), nil
+}
+
+func (sm *SourceManager) ensureDefaultSource(ctx context.Context, source *SourceConfig) error {
+	if err := sm.configManager.Mutate(ctx, func(_ context.Context, userConfig config.Config) (bool, error) {
+		if _, exists := userConfig.Get(baseConfigKey); exists {
+			return false, nil
+		}
+		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Name)
+		if err := userConfig.Set(path, source); err != nil {
+			return false, fmt.Errorf("unable to add extension source '%s': %w", source.Name, err)
+		}
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("updating user configuration: %w", err)
+	}
+
+	return nil
 }
 
 // addInternal adds a new extension source to the user configuration.

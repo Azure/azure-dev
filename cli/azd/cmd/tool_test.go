@@ -2236,7 +2236,10 @@ func (m *memUserConfigManager) Save(c config.Config) error {
 	return nil
 }
 
-func (m *memUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *memUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err

@@ -1287,7 +1287,10 @@ type mockUserConfigManager struct {
 	mock.Mock
 }
 
-func (m *mockUserConfigManager) Mutate(ctx context.Context, mutation func(context.Context, config.Config) (bool, error)) error {
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
 	cfg, err := m.Load()
 	if err != nil {
 		return err

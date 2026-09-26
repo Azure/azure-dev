@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -481,6 +482,65 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_CLI_Up_Down_ContainerAppExpress(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	subscriptionID := cfgOrStoredSubscription(session)
+	require.NotEmpty(t, subscriptionID, "a test subscription is required")
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	err := copySample(dir, "containerappexpress")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", subscriptionID)
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "up")
+	require.NoError(t, err)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	url, has := env["WEBSITE_URL"]
+	require.True(t, has, "WEBSITE_URL should be in environment after up")
+
+	client := http.DefaultClient
+	backoff := retry.NewConstant(5 * time.Second)
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+		client = session.ProxyClient
+		backoff = retry.NewConstant(1 * time.Millisecond)
+	}
+
+	require.NoError(t, probeServiceStatus(t, ctx, client, backoff, url))
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
 func Test_CLI_Up_Down_ContainerAppJob(t *testing.T) {
 	t.Skip("skipping until recording is available (azure-dev#7014)")
 	t.Parallel()
@@ -826,5 +886,33 @@ func probeServiceHealth(
 			assert.Equal(t, expectedBody, bodyString)
 			return nil
 		}
+	})
+}
+
+func probeServiceStatus(
+	t *testing.T,
+	ctx context.Context,
+	client httpClient,
+	backOff retry.Backoff,
+	url string,
+) error {
+	return retry.Do(ctx, retry.WithMaxRetries(10, backOff), func(ctx context.Context) error {
+		t.Logf("Attempting to Get URL: %s", url)
+
+		/* #nosec G107 - Potential HTTP request made with variable url false positive */
+		res, err := client.Get(url)
+		if err != nil {
+			return retry.RetryableError(err)
+		}
+		defer res.Body.Close()
+
+		if _, err := io.Copy(io.Discard, res.Body); err != nil {
+			return retry.RetryableError(err)
+		}
+		if res.StatusCode < http.StatusOK || res.StatusCode >= http.StatusMultipleChoices {
+			return retry.RetryableError(fmt.Errorf("unexpected status %s for request to %s", res.Status, url))
+		}
+
+		return nil
 	})
 }

@@ -4,11 +4,90 @@
 package vsrpc
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewContainer_IsolatesRequests(t *testing.T) {
+	t.Parallel()
+
+	type requestService struct {
+		projectContext *azdcontext.AzdContext
+		console        input.Console
+	}
+
+	projectRoot := t.TempDir()
+	rootContainer := ioc.NewNestedContainer(nil)
+	rootContext := azdcontext.NewAzdContextWithDirectory(projectRoot)
+	rootConsole := mockinput.NewMockConsole()
+
+	ioc.RegisterInstance(rootContainer, rootContext)
+	ioc.RegisterInstance[input.Console](rootContainer, rootConsole)
+	rootContainer.MustRegisterSingleton(func(projectContext *azdcontext.AzdContext, console input.Console) *requestService {
+		return &requestService{projectContext: projectContext, console: console}
+	})
+
+	var rootService *requestService
+	require.NoError(t, rootContainer.Resolve(&rootService))
+	require.NotNil(t, rootService)
+
+	server := NewServer(rootContainer)
+	sessionInfo, err := newServerService(server, nil).InitializeAsync(t.Context(), projectRoot, InitializeServerOptions{})
+	require.NoError(t, err)
+	session, err := server.validateSession(*sessionInfo)
+	require.NoError(t, err)
+
+	var services []*requestService
+
+	// create two "requests" - we'll check, after this, that they are properly creating their
+	// own instances of types that are scoped.
+	for _, name := range []string{"first", "second"} {
+		projectDir := filepath.Join(projectRoot, name)
+		hostProjectPath := filepath.Join(projectDir, "apphost.csproj")
+		require.NoError(t, createAppHost(hostProjectPath))
+		require.NoError(t, createProject(projectDir, "apphost.csproj"))
+
+		perRequestContainer, err := session.newContainer(RequestContext{
+			Session:         *sessionInfo,
+			HostProjectPath: hostProjectPath,
+		})
+		require.NoError(t, err)
+
+		var service *requestService
+		require.NoError(t, perRequestContainer.Resolve(&service))
+		require.Equal(t, projectDir, service.projectContext.ProjectDirectory())
+		require.NotSame(t, rootService, service)
+		require.Same(t, perRequestContainer.outWriter, service.console.Handles().Stdout)
+
+		var requestConsole input.Console
+		require.NoError(t, perRequestContainer.Resolve(&requestConsole))
+		require.Same(t, requestConsole, service.console)
+
+		var repeated *requestService
+		require.NoError(t, perRequestContainer.Resolve(&repeated))
+		require.Same(t, service, repeated)
+		services = append(services, service)
+	}
+
+	// scoped instances are not shared across different scopes.. :)
+	require.NotSame(t, services[0], services[1])
+	require.NotSame(t, services[0].projectContext, services[1].projectContext)
+	require.NotSame(t, services[0].console, services[1].console)
+
+	// and singleton instances are shared
+	var rootAgain *requestService
+	require.NoError(t, rootContainer.Resolve(&rootAgain))
+	require.Same(t, rootService, rootAgain)
+	require.Same(t, rootContext, rootAgain.projectContext)
+	require.Same(t, rootConsole, rootAgain.console)
+}
 
 func TestNewSession_CreatesUniqueIDs(t *testing.T) {
 	s := newTestServer()

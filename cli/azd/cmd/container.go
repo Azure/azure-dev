@@ -160,6 +160,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			Stderr: cmd.ErrOrStderr(),
 		}, formatter, externalPromptCfg)
 	})
+	container.MustRegisterScoped(func(console input.Console) io.Writer {
+		writer := console.Handles().Stdout
+
+		if os.Getenv("NO_COLOR") != "" {
+			writer = colorable.NewNonColorable(writer)
+		}
+
+		return writer
+	})
 
 	container.MustRegisterSingleton(
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
@@ -181,16 +190,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	container.MustRegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
-	})
-
-	container.MustRegisterSingleton(func(console input.Console) io.Writer {
-		writer := console.Handles().Stdout
-
-		if os.Getenv("NO_COLOR") != "" {
-			writer = colorable.NewNonColorable(writer)
-		}
-
-		return writer
 	})
 
 	container.MustRegisterScoped(func(
@@ -228,11 +227,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 
-	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
+	// These two registrations should always be scoped (not singleton!), as they specifically are
+	// used with the cobra.Command will be registered at their same scope
+	container.MustRegisterScoped(func(cmd *cobra.Command) CmdAnnotations {
 		return cmd.Annotations
 	})
 
-	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdCalledAs {
+	container.MustRegisterScoped(func(cmd *cobra.Command) CmdCalledAs {
 		return CmdCalledAs(cmd.CalledAs())
 	})
 

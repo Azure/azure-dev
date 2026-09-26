@@ -4,6 +4,7 @@
 package devcenter
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -215,6 +216,39 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 	env := environment.New(mockEnvironments[0].Name)
 	path := store.EnvPath(env)
 	require.Equal(t, fmt.Sprintf("projects/%s/users/me/environments/%s", config.Project, env.Name()), path)
+}
+
+func TestEnvironmentStoreReloadFailurePreservesSharedSettings(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
+	remoteEnv := mockEnvironments[0]
+	mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", remoteEnv.Name, remoteEnv)
+
+	settings := &Config{
+		Name:                  "DEV_CENTER_01",
+		Project:               "Project1",
+		EnvironmentDefinition: "WebApp",
+		Catalog:               "SampleCatalog",
+	}
+	original := *settings
+	outputErr := errors.New("outputs unavailable")
+	manager := &mockDevCenterManager{}
+	manager.On("Outputs", mock.Anything, mock.Anything, mock.Anything).
+		Return(map[string]provisioning.OutputParameter(nil), outputErr).Once()
+	manager.On("Outputs", mock.Anything, mock.Anything, mock.Anything).
+		Return(map[string]provisioning.OutputParameter{"OUTPUT": {Type: "string", Value: "loaded"}}, nil).Once()
+	store, ok := newEnvironmentStoreForTest(t, mockContext, settings, manager).(*EnvironmentStore)
+	require.True(t, ok)
+	env := environment.New(remoteEnv.Name)
+
+	require.ErrorIs(t, store.Reload(t.Context(), env), outputErr)
+	require.Equal(t, original, *settings)
+	require.NoError(t, store.Reload(t.Context(), env))
+	require.Equal(t, remoteEnv.EnvironmentType, settings.EnvironmentType)
+	require.Equal(t, remoteEnv.User, settings.User)
+	require.Equal(t, "loaded", env.Getenv("OUTPUT"))
+	manager.AssertExpectations(t)
 }
 
 func Test_EnvironmentStore_Save(t *testing.T) {

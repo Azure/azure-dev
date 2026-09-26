@@ -9,6 +9,7 @@ on:
       - ".github/workflows/cli-ci.yml"
       - "eng/scripts/Get-CoverageDiff*.ps1"
       - "eng/scripts/Set-ExtensionVersionVariable*.ps1"
+      - "eng/scripts/Test-CliReleaseReadiness*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -64,6 +65,7 @@ jobs:
           $config.Run.Path = @(
             './eng/scripts/Get-CoverageDiff.Tests.ps1'
             './eng/scripts/Set-ExtensionVersionVariable.Tests.ps1'
+            './eng/scripts/Test-CliReleaseReadiness.Tests.ps1'
           )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
@@ -80,27 +82,42 @@ jobs:
           go-version-file: cli/azd/go.mod
       - name: Run mage helper tests
         working-directory: cli/azd
-        run: go test -tags mage -run '^Test(Resolve|DependencyVersion|ProtoContainerRuntime)' -v .
+        run: go test -tags mage -v .
 
   proto-contract-compatibility:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: cli/azd/go.mod
       - name: Install Buf
         run: go install github.com/bufbuild/buf/cmd/buf@v1.72.0
-      - name: Check protobuf contracts
+      - name: Regenerate protobuf artifacts
+        working-directory: cli/azd
+        run: go tool mage generateProtos
+      - name: Verify generated protobuf artifacts are current
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [[ -n "$changes" ]]; then
+            echo "::error::Protobuf generation produced uncommitted artifacts."
+            echo "$changes"
+            git diff
+            exit 1
+          fi
+      - name: Lint protobuf contracts
+        working-directory: cli/azd
+        run: make proto-lint
+      - name: Verify v1 is compatible with v1beta
+        working-directory: cli/azd
+        run: make proto-version-compatibility
+      - name: Check protobuf history for breaking changes
         working-directory: cli/azd
         run: |
-          go tool mage generateProtos
-          git diff --exit-code
-          make proto-lint
           if git cat-file -e origin/main:cli/azd/grpc/proto/azd/extensions/v1 2>/dev/null; then
             git branch --force buf-contract-baseline origin/main
             make proto-breaking BUF_BREAKING_AGAINST='../../.git#branch=buf-contract-baseline,subdir=cli/azd/grpc'

@@ -325,6 +325,11 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 	return err == nil && isHosted
 }
 
+func isPromptAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
+	_, found, err := project.PromptAgentFromResolvedService(svc, proj.Path)
+	return err == nil && found
+}
+
 // duplicateAgentNameGroup is a Foundry agent name referenced by more than one
 // azure.ai.agent service, with the colliding azure.yaml service keys sorted for
 // stable output.
@@ -426,9 +431,10 @@ func gatherPostdeployInputs(
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
+	isHostedAgent := isHostedAgentService(svc, args.Project)
+	isPromptAgent := isPromptAgentService(svc, args.Project)
 
-	// Skip when the service is not a hosted agent.
-	if !isHostedAgentService(svc, args.Project) {
+	if !isHostedAgent && !isPromptAgent {
 		return nil
 	}
 
@@ -438,48 +444,50 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// configuration pass that can conflict with the deploy-time bot name.
 	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
-	if profileErr != nil {
-		log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
-	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
-		warnLegacySimpleTeamsArtifacts(args.Project, svc)
-	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
-		serviceKey := toServiceKey(svc.Name)
-		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
-		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
-		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
-		if nameErr == nil && botErr == nil && idErr == nil {
-			packagePath := ""
-			if inputErr == nil {
-				subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
-				resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
-				if subErr == nil && rgErr == nil {
-					botResourceGroup := readOptionalEnvValue(
-						ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
-					)
-					if botResourceGroup != "" {
-						resourceGroup = botResourceGroup
+	if isHostedAgent {
+		activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
+		if profileErr != nil {
+			log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
+		} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+			warnLegacySimpleTeamsArtifacts(args.Project, svc)
+		} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
+			serviceKey := toServiceKey(svc.Name)
+			agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+			botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+			msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
+			if nameErr == nil && botErr == nil && idErr == nil {
+				packagePath := ""
+				if inputErr == nil {
+					subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+					resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+					if subErr == nil && rgErr == nil {
+						botResourceGroup := readOptionalEnvValue(
+							ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+						)
+						if botResourceGroup != "" {
+							resourceGroup = botResourceGroup
+						}
+						agentClient := agent_api.NewAgentClient(endpoint, cred)
+						packagePath = writeTeamsAppPackage(
+							ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,
+						)
+					} else {
+						log.Printf(
+							"postdeploy: skipping Teams app package for %s: subscription: %v, resource group: %v",
+							svc.Name, subErr, rgErr,
+						)
 					}
-					agentClient := agent_api.NewAgentClient(endpoint, cred)
-					packagePath = writeTeamsAppPackage(
-						ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,
-					)
 				} else {
-					log.Printf(
-						"postdeploy: skipping Teams app package for %s: subscription: %v, resource group: %v",
-						svc.Name, subErr, rgErr,
-					)
+					log.Printf("postdeploy: skipping Teams app package for %s: %v", svc.Name, inputErr)
 				}
+				guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID, packagePath)
+				printTeamsNextSteps(botName, msaAppID, guidePath, packagePath)
 			} else {
-				log.Printf("postdeploy: skipping Teams app package for %s: %v", svc.Name, inputErr)
+				log.Printf(
+					"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
+					svc.Name, nameErr, botErr, idErr,
+				)
 			}
-			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID, packagePath)
-			printTeamsNextSteps(botName, msaAppID, guidePath, packagePath)
-		} else {
-			log.Printf(
-				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
-				svc.Name, nameErr, botErr, idErr,
-			)
 		}
 	}
 
@@ -498,6 +506,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		}()
 		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpoint,
 			baselineAdvancementDir(args.Project.Path, svc),
+			optimizationPromotionHeaders(isPromptAgent),
 			func(endpoint string) *optimize_api.OptimizeClient {
 				return optimize_api.NewOptimizeClient(endpoint, cred)
 			},
@@ -507,8 +516,10 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Resume the pre-deploy session on the newly deployed version so the next
 	// invoke continues on the new code with the session's persisted volume
 	// intact (see session_carryover.go). Best-effort; never blocks deploy.
-	agentClient := agent_api.NewAgentClient(endpoint, cred)
-	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
+	if isHostedAgent {
+		agentClient := agent_api.NewAgentClient(endpoint, cred)
+		carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
+	}
 
 	return nil
 }

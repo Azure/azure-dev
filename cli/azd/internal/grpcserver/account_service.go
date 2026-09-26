@@ -5,22 +5,84 @@ package grpcserver
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type accountService struct {
 	azdext.UnimplementedAccountServiceServer
-	subscriptionsManager *account.SubscriptionsManager
+	subscriptionsManager interface {
+		account.SubscriptionResolver
+		GetSubscriptions(context.Context) ([]account.Subscription, error)
+		LookupTenant(context.Context, string) (string, error)
+	}
+	userProfileService    *azapi.UserProfileService
+	principalTypeProvider interface {
+		CurrentPrincipalType(context.Context) (auth.PrincipalType, error)
+	}
 }
 
-func NewAccountService(subscriptionsManager *account.SubscriptionsManager) azdext.AccountServiceServer {
+func NewAccountService(
+	subscriptionsManager *account.SubscriptionsManager,
+	userProfileService *azapi.UserProfileService,
+	authManager *auth.Manager,
+) azdext.AccountServiceServer {
 	return &accountService{
-		subscriptionsManager: subscriptionsManager,
+		subscriptionsManager:  subscriptionsManager,
+		userProfileService:    userProfileService,
+		principalTypeProvider: authManager,
 	}
+}
+
+var _ BetaAccountServiceGetCurrentPrincipalOverride = (*accountService)(nil)
+
+func (s *accountService) GetCurrentPrincipal(
+	ctx context.Context,
+	req *v1beta.GetCurrentPrincipalRequest,
+) (*v1beta.GetCurrentPrincipalResponse, error) {
+	if strings.TrimSpace(req.GetSubscriptionId()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "subscription id is required")
+	}
+
+	principalType, err := s.principalTypeProvider.CurrentPrincipalType(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var protoType v1beta.PrincipalType
+	switch principalType {
+	case auth.UserPrincipalType:
+		protoType = v1beta.PrincipalType_PRINCIPAL_TYPE_USER
+	case auth.ServicePrincipalType:
+		protoType = v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL
+	default:
+		return nil, status.Error(codes.Internal, "unsupported current principal type")
+	}
+
+	subscription, err := s.subscriptionsManager.GetSubscription(ctx, req.SubscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("getting subscription %s: %w", req.SubscriptionId, err)
+	}
+
+	// Role assignments need the object ID in the resource tenant, even when access uses another tenant.
+	objectID, err := azureutil.GetCurrentPrincipalId(ctx, s.userProfileService, subscription.TenantId)
+	if err != nil {
+		return nil, fmt.Errorf("fetching current principal information: %w", err)
+	}
+
+	return &v1beta.GetCurrentPrincipalResponse{
+		ObjectId:      objectID,
+		PrincipalType: protoType,
+	}, nil
 }
 
 func (s *accountService) ListSubscriptions(

@@ -37,6 +37,11 @@ func newEvalShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Show an eval definition, run history, or run details.
 
 If eval-id is omitted, the most recent eval from the current environment is used.`,
+		Example: `  # Show the most recent evaluation in the current environment
+  azd ai agent eval show
+
+  # Show a specific evaluation
+  azd ai agent eval show <eval-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

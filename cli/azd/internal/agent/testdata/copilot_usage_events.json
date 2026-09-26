@@ -1,0 +1,74 @@
+[
+    {
+        "type": "assistant.turn_start",
+        "data": {}
+    },
+    {
+        "type": "assistant.usage",
+        "data": {
+            "inputTokens": 9969,
+            "outputTokens": 3,
+            "copilotUsage": {
+                "totalNanoAiu": 2495150000
+            }
+        }
+    },
+    {
+        "type": "assistant.message",
+        "data": {}
+    },
+    {
+        "type": "assistant.turn_end",
+        "data": {}
+    },
+    {
+        "type": "session.usage_checkpoint",
+        "data": {
+            "totalNanoAiu": 2495150000
+        }
+    },
+    {
+        "type": "assistant.idle",
+        "data": {}
+    },
+    {
+        "type": "session.idle",
+        "data": {}
+    },
+    {
+        "type": "assistant.turn_start",
+        "data": {}
+    },
+    {
+        "type": "assistant.usage",
+        "data": {
+            "inputTokens": 10084,
+            "outputTokens": 3,
+            "copilotUsage": {
+                "totalNanoAiu": 231490000
+            }
+        }
+    },
+    {
+        "type": "assistant.message",
+        "data": {}
+    },
+    {
+        "type": "assistant.turn_end",
+        "data": {}
+    },
+    {
+        "type": "session.usage_checkpoint",
+        "data": {
+            "totalNanoAiu": 2726640000
+        }
+    },
+    {
+        "type": "assistant.idle",
+        "data": {}
+    },
+    {
+        "type": "session.idle",
+        "data": {}
+    }
+]

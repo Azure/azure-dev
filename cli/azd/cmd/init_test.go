@@ -1952,3 +1952,84 @@ func Test_SelectDistinctExtension_NoPrompt(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "found in multiple sources")
 }
+
+func TestInitializeExtensionsPromotesDependencyInstalledExtension(t *testing.T) {
+	const registryURL = "https://test.example.com/init-registry.json"
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager, _ := createUpgradeTestManager(
+		t,
+		mockCtx,
+		map[string]*extensions.Extension{
+			"test.pack": {
+				Id:           "test.pack",
+				Version:      "1.0.0",
+				Source:       "test",
+				Dependencies: []extensions.ExtensionDependency{{Id: "test.child"}},
+			},
+			"test.child": {
+				Id:                    "test.child",
+				Version:               "1.0.0",
+				Source:                "test",
+				InstalledAsDependency: true,
+			},
+		},
+		registryURL,
+		extensions.Registry{SchemaVersion: extensions.CurrentRegistrySchemaVersion},
+	)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{
+		Name: "test-project",
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{"test.child": nil},
+		},
+	}, azdCtx.ProjectPath()))
+	action := &initAction{
+		console:           mockCtx.Console,
+		extensionsManager: manager,
+		flags:             &initFlags{global: &internal.GlobalCommandOptions{}},
+	}
+
+	// The project names test.child directly, so the record a pack pulled in becomes explicit.
+	require.NoError(t, action.initializeExtensions(t.Context(), azdCtx))
+	child, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.False(t, child.InstalledAsDependency)
+}
+
+func TestInitializeExtensionsReturnsInstalledConfigError(t *testing.T) {
+	const registryURL = "https://test.example.com/init-registry.json"
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	cfg := config.NewEmptyConfig()
+	require.NoError(t, cfg.Set("extension.installed", "invalid"))
+	mockCtx.ConfigManager.WithConfig(cfg)
+
+	manager, _ := createUpgradeTestManager(
+		t,
+		mockCtx,
+		nil,
+		registryURL,
+		extensions.Registry{SchemaVersion: extensions.CurrentRegistrySchemaVersion},
+	)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{
+		Name: "test-project",
+		RequiredVersions: &project.RequiredVersions{
+			Extensions: map[string]*string{"test.extension": nil},
+		},
+	}, azdCtx.ProjectPath()))
+	action := &initAction{
+		console:           mockCtx.Console,
+		extensionsManager: manager,
+		flags:             &initFlags{global: &internal.GlobalCommandOptions{}},
+	}
+
+	err := action.initializeExtensions(t.Context(), azdCtx)
+	require.ErrorContains(t, err, "checking installed extension test.extension")
+	require.ErrorContains(t, err, "failed to get extensions section")
+	require.Equal(t, []mockinput.SpinnerOp{
+		{Op: mockinput.SpinnerOpShow, Message: "Installing test.extension", Format: input.Step},
+		{Op: mockinput.SpinnerOpStop, Message: "Installing test.extension", Format: input.StepFailed},
+	}, mockCtx.Console.SpinnerOps())
+}

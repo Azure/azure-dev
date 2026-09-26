@@ -18,6 +18,7 @@ OpenTelemetry span name or event name.
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
 | `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
+| `ExtensionUninstallEvent` | `ext.uninstall` | Single extension uninstall attempt, by name or as a no-longer-required dependency |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
@@ -43,8 +44,10 @@ OpenTelemetry span name or event name.
 
 ## Fields
 
-Fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has a classification
-and purpose that governs how it may be stored, queried, and retained.
+Core fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has a classification
+and purpose that governs how it may be stored, queried, and retained. First-party extension usage
+fields are declared separately in `cli/azd/extensions/telemetry/fields.go` and are documented under
+[Extension-contributed usage attributes](#extension-contributed-usage-attributes).
 
 ### Application-Level (Resource Attributes)
 
@@ -68,11 +71,11 @@ Application Insights queue, `--trace-log-file`, or `--trace-log-url`. Span attri
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
 
 The canonical resource also includes the OpenTelemetry SDK's standard metadata. These keys are SDK-managed rather
-than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect the existing completed
-GDPR data-catalog entries rather than metadata declared in source:
+than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect reviewed telemetry
+metadata rather than declarations in the azd source:
 
-| Field | OTel Key | Catalog Classification | Catalog Purpose | Notes |
-|-------|----------|------------------------|-----------------|-------|
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
 | SDK name | `telemetry.sdk.name` | SystemMetadata | PerformanceAndHealth | Always `opentelemetry` |
 | SDK language | `telemetry.sdk.language` | SystemMetadata | PerformanceAndHealth | Always `go` |
 | SDK version | `telemetry.sdk.version` | SystemMetadata | PerformanceAndHealth | OpenTelemetry Go SDK version |
@@ -89,7 +92,9 @@ GDPR data-catalog entries rather than metadata declared in source:
 - CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
   `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
   `TeamCity`, `JetBrains Space`.
-- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`.
+- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`, `agency` (in this order).
+
+`agency` indicates a non-empty `AGENCY_SESSION_ID` environment variable. It is additive to the primary environment, including Copilot attribution, and does not depend on agent detection being enabled. Only the fixed enum value is emitted; the session ID is not emitted or hashed. The existing `SystemMetadata` classification and `BusinessInsight` purpose are unchanged.
 
 ### Experimentation
 
@@ -269,38 +274,63 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 
 #### Extension-contributed usage attributes
 
-Extensions do not have individual fields listed in this document. An extension
-reports a named event with an arbitrary attribute map, and `azd` records it on
-an `ext.usage` span alongside `extension.id`, `extension.version`,
+An extension reports a named event with an attribute map, and `azd` records it
+on an `ext.usage` span alongside `extension.id`, `extension.version`,
 `extension.source`, and `extension.event`. Failed extension commands use
-`extension.id` and `extension.version` on the failed `ext.run` span, but do
-not set `extension.event` or create an `ext.usage` span. Failed lifecycle
-hooks use the enclosing `cmd.*` span and include the extension ID, version,
-and lifecycle event.
+`extension.id` and `extension.version` on the failed `ext.run` span, but do not
+set `extension.event` or create an `ext.usage` span. Failed lifecycle hooks use
+the enclosing `cmd.*` span and include the extension ID, version, and lifecycle
+event.
 
-`azd` core carries no product-specific telemetry semantics for these fields.
-The following rules are enforced by the host and are what this schema
-guarantees about the whole class:
+First-party fields are declared as exported `AttributeKey` variables in
+`cli/azd/extensions/telemetry/fields.go`. Declarations are keyed by final OTel
+field name and may be reused by multiple first-party extensions when the
+meaning, allowed values, classification, and purpose are identical. The
+extension column lists the current emitter, not an exclusive owner. The current
+declarations are:
+
+| Current extension | OTel Key | Classification | Purpose | Endpoint | Hashed | Measurement | Allowed values / event |
+|-----------|----------|----------------|---------|----------|--------|-------------|------------------------|
+| `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | `sample` on `demo.telemetry.reported` |
+| `microsoft.azd.demo` | `ext.demo.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `completed` on `demo.telemetry.reported` |
+| `azure.ai.agents` | `ext.agent.kind` | SystemMetadata | FeatureInsight | `N/A` | No | No | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.harness` | SystemMetadata | FeatureInsight | `N/A` | No | No | `none`, `github_copilot_preview`, or `other` on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | Fixed extension command path on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
+| `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
+| `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
+| `azure.ai.dataset` | `ext.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | `create`, `update`, or `unknown` on `dataset.published` |
+| `azure.ai.evaluations` | `ext.source` | SystemMetadata | FeatureInsight | `N/A` | No | No | `traces`, `dataset`, or `unknown` on `init.completed` |
+
+These fields share a classification because their reviewed values are bounded
+product enums. `SystemMetadata` and `FeatureInsight` are not defaults for an
+unknown or future `ext.*` field.
+
+The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
-| Eligibility | Only extensions whose configured `azd` source matches the verified official registry name, type, and normalized URL produce `ext.usage` spans. A call from any other source succeeds but is dropped without recording |
+| Eligibility | Only eligible official-registry installations produce `ext.usage` spans; other installations receive a normal response without recording an event |
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
 | Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
-| Classification | Always `SystemMetadata` |
-| Purpose | Always `FeatureInsight` |
-| Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
-| Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
+| Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |
+| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically |
+| Identity | The host supplies extension identity and source context; the request cannot override those fields |
+| Repository validation | `go test ./extensions/telemetry` rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications before release |
+| Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
 
 Reviewed first-party event contracts:
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
+| `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
+| `azure.ai.evaluations` | `init.completed` | `azd ai eval init` has written an eval scaffold to disk; one event per successful init | `ext.source`: fixed enum `traces`, `dataset`, or `unknown`, where `unknown` absorbs an unrecognized source so the attribute cannot widen into an open set; carries no eval names, dataset identifiers, paths, or trace content |
+| `azure.ai.dataset` | `dataset.published` | `azd ai dataset create` or `azd ai dataset update` has registered a dataset version; one event per successful publish | `ext.operation`: fixed enum `create`, `update`, or `unknown`, where `unknown` absorbs an unrecognized verb so the attribute cannot widen into an open set; carries no dataset names, versions, row content, or file paths |
 
 Because `ext.usage` spans share the command's trace, they join the originating
 command in Kusto on `operation_Id`. See
@@ -311,13 +341,9 @@ for the author-facing rules.
 
 #### What this class does and does not guarantee
 
-The installed extension identity and source information originate from local
-`azd` configuration. Eligibility is determined from the verified install
-source and is not a cryptographic provenance guarantee.
-
-When governing this data, treat `(extension.id, extension.version, key)` as
-the authoritative filter rather than assuming the client enforced the reviewed
-set on its own.
+The source inventory is not a runtime allowlist. When governing this data,
+treat `(extension.id, extension.version, key)` as the authoritative filter
+rather than assuming the client enforced the reviewed set on its own.
 
 ### Update
 
@@ -354,8 +380,7 @@ set on its own.
 | Model | `copilot.message.model` | SystemMetadata | FeatureInsight | |
 | Input tokens | `copilot.message.inputTokens` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 | Output tokens | `copilot.message.outputTokens` | SystemMetadata | PerformanceAndHealth | **Measurement** |
-| Billing rate | `copilot.message.billingRate` | SystemMetadata | BusinessInsight | **Measurement** |
-| Premium requests | `copilot.message.premiumRequests` | SystemMetadata | BusinessInsight | **Measurement** |
+| AI credits | `copilot.message.aiCredits` | SystemMetadata | BusinessInsight | **Measurement** |
 | Duration (ms) | `copilot.message.durationMs` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Copilot Consent
@@ -544,41 +569,44 @@ Fields that are hashed:
 5. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
 6. **Analysis**: Data flows into Kusto tables for dashboards and analysis via LENS jobs and cooked tables.
 
-## GDPR Data-Catalog Classification
+## Telemetry Metadata Declarations
 
-Runtime emission (above) is separate from **classification**. The GDPR data catalog is kept in
-sync by an external metadata tool that **statically scans the telemetry source** — it does not read this document or observe live telemetry, so it can only classify a property that is declared where the scan looks: an exported `fields.AttributeKey`. A raw `attribute.String("my.key", v)` at a call site is invisible to the scan, so its catalog row stays **Unclassified / `Complete=false`**. This is enforced in-repo by `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`).
+Runtime emission is separate from telemetry metadata. Repository tooling reads
+explicit field and event declarations rather than inferring metadata from
+arbitrary instrumentation calls. Raw attribute keys bypass that declaration
+contract and are rejected by `TestNoRawTelemetryAttributes`
+(`cli/azd/cmd/telemetry_test.go`).
 
-### Field (attribute) discovery contract
+### Field declaration contract
 
-For a field to be discovered and classified it must be:
+For a field to participate in telemetry metadata it must be:
 
 - an **exported**, **package-level** `var` (not a `const`, not function-local, not unexported), and
 - typed exactly **`AttributeKey`** (the struct declared in `fields.go`).
 
-The scanner reads these `AttributeKey` members:
+Repository tooling uses these `AttributeKey` members:
 
-| `AttributeKey` member | What the classifier reads |
-|-----------------------|---------------------------|
+| `AttributeKey` member | Metadata |
+|-----------------------|----------|
 | `Key` | The dotted OTel key (a string literal, `attribute.Key("…")`, or a string const). |
 | `Classification` | One of the six [Data Classifications](#data-classifications). |
 | `Purpose` | One or more [Purposes](#purposes). |
-| `Endpoint` | Optional identifier-type tag; set only when the value is a known endpoint identifier. |
+| `Endpoint` | Identifier-handling metadata required by the selected classification. |
 | `IsMeasurement` | `true` for numeric values (routed to the Measurements column); `false` (default) for Properties. |
 
-`Classification` and `Purpose` must be written as **bare identifiers from the `fields` package**
-(e.g. `Classification: SystemMetadata`) — the scanner reads the identifier name, so a qualified
-`fields.SystemMetadata` reference from another package would not be recognized. Keep all
-`AttributeKey` definitions inside the `fields` package. Fields are registered as **common
-properties** that apply across events (the scan does not tie an attribute to a specific event).
+Core field declarations live in `internal/tracing/fields`. First-party
+extension declarations live in `extensions/telemetry/fields.go` and use the
+same `AttributeKey` metadata model. Follow the declaration style in the owning
+package; repository tests enforce the supported source forms. Field
+declarations apply across events and are not tied to a single event.
 
-### Event discovery contract
+### Event declaration contract
 
-For an event to be discovered its constant must be:
+For an event to participate in telemetry metadata its constant must be:
 
 - an **exported** `const` with a **string** value in the `events` package, and
 - named with a Go identifier that **contains the substring `Event`** (e.g. `PackBuildEvent`). A
-  constant whose identifier omits `Event` is silently skipped even if it is emitted at runtime.
+  constant whose identifier omits `Event` is not included in repository metadata.
 
 An identifier that **ends with `Prefix`** (e.g. `CommandEventPrefix`) registers a **prefix group**:
 any emitted event name starting with that prefix is classified under it. Every other event constant

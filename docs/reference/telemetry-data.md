@@ -75,8 +75,11 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `ext.run` | Extension command execution |
 | `ext.install` | Extension installation |
 | `ext.update` | Extension update attempt |
+| `ext.uninstall` | Single extension uninstall attempt, by name or as a no-longer-required dependency |
 | `ext.promote` | Registry promotion (e.g., dev → main) |
 | `ext.usage` | Usage event reported by an extension through the telemetry service (official-registry extensions only) |
+
+`ext.uninstall` intentionally combines requested removals and automatic unused-dependency cleanup. No event field distinguishes these cases. Internal removals during updates do not emit this event.
 
 ### Agent & Copilot Events
 
@@ -474,8 +477,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `copilot.message.model` | string | Model for specific message |
 | `copilot.message.inputTokens` | measurement | Input token count |
 | `copilot.message.outputTokens` | measurement | Output token count |
-| `copilot.message.billingRate` | measurement | Billing rate |
-| `copilot.message.premiumRequests` | measurement | Premium request count |
+| `copilot.message.aiCredits` | measurement | AI credits consumed during the session |
 | `copilot.message.durationMs` | measurement | Message duration |
 | `copilot.consent.approvedCount` | measurement | Approved consent actions |
 | `copilot.consent.deniedCount` | measurement | Denied consent actions |
@@ -490,19 +492,23 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
-| `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
+| `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. First-party concrete keys are declared in `cli/azd/extensions/telemetry/fields.go` |
+| `ext.demo.mode` | string | Demo telemetry mode: currently `sample` (`demo.telemetry.reported`) |
+| `ext.demo.outcome` | string | Demo telemetry outcome: currently `completed` (`demo.telemetry.reported`) |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
 | `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, or `other` (`agent.context.resolved`) |
 | `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
+| `ext.source` | string | Rows a scaffolded eval will grade, reported by `azure.ai.evaluations`: `traces`, `dataset`, or `unknown` (`init.completed`). Extension-chosen, and unrelated to the host-owned `extension.source` below |
+| `ext.operation` | string | Write that published a dataset version, reported by `azure.ai.dataset`: `create`, `update`, or `unknown` (`dataset.published`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
 | `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
 | `extension.version.to` | string | Version after an update or promotion (`ext.update`, `ext.promote`) |
 | `extension.source` | string | Registry source used for an update and admission check for `ext.usage` |
-| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.update`, `azd extension source add`) |
+| `extension.source.category` | string | Fixed source category: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, or `unknown` (`ext.install`, `ext.update`, `ext.uninstall`, `azd extension source add`) |
 | `extension.source.kind` | string | Kind of `--source` argument: `none`, `registered`, or `location` (`azd extension list`, `show`, `install`, `update`) |
 | `extension.source.category.from` | string | Fixed source category before a promotion (`ext.promote`) |
 | `extension.source.category.to` | string | Fixed source category after a promotion (`ext.promote`) |
@@ -512,31 +518,37 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.dependency_update_count` | measurement | Number of dependency extensions updated recursively (`ext.update`) |
 
 Each `ext.usage` span contains `extension.id`, `extension.version`,
-`extension.source`, `extension.event`, and any number of dynamic `ext.*`
+`extension.source`, `extension.event`, and up to 32 dynamic `ext.*`
 fields. The host writes the identity fields and applies the `ext.` prefix; the
 extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
 the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
 hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
-enclosing `cmd.*` span. The whole class is classified as `SystemMetadata` for
-`FeatureInsight`. Extension authors are responsible
-for keeping usage values low cardinality and free of customer content, and for
-having them privacy reviewed with their extension.
+enclosing `cmd.*` span.
 
-Only extensions whose configured `azd` source matches the verified official
-registry name, type, and normalized URL produce these spans, which is what ties
-the recorded values to that privacy review. A report from any other install
-source succeeds but records nothing, as does any report past the limit of 100
-spans per `azd` invocation. This is a configuration-based admission check, not
-a cryptographic provenance guarantee.
+Each concrete first-party field has its own classification, purpose, and
+endpoint declaration. The currently declared fields are bounded enums
+classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
+is a decision about those fields, not a default for the whole `ext.*` class.
+Repository validation blocks undeclared or dynamically keyed
+attributes before release. Extension authors remain responsible for keeping
+values low cardinality and free of customer content, and for having them
+privacy reviewed with their extension.
+
+Only eligible official-registry installations produce these spans. Other
+installations receive a normal response without recording an event, as does
+any report past the limit of 100 spans per `azd` invocation.
 
 Reviewed first-party extension usage events currently include:
 
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; no agent names or customer content |
+| `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
+| `azure.ai.evaluations` | `init.completed` | `azd ai eval init` writes an eval scaffold to disk; one event per successful init | `ext.source`: `traces`, `dataset`, or `unknown`; no eval names, dataset identifiers, paths, or trace content |
+| `azure.ai.dataset` | `dataset.published` | `azd ai dataset create` or `azd ai dataset update` registers a dataset version; one event per successful publish | `ext.operation`: `create`, `update`, or `unknown`; no dataset names, versions, row content, or file paths |
 
 Source-category fields are classified from the configured source type and location, not the user-defined source name.
 Raw source names, URLs, paths, and hosts are not emitted in those fields.
@@ -683,7 +695,9 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Codespaces` | GitHub Codespaces |
 | Other CI systems | `UnknownCI`, `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `TeamCity`, `JetBrains Space` |
 
-**Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
+**Modifiers:** `Azure App Spaces Portal`, `Microsoft Foundry Skill`, and `agency` may be appended as modifiers (`;` separated), in that order.
+
+The `agency` modifier is appended when `AGENCY_SESSION_ID` is non-empty, including when other agent markers are present. For example, Agency with Copilot CLI reports `GitHub Copilot CLI;agency`. Empty or unset values have no effect. Only the fixed modifier is emitted, never the session ID. Agency attribution does not change the primary-environment precedence or prompting behavior and is independent of `AZD_DISABLE_AGENT_DETECT`.
 
 ## Data Nuances & Gotchas
 
@@ -837,7 +851,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command and lifecycle-hook errors, usage events, and remaining legacy gRPC bridge use |
+| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command and lifecycle-hook errors, usage events, and remaining legacy gRPC bridge use |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

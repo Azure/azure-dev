@@ -681,8 +681,17 @@ func (r *evalReconciler) EnsureEvaluator(
 		known = existing
 	}
 
+	// Applied here rather than when body was built: the digest and the
+	// drift comparison are taken from the authored definition, and
+	// folding catalog metadata in earlier would make every existing
+	// evaluator look edited and publish a version nobody asked for.
+	published, err := withCatalogMetadata(body, decl)
+	if err != nil {
+		return "", false, messages.EvaluatorProblem(decl.Name, err)
+	}
+
 	created, err := r.ec.evalClient.CreateEvaluatorVersion(
-		ctx, decl.Name, body, known, ProjectEndpointAPIVersion,
+		ctx, decl.Name, published, known, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return "", false, err

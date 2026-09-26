@@ -44,6 +44,8 @@ from the last invoke session, or can be overridden with --session-id.
 
 For agents configured with header-based isolation, pass --user-identity
 on each file operation.`,
+		Example: `  # List files in the current hosted agent session
+  azd ai agent files list`,
 	}
 
 	cmd.AddCommand(newFilesUploadCommand(extCtx))

@@ -99,6 +99,8 @@ func keysOfType(goType string) []string {
 		v = Target{}
 	case "project.SourceDecl":
 		v = SourceDecl{}
+	case "project.Simulation", "project.simulationYAML":
+		v = Simulation{}
 	case "evalcore.EvaluatorRef":
 		v = evalcore.EvaluatorRef{}
 	default:

@@ -1,6 +1,6 @@
 # Preflight Checks Reference
 
-The `mage preflight` command runs these 9 checks in order. Each check, its
+The `go tool mage preflight` command runs the following checks in order. Each check, its
 purpose, and the automated fix strategy are listed below.
 
 ## 1. Formatting (`gofmt`)
@@ -49,7 +49,14 @@ typos, fix the spelling in source code.
 **Auto-fix**: Fix typos. Add legitimate terms to file-scoped `overrides` entries in
 `.vscode/cspell.misc.yaml`.
 
-## 7. Build (`go build`)
+## 7. JSON Schema Formatting (`schema:check`)
+
+**Command**: `go tool mage schema:check` (from `cli/azd/`)
+**Passes when**: Every `.json` file below the repository's `schemas/` directory
+uses four-space indentation and one trailing newline.
+**Auto-fix**: `go tool mage schema:format`
+
+## 8. Build (`go build`)
 
 **Command**: `go build ./...` (from `cli/azd/`)
 **Passes when**: Compilation succeeds with zero errors.
@@ -59,14 +66,14 @@ typos, fix the spelling in source code.
 - Undefined symbols
 - Syntax errors
 
-## 8. Unit Tests (`go test -short`)
+## 9. Unit Tests (`go test -short`)
 
 **Command**: `go test ./... -short -cover -count=1` (from `cli/azd/`)
 **Passes when**: All tests pass.
 **Auto-fix**: Analyze test failures and fix the root cause in source code or
 tests. Do NOT skip or delete failing tests — fix them.
 
-## 9. Playback Tests (Functional)
+## 10. Playback Tests (Functional)
 
 **Command**: Discovers test recordings in `test/functional/testdata/recordings/`
 and runs matching functional tests with `AZURE_RECORD_MODE=playback`.
@@ -96,8 +103,10 @@ resolved owning config.
 Before running preflight, these tools must be installed:
 
 - **Go** (version matching `cli/azd/go.mod`)
-- **golangci-lint**: `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4`
+- **golangci-lint**: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4`
 - **cspell**: `npm install -g cspell@8.13.1`
 - **GitHub CLI (`gh`)**: install from https://cli.github.com/
 - **bash or sh**: On Windows, Git for Windows provides this
-- **mage**: `go install github.com/magefile/mage@latest`
+
+Mage is declared as a tool in `cli/azd/go.mod`; `go tool mage` downloads the pinned
+version when needed.

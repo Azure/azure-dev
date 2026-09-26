@@ -83,3 +83,9 @@ type ServiceDeployResult struct {
 	Artifacts ArtifactCollection `json:"artifacts"`
 	Warnings  []string           `json:"warnings,omitempty"`
 }
+
+// ServiceDeployPreviewResult is the result of a successful deployment preview.
+type ServiceDeployPreviewResult struct {
+	Message string         `json:"message,omitempty"`
+	Data    map[string]any `json:"data,omitempty"`
+}

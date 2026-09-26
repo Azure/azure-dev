@@ -138,6 +138,77 @@ func TestARowCapDoesNotCostAnEvalItsRunHistory(t *testing.T) {
 	assert.NotEqual(t, before, forked, "a different dataset is a different eval")
 }
 
+// simulation: settings ride in the run's data source, so turning up the number
+// of conversations or the turn budget changes nothing the service stores on the
+// eval. Treating them as part of the definition would recreate an immutable
+// eval at a new id on every tuning pass and strand each earlier run behind the
+// id it was taken under.
+func TestTuningASimulationDoesNotCostAnEvalItsRunHistory(t *testing.T) {
+	simulated := func(model string, conversations, turns int) Eval {
+		return Eval{
+			Name:            "quality",
+			Dataset:         "seeds",
+			EvaluationLevel: "conversation",
+			Target:          &Target{Type: "agent", Name: "my-agent"},
+			Evaluators:      evalcore.EvaluatorList{{Evaluator: "builtin.task_completion"}},
+			Simulation: &Simulation{
+				Model:            model,
+				NumConversations: conversations,
+				MaxTurns:         turns,
+			},
+		}
+	}
+
+	base, err := FingerprintDefinition(simulated("gpt-4o", 2, 4))
+	require.NoError(t, err)
+
+	for _, tuned := range []struct {
+		name string
+		eval Eval
+	}{
+		{"a different simulator model", simulated("gpt-4o-mini", 2, 4)},
+		{"more conversations", simulated("gpt-4o", 5, 4)},
+		{"a longer turn budget", simulated("gpt-4o", 2, 20)},
+	} {
+		t.Run(tuned.name, func(t *testing.T) {
+			after, err := FingerprintDefinition(tuned.eval)
+			require.NoError(t, err)
+			assert.Equal(t, base, after, "the eval the service holds did not change")
+		})
+	}
+
+	// Presence is not a run-time setting. It decides whether the stored item
+	// schema describes conversations or turn rows, so adding or removing the
+	// block is a different eval and has to fork.
+	turnLevel := simulated("gpt-4o", 2, 4)
+	turnLevel.Simulation = nil
+	plain, err := FingerprintDefinition(turnLevel)
+	require.NoError(t, err)
+	assert.NotEqual(t, base, plain, "a simulation describes a different stored dataset")
+}
+
+// Normalizing the simulation must not reach back into the caller's eval. The
+// reconciler fingerprints a group it is still about to deploy, and a scrubbed
+// model or turn count would deploy a simulation the project never declared.
+func TestFingerprintingLeavesTheCallersSimulationIntact(t *testing.T) {
+	group := Eval{
+		Name:            "quality",
+		Dataset:         "seeds",
+		EvaluationLevel: "conversation",
+		Target:          &Target{Type: "agent", Name: "my-agent"},
+		Evaluators:      evalcore.EvaluatorList{{Evaluator: "builtin.task_completion"}},
+		Simulation:      &Simulation{Model: "gpt-4o", NumConversations: 3, MaxTurns: 6},
+	}
+
+	_, err := FingerprintDefinition(group)
+	require.NoError(t, err)
+
+	require.NotNil(t, group.Simulation)
+	assert.Equal(t, "gpt-4o", group.Simulation.Model)
+	assert.Equal(t, 3, group.Simulation.NumConversations)
+	assert.Equal(t, 6, group.Simulation.MaxTurns)
+}
+
 // The identity digest is the other half, and it must keep them: it is also the
 // key a rename looks the eval up by, so two declarations differing only in
 // their window would share it -- the second would adopt the first one's id,

@@ -1,0 +1,25 @@
+Stop a running hosted agent session.
+
+Terminates the session's running compute while preserving its persistent
+filesystem volume. Unlike 'delete', the session is retained and can be
+resumed by a subsequent invocation. Returns once the session is stopped.
+Stopping a session that is already stopped succeeds without error.
+
+Usage
+  azd ai agent sessions stop <session-id> [flags]
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for stop
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Stop a session
+    azd ai agent sessions stop my-session

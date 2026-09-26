@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "**/internal/agent/types.go"
+    words:
+      - billionized
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock
@@ -288,6 +291,7 @@ overrides:
       - Chdir
       - creds
       - Moby
+      - postflight
       - upsert
   - filename: docs/proxy-configuration.md
     words:
@@ -539,6 +543,11 @@ overrides:
   - filename: pkg/azdext/contracts_v1_aliases.go
     words:
       - generatefacade
+  - filename: extensions/telemetry/*.go
+    words:
+      - elts
+      - fset
+      - unkeyed
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

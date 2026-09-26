@@ -40,6 +40,7 @@ type InitFromCodeAction struct {
 	// addToProject can disable remote build for VNET-injected accounts
 	// without issuing a second account read.
 	selectedFoundryProject *FoundryProjectInfo
+	newProjectSelected     bool
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
@@ -388,7 +389,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
-			ctx, a.azdClient, a.environment.Name, a.azureContext, false,
+			ctx, a.azdClient, a.environment.Name, a.azureContext,
+			false, false,
 		); err != nil {
 			return nil, err
 		}
@@ -402,6 +404,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, err
 		}
 		a.credential = newCred
+		a.newProjectSelected = true
 	} else {
 		projectChoices := []*azdext.SelectChoice{
 			{Label: "Use an existing Foundry project", Value: "existing"},
@@ -464,6 +467,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
+				a.newProjectSelected = true
 			} else {
 				selectedProject = proj
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
@@ -491,6 +495,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
+			a.newProjectSelected = true
 		}
 	}
 
@@ -872,8 +877,8 @@ func (a *InitFromCodeAction) addToProject(
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	// Move the model deployments out of the agent config into a sibling
-	// azure.ai.project service, emitted after the agent service below.
+	// Keep managed model deployments for the projects workflow. They
+	// are not embedded in the agent service.
 	resourceDeployments := agentConfig.Deployments
 	agentConfig.Deployments = nil
 
@@ -939,20 +944,42 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	// Emit the sibling azure.ai.project service carrying the model deployments
-	// and wire the agent's uses: to it. A selected existing project contributes
-	// its endpoint so provision reuses it instead of creating a new project. The
-	// endpoint itself lives in the azd environment; azure.yaml only references it.
-	endpointRef, err := recordFoundryProjectEnv(
+	if err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
-	)
-	if err != nil {
+	); err != nil {
+		return err
+	}
+	if err := authorSelectedFoundryProject(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		a.selectedFoundryProject,
+		a.projectConfig.GetPath(),
+		func() projectAuthoringMode {
+			if a.newProjectSelected {
+				return projectAuthoringNew
+			}
+			if a.selectedFoundryProject != nil {
+				return projectAuthoringExisting
+			}
+			return projectAuthoringCurrent
+		}(),
+		a.flags.noPrompt,
+	); err != nil {
+		return err
+	}
+	if err := authorFoundryDeploymentsPreservingDefault(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		a.projectConfig.GetPath(),
+		resourceDeployments,
+	); err != nil {
 		return err
 	}
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
-		endpointRef,
-		foundryResources{Deployments: resourceDeployments},
+		foundryResources{},
 	); err != nil {
 		return err
 	}

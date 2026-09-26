@@ -20,7 +20,11 @@ reporter.Report(ctx, telemetry.Event{
 The example is illustrative; this extension does not currently emit a product
 usage event through this interface. Existing provisioning span attributes are
 unchanged by this adapter. Add an event only after its product question, bounded
-values, documentation, and privacy review are agreed.
+values, documentation, and privacy review are agreed. Before emitting, declare each
+`ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
+declaration only when its meaning, allowed values, classification, and purpose are
+identical, otherwise declare a distinct key — as enforced by
+`go test ./extensions/telemetry`.
 
 `Report` has no return value and never changes command or provider behavior. It
 uses a one-second timeout, does not retry, and does not log attribute values or
@@ -121,6 +125,16 @@ guidance instead of searching all subscription regions.
 Use `--force` with an explicit `--project-id` or `--project-endpoint` when
 replacing a different configured project. The command rejects `--force`
 without an explicit target instead of silently ignoring the flag.
+
+Use `--new-project` when a new project must be created even if the workspace
+already has a project endpoint or project ID configured:
+
+```sh
+azd ai project add --new-project
+```
+
+`--new-project` cannot be combined with `--project-id` or
+`--project-endpoint`.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment

@@ -5,9 +5,11 @@ cwd: "/tmp"
 tags: ["tier:0", "cmd:help", "parallel-safe"]
 
 goals:
-  - "Wait for the help output to render (it includes an ASCII-art banner and a 'Usage:' section)."
+  - "Wait for the help output to render (it includes an ASCII-art banner and a 'Usage' section)."
   - "Confirm the 'Available Commands' list includes: code, delete, doctor, endpoint, eval, files, init, invocations, invoke, monitor, optimize, pack, publish, run, sample, sessions, show, version."
   - "Confirm the global flags are listed: --cwd/-C, --debug, --environment/-e, --no-prompt, --output/-o."
+  - "Confirm the Environments & Environment Variables section explains .azure/<environment>/.env, azd env new/select/set/get-values, FOUNDRY_PROJECT_ENDPOINT, AGENT_<SERVICE> deployment values, and the service-level env mapping for runtime settings."
+  - "Compare root, init, and files list help: headings should be consistently bold and underlined, command examples and flags highlighted, and usage paths start with azd ai agent. With NO_COLOR=1, the same content must remain readable without escape sequences."
   - "Confirm the root description mentions hosted and voice agents, and the init, show, and delete command summaries mention voice agents."
   - "Run 'azd ai agent init --help'; confirm --kind and --voice are visible, --kind prompt-voice is demonstrated, and voice settings are described in azure.yaml with azd provision and azd deploy as the deployment workflow."
   - "Confirm init help states --voice is rejected for other init flows and directs existing voice settings to azure.yaml; voice deployment uses azd provision and azd deploy."

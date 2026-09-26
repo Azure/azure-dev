@@ -64,34 +64,33 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Check Copilot availability
+    - name: Reject PRs from forks
       id: copilot
       shell: bash
       env:
         COPILOT_ENABLED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       run: |
-        echo "enabled=$COPILOT_ENABLED" >> "$GITHUB_OUTPUT"
+        if [[ "$COPILOT_ENABLED" != "true" ]]; then
+          echo "::error::Vally evals cannot run for fork pull requests because Copilot request permission is unavailable."
+          exit 1
+        fi
 
     - name: Set up Node.js
-      if: steps.copilot.outputs.enabled == 'true'
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: ${{ inputs.node-version }}
 
     - name: Set up Go
-      if: steps.copilot.outputs.enabled == 'true'
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: ${{ inputs.working-directory }}/go.mod
 
     - name: Test report generator
-      if: steps.copilot.outputs.enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: go test ./...
 
     - name: Install eval dependencies
-      if: steps.copilot.outputs.enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: npm ci
@@ -99,7 +98,7 @@ runs:
     # Keep installed extensions and auth state in a job-local dir so a run never
     # touches or depends on persistent runner state.
     - name: Configure azd environment
-      if: steps.copilot.outputs.enabled == 'true' && (inputs.install-azd == 'true' || inputs.azd-extensions != '')
+      if: inputs.install-azd == 'true' || inputs.azd-extensions != ''
       shell: bash
       run: |
         azd_config_dir="$RUNNER_TEMP/azd-config"
@@ -111,14 +110,14 @@ runs:
         } >> "$GITHUB_ENV"
 
     - name: Install azd
-      if: steps.copilot.outputs.enabled == 'true' && (inputs.install-azd == 'true' || inputs.azd-extensions != '')
+      if: inputs.install-azd == 'true' || inputs.azd-extensions != ''
       shell: bash
       run: |
         curl -fsSL https://aka.ms/install-azd.sh | bash
         azd version
 
     - name: Install azd extensions
-      if: steps.copilot.outputs.enabled == 'true' && inputs.azd-extensions != ''
+      if: inputs.azd-extensions != ''
       shell: bash
       env:
         AZD_EXTENSIONS: ${{ inputs.azd-extensions }}
@@ -138,7 +137,7 @@ runs:
         azd extension list --installed
 
     - name: Fetch external skills
-      if: steps.copilot.outputs.enabled == 'true' && inputs.fetch-skills == 'true'
+      if: inputs.fetch-skills == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
@@ -147,7 +146,6 @@ runs:
 
     - name: Run vally eval
       id: run
-      if: steps.copilot.outputs.enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -163,18 +161,28 @@ runs:
         set -e
         echo "vally-exit-code=$exit_code" >> "$GITHUB_OUTPUT"
 
-        # vally always writes results into a single timestamped subdirectory of
+        # vally writes results into a single timestamped subdirectory of
         # vally-results/. There's only a single run here, so we'll resolve it once
         # and export that value as 'vally-run-dir'.
         #
-        run_dir=$(find vally-results -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n1)
-        run_dir=${run_dir:-vally-results}
-        echo "vally-run-dir=$(pwd)/$run_dir" >> "$GITHUB_OUTPUT"
+        run_dir=""
+        if [[ -d vally-results ]]; then
+          run_dir=$(find "$PWD/vally-results" -mindepth 1 -maxdepth 1 -type d | sort | tail -n1)
+        fi
+        if [[ -z "$run_dir" ]]; then
+          echo "::error::Vally did not produce a run directory under vally-results."
+          if [[ "$exit_code" -eq 0 ]]; then
+            exit_code=1
+          fi
+        else
+          echo "vally-run-dir=$run_dir" >> "$GITHUB_OUTPUT"
+        fi
+        exit "$exit_code"
 
     # The skill tracks another repo's default branch, so record which commit this run
     # saw -- otherwise the results artifact can't be tied back to it.
     - name: Capture skill provenance
-      if: always() && steps.copilot.outputs.enabled == 'true' && inputs.fetch-skills == 'true' && steps.run.outputs.vally-run-dir != ''
+      if: always() && inputs.fetch-skills == 'true' && steps.run.outputs.vally-run-dir != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -185,7 +193,7 @@ runs:
         fi
 
     - name: Generate vally report
-      if: always() && steps.copilot.outputs.enabled == 'true' && steps.run.outputs.vally-run-dir != ''
+      if: always() && steps.run.outputs.vally-run-dir != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -196,7 +204,7 @@ runs:
         fi
 
     - name: Write job summary
-      if: always() && steps.copilot.outputs.enabled == 'true'
+      if: always() && steps.run.outputs.vally-run-dir != ''
       shell: bash
       env:
         VALLY_RUN_DIR: ${{ steps.run.outputs.vally-run-dir }}
@@ -218,32 +226,9 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload vally results
-      if: always() && steps.copilot.outputs.enabled == 'true' && steps.run.outputs.vally-run-dir != ''
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      if: always() && steps.run.outputs.vally-run-dir != ''
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ steps.run.outputs.vally-run-dir }}/**
         if-no-files-found: warn
-
-    - name: Propagate vally result
-      if: always() && steps.copilot.outputs.enabled == 'true'
-      shell: bash
-      env:
-        VALLY_EXIT_CODE: ${{ steps.run.outputs.vally-exit-code }}
-      run: |
-        if [[ -z "$VALLY_EXIT_CODE" ]]; then
-          echo "::error::Vally did not run -- check the preceding setup and test steps."
-          exit 1
-        fi
-
-        if [[ "$VALLY_EXIT_CODE" -ne 0 ]]; then
-          echo "::error::npx vally eval failed with exit code $VALLY_EXIT_CODE -- see the 'Run vally eval' log above."
-          exit 1
-        fi
-
-    - name: Reject PRs from forks
-      if: always() && steps.copilot.outputs.enabled != 'true'
-      shell: bash
-      run: |
-        echo "::error::Vally evals cannot run for fork pull requests because Copilot request permission is unavailable."
-        exit 1

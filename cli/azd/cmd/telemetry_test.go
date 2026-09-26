@@ -25,6 +25,7 @@ import (
 func TestTelemetryEventConstants(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "ext.update", events.ExtensionUpdateEvent)
+	require.Equal(t, "ext.uninstall", events.ExtensionUninstallEvent)
 }
 
 // TestTelemetryFieldConstants verifies that all telemetry field constants added for
@@ -41,6 +42,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
 	t.Run("ResourceFields", func(t *testing.T) {
 		t.Parallel()
+		require.Equal(t, "agency", fields.EnvModifierAgency)
 		tests := []struct {
 			key             fields.AttributeKey
 			expectedName    string
@@ -49,6 +51,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			{fields.ServiceNameKey, "service.name", fields.PerformanceAndHealth},
 			{fields.ServiceVersionKey, "service.version", fields.FeatureInsight},
 			{fields.OSTypeKey, "os.type", fields.FeatureInsight},
+			{fields.ExecutionEnvironmentKey, "execution.environment", fields.BusinessInsight},
 		}
 		for _, tt := range tests {
 			require.Equal(t, tt.expectedName, string(tt.key.Key))
@@ -132,6 +135,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 		measurementFields := []fields.AttributeKey{
 			fields.AgentFixAttempts,
+			fields.CopilotMessageAICredits,
 			fields.ExeGraphDeployConcurrencyKey,
 			fields.ExeGraphMaxConcurrencyKey,
 			fields.ExeGraphPackageConcurrencyKey,
@@ -406,11 +410,9 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //   - Platform-specific files for other operating systems are covered by the
 //     native Linux, Windows, and macOS CI jobs.
 //   - Nested modules (extensions/*, test/evals, test data samples) have their own
-//     go.mod and are not matched by the "./..." pattern. Extension telemetry is
-//     out of scope by design, not merely by mechanics: extensions are separate
-//     modules whose attributes (the "ext.*" namespace) are reviewed together with
-//     the extension that reports them, per docs/specs/metrics-audit/
-//     privacy-review-checklist.md, rather than against the core fields catalog.
+//     go.mod and are not matched by the "./..." pattern. Extension ReportUsage
+//     maps are covered separately by extensions/telemetry/fields_test.go, which
+//     checks their static keys against the extension field registry.
 func TestNoRawTelemetryAttributes(t *testing.T) {
 	// This test loads and type-checks the full module for the host platform.
 	// Keep it serial so it does not compete with the cmd package's parallel tests.
@@ -520,6 +522,10 @@ func isRawAttributeKeyValueType(t types.Type) bool {
 // fieldsPkgPath is the import path of the package that defines the sanctioned
 // classified attribute wrapper, fields.AttributeKey.
 const fieldsPkgPath = "github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+
+// extensionTelemetryFieldsPkgPath is the source registry for concrete ext.*
+// fields emitted by first-party extensions.
+const extensionTelemetryFieldsPkgPath = "github.com/azure/azure-dev/cli/azd/extensions/telemetry"
 
 // baggagePkgPath is the import path of the telemetry baggage package, which
 // legitimately rebuilds caller-supplied attribute.KeyValue structs (re-emitting
@@ -684,17 +690,15 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		return true
 	}
 
-	// sanctionedFieldsKeyLit collects the fields.AttributeKey composite literals in
-	// this file that are legitimate inside the fields package: the exported
-	// package-level var initializers that make up the registry the GDPR classifier
-	// scans, and the literal returned by the ExtensionUsageAttribute factory (the
-	// one sanctioned source of a dynamic key). It is only populated for the fields
-	// package; a function-local or unexported fields.AttributeKey built anywhere
-	// else in that package would carry a key the classifier never discovers while
-	// its sanctioned receiver type would let the method branch accept emissions
-	// through it, so those are flagged.
+	// sanctionedFieldsKeyLit collects the fields.AttributeKey composite literals
+	// that belong to a classifier-visible source registry. Core fields are declared
+	// in internal/tracing/fields; concrete first-party extension fields are declared
+	// in extensions/telemetry. The dynamic ExtensionUsageAttribute factory is also
+	// allowed because it only applies the runtime ext.* namespace.
 	sanctionedFieldsKeyLit := map[ast.Node]bool{}
-	if pkgPath == fieldsPkgPath {
+	isExtensionTelemetryRegistryFile := pkgPath == extensionTelemetryFieldsPkgPath &&
+		filepath.Base(rel) == "fields.go"
+	if pkgPath == fieldsPkgPath || isExtensionTelemetryRegistryFile {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
@@ -713,7 +717,7 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 					}
 				}
 			case *ast.FuncDecl:
-				if d.Name.Name == "ExtensionUsageAttribute" && d.Body != nil {
+				if pkgPath == fieldsPkgPath && d.Name.Name == "ExtensionUsageAttribute" && d.Body != nil {
 					ast.Inspect(d.Body, func(n ast.Node) bool {
 						if cl, ok := n.(*ast.CompositeLit); ok {
 							sanctionedFieldsKeyLit[cl] = true
@@ -751,24 +755,20 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 		case *ast.CompositeLit:
 			pos := fset.Position(node.Pos())
 			clType := info.TypeOf(node)
-			// fields.AttributeKey{...} wrapper construction. Outside the fields
-			// package this always fabricates a key the classifier never sees (it
-			// discovers only the exported package-level AttributeKey vars declared in
-			// the fields package). Inside the fields package it is allowed only for
-			// the registry itself — an exported package-level var initializer — or the
-			// sanctioned dynamic factory ExtensionUsageAttribute; anything else builds
-			// an uncatalogued key whose fields.AttributeKey type would nonetheless let
-			// the method branch below accept emissions through it.
+			// fields.AttributeKey{...} wrapper construction. It is allowed only in
+			// classifier-visible source registries as an exported package-level var,
+			// plus the runtime-only ExtensionUsageAttribute namespace helper.
 			if isFieldsAttributeKeyType(clType) {
-				if pkgPath != fieldsPkgPath {
+				isRegistrySource := pkgPath == fieldsPkgPath || isExtensionTelemetryRegistryFile
+				if !isRegistrySource {
 					violations = append(violations, fmt.Sprintf(
-						"  %s:%d: fields.AttributeKey{...} constructed outside the fields "+
-							"package (its key is not in the classifier catalog; reference a "+
-							"registered fields.* key or fields.ExtensionUsageAttribute)", rel, pos.Line))
+						"  %s:%d: fields.AttributeKey{...} constructed outside a telemetry field "+
+							"registry (its key is not in the classifier catalog; reference a registered "+
+							"field or fields.ExtensionUsageAttribute)", rel, pos.Line))
 				} else if !sanctionedFieldsKeyLit[node] {
 					violations = append(violations, fmt.Sprintf(
-						"  %s:%d: fields.AttributeKey{...} built in the fields package outside an "+
-							"exported package-level var or ExtensionUsageAttribute (the classifier "+
+						"  %s:%d: fields.AttributeKey{...} built in a telemetry field registry outside "+
+							"an exported package-level var or ExtensionUsageAttribute (the classifier "+
 							"discovers only exported package-level keys)", rel, pos.Line))
 				}
 				return true
@@ -869,10 +869,10 @@ func scanFileForRawAttributes(fset *token.FileSet, file *ast.File, info *types.I
 // bare attribute.Key(k) conversion (which does not build a KeyValue), a write to
 // an unrelated Key field, and non-KeyValue uses of a key (e.g. a map lookup) are
 // not. The in-package
-// exemptions — the fields registry vars, ExtensionUsageAttribute, the
+// exemptions — the core field registry vars, ExtensionUsageAttribute, the
 // fields/baggage KeyValue plumbing, and internal/cmd's error.* re-keying — are
-// keyed on package path and so are
-// exercised by the module walk rather than these package-p fixtures. Fixtures are
+// keyed on package path and exercised by the module walk. The extension registry's
+// fields.go boundary is pinned below with package/path overrides. Fixtures are
 // type-checked against the real attribute and fields packages via go/packages, so
 // the guard runs with the same type information it uses on the module.
 func TestRawTelemetryAttributeScanner(t *testing.T) {
@@ -884,6 +884,8 @@ func TestRawTelemetryAttributeScanner(t *testing.T) {
 	cases := []struct {
 		name          string
 		src           string
+		scanPkgPath   string
+		rel           string
 		wantViolation bool
 	}{
 		{
@@ -1200,6 +1202,32 @@ func f() {
 			wantViolation: true,
 		},
 		{
+			name: "exported extension registry field in fields.go",
+			src: `package p
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+var Registered = fields.AttributeKey{Key: attribute.Key("ext.registered")}
+`,
+			scanPkgPath:   extensionTelemetryFieldsPkgPath,
+			rel:           "extensions/telemetry/fields.go",
+			wantViolation: false,
+		},
+		{
+			name: "exported extension field outside fields.go",
+			src: `package p
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+var Rogue = fields.AttributeKey{Key: attribute.Key("ext.rogue")}
+`,
+			scanPkgPath:   extensionTelemetryFieldsPkgPath,
+			rel:           "extensions/telemetry/fields_extra.go",
+			wantViolation: true,
+		},
+		{
 			name: "shadowed classified key across scopes",
 			src: `package p
 import "go.opentelemetry.io/otel/attribute"
@@ -1261,7 +1289,15 @@ var _ = 1
 			if !ok {
 				continue
 			}
-			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, pkg.PkgPath, cases[idx].name)) > 0
+			scanPkgPath := pkg.PkgPath
+			if cases[idx].scanPkgPath != "" {
+				scanPkgPath = cases[idx].scanPkgPath
+			}
+			rel := cases[idx].name
+			if cases[idx].rel != "" {
+				rel = cases[idx].rel
+			}
+			got[idx] = len(scanFileForRawAttributes(pkg.Fset, file, pkg.TypesInfo, scanPkgPath, rel)) > 0
 			checked[idx] = true
 		}
 	}
@@ -1302,21 +1338,22 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"extension show",    // extension.source.kind
 		// extension.source.category
 		"extension source add",
-		"extension update", // extension.source.kind + extension update spans
-		"hooks run",        // hooks.name, hooks.type
-		"infra generate",   // infra.provider
-		"init",             // init.method, appinit.* fields
-		"package",          // (via hooks middleware)
-		"pipeline config",  // pipeline.provider, pipeline.auth
-		"provision",        // infra.provider (resolved provider, via provisioning manager)
-		"restore",          // (via hooks middleware)
-		"tool check",       // tool.check.updates_available
-		"tool install",     // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool show",        // tool.id
-		"tool uninstall",   // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
-		"tool update",      // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
-		"up",               // infra.provider (via provisioning manager; composes provision+deploy)
-		"update",           // update.* fields
+		"extension uninstall", // ext.uninstall span per attempted extension removal
+		"extension update",    // extension.source.kind + extension update spans
+		"hooks run",           // hooks.name, hooks.type
+		"infra generate",      // infra.provider
+		"init",                // init.method, appinit.* fields
+		"package",             // (via hooks middleware)
+		"pipeline config",     // pipeline.provider, pipeline.auth
+		"provision",           // infra.provider (resolved provider, via provisioning manager)
+		"restore",             // (via hooks middleware)
+		"tool check",          // tool.check.updates_available
+		"tool install",        // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool show",           // tool.id
+		"tool uninstall",      // tool.id(s), tool.dry_run, tool.install.* aggregate + per-tool fields
+		"tool update",         // tool.id(s), tool.dry_run, tool.install.* aggregate + tool.update.* versions
+		"up",                  // infra.provider (via provisioning manager; composes provision+deploy)
+		"update",              // update.* fields
 	}
 
 	// Commands that rely ONLY on global middleware telemetry (command name, flags,

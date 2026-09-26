@@ -20,6 +20,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -129,12 +130,6 @@ func (a *OptimizeDeployAction) runDirect(
 		return fmt.Errorf("failed to fetch candidate config: %w", err)
 	}
 
-	// JSON-stringify the candidate config for the env var.
-	configJSON, err := json.Marshal(candidateConfig)
-	if err != nil {
-		return fmt.Errorf("failed to serialize candidate config: %w", err)
-	}
-
 	// Step 2: Fetch current agent from Foundry.
 	fmt.Fprintf(out, "  Fetching current agent definition...\n")
 	agentClient := agent_api.NewAgentClient(projectEndpoint, credential)
@@ -150,53 +145,89 @@ func (a *OptimizeDeployAction) runDirect(
 		return err
 	}
 
-	// Step 3: Merge env vars and create new version.
-	// Use OPTIMIZATION_CONFIG (non-reserved) — the agent SDK reads both
-	// AGENT_OPTIMIZATION_CONFIG (first-party service) and OPTIMIZATION_CONFIG (CLI).
-	// TODO: if the SSL issue is resolved, change to resolved endpoint + candidate ID.
-	envVars := extractEnvVars(latestDef)
-	envVars["OPTIMIZATION_CONFIG"] = string(configJSON)
-
-	newDef := buildDeployDefinition(latestDef, envVars)
-
 	description := fmt.Sprintf("Optimized: candidate %s", a.flags.candidate)
-	createReq := &agent_api.CreateAgentVersionRequest{
-		Description: &description,
-		Metadata:    map[string]string{"optimized_from": a.flags.candidate},
-		Definition:  newDef,
-	}
+	metadata := map[string]string{"optimized_from": a.flags.candidate}
+	var versionObj *agent_api.AgentVersionObject
 
-	fmt.Fprintf(out, "  Creating new agent version...\n")
-	versionObj, err := agentClient.CreateAgentVersion(ctx, agentName, createReq, DefaultAgentAPIVersion)
-	if err != nil {
-		// Check for reserved env var error (AGENT_* and FOUNDRY_* are platform-reserved).
-		if isReservedEnvVarError(err) {
-			return fmt.Errorf("the platform reserves AGENT_* environment variables for internal use.\n\n" +
-				"Deploying optimization candidates for hosted (container) agents requires the\n" +
-				"optimization service to create versions with elevated privileges.\n\n" +
-				"Contact the platform team to promote via the optimization service API")
+	isPromptAgent := stringFromMap(latestDef, "kind") == string(agent_api.AgentKindPrompt)
+	if isPromptAgent {
+		newDef, err := buildPromptDeployDefinition(latestDef, candidateConfig)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("failed to create agent version: %w", err)
+		headers := optimizeDeployAgentHeaders(latestDef, projectEndpoint)
+		fmt.Fprintf(out, "  Creating new prompt agent version...\n")
+		updatedAgent, err := agentClient.UpdateAgentWithHeaders(
+			ctx,
+			agentName,
+			&agent_api.UpdateAgentRequest{
+				Description: &description,
+				Metadata:    metadata,
+				Definition:  newDef,
+			},
+			DefaultAgentAPIVersion,
+			headers,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create prompt agent version: %w", err)
+		}
+		versionObj = &updatedAgent.Versions.Latest
+		if versionObj.Status != "active" {
+			fmt.Fprintf(out, "  Waiting for version %s to become active...\n", versionObj.Version)
+			versionObj, err = pollPromptVersionActive(ctx, agentClient, agentName, headers)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		// Hosted agents select the candidate at runtime through OPTIMIZATION_CONFIG.
+		configJSON, err := json.Marshal(candidateConfig)
+		if err != nil {
+			return fmt.Errorf("failed to serialize candidate config: %w", err)
+		}
+		envVars := extractEnvVars(latestDef)
+		envVars["OPTIMIZATION_CONFIG"] = string(configJSON)
+
+		fmt.Fprintf(out, "  Creating new agent version...\n")
+		versionObj, err = agentClient.CreateAgentVersion(
+			ctx,
+			agentName,
+			&agent_api.CreateAgentVersionRequest{
+				Description: &description,
+				Metadata:    metadata,
+				Definition:  buildDeployDefinition(latestDef, envVars),
+			},
+			DefaultAgentAPIVersion,
+		)
+		if err != nil {
+			// Check for reserved env var error (AGENT_* and FOUNDRY_* are platform-reserved).
+			if isReservedEnvVarError(err) {
+				return fmt.Errorf("the platform reserves AGENT_* environment variables for internal use.\n\n" +
+					"Deploying optimization candidates for hosted (container) agents requires the\n" +
+					"optimization service to create versions with elevated privileges.\n\n" +
+					"Contact the platform team to promote via the optimization service API")
+			}
+			return fmt.Errorf("failed to create agent version: %w", err)
+		}
+
+		fmt.Fprintf(out, "  Waiting for version %s to become active...\n", versionObj.Version)
+		if err := pollVersionActive(ctx, agentClient, agentName, versionObj.Version); err != nil {
+			return err
+		}
 	}
 
-	// Step 4: Poll until version is active.
-	fmt.Fprintf(out, "  Waiting for version %s to become active...\n", versionObj.Version)
-	if err := pollVersionActive(ctx, agentClient, agentName, versionObj.Version); err != nil {
-		return err
-	}
-
-	// Step 5: Report the deployment to the optimization service (best-effort).
-	if err := optClient.ReportDeployment(ctx, jobID, &optimize_api.DeploymentReport{
+	// Step 4: Report the deployment to the optimization service (best-effort).
+	if err := optClient.ReportDeploymentWithHeaders(ctx, jobID, &optimize_api.DeploymentReport{
 		CandidateID:  a.flags.candidate,
 		AgentName:    agentName,
 		AgentVersion: versionObj.Version,
-	}); err != nil {
+	}, optimizationPromotionHeaders(isPromptAgent)); err != nil {
 		// Non-fatal — deployment succeeded, just log the reporting failure.
 		fmt.Fprintf(out, "  %s failed to report deployment to optimization service: %s\n",
 			color.YellowString("warning:"), err)
 	}
 
-	// Step 6: Print success.
+	// Step 5: Print success.
 	fmt.Fprintln(out)
 	_, _ = color.New(color.FgGreen, color.Bold).Fprintf(out,
 		"  \u2713 Successfully deployed candidate %s as version %s\n", a.flags.candidate, versionObj.Version)
@@ -204,6 +235,64 @@ func (a *OptimizeDeployAction) runDirect(
 	fmt.Fprintf(out, "  Version: %s\n", versionObj.Version)
 
 	return nil
+}
+
+func optimizeDeployAgentHeaders(def map[string]any, projectEndpoint string) map[string]string {
+	if stringFromMap(def, "kind") != string(agent_api.AgentKindPrompt) {
+		return nil
+	}
+
+	settings := &projectpkg.PromptAgentSettings{ProjectEndpoint: projectEndpoint}
+	headers := map[string]string{
+		"x-model-endpoint": settings.EffectiveModelEndpoint(),
+	}
+
+	var features []string
+	if harnessTypeFromMap(def) == agent_api.ManagedAgentHarnessGitHubCopilot {
+		features = append(features, agent_api.GitHubCopilotPreviewFeature)
+	}
+	if skills, ok := def["skills"].([]any); ok && len(skills) > 0 {
+		features = append(features, agent_api.SkillsPreviewFeature)
+	}
+	if len(features) > 0 {
+		headers["Foundry-Features"] = strings.Join(features, ",")
+	}
+	return headers
+}
+
+func optimizationPromotionHeaders(reportOnly bool) map[string]string {
+	if !reportOnly {
+		return nil
+	}
+	return map[string]string{
+		optimize_api.PromotionReportOnlyHeader: "true",
+	}
+}
+
+func buildPromptDeployDefinition(
+	currentDef map[string]any,
+	candidateConfig json.RawMessage,
+) (map[string]any, error) {
+	updates, err := promptAgentCandidateValues(candidateConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := json.Marshal(currentDef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy prompt agent definition: %w", err)
+	}
+	var newDef map[string]any
+	if err := json.Unmarshal(data, &newDef); err != nil {
+		return nil, fmt.Errorf("failed to copy prompt agent definition: %w", err)
+	}
+
+	newDef["model"] = updates.model
+	newDef["instructions"] = updates.instructions
+	if err := mergePromptAgentTools(newDef, updates.functionTools); err != nil {
+		return nil, fmt.Errorf("updating prompt agent tools: %w", err)
+	}
+	return newDef, nil
 }
 
 // upsertAgentYamlEnvVar reads the agent.yaml file, adds or updates the specified
@@ -423,6 +512,49 @@ func pollVersionActive(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+func pollPromptVersionActive(
+	ctx context.Context,
+	client *agent_api.AgentClient,
+	agentName string,
+	headers map[string]string,
+) (*agent_api.AgentVersionObject, error) {
+	timeout := 5 * time.Minute
+	interval := 5 * time.Second
+	deadline := time.Now().Add(timeout)
+
+	for {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for prompt agent %q to become active after %s", agentName, timeout)
+		}
+
+		agent, err := client.GetAgentWithHeaders(ctx, agentName, DefaultAgentAPIVersion, headers)
+		if err != nil {
+			return nil, fmt.Errorf("failed to poll prompt agent status: %w", err)
+		}
+		latest := agent.Versions.Latest
+		switch latest.Status {
+		case "active":
+			return &latest, nil
+		case "failed":
+			if latest.Error != nil {
+				return nil, fmt.Errorf(
+					"prompt agent version %s failed to activate: [%s] %s",
+					latest.Version,
+					latest.Error.Code,
+					latest.Error.Message,
+				)
+			}
+			return nil, fmt.Errorf("prompt agent version %s failed to activate", latest.Version)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		case <-time.After(interval):
 		}
 	}

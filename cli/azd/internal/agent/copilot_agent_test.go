@@ -5,6 +5,8 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -20,6 +22,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestMain(m *testing.M) {
+	configDir, err := os.MkdirTemp("", "azd-agent-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZD_CONFIG_DIR", configDir); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no"); err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+	if err := os.RemoveAll(configDir); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to remove temporary azd config directory %q: %v\n", configDir, err)
+	}
+	os.Exit(code)
+}
 
 type fakeCopilotSession struct {
 	handler copilot.SessionEventHandler

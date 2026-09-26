@@ -2236,6 +2236,23 @@ func (m *memUserConfigManager) Save(c config.Config) error {
 	return nil
 }
 
+func (m *memUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	_, err = mutation(ctx, cfg)
+	return err
+}
+
+func (m *memUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return nil
+}
+
 // stubVersionProvider is a tool.LatestVersionProvider that returns a fixed
 // version, so update checks are deterministic and offline.
 type stubVersionProvider struct{ version string }

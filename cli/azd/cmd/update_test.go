@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -89,7 +90,7 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		}
 
 		cfg := config.NewEmptyConfig()
-		err := action.persistNonChannelFlags(cfg)
+		err := action.persistNonChannelFlags(t.Context(), cfg)
 		require.NoError(t, err)
 	})
 
@@ -104,7 +105,7 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		}
 
 		cfg := config.NewEmptyConfig()
-		err := action.persistNonChannelFlags(cfg)
+		err := action.persistNonChannelFlags(t.Context(), cfg)
 		require.NoError(t, err)
 
 		// Verify the interval was saved
@@ -421,14 +422,44 @@ func Test_UpdateAction_PersistNonChannelFlags(t *testing.T) {
 		configManager: &simpleConfigMgr{},
 	}
 	cfg := config.NewEmptyConfig()
-	err := a.persistNonChannelFlags(cfg)
+	err := a.persistNonChannelFlags(t.Context(), cfg)
 	require.NoError(t, err)
 
 	// Test with zero check interval
 	a2 := &updateAction{flags: &updateFlags{checkIntervalHours: 0}}
 	cfg2 := config.NewEmptyConfig()
-	err = a2.persistNonChannelFlags(cfg2)
+	err = a2.persistNonChannelFlags(t.Context(), cfg2)
 	require.NoError(t, err)
+}
+
+func Test_UpdateAction_FirstUsePreservesConcurrentUpdateConfig(t *testing.T) {
+	setProdVersion(t)
+	clearCIEnv(t)
+
+	staleConfig := config.NewEmptyConfig()
+	latestConfig := config.NewEmptyConfig()
+	require.NoError(t, update.SetChannel(latestConfig, update.ChannelDaily))
+
+	configManager := &staleUpdateConfigManager{
+		staleConfig:  staleConfig,
+		latestConfig: latestConfig,
+	}
+	action := newTestUpdateAction(
+		&updateFlags{checkIntervalHours: 12},
+		mockinput.NewMockConsole(),
+		&output.NoneFormatter{},
+		&bytes.Buffer{},
+		configManager,
+		nil,
+	)
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	updateConfig := update.LoadUpdateConfig(latestConfig)
+	require.Equal(t, update.ChannelDaily, updateConfig.Channel)
+	require.Equal(t, 12, updateConfig.CheckIntervalHours)
 }
 
 func Test_NewUpdateFlags(t *testing.T) {
@@ -454,4 +485,38 @@ func Test_UpdateAction_Run_NonProdVersion(t *testing.T) {
 	_, err := a.(*updateAction).Run(t.Context())
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, internal.ErrUnsupportedOperation))
+}
+
+type staleUpdateConfigManager struct {
+	staleConfig  config.Config
+	latestConfig config.Config
+	loadCount    int
+}
+
+func (m *staleUpdateConfigManager) Load() (config.Config, error) {
+	m.loadCount++
+	if m.loadCount == 1 {
+		return m.staleConfig, nil
+	}
+	return m.latestConfig, nil
+}
+
+func (m *staleUpdateConfigManager) Save(cfg config.Config) error {
+	m.latestConfig = cfg
+	return nil
+}
+
+func (m *staleUpdateConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	changed, err := mutation(ctx, m.latestConfig)
+	if err != nil || !changed {
+		return err
+	}
+	return m.Save(m.latestConfig)
+}
+
+func (m *staleUpdateConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
 }

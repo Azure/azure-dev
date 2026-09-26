@@ -4,6 +4,8 @@
 package config
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +28,23 @@ type FileConfigManager interface {
 	Load(filePath string) (Config, error)
 }
 
+// ContextualFileConfigManager is an optional FileConfigManager capability for
+// context-aware persistence.
+type ContextualFileConfigManager interface {
+	FileConfigManager
+	SaveWithContext(ctx context.Context, config Config, filePath string) error
+}
+
+func saveFileConfig(ctx context.Context, manager FileConfigManager, config Config, filePath string) error {
+	if contextualManager, ok := manager.(ContextualFileConfigManager); ok {
+		return contextualManager.SaveWithContext(ctx, config, filePath)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return manager.Save(config, filePath)
+}
+
 // NewFileConfigManager creates a new FileConfigManager instance
 func NewFileConfigManager(configManager Manager) FileConfigManager {
 	return &fileConfigManager{
@@ -39,14 +58,12 @@ type fileConfigManager struct {
 }
 
 func (m *fileConfigManager) Load(filePath string) (Config, error) {
-	file, err := os.Open(filePath)
+	data, err := osutil.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed opening azd configuration file: %w", err)
+		return nil, fmt.Errorf("failed reading azd configuration file: %w", err)
 	}
 
-	defer file.Close()
-
-	azdConfig, err := m.manager.Load(file)
+	azdConfig, err := m.manager.Load(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -77,16 +94,13 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 }
 
 func (m *fileConfigManager) Save(c Config, filePath string) error {
+	return m.SaveWithContext(context.Background(), c, filePath)
+}
+
+func (m *fileConfigManager) SaveWithContext(ctx context.Context, c Config, filePath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	return m.saveLocked(c, filePath)
-}
-
-// saveLocked performs the actual save logic. It must be called while m.mu is held.
-// This is separated from Save to allow the recursive vault save without deadlocking
-// on the non-reentrant mutex.
-func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 	baseConfig, ok := c.(*config)
 	if !ok {
 		return fmt.Errorf("failed casting azd configuration to config")
@@ -97,14 +111,9 @@ func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 		return fmt.Errorf("failed creating config directory: %w", err)
 	}
 
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, osutil.PermissionFile)
-	if err != nil {
-		return fmt.Errorf("saving file config: %w", err)
-	}
-	defer file.Close()
-
-	if err := m.manager.Save(c, file); err != nil {
-		return fmt.Errorf("saving file config: %w", err)
+	var rootData bytes.Buffer
+	if err := m.manager.Save(c, &rootData); err != nil {
+		return fmt.Errorf("serializing file config: %w", err)
 	}
 
 	// If the configuration contains a vault, then also save the vault configuration
@@ -114,15 +123,38 @@ func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 		if err != nil {
 			return err
 		}
+		if baseConfig.vault == nil {
+			return fmt.Errorf("vault configuration '%s' is not loaded", baseConfig.vaultId)
+		}
 
 		if err = os.MkdirAll(filepath.Dir(vaultPath), osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("failed creating vaults directory: %w", err)
 		}
 
-		return m.saveLocked(baseConfig.vault, vaultPath)
+		var vaultData bytes.Buffer
+		if err := m.manager.Save(baseConfig.vault, &vaultData); err != nil {
+			return fmt.Errorf("serializing vault configuration: %w", err)
+		}
+		if err := writeUserConfigFileAtomic(ctx, vaultPath, vaultData.Bytes()); err != nil {
+			return fmt.Errorf("saving vault configuration: %w", err)
+		}
+	}
+
+	if err := writeUserConfigFileAtomic(ctx, filePath, rootData.Bytes()); err != nil {
+		return fmt.Errorf("saving file config: %w", err)
 	}
 
 	return nil
+}
+
+func writeUserConfigFileAtomic(ctx context.Context, path string, data []byte) error {
+	perm := osutil.PermissionFileOwnerOnly
+	if _, err := os.Stat(path); err == nil {
+		perm = 0
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stating config target file: %w", err)
+	}
+	return osutil.WriteFileAtomic(ctx, path, data, perm)
 }
 
 // resolveVaultPath validates a vault ID and returns the full path to the vault JSON file.

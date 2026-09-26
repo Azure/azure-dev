@@ -234,6 +234,63 @@ func Test_GetSection(t *testing.T) {
 	})
 }
 
+func Test_RawMapEntryPreservesOpaqueKeysAndNull(t *testing.T) {
+	cfg := NewEmptyConfig()
+	key := "endpoint.example.com/agents/my.agent/versions/v1/remote"
+
+	require.NoError(t, SetRawMapEntry(cfg, "extensions.ai-agents.sessions", key, nil))
+	value, found, err := GetRawMapEntry(cfg, "extensions.ai-agents.sessions", key)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Nil(t, value)
+
+	require.NoError(t, SetRawMapEntry(cfg, "extensions.ai-agents.sessions", key, "session-1"))
+	value, found, err = GetRawMapEntry(cfg, "extensions.ai-agents.sessions", key)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "session-1", value)
+
+	require.NoError(t, DeleteRawMapEntry(cfg, "extensions.ai-agents.sessions", key))
+	_, found, err = GetRawMapEntry(cfg, "extensions.ai-agents.sessions", key)
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
+func Test_RawMapEntryDoesNotResolveVaultReferences(t *testing.T) {
+	cfg := NewEmptyConfig()
+	require.NoError(t, cfg.SetSecret("secret", "value"))
+	rawReference := cfg.Raw()["secret"]
+	require.NoError(t, SetRawMapEntry(cfg, "entries", "opaque.key", rawReference))
+
+	rawValue, found, err := GetRawMapEntry(cfg, "entries", "opaque.key")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, rawReference, rawValue)
+	require.NotEqual(t, "value", rawValue)
+}
+
+func Test_RawMapEntryRejectsNonMapParent(t *testing.T) {
+	cfg := NewConfig(map[string]any{"entries": "not-a-map"})
+
+	_, _, err := GetRawMapEntry(cfg, "entries", "key")
+	require.Error(t, err)
+	require.Error(t, SetRawMapEntry(cfg, "entries", "key", "value"))
+	require.Error(t, DeleteRawMapEntry(cfg, "entries", "key"))
+}
+
+func Test_RawMapEntryHelpersRequireCapability(t *testing.T) {
+	cfg := &configWithoutRawMapEntries{Config: NewEmptyConfig()}
+
+	_, _, err := GetRawMapEntry(cfg, "entries", "key")
+	require.Error(t, err)
+	require.Error(t, SetRawMapEntry(cfg, "entries", "key", "value"))
+	require.Error(t, DeleteRawMapEntry(cfg, "entries", "key"))
+}
+
+type configWithoutRawMapEntries struct {
+	Config
+}
+
 type testConfig struct {
 	A string
 	B string

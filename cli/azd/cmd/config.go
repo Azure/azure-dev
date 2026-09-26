@@ -319,20 +319,19 @@ func newConfigSetAction(configManager config.UserConfigManager, args []string) a
 
 // Executes the `azd config set <path> <value>` action
 func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := a.configManager.Load()
-	if err != nil {
-		return nil, err
-	}
-
 	path := a.args[0]
 	value := a.args[1]
 
-	err = azdConfig.Set(path, value)
-	if err != nil {
-		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
-	}
-
-	return nil, a.configManager.Save(azdConfig)
+	return nil, config.MutateUserConfig(
+		ctx,
+		a.configManager,
+		func(_ context.Context, azdConfig config.Config) (bool, error) {
+			if err := azdConfig.Set(path, value); err != nil {
+				return false, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
+			}
+			return true, nil
+		},
+	)
 }
 
 // azd config unset <path>
@@ -351,19 +350,18 @@ func newConfigUnsetAction(configManager config.UserConfigManager, args []string)
 
 // Executes the `azd config unset <path>` action
 func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	azdConfig, err := a.configManager.Load()
-	if err != nil {
-		return nil, err
-	}
-
 	path := a.args[0]
 
-	err = azdConfig.Unset(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
-	}
-
-	return nil, a.configManager.Save(azdConfig)
+	return nil, config.MutateUserConfig(
+		ctx,
+		a.configManager,
+		func(_ context.Context, azdConfig config.Config) (bool, error) {
+			if err := azdConfig.Unset(path); err != nil {
+				return false, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
+			}
+			return true, nil
+		},
+	)
 }
 
 // azd config reset
@@ -427,7 +425,7 @@ func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	err := a.configManager.Save(config.NewEmptyConfig())
+	err := config.ReplaceUserConfig(ctx, a.configManager, config.NewEmptyConfig())
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 	if err != nil {
 		return nil, err

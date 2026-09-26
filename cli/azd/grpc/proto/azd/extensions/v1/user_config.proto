@@ -23,6 +23,18 @@ service UserConfigService {
 
   // Unset removes a value at a given path
   rpc Unset (UnsetUserConfigRequest) returns (EmptyResponse);
+
+  // GetMapEntry retrieves a value under an opaque key in a map.
+  rpc GetMapEntry (GetUserConfigMapEntryRequest) returns (GetUserConfigMapEntryResponse);
+
+  // SetMapEntry sets a value under an opaque key in a map.
+  rpc SetMapEntry (SetUserConfigMapEntryRequest) returns (EmptyResponse);
+
+  // DeleteMapEntry removes an opaque key from a map.
+  rpc DeleteMapEntry (DeleteUserConfigMapEntryRequest) returns (EmptyResponse);
+
+  // CompareExchangeMapEntry conditionally updates an opaque map entry.
+  rpc CompareExchangeMapEntry (CompareExchangeUserConfigMapEntryRequest) returns (CompareExchangeUserConfigMapEntryResponse);
 }
 
 // Request message for Get
@@ -67,4 +79,47 @@ message SetUserConfigRequest {
 // Request message for Unset
 message UnsetUserConfigRequest {
   string path = 1;
+}
+
+message GetUserConfigMapEntryRequest {
+  string path = 1;
+  string key = 2;
+}
+
+message GetUserConfigMapEntryResponse {
+  bytes value = 1;
+  bool found = 2;
+  string revision = 3;
+}
+
+message SetUserConfigMapEntryRequest {
+  string path = 1;
+  string key = 2;
+  bytes value = 3;
+}
+
+message DeleteUserConfigMapEntryRequest {
+  string path = 1;
+  string key = 2;
+}
+
+enum UserConfigMapEntryOperation {
+  USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED = 0;
+  USER_CONFIG_MAP_ENTRY_OPERATION_SET = 1;
+  USER_CONFIG_MAP_ENTRY_OPERATION_DELETE = 2;
+}
+
+message CompareExchangeUserConfigMapEntryRequest {
+  string path = 1;
+  string key = 2;
+  string expected_revision = 3;
+  UserConfigMapEntryOperation operation = 4;
+  bytes value = 5;
+}
+
+message CompareExchangeUserConfigMapEntryResponse {
+  bool exchanged = 1;
+  bytes value = 2;
+  bool found = 3;
+  string revision = 4;
 }

@@ -138,6 +138,201 @@ func (ch *ConfigHelper) UnsetUser(ctx context.Context, path string) error {
 	return nil
 }
 
+// GetUserMapEntryJSON retrieves a value under an opaque key in a user-config map.
+// The key is not interpreted as a dot-separated config path.
+func (ch *ConfigHelper) GetUserMapEntryJSON(
+	ctx context.Context,
+	path string,
+	key string,
+	out any,
+) (string, bool, error) {
+	if err := validateMapEntry(path, key); err != nil {
+		return "", false, err
+	}
+	if out == nil {
+		return "", false, errors.New("azdext.ConfigHelper.GetUserMapEntryJSON: out must not be nil")
+	}
+
+	resp, err := ch.client.UserConfig().GetMapEntry(ctx, &GetUserConfigMapEntryRequest{
+		Path: path,
+		Key:  key,
+	})
+	if err != nil {
+		return "", false, fmt.Errorf(
+			"azdext.ConfigHelper.GetUserMapEntryJSON: gRPC call failed for path %q and key %q: %w",
+			path,
+			key,
+			err,
+		)
+	}
+
+	if err := unmarshalMapEntry(resp.GetValue(), resp.GetFound(), path, key, out); err != nil {
+		return resp.GetRevision(), resp.GetFound(), err
+	}
+	return resp.GetRevision(), resp.GetFound(), nil
+}
+
+// SetUserMapEntryJSON sets a value under an opaque key in a user-config map.
+func (ch *ConfigHelper) SetUserMapEntryJSON(ctx context.Context, path string, key string, value any) error {
+	if err := validateMapEntry(path, key); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return mapEntryConfigError(path, key, fmt.Errorf("failed to marshal value: %w", err))
+	}
+
+	_, err = ch.client.UserConfig().SetMapEntry(ctx, &SetUserConfigMapEntryRequest{
+		Path:  path,
+		Key:   key,
+		Value: data,
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"azdext.ConfigHelper.SetUserMapEntryJSON: gRPC call failed for path %q and key %q: %w",
+			path,
+			key,
+			err,
+		)
+	}
+	return nil
+}
+
+// DeleteUserMapEntry removes an opaque key from a user-config map.
+func (ch *ConfigHelper) DeleteUserMapEntry(ctx context.Context, path string, key string) error {
+	if err := validateMapEntry(path, key); err != nil {
+		return err
+	}
+
+	_, err := ch.client.UserConfig().DeleteMapEntry(ctx, &DeleteUserConfigMapEntryRequest{
+		Path: path,
+		Key:  key,
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"azdext.ConfigHelper.DeleteUserMapEntry: gRPC call failed for path %q and key %q: %w",
+			path,
+			key,
+			err,
+		)
+	}
+	return nil
+}
+
+// CompareExchangeSetUserMapEntryJSON sets an opaque map entry only when its revision matches expectedRevision.
+// On return, current receives the value observed after a successful exchange or the conflicting current value.
+func (ch *ConfigHelper) CompareExchangeSetUserMapEntryJSON(
+	ctx context.Context,
+	path string,
+	key string,
+	expectedRevision string,
+	value any,
+	current any,
+) (bool, string, bool, error) {
+	if err := validateMapEntry(path, key); err != nil {
+		return false, "", false, err
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false, "", false, mapEntryConfigError(path, key, fmt.Errorf("failed to marshal value: %w", err))
+	}
+
+	return ch.compareExchangeUserMapEntry(
+		ctx,
+		path,
+		key,
+		expectedRevision,
+		UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+		data,
+		current,
+	)
+}
+
+// CompareExchangeDeleteUserMapEntry deletes an opaque map entry only when its revision matches expectedRevision.
+// On conflict, current receives the value that prevented the exchange.
+func (ch *ConfigHelper) CompareExchangeDeleteUserMapEntry(
+	ctx context.Context,
+	path string,
+	key string,
+	expectedRevision string,
+	current any,
+) (bool, string, bool, error) {
+	if err := validateMapEntry(path, key); err != nil {
+		return false, "", false, err
+	}
+
+	return ch.compareExchangeUserMapEntry(
+		ctx,
+		path,
+		key,
+		expectedRevision,
+		UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE,
+		nil,
+		current,
+	)
+}
+
+func (ch *ConfigHelper) compareExchangeUserMapEntry(
+	ctx context.Context,
+	path string,
+	key string,
+	expectedRevision string,
+	operation UserConfigMapEntryOperation,
+	value []byte,
+	current any,
+) (bool, string, bool, error) {
+	resp, err := ch.client.UserConfig().CompareExchangeMapEntry(ctx, &CompareExchangeUserConfigMapEntryRequest{
+		Path:             path,
+		Key:              key,
+		ExpectedRevision: expectedRevision,
+		Operation:        operation,
+		Value:            value,
+	})
+	if err != nil {
+		return false, "", false, fmt.Errorf(
+			"azdext.ConfigHelper.compareExchangeUserMapEntry: gRPC call failed for path %q and key %q: %w",
+			path,
+			key,
+			err,
+		)
+	}
+
+	if err := unmarshalMapEntry(resp.GetValue(), resp.GetFound(), path, key, current); err != nil {
+		return resp.GetExchanged(), resp.GetRevision(), resp.GetFound(), err
+	}
+	return resp.GetExchanged(), resp.GetRevision(), resp.GetFound(), nil
+}
+
+func validateMapEntry(path string, key string) error {
+	if err := validatePath(path); err != nil {
+		return err
+	}
+	if key == "" {
+		return errors.New("azdext.ConfigHelper: map entry key must not be empty")
+	}
+	return nil
+}
+
+func unmarshalMapEntry(data []byte, found bool, path string, key string, out any) error {
+	if !found || out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return mapEntryConfigError(path, key, fmt.Errorf("failed to unmarshal config value: %w", err))
+	}
+	return nil
+}
+
+func mapEntryConfigError(path string, key string, err error) error {
+	return &ConfigError{
+		Path:   fmt.Sprintf("%s[%q]", path, key),
+		Reason: ConfigReasonInvalidFormat,
+		Err:    err,
+	}
+}
+
 // --- Environment Config (per-environment) ---
 
 // GetEnvString retrieves a string config value from the current environment.

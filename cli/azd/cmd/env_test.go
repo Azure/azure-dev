@@ -1775,6 +1775,24 @@ func (m *simpleConfigMgr) Save(c config.Config) error {
 	return nil
 }
 
+func (m *simpleConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := mutation(ctx, cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(cfg)
+}
+
+func (m *simpleConfigMgr) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
+}
+
 // failSaveConfigMgr returns error on Save but succeeds on Load.
 type failSaveConfigMgr struct {
 	cfg config.Config
@@ -1791,6 +1809,24 @@ func (m *failSaveConfigMgr) Save(_ config.Config) error {
 	return errors.New("save failed")
 }
 
+func (m *failSaveConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := mutation(ctx, cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(cfg)
+}
+
+func (m *failSaveConfigMgr) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
+}
+
 // failLoadConfigMgr returns error on Load.
 type failLoadConfigMgr struct{}
 
@@ -1800,6 +1836,14 @@ func (m *failLoadConfigMgr) Load() (config.Config, error) {
 
 func (m *failLoadConfigMgr) Save(_ config.Config) error {
 	return nil
+}
+
+func (m *failLoadConfigMgr) Mutate(context.Context, func(context.Context, config.Config) (bool, error)) error {
+	return errors.New("load failed")
+}
+
+func (m *failLoadConfigMgr) Replace(context.Context, config.Config) error {
+	return errors.New("load failed")
 }
 
 // noopCommandRunner implements exec.CommandRunner with no-op methods.
@@ -2397,6 +2441,22 @@ func (m *finishConfigMgr) Load() (config.Config, error) { return m.cfg, m.err }
 
 func (m *finishConfigMgr) Save(_ config.Config) error { return nil }
 
+func (m *finishConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	if m.err != nil {
+		return m.err
+	}
+	_, err := mutation(ctx, m.cfg)
+	return err
+}
+
+func (m *finishConfigMgr) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return nil
+}
+
 func Test_EnvGetValueAction_WriterError(t *testing.T) {
 	t.Parallel()
 	azdCtx := newTestAzdContext(t)
@@ -2478,6 +2538,14 @@ func (m *finishFailLoadConfigMgr) Load() (config.Config, error) {
 }
 
 func (m *finishFailLoadConfigMgr) Save(_ config.Config) error { return nil }
+
+func (m *finishFailLoadConfigMgr) Mutate(context.Context, func(context.Context, config.Config) (bool, error)) error {
+	return errors.New("load error")
+}
+
+func (m *finishFailLoadConfigMgr) Replace(context.Context, config.Config) error {
+	return errors.New("load error")
+}
 
 func Test_EnvSetAction_KeyCaseConflict(t *testing.T) {
 	t.Parallel()
@@ -2907,6 +2975,22 @@ func (m *testConfigMgr) Save(c config.Config) error {
 	return nil
 }
 
+func (m *testConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	_, err = mutation(ctx, cfg)
+	return err
+}
+
+func (m *testConfigMgr) Replace(context.Context, config.Config) error {
+	return nil
+}
+
 func Test_SelectKeyVaultSecret_Success(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -3254,6 +3338,21 @@ func (m *pushConfigMgr) Save(cfg config.Config) error {
 	return m.saveErr
 }
 
+func (m *pushConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	if changed, err := mutation(ctx, m.cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(m.cfg)
+}
+
+func (m *pushConfigMgr) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return m.Save(replacement)
+}
+
 type pushFailSaveConfigMgr struct{}
 
 func (m *pushFailSaveConfigMgr) Load() (config.Config, error) {
@@ -3264,6 +3363,24 @@ func (m *pushFailSaveConfigMgr) Save(cfg config.Config) error {
 	return errors.New("save error")
 }
 
+func (m *pushFailSaveConfigMgr) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := mutation(ctx, cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(cfg)
+}
+
+func (m *pushFailSaveConfigMgr) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
+}
+
 type pushFailLoadConfigMgr struct{}
 
 func (m *pushFailLoadConfigMgr) Load() (config.Config, error) {
@@ -3272,6 +3389,14 @@ func (m *pushFailLoadConfigMgr) Load() (config.Config, error) {
 
 func (m *pushFailLoadConfigMgr) Save(cfg config.Config) error {
 	return nil
+}
+
+func (m *pushFailLoadConfigMgr) Mutate(context.Context, func(context.Context, config.Config) (bool, error)) error {
+	return errors.New("load error")
+}
+
+func (m *pushFailLoadConfigMgr) Replace(context.Context, config.Config) error {
+	return errors.New("load error")
 }
 
 func Test_EnvSetSecretAction_NoArgs(t *testing.T) {

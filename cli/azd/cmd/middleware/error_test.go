@@ -1412,6 +1412,19 @@ func (m *mockUserConfigManager) Save(_ config.Config) error {
 	return nil
 }
 
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	_, err := mutation(ctx, m.cfg)
+	return err
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return nil
+}
+
 // configWithKeys creates a Config with dot-path keys properly nested.
 func configWithKeys(kvs ...string) config.Config {
 	cfg := config.NewEmptyConfig()

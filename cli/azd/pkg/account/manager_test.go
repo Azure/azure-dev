@@ -6,7 +6,9 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"testing"
 
@@ -23,6 +25,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	configDir, err := os.MkdirTemp("", "azd-account-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZD_CONFIG_DIR", configDir); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no"); err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+	if err := os.RemoveAll(configDir); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to remove temporary azd config directory %q: %v\n", configDir, err)
+	}
+	os.Exit(code)
+}
 
 func armClientOptions(httpTransport *mockhttp.MockHttpClient) *arm.ClientOptions {
 	return &arm.ClientOptions{

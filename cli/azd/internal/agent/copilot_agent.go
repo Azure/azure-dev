@@ -1156,10 +1156,6 @@ func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *ini
 		modelID = ""
 	}
 
-	if err := azdConfig.Set(agentcopilot.ConfigKeyModel, modelID); err != nil {
-		return nil, fmt.Errorf("failed to save model: %w", err)
-	}
-
 	if selectedModel != nil {
 		reasoningEffort, err = a.promptReasoningEffort(ctx, *selectedModel)
 		if err != nil {
@@ -1171,11 +1167,15 @@ func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *ini
 		reasoningEffort = ""
 	}
 
-	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
-		return nil, fmt.Errorf("failed to save reasoning effort: %w", err)
-	}
-
-	if err := a.configManager.Save(azdConfig); err != nil {
+	if err := config.MutateUserConfig(ctx, a.configManager, func(_ context.Context, azdConfig config.Config) (bool, error) {
+		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, modelID); err != nil {
+			return false, fmt.Errorf("failed to save model: %w", err)
+		}
+		if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
+			return false, fmt.Errorf("failed to save reasoning effort: %w", err)
+		}
+		return true, nil
+	}); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 

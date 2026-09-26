@@ -24,6 +24,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type UserConfigMapEntryOperation int32
+
+const (
+	UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED UserConfigMapEntryOperation = 0
+	UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET         UserConfigMapEntryOperation = 1
+	UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE      UserConfigMapEntryOperation = 2
+)
+
+// Enum value maps for UserConfigMapEntryOperation.
+var (
+	UserConfigMapEntryOperation_name = map[int32]string{
+		0: "USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED",
+		1: "USER_CONFIG_MAP_ENTRY_OPERATION_SET",
+		2: "USER_CONFIG_MAP_ENTRY_OPERATION_DELETE",
+	}
+	UserConfigMapEntryOperation_value = map[string]int32{
+		"USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED": 0,
+		"USER_CONFIG_MAP_ENTRY_OPERATION_SET":         1,
+		"USER_CONFIG_MAP_ENTRY_OPERATION_DELETE":      2,
+	}
+)
+
+func (x UserConfigMapEntryOperation) Enum() *UserConfigMapEntryOperation {
+	p := new(UserConfigMapEntryOperation)
+	*p = x
+	return p
+}
+
+func (x UserConfigMapEntryOperation) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UserConfigMapEntryOperation) Descriptor() protoreflect.EnumDescriptor {
+	return file_azd_extensions_v1beta_user_config_proto_enumTypes[0].Descriptor()
+}
+
+func (UserConfigMapEntryOperation) Type() protoreflect.EnumType {
+	return &file_azd_extensions_v1beta_user_config_proto_enumTypes[0]
+}
+
+func (x UserConfigMapEntryOperation) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UserConfigMapEntryOperation.Descriptor instead.
+func (UserConfigMapEntryOperation) EnumDescriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{0}
+}
+
 // Request message for Get
 type GetUserConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -416,6 +465,374 @@ func (x *UnsetUserConfigRequest) GetPath() string {
 	return ""
 }
 
+type GetUserConfigMapEntryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserConfigMapEntryRequest) Reset() {
+	*x = GetUserConfigMapEntryRequest{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserConfigMapEntryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserConfigMapEntryRequest) ProtoMessage() {}
+
+func (x *GetUserConfigMapEntryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserConfigMapEntryRequest.ProtoReflect.Descriptor instead.
+func (*GetUserConfigMapEntryRequest) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetUserConfigMapEntryRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *GetUserConfigMapEntryRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type GetUserConfigMapEntryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         []byte                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	Revision      string                 `protobuf:"bytes,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserConfigMapEntryResponse) Reset() {
+	*x = GetUserConfigMapEntryResponse{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserConfigMapEntryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserConfigMapEntryResponse) ProtoMessage() {}
+
+func (x *GetUserConfigMapEntryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserConfigMapEntryResponse.ProtoReflect.Descriptor instead.
+func (*GetUserConfigMapEntryResponse) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetUserConfigMapEntryResponse) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *GetUserConfigMapEntryResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *GetUserConfigMapEntryResponse) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
+type SetUserConfigMapEntryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Value         []byte                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetUserConfigMapEntryRequest) Reset() {
+	*x = SetUserConfigMapEntryRequest{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetUserConfigMapEntryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetUserConfigMapEntryRequest) ProtoMessage() {}
+
+func (x *SetUserConfigMapEntryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetUserConfigMapEntryRequest.ProtoReflect.Descriptor instead.
+func (*SetUserConfigMapEntryRequest) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SetUserConfigMapEntryRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetUserConfigMapEntryRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SetUserConfigMapEntryRequest) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type DeleteUserConfigMapEntryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserConfigMapEntryRequest) Reset() {
+	*x = DeleteUserConfigMapEntryRequest{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserConfigMapEntryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserConfigMapEntryRequest) ProtoMessage() {}
+
+func (x *DeleteUserConfigMapEntryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserConfigMapEntryRequest.ProtoReflect.Descriptor instead.
+func (*DeleteUserConfigMapEntryRequest) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DeleteUserConfigMapEntryRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *DeleteUserConfigMapEntryRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type CompareExchangeUserConfigMapEntryRequest struct {
+	state            protoimpl.MessageState      `protogen:"open.v1"`
+	Path             string                      `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Key              string                      `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	ExpectedRevision string                      `protobuf:"bytes,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Operation        UserConfigMapEntryOperation `protobuf:"varint,4,opt,name=operation,proto3,enum=azd.extensions.v1beta.UserConfigMapEntryOperation" json:"operation,omitempty"`
+	Value            []byte                      `protobuf:"bytes,5,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) Reset() {
+	*x = CompareExchangeUserConfigMapEntryRequest{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompareExchangeUserConfigMapEntryRequest) ProtoMessage() {}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompareExchangeUserConfigMapEntryRequest.ProtoReflect.Descriptor instead.
+func (*CompareExchangeUserConfigMapEntryRequest) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) GetExpectedRevision() string {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return ""
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) GetOperation() UserConfigMapEntryOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED
+}
+
+func (x *CompareExchangeUserConfigMapEntryRequest) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type CompareExchangeUserConfigMapEntryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Exchanged     bool                   `protobuf:"varint,1,opt,name=exchanged,proto3" json:"exchanged,omitempty"`
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Found         bool                   `protobuf:"varint,3,opt,name=found,proto3" json:"found,omitempty"`
+	Revision      string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) Reset() {
+	*x = CompareExchangeUserConfigMapEntryResponse{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompareExchangeUserConfigMapEntryResponse) ProtoMessage() {}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompareExchangeUserConfigMapEntryResponse.ProtoReflect.Descriptor instead.
+func (*CompareExchangeUserConfigMapEntryResponse) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) GetExchanged() bool {
+	if x != nil {
+		return x.Exchanged
+	}
+	return false
+}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *CompareExchangeUserConfigMapEntryResponse) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
 var File_azd_extensions_v1beta_user_config_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_user_config_proto_rawDesc = "" +
@@ -440,14 +857,47 @@ const file_azd_extensions_v1beta_user_config_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\",\n" +
 	"\x16UnsetUserConfigRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path2\x98\x04\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"D\n" +
+	"\x1cGetUserConfigMapEntryRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\"g\n" +
+	"\x1dGetUserConfigMapEntryResponse\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\fR\x05value\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\tR\brevision\"Z\n" +
+	"\x1cSetUserConfigMapEntryRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\fR\x05value\"G\n" +
+	"\x1fDeleteUserConfigMapEntryRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\"\xe5\x01\n" +
+	"(CompareExchangeUserConfigMapEntryRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\tR\x10expectedRevision\x12P\n" +
+	"\toperation\x18\x04 \x01(\x0e22.azd.extensions.v1beta.UserConfigMapEntryOperationR\toperation\x12\x14\n" +
+	"\x05value\x18\x05 \x01(\fR\x05value\"\x91\x01\n" +
+	")CompareExchangeUserConfigMapEntryResponse\x12\x1c\n" +
+	"\texchanged\x18\x01 \x01(\bR\texchanged\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\x12\x14\n" +
+	"\x05found\x18\x03 \x01(\bR\x05found\x12\x1a\n" +
+	"\brevision\x18\x04 \x01(\tR\brevision*\xa3\x01\n" +
+	"\x1bUserConfigMapEntryOperation\x12/\n" +
+	"+USER_CONFIG_MAP_ENTRY_OPERATION_UNSPECIFIED\x10\x00\x12'\n" +
+	"#USER_CONFIG_MAP_ENTRY_OPERATION_SET\x10\x01\x12*\n" +
+	"&USER_CONFIG_MAP_ENTRY_OPERATION_DELETE\x10\x022\x8b\b\n" +
 	"\x11UserConfigService\x12`\n" +
 	"\x03Get\x12+.azd.extensions.v1beta.GetUserConfigRequest\x1a,.azd.extensions.v1beta.GetUserConfigResponse\x12r\n" +
 	"\tGetString\x121.azd.extensions.v1beta.GetUserConfigStringRequest\x1a2.azd.extensions.v1beta.GetUserConfigStringResponse\x12u\n" +
 	"\n" +
 	"GetSection\x122.azd.extensions.v1beta.GetUserConfigSectionRequest\x1a3.azd.extensions.v1beta.GetUserConfigSectionResponse\x12X\n" +
 	"\x03Set\x12+.azd.extensions.v1beta.SetUserConfigRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12\\\n" +
-	"\x05Unset\x12-.azd.extensions.v1beta.UnsetUserConfigRequest\x1a$.azd.extensions.v1beta.EmptyResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
+	"\x05Unset\x12-.azd.extensions.v1beta.UnsetUserConfigRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12x\n" +
+	"\vGetMapEntry\x123.azd.extensions.v1beta.GetUserConfigMapEntryRequest\x1a4.azd.extensions.v1beta.GetUserConfigMapEntryResponse\x12h\n" +
+	"\vSetMapEntry\x123.azd.extensions.v1beta.SetUserConfigMapEntryRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12n\n" +
+	"\x0eDeleteMapEntry\x126.azd.extensions.v1beta.DeleteUserConfigMapEntryRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12\x9c\x01\n" +
+	"\x17CompareExchangeMapEntry\x12?.azd.extensions.v1beta.CompareExchangeUserConfigMapEntryRequest\x1a@.azd.extensions.v1beta.CompareExchangeUserConfigMapEntryResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
 var (
 	file_azd_extensions_v1beta_user_config_proto_rawDescOnce sync.Once
@@ -461,34 +911,51 @@ func file_azd_extensions_v1beta_user_config_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1beta_user_config_proto_rawDescData
 }
 
-var file_azd_extensions_v1beta_user_config_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_azd_extensions_v1beta_user_config_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_azd_extensions_v1beta_user_config_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_azd_extensions_v1beta_user_config_proto_goTypes = []any{
-	(*GetUserConfigRequest)(nil),         // 0: azd.extensions.v1beta.GetUserConfigRequest
-	(*GetUserConfigResponse)(nil),        // 1: azd.extensions.v1beta.GetUserConfigResponse
-	(*GetUserConfigStringRequest)(nil),   // 2: azd.extensions.v1beta.GetUserConfigStringRequest
-	(*GetUserConfigStringResponse)(nil),  // 3: azd.extensions.v1beta.GetUserConfigStringResponse
-	(*GetUserConfigSectionRequest)(nil),  // 4: azd.extensions.v1beta.GetUserConfigSectionRequest
-	(*GetUserConfigSectionResponse)(nil), // 5: azd.extensions.v1beta.GetUserConfigSectionResponse
-	(*SetUserConfigRequest)(nil),         // 6: azd.extensions.v1beta.SetUserConfigRequest
-	(*UnsetUserConfigRequest)(nil),       // 7: azd.extensions.v1beta.UnsetUserConfigRequest
-	(*EmptyResponse)(nil),                // 8: azd.extensions.v1beta.EmptyResponse
+	(UserConfigMapEntryOperation)(0),                  // 0: azd.extensions.v1beta.UserConfigMapEntryOperation
+	(*GetUserConfigRequest)(nil),                      // 1: azd.extensions.v1beta.GetUserConfigRequest
+	(*GetUserConfigResponse)(nil),                     // 2: azd.extensions.v1beta.GetUserConfigResponse
+	(*GetUserConfigStringRequest)(nil),                // 3: azd.extensions.v1beta.GetUserConfigStringRequest
+	(*GetUserConfigStringResponse)(nil),               // 4: azd.extensions.v1beta.GetUserConfigStringResponse
+	(*GetUserConfigSectionRequest)(nil),               // 5: azd.extensions.v1beta.GetUserConfigSectionRequest
+	(*GetUserConfigSectionResponse)(nil),              // 6: azd.extensions.v1beta.GetUserConfigSectionResponse
+	(*SetUserConfigRequest)(nil),                      // 7: azd.extensions.v1beta.SetUserConfigRequest
+	(*UnsetUserConfigRequest)(nil),                    // 8: azd.extensions.v1beta.UnsetUserConfigRequest
+	(*GetUserConfigMapEntryRequest)(nil),              // 9: azd.extensions.v1beta.GetUserConfigMapEntryRequest
+	(*GetUserConfigMapEntryResponse)(nil),             // 10: azd.extensions.v1beta.GetUserConfigMapEntryResponse
+	(*SetUserConfigMapEntryRequest)(nil),              // 11: azd.extensions.v1beta.SetUserConfigMapEntryRequest
+	(*DeleteUserConfigMapEntryRequest)(nil),           // 12: azd.extensions.v1beta.DeleteUserConfigMapEntryRequest
+	(*CompareExchangeUserConfigMapEntryRequest)(nil),  // 13: azd.extensions.v1beta.CompareExchangeUserConfigMapEntryRequest
+	(*CompareExchangeUserConfigMapEntryResponse)(nil), // 14: azd.extensions.v1beta.CompareExchangeUserConfigMapEntryResponse
+	(*EmptyResponse)(nil),                             // 15: azd.extensions.v1beta.EmptyResponse
 }
 var file_azd_extensions_v1beta_user_config_proto_depIdxs = []int32{
-	0, // 0: azd.extensions.v1beta.UserConfigService.Get:input_type -> azd.extensions.v1beta.GetUserConfigRequest
-	2, // 1: azd.extensions.v1beta.UserConfigService.GetString:input_type -> azd.extensions.v1beta.GetUserConfigStringRequest
-	4, // 2: azd.extensions.v1beta.UserConfigService.GetSection:input_type -> azd.extensions.v1beta.GetUserConfigSectionRequest
-	6, // 3: azd.extensions.v1beta.UserConfigService.Set:input_type -> azd.extensions.v1beta.SetUserConfigRequest
-	7, // 4: azd.extensions.v1beta.UserConfigService.Unset:input_type -> azd.extensions.v1beta.UnsetUserConfigRequest
-	1, // 5: azd.extensions.v1beta.UserConfigService.Get:output_type -> azd.extensions.v1beta.GetUserConfigResponse
-	3, // 6: azd.extensions.v1beta.UserConfigService.GetString:output_type -> azd.extensions.v1beta.GetUserConfigStringResponse
-	5, // 7: azd.extensions.v1beta.UserConfigService.GetSection:output_type -> azd.extensions.v1beta.GetUserConfigSectionResponse
-	8, // 8: azd.extensions.v1beta.UserConfigService.Set:output_type -> azd.extensions.v1beta.EmptyResponse
-	8, // 9: azd.extensions.v1beta.UserConfigService.Unset:output_type -> azd.extensions.v1beta.EmptyResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: azd.extensions.v1beta.CompareExchangeUserConfigMapEntryRequest.operation:type_name -> azd.extensions.v1beta.UserConfigMapEntryOperation
+	1,  // 1: azd.extensions.v1beta.UserConfigService.Get:input_type -> azd.extensions.v1beta.GetUserConfigRequest
+	3,  // 2: azd.extensions.v1beta.UserConfigService.GetString:input_type -> azd.extensions.v1beta.GetUserConfigStringRequest
+	5,  // 3: azd.extensions.v1beta.UserConfigService.GetSection:input_type -> azd.extensions.v1beta.GetUserConfigSectionRequest
+	7,  // 4: azd.extensions.v1beta.UserConfigService.Set:input_type -> azd.extensions.v1beta.SetUserConfigRequest
+	8,  // 5: azd.extensions.v1beta.UserConfigService.Unset:input_type -> azd.extensions.v1beta.UnsetUserConfigRequest
+	9,  // 6: azd.extensions.v1beta.UserConfigService.GetMapEntry:input_type -> azd.extensions.v1beta.GetUserConfigMapEntryRequest
+	11, // 7: azd.extensions.v1beta.UserConfigService.SetMapEntry:input_type -> azd.extensions.v1beta.SetUserConfigMapEntryRequest
+	12, // 8: azd.extensions.v1beta.UserConfigService.DeleteMapEntry:input_type -> azd.extensions.v1beta.DeleteUserConfigMapEntryRequest
+	13, // 9: azd.extensions.v1beta.UserConfigService.CompareExchangeMapEntry:input_type -> azd.extensions.v1beta.CompareExchangeUserConfigMapEntryRequest
+	2,  // 10: azd.extensions.v1beta.UserConfigService.Get:output_type -> azd.extensions.v1beta.GetUserConfigResponse
+	4,  // 11: azd.extensions.v1beta.UserConfigService.GetString:output_type -> azd.extensions.v1beta.GetUserConfigStringResponse
+	6,  // 12: azd.extensions.v1beta.UserConfigService.GetSection:output_type -> azd.extensions.v1beta.GetUserConfigSectionResponse
+	15, // 13: azd.extensions.v1beta.UserConfigService.Set:output_type -> azd.extensions.v1beta.EmptyResponse
+	15, // 14: azd.extensions.v1beta.UserConfigService.Unset:output_type -> azd.extensions.v1beta.EmptyResponse
+	10, // 15: azd.extensions.v1beta.UserConfigService.GetMapEntry:output_type -> azd.extensions.v1beta.GetUserConfigMapEntryResponse
+	15, // 16: azd.extensions.v1beta.UserConfigService.SetMapEntry:output_type -> azd.extensions.v1beta.EmptyResponse
+	15, // 17: azd.extensions.v1beta.UserConfigService.DeleteMapEntry:output_type -> azd.extensions.v1beta.EmptyResponse
+	14, // 18: azd.extensions.v1beta.UserConfigService.CompareExchangeMapEntry:output_type -> azd.extensions.v1beta.CompareExchangeUserConfigMapEntryResponse
+	10, // [10:19] is the sub-list for method output_type
+	1,  // [1:10] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1beta_user_config_proto_init() }
@@ -502,13 +969,14 @@ func file_azd_extensions_v1beta_user_config_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_user_config_proto_rawDesc), len(file_azd_extensions_v1beta_user_config_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   8,
+			NumEnums:      1,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_azd_extensions_v1beta_user_config_proto_goTypes,
 		DependencyIndexes: file_azd_extensions_v1beta_user_config_proto_depIdxs,
+		EnumInfos:         file_azd_extensions_v1beta_user_config_proto_enumTypes,
 		MessageInfos:      file_azd_extensions_v1beta_user_config_proto_msgTypes,
 	}.Build()
 	File_azd_extensions_v1beta_user_config_proto = out.File

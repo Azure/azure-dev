@@ -591,6 +591,21 @@ func (m *memoryUserConfigManager) Save(cfg config.Config) error {
 	return nil
 }
 
+func (m *memoryUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	if changed, err := mutation(ctx, m.config); err != nil || !changed {
+		return err
+	}
+	return nil
+}
+
+func (m *memoryUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.config = replacement
+	return nil
+}
+
 func newMemoryConfigManager() *memoryConfigManager {
 	return &memoryConfigManager{
 		configs: map[string]config.Config{},
@@ -612,6 +627,10 @@ func (m *memoryConfigManager) Load(path string) (config.Config, error) {
 func (m *memoryConfigManager) Save(cfg config.Config, path string) error {
 	m.configs[path] = cfg
 	return nil
+}
+
+func (m *memoryConfigManager) SaveWithContext(ctx context.Context, cfg config.Config, path string) error {
+	return m.Save(cfg, path)
 }
 
 type mockPublicClient struct {
@@ -694,7 +713,7 @@ func TestMode(t *testing.T) {
 		cfg, err := ucm.Load()
 		require.NoError(t, err)
 		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-		require.NoError(t, ucm.Save(cfg))
+		require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 		m := Manager{
 			userConfigManager: ucm,
@@ -732,7 +751,7 @@ func TestSetBuiltInAuthMode(t *testing.T) {
 		cfg, err := ucm.Load()
 		require.NoError(t, err)
 		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-		require.NoError(t, ucm.Save(cfg))
+		require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 		m := Manager{
 			userConfigManager: ucm,
@@ -786,7 +805,7 @@ func TestGetLoggedInServicePrincipalTenantID(t *testing.T) {
 		cfg, err := ucm.Load()
 		require.NoError(t, err)
 		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-		require.NoError(t, ucm.Save(cfg))
+		require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 		m := Manager{
 			userConfigManager: ucm,
@@ -884,7 +903,7 @@ func TestCredentialForCurrentUser_LegacyAuth_Error(t *testing.T) {
 	cfg, err := ucm.Load()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-	require.NoError(t, ucm.Save(cfg))
+	require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 	m := Manager{
 		userConfigManager: ucm,
@@ -902,7 +921,7 @@ func TestCredentialForCurrentUser_LegacyAuthWithTenant(t *testing.T) {
 	cfg, err := ucm.Load()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
-	require.NoError(t, ucm.Save(cfg))
+	require.NoError(t, config.ReplaceUserConfig(t.Context(), ucm, cfg))
 
 	m := Manager{
 		userConfigManager: ucm,
@@ -2579,6 +2598,14 @@ func (f *failingUserConfigManager) Load() (config.Config, error) {
 }
 
 func (f *failingUserConfigManager) Save(_ config.Config) error {
+	return f.err
+}
+
+func (f *failingUserConfigManager) Mutate(context.Context, func(context.Context, config.Config) (bool, error)) error {
+	return f.err
+}
+
+func (f *failingUserConfigManager) Replace(context.Context, config.Config) error {
 	return f.err
 }
 

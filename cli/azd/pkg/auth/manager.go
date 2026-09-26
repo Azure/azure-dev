@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -1281,11 +1282,17 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 		return nil, err
 	}
 
-	if err := userCfg.Unset(currentUserKey); err != nil {
-		return nil, err
+	mutation := func(_ context.Context, cfg config.Config) (bool, error) {
+		currentData, exists := cfg.Get(currentUserKey)
+		if !exists || !reflect.DeepEqual(currentData, curUserData) {
+			return false, nil
+		}
+		if err := cfg.Unset(currentUserKey); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
-
-	if err := m.userConfigManager.Save(userCfg); err != nil {
+	if err := config.MutateUserConfig(context.Background(), m.userConfigManager, mutation); err != nil {
 		return nil, err
 	}
 
@@ -1639,17 +1646,16 @@ func (m *Manager) SetBuiltInAuthMode() error {
 		return fmt.Errorf("Unexpected mode found: %s", currentMode)
 	}
 
-	// Unset the useAzCliAuthKey flag
-	cfg, err := m.userConfigManager.Load()
-	if err != nil {
-		return fmt.Errorf("reading user config: %w", err)
+	mutation := func(_ context.Context, cfg config.Config) (bool, error) {
+		if _, exists := cfg.Get(useAzCliAuthKey); !exists {
+			return false, nil
+		}
+		if err := cfg.Unset(useAzCliAuthKey); err != nil {
+			return false, fmt.Errorf("unsetting %s: %w", useAzCliAuthKey, err)
+		}
+		return true, nil
 	}
-
-	if err := cfg.Unset(useAzCliAuthKey); err != nil {
-		return fmt.Errorf("unsetting %s: %w", useAzCliAuthKey, err)
-	}
-
-	if err := m.userConfigManager.Save(cfg); err != nil {
+	if err := config.MutateUserConfig(context.Background(), m.userConfigManager, mutation); err != nil {
 		return fmt.Errorf("saving user config: %w", err)
 	}
 

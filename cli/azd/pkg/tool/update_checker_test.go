@@ -35,6 +35,21 @@ func (m *mockUserConfigManager) Save(cfg config.Config) error {
 	return nil
 }
 
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	if changed, err := mutation(ctx, m.cfg); err != nil || !changed {
+		return err
+	}
+	return nil
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return nil
+}
+
 // staticDir returns a configDirFn that always yields the given directory.
 // This is a test helper for constructing [UpdateChecker] instances with
 // a known, fixed directory.

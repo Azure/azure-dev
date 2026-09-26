@@ -36,6 +36,17 @@ func newInMemoryUserConfigManager(cfg config.Config) *inMemoryUserConfigManager 
 
 func (m *inMemoryUserConfigManager) Load() (config.Config, error) { return m.cfg, nil }
 func (m *inMemoryUserConfigManager) Save(_ config.Config) error   { return nil }
+func (m *inMemoryUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	_, err := mutation(ctx, m.cfg)
+	return err
+}
+func (m *inMemoryUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	m.cfg = replacement
+	return nil
+}
 
 func Test_PromptService_PromptSubscription(t *testing.T) {
 	ucm := newInMemoryUserConfigManager(nil)

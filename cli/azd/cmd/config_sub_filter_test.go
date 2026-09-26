@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -117,7 +118,7 @@ func TestSubFilterRemoveAction_ConfirmedRemoval(t *testing.T) {
 	require.NoError(t, err)
 	err = prompt.SaveSubscriptionFilter(cfg, "t1", []string{"sub-1"})
 	require.NoError(t, err)
-	err = ucm.Save(cfg)
+	err = config.ReplaceUserConfig(t.Context(), ucm, cfg)
 	require.NoError(t, err)
 
 	mockAccount := &mockaccount.MockAccountManager{
@@ -158,7 +159,7 @@ func TestSubFilterRemoveAction_CancelledRemoval(t *testing.T) {
 	require.NoError(t, err)
 	err = prompt.SaveSubscriptionFilter(cfg, "t1", []string{"sub-1"})
 	require.NoError(t, err)
-	err = ucm.Save(cfg)
+	err = config.ReplaceUserConfig(t.Context(), ucm, cfg)
 	require.NoError(t, err)
 
 	mockAccount := &mockaccount.MockAccountManager{
@@ -255,7 +256,7 @@ func TestSubFilterRemoveAction_MultiTenant_RemovesCorrectTenant(
 	require.NoError(t, err)
 	err = prompt.SaveSubscriptionFilter(cfg, "t2", []string{"sub-2"})
 	require.NoError(t, err)
-	err = ucm.Save(cfg)
+	err = config.ReplaceUserConfig(t.Context(), ucm, cfg)
 	require.NoError(t, err)
 
 	mockAccount := &mockaccount.MockAccountManager{

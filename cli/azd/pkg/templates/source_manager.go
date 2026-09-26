@@ -102,7 +102,7 @@ func NewSourceManager(
 
 // List returns a list of template sources.
 func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
-	config, err := sm.configManager.Load()
+	userConfig, err := sm.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("unable to load user configuration: %w", err)
 	}
@@ -117,7 +117,19 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		return allSourceConfigs, nil
 	}
 
-	rawSources, ok := config.Get(baseConfigKey)
+	if _, ok := userConfig.Get(baseConfigKey); !ok {
+		// In the use case where template sources have never been configured,
+		// add Awesome-Azd as the default template source.
+		if err := sm.ensureDefaultSource(ctx, SourceAwesomeAzd); err != nil {
+			return nil, fmt.Errorf("unable to default template source '%s': %w", SourceAwesomeAzd.Key, err)
+		}
+		userConfig, err = sm.configManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("unable to reload user configuration: %w", err)
+		}
+	}
+
+	rawSources, ok := userConfig.Get(baseConfigKey)
 	if ok {
 		sourceMap := rawSources.(map[string]any)
 		for key, rawSource := range sourceMap {
@@ -140,13 +152,6 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 			sourceConfig.Key = key
 			allSourceConfigs = append(allSourceConfigs, sourceConfig)
 		}
-	} else {
-		// In the use case where template sources have never been configured,
-		// add Awesome-Azd as the default template source.
-		if err := sm.addInternal(SourceAwesomeAzd); err != nil {
-			return nil, fmt.Errorf("unable to default template source '%s': %w", SourceAwesomeAzd.Key, err)
-		}
-		allSourceConfigs = append(allSourceConfigs, SourceAwesomeAzd)
 	}
 
 	return allSourceConfigs, nil
@@ -183,7 +188,7 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 
 	source.Key = newKey
 
-	return sm.addInternal(source)
+	return sm.addInternal(ctx, source)
 }
 
 // Remove removes a template source by the specified key.
@@ -195,24 +200,17 @@ func (sm *sourceManager) Remove(ctx context.Context, key string) error {
 		return fmt.Errorf("template source '%s' not found, %w", key, err)
 	}
 
-	config, err := sm.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("unable to load user configuration: %w", err)
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
+		path := fmt.Sprintf("%s.%s", baseConfigKey, key)
+		if _, ok := userConfig.Get(path); !ok {
+			return false, nil
+		}
+		if err := userConfig.Unset(path); err != nil {
+			return false, fmt.Errorf("unable to remove template source '%s': %w", key, err)
+		}
+		return true, nil
 	}
-
-	path := fmt.Sprintf("%s.%s", baseConfigKey, key)
-	_, ok := config.Get(path)
-	if !ok {
-		return nil
-	}
-
-	err = config.Unset(path)
-	if err != nil {
-		return fmt.Errorf("unable to remove template source '%s': %w", key, err)
-	}
-
-	err = sm.configManager.Save(config)
-	if err != nil {
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
@@ -252,20 +250,36 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	return source, nil
 }
 
-func (sm *sourceManager) addInternal(source *SourceConfig) error {
-	config, err := sm.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("unable to load user configuration: %w", err)
+func (sm *sourceManager) ensureDefaultSource(ctx context.Context, source *SourceConfig) error {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
+		if _, exists := userConfig.Get(baseConfigKey); exists {
+			return false, nil
+		}
+		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
+		if err := userConfig.Set(path, source); err != nil {
+			return false, fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
+		}
+		return true, nil
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
+		return fmt.Errorf("updating user configuration: %w", err)
 	}
 
-	path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
-	err = config.Set(path, source)
-	if err != nil {
-		return fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
-	}
+	return nil
+}
 
-	err = sm.configManager.Save(config)
-	if err != nil {
+func (sm *sourceManager) addInternal(ctx context.Context, source *SourceConfig) error {
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
+		path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
+		if _, exists := userConfig.Get(path); exists {
+			return false, fmt.Errorf("template source '%s' already exists, %w", source.Key, ErrSourceExists)
+		}
+		if err := userConfig.Set(path, source); err != nil {
+			return false, fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
+		}
+		return true, nil
+	}
+	if err := config.MutateUserConfig(ctx, sm.configManager, mutation); err != nil {
 		return fmt.Errorf("updating user configuration: %w", err)
 	}
 

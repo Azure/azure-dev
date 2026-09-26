@@ -958,6 +958,22 @@ func (m *mockUserConfigManager) Save(c config.Config) error {
 	return nil
 }
 
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	_, err = mutation(ctx, cfg)
+	return err
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, _ config.Config) error {
+	return nil
+}
+
 func setupGitCliMocks(mockContext *mocks.MockContext, repoPath string) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "rev-parse --show-toplevel")

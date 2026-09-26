@@ -36,6 +36,25 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
+func TestMain(m *testing.M) {
+	configDir, err := os.MkdirTemp("", "azd-extensions-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZD_CONFIG_DIR", configDir); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no"); err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+	if err := os.RemoveAll(configDir); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to remove temporary azd config directory %q: %v\n", configDir, err)
+	}
+	os.Exit(code)
+}
+
 func Test_ValidateChecksum_Success_SHA256(t *testing.T) {
 	// Create a temporary file with known content
 	content := []byte("test data")
@@ -196,8 +215,8 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.Greater(t, len(installed), 0)
 	require.Equal(t, SourceCategoryAzd, installed[extensions[0].Id].SourceCategory)
 
-	// Uninstall the first extension
-	err = manager.Uninstall(t.Context(), extensions[0].Id)
+	// Uninstall the first extension using different casing.
+	err = manager.Uninstall(t.Context(), strings.ToUpper(extensions[0].Id))
 	require.NoError(t, err)
 
 	// List installed extensions (expect 0)
@@ -221,7 +240,7 @@ func TestInstallEmitsSourceCategoryTelemetry(t *testing.T) {
 		Type:     SourceKindUrl,
 		Location: extensionRegistryUrl,
 	}))
-	require.NoError(t, userConfigManager.Save(userConfig))
+	require.NoError(t, config.ReplaceUserConfig(t.Context(), userConfigManager, userConfig))
 
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
 	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
@@ -1101,13 +1120,13 @@ func Test_Install_PackDependency_FallsBackToMainRegistry(t *testing.T) {
 		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent}},
 		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{child}},
 	}
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"test.leaf": {
 			Id:      "test.leaf",
 			Version: "1.0.0",
 			Source:  MainRegistryName,
 		},
-	}))
+	})
 	manager.installed = nil
 
 	_, err := manager.Install(t.Context(), parent, "")
@@ -1152,13 +1171,13 @@ func Test_Install_PackDependency_FallsBackWhenParentSourceRequiresNewerAzd(t *te
 		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, localChild}},
 		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainChild}},
 	}
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"test.leaf": {
 			Id:      "test.leaf",
 			Version: "1.0.0",
 			Source:  MainRegistryName,
 		},
-	}))
+	})
 	manager.installed = nil
 
 	manager.azdVersion = semver.MustParse("1.0.0")
@@ -2020,12 +2039,12 @@ func Test_UpdateInstalled_UpdatesConfigAndInvalidatesCache(t *testing.T) {
 	t.Parallel()
 
 	manager := newTestManager(t)
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"test.extension": {
 			Id:      "test.extension",
 			Version: "1.0.0",
 		},
-	}))
+	})
 
 	manager.installed = map[string]*Extension{
 		"test.extension": {
@@ -2070,7 +2089,7 @@ func Test_HasMetadataCapability(t *testing.T) {
 	t.Parallel()
 
 	manager := newTestManager(t)
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"metadata.extension": {
 			Id:           "metadata.extension",
 			Capabilities: []CapabilityType{MetadataCapability},
@@ -2078,7 +2097,7 @@ func Test_HasMetadataCapability(t *testing.T) {
 		"plain.extension": {
 			Id: "plain.extension",
 		},
-	}))
+	})
 
 	require.True(t, manager.HasMetadataCapability("metadata.extension"))
 	require.False(t, manager.HasMetadataCapability("plain.extension"))
@@ -2108,6 +2127,19 @@ func newTestManagerWithOptions(t *testing.T, options ManagerOptions) *Manager {
 	require.NoError(t, err)
 
 	return manager
+}
+
+func setInstalledExtensions(t *testing.T, manager *Manager, extensions map[string]*Extension) {
+	t.Helper()
+
+	mutation := func(_ context.Context, userConfig config.Config) (bool, error) {
+		if err := userConfig.Set(installedConfigKey, extensions); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	err := config.MutateUserConfig(t.Context(), manager.configManager, mutation)
+	require.NoError(t, err)
 }
 
 func writeExtensionRegistryFile(t *testing.T, registry Registry) string {
@@ -2427,8 +2459,7 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		extensions, err := manager.ListInstalled()
 		require.NoError(t, err)
 		extensions[extension.Id] = extension
-		err = manager.userConfig.Set(installedConfigKey, extensions)
-		require.NoError(t, err)
+		setInstalledExtensions(t, manager, extensions)
 
 		// Fetch and cache metadata
 		err = manager.fetchAndCacheMetadata(*mockContext.Context, extension)
@@ -2562,8 +2593,7 @@ func Test_GetInstalled_WithSourceFilter(t *testing.T) {
 		},
 	}
 
-	err = manager.userConfig.Set(installedConfigKey, extensions)
-	require.NoError(t, err)
+	setInstalledExtensions(t, manager, extensions)
 
 	t.Run("filter by ID only", func(t *testing.T) {
 		ext, err := manager.GetInstalled(FilterOptions{Id: "test.ext"})
@@ -3049,7 +3079,7 @@ func Test_Upgrade_DependencyUpgrade_FallsBackToMainRegistry(t *testing.T) {
 		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, localChild}},
 		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainChild}},
 	}
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"test.child": {
 			Id:      "test.child",
 			Version: "1.0.0",
@@ -3060,7 +3090,7 @@ func Test_Upgrade_DependencyUpgrade_FallsBackToMainRegistry(t *testing.T) {
 			Version: "1.0.0",
 			Source:  MainRegistryName,
 		},
-	}))
+	})
 	manager.installed = nil
 
 	_, depUpgrades, err := manager.ReconcileDependencies(
@@ -3109,7 +3139,7 @@ func Test_Upgrade_DependencyUpgrade_FallsBackWhenParentSourceRequiresNewerAzd(t 
 		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, localChild}},
 		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainChild}},
 	}
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"test.child": {
 			Id:      "test.child",
 			Version: "1.0.0",
@@ -3120,7 +3150,7 @@ func Test_Upgrade_DependencyUpgrade_FallsBackWhenParentSourceRequiresNewerAzd(t 
 			Version: "1.0.0",
 			Source:  MainRegistryName,
 		},
-	}))
+	})
 	manager.installed = nil
 
 	manager.azdVersion = semver.MustParse("1.0.0")
@@ -3185,7 +3215,7 @@ func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencie
 		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent, bundleChild, bundleLeaf}},
 		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{mainLeaf}},
 	}
-	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+	setInstalledExtensions(t, manager, map[string]*Extension{
 		"test.child": {
 			Id:      "test.child",
 			Version: "1.0.0",
@@ -3201,7 +3231,7 @@ func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencie
 			Version: "1.0.0",
 			Source:  parent.Source,
 		},
-	}))
+	})
 	manager.installed = nil
 
 	_, depUpgrades, err := manager.ReconcileDependencies(t.Context(), parent, UpgradeOptions{

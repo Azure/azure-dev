@@ -4,6 +4,7 @@
 package templates
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -84,6 +85,31 @@ func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 
 	require.Len(t, sources, 1)
 	require.Equal(t, SourceAwesomeAzd.Key, sources[0].Key)
+}
+
+func Test_sourceManager_List_PreservesConcurrentExplicitSources(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+
+	staleConfig := config.NewEmptyConfig()
+	latestConfig := config.NewEmptyConfig()
+	require.NoError(t, latestConfig.Set("template.sources.private", map[string]any{
+		"name":     "Private",
+		"type":     "file",
+		"location": "testdata/templates.json",
+	}))
+	configManager.On("Load").Return(staleConfig, nil).Once()
+	configManager.On("Load").Return(latestConfig, nil).Twice()
+
+	sources, err := sm.List(t.Context())
+	require.NoError(t, err)
+	require.Len(t, sources, 1)
+	require.Equal(t, "private", sources[0].Key)
+
+	_, found := latestConfig.Get("template.sources." + SourceAwesomeAzd.Key)
+	require.False(t, found)
 }
 
 func Test_sourceManager_Get(t *testing.T) {
@@ -257,4 +283,22 @@ func (m *mockUserConfigManager) Load() (config.Config, error) {
 func (m *mockUserConfigManager) Save(config config.Config) error {
 	args := m.Called(config)
 	return args.Error(0)
+}
+
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := mutation(ctx, cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(cfg)
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
 }

@@ -294,7 +294,7 @@ func (uc *UpdateChecker) Check(
 		return results, fmt.Errorf("saving update cache: %w", err)
 	}
 
-	if err := uc.recordCheckTimestamp(); err != nil {
+	if err := uc.recordCheckTimestamp(ctx); err != nil {
 		return results, fmt.Errorf(
 			"recording check timestamp: %w", err,
 		)
@@ -511,19 +511,15 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 func (uc *UpdateChecker) MarkNotificationShown(
 	ctx context.Context,
 ) error {
-	cfg, err := uc.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	if err := cfg.Set(
-		configKeyLastNotificationShown,
-		time.Now().UTC().Format(time.RFC3339),
-	); err != nil {
-		return fmt.Errorf("setting %s: %w", configKeyLastNotificationShown, err)
-	}
-
-	if err := uc.configManager.Save(cfg); err != nil {
+	if err := config.MutateUserConfig(ctx, uc.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := cfg.Set(
+			configKeyLastNotificationShown,
+			time.Now().UTC().Format(time.RFC3339),
+		); err != nil {
+			return false, fmt.Errorf("setting %s: %w", configKeyLastNotificationShown, err)
+		}
+		return true, nil
+	}); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -608,20 +604,16 @@ func (uc *UpdateChecker) loadConfiguredInterval() int {
 
 // recordCheckTimestamp persists the current UTC time as the
 // last-update-check timestamp in the user config.
-func (uc *UpdateChecker) recordCheckTimestamp() error {
-	cfg, err := uc.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	if err := cfg.Set(
-		configKeyLastUpdateCheck,
-		time.Now().UTC().Format(time.RFC3339),
-	); err != nil {
-		return fmt.Errorf("setting %s: %w", configKeyLastUpdateCheck, err)
-	}
-
-	if err := uc.configManager.Save(cfg); err != nil {
+func (uc *UpdateChecker) recordCheckTimestamp(ctx context.Context) error {
+	if err := config.MutateUserConfig(ctx, uc.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := cfg.Set(
+			configKeyLastUpdateCheck,
+			time.Now().UTC().Format(time.RFC3339),
+		); err != nil {
+			return false, fmt.Errorf("setting %s: %w", configKeyLastUpdateCheck, err)
+		}
+		return true, nil
+	}); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 

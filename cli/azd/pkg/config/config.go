@@ -49,6 +49,41 @@ type Config interface {
 	IsEmpty() bool
 }
 
+// RawMapEntryConfig is an optional Config capability for accessing map entries
+// without interpreting entry keys as configuration paths.
+type RawMapEntryConfig interface {
+	GetRawMapEntry(path string, key string) (any, bool, error)
+	SetRawMapEntry(path string, key string, value any) error
+	DeleteRawMapEntry(path string, key string) error
+}
+
+// GetRawMapEntry retrieves an opaque map entry without resolving vault references.
+func GetRawMapEntry(config Config, path string, key string) (any, bool, error) {
+	rawConfig, ok := config.(RawMapEntryConfig)
+	if !ok {
+		return nil, false, fmt.Errorf("config type %T does not support raw map entries", config)
+	}
+	return rawConfig.GetRawMapEntry(path, key)
+}
+
+// SetRawMapEntry stores an entry without interpreting its key as a configuration path.
+func SetRawMapEntry(config Config, path string, key string, value any) error {
+	rawConfig, ok := config.(RawMapEntryConfig)
+	if !ok {
+		return fmt.Errorf("config type %T does not support raw map entries", config)
+	}
+	return rawConfig.SetRawMapEntry(path, key, value)
+}
+
+// DeleteRawMapEntry removes an entry without interpreting its key as a configuration path.
+func DeleteRawMapEntry(config Config, path string, key string) error {
+	rawConfig, ok := config.(RawMapEntryConfig)
+	if !ok {
+		return fmt.Errorf("config type %T does not support raw map entries", config)
+	}
+	return rawConfig.DeleteRawMapEntry(path, key)
+}
+
 // NewEmptyConfig creates a empty configuration object.
 func NewEmptyConfig() Config {
 	return NewConfig(nil)
@@ -250,6 +285,64 @@ func (c *config) GetMap(path string) (map[string]any, bool) {
 
 	node, ok := value.(map[string]any)
 	return node, ok
+}
+
+func (c *config) GetRawMapEntry(path string, key string) (any, bool, error) {
+	node, found, err := c.rawMap(path, false)
+	if err != nil || !found {
+		return nil, false, err
+	}
+
+	value, found := node[key]
+	return value, found, nil
+}
+
+func (c *config) SetRawMapEntry(path string, key string, value any) error {
+	node, _, err := c.rawMap(path, true)
+	if err != nil {
+		return err
+	}
+
+	node[key] = value
+	return nil
+}
+
+func (c *config) DeleteRawMapEntry(path string, key string) error {
+	node, found, err := c.rawMap(path, false)
+	if err != nil || !found {
+		return err
+	}
+
+	delete(node, key)
+	return nil
+}
+
+func (c *config) rawMap(path string, create bool) (map[string]any, bool, error) {
+	if path == "" {
+		return c.data, true, nil
+	}
+
+	currentNode := c.data
+	for part := range strings.SplitSeq(path, ".") {
+		value, exists := currentNode[part]
+		if !exists || value == nil {
+			if !create {
+				return nil, false, nil
+			}
+			node := map[string]any{}
+			currentNode[part] = node
+			currentNode = node
+			continue
+		}
+
+		node, ok := value.(map[string]any)
+		if !ok {
+			return nil, false, fmt.Errorf("failed converting node at path '%s' to map", part)
+		}
+		currentNode = node
+	}
+
+	return currentNode, true, nil
 }
 
 // GetSlice retrieves the slice stored at the specified path

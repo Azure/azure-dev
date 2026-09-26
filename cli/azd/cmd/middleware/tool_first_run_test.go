@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -19,6 +20,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	configDir, err := os.MkdirTemp("", "azd-middleware-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZD_CONFIG_DIR", configDir); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no"); err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+	if err := os.RemoveAll(configDir); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to remove temporary azd config directory %q: %v\n", configDir, err)
+	}
+	os.Exit(code)
+}
 
 // lookupUsageAttr returns the most recent value set on usage baggage for the
 // given key, plus a found flag.  Used by telemetry assertions in this file.
@@ -397,7 +417,7 @@ func TestToolFirstRunMiddleware_MarkCompleted_PersistsKey(t *testing.T) {
 		configManager: ucm,
 	}
 
-	m.markCompleted()
+	m.markCompleted(t.Context())
 
 	got, ok := cfg.Get(configKeyFirstRunCompleted)
 	require.True(t, ok, "markCompleted must persist the firstRunCompleted key")
@@ -420,7 +440,7 @@ func TestToolFirstRunMiddleware_MarkCompleted_LoadError(t *testing.T) {
 
 	// Should not panic; should silently swallow the load error.
 	require.NotPanics(t, func() {
-		m.markCompleted()
+		m.markCompleted(t.Context())
 	})
 }
 

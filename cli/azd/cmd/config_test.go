@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -21,6 +23,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
+
+func TestMain(m *testing.M) {
+	configDir, err := os.MkdirTemp("", "azd-cmd-tests-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZD_CONFIG_DIR", configDir); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no"); err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+	if err := os.RemoveAll(configDir); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to remove temporary azd config directory %q: %v\n", configDir, err)
+	}
+	os.Exit(code)
+}
 
 func newTestUserConfigManager(t *testing.T) config.UserConfigManager {
 	t.Helper()
@@ -96,7 +117,7 @@ func TestConfigGetAction(t *testing.T) {
 		require.NoError(t, err)
 		err = cfg.Set("test.key", "test-value")
 		require.NoError(t, err)
-		err = userConfigManager.Save(cfg)
+		err = config.ReplaceUserConfig(t.Context(), userConfigManager, cfg)
 		require.NoError(t, err)
 
 		action := newConfigGetAction(
@@ -150,7 +171,7 @@ func TestConfigUnsetAction(t *testing.T) {
 	require.NoError(t, err)
 	err = cfg.Set("my.setting", "myvalue")
 	require.NoError(t, err)
-	err = userConfigManager.Save(cfg)
+	err = config.ReplaceUserConfig(t.Context(), userConfigManager, cfg)
 	require.NoError(t, err)
 
 	action := newConfigUnsetAction(
@@ -176,7 +197,7 @@ func TestConfigResetAction_WithForce(t *testing.T) {
 	require.NoError(t, err)
 	err = cfg.Set("some.key", "some-value")
 	require.NoError(t, err)
-	err = userConfigManager.Save(cfg)
+	err = config.ReplaceUserConfig(t.Context(), userConfigManager, cfg)
 	require.NoError(t, err)
 
 	action := newConfigResetAction(
@@ -211,7 +232,7 @@ func TestConfigResetAction_UserDeclines(t *testing.T) {
 	require.NoError(t, err)
 	err = cfg.Set("keep.me", "important")
 	require.NoError(t, err)
-	err = userConfigManager.Save(cfg)
+	err = config.ReplaceUserConfig(t.Context(), userConfigManager, cfg)
 	require.NoError(t, err)
 
 	action := newConfigResetAction(

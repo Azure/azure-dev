@@ -643,10 +643,23 @@ Provides read/write access to azd user and environment configuration:
 | `GetUserJSON(ctx, path, out)` | Unmarshal user config into a struct. |
 | `SetUserJSON(ctx, path, value)` | Write a value to user config. |
 | `UnsetUser(ctx, path)` | Remove a user config key. |
+| `GetUserMapEntryJSON(ctx, path, key, out)` | Read an opaque map key and return its revision and presence. |
+| `SetUserMapEntryJSON(ctx, path, key, value)` | Unconditionally write an opaque map key. |
+| `DeleteUserMapEntry(ctx, path, key)` | Unconditionally remove an opaque map key. |
+| `CompareExchangeSetUserMapEntryJSON(ctx, path, key, revision, value, current)` | Write only when the current revision matches. |
+| `CompareExchangeDeleteUserMapEntry(ctx, path, key, revision, current)` | Delete only when the current revision matches. |
 | `GetEnvString(ctx, path)` | Read a string from env config. |
 | `GetEnvJSON(ctx, path, out)` | Unmarshal env config into a struct. |
 | `SetEnvJSON(ctx, path, value)` | Write a value to env config. |
 | `UnsetEnv(ctx, path)` | Remove an env config key. |
+
+User map-entry keys are opaque and are not interpreted as dot-separated config
+paths. `GetUserMapEntryJSON` and both compare-exchange methods return an opaque
+revision token with the observed value. An absent entry returns `found=false`
+and an empty revision. Explicit JSON `null` returns `found=true` and a nonempty
+revision. Compare-exchange succeeds only when the supplied revision matches;
+on conflict, `current` receives the observed value and the returned revision
+can be used for a retry.
 
 Utility functions:
 

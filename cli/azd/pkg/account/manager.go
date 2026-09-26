@@ -5,10 +5,8 @@ package account
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
-	"os"
 	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -44,10 +42,7 @@ type Manager interface {
 
 // Manages azd account configuration
 type manager struct {
-	// Path to the local azd user configuration file
-	filePath      string
-	configManager config.FileConfigManager
-	config        config.Config
+	configManager config.UserConfigManager
 	subManager    *SubscriptionsManager
 }
 
@@ -55,26 +50,15 @@ type manager struct {
 func NewManager(
 	configManager config.FileConfigManager,
 	subManager *SubscriptionsManager) (Manager, error) {
-	filePath, err := config.GetUserConfigFilePath()
+	userConfigManager := config.NewUserConfigManager(configManager)
+	_, err := userConfigManager.Load()
 	if err != nil {
 		return nil, err
 	}
 
-	azdConfig, err := configManager.Load(filePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("configuration file '%s' does not exist. Creating new empty config.", filePath)
-			azdConfig = config.NewEmptyConfig()
-		} else {
-			return nil, err
-		}
-	}
-
 	return &manager{
-		filePath:      filePath,
 		subManager:    subManager,
-		configManager: configManager,
-		config:        azdConfig,
+		configManager: userConfigManager,
 	}, nil
 }
 
@@ -163,12 +147,12 @@ func (m *manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 		return nil, fmt.Errorf("failed getting account for id '%s'", subscriptionId)
 	}
 
-	err = m.config.Set(defaultSubscriptionKeyPath, subscription.Id)
-	if err != nil {
-		return nil, fmt.Errorf("failed setting default subscription: %w", err)
-	}
-
-	err = m.configManager.Save(m.config, m.filePath)
+	err = config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := cfg.Set(defaultSubscriptionKeyPath, subscription.Id); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed saving azd configuration: %w", err)
 	}
@@ -197,12 +181,12 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 
 	matchingLocation := locations[index]
 
-	err = m.config.Set(defaultLocationKeyPath, matchingLocation.Name)
-	if err != nil {
-		return nil, fmt.Errorf("failed setting default location: %w", err)
-	}
-
-	err = m.configManager.Save(m.config, m.filePath)
+	err = config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
+		if err := cfg.Set(defaultLocationKeyPath, matchingLocation.Name); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed saving azd configuration: %w", err)
 	}
@@ -212,26 +196,37 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 
 // HasDefaultSubscription returns true if a default subscription has been configured (i.e defaults.subscription is set)
 func (m *manager) HasDefaultSubscription() bool {
-	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return false
+	}
+	_, hasDefaultSubscription := cfg.Get(defaultSubscriptionKeyPath)
 
 	return hasDefaultSubscription
 }
 
 // HasDefaultLocation returns true if a default location has been configured (i.e defaults.location is set)
 func (m *manager) HasDefaultLocation() bool {
-	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return false
+	}
+	_, hasDefaultLocation := cfg.Get(defaultLocationKeyPath)
 
 	return hasDefaultLocation
 }
 
 // Clears any persisted defaults in the azd config
 func (m *manager) Clear(ctx context.Context) error {
-	err := m.config.Unset("defaults")
-	if err != nil {
-		return fmt.Errorf("failed clearing defaults: %w", err)
-	}
-
-	err = m.configManager.Save(m.config, m.filePath)
+	err := config.MutateUserConfig(ctx, m.configManager, func(_ context.Context, cfg config.Config) (bool, error) {
+		if _, exists := cfg.Get("defaults"); !exists {
+			return false, nil
+		}
+		if err := cfg.Unset("defaults"); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed saving azd configuration: %w", err)
 	}
@@ -242,8 +237,12 @@ func (m *manager) Clear(ctx context.Context) error {
 // Returns the default subscription ID stored in configuration.
 // If configuration is not found or invalid, an empty string is returned.
 func (m *manager) GetDefaultSubscriptionID(ctx context.Context) string {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return ""
+	}
 	// Get the default subscription ID from azd configuration
-	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
+	configSubscriptionId, ok := cfg.Get(defaultSubscriptionKeyPath)
 	if !ok {
 		return ""
 	}
@@ -260,8 +259,12 @@ func (m *manager) GetDefaultSubscriptionID(ctx context.Context) string {
 // If set in config will return the configured subscription
 // otherwise will return nil.
 func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("loading user configuration: %w", err)
+	}
 	// Get the default subscription ID from azd configuration
-	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
+	configSubscriptionId, ok := cfg.Get(defaultSubscriptionKeyPath)
 
 	if !ok {
 		return nil, nil
@@ -288,7 +291,11 @@ func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 // Gets the default Azure location name stored in configuration.
 // If configuration is not found or invalid, a default location (eastus2) is returned.
 func (m *manager) GetDefaultLocationName(ctx context.Context) string {
-	configLocation, ok := m.config.Get(defaultLocationKeyPath)
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return defaultLocation.Name
+	}
+	configLocation, ok := cfg.Get(defaultLocationKeyPath)
 	if !ok {
 		return defaultLocation.Name
 	}
@@ -304,7 +311,11 @@ func (m *manager) GetDefaultLocationName(ctx context.Context) string {
 // Gets the default Azure location stored in configuration
 // When specified in azd config, will return the location when valid, otherwise azd global default (eastus2)
 func (m *manager) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
-	configLocation, ok := m.config.Get(defaultLocationKeyPath)
+	cfg, err := m.configManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("loading user configuration: %w", err)
+	}
+	configLocation, ok := cfg.Get(defaultLocationKeyPath)
 	if !ok {
 		return &defaultLocation, nil
 	}

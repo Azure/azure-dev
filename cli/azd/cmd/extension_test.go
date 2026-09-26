@@ -1287,6 +1287,24 @@ type mockUserConfigManager struct {
 	mock.Mock
 }
 
+func (m *mockUserConfigManager) Mutate(
+	ctx context.Context,
+	mutation func(context.Context, config.Config) (bool, error),
+) error {
+	cfg, err := m.Load()
+	if err != nil {
+		return err
+	}
+	if changed, err := mutation(ctx, cfg); err != nil || !changed {
+		return err
+	}
+	return m.Save(cfg)
+}
+
+func (m *mockUserConfigManager) Replace(_ context.Context, replacement config.Config) error {
+	return m.Save(replacement)
+}
+
 func newTestSourceManager(t *testing.T) (*extensions.SourceManager, *mockUserConfigManager) {
 	t.Helper()
 	cfgMgr := &mockUserConfigManager{}

@@ -121,6 +121,7 @@ func (s *Server) registerServices() error {
 			BetaUserConfigService:    s.userConfigService,
 			BetaDeploymentService:    s.deploymentService,
 			BetaEventService:         s.eventService,
+			BetaFollowUpService:      s.followUpService,
 			BetaComposeService:       s.composeService,
 			BetaWorkflowService:      s.workflowService,
 			BetaExtensionService:     s.extensionService,

@@ -1,5 +1,7 @@
 # Extension Framework
 
+<!-- cspell:ignore azdext -->
+
 Architecture of the gRPC-based extension system in azd.
 
 ## Overview
@@ -45,6 +47,19 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+### Lifecycle follow-up contributions
+
+The beta event stream supplies an invocation ID to each subscribed project
+handler. The extension calls the beta `FollowUpService` with that ID over
+gRPC; both services use a host-owned invocation store. Only successful
+project `post*` invocations are committed to the command's follow-up
+collector. The UX middleware appends the resolved text to human-readable
+completion output without changing JSON output. Within a custom workflow,
+later command steps take precedence over earlier steps.
+
+See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
+for the API, host compatibility, and contribution ordering rules.
+
 ## Capabilities
 
 Extensions declare their capabilities in `extension.yaml`:
@@ -71,6 +86,7 @@ Extensions can access these azd services via gRPC:
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events
+- **Follow-up (beta)** — Contribute command-level guidance from project lifecycle handlers; see the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 - **Container** — Container registry operations
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations

@@ -77,6 +77,7 @@ func newExtensionActionTestServer() *grpcserver.Server {
 		&azdext.UnimplementedProvisioningServiceServer{},
 		&azdext.UnimplementedValidationServiceServer{},
 		&v1beta.UnimplementedTelemetryServiceServer{},
+		&v1beta.UnimplementedFollowUpServiceServer{},
 	)
 }
 

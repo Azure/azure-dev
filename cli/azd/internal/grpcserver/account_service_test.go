@@ -152,6 +152,7 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 				azdext.UnimplementedProvisioningServiceServer{},
 				azdext.UnimplementedValidationServiceServer{},
 				v1beta.UnimplementedTelemetryServiceServer{},
+				v1beta.UnimplementedFollowUpServiceServer{},
 			)
 			info, err := server.Start()
 			require.NoError(t, err)

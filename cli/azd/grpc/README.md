@@ -12,9 +12,9 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CopilotService`, and `TelemetryService` are currently beta-only. Removing or
-renumbering fields, changing field types, and reusing reserved names or
-numbers remain breaking changes in either channel.
+`CopilotService`, `FollowUpService`, and `TelemetryService` are currently
+beta-only. Removing or renumbering fields, changing field types, and reusing
+reserved names or numbers remain breaking changes in either channel.
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a

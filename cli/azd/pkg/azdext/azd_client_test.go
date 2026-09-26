@@ -4,8 +4,10 @@
 package azdext
 
 import (
+	"sync"
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
@@ -143,4 +145,42 @@ func Test_AzdClient_Telemetry(t *testing.T) {
 	require.NotNil(t, first)
 	require.NotNil(t, second)
 	require.NotSame(t, first, second)
+}
+
+func Test_AzdClient_FollowUp_ReturnsSameClient(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.FollowUp()
+	second := client.FollowUp()
+
+	require.NotNil(t, first)
+	require.Same(t, first, second)
+}
+
+func Test_AzdClient_EventsBeta_ReturnsSameClient(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.EventsBeta()
+	second := client.EventsBeta()
+
+	require.NotNil(t, first)
+	require.Same(t, first, second)
+}
+
+func Test_AzdClient_FollowUp_IsStableAcrossConcurrentCalls(t *testing.T) {
+	client := &AzdClient{}
+	clients := make([]v1beta.FollowUpServiceClient, 100)
+	var wg sync.WaitGroup
+
+	for i := range clients {
+		wg.Go(func() {
+			clients[i] = client.FollowUp()
+		})
+	}
+	wg.Wait()
+
+	for _, followUpClient := range clients {
+		require.NotNil(t, followUpClient)
+		require.Same(t, clients[0], followUpClient)
+	}
 }

@@ -83,6 +83,19 @@ For extensions that are still in development or preview, consider publishing to 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
 
+## Command-level lifecycle follow-up
+
+Beta project `post*` handlers can contribute next-step guidance to the
+parent command's human-readable completion message. Use the preview
+`EventsBeta()` client to subscribe and receive an invocation ID, then call
+`FollowUp().SetFollowUp` while processing that invocation.
+
+For published extensions using this preview API, set `requiredAzdVersion`
+to `>=1.35.0` for the current release line. See the
+[SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
+for host compatibility, subscription errors, and how contributions from
+multiple handlers and workflow steps are resolved.
+
 ## Extension Design Guidelines
 
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)

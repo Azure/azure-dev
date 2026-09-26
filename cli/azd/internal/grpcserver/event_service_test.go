@@ -9,6 +9,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -202,7 +203,14 @@ func createTestEventService() (*eventService, *MockEventStreamingServer) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
+	service := NewEventService(
+		extensionManager,
+		lazyEnvManager,
+		lazyProject,
+		lazyEnv,
+		NewFollowUpManager(),
+		console,
+	)
 	return service.(*eventService), mockStream
 }
 
@@ -427,6 +435,107 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	// Test that the handler function is created correctly
 	// We won't execute it since that would require complex async setup with broker
 	assert.NotNil(t, handler)
+}
+
+func TestEventService_createProjectEventHandler_DoesNotCollectFollowUp(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventName string
+		status    string
+		message   string
+		initial   string
+		want      string
+		wantError bool
+	}{
+		{
+			name:      "completed post event",
+			eventName: "postdeploy",
+			status:    "completed",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+		{
+			name:      "completed pre event",
+			eventName: "predeploy",
+			status:    "completed",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+		{
+			name:      "completed post event ignores message",
+			eventName: "postdeploy",
+			status:    "completed",
+			message:   "not follow-up",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+		{
+			name:      "failed post event",
+			eventName: "postdeploy",
+			status:    "failed",
+			message:   "hook failed",
+			initial:   "old guidance",
+			want:      "old guidance",
+			wantError: true,
+		},
+		{
+			name:      "incomplete post event",
+			eventName: "postdeploy",
+			status:    "running",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _ := createTestEventService()
+			extension := createTestExtension()
+			projectConfig, err := service.lazyProject.GetValue()
+			require.NoError(t, err)
+
+			broker, streamCtx, cleanup := createBrokerForEventHandler(
+				t,
+				extension.Id,
+				func(msg *azdext.EventMessage) *azdext.EventMessage {
+					invoke := msg.GetInvokeProjectHandler()
+					require.NotNil(t, invoke)
+					return &azdext.EventMessage{
+						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+								EventName: tt.eventName,
+								Status:    tt.status,
+								Message:   tt.message,
+							},
+						},
+					}
+				},
+			)
+			defer cleanup()
+
+			handler := service.createProjectEventHandler(
+				streamCtx,
+				extension,
+				tt.eventName,
+				broker,
+			)
+			collector := guidance.NewFollowUpCollector()
+			collector.Add(guidance.FollowUp{
+				ExtensionID: extension.Id,
+				EventName:   "postprovision",
+				Text:        tt.initial,
+			})
+			ctx := guidance.WithFollowUpCollector(t.Context(), collector)
+
+			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+			if tt.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, collector.Text())
+		})
+	}
 }
 
 func TestEventService_createServiceEventHandler(t *testing.T) {
@@ -679,7 +788,14 @@ func TestEventService_New(t *testing.T) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
+	service := NewEventService(
+		extensionManager,
+		lazyEnvManager,
+		lazyProject,
+		lazyEnv,
+		NewFollowUpManager(),
+		console,
+	)
 
 	assert.NotNil(t, service)
 

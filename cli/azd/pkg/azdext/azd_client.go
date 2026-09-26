@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -37,6 +38,9 @@ type AzdClient struct {
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
+	betaEventsClient    v1beta.EventServiceClient
+	followUpClient      v1beta.FollowUpServiceClient
+	followUpOnce        sync.Once
 	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
@@ -217,6 +221,25 @@ func (c *AzdClient) Events() EventServiceClient {
 	}
 
 	return c.eventsClient
+}
+
+// EventsBeta returns the preview event service client.
+func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
+	if c.betaEventsClient == nil {
+		c.betaEventsClient = v1beta.NewEventServiceClient(c.connection)
+	}
+	return c.betaEventsClient
+}
+
+// FollowUp returns the preview follow-up contribution service client.
+func (c *AzdClient) FollowUp() v1beta.FollowUpServiceClient {
+	c.followUpOnce.Do(func() {
+		if c.followUpClient == nil {
+			c.followUpClient = v1beta.NewFollowUpServiceClient(c.connection)
+		}
+	})
+
+	return c.followUpClient
 }
 
 // Compose returns the preview compose service client.

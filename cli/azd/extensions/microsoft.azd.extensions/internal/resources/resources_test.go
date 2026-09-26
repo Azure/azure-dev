@@ -43,6 +43,8 @@ func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
 	require.Contains(t, eventContents, `import "errors.proto";`)
 	require.Contains(t, eventContents, "ExtensionError error = 4;")
 	require.Contains(t, eventContents, "ExtensionError error = 5;")
+	require.NotContains(t, eventContents, "string invocation_id = 3;")
+	require.NotContains(t, eventContents, "follow_up")
 }
 
 // TestGoGitignoreExcludesBin ensures the generated Go extension ignores the build

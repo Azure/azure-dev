@@ -6,6 +6,7 @@ package ioc
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -13,6 +14,73 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 )
+
+func Test_NewResolverReceiver(t *testing.T) {
+	t.Parallel()
+
+	sentinelErr := errors.New("resolver failed")
+	tests := []struct {
+		name      string
+		resolver  any
+		arguments []reflect.Value
+		want      []any
+	}{
+		{
+			name:     "NoArguments",
+			resolver: func() string { return "ready" },
+			want:     []any{"ready"},
+		},
+		{
+			name: "MultipleArgumentsAndError",
+			resolver: func(prefix string, number int) (string, error) {
+				return fmt.Sprintf("%s%d", prefix, number), sentinelErr
+			},
+			arguments: []reflect.Value{reflect.ValueOf("value="), reflect.ValueOf(42)},
+			want:      []any{"value=42", sentinelErr},
+		},
+		{
+			name: "NilResults",
+			resolver: func(value *counterService) (*counterService, error) {
+				return value, nil
+			},
+			arguments: []reflect.Value{reflect.ValueOf((*counterService)(nil))},
+			want:      []any{(*counterService)(nil), nil},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			resolver := reflect.ValueOf(tt.resolver)
+			var capturedResults []reflect.Value
+			captureCalls := 0
+
+			receiver := newResolverReceiver(resolver, func(results []reflect.Value) {
+				capturedResults = results
+				captureCalls++
+			})
+
+			require.Nil(t, capturedResults, "resolver has not run")
+			require.Zero(t, captureCalls, "resolver has not run")
+			require.Equal(t, resolver.Type().NumIn(), receiver.Type().NumIn())
+			require.Zero(t, receiver.Type().NumOut())
+
+			// make sure we matched the function's parameters properly...
+			for index := range resolver.Type().NumIn() {
+				require.Equal(t, resolver.Type().In(index), receiver.Type().In(index))
+			}
+
+			for range 2 { // nothing special about 2, just want to run more than once!
+				require.Empty(t, receiver.Call(tt.arguments))
+				require.Len(t, capturedResults, len(tt.want))
+				for index, want := range tt.want {
+					require.Equal(t, want, capturedResults[index].Interface(), "returned values match")
+				}
+			}
+			require.Equal(t, 2, captureCalls)
+		})
+	}
+}
 
 func Test_Container_Resolve(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
@@ -140,7 +208,7 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		require.Same(t, instance1, instance2)
 	})
 
-	t.Run("Nested Scope", func(t *testing.T) {
+	t.Run("Singleton, resolved", func(t *testing.T) {
 		rootContainer := NewNestedContainer(nil)
 
 		rootInstance := newSingletonService()
@@ -165,16 +233,136 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		err = scope1.Resolve(&scope1Instance1)
 		require.NoError(t, err)
 		require.NotNil(t, scope1Instance1)
+		require.Same(t, scope1Instance, scope1Instance1)
 
 		var scope2Instance1 *singletonService
 		err = scope2.Resolve(&scope2Instance1)
 		require.NoError(t, err)
 		require.NotNil(t, scope2Instance1)
-
-		// Instance 1 & 2 are singletons but overriden in each child scope so they should be different
-		require.NotSame(t, rootInstance, rootInstanceResolved)
-		require.NotSame(t, scope1Instance, scope2Instance)
+		require.Same(t, scope2Instance, scope2Instance1)
 	})
+
+	t.Run("Singleton, resolve at different levels", func(t *testing.T) {
+		t.Run("root first", func(t *testing.T) {
+			rootContainer := NewNestedContainer(nil)
+
+			// register, but not yet resolve, a singleton - we'll try to resolve it at different scopes
+			instance := newSingletonService()
+			RegisterInstance(rootContainer, instance)
+
+			childScope, err := rootContainer.NewScope()
+			require.NoError(t, err)
+
+			var rootResolved *singletonService
+			require.NoError(t, rootContainer.Resolve(&rootResolved))
+
+			var childResolved *singletonService
+			require.NoError(t, childScope.Resolve(&childResolved))
+
+			require.Same(t, rootResolved, childResolved)
+		})
+
+		t.Run("child first", func(t *testing.T) {
+			rootContainer := NewNestedContainer(nil)
+
+			// register, but not yet resolve, a singleton - we'll try to resolve it at different scopes
+			instance := newSingletonService()
+			RegisterInstance(rootContainer, instance)
+
+			childScope, err := rootContainer.NewScope()
+			require.NoError(t, err)
+
+			var childResolved *singletonService
+			err = childScope.Resolve(&childResolved)
+			require.NoError(t, err)
+
+			var rootResolved *singletonService
+			err = rootContainer.Resolve(&rootResolved)
+			require.NoError(t, err)
+
+			require.Same(t, rootResolved, childResolved)
+		})
+	})
+
+	t.Run("Singleton, resolved at child first", func(t *testing.T) {
+		rootContainer := NewNestedContainer(nil)
+
+		rootInstance := newSingletonService()
+		RegisterInstance(rootContainer, rootInstance)
+
+		scope1, err := rootContainer.NewScope()
+		require.NoError(t, err)
+		scope1Instance := newSingletonService()
+		RegisterInstance(scope1, scope1Instance)
+
+		scope2, err := rootContainer.NewScope()
+		require.NoError(t, err)
+		scope2Instance := newSingletonService()
+		RegisterInstance(scope2, scope2Instance)
+
+		var rootInstanceResolved *singletonService
+		err = rootContainer.Resolve(&rootInstanceResolved)
+		require.NoError(t, err)
+		require.NotNil(t, rootInstanceResolved)
+
+		var scope1Instance1 *singletonService
+		err = scope1.Resolve(&scope1Instance1)
+		require.NoError(t, err)
+		require.NotNil(t, scope1Instance1)
+		require.Same(t, scope1Instance, scope1Instance1)
+
+		var scope2Instance1 *singletonService
+		err = scope2.Resolve(&scope2Instance1)
+		require.NoError(t, err)
+		require.NotNil(t, scope2Instance1)
+		require.Same(t, scope2Instance, scope2Instance1)
+	})
+}
+
+func Test_Container_LayerEnvironmentManagerOverridesAreIsolated(t *testing.T) {
+	// This is a case I ran into when I was trying to make it so we could inject a new
+	// environment manager instance for each infra provider. Prior to the fix for this
+	// we'd accidentally end up mutating the _root_ environment manager instead of just the
+	// lower level manager.
+
+	rootContainer := NewNestedContainer(nil)
+	rootEnvManager := &fakeEnvironmentManager{name: "root"}
+	RegisterInstance[environmentManager](rootContainer, rootEnvManager)
+
+	// now we're going to register an env manager, but each one is in a new
+	// scope, so the root should be unaffected (there was a bug where this was
+	// NOT the case)
+	layer1Scope, err := rootContainer.NewScope()
+	require.NoError(t, err)
+	layer1EnvManager := &fakeEnvironmentManager{name: "layer-1"}
+	RegisterInstance[environmentManager](layer1Scope, layer1EnvManager) // override with our own env manager
+
+	layer2Scope, err := rootContainer.NewScope()
+	require.NoError(t, err)
+	layer2EnvManager := &fakeEnvironmentManager{name: "layer-2"}
+	RegisterInstance[environmentManager](layer2Scope, layer2EnvManager) // override with our own env manager
+
+	// okay, at this point we've created this structure in our IoC, each independent from
+	// each other:
+	//
+	// root container
+	// |-- root env manager
+	// |-- layer 1 scope
+	// |   |-- layer 1 env manager
+	// |-- layer 2 scope
+	//     |-- layer 2 env manager
+
+	var resolvedRoot environmentManager
+	require.NoError(t, rootContainer.Resolve(&resolvedRoot))
+	require.Same(t, rootEnvManager, resolvedRoot)
+
+	var resolvedLayer1 environmentManager
+	require.NoError(t, layer1Scope.Resolve(&resolvedLayer1))
+	require.Same(t, layer1EnvManager, resolvedLayer1)
+
+	var resolvedLayer2 environmentManager
+	require.NoError(t, layer2Scope.Resolve(&resolvedLayer2))
+	require.Same(t, layer2EnvManager, resolvedLayer2)
 }
 
 type singletonService struct {
@@ -208,6 +396,18 @@ func newTransientService() *transientService {
 }
 
 // ---------- helper types for tests ----------
+
+type environmentManager interface {
+	Name() string
+}
+
+type fakeEnvironmentManager struct {
+	name string
+}
+
+func (m *fakeEnvironmentManager) Name() string {
+	return m.name
+}
 
 type greeter interface {
 	Greet() string
@@ -703,15 +903,52 @@ func Test_NewScopeRegistrationsOnly(t *testing.T) {
 	t.Run("NilParent", func(t *testing.T) {
 		t.Parallel()
 		// NewRegistrationsOnly(nil) should produce a working empty container
-		c := NewRegistrationsOnly(nil)
+		c, err := NewRegistrationsOnly(nil)
+		require.NoError(t, err)
 		require.NotNil(t, c)
 
 		// ServiceLocator should still self-register
 		var sl ServiceLocator
-		err := c.Resolve(&sl)
+		err = c.Resolve(&sl)
 		require.NoError(t, err)
 		require.NotNil(t, sl)
 	})
+}
+
+func Test_NewRegistrationsOnly_NewScopeRecreatesScopedService(t *testing.T) {
+	t.Parallel()
+
+	rootContainer := NewNestedContainer(nil)
+	rootContainer.MustRegisterScoped(newCounterService)
+
+	var rootCounterService *counterService
+	require.NoError(t, rootContainer.Resolve(&rootCounterService))
+	require.NotNil(t, rootCounterService)
+
+	// This is the "copy": a separate container populated from the original registrations.
+	registrationsOnlyContainer, err := NewRegistrationsOnly(rootContainer)
+	require.NoError(t, err)
+
+	var registrationsOnlyCounterService *counterService
+	require.NoError(t, registrationsOnlyContainer.Resolve(&registrationsOnlyCounterService))
+	require.NotNil(t, registrationsOnlyCounterService)
+	require.NotSame(t, rootCounterService, registrationsOnlyCounterService, "scoped services are not inherited")
+
+	// This is the "child": a normal scope created FROM that copy, not from the original.
+	childOfRegistrationsOnlyContainer, err := registrationsOnlyContainer.NewScope()
+	require.NoError(t, err)
+
+	var childOfRegistrationsOnlyCounterService *counterService
+	require.NoError(t, childOfRegistrationsOnlyContainer.Resolve(&childOfRegistrationsOnlyCounterService))
+	require.NotNil(t, childOfRegistrationsOnlyCounterService)
+
+	// Previously the direct copy forgot this registration was scoped, so these were the same instance.
+	require.NotSame(t, registrationsOnlyCounterService, childOfRegistrationsOnlyCounterService)
+	require.NotSame(t, rootCounterService, childOfRegistrationsOnlyCounterService)
+
+	var childServiceAgain *counterService
+	require.NoError(t, childOfRegistrationsOnlyContainer.Resolve(&childServiceAgain))
+	require.Same(t, childOfRegistrationsOnlyCounterService, childServiceAgain)
 }
 
 // ---------- ServiceLocator self-registration ----------
@@ -733,10 +970,11 @@ func Test_ServiceLocator_SelfRegistered(t *testing.T) {
 	t.Run("InNewRegistrationsOnly", func(t *testing.T) {
 		t.Parallel()
 		parent := NewNestedContainer(nil)
-		child := NewRegistrationsOnly(parent)
+		child, err := NewRegistrationsOnly(parent)
+		require.NoError(t, err)
 
 		var sl ServiceLocator
-		err := child.Resolve(&sl)
+		err = child.Resolve(&sl)
 		require.NoError(t, err)
 		require.Same(t, child, sl)
 	})
@@ -849,22 +1087,92 @@ func Test_DependencyChain(t *testing.T) {
 func Test_NewNestedContainer_InheritsParent(t *testing.T) {
 	t.Parallel()
 
-	parent := NewNestedContainer(nil)
-	parent.MustRegisterSingleton(func() *counterService {
-		return &counterService{calls: 99}
+	t.Run("ParentAccessesFirst", func(t *testing.T) {
+		parent := NewNestedContainer(nil)
+		parent.MustRegisterSingleton(func() *counterService {
+			return &counterService{calls: 99}
+		})
+		child := NewNestedContainer(parent)
+
+		var parentInst *counterService
+		err := parent.Resolve(&parentInst)
+		require.NoError(t, err)
+
+		var childInst *counterService
+		err = child.Resolve(&childInst)
+		require.NoError(t, err)
+		require.Same(t, parentInst, childInst)
 	})
 
-	// Resolve in parent first to cache the singleton
-	var parentInst *counterService
-	err := parent.Resolve(&parentInst)
-	require.NoError(t, err)
+	t.Run("ChildAccessesFirst", func(t *testing.T) {
+		parent := NewNestedContainer(nil)
+		parent.MustRegisterSingleton(func() *counterService {
+			return &counterService{calls: 99}
+		})
+		child := NewNestedContainer(parent)
 
-	child := NewNestedContainer(parent)
-	var childInst *counterService
-	err = child.Resolve(&childInst)
-	require.NoError(t, err)
-	// Child inherits parent's cached singleton
-	require.Same(t, parentInst, childInst)
+		var childInst *counterService
+		err := child.Resolve(&childInst)
+		require.NoError(t, err)
+
+		var parentInst *counterService
+		err = parent.Resolve(&parentInst)
+		require.NoError(t, err)
+		require.Same(t, parentInst, childInst)
+	})
+}
+
+func Test_NewScope_InheritedSingletonUsesParentDependencies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		childFirst bool
+	}{
+		{name: "ParentFirst"},
+		{name: "ChildFirst", childFirst: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			parent := NewNestedContainer(nil)
+			parentCounter := &counterService{calls: 1}
+			RegisterInstance(parent, parentCounter)
+			parent.MustRegisterSingleton(newDepService)
+
+			child, err := parent.NewScope()
+			require.NoError(t, err)
+			sibling, err := parent.NewScope()
+			require.NoError(t, err)
+
+			childCounter := &counterService{calls: 2}
+			RegisterInstance(child, childCounter)
+
+			var resolvedCounter *counterService
+			require.NoError(t, child.Resolve(&resolvedCounter))
+			require.Same(t, childCounter, resolvedCounter)
+
+			var parentResolved, childResolved *depService
+			if tt.childFirst {
+				require.NoError(t, child.Resolve(&childResolved))
+				require.NoError(t, parent.Resolve(&parentResolved))
+			} else {
+				require.NoError(t, parent.Resolve(&parentResolved))
+				require.NoError(t, child.Resolve(&childResolved))
+			}
+
+			var siblingResolved *depService
+			require.NoError(t, sibling.Resolve(&siblingResolved))
+
+			require.NotNil(t, parentResolved)
+			require.Same(t, parentResolved, childResolved)
+			require.Same(t, parentResolved, siblingResolved)
+			require.Same(t, parentCounter, parentResolved.counter,
+				"the inherited singleton must not capture a child's dependency")
+		})
+	}
 }
 
 // ---------- inspectResolveError ----------

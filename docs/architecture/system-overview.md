@@ -49,7 +49,7 @@ See [Command Execution Model](command-execution-model.md) for details.
 
 ### Dependency Injection
 
-All services are registered in `cmd/container.go` using the IoC container (`pkg/ioc`). Services are resolved at runtime — never instantiated directly.
+All services are registered in `cmd/container.go` using the [IoC container](../../cli/azd/pkg/ioc/container.go). Services are resolved at runtime — never instantiated directly.
 
 ```go
 container.MustRegisterSingleton(func(dep *Dependency) *MyService {

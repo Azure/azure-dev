@@ -190,7 +190,7 @@ func newResolverReceiver(resolver reflect.Value, capture func([]reflect.Value)) 
 
 	return reflect.MakeFunc(receiverType, func(args []reflect.Value) []reflect.Value {
 		// when this wrapper resolver is called, we'll call the inner resolver (ie, the _real_ creator of the value)
-		// and pass all the args, whcih matched the original resolverFn's args.
+		// and pass all the args, which matched the original resolverFn's args.
 		capture(resolver.Call(args))
 		return nil
 	})

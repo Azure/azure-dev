@@ -93,9 +93,15 @@ func resolveFileSymlink(path string) (string, error) {
 			return "", err
 		}
 		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
+			target = filepath.Dir(path) + string(filepath.Separator) + target
 		}
-		path = target
+
+		targetDir, targetName := filepath.Split(target)
+		targetDir, err = filepath.EvalSymlinks(targetDir)
+		if err != nil {
+			return "", err
+		}
+		path = filepath.Join(targetDir, targetName)
 	}
 
 	return "", fmt.Errorf("too many symlinks")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -127,13 +128,34 @@ func newPipelineConfigCmd() *cobra.Command {
 type pipelineConfigAction struct {
 	flags               *pipelineConfigFlags
 	alphaFeatureManager *alpha.FeatureManager
-	manager             *pipeline.PipelineManager
+	manager             pipelineConfigManager
 	provisioningManager *provisioning.Manager
+	extensionActivator  pipelineProvisioningProviderActivator
 	env                 *environment.Environment
 	console             input.Console
 	prompters           prompt.Prompter
 	projectConfig       *project.ProjectConfig
 	importManager       *project.ImportManager
+}
+
+type pipelineConfigManager interface {
+	CiProviderName() string
+	SetParameters(parameters []provisioning.Parameter)
+	SetRequiredExtensions(extensions []pipeline.RequiredExtension) error
+	Configure(
+		ctx context.Context,
+		projectName string,
+		infra *project.Infra,
+	) (*pipeline.PipelineConfigResult, error)
+}
+
+type pipelineProvisioningProviderActivator interface {
+	EnsureProvisioningProviders(ctx context.Context, providerNames []string, environmentName string) (func(), error)
+	ExtensionsForProject(
+		provisioningProviderNames []string,
+		serviceTargetProviderNames []string,
+		requiredExtensionIds []string,
+	) ([]middleware.ProjectExtension, error)
 }
 
 func newPipelineConfigAction(
@@ -144,6 +166,7 @@ func newPipelineConfigAction(
 	prompters prompt.Prompter,
 	manager *pipeline.PipelineManager,
 	provisioningManager *provisioning.Manager,
+	extensionActivator *middleware.ExtensionActivator,
 	importManager *project.ImportManager,
 	projectConfig *project.ProjectConfig,
 ) actions.Action {
@@ -155,6 +178,7 @@ func newPipelineConfigAction(
 		console:             console,
 		prompters:           prompters,
 		provisioningManager: provisioningManager,
+		extensionActivator:  extensionActivator,
 		importManager:       importManager,
 		projectConfig:       projectConfig,
 	}
@@ -184,6 +208,49 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	})
 
 	layers := infra.Options.GetLayers()
+	providerNames := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		providerNames = append(providerNames, string(layer.Provider))
+	}
+
+	cleanupProviders, err := p.extensionActivator.EnsureProvisioningProviders(ctx, providerNames, p.env.Name())
+	if err != nil {
+		return nil, fmt.Errorf("activating provisioning provider extensions: %w", err)
+	}
+	defer cleanupProviders()
+
+	serviceTargetProviderNames := make([]string, 0, len(p.projectConfig.Services))
+	for _, service := range p.projectConfig.Services {
+		serviceTargetProviderNames = append(serviceTargetProviderNames, string(service.Host))
+	}
+
+	var requiredExtensionIds []string
+	if p.projectConfig.RequiredVersions != nil {
+		requiredExtensionIds = make([]string, 0, len(p.projectConfig.RequiredVersions.Extensions))
+		for extensionId := range p.projectConfig.RequiredVersions.Extensions {
+			requiredExtensionIds = append(requiredExtensionIds, extensionId)
+		}
+	}
+
+	requiredExtensions, err := p.extensionActivator.ExtensionsForProject(
+		providerNames,
+		serviceTargetProviderNames,
+		requiredExtensionIds,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolving project extensions: %w", err)
+	}
+	pipelineExtensions := make([]pipeline.RequiredExtension, len(requiredExtensions))
+	for i, extension := range requiredExtensions {
+		pipelineExtensions[i] = pipeline.RequiredExtension{
+			Id:      extension.Id,
+			Version: extension.Version,
+		}
+	}
+	if err := p.manager.SetRequiredExtensions(pipelineExtensions); err != nil {
+		return nil, fmt.Errorf("configuring required pipeline extensions: %w", err)
+	}
+
 	allParameters := []provisioning.Parameter{}
 
 	inputParameters := func(layer provisioning.Options) ([]provisioning.Parameter, error) {

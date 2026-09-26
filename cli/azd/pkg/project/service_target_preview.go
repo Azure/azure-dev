@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 func (st *appServiceTarget) PreviewWithTarget(
@@ -35,11 +36,14 @@ func (st *appServiceTarget) PreviewWithTarget(
 	targetDescription := "Azure Web App"
 	slotName := st.env.Getenv(slotEnvVarNameForService(serviceConfig.Name))
 	if slotName != "" && !strings.EqualFold(slotName, productionSlotName) {
-		targetDescription = fmt.Sprintf("deployment slot `%s` on Azure Web App", slotName)
+		targetDescription = fmt.Sprintf(
+			"deployment slot %s on Azure Web App",
+			output.WithHighLightFormat(slotName),
+		)
 		details["slot"] = slotName
 	}
 
-	return newServiceTargetPreview(serviceConfig, targetResource, operation, targetDescription, details), nil
+	return newServiceTargetPreview(serviceConfig, targetResource, operation, "", targetDescription, details), nil
 }
 
 func (f *functionAppTarget) PreviewWithTarget(
@@ -59,7 +63,7 @@ func (f *functionAppTarget) PreviewWithTarget(
 		operation = "publish a container image and update the app"
 	}
 
-	return newServiceTargetPreview(serviceConfig, targetResource, operation, "Azure Function App", nil), nil
+	return newServiceTargetPreview(serviceConfig, targetResource, operation, "", "Azure Function App", nil), nil
 }
 
 func (at *containerAppTarget) PreviewWithTarget(
@@ -72,6 +76,7 @@ func (at *containerAppTarget) PreviewWithTarget(
 			serviceConfig,
 			targetResource,
 			"provision the target and deploy a container image",
+			"",
 			"new Azure Container App",
 			map[string]any{"firstDeployment": true},
 		), nil
@@ -88,7 +93,7 @@ func (at *containerAppTarget) PreviewWithTarget(
 		targetDescription = "Azure Container Apps job"
 	}
 
-	return newServiceTargetPreview(serviceConfig, targetResource, operation, targetDescription, nil), nil
+	return newServiceTargetPreview(serviceConfig, targetResource, operation, "", targetDescription, nil), nil
 }
 
 func (at *staticWebAppTarget) PreviewWithTarget(
@@ -104,6 +109,7 @@ func (at *staticWebAppTarget) PreviewWithTarget(
 		serviceConfig,
 		targetResource,
 		"deploy built application content",
+		"",
 		"production environment of Azure Static Web App",
 		map[string]any{"environment": "production"},
 	), nil
@@ -145,12 +151,18 @@ func (t *aksTarget) PreviewWithTarget(
 		"namespace":  namespace,
 		"mechanisms": mechanisms,
 	}
-	operation := fmt.Sprintf("apply %s in namespace `%s`", joinPreviewItems(mechanisms), namespace)
+	operation := fmt.Sprintf("apply %s in namespace %s", joinPreviewItems(mechanisms), namespace)
+	messageOperation := fmt.Sprintf(
+		"apply %s in namespace %s",
+		joinPreviewItems(mechanisms),
+		output.WithHighLightFormat(namespace),
+	)
 
 	return newServiceTargetPreview(
 		serviceConfig,
 		targetResource,
 		operation,
+		messageOperation,
 		"Azure Kubernetes Service cluster",
 		details,
 	), nil
@@ -212,6 +224,7 @@ func (m *aiEndpointTarget) PreviewWithTarget(
 		serviceConfig,
 		endpointTarget,
 		operation,
+		"",
 		"Azure Machine Learning online endpoint",
 		details,
 	), nil
@@ -221,6 +234,7 @@ func newServiceTargetPreview(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 	operation string,
+	messageOperation string,
 	targetDescription string,
 	details map[string]any,
 ) *ServiceDeployPreviewResult {
@@ -240,15 +254,18 @@ func newServiceTargetPreview(
 
 	targetName := ""
 	if targetResource.ResourceName() != "" {
-		targetName = fmt.Sprintf(" `%s`", targetResource.ResourceName())
+		targetName = " " + output.WithHighLightFormat(targetResource.ResourceName())
+	}
+	if messageOperation == "" {
+		messageOperation = operation
 	}
 	message := fmt.Sprintf(
-		"Service `%s` will %s to the %s%s in resource group `%s`.",
-		serviceConfig.Name,
-		operation,
+		"Service %s will %s to the %s%s in resource group %s.",
+		output.WithHighLightFormat(serviceConfig.Name),
+		messageOperation,
 		targetDescription,
 		targetName,
-		targetResource.ResourceGroupName(),
+		output.WithHighLightFormat(targetResource.ResourceGroupName()),
 	)
 	if firstDeployment, ok := data["firstDeployment"].(bool); ok && firstDeployment {
 		message += " This will be the first deployment."

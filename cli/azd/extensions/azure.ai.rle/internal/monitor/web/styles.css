@@ -157,6 +157,8 @@ summary:hover { color: var(--accent); }
 #graph-inspector .eyebrow { font-size: 11px; color: #7c8aa5; }
 #graph-inspector .inspector-id { display: block; margin: 9px 0 18px; color: var(--muted); font-size: 12px; }
 #graph-inspector .field-list { grid-template-columns: minmax(90px, 1fr) minmax(0, 1fr); gap: 12px; font-size: 13px; margin: 20px 0; }
+.tool-call-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+.tool-call-id { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .field-list { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr); gap: 12px 24px; font-size: 14px; margin: 16px 0; }
 dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }

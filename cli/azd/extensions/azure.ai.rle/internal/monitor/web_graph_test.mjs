@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildGraph, GRAPH_PAGE_SIZE, sequenceLabel } from "./web/data.mjs";
+import { buildGraph, GRAPH_PAGE_SIZE, sequenceLabel, toolCalls, toolCallSummary } from "./web/data.mjs";
 
 const turns = (...ids) => ids.map((node_id, index) => ({ node_id, index }));
 const path = (node_ids, role = "agent") => ({ node_ids, role });
@@ -142,4 +142,79 @@ test("chart links can focus calls beyond the first graph page without unbounding
   const noID = buildGraph({ turns: Array.from({ length: 90 }, () => ({})) }, { focusKey: "turn:85" });
   assert.equal(noID.page, 1);
   assert.equal(noID.nodes.some((node) => node.key === "turn:85"), true);
+});
+
+// A turn that called a tool reports its finish reason as "tool_calls", which
+// says that the model reached for something but never which tool. The node card
+// has one line for it, so the names go there and the finish reason is dropped:
+// naming the tool already implies it.
+const called = (node_id, index, ...names) => ({
+  node_id, index, finish_reason: "tool_calls",
+  response_message: { role: "assistant", tool_calls: names.map((name, position) => ({
+    id: `call_${position}`, type: "function", function: { name, arguments: "{}" },
+  })) },
+});
+
+test("a node names the tools its call reached for", () => {
+  const graph = buildGraph({ turns: [called("a", 0, "web_search", "fabric_query")], sequences: [path(["a"])] });
+  assert.deepEqual(graph.nodes[0].tools, ["web_search", "fabric_query"]);
+  assert.equal(graph.nodes[0].kind, "ROOT TOOL CALL");
+});
+
+// One tool called three times and three tools called once are different
+// behaviours, and a bare list of names cannot tell them apart.
+test("a tool called more than once is counted rather than repeated", () => {
+  const graph = buildGraph({ turns: [called("a", 0, "web_search", "web_search")], sequences: [path(["a"])] });
+  assert.deepEqual(graph.nodes[0].tools, ["web_search \u00d72"]);
+});
+
+test("a call that answered instead of calling a tool keeps its finish reason", () => {
+  const graph = buildGraph({
+    turns: [{ node_id: "a", index: 0, finish_reason: "stop", response_message: { role: "assistant", content: "done" } }],
+    sequences: [path(["a"])],
+  });
+  assert.deepEqual(graph.nodes[0].tools, []);
+  assert.equal(graph.nodes[0].finishReason, "stop");
+  assert.equal(graph.nodes[0].kind, "ROOT CALL");
+});
+
+// Two records under one ID cannot say which call the node made, and guessing
+// from the first would be a claim the capture does not support.
+test("an ambiguous node reports no tools rather than one record's", () => {
+  const graph = buildGraph({
+    turns: [called("a", 0, "web_search"), called("a", 1, "fabric_query")],
+    sequences: [path(["a"])],
+  });
+  assert.deepEqual(graph.nodes[0].tools, []);
+  assert.equal(graph.nodes[0].finishReason, null);
+});
+
+test("a node whose call details were never exported reports no tools", () => {
+  const graph = buildGraph({ turns: [], sequences: [path(["a"])] });
+  assert.deepEqual(graph.nodes[0].tools, []);
+  assert.equal(graph.nodes[0].kind, "ROOT CALL");
+});
+
+test("a discarded call is still marked discarded when it called a tool", () => {
+  const graph = buildGraph({
+    turns: [{ ...called("a", 0, "web_search"), discarded: true }],
+    sequences: [path(["a"])],
+  });
+  assert.equal(graph.nodes[0].kind, "DISCARDED");
+});
+
+test("tool calls are listed with the arguments the model produced", () => {
+  const calls = toolCalls({ tool_calls: [
+    { id: "call_0", function: { name: "web_search", arguments: '{"search_query":"agent bricks"}' } },
+    { function: {} },
+  ] });
+  assert.deepEqual(calls.map((call) => call.name), ["web_search", "unnamed tool"]);
+  assert.equal(calls[0].id, "call_0");
+  assert.equal(calls[0].arguments, '{"search_query":"agent bricks"}');
+  assert.equal(calls[1].id, null);
+});
+
+test("a response with no tool calls summarises to nothing", () => {
+  assert.deepEqual(toolCallSummary({ role: "assistant", content: "done" }), []);
+  assert.deepEqual(toolCallSummary(null), []);
 });

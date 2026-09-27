@@ -5,6 +5,7 @@ import {
   buildGraph, chartGeometry, chartHoverAt, chartPath, chartScales, fetchRolloutIndex, fetchRunLog, fetchRunMetrics,
   fetchRunOverview, fetchSnapshot, isNumber, mapSnapshot, present, rewardGeometry,
   runCharts, runFacts, runHeadline, runWarnings, sequenceData, sequenceLabel, sequencePage, TOKEN_PAGE_SIZE,
+  toolCalls, toolCallSummary, withGroupSignal,
 } from "./data.mjs";
 
 const byID = (id) => document.getElementById(id);
@@ -127,8 +128,11 @@ function renderActivitySummary() {
     });
     button.append(flow);
     if (turn.toolCalls.length) {
-      button.append(element("span",
-        `${turn.toolCalls.length} tool call${turn.toolCalls.length === 1 ? "" : "s"}`, "timeline-tools"));
+      const summary = toolCallSummary(turn.responseMessage);
+      const chip = element("span", summary.length ? summary.join(", ")
+        : `${turn.toolCalls.length} tool call${turn.toolCalls.length === 1 ? "" : "s"}`, "timeline-tools");
+      chip.title = summary.join(", ");
+      button.append(chip);
     }
     button.addEventListener("click", () => {
       selectTab("conversation");
@@ -258,12 +262,19 @@ function renderGraph(focusKey = null) {
     group.append(svgElement("title", {}, `${node.label}: ${node.id ?? "Node ID not reported"}`));
     group.append(svgElement("rect", { width: 220, height: 110, rx: 14, class: "node-card" }));
     group.append(svgElement("circle", { cx: 19, cy: 23, r: 4, class: "node-dot" }));
-    group.append(svgElement("text", { x: 32, y: 27, class: "node-kind" },
-      node.unresolved ? "UNORDERED" : node.discarded ? "DISCARDED" : node.root ? "ROOT CALL" : "MODEL CALL"));
+    group.append(svgElement("text", { x: 32, y: 27, class: "node-kind" }, node.kind));
     group.append(svgElement("text", { x: 16, y: 51, class: "node-label" }, node.label));
-    const detail = node.records.length === 1 ? node.records[0].raw.finish_reason : null;
-    group.append(svgElement("text", { x: 16, y: 72, class: "node-detail" },
-      short(detail ? `${detail} · ${node.id ?? "ID not reported"}` : node.id ?? "ID not reported", 26)));
+    // Which tool the call reached for, when it reached for one. The finish
+    // reason it replaces says only that it did.
+    const detail = node.records.length === 1 ? node.finishReason : null;
+    const detailText = node.tools.length ? node.tools.join(", ")
+      : detail ? `${detail} · ${node.id ?? "ID not reported"}` : node.id ?? "ID not reported";
+    const detailNode = svgElement("text", { x: 16, y: 72, class: "node-detail" }, short(detailText, 26));
+    if (node.tools.length) {
+      detailNode.append(svgElement("title", {}, node.tools.join(", ")));
+      group.setAttribute("aria-label", `${group.getAttribute("aria-label")}, called ${node.tools.join(", ")}`);
+    }
+    group.append(detailNode);
     const call = node.records.length === 1 ? node.records[0].raw : null;
     const tokenCounts = model.tokensCaptured && call
       ? [present(call.n_prompt) ? `${count(call.n_prompt)} prompt` : null,
@@ -309,6 +320,26 @@ function selectGraphNode(key) {
       ["Sampled tokens", format(model.tokensCaptured ? raw.n_sampled : null)],
       ["Finish reason", raw.finish_reason ?? "Not reported"], ["Discarded", raw.discarded],
       ["Available tools (not calls)", raw.n_tools]]);
+    const calls = toolCalls(raw.response_message);
+    if (calls.length) {
+      const details = element("details", undefined, "detail-section");
+      details.append(element("summary", `Tool calls made (${calls.length})`));
+      for (const call of calls) {
+        const heading = element("p", undefined, "tool-call-heading");
+        heading.append(element("code", call.name, "tool-name"));
+        if (call.id) heading.append(element("span", call.id, "tool-call-id"));
+        details.append(heading);
+        // Arguments arrive as a JSON string the model produced, which is not
+        // guaranteed to parse. Showing it raw beats showing nothing.
+        let parsed = call.arguments;
+        if (typeof call.arguments === "string") {
+          try { parsed = JSON.parse(call.arguments); } catch { parsed = call.arguments; }
+        }
+        if (present(parsed)) json(details, parsed);
+        else details.append(element("p", "No arguments reported.", "muted"));
+      }
+      inspector.append(details);
+    }
     if (present(raw.sampling_params)) {
       const details = element("details", undefined, "detail-section");
       details.append(element("summary", "Sampling parameters"));
@@ -1245,11 +1276,19 @@ function chartFigure(chart) {
 function renderRunCharts() {
   const container = byID("run-charts");
   container.replaceChildren();
-  for (const chart of runCharts(runMetrics)) {
+  for (const chart of runCharts(runRows())) {
     const figure = chartFigure(chart);
     if (figure) container.append(figure);
   }
   byID("run-pending").hidden = runMetrics.length > 0;
+}
+
+// The environment reports a step's metrics; the rollouts it recorded carry what
+// happened inside that step. Charting the two together is what lets the run
+// view show a measurement the environment does not report, without the rollouts
+// having to be loaded a second time.
+function runRows() {
+  return withGroupSignal(runMetrics, rolloutIndex?.data ?? []);
 }
 
 function renderRunProgress() {
@@ -1263,7 +1302,7 @@ function renderRunProgress() {
 function renderRunView() {
   byID("run-job-id").textContent = rolloutIndex?.job_id || "";
   renderRunProgress();
-  notices("run-warnings", runWarnings(runMetrics));
+  notices("run-warnings", runWarnings(runRows()));
   renderRunHeadline();
   renderRunFacts();
   renderRunCharts();

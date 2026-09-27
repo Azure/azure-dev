@@ -2,9 +2,10 @@
 // Licensed under the MIT License.
 
 import {
-  buildGraph, chartGeometry, chartHoverAt, chartPath, chartScales, fetchRolloutIndex, fetchRunLog, fetchRunMetrics,
+  buildGraph, chartGeometry, chartHoverAt, chartPath, chartScales, fetchRolloutIndex, fetchRolloutStates, fetchRunLog, fetchRunMetrics,
   fetchRunOverview, fetchSnapshot, isNumber, mapSnapshot, present, rewardGeometry,
   runCharts, runFacts, runHeadline, runWarnings, sequenceData, sequenceLabel, sequencePage, TOKEN_PAGE_SIZE,
+  toolCalls, toolCallSummary, withGroupSignal,
 } from "./data.mjs";
 
 const byID = (id) => document.getElementById(id);
@@ -127,8 +128,11 @@ function renderActivitySummary() {
     });
     button.append(flow);
     if (turn.toolCalls.length) {
-      button.append(element("span",
-        `${turn.toolCalls.length} tool call${turn.toolCalls.length === 1 ? "" : "s"}`, "timeline-tools"));
+      const summary = toolCallSummary(turn.responseMessage);
+      const chip = element("span", summary.length ? summary.join(", ")
+        : `${turn.toolCalls.length} tool call${turn.toolCalls.length === 1 ? "" : "s"}`, "timeline-tools");
+      chip.title = summary.join(", ");
+      button.append(chip);
     }
     button.addEventListener("click", () => {
       selectTab("conversation");
@@ -258,12 +262,19 @@ function renderGraph(focusKey = null) {
     group.append(svgElement("title", {}, `${node.label}: ${node.id ?? "Node ID not reported"}`));
     group.append(svgElement("rect", { width: 220, height: 110, rx: 14, class: "node-card" }));
     group.append(svgElement("circle", { cx: 19, cy: 23, r: 4, class: "node-dot" }));
-    group.append(svgElement("text", { x: 32, y: 27, class: "node-kind" },
-      node.unresolved ? "UNORDERED" : node.discarded ? "DISCARDED" : node.root ? "ROOT CALL" : "MODEL CALL"));
+    group.append(svgElement("text", { x: 32, y: 27, class: "node-kind" }, node.kind));
     group.append(svgElement("text", { x: 16, y: 51, class: "node-label" }, node.label));
-    const detail = node.records.length === 1 ? node.records[0].raw.finish_reason : null;
-    group.append(svgElement("text", { x: 16, y: 72, class: "node-detail" },
-      short(detail ? `${detail} · ${node.id ?? "ID not reported"}` : node.id ?? "ID not reported", 26)));
+    // Which tool the call reached for, when it reached for one. The finish
+    // reason it replaces says only that it did.
+    const detail = node.records.length === 1 ? node.finishReason : null;
+    const detailText = node.tools.length ? node.tools.join(", ")
+      : detail ? `${detail} · ${node.id ?? "ID not reported"}` : node.id ?? "ID not reported";
+    const detailNode = svgElement("text", { x: 16, y: 72, class: "node-detail" }, short(detailText, 26));
+    if (node.tools.length) {
+      detailNode.append(svgElement("title", {}, node.tools.join(", ")));
+      group.setAttribute("aria-label", `${group.getAttribute("aria-label")}, called ${node.tools.join(", ")}`);
+    }
+    group.append(detailNode);
     const call = node.records.length === 1 ? node.records[0].raw : null;
     const tokenCounts = model.tokensCaptured && call
       ? [present(call.n_prompt) ? `${count(call.n_prompt)} prompt` : null,
@@ -309,6 +320,26 @@ function selectGraphNode(key) {
       ["Sampled tokens", format(model.tokensCaptured ? raw.n_sampled : null)],
       ["Finish reason", raw.finish_reason ?? "Not reported"], ["Discarded", raw.discarded],
       ["Available tools (not calls)", raw.n_tools]]);
+    const calls = toolCalls(raw.response_message);
+    if (calls.length) {
+      const details = element("details", undefined, "detail-section");
+      details.append(element("summary", `Tool calls made (${calls.length})`));
+      for (const call of calls) {
+        const heading = element("p", undefined, "tool-call-heading");
+        heading.append(element("code", call.name, "tool-name"));
+        if (call.id) heading.append(element("span", call.id, "tool-call-id"));
+        details.append(heading);
+        // Arguments arrive as a JSON string the model produced, which is not
+        // guaranteed to parse. Showing it raw beats showing nothing.
+        let parsed = call.arguments;
+        if (typeof call.arguments === "string") {
+          try { parsed = JSON.parse(call.arguments); } catch { parsed = call.arguments; }
+        }
+        if (present(parsed)) json(details, parsed);
+        else details.append(element("p", "No arguments reported.", "muted"));
+      }
+      inspector.append(details);
+    }
     if (present(raw.sampling_params)) {
       const details = element("details", undefined, "detail-section");
       details.append(element("summary", "Sampling parameters"));
@@ -669,6 +700,20 @@ export function setSnapshot(snapshot) {
   outcome.hidden = model.outcome === null;
   outcome.textContent = model.outcome ?? "";
   outcome.className = `badge ${model.response.success === true ? "positive" : "negative"}`;
+  const completion = byID("completion");
+  if (model.execution.state === "failed") {
+    completion.textContent = model.execution.error
+      ? `Execution failed · ${model.execution.error}`
+      : "Execution failed";
+    completion.className = "badge negative";
+    completion.title = model.execution.detail
+      ? `The rollout did not run to completion: ${model.execution.detail}`
+      : "The rollout did not run to completion. Its reward reflects a partial attempt.";
+  } else {
+    completion.textContent = "Execution completed";
+    completion.className = "badge neutral";
+    completion.title = "A final execute-rollout response was saved. Completion does not imply task success.";
+  }
   byID("rollout-id").textContent = model.response.rollout_id;
   byID("source").textContent = model.source;
   byID("environment-context").hidden = model.environment === null;
@@ -761,6 +806,11 @@ byID("token-jump-form").addEventListener("submit", (event) => {
 
 let rolloutIndex = null;
 
+// Execution state arrives separately from the index and fills in over the life
+// of the monitor, so it is held beside the list rather than merged into it: an
+// entry that has not been classified yet must read as unknown, not as healthy.
+let rolloutStates = new Map();
+
 // A job monitor is left open and reloaded, so the view being watched outlives a
 // refresh. Session storage can be barred outright, which is not worth failing over.
 const JOB_TAB_KEY = "rle-monitor-job-tab";
@@ -845,11 +895,30 @@ function renderRolloutList() {
     row.append(identity);
     row.append(element("td", entry.split || "—"));
     row.append(element("td", stepLabel(entry) || "—"));
+    // Execution state precedes the reward because a reward from a rollout that
+    // crashed is not a measurement of anything: the harness grades the wreckage.
+    const state = rolloutStates.get(entry.rollout_id);
+    const execution = element("td");
+    if (state?.state === "failed") {
+      const badge = element("span", "Failed", "badge fault");
+      badge.title = [state.error, state.detail].filter(Boolean).join(": ")
+        || "The rollout did not run to completion.";
+      execution.append(badge);
+    } else if (state?.state === "completed") {
+      execution.append(element("span", "Completed", "badge positive"));
+    } else {
+      const unknown = element("span", "—", "muted");
+      unknown.title = "Not classified yet. The monitor reads rollout bodies in the background.";
+      execution.append(unknown);
+    }
+    row.append(execution);
     row.append(element("td", isNumber(entry.reward) ? entry.reward.toFixed(3) : "—"));
-    // A recorded rollout may legitimately carry no verdict, which is not a failure.
+    // `success` is the grader's task verdict, not an execution state: a rollout
+    // that crashed and one that merely scored poorly both report false. Naming
+    // this "failure" read as an infrastructure fault on roughly half of all rows.
     const outcome = element("td");
-    if (entry.success === true) outcome.append(element("span", "Success", "badge positive"));
-    else if (entry.success === false) outcome.append(element("span", "Failure", "badge negative"));
+    if (entry.success === true) outcome.append(element("span", "Solved", "badge positive"));
+    else if (entry.success === false) outcome.append(element("span", "Not solved", "badge negative"));
     else outcome.append(element("span", "Not reported", "badge neutral"));
     row.append(outcome);
     row.append(element("td", isNumber(entry.latency_s) ? `${entry.latency_s.toFixed(1)}s` : "—"));
@@ -949,10 +1018,27 @@ function startPolling() {
   }, pollIntervalMs);
 }
 
+// refreshRolloutStates replaces the held map and reports whether it changed, so
+// a poll that learned nothing does not redraw the table. Failures leave the
+// existing states in place: a column that emptied on one unreachable poll would
+// be worse than one that lags.
+async function refreshRolloutStates() {
+  const states = await fetchRolloutStates();
+  if (!states || !states.data) return false;
+  const entries = Object.entries(states.data);
+  if (entries.length === rolloutStates.size) return false;
+  rolloutStates = new Map(entries);
+  return true;
+}
+
 async function pollForNewRollouts() {
   // Polling follows the job view rather than the visible tab: a count that
   // stopped moving whenever the charts were up would report a live run as done.
   if (!rolloutIndex || !byID("snapshot").hidden) return;
+  // States are refreshed before the index and independently of it, because the
+  // monitor keeps classifying rollouts it has already listed: a run that has
+  // stopped recording still has a column filling in behind it.
+  const grew = await refreshRolloutStates();
   const last = rolloutIndex.data.length
     ? rolloutIndex.data[rolloutIndex.data.length - 1].rollout_id
     : "";
@@ -964,7 +1050,10 @@ async function pollForNewRollouts() {
     // already listed are still valid, and the next tick retries.
     return;
   }
-  if (!update || !update.data || update.data.length === 0) return;
+  if (!update || !update.data || update.data.length === 0) {
+    if (grew && !byID("rollout-list").hidden) renderRolloutList();
+    return;
+  }
   // `reset` means the monitor answered with the whole list rather than the part
   // that is new, so appending it would double every rollout already shown.
   if (update.reset) rolloutIndex.data = update.data;
@@ -1245,11 +1334,19 @@ function chartFigure(chart) {
 function renderRunCharts() {
   const container = byID("run-charts");
   container.replaceChildren();
-  for (const chart of runCharts(runMetrics)) {
+  for (const chart of runCharts(runRows())) {
     const figure = chartFigure(chart);
     if (figure) container.append(figure);
   }
   byID("run-pending").hidden = runMetrics.length > 0;
+}
+
+// The environment reports a step's metrics; the rollouts it recorded carry what
+// happened inside that step. Charting the two together is what lets the run
+// view show a measurement the environment does not report, without the rollouts
+// having to be loaded a second time.
+function runRows() {
+  return withGroupSignal(runMetrics, rolloutIndex?.data ?? []);
 }
 
 function renderRunProgress() {
@@ -1263,7 +1360,7 @@ function renderRunProgress() {
 function renderRunView() {
   byID("run-job-id").textContent = rolloutIndex?.job_id || "";
   renderRunProgress();
-  notices("run-warnings", runWarnings(runMetrics));
+  notices("run-warnings", runWarnings(runRows()));
   renderRunHeadline();
   renderRunFacts();
   renderRunCharts();
@@ -1344,6 +1441,7 @@ async function load() {
   try {
     rolloutIndex = await fetchRolloutIndex();
     if (rolloutIndex) {
+      await refreshRolloutStates();
       refreshFilters();
       renderRolloutList();
       // The run panel is best-effort: a job can always be browsed by its

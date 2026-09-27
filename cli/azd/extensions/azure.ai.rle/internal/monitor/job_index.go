@@ -153,3 +153,16 @@ func (j *jobIndex) count() int {
 	defer j.mu.Unlock()
 	return len(j.entries)
 }
+
+// rolloutIDs returns the rollouts listed so far, oldest first. The order is the
+// run's own, so a probe reading it front to back classifies the run in the
+// order it happened rather than in whatever order a map produced.
+func (j *jobIndex) rolloutIDs() []string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	ids := make([]string, 0, len(j.entries))
+	for _, entry := range j.entries {
+		ids = append(ids, entry.RolloutID)
+	}
+	return ids
+}

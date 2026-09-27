@@ -65,6 +65,7 @@ func RunJob(
 		return err
 	}
 	src := source{jobID: jobID, index: index, reader: reader}
+	src.probe = newStateProbe(index, reader, stateProbeWorkers)
 	if strings.TrimSpace(runDir) != "" {
 		src.run = &runArtifacts{dir: runDir}
 	}
@@ -78,6 +79,7 @@ type source struct {
 	index    *jobIndex
 	reader   rollouts.Reader
 	run      *runArtifacts
+	probe    *stateProbe
 }
 
 func serve(ctx context.Context, src source, noBrowser bool, out, errOut io.Writer) error {
@@ -91,6 +93,9 @@ func serve(ctx context.Context, src source, noBrowser bool, out, errOut io.Write
 		return err
 	}
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	if src.probe != nil {
+		go src.probe.run(ctx)
+	}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	defer func() { _ = server.Close() }()
@@ -169,6 +174,31 @@ func newHandler(src source, host string) (http.Handler, error) {
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			http.Error(w, "could not encode rollout index", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(encoded)
+	})
+
+	// Whether each rollout ran to completion, which the index cannot say: the
+	// harness grades a crashed rollout too, so a failure arrives with a reward
+	// and a graph like any other row. Answered from the probe's cache rather
+	// than by reading bodies here, so the page's poll stays cheap and a rollout
+	// is fetched once for the whole run instead of once per viewer.
+	mux.HandleFunc("GET /api/rollouts/states", func(w http.ResponseWriter, r *http.Request) {
+		if src.probe == nil {
+			http.NotFound(w, r)
+			return
+		}
+		states, known := src.probe.snapshot()
+		encoded, err := json.Marshal(map[string]any{
+			"job_id": src.jobID,
+			"data":   states,
+			"known":  known,
+			"total":  src.index.count(),
+		})
+		if err != nil {
+			http.Error(w, "could not encode rollout states", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

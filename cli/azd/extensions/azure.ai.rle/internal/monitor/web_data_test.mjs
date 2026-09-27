@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  fetchRolloutIndex, fetchSnapshot, mapSnapshot,
+  fetchRolloutIndex, fetchRolloutStates, fetchSnapshot, mapSnapshot,
 } from "./web/data.mjs";
 
 const snapshot = (response = {}) => ({
@@ -236,6 +236,33 @@ test("returns the recorded index for a training job", async () => {
 test("index transport and HTTP failures stay distinguishable", async () => {
   await assert.rejects(fetchRolloutIndex(async () => ({ ok: false, status: 500 })), /HTTP 500/);
   await assert.rejects(fetchRolloutIndex(async () => { throw new Error("sensitive"); }), /Could not reach/);
+});
+
+test("returns the execution states the monitor has classified so far", async () => {
+  const expected = {
+    job_id: "ftjob-1", known: 2, total: 9,
+    data: { a: { state: "completed" }, b: { state: "failed", error: "openai.APITimeoutError" } },
+  };
+  const received = await fetchRolloutStates(async (url, options) => {
+    assert.equal(url, "/api/rollouts/states");
+    assert.equal(options.credentials, "same-origin");
+    assert.equal(options.cache, "no-store");
+    return { ok: true, json: async () => expected };
+  });
+  assert.equal(received, expected);
+});
+
+// The column is an addition to the list, not a precondition for it: a monitor
+// that cannot answer must leave the rollouts showing rather than fail the page.
+test("an unavailable state endpoint is reported as absent, not as an error", async () => {
+  for (const responder of [
+    async () => ({ ok: false, status: 404 }),
+    async () => ({ ok: false, status: 500 }),
+    async () => { throw new Error("offline"); },
+    async () => ({ ok: true, json: async () => { throw new Error("invalid JSON"); } }),
+  ]) {
+    assert.equal(await fetchRolloutStates(responder), null);
+  }
 });
 
 test("polls from the last rollout it holds, so a poll costs only what is new", async () => {

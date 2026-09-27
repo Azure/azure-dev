@@ -39,6 +39,30 @@ function toolCallName(call) {
   return null;
 }
 
+// The tool calls a captured response made, in the order the model emitted them.
+//
+// A turn that ends in tool calls reports its finish reason as "tool_calls",
+// which says that the model called something but never which tool, and that is
+// the question a reader has when they are looking at the call.
+export function toolCalls(message) {
+  const calls = Array.isArray(message?.tool_calls) ? message.tool_calls.filter(isRecord) : [];
+  return calls.map((call, index) => ({
+    index,
+    name: toolCallName(call) ?? "unnamed tool",
+    id: isString(call.id) && call.id.trim() ? call.id.trim() : null,
+    arguments: call.function?.arguments ?? call.arguments ?? null,
+  }));
+}
+
+// The same calls collapsed to "name ×n" for the places that have room for a
+// line rather than a list. Repeats are counted because a model calling one tool
+// three times and calling three tools are different behaviours.
+export function toolCallSummary(message) {
+  const counts = new Map();
+  for (const call of toolCalls(message)) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
+  return [...counts].map(([name, times]) => (times > 1 ? `${name} \u00d7${times}` : name));
+}
+
 function finalResponseSummary(value) {
   if (!isString(value) || !value.trim()) {
     return { full: null, preview: null, reasoningHidden: false, expandable: false };
@@ -153,7 +177,40 @@ export function mapSnapshot(snapshot) {
     finalResponseReasoningHidden: finalResponse.reasoningHidden,
     finalResponseExpandable: finalResponse.expandable,
     hasConversation, toolActivity: { count: allToolCalls.length, names: toolNames },
+    execution: executionStatus(response),
     outcome: response.success === true ? "Task succeeded" : response.success === false ? "Task unsuccessful" : null };
+}
+
+// The harness grades a rollout whether or not it finished, so `success` is a task
+// verdict and says nothing about execution. A rollout killed by a transport error
+// still carries a reward, a graph and success=false, which is indistinguishable
+// from a complete but poor attempt unless the agent's own output is read.
+const ROLLOUT_ERROR_PREFIX = "ROLLOUT ERROR";
+const PYTHON_EXCEPTION = /^([A-Za-z_][\w.]*(?:Error|Exception|Timeout|Interrupt))(?::\s*(.*))?$/;
+
+// A Python traceback ends with the exception that escaped, so the last match is
+// the one that stopped the rollout; earlier matches are the frames it wrapped.
+export function exceptionFromTraceback(text) {
+  if (!isString(text)) return null;
+  let found = null;
+  for (const line of text.split("\n")) {
+    const match = PYTHON_EXCEPTION.exec(line.trim());
+    if (match) found = { type: match[1], message: match[2]?.trim() || null };
+  }
+  return found;
+}
+
+export function executionStatus(response) {
+  const agentResponse = response?.result?.agent_response;
+  if (isString(agentResponse) && agentResponse.startsWith(ROLLOUT_ERROR_PREFIX)) {
+    const failure = exceptionFromTraceback(agentResponse);
+    return { state: "failed", error: failure?.type ?? null, detail: failure?.message ?? null };
+  }
+  const turns = response?.rollout?.turns;
+  if (Array.isArray(turns) && turns.length === 0) {
+    return { state: "failed", error: "No model calls", detail: "The rollout recorded no turns." };
+  }
+  return { state: "completed", error: null, detail: null };
 }
 
 export const GRAPH_PAGE_SIZE = 80;
@@ -243,6 +300,15 @@ export function buildGraph(graph = {}, { sequenceIndex = null, page = 0, limit =
     node.discarded = node.records.length === 1 && node.records[0].raw.discarded === true;
     node.label = !node.records.length ? "Missing call details" :
       node.records.length > 1 ? "Ambiguous model call" : `Model call ${node.records[0].position + 1}`;
+    // What the call did, as opposed to where it sits in the graph. A node whose
+    // record is ambiguous or missing has no single answer, so it reports none.
+    const only = node.records.length === 1 ? node.records[0].raw : null;
+    node.tools = only ? toolCallSummary(only.response_message) : [];
+    node.finishReason = isString(only?.finish_reason) && only.finish_reason.trim()
+      ? only.finish_reason.trim() : null;
+    node.kind = node.unresolved ? "UNORDERED" : node.discarded ? "DISCARDED"
+      : node.tools.length ? (node.root ? "ROOT TOOL CALL" : "TOOL CALL")
+      : node.root ? "ROOT CALL" : "MODEL CALL";
   }
   const pageCount = Math.max(1, Math.ceil(all.length / limit));
   const focusIndex = focusKey === null ? -1 : all.findIndex((node) => node.key === focusKey);
@@ -396,6 +462,35 @@ export async function fetchRolloutIndex(fetcher = fetch, after = "") {
   }
 }
 
+// Execution state for the listed rollouts, keyed by rollout id.
+//
+// The index cannot answer this. A rollout that died mid-flight is still graded,
+// so it arrives with a reward, a graph and success=false -- the same row shape
+// as one that merely scored badly. Only the agent's output separates them, and
+// at ~342KB a body the monitor classifies them server-side and the page reads
+// the verdicts here, which is why this is a separate call rather than a field
+// on the index.
+//
+// The result is partial while the monitor works through a run, so a rollout
+// missing from `data` means "not classified yet", never "completed". A failure
+// to reach it is not worth reporting: the list is still valid without the
+// column, so this returns null rather than throwing the way the index does.
+export async function fetchRolloutStates(fetcher = fetch) {
+  let result;
+  try {
+    result = await fetcher("/api/rollouts/states", { credentials: "same-origin", cache: "no-store",
+      headers: { Accept: "application/json" } });
+  } catch {
+    return null;
+  }
+  if (!result.ok) return null;
+  try {
+    return await result.json();
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Training run artifacts
 //
@@ -435,10 +530,22 @@ export const RUN_CHARTS = [
   {
     id: "signal",
     title: "Learning signal",
-    note: "Groups where rollouts disagree are the only ones that teach anything. "
-      + "All-good means the tasks are too easy to learn from; all-bad means too hard.",
+    note: "A group teaches only through the spread of its rollouts: advantage is each reward's "
+      + "distance from its group's mean, so a group whose rollouts agree contributes nothing no "
+      + "matter how they scored. Spread is that distance averaged over groups. All-good means the "
+      + "tasks are too easy to learn from; all-bad means too hard.",
     range: [0, 1],
     series: [
+      { key: "derived/by_group/reward_sd", name: "Spread", tone: "positive" },
+      { key: "derived/by_group/frac_all_good", name: "All good", tone: "primary" },
+      { key: "derived/by_group/frac_all_bad", name: "All bad", tone: "negative" },
+    ],
+    // The environment reports the same split, but it counts a group as teaching
+    // something when its rewards are not all *exactly* equal. That holds for a
+    // reward like a passing test suite and never holds for a weighted score, so
+    // for most environments the reported series read 1/0/0 for the whole run.
+    // They are kept for the case where no rollout index is loaded to derive from.
+    fallback: [
       { key: "env/all/by_group/frac_mixed", name: "Mixed", tone: "positive" },
       { key: "env/all/by_group/frac_all_good", name: "All good", tone: "primary" },
       { key: "env/all/by_group/frac_all_bad", name: "All bad", tone: "negative" },
@@ -545,18 +652,110 @@ export function runCharts(rows = [], specs = RUN_CHARTS) {
   const usable = Array.isArray(rows) ? rows.filter(isRecord) : [];
   const charts = [];
   for (const spec of specs) {
-    const series = [];
-    for (const definition of spec.series) {
-      const points = [];
-      usable.forEach((row, index) => {
-        const value = row[definition.key];
-        if (isNumber(value)) points.push({ step: stepOf(row, index), value });
-      });
-      if (points.length) series.push({ ...definition, points });
-    }
-    if (series.length) charts.push({ ...spec, series });
+    const { fallback, ...panel } = spec;
+    // A spec may name a preferred source and a weaker one to fall back to when
+    // the preferred metrics are absent from the run, rather than drawing both.
+    const series = chartSeries(usable, spec.series);
+    const resolved = series.length ? series : chartSeries(usable, fallback ?? []);
+    if (resolved.length) charts.push({ ...panel, series: resolved });
   }
   return charts;
+}
+
+function chartSeries(rows, definitions = []) {
+  const series = [];
+  for (const definition of definitions) {
+    const points = [];
+    rows.forEach((row, index) => {
+      const value = row[definition.key];
+      if (isNumber(value)) points.push({ step: stepOf(row, index), value });
+    });
+    if (points.length) series.push({ ...definition, points });
+  }
+  return series;
+}
+
+// The reward at which a group that agreed with itself counts as having agreed
+// on success rather than on failure. It matches the environment's own split.
+const GOOD_REWARD = 0.5;
+
+// The step a rollout belongs to. Training rollouts leave `step` unset and name
+// the checkpoint they were sampled from instead -- "step0", then "1", "2" -- and
+// the batch drawn from a checkpoint is the one that checkpoint's gradient is
+// computed from, so the two line up. Validation rollouts carry `step` directly.
+function entryStep(entry) {
+  if (isNumber(entry?.step)) return entry.step;
+  const match = /(\d+)$/.exec(entry?.checkpoint_id ?? "");
+  return match ? Number(match[1]) : null;
+}
+
+// groupSignal measures, per step, how much the rollouts within a group disagree.
+//
+// This is the quantity the run actually learns from. It is derived here from the
+// rollout index rather than read from the environment's own by_group metrics
+// because those ask whether a group's rewards are exactly equal, which a
+// weighted score never is -- so they report every group as mixed and the chart
+// they feed reads 1/0/0 for the whole run. Standard deviation answers the same
+// question for a score of any shape, and reduces to the environment's answer
+// when the reward is pass/fail.
+//
+// Only training rollouts count: advantage is computed over the groups a step
+// trains on, and validation rollouts are not grouped.
+export function groupSignal(entries = []) {
+  const steps = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!isRecord(entry) || entry.split === "validation") continue;
+    if (!isNumber(entry.reward) || !entry.task_id) continue;
+    const step = entryStep(entry);
+    if (step === null) continue;
+    if (!steps.has(step)) steps.set(step, new Map());
+    const groups = steps.get(step);
+    if (!groups.has(entry.task_id)) groups.set(entry.task_id, []);
+    groups.get(entry.task_id).push(entry.reward);
+  }
+
+  const rows = [];
+  for (const [step, groups] of [...steps].sort((a, b) => a[0] - b[0])) {
+    // A group of one has no spread to measure, only a missing sibling.
+    const scored = [...groups.values()].filter((rewards) => rewards.length > 1);
+    if (!scored.length) continue;
+    let spread = 0;
+    let good = 0;
+    let bad = 0;
+    for (const rewards of scored) {
+      const mean = rewards.reduce((total, reward) => total + reward, 0) / rewards.length;
+      const variance = rewards.reduce((total, reward) => total + (reward - mean) ** 2, 0) / rewards.length;
+      const deviation = Math.sqrt(variance);
+      spread += deviation;
+      if (deviation === 0) {
+        if (mean >= GOOD_REWARD) good += 1;
+        else bad += 1;
+      }
+    }
+    rows.push({
+      step,
+      "derived/by_group/reward_sd": spread / scored.length,
+      "derived/by_group/frac_all_good": good / scored.length,
+      "derived/by_group/frac_all_bad": bad / scored.length,
+    });
+  }
+  return rows;
+}
+
+// withGroupSignal folds the derived group measurements into the metrics rows so
+// they chart through the same path as everything the environment reported.
+// Steps with no rollouts recorded are left as they were.
+export function withGroupSignal(rows = [], entries = []) {
+  const usable = Array.isArray(rows) ? rows : [];
+  const derived = new Map(groupSignal(entries).map((row) => [row.step, row]));
+  if (!derived.size) return usable;
+  return usable.map((row, index) => {
+    if (!isRecord(row)) return row;
+    const match = derived.get(stepOf(row, index));
+    if (!match) return row;
+    const { step, ...values } = match;
+    return { ...row, ...values };
+  });
 }
 
 // Round a span down to a "nice" tick stride: 1, 2, 2.5 or 5 times a power of
@@ -758,7 +957,11 @@ export function runWarnings(rows = []) {
   }
 
   const mixed = series("signal", "Mixed");
-  if (mixed.length >= 3 && mixed.slice(-3).every((point) => point.value === 0)) {
+  const spread = series("signal", "Spread");
+  // Whichever source the panel resolved to: both answer "did any group disagree",
+  // and a flat zero on either means no group produced a gradient.
+  const teaching = spread.length ? spread : mixed;
+  if (teaching.length >= 3 && teaching.slice(-3).every((point) => point.value === 0)) {
     warnings.push("No group has produced mixed outcomes for the last three steps, so every group's advantage"
       + " is zero and no gradient is being learned from. The tasks are either all passing or all failing.");
   }

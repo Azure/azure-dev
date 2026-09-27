@@ -4,7 +4,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  chartGeometry, chartPath, runCharts, runFacts, runHeadline, runWarnings, settingLabel, RUN_CHARTS,
+  chartGeometry, chartPath, exceptionFromTraceback, executionStatus, groupSignal, runCharts, runFacts,
+  runHeadline, runWarnings, settingLabel, withGroupSignal, RUN_CHARTS,
 } from "./web/data.mjs";
 
 const rewardChart = RUN_CHARTS.find((chart) => chart.id === "reward");
@@ -229,4 +230,174 @@ test("small settings keep the exponential form they were written in", () => {
   assert.equal(settingLabel(0), 0, "zero is not 0e+0");
   assert.equal(settingLabel(32), 32);
   assert.equal(settingLabel("importance_sampling"), "importance_sampling");
+});
+
+// The environment counts a group as teaching something when its rewards are not
+// all exactly equal. That is true of a pass/fail reward and never true of a
+// weighted score, so on most runs the reported series read 1/0/0 for every step
+// and the panel answers nothing. These derive the same question from the
+// rollouts, where a spread of zero still means a group taught nothing.
+const rollout = (task_id, checkpoint_id, reward, extra = {}) =>
+  ({ task_id, checkpoint_id, reward, split: "train", ...extra });
+// A standard deviation is a square root, so these compare to the precision the
+// chart draws at rather than to the bit.
+const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9,
+  `expected ${actual} to be about ${expected}`);
+
+test("a group's learning signal is measured as spread, not as exact disagreement", () => {
+  const [row] = groupSignal([
+    rollout("alpha", "step0", 0.4), rollout("alpha", "step0", 0.6),
+    rollout("beta", "step0", 0.5), rollout("beta", "step0", 0.5),
+  ]);
+  assert.equal(row.step, 0);
+  // alpha deviates 0.1 either side of 0.5; beta not at all.
+  close(row["derived/by_group/reward_sd"], 0.05);
+  assert.equal(row["derived/by_group/frac_all_good"], 0.5);
+  assert.equal(row["derived/by_group/frac_all_bad"], 0);
+});
+
+test("a group that agreed on a low reward is too hard rather than too easy", () => {
+  const [row] = groupSignal([rollout("alpha", "step0", 0.2), rollout("alpha", "step0", 0.2)]);
+  assert.equal(row["derived/by_group/frac_all_bad"], 1);
+  assert.equal(row["derived/by_group/frac_all_good"], 0);
+});
+
+// Training rollouts leave `step` unset and name the checkpoint they were sampled
+// from. Bucketing them by it reproduces the environment's own per-step mean, which
+// is how the mapping was confirmed against a live run.
+test("training rollouts are bucketed by the checkpoint they were sampled from", () => {
+  const rows = groupSignal([
+    rollout("alpha", "step0", 0.2), rollout("alpha", "step0", 0.8),
+    rollout("alpha", "1", 0.5), rollout("alpha", "1", 0.5),
+    rollout("alpha", "2", 0.1), rollout("alpha", "2", 0.3),
+  ]);
+  assert.deepEqual(rows.map((row) => row.step), [0, 1, 2]);
+  rows.map((row) => row["derived/by_group/reward_sd"]).forEach((sd, index) => close(sd, [0.3, 0, 0.1][index]));
+});
+
+// Advantage is computed over the groups a step trains on. Validation rollouts
+// are not grouped, and counting them would report a spread nothing learns from.
+test("validation rollouts are not counted as learning signal", () => {
+  assert.deepEqual(groupSignal([
+    { task_id: "alpha", step: 0, reward: 0.2, split: "validation" },
+    { task_id: "alpha", step: 0, reward: 0.9, split: "validation" },
+  ]), []);
+});
+
+test("a group with a single rollout has no spread to report", () => {
+  assert.deepEqual(groupSignal([rollout("alpha", "step0", 0.4)]), []);
+});
+
+test("derived measurements join the step they belong to and leave the rest alone", () => {
+  const rows = withGroupSignal(
+    [{ step: 0, "env/all/reward/total": 0.5 }, { step: 1, "env/all/reward/total": 0.6 }],
+    [rollout("alpha", "step0", 0.4), rollout("alpha", "step0", 0.6)],
+  );
+  close(rows[0]["derived/by_group/reward_sd"], 0.1);
+  assert.equal(rows[0]["env/all/reward/total"], 0.5);
+  assert.equal("derived/by_group/reward_sd" in rows[1], false);
+});
+
+test("metrics rows are returned unchanged when no rollouts have been loaded", () => {
+  const rows = [{ step: 0, "env/all/reward/total": 0.5 }];
+  assert.deepEqual(withGroupSignal(rows, []), rows);
+});
+
+const signalChart = RUN_CHARTS.find((chart) => chart.id === "signal");
+
+test("the learning signal panel prefers the derived spread over the reported fractions", () => {
+  const [chart] = runCharts([{
+    step: 0,
+    "derived/by_group/reward_sd": 0.17,
+    "env/all/by_group/frac_mixed": 1,
+  }], [signalChart]);
+  assert.deepEqual(chart.series.map((series) => series.name), ["Spread"]);
+});
+
+// A monitor serving a run it cannot list rollouts for still has the environment's
+// own answer, and a weaker answer beats an empty panel.
+test("the learning signal panel falls back to the reported fractions when nothing was derived", () => {
+  const [chart] = runCharts([{ step: 0, "env/all/by_group/frac_mixed": 0.8 }], [signalChart]);
+  assert.deepEqual(chart.series.map((series) => series.name), ["Mixed"]);
+});
+
+test("three steps with no spread in any group are reported as no gradient to learn from", () => {
+  const warnings = runWarnings([
+    { step: 0, "derived/by_group/reward_sd": 0 },
+    { step: 1, "derived/by_group/reward_sd": 0 },
+    { step: 2, "derived/by_group/reward_sd": 0 },
+  ]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /advantage/);
+});
+
+// Execution state is independent of the grader's verdict: the harness scores a
+// rollout whether or not it finished, so a crash and a poor attempt both report
+// success=false with a real reward. Only the agent's own output separates them.
+test("a crashed rollout reports the exception that stopped it", () => {
+  const status = executionStatus({
+    success: false,
+    result: {
+      agent_response: [
+        "ROLLOUT ERROR",
+        "Traceback (most recent call last):",
+        '  File "/app/httpx/_transports/default.py", line 101, in map_httpcore_exceptions',
+        "    yield",
+        "httpcore.ReadTimeout",
+        "",
+        "The above exception was the direct cause of the following exception:",
+        "",
+        "httpx.ReadTimeout: The read operation timed out",
+      ].join("\n"),
+    },
+  });
+  assert.equal(status.state, "failed");
+  assert.equal(status.error, "httpx.ReadTimeout");
+  assert.equal(status.detail, "The read operation timed out");
+});
+
+test("a low reward alone is not an execution failure", () => {
+  const status = executionStatus({
+    success: false,
+    reward: 0.0568,
+    rollout: { turns: [{ index: 0 }] },
+    result: { agent_response: "The competitor's filing does not disclose segment revenue." },
+  });
+  assert.equal(status.state, "completed");
+  assert.equal(status.error, null);
+});
+
+test("a rollout with no turns is an execution failure", () => {
+  const status = executionStatus({ success: false, rollout: { turns: [] }, result: {} });
+  assert.equal(status.state, "failed");
+  assert.equal(status.error, "No model calls");
+});
+
+test("an exception with no message reports only its type", () => {
+  const status = executionStatus({
+    result: { agent_response: "ROLLOUT ERROR\nTraceback (most recent call last):\nhttpx.ReadTimeout" },
+  });
+  assert.equal(status.error, "httpx.ReadTimeout");
+  assert.equal(status.detail, null);
+});
+
+test("a missing agent response does not claim an execution failure", () => {
+  assert.equal(executionStatus({ success: true }).state, "completed");
+  assert.equal(executionStatus({}).state, "completed");
+  assert.equal(executionStatus(null).state, "completed");
+});
+
+test("prose mentioning an error is not read as a traceback", () => {
+  const status = executionStatus({
+    result: { agent_response: "The vendor reported a ValueError: in their changelog." },
+  });
+  assert.equal(status.state, "completed");
+});
+
+test("the raised exception wins over the frames it wrapped", () => {
+  const failure = exceptionFromTraceback(
+    "Traceback (most recent call last):\nhttpcore.ConnectError\nopenai.APITimeoutError: Request timed out.",
+  );
+  assert.equal(failure.type, "openai.APITimeoutError");
+  assert.equal(failure.message, "Request timed out.");
 });

@@ -462,6 +462,35 @@ export async function fetchRolloutIndex(fetcher = fetch, after = "") {
   }
 }
 
+// Execution state for the listed rollouts, keyed by rollout id.
+//
+// The index cannot answer this. A rollout that died mid-flight is still graded,
+// so it arrives with a reward, a graph and success=false -- the same row shape
+// as one that merely scored badly. Only the agent's output separates them, and
+// at ~342KB a body the monitor classifies them server-side and the page reads
+// the verdicts here, which is why this is a separate call rather than a field
+// on the index.
+//
+// The result is partial while the monitor works through a run, so a rollout
+// missing from `data` means "not classified yet", never "completed". A failure
+// to reach it is not worth reporting: the list is still valid without the
+// column, so this returns null rather than throwing the way the index does.
+export async function fetchRolloutStates(fetcher = fetch) {
+  let result;
+  try {
+    result = await fetcher("/api/rollouts/states", { credentials: "same-origin", cache: "no-store",
+      headers: { Accept: "application/json" } });
+  } catch {
+    return null;
+  }
+  if (!result.ok) return null;
+  try {
+    return await result.json();
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Training run artifacts
 //

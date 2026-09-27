@@ -60,6 +60,9 @@ h4 { font-size: 14px; margin: 22px 0 8px; }
 .badge.neutral { color: #395ba8; background: #edf2ff; border-color: #dce6ff; }
 .badge.positive { color: #1d6a51; background: #e8f6f0; border-color: #c9e9dc; }
 .badge.negative { color: #974920; background: #fff2e9; border-color: #f2dbc8; }
+/* An execution fault is a different kind of bad news from an unsolved task:
+   orange reads as "scored poorly", red as "did not run". */
+.badge.fault { color: #a12b2b; background: #fdecec; border-color: #f4cccc; }
 .environment-context { display: flex; align-items: baseline; flex-wrap: wrap; gap: 9px; min-width: 0; }
 #environment-name { font-size: 22px; font-weight: 680; letter-spacing: -.6px; overflow-wrap: anywhere; min-width: 0; }
 .version-chip { color: #5e6f93; background: #ecf1fb; border: 1px solid #dce4f3; border-radius: 20px; padding: 2px 8px; font-size: 12px; overflow-wrap: anywhere; }
@@ -290,6 +293,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 380px; overflo
 :where([data-theme="dark"]) .badge.neutral { color: #b2c9ff; background: #263859; border-color: #435e89; }
 :where([data-theme="dark"]) .badge.positive { color: #98e2c5; background: #193d34; border-color: #376b5b; }
 :where([data-theme="dark"]) .badge.negative { color: #f1c29b; background: #3c2c22; border-color: #76543b; }
+:where([data-theme="dark"]) .badge.fault { color: #ffb0b0; background: #452424; border-color: #7d4040; }
 :where([data-theme="dark"]) .version-chip { color: #c0ceea; background: #293952; border-color: #43546f; }
 :where([data-theme="dark"]) .metric { border-color: var(--line); }
 :where([data-theme="dark"]) .activity-card { background: #18263b; border-color: var(--line); }

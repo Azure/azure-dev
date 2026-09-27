@@ -71,7 +71,9 @@
       <div class="list-scroll"><table id="list-table" class="rollout-table">
         <thead><tr>
           <th scope="col">#</th><th scope="col">Rollout</th><th scope="col">Split</th>
-          <th scope="col">Step</th><th scope="col">Reward</th>
+          <th scope="col">Step</th>
+          <th scope="col" title="Whether the rollout ran to completion. A crashed rollout is still graded, so this is not the same question as the task verdict.">State</th>
+          <th scope="col">Reward</th>
           <th scope="col" title="The grader's verdict on the task. Not an execution state: open a rollout to see whether it ran to completion.">Task verdict</th>
           <th scope="col">Latency</th><th scope="col">Task</th>
         </tr></thead>

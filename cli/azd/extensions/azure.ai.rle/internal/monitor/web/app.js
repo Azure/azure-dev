@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import {
-  buildGraph, chartGeometry, chartHoverAt, chartPath, chartScales, fetchRolloutIndex, fetchRunLog, fetchRunMetrics,
+  buildGraph, chartGeometry, chartHoverAt, chartPath, chartScales, fetchRolloutIndex, fetchRolloutStates, fetchRunLog, fetchRunMetrics,
   fetchRunOverview, fetchSnapshot, isNumber, mapSnapshot, present, rewardGeometry,
   runCharts, runFacts, runHeadline, runWarnings, sequenceData, sequenceLabel, sequencePage, TOKEN_PAGE_SIZE,
   toolCalls, toolCallSummary, withGroupSignal,
@@ -806,6 +806,11 @@ byID("token-jump-form").addEventListener("submit", (event) => {
 
 let rolloutIndex = null;
 
+// Execution state arrives separately from the index and fills in over the life
+// of the monitor, so it is held beside the list rather than merged into it: an
+// entry that has not been classified yet must read as unknown, not as healthy.
+let rolloutStates = new Map();
+
 // A job monitor is left open and reloaded, so the view being watched outlives a
 // refresh. Session storage can be barred outright, which is not worth failing over.
 const JOB_TAB_KEY = "rle-monitor-job-tab";
@@ -890,6 +895,23 @@ function renderRolloutList() {
     row.append(identity);
     row.append(element("td", entry.split || "—"));
     row.append(element("td", stepLabel(entry) || "—"));
+    // Execution state precedes the reward because a reward from a rollout that
+    // crashed is not a measurement of anything: the harness grades the wreckage.
+    const state = rolloutStates.get(entry.rollout_id);
+    const execution = element("td");
+    if (state?.state === "failed") {
+      const badge = element("span", "Failed", "badge fault");
+      badge.title = [state.error, state.detail].filter(Boolean).join(": ")
+        || "The rollout did not run to completion.";
+      execution.append(badge);
+    } else if (state?.state === "completed") {
+      execution.append(element("span", "Completed", "badge positive"));
+    } else {
+      const unknown = element("span", "—", "muted");
+      unknown.title = "Not classified yet. The monitor reads rollout bodies in the background.";
+      execution.append(unknown);
+    }
+    row.append(execution);
     row.append(element("td", isNumber(entry.reward) ? entry.reward.toFixed(3) : "—"));
     // `success` is the grader's task verdict, not an execution state: a rollout
     // that crashed and one that merely scored poorly both report false. Naming
@@ -996,10 +1018,27 @@ function startPolling() {
   }, pollIntervalMs);
 }
 
+// refreshRolloutStates replaces the held map and reports whether it changed, so
+// a poll that learned nothing does not redraw the table. Failures leave the
+// existing states in place: a column that emptied on one unreachable poll would
+// be worse than one that lags.
+async function refreshRolloutStates() {
+  const states = await fetchRolloutStates();
+  if (!states || !states.data) return false;
+  const entries = Object.entries(states.data);
+  if (entries.length === rolloutStates.size) return false;
+  rolloutStates = new Map(entries);
+  return true;
+}
+
 async function pollForNewRollouts() {
   // Polling follows the job view rather than the visible tab: a count that
   // stopped moving whenever the charts were up would report a live run as done.
   if (!rolloutIndex || !byID("snapshot").hidden) return;
+  // States are refreshed before the index and independently of it, because the
+  // monitor keeps classifying rollouts it has already listed: a run that has
+  // stopped recording still has a column filling in behind it.
+  const grew = await refreshRolloutStates();
   const last = rolloutIndex.data.length
     ? rolloutIndex.data[rolloutIndex.data.length - 1].rollout_id
     : "";
@@ -1011,7 +1050,10 @@ async function pollForNewRollouts() {
     // already listed are still valid, and the next tick retries.
     return;
   }
-  if (!update || !update.data || update.data.length === 0) return;
+  if (!update || !update.data || update.data.length === 0) {
+    if (grew && !byID("rollout-list").hidden) renderRolloutList();
+    return;
+  }
   // `reset` means the monitor answered with the whole list rather than the part
   // that is new, so appending it would double every rollout already shown.
   if (update.reset) rolloutIndex.data = update.data;
@@ -1399,6 +1441,7 @@ async function load() {
   try {
     rolloutIndex = await fetchRolloutIndex();
     if (rolloutIndex) {
+      await refreshRolloutStates();
       refreshFilters();
       renderRolloutList();
       // The run panel is best-effort: a job can always be browsed by its

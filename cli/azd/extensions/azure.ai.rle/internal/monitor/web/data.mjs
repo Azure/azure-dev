@@ -177,7 +177,40 @@ export function mapSnapshot(snapshot) {
     finalResponseReasoningHidden: finalResponse.reasoningHidden,
     finalResponseExpandable: finalResponse.expandable,
     hasConversation, toolActivity: { count: allToolCalls.length, names: toolNames },
+    execution: executionStatus(response),
     outcome: response.success === true ? "Task succeeded" : response.success === false ? "Task unsuccessful" : null };
+}
+
+// The harness grades a rollout whether or not it finished, so `success` is a task
+// verdict and says nothing about execution. A rollout killed by a transport error
+// still carries a reward, a graph and success=false, which is indistinguishable
+// from a complete but poor attempt unless the agent's own output is read.
+const ROLLOUT_ERROR_PREFIX = "ROLLOUT ERROR";
+const PYTHON_EXCEPTION = /^([A-Za-z_][\w.]*(?:Error|Exception|Timeout|Interrupt))(?::\s*(.*))?$/;
+
+// A Python traceback ends with the exception that escaped, so the last match is
+// the one that stopped the rollout; earlier matches are the frames it wrapped.
+export function exceptionFromTraceback(text) {
+  if (!isString(text)) return null;
+  let found = null;
+  for (const line of text.split("\n")) {
+    const match = PYTHON_EXCEPTION.exec(line.trim());
+    if (match) found = { type: match[1], message: match[2]?.trim() || null };
+  }
+  return found;
+}
+
+export function executionStatus(response) {
+  const agentResponse = response?.result?.agent_response;
+  if (isString(agentResponse) && agentResponse.startsWith(ROLLOUT_ERROR_PREFIX)) {
+    const failure = exceptionFromTraceback(agentResponse);
+    return { state: "failed", error: failure?.type ?? null, detail: failure?.message ?? null };
+  }
+  const turns = response?.rollout?.turns;
+  if (Array.isArray(turns) && turns.length === 0) {
+    return { state: "failed", error: "No model calls", detail: "The rollout recorded no turns." };
+  }
+  return { state: "completed", error: null, detail: null };
 }
 
 export const GRAPH_PAGE_SIZE = 80;

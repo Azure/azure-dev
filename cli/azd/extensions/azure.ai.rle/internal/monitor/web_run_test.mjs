@@ -4,8 +4,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  chartGeometry, chartPath, groupSignal, runCharts, runFacts, runHeadline, runWarnings, settingLabel,
-  withGroupSignal, RUN_CHARTS,
+  chartGeometry, chartPath, exceptionFromTraceback, executionStatus, groupSignal, runCharts, runFacts,
+  runHeadline, runWarnings, settingLabel, withGroupSignal, RUN_CHARTS,
 } from "./web/data.mjs";
 
 const rewardChart = RUN_CHARTS.find((chart) => chart.id === "reward");
@@ -329,4 +329,75 @@ test("three steps with no spread in any group are reported as no gradient to lea
   ]);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /advantage/);
+});
+
+// Execution state is independent of the grader's verdict: the harness scores a
+// rollout whether or not it finished, so a crash and a poor attempt both report
+// success=false with a real reward. Only the agent's own output separates them.
+test("a crashed rollout reports the exception that stopped it", () => {
+  const status = executionStatus({
+    success: false,
+    result: {
+      agent_response: [
+        "ROLLOUT ERROR",
+        "Traceback (most recent call last):",
+        '  File "/app/httpx/_transports/default.py", line 101, in map_httpcore_exceptions',
+        "    yield",
+        "httpcore.ReadTimeout",
+        "",
+        "The above exception was the direct cause of the following exception:",
+        "",
+        "httpx.ReadTimeout: The read operation timed out",
+      ].join("\n"),
+    },
+  });
+  assert.equal(status.state, "failed");
+  assert.equal(status.error, "httpx.ReadTimeout");
+  assert.equal(status.detail, "The read operation timed out");
+});
+
+test("a low reward alone is not an execution failure", () => {
+  const status = executionStatus({
+    success: false,
+    reward: 0.0568,
+    rollout: { turns: [{ index: 0 }] },
+    result: { agent_response: "The competitor's filing does not disclose segment revenue." },
+  });
+  assert.equal(status.state, "completed");
+  assert.equal(status.error, null);
+});
+
+test("a rollout with no turns is an execution failure", () => {
+  const status = executionStatus({ success: false, rollout: { turns: [] }, result: {} });
+  assert.equal(status.state, "failed");
+  assert.equal(status.error, "No model calls");
+});
+
+test("an exception with no message reports only its type", () => {
+  const status = executionStatus({
+    result: { agent_response: "ROLLOUT ERROR\nTraceback (most recent call last):\nhttpx.ReadTimeout" },
+  });
+  assert.equal(status.error, "httpx.ReadTimeout");
+  assert.equal(status.detail, null);
+});
+
+test("a missing agent response does not claim an execution failure", () => {
+  assert.equal(executionStatus({ success: true }).state, "completed");
+  assert.equal(executionStatus({}).state, "completed");
+  assert.equal(executionStatus(null).state, "completed");
+});
+
+test("prose mentioning an error is not read as a traceback", () => {
+  const status = executionStatus({
+    result: { agent_response: "The vendor reported a ValueError: in their changelog." },
+  });
+  assert.equal(status.state, "completed");
+});
+
+test("the raised exception wins over the frames it wrapped", () => {
+  const failure = exceptionFromTraceback(
+    "Traceback (most recent call last):\nhttpcore.ConnectError\nopenai.APITimeoutError: Request timed out.",
+  );
+  assert.equal(failure.type, "openai.APITimeoutError");
+  assert.equal(failure.message, "Request timed out.");
 });

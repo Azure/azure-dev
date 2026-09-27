@@ -700,6 +700,20 @@ export function setSnapshot(snapshot) {
   outcome.hidden = model.outcome === null;
   outcome.textContent = model.outcome ?? "";
   outcome.className = `badge ${model.response.success === true ? "positive" : "negative"}`;
+  const completion = byID("completion");
+  if (model.execution.state === "failed") {
+    completion.textContent = model.execution.error
+      ? `Execution failed · ${model.execution.error}`
+      : "Execution failed";
+    completion.className = "badge negative";
+    completion.title = model.execution.detail
+      ? `The rollout did not run to completion: ${model.execution.detail}`
+      : "The rollout did not run to completion. Its reward reflects a partial attempt.";
+  } else {
+    completion.textContent = "Execution completed";
+    completion.className = "badge neutral";
+    completion.title = "A final execute-rollout response was saved. Completion does not imply task success.";
+  }
   byID("rollout-id").textContent = model.response.rollout_id;
   byID("source").textContent = model.source;
   byID("environment-context").hidden = model.environment === null;
@@ -877,10 +891,12 @@ function renderRolloutList() {
     row.append(element("td", entry.split || "—"));
     row.append(element("td", stepLabel(entry) || "—"));
     row.append(element("td", isNumber(entry.reward) ? entry.reward.toFixed(3) : "—"));
-    // A recorded rollout may legitimately carry no verdict, which is not a failure.
+    // `success` is the grader's task verdict, not an execution state: a rollout
+    // that crashed and one that merely scored poorly both report false. Naming
+    // this "failure" read as an infrastructure fault on roughly half of all rows.
     const outcome = element("td");
-    if (entry.success === true) outcome.append(element("span", "Success", "badge positive"));
-    else if (entry.success === false) outcome.append(element("span", "Failure", "badge negative"));
+    if (entry.success === true) outcome.append(element("span", "Solved", "badge positive"));
+    else if (entry.success === false) outcome.append(element("span", "Not solved", "badge negative"));
     else outcome.append(element("span", "Not reported", "badge neutral"));
     row.append(outcome);
     row.append(element("td", isNumber(entry.latency_s) ? `${entry.latency_s.toFixed(1)}s` : "—"));

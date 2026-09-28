@@ -38,12 +38,14 @@ default version is unchanged; run
 'azd ai toolbox publish <toolbox> <version>' to promote it.
 
 When the version is omitted, the reference resolves to the skill's default
-version at read time.
-
-Examples:
-
+version at read time.`,
+		Example: `  # Follow a skill's default version
   azd ai toolbox skill add research my-skill
+
+  # Pin an immutable skill version
   azd ai toolbox skill add research my-skill@2
+
+  # Attach several skills in one new toolbox version
   azd ai toolbox skill add research --from-file ./skills.yaml
 `,
 		Args: func(cmd *cobra.Command, args []string) error {

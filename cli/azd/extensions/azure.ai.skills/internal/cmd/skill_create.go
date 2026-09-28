@@ -517,9 +517,16 @@ round-trip works without a manual zip step.
 Skills are versioned. ` + "`create`" + ` creates a new skill (if it does not exist)
 and uploads its first version as the default. Pass --force to delete an existing
 skill of the same name before creating.`,
-		Example: `  azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet ..."
+		Example: `  # Create a skill from inline instructions
+  azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet the user by name."
+
+  # Create a skill from a Markdown file
   azd ai skill create greet-user --file ./SKILL.md
+
+  # Replace an existing skill with a packaged archive
   azd ai skill create greet-user --file ./skill.zip --force
+
+  # Replace an existing skill with a directory containing SKILL.md
   azd ai skill create greet-user --file ./skill-src/ --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

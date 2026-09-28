@@ -36,6 +36,11 @@ To create a new toolbox, run 'azd ai toolbox create <name> --from-file <path>'.
 For ongoing deployment, declare the definition fields inline in an
 azure.ai.toolbox service in azure.yaml and run 'azd deploy <service>'.
 Toolbox services do not load the local file automatically or support a root $ref.`,
+		Example: `  # Add an existing project connection to a local definition
+  azd ai toolbox add connection my-mcp --file ./toolbox.yaml
+
+  # Pin a skill reference in the same definition
+  azd ai toolbox add skill my-skill@2 --file ./toolbox.yaml`,
 	}
 	cmd.AddCommand(newToolboxAddSkillCommand(extCtx))
 	cmd.AddCommand(newToolboxAddConnectionCommand(extCtx))
@@ -48,7 +53,9 @@ func newToolboxAddSkillCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skill <name>[@<version>]",
 		Short: "Add a skill reference to toolbox.yaml.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # Add a versioned skill reference to the local definition
+  azd ai toolbox add skill my-skill@2 --file ./toolbox.yaml`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLocalSkillAdd(args[0], *flags, readToolboxFlags(cmd, extCtx))
 		},
@@ -64,7 +71,9 @@ func newToolboxAddConnectionCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd := &cobra.Command{
 		Use:   "connection <name>",
 		Short: "Add a connection reference to toolbox.yaml.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # Add an Azure AI Search connection with its index
+  azd ai toolbox add connection my-search --index products --file ./toolbox.yaml`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLocalConnectionAdd(args[0], *flags, readToolboxFlags(cmd, extCtx))
 		},

@@ -24,6 +24,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 )
 
@@ -74,6 +75,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
+	}
+	if recordproxy.Transport != nil {
+		clientOptions.Transport = &http.Client{Transport: recordproxy.Transport}
 	}
 
 	pipeline := runtime.NewPipeline(

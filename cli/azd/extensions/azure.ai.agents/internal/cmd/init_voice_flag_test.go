@@ -281,6 +281,28 @@ func TestVoiceServiceLayoutAnchorsUnderProjectRoot(t *testing.T) {
 	require.ErrorContains(t, err, "outside the resolved azd project")
 }
 
+func TestNormalizeVoiceServiceDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	absolute, relative, err := normalizeVoiceServiceDirectory(root, filepath.Join("src", "renamed"))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "src", "renamed"), absolute)
+	require.Equal(t, "src/renamed", relative)
+
+	absolute, relative, err = normalizeVoiceServiceDirectory(
+		root,
+		filepath.Join(root, "nested", "src", "renamed-2"),
+	)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "nested", "src", "renamed-2"), absolute)
+	require.Equal(t, "nested/src/renamed-2", relative)
+
+	_, _, err = normalizeVoiceServiceDirectory(root, filepath.Join(root, "..", "outside"))
+	require.ErrorContains(t, err, "outside the resolved project")
+	require.NoDirExists(t, filepath.Join(root, "..", "outside"))
+}
+
 func TestResolveVoiceProjectResourceID(t *testing.T) {
 	t.Parallel()
 	const configured = "/subscriptions/sub/resourceGroups/rg/providers/" +

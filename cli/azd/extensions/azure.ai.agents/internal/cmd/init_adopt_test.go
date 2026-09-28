@@ -178,6 +178,61 @@ func TestExplicitManifestCancellationIsPreserved(t *testing.T) {
 	require.Equal(t, exterrors.CodeCancelled, localErr.Code)
 }
 
+func TestExplicitManifestUnrecognizedGitHubFormsUseAuthenticatedFallback(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range []string{
+		"https://api.github.com/repos/example/private/contents/azure.yaml?ref=main",
+		"https://github.contoso.com/example/private/blob/main/azure.yaml",
+	} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			const content = "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n"
+			var gotSource string
+			got, err := readExplicitManifestContent(
+				t.Context(),
+				source,
+				&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					t.Fatal("unrecognized URL must not use the public GitHub downloader")
+					return nil, nil
+				})},
+				func(_ context.Context, pointer string) ([]byte, error) {
+					gotSource = pointer
+					return []byte(content), nil
+				},
+			)
+			require.NoError(t, err)
+			require.Equal(t, source, gotSource)
+			require.Equal(t, content, string(got))
+		})
+	}
+}
+
+func TestExplicitManifestAuthenticatedFallbackErrorsAreAuthoritative(t *testing.T) {
+	t.Parallel()
+
+	// #nosec G101 -- intentional credential-bearing URL verifies non-disclosure
+
+	const source = "https://user:password@github.contoso.com/example/private/blob/main/azure.yaml?sig=secret#fragment"
+	wantErr := exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		"unsupported GitHub host",
+		"use a supported GitHub Enterprise URL",
+	)
+	_, err := readExplicitManifestContent(
+		t.Context(),
+		source,
+		http.DefaultClient,
+		func(context.Context, string) ([]byte, error) {
+			return nil, wantErr
+		},
+	)
+	require.ErrorIs(t, err, wantErr)
+	for _, sensitive := range []string{"user", "password", "sig", "secret", "fragment"} {
+		require.NotContains(t, err.Error(), sensitive)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -461,6 +516,69 @@ func TestValidateStagedAzureYamlRequiresAgentService(t *testing.T) {
 	require.Contains(t, localErr.Message, "does not declare an agent service")
 }
 
+func TestValidateStagedAzureYamlRequiresResolvedAgentService(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		azureYaml string
+		files     map[string]string
+		wantErr   bool
+	}{
+		{
+			name: "all refs resolve to generic services",
+			azureYaml: `services:
+  web:
+    $ref: ./web.yaml
+`,
+			files:   map[string]string{"web.yaml": "host: containerapp\n"},
+			wantErr: true,
+		},
+		{
+			name: "mixed generic and agent refs",
+			azureYaml: `services:
+  web:
+    $ref: ./web.yaml
+  agent:
+    $ref: ./agent.yaml
+`,
+			files: map[string]string{
+				"web.yaml":   "host: containerapp\n",
+				"agent.yaml": "host: azure.ai.agent\nkind: prompt\nname: agent\n",
+			},
+		},
+		{
+			name: "nested ref resolves agent",
+			azureYaml: `services:
+  agent:
+    $ref: ./service.yaml
+`,
+			files: map[string]string{
+				"service.yaml":    "host: azure.ai.agent\n$ref: ./definition.yaml\n",
+				"definition.yaml": "kind: hosted\nname: agent\n",
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte(tt.azureYaml), 0o600,
+			))
+			for name, body := range tt.files {
+				require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(body), 0o600))
+			}
+
+			err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+			if tt.wantErr {
+				require.ErrorContains(t, err, "does not declare an agent service")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
@@ -673,7 +791,7 @@ config: {}
 	}
 }
 
-func TestPreflightAzdTemplateDoesNotMutateCallerDirectory(t *testing.T) {
+func TestPreflightAzdTemplateIsReadOnly(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
 		content string
@@ -700,20 +818,24 @@ func TestPreflightAzdTemplateDoesNotMutateCallerDirectory(t *testing.T) {
 			sentinel := filepath.Join(callerDir, "sentinel.txt")
 			require.NoError(t, os.WriteFile(sentinel, []byte("unchanged"), 0o600))
 
-			workflow := &testWorkflowServiceServer{runHook: func() {
-				require.NoError(t, os.MkdirAll("project", 0o700))
-				require.NoError(t, os.WriteFile(
-					filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
-				))
-			}}
+			templateDir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(templateDir, "azure.yaml"), []byte(tt.content), 0o600,
+			))
+			workflow := &testWorkflowServiceServer{}
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
-			err := preflightAzdTemplate(t.Context(), client, "https://github.com/example/template")
+			before, cwdErr := os.Getwd()
+			require.NoError(t, cwdErr)
+			err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
-			require.Equal(t, 1, workflow.runCalls)
+			require.Zero(t, workflow.runCalls)
+			after, cwdErr := os.Getwd()
+			require.NoError(t, cwdErr)
+			require.Equal(t, before, after)
 			content, readErr := os.ReadFile(sentinel)
 			require.NoError(t, readErr)
 			require.Equal(t, "unchanged", string(content))
@@ -722,6 +844,140 @@ func TestPreflightAzdTemplateDoesNotMutateCallerDirectory(t *testing.T) {
 			require.Len(t, entries, 1)
 		})
 	}
+}
+
+func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		content  string
+		wantErr  string
+		wantRuns int
+	}{
+		{
+			name: "valid repository",
+			content: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+`,
+			wantRuns: 1,
+		},
+		{
+			name:    "invalid repository",
+			content: "services:\n  web:\n    host: containerapp\n",
+			wantErr: "does not declare an agent service",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			templateDir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(templateDir, "azure.yaml"), []byte(tt.content), 0o600,
+			))
+			workflow := &testWorkflowServiceServer{runHook: func() {
+				require.NoError(t, os.Mkdir("project", 0o700))
+				require.NoError(t, os.WriteFile(
+					filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
+				))
+			}}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+
+			err := scaffoldAzdTemplateProject(
+				t.Context(), client, http.DefaultClient,
+				"project", templateDir, "dev",
+			)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.NoDirExists(t, filepath.Join(root, "project"))
+			} else {
+				require.NoError(t, err)
+				require.DirExists(t, filepath.Join(root, "project"))
+			}
+			require.Equal(t, tt.wantRuns, workflow.runCalls)
+		})
+	}
+}
+
+func TestStageAzdTemplateRepositorySupportsAuthenticatedSources(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range []string{
+		"Azure-Samples/private-agent-template",
+		"https://github.contoso.com/agents/private-template/tree/main/sample",
+	} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			var parsedSource string
+			var downloaded *GitHubUrlInfo
+			staging, cleanup, err := stageAzdTemplateRepository(
+				t.Context(),
+				source,
+				func(_ context.Context, input string) (*GitHubUrlInfo, error) {
+					parsedSource = input
+					return &GitHubUrlInfo{
+						RepoSlug: "agents/private-template",
+						Branch:   "main",
+						FilePath: "sample",
+						Hostname: "github.contoso.com",
+					}, nil
+				},
+				func(_ context.Context, input *GitHubUrlInfo, dir string) error {
+					downloaded = input
+					return os.WriteFile(
+						filepath.Join(dir, "azure.yaml"),
+						[]byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n"),
+						0o600,
+					)
+				},
+			)
+			require.NoError(t, err)
+			require.Equal(t, source, parsedSource)
+			require.Equal(t, "github.contoso.com", downloaded.Hostname)
+			require.FileExists(t, filepath.Join(staging, "azure.yaml"))
+			cleanup()
+			require.NoDirExists(t, staging)
+		})
+	}
+}
+
+func TestDownloadAzdTemplateRepositoryPublicGitHub(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `[{"name":"azure.yaml","type":"file"}]`
+		if req.Header.Get("Accept") == "application/vnd.github.v3.raw" {
+			body = "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n"
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	staging := t.TempDir()
+	require.NoError(t, downloadAzdTemplateRepository(
+		t.Context(),
+		client,
+		&GitHubUrlInfo{RepoSlug: "example/template", Hostname: "github.com"},
+		staging,
+	))
+	require.NoError(t, validateStagedAzureYaml(staging, "example/template"))
+}
+
+func TestFullRepositoryPreservesInfrastructureProvider(t *testing.T) {
+	t.Parallel()
+
+	for _, provider := range []string{"bicep", "terraform", "microsoft.foundry", ""} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			require.False(t, shouldEnsureFoundryProvider(TemplateTypeAzd),
+				"full repository provider %q must remain owned by the template", provider)
+		})
+	}
+	require.True(t, shouldEnsureFoundryProvider(TemplateTypeAzureYaml),
+		"file-level unified adoption may stamp microsoft.foundry")
 }
 
 func TestFoundryProjectName(t *testing.T) {

@@ -173,6 +173,8 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 		"--force",
 	)
 	require.NoError(t, err, "ai agent init failed: stdout=%s, stderr=%s", result.Stdout, result.Stderr)
+	require.NotContains(t, result.Stderr, "unable to check whether agent",
+		"Foundry agent lookup must use the recording proxy during playback")
 
 	// Verify success
 	require.Contains(t, result.Stdout, "AI agent definition added to your azd project successfully!")

@@ -351,69 +351,6 @@ func folderNameStrippingParenSuffix(title string) string {
 	return sanitizeAgentName(title)
 }
 
-// readInitSourceContent returns the raw source bytes for local files and
-// supported public GitHub URLs without invoking the GitHub CLI.
-func readInitSourceContent(
-	ctx context.Context, manifestPointer string, httpClient *http.Client,
-) ([]byte, bool) {
-	// Local file path: bypass URL handling entirely so a relative path like
-	// A relative path that happens to look URL-ish is still read from disk.
-	if !strings.HasPrefix(manifestPointer, "http://") && !strings.HasPrefix(manifestPointer, "https://") {
-		info, statErr := os.Stat(manifestPointer)
-		if statErr != nil || info.IsDir() {
-			return nil, false
-		}
-		//nolint:gosec // source path is an explicit user-provided local path
-		content, err := os.ReadFile(manifestPointer)
-		if err != nil {
-			log.Printf("peek manifest name: read %s: %v", manifestPointer, err)
-			return nil, false
-		}
-		return content, true
-	}
-
-	// GitHub URL: try naive parsing and an unauthenticated HTTP GET for
-	// public repositories.
-	urlInfo := parseGitHubUrlNaive(manifestPointer)
-	if urlInfo == nil {
-		return nil, false
-	}
-	if httpClient == nil {
-		return nil, false
-	}
-
-	fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
-	if urlInfo.Branch != "" {
-		fileApiUrl += "?ref=" + url.QueryEscape(urlInfo.Branch)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
-	if err != nil {
-		log.Printf("peek manifest name: request: %v", err)
-		return nil, false
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3.raw")
-
-	//nolint:gosec // URL is constrained to the GitHub contents API built from a parsed GitHub URL
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		log.Printf("peek manifest name: http: %v", err)
-		return nil, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("peek manifest name: http status %d", resp.StatusCode)
-		return nil, false
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("peek manifest name: read body: %v", err)
-		return nil, false
-	}
-	return body, true
-}
-
 // parseGitHubUrlNaive parses public GitHub file URLs whose branch is a
 // single path segment.
 func parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {

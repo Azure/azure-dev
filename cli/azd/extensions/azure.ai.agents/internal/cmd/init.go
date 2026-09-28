@@ -817,6 +817,26 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			defer azdClient.Close()
 			printBanner(cmd.OutOrStdout())
 
+			var cachedExplicitAzureYaml []byte
+			if userProvidedManifest {
+				content, cached, err := validateLocalExplicitAzureYaml(flags.manifestPointer)
+				if err != nil {
+					return err
+				}
+				if cached {
+					cachedExplicitAzureYaml = content
+				}
+			}
+			sourceValidated := false
+			explicitSource := cmd.Flags().Changed("src") ||
+				(len(args) > 0 && flags.src != "" && flags.manifestPointer == "")
+			if explicitSource {
+				if err := validateExplicitInitSource(ctx, azdClient, flags.src); err != nil {
+					return err
+				}
+				sourceValidated = true
+			}
+
 			// Resolve the eject provider once (when --infra was passed) so an
 			// invalid value fails fast regardless of whether azure.yaml exists
 			// yet, and both the standalone and post-init eject paths agree.
@@ -882,9 +902,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			// Explicit YAML input is authoritative and must be a unified azure.yaml.
 			if userProvidedManifest {
-				content, err := loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
-				if err != nil {
-					return err
+				content := cachedExplicitAzureYaml
+				if content == nil {
+					var err error
+					content, err = loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
+					if err != nil {
+						return err
+					}
 				}
 				if err := validateUnifiedInitFlags(cmd); err != nil {
 					return err
@@ -972,6 +996,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					flags:             flags,
 					projectTargetDir:  targetDir,
 					createdFolderPath: folderDisplay,
+					sourceValidated:   sourceValidated,
 				}
 				if err := action.Run(ctx); err != nil {
 					return err
@@ -1168,9 +1193,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				default:
 					// initModeFromCode - use existing code in current directory
 					action := &InitFromCodeAction{
-						azdClient:  azdClient,
-						flags:      flags,
-						httpClient: httpClient,
+						azdClient:       azdClient,
+						flags:           flags,
+						httpClient:      httpClient,
+						sourceValidated: sourceValidated,
 					}
 
 					if err := action.Run(ctx); err != nil {
@@ -1757,14 +1783,8 @@ func getExistingEnvironment(ctx context.Context, envName string, azdClient *azde
 
 // isLocalFilePath reports whether path refers to a local file (not an http/https URL).
 func isLocalFilePath(path string) bool {
-	// Check if it starts with http:// or https://
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return false
-	} else if _, err := os.Stat(path); err == nil {
-		return true
-	}
-
-	return false
+	kind, err := classifyInitSource(path)
+	return err == nil && kind == initSourceLocal
 }
 
 // checkNotDirectory returns a validation error when path is a directory
@@ -1792,12 +1812,12 @@ func checkNotDirectory(path string) error {
 // treated as manifest pointers, while all other paths are treated as source
 // directories (the downstream init flow creates them via MkdirAll).
 func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
-	// Check for an explicit URI form first. Requiring "://" avoids
-	// misclassifying Windows drive paths such as C:\...
-	if strings.Contains(arg, "://") {
-		if parsed, parseErr := url.Parse(arg); parseErr == nil && parsed.Scheme != "" {
-			return true, false, nil
-		}
+	kind, classifyErr := classifyInitSource(arg)
+	if classifyErr != nil {
+		return false, false, classifyErr
+	}
+	if kind == initSourceHTTP {
+		return true, false, nil
 	}
 
 	info, statErr := os.Stat(arg)

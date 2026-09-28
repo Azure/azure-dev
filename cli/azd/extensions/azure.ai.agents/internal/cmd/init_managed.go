@@ -433,7 +433,8 @@ func promptManagedAgentDescription(
 			DefaultValue:   "",
 			Required:       false,
 			IgnoreHintKeys: true,
-			HelpMessage:    "A short summary of what this agent does. Written to azure.yaml and shown in Foundry.",
+			HelpMessage: "A short summary of what this agent does. " +
+				"Written to the agent service in azure.yaml and shown in Foundry.",
 		},
 	})
 	if err != nil {

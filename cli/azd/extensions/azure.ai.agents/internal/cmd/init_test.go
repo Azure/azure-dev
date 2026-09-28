@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +27,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -1182,6 +1185,7 @@ func TestResolvePositionalArg(t *testing.T) {
 		arg        string
 		isManifest bool
 		isSrc      bool
+		wantErr    string
 	}{
 		{
 			name:       "https URL is manifest",
@@ -1194,9 +1198,19 @@ func TestResolvePositionalArg(t *testing.T) {
 			isManifest: true,
 		},
 		{
-			name:       "custom scheme URL is manifest",
-			arg:        "custom://some/resource",
+			name:    "custom scheme URL is rejected",
+			arg:     "custom://some/resource",
+			wantErr: "unsupported manifest URI scheme",
+		},
+		{
+			name:       "uppercase HTTPS URL is manifest",
+			arg:        "HTTPS://github.com/org/repo/blob/main/azure.yaml",
 			isManifest: true,
+		},
+		{
+			name:  "Windows drive path remains local",
+			arg:   `C:\code\agent`,
+			isSrc: true,
 		},
 		{
 			name:       "existing file is manifest",
@@ -1229,9 +1243,11 @@ func TestResolvePositionalArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			isManifest, isSrc, err := resolvePositionalArg(tt.arg)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
 			}
+			require.NoError(t, err)
 			if isManifest != tt.isManifest {
 				t.Errorf("isManifest = %v, want %v", isManifest, tt.isManifest)
 			}
@@ -1240,6 +1256,123 @@ func TestResolvePositionalArg(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInitCommandPreAuthLocalValidation(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+
+	for _, tt := range []struct {
+		name    string
+		setup   func(*testing.T) string
+		wantErr string
+	}{
+		{
+			name: "standalone definition",
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "agent.yaml")
+				require.NoError(t, os.WriteFile(path, []byte("kind: hosted\nname: agent\n"), 0o600))
+				return path
+			},
+			wantErr: "standalone agent definition",
+		},
+		{
+			name: "manifest wrapper",
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "agent.manifest.yaml")
+				require.NoError(t, os.WriteFile(
+					path,
+					[]byte("template:\n  kind: hosted\n  name: agent\n"),
+					0o600,
+				))
+				return path
+			},
+			wantErr: "top-level 'template:'",
+		},
+		{
+			name: "legacy source directory",
+			setup: func(t *testing.T) string {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(dir, "agent.yaml"),
+					[]byte("kind: hosted\nname: agent\n"),
+					0o600,
+				))
+				return dir
+			},
+			wantErr: "legacy agent configuration",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			source := tt.setup(t)
+			command := newInitCommand(&azdext.ExtensionContext{})
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			if filepath.Ext(source) == "" {
+				command.SetArgs([]string{"--src", source})
+			} else {
+				command.SetArgs([]string{"--manifest", source})
+			}
+
+			require.ErrorContains(t, command.Execute(), tt.wantErr)
+		})
+	}
+}
+
+type initAuthOrderingAiServer struct {
+	azdext.UnimplementedAiModelServiceServer
+}
+
+func (*initAuthOrderingAiServer) ListModels(
+	context.Context,
+	*azdext.ListModelsRequest,
+) (*azdext.ListModelsResponse, error) {
+	return &azdext.ListModelsResponse{}, nil
+}
+
+func TestInitCommandValidLocalAzureYamlReachesAuthentication(t *testing.T) {
+	grpcServer := grpc.NewServer()
+	azdext.RegisterAiModelServiceServer(grpcServer, &initAuthOrderingAiServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("AZD_EXT_DEBUG", "")
+
+	binDir := t.TempDir()
+	var executable, executableContent string
+	if runtime.GOOS == "windows" {
+		executable = filepath.Join(binDir, "azd.cmd")
+		executableContent = "@echo {\"status\":\"unauthenticated\"}\r\n"
+	} else {
+		executable = filepath.Join(binDir, "azd")
+		executableContent = "#!/bin/sh\nprintf '{\"status\":\"unauthenticated\"}\\n'\n"
+	}
+	require.NoError(t, os.WriteFile(executable, []byte(executableContent), 0o600))
+	//nolint:gosec // the test fixture must be executable on Unix
+	require.NoError(t, os.Chmod(executable, 0o700))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	manifest := filepath.Join(t.TempDir(), "azure.yaml")
+	require.NoError(t, os.WriteFile(
+		manifest,
+		[]byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: agent\n"),
+		0o600,
+	))
+	command := newInitCommand(&azdext.ExtensionContext{})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"--manifest", manifest})
+
+	err = command.Execute()
+	require.ErrorContains(t, err, "not logged in")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeNotLoggedIn, localErr.Code)
 }
 
 func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {

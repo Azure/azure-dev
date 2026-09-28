@@ -506,6 +506,7 @@ type helpersPromptServer struct {
 	selectCalls atomic.Int32
 	promptCalls atomic.Int32
 	lastSelect  *azdext.SelectRequest
+	lastPrompt  *azdext.PromptRequest
 	promptValue string
 }
 
@@ -547,9 +548,10 @@ func (s *helpersPromptServer) Select(
 }
 
 func (s *helpersPromptServer) Prompt(
-	context.Context, *azdext.PromptRequest,
+	_ context.Context, req *azdext.PromptRequest,
 ) (*azdext.PromptResponse, error) {
 	s.promptCalls.Add(1)
+	s.lastPrompt = req
 	if s.promptValue != "" {
 		return &azdext.PromptResponse{Value: s.promptValue}, nil
 	}

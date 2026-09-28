@@ -17,6 +17,7 @@ import (
 	"os"
 	osExec "os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -50,8 +51,41 @@ type azureYamlManifestInfo struct {
 
 type authenticatedManifestReader func(context.Context, string) ([]byte, error)
 
+type initSourceKind int
+
+const (
+	initSourceLocal initSourceKind = iota
+	initSourceHTTP
+)
+
+var windowsDrivePathPattern = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
+
+func classifyInitSource(source string) (initSourceKind, error) {
+	if windowsDrivePathPattern.MatchString(source) || strings.HasPrefix(source, `\\`) {
+		return initSourceLocal, nil
+	}
+
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return initSourceLocal, nil
+	}
+	if parsed.Scheme == "" {
+		return initSourceLocal, nil
+	}
+	if strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https") {
+		return initSourceHTTP, nil
+	}
+
+	return initSourceLocal, exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf("unsupported manifest URI scheme %q", parsed.Scheme),
+		"Use an existing local azure.yaml path or an HTTP(S) URL.",
+	)
+}
+
 func safeInitSourceDisplay(source string) string {
-	if !strings.Contains(source, "://") {
+	kind, err := classifyInitSource(source)
+	if err != nil || kind == initSourceLocal {
 		return source
 	}
 
@@ -65,13 +99,13 @@ func safeInitSourceDisplay(source string) string {
 	return parsed.String()
 }
 
-func safeInitSourceError(err error, source string) string {
-	if err == nil {
-		return ""
+func redactURLFromText(text, rawURL string) string {
+	if rawURL == "" {
+		return text
 	}
-	text := strings.ReplaceAll(err.Error(), source, safeInitSourceDisplay(source))
-	parsed, parseErr := url.Parse(source)
-	if parseErr != nil {
+	text = strings.ReplaceAll(text, rawURL, safeInitSourceDisplay(rawURL))
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
 		return text
 	}
 	if parsed.User != nil {
@@ -94,6 +128,31 @@ func safeInitSourceError(err error, source string) string {
 		text = strings.ReplaceAll(text, parsed.Fragment, "[redacted]")
 	}
 	return text
+}
+
+func redactNestedErrorURLs(text string, err error, depth int) string {
+	if err == nil || depth > 64 {
+		return text
+	}
+
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
+		text = redactURLFromText(text, urlErr.URL)
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, nested := range multi.Unwrap() {
+			text = redactNestedErrorURLs(text, nested, depth+1)
+		}
+		return text
+	}
+	return redactNestedErrorURLs(text, errors.Unwrap(err), depth+1)
+}
+
+func safeInitSourceError(err error, source string) string {
+	if err == nil {
+		return ""
+	}
+	text := redactURLFromText(err.Error(), source)
+	return redactNestedErrorURLs(text, err, 0)
 }
 
 func (i azureYamlManifestInfo) promptOnly() bool {
@@ -123,6 +182,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			continue
 		}
 
+		host, _ := svcMap["host"].(string)
 		if hasAzureYamlFileRef(svcMap) {
 			if projectRoot == "" {
 				info.hasUnresolvedRefs = true
@@ -139,7 +199,6 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			}
 		}
 
-		host, _ := svcMap["host"].(string)
 		if host == AiAgentHost {
 			info.hasAgentService = true
 			kind, _ := svcMap["kind"].(string)
@@ -211,10 +270,14 @@ func loadExplicitAzureYaml(
 		return nil, err
 	}
 
-	display := safeInitSourceDisplay(flags.manifestPointer)
+	return validateExplicitAzureYamlContent(flags.manifestPointer, content)
+}
+
+func validateExplicitAzureYamlContent(manifestPointer string, content []byte) ([]byte, error) {
+	display := safeInitSourceDisplay(manifestPointer)
 	projectRoot := ""
-	if isLocalFilePath(flags.manifestPointer) {
-		projectRoot = filepath.Dir(flags.manifestPointer)
+	if isLocalFilePath(manifestPointer) {
+		projectRoot = filepath.Dir(manifestPointer)
 	}
 	info, err := inspectAzureYaml(content, projectRoot)
 	if err != nil {
@@ -222,7 +285,7 @@ func loadExplicitAzureYaml(
 	}
 	if info.hasServices {
 		if !info.hasAgentService && !info.hasUnresolvedRefs {
-			return nil, missingAgentServiceError(flags.manifestPointer)
+			return nil, missingAgentServiceError(manifestPointer)
 		}
 		return content, nil
 	}
@@ -235,6 +298,7 @@ func loadExplicitAzureYaml(
 			"Provide a valid azure.yaml project document with an azure.ai.agent service.",
 		)
 	}
+
 	if _, hasTemplate := document["template"]; hasTemplate {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -259,6 +323,37 @@ func loadExplicitAzureYaml(
 	)
 }
 
+func validateLocalExplicitAzureYaml(manifestPointer string) ([]byte, bool, error) {
+	kind, err := classifyInitSource(manifestPointer)
+	if err != nil {
+		return nil, false, err
+	}
+	if kind == initSourceHTTP {
+		return nil, false, nil
+	}
+	if err := checkNotDirectory(manifestPointer); err != nil {
+		return nil, false, err
+	}
+	//nolint:gosec // the path is an explicit user-provided init source
+	content, err := os.ReadFile(manifestPointer)
+	if err != nil {
+		return nil, false, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf(
+				"could not read unified azure.yaml from %q: %s",
+				safeInitSourceDisplay(manifestPointer),
+				err,
+			),
+			"Provide an existing local azure.yaml path.",
+		)
+	}
+	content, err = validateExplicitAzureYamlContent(manifestPointer, content)
+	if err != nil {
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
 func readExplicitManifestContent(
 	ctx context.Context,
 	manifestPointer string,
@@ -266,8 +361,11 @@ func readExplicitManifestContent(
 	readAuthenticated authenticatedManifestReader,
 ) ([]byte, error) {
 	display := safeInitSourceDisplay(manifestPointer)
-	if !strings.HasPrefix(manifestPointer, "http://") &&
-		!strings.HasPrefix(manifestPointer, "https://") {
+	kind, err := classifyInitSource(manifestPointer)
+	if err != nil {
+		return nil, err
+	}
+	if kind == initSourceLocal {
 		//nolint:gosec // the path is an explicit user-provided init source
 		content, err := os.ReadFile(manifestPointer)
 		if err != nil {
@@ -439,6 +537,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 	}
 	hasResolvedAgentService := false
 	for name, service := range document.Services {
+		inlineHost, _ := service["host"].(string)
 		resolvedService := service
 		if hasAzureYamlFileRef(service) {
 			resolvedService, err = foundry.ResolveFileRefs(service, stagingDir)
@@ -447,8 +546,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 			}
 		}
 
-		host, _ := resolvedService["host"].(string)
-		if strings.TrimSpace(host) != AiAgentHost {
+		if strings.TrimSpace(inlineHost) != AiAgentHost {
 			continue
 		}
 		hasResolvedAgentService = true
@@ -478,7 +576,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 		}
 		svc := &azdext.ServiceConfig{
 			Name:                 name,
-			Host:                 host,
+			Host:                 inlineHost,
 			AdditionalProperties: props,
 		}
 		probe, err := probeAgentDefinitionForInit(svc, stagingDir)

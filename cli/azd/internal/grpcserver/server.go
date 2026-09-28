@@ -58,7 +58,7 @@ func NewServer(
 	promptService azdext.PromptServiceServer,
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
-	eventService azdext.EventServiceServer,
+	eventServiceImpl azdext.EventServiceServer,
 	composeService v1beta.ComposeServiceServer,
 	workflowService azdext.WorkflowServiceServer,
 	extensionService azdext.ExtensionServiceServer,
@@ -72,13 +72,13 @@ func NewServer(
 	validationService azdext.ValidationServiceServer,
 	telemetryService v1beta.TelemetryServiceServer,
 ) *Server {
-	return &Server{
+	server := &Server{
 		projectService:       projectService,
 		environmentService:   environmentService,
 		promptService:        promptService,
 		userConfigService:    userConfigService,
 		deploymentService:    deploymentService,
-		eventService:         eventService,
+		eventService:         eventServiceImpl,
 		composeService:       composeService,
 		workflowService:      workflowService,
 		extensionService:     extensionService,
@@ -93,6 +93,10 @@ func NewServer(
 		telemetryService:     telemetryService,
 		betaServiceOverrides: map[BetaService]any{},
 	}
+	if eventService, ok := eventServiceImpl.(*eventService); ok {
+		server.betaServiceOverrides[BetaEventService] = &betaEventService{service: eventService}
+	}
+	return server
 }
 
 // WithOptions applies optional beta service configuration before the server starts.

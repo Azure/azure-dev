@@ -1,0 +1,91 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package grpcserver
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/stretchr/testify/require"
+)
+
+func TestBetaEventMessageEnvelope_UsesTopLevelRequestID(t *testing.T) {
+	envelope := betaEventMessageEnvelope{}
+	message := envelope.CreateProgressMessage("request-1", "warning")
+
+	require.Equal(t, "request-1", envelope.GetRequestId(t.Context(), message))
+	require.True(t, envelope.IsProgressMessage(message))
+	require.Equal(t, "warning", envelope.GetProgressMessage(message))
+	require.Nil(t, message.GetHandlerOutput().ProtoReflect().Descriptor().Fields().ByName("request_id"))
+}
+
+func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
+	t.Run("local cause types", func(t *testing.T) {
+		err := &azdext.LocalError{
+			Message:    "handler failed",
+			Code:       "handler_failed",
+			Category:   azdext.LocalErrorCategoryValidation,
+			CauseTypes: []string{"*demo.TransportError"},
+			Suggestion: "Check the extension configuration",
+		}
+
+		message := wrapBetaEventError(err)
+		localErr, ok := errors.AsType[*azdext.LocalError](unwrapBetaExtensionError(message))
+		require.True(t, ok)
+		require.Equal(t, []string{"*demo.TransportError"}, localErr.CauseTypes)
+		require.Equal(t, "Check the extension configuration", localErr.Suggestion)
+	})
+
+	t.Run("tool detail", func(t *testing.T) {
+		exitCode := 42
+		err := &azdext.ToolError{
+			Message:    "tool failed",
+			ToolName:   "docker",
+			Kind:       azdext.ToolErrorKindFailed,
+			ExitCode:   &exitCode,
+			Suggestion: "Check the tool output",
+		}
+
+		message := wrapBetaEventError(err)
+		require.Equal(t, v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL, message.GetOrigin())
+		require.Equal(t, "docker", message.GetToolError().GetToolName())
+		require.Equal(t, "failed", message.GetToolError().GetFailureKind())
+		require.Equal(t, int64(42), message.GetToolError().GetExitCode())
+	})
+}
+
+func TestValidateBetaEventMessageModes(t *testing.T) {
+	t.Run("modern requires a request ID", func(t *testing.T) {
+		err := validateModernBetaEventMessage(&v1beta.EventMessage{
+			MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+				ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+					EventName: "predeploy",
+					Status:    "completed",
+				},
+			},
+		})
+		require.ErrorContains(t, err, "request_id is required")
+	})
+
+	t.Run("legacy rejects progress", func(t *testing.T) {
+		err := validateLegacyBetaEventMessage(&v1beta.EventMessage{
+			MessageType: &v1beta.EventMessage_HandlerOutput{
+				HandlerOutput: &v1beta.HandlerOutput{Output: "warning"},
+			},
+		})
+		require.ErrorContains(t, err, "require a new stream")
+	})
+
+	t.Run("modern rejects server message types", func(t *testing.T) {
+		err := validateModernBetaEventMessage(&v1beta.EventMessage{
+			RequestId: "request-1",
+			MessageType: &v1beta.EventMessage_InvokeProjectHandler{
+				InvokeProjectHandler: &v1beta.InvokeProjectHandler{EventName: "predeploy"},
+			},
+		})
+		require.ErrorContains(t, err, "invalid message for a beta event client")
+	})
+}

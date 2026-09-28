@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/project"
@@ -18,8 +20,9 @@ func newListenCommand() *cobra.Command {
 		Use:   "listen",
 		Short: "Starts the extension and listens for events.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Create a new context that includes the AZD access token.
-			ctx := azdext.WithAccessToken(cmd.Context())
+			runCtx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			ctx := azdext.WithAccessToken(runCtx)
 
 			// Create a new AZD client.
 			azdClient, err := azdext.NewAzdClient()
@@ -29,15 +32,43 @@ func newListenCommand() *cobra.Command {
 			defer azdClient.Close()
 
 			host := azdext.NewExtensionHost(azdClient)
-			configureExtensionHost(host)
+			configureExtensionHostWithOutput(host, cmd.OutOrStdout())
 
-			// Start listening for events
-			// This is a blocking call and will not return until the server connection is closed.
-			if err := host.Run(ctx); err != nil {
-				return fmt.Errorf("failed to run extension: %w", err)
+			deployEvents := newDemoBetaEventRunner(azdClient, cmd.OutOrStdout())
+			if err := deployEvents.Start(ctx); err != nil {
+				return fmt.Errorf("failed to register beta deploy hooks: %w", err)
 			}
 
-			return nil
+			hostErrors := make(chan error, 1)
+			go func() {
+				hostErrors <- host.Run(ctx)
+			}()
+
+			select {
+			case <-deployEvents.Done():
+				if cmd.Context().Err() != nil {
+					cancel()
+					return <-hostErrors
+				}
+				cancel()
+				<-hostErrors
+				return fmt.Errorf("beta deploy event stream stopped: %w", deployEvents.Wait())
+			case err := <-hostErrors:
+				if cmd.Context().Err() != nil {
+					cancel()
+					_ = deployEvents.Wait()
+					return err
+				}
+				cancel()
+				betaErr := deployEvents.Wait()
+				if err != nil {
+					return fmt.Errorf("failed to run extension: %w", err)
+				}
+				if betaErr != nil && !errors.Is(betaErr, context.Canceled) {
+					return fmt.Errorf("beta deploy event stream stopped: %w", betaErr)
+				}
+				return errors.New("extension host stopped before listen context was canceled")
+			}
 		},
 	}
 
@@ -47,6 +78,10 @@ func newListenCommand() *cobra.Command {
 // configureExtensionHost wires the demo extension's providers and event handlers onto
 // the supplied host, so tests can verify the registrations against extension.yaml.
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostWithOutput(host, io.Discard)
+}
+
+func configureExtensionHostWithOutput(host *azdext.ExtensionHost, output io.Writer) {
 	azdClient := host.Client()
 
 	host.
@@ -81,65 +116,51 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			},
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			for i := 1; i <= 20; i++ {
-				fmt.Fprintf(
-					azdext.EventOutput(ctx),
-					"%d. Doing important work in extension...\n",
-					i,
-				)
-				time.Sleep(250 * time.Millisecond)
-			}
-
-			return nil
-		}).
-		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			for i := 1; i <= 20; i++ {
-				fmt.Fprintf(
-					azdext.EventOutput(ctx),
-					"%d. Doing important predeploy project work in extension...\n",
-					i,
-				)
-				time.Sleep(250 * time.Millisecond)
-			}
-
-			return nil
-		}).
-		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			for i := 1; i <= 20; i++ {
-				fmt.Fprintf(
-					azdext.EventOutput(ctx),
-					"%d. Doing important postdeploy project work in extension...\n",
-					i,
-				)
-				time.Sleep(250 * time.Millisecond)
-			}
-
-			return nil
+			return runDemoWork(ctx, func(index int) error {
+				_, err := fmt.Fprintf(output, "%d. Doing important work in extension...\n", index)
+				return err
+			})
 		}).
 		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-			for i := 1; i <= 20; i++ {
-				fmt.Fprintf(
-					azdext.EventOutput(ctx),
+			return runDemoWork(ctx, func(int) error {
+				_, err := fmt.Fprintf(
+					output,
 					"Service: %s, Artifacts: %d\n",
 					args.Service.Name,
 					len(args.ServiceContext.Package),
 				)
-				time.Sleep(250 * time.Millisecond)
-			}
-
-			return nil
+				return err
+			})
 		}, nil).
 		WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-			for i := 1; i <= 20; i++ {
-				fmt.Fprintf(
-					azdext.EventOutput(ctx),
+			return runDemoWork(ctx, func(int) error {
+				_, err := fmt.Fprintf(
+					output,
 					"Service: %s, Artifacts: %d\n",
 					args.Service.Name,
 					len(args.ServiceContext.Package),
 				)
-				time.Sleep(250 * time.Millisecond)
-			}
-
-			return nil
+				return err
+			})
 		}, nil)
+}
+
+func runDemoWork(ctx context.Context, write func(int) error) error {
+	for index := 1; index <= 20; index++ {
+		if err := write(index); err != nil {
+			return err
+		}
+		if index == 20 {
+			break
+		}
+
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil
 }

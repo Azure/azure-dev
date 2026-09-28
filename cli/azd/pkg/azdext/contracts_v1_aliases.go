@@ -142,7 +142,6 @@ type (
 	ErrorLink                                                = v1.ErrorLink
 	ErrorOrigin                                              = v1.ErrorOrigin
 	EventMessage                                             = v1.EventMessage
-	EventMessage_HandlerOutput                               = v1.EventMessage_HandlerOutput
 	EventMessage_InvokeProjectHandler                        = v1.EventMessage_InvokeProjectHandler
 	EventMessage_InvokeServiceHandler                        = v1.EventMessage_InvokeServiceHandler
 	EventMessage_ProjectHandlerStatus                        = v1.EventMessage_ProjectHandlerStatus
@@ -224,7 +223,6 @@ type (
 	GetUserConfigSectionResponse                             = v1.GetUserConfigSectionResponse
 	GetUserConfigStringRequest                               = v1.GetUserConfigStringRequest
 	GetUserConfigStringResponse                              = v1.GetUserConfigStringResponse
-	HandlerOutput                                            = v1.HandlerOutput
 	InfraOptions                                             = v1.InfraOptions
 	InvokeProjectHandler                                     = v1.InvokeProjectHandler
 	InvokeServiceHandler                                     = v1.InvokeServiceHandler

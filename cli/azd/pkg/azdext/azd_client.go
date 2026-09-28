@@ -213,6 +213,12 @@ func (c *AzdClient) Events() EventServiceClient {
 	return c.eventsClient
 }
 
+// EventsBeta returns a generated v1beta event service client.
+// Callers opt in to beta event behavior by using this accessor.
+func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
+	return v1beta.NewEventServiceClient(c.connection)
+}
+
 // Compose returns the preview compose service client.
 func (c *AzdClient) Compose() v1beta.ComposeServiceClient {
 	if c.composeClient == nil {

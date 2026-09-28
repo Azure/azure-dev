@@ -13,43 +13,30 @@ import (
 
 // EventMessageEnvelope provides message operations for EventMessage
 // It implements the grpcbroker.MessageEnvelope interface
-// This envelope uses the extension ID from gRPC context or its
-// configured client ID for correlation.
-type EventMessageEnvelope struct {
-	extensionId string
-}
+// This envelope extracts the extension ID from the gRPC context.
+type EventMessageEnvelope struct{}
 
 // NewEventMessageEnvelope creates an EventMessageEnvelope.
 func NewEventMessageEnvelope() *EventMessageEnvelope {
-	return newEventMessageEnvelope("")
-}
-
-func newEventMessageEnvelope(extensionId string) *EventMessageEnvelope {
-	return &EventMessageEnvelope{extensionId: extensionId}
+	return &EventMessageEnvelope{}
 }
 
 // Verify interface implementation at compile time
 var _ grpcbroker.MessageEnvelope[EventMessage] = (*EventMessageEnvelope)(nil)
 
-// getExtensionIdFromContext returns the validated extension ID when
-// available, or the configured client ID for extension messages.
+// getExtensionIdFromContext returns the validated extension ID.
 func (ops *EventMessageEnvelope) getExtensionIdFromContext(ctx context.Context) string {
 	claims, err := extensions.GetClaimsFromContext(ctx)
-	if err == nil && claims.Subject != "" {
-		return claims.Subject
+	if err != nil {
+		return ""
 	}
-
-	return ops.extensionId
+	return claims.Subject
 }
 
 // GetRequestId generates a correlation key from the message content
 // and extension identity.
 func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMessage) string {
 	innerMsg := ops.GetInnerMessage(msg)
-	if output, ok := innerMsg.(*HandlerOutput); ok {
-		return output.RequestId
-	}
-
 	extensionId := ops.getExtensionIdFromContext(ctx)
 	if extensionId == "" {
 		return ""
@@ -125,36 +112,23 @@ func (ops *EventMessageEnvelope) GetInnerMessage(msg *EventMessage) any {
 		return m.InvokeServiceHandler
 	case *EventMessage_ServiceHandlerStatus:
 		return m.ServiceHandlerStatus
-	case *EventMessage_HandlerOutput:
-		return m.HandlerOutput
 	default:
 		// Return nil for unhandled message types
 		return nil
 	}
 }
 
-// IsProgressMessage reports whether the message contains handler
-// output.
+// IsProgressMessage reports whether the message contains progress.
 func (ops *EventMessageEnvelope) IsProgressMessage(msg *EventMessage) bool {
-	return msg.GetHandlerOutput() != nil
+	return false
 }
 
-// GetProgressMessage extracts handler output text.
+// GetProgressMessage returns the progress text.
 func (ops *EventMessageEnvelope) GetProgressMessage(msg *EventMessage) string {
-	if output := msg.GetHandlerOutput(); output != nil {
-		return output.Output
-	}
 	return ""
 }
 
-// CreateProgressMessage creates a handler output message.
+// CreateProgressMessage returns nil because v1 has no progress message.
 func (ops *EventMessageEnvelope) CreateProgressMessage(requestId string, message string) *EventMessage {
-	return &EventMessage{
-		MessageType: &EventMessage_HandlerOutput{
-			HandlerOutput: &HandlerOutput{
-				RequestId: requestId,
-				Output:    message,
-			},
-		},
-	}
+	return nil
 }

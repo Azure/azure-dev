@@ -12,6 +12,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -62,7 +63,11 @@ func (b *boundedLifecycleOutput) Write(data []byte) (int, error) {
 
 	remaining := maxLifecycleOutputBytes - b.buffer.Len()
 	if len(data) > remaining {
-		_, _ = b.buffer.Write(data[:remaining])
+		writeSize := remaining
+		for writeSize > 0 && writeSize < len(data) && !utf8.RuneStart(data[writeSize]) {
+			writeSize--
+		}
+		_, _ = b.buffer.Write(data[:writeSize])
 		b.truncated = true
 		return len(data), nil
 	}
@@ -197,11 +202,11 @@ func (s *eventService) createProjectEventHandler(
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
-			cleanupPreview, output := s.syncExtensionOutput(
+			cleanupPreview, _ := s.syncExtensionOutput(
 				ctx,
 				extension,
 				previewTitle,
-				shouldPersistLifecycleOutput(eventName),
+				false,
 			)
 			defer cleanupPreview()
 
@@ -228,11 +233,7 @@ func (s *eventService) createProjectEventHandler(
 
 			return s.runWithEnvReload(ctx, func() error {
 				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWaitWithProgress(
-					streamCtx,
-					invokeMsg,
-					lifecycleOutputProgress(output),
-				)
+				response, err := broker.SendAndWait(streamCtx, invokeMsg)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
 				}
@@ -324,11 +325,11 @@ func (s *eventService) createServiceEventHandler(
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
-			cleanupPreview, output := s.syncExtensionOutput(
+			cleanupPreview, _ := s.syncExtensionOutput(
 				ctx,
 				extension,
 				previewTitle,
-				shouldPersistLifecycleOutput(eventName),
+				false,
 			)
 			defer cleanupPreview()
 
@@ -369,11 +370,7 @@ func (s *eventService) createServiceEventHandler(
 
 			return s.runWithEnvReload(ctx, func() error {
 				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWaitWithProgress(
-					streamCtx,
-					invokeMsg,
-					lifecycleOutputProgress(output),
-				)
+				response, err := broker.SendAndWait(streamCtx, invokeMsg)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}

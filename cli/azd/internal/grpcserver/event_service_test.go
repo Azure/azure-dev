@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -579,6 +580,19 @@ func TestEventService_syncExtensionOutput_BoundsPersistedOutput(t *testing.T) {
 	require.LessOrEqual(t, len(retainedOutput), maxLifecycleOutputBytes+64)
 }
 
+func TestBoundedLifecycleOutput_TruncatesOnUTF8Boundary(t *testing.T) {
+	output := &boundedLifecycleOutput{}
+	input := strings.Repeat("x", maxLifecycleOutputBytes-1) + "💩"
+
+	n, err := output.Write([]byte(input))
+	require.NoError(t, err)
+	require.Equal(t, len(input), n)
+	require.LessOrEqual(t, output.buffer.Len(), maxLifecycleOutputBytes)
+	require.True(t, utf8.ValidString(output.String()))
+	require.Contains(t, output.String(), "lifecycle output truncated")
+	require.NotContains(t, output.String(), "💩")
+}
+
 func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testing.T) {
 	service, _ := createTestEventService()
 	console := service.console.(*mockinput.MockConsole)
@@ -597,60 +611,6 @@ func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testi
 	cleanup()
 
 	require.Empty(t, console.Output())
-}
-
-func TestEventService_createProjectEventHandler_PersistsCorrelatedOutput(t *testing.T) {
-	service, _ := createTestEventService()
-	console := service.console.(*mockinput.MockConsole)
-	extension := createTestExtension()
-	projectConfig, err := service.lazyProject.GetValue()
-	require.NoError(t, err)
-
-	var streamCtx context.Context
-	var broker *grpcbroker.MessageBroker[azdext.EventMessage]
-	var cleanup func()
-	broker, streamCtx, cleanup = createBrokerForEventHandler(
-		t,
-		extension.Id,
-		func(msg *azdext.EventMessage) *azdext.EventMessage {
-			invoke := msg.GetInvokeProjectHandler()
-			require.NotNil(t, invoke)
-
-			return &azdext.EventMessage{
-				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
-					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
-						EventName: invoke.EventName,
-						Status:    "completed",
-					},
-				},
-			}
-		},
-		func(msg *azdext.EventMessage) *azdext.EventMessage {
-			if msg.GetInvokeProjectHandler() == nil {
-				return nil
-			}
-
-			requestID := azdext.NewEventMessageEnvelope().GetRequestId(streamCtx, msg)
-			return azdext.NewEventMessageEnvelope().CreateProgressMessage(
-				requestID,
-				"RBAC warning\n",
-			)
-		},
-	)
-	defer cleanup()
-
-	handler := service.createProjectEventHandler(
-		streamCtx,
-		extension,
-		"predeploy",
-		broker,
-	)
-	err = handler(t.Context(), project.ProjectLifecycleEventArgs{
-		Project: projectConfig,
-	})
-
-	require.NoError(t, err)
-	require.Contains(t, strings.Join(console.Output(), "\n"), "RBAC warning")
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {

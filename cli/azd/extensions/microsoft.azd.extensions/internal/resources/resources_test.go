@@ -158,6 +158,14 @@ func TestNonGoScaffoldEventMessageMatchesStableContract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, string(generated), "ExtensionReadyEvent", path)
 		require.NotContains(t, string(generated), "extension_ready_event", path)
+		for _, betaOnlyField := range []string{
+			"handler_output",
+			"subscribe_project_event_response",
+			"subscribe_service_event_response",
+			"request_id",
+		} {
+			require.NotContains(t, string(generated), betaOnlyField, path)
+		}
 	}
 }
 

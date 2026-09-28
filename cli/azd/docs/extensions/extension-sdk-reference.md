@@ -11,7 +11,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
-  - [Lifecycle Handler Output](#lifecycle-handler-output)
+  - [Lifecycle output (beta)](#lifecycle-output-beta)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
@@ -89,36 +89,23 @@ func main() {
 }
 ```
 
-### Lifecycle Handler Output
+### Lifecycle output (beta)
 
-```go
-func EventOutput(ctx context.Context) io.Writer
-```
+`HandlerOutput` is available only on the `v1beta.EventMessage` stream. It is
+carried in the `handler_output` oneof field, and its invocation `request_id`
+is set on the enclosing event message. The stable `v1` event message and
+stable `EventServiceClient` do not expose this feature.
 
-Use `EventOutput(ctx)` for output produced by project and service lifecycle
-handlers:
+Go extensions opt in through `AzdClient.EventsBeta()`, which returns a
+generated `v1beta.EventServiceClient`. A beta client must include request IDs
+on its messages and wait for matching subscription acknowledgements. The host
+correlates handler output with the invocation and retains bounded output for
+deploy hooks after the preview closes. A legacy beta stream whose initial
+subscription has no request ID keeps the older behavior but cannot send
+correlated output. The default language scaffolds continue to use stable `v1`.
 
-<!-- cspell:ignore Fprintln -->
-
-```go
-func postdeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
-    _, err := fmt.Fprintln(azdext.EventOutput(ctx), "The next step is ...")
-    return err
-}
-```
-
-When the handler is invoked by `azd`, the writer sends output to the host with
-the current invocation's request ID and also writes it to standard output.
-This lets the host retain deploy lifecycle output without mixing it with
-output from another concurrent handler or service target. Outside a lifecycle
-invocation, the writer falls back to `os.Stdout`.
-Large writes are split into smaller progress messages before they are sent to
-the host. Invalid UTF-8 bytes are replaced with the Unicode replacement
-character for the host progress messages; the original bytes are still written
-to the local output writer.
-
-Use the writer supplied by the context for lifecycle output. Direct writes to
-process-wide output writers cannot be correlated with a specific invocation.
+See the [extension framework guide](extension-framework.md#event-service)
+for the host behavior and the demo implementation.
 
 ### RunOption / WithPreExecute
 

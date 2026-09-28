@@ -670,6 +670,9 @@ func updateAdoptedAgentNames(
 			resp.GetProject().GetPath(),
 		)
 		if err != nil {
+			if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+				return localErr
+			}
 			return fmt.Errorf(
 				"resolving adopted agent name for service %q: %w",
 				serviceName,
@@ -1710,11 +1713,11 @@ func projectManifestExists(dir string) bool {
 
 // stageAzureYamlTemplate produces a local directory that azd-core can adopt as a
 // template (`azd init -t <dir>`): it contains the sample's azure.yaml at its
-// root alongside the sibling files/dirs the manifest references.
+// root alongside the sibling files/dirs the project file references.
 //
 // For a local pointer the pointer's parent directory is used directly when the
 // file is already named azure.yaml(.yml); otherwise a temp copy of the
-// directory is staged with the manifest written as azure.yaml. For a remote
+// directory is staged with the project file written as azure.yaml. For a remote
 // GitHub pointer the azure.yaml's containing directory is downloaded into a temp
 // staging dir. The returned cleanup removes any temp directory created.
 func stageAzureYamlTemplate(

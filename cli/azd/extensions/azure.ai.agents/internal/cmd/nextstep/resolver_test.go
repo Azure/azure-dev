@@ -569,6 +569,33 @@ func TestResolveAfterInit_SplitToolboxUsesDeployOnce(t *testing.T) {
 	assert.Equal(t, 1, deployCount)
 }
 
+func TestResolveAfterInit_MixedToolboxSourcesUseGenericRunGuidance(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{
+				Name:          "split-tools",
+				ServiceName:   "split-tools",
+				ToolboxSource: ToolboxSourceSplit,
+			},
+			{
+				Name:          "bundled-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
+		},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+	assert.Contains(t, rendered, "start the agent locally once the steps above are complete")
+	assert.NotContains(t, rendered, "start the agent locally once deployment completes")
+	assert.NotContains(t, rendered, "start the agent locally once toolbox migration and deployment complete")
+}
+
 func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 	t.Parallel()
 
@@ -970,7 +997,7 @@ func TestRunFollowUpDescription(t *testing.T) {
 			hasToolboxEndpoint:      true,
 			hasSplitToolboxEndpoint: true,
 			hasBundledToolbox:       true,
-			want:                    "start the agent locally once deployment completes",
+			want:                    "start the agent locally once the steps above are complete",
 		},
 		{
 			name:               "bundled toolbox only",

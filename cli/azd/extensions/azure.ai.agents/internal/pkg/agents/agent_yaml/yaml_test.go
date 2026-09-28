@@ -115,9 +115,3 @@ func TestA2APreviewToolSerialization(t *testing.T) {
 		t.Errorf("Expected agentCardPath '%s'", agentCardPath)
 	}
 }
-
-// TestConnectionResourceNewFieldsJSONRoundTrip tests that the 6 new fields
-// survive a JSON marshal/unmarshal round-trip, catching any json struct tag typos.
-
-// TestConnectionResourceNewFieldsYAMLRoundTrip tests YAML unmarshal for the 6 new fields,
-// verifying that yaml struct tags are correct and fields are not silently dropped.

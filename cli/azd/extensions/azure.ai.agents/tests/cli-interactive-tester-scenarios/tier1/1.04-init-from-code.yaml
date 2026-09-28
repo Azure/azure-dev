@@ -2,7 +2,7 @@
 #
 # Requires Azure login (see README "Authentication"). Does NOT run `azd provision`;
 # no cost incurred.
-# Precondition: the cwd should already contain agent source code (and ideally an
+# Precondition: the cwd should already contain agent source code (and ideally
 # source files). The pre hooks seed a committed Python fixture so this is
 # guaranteed and the run is idempotent.
 name: "init-from-code"

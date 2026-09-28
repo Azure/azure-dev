@@ -335,6 +335,7 @@ in any order, any time.
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
 | `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
 | `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
+| `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -618,10 +619,10 @@ How they're used here:
   (`1.04-init-from-code`, `1.06-init-deploy-mode-code`) also copy a committed Python
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
-- **`pre` gh-auth guard** — the manifest scenarios (`1.03-init-from-azure-yaml-url`,
+- **`pre` gh-auth guard** — the remote unified azure.yaml scenarios (`1.03-init-from-azure-yaml-url`,
   `1.05-init-flag-agent-name`) run `gh auth status` and fail fast if GitHub
-  CLI isn't authenticated, because downloading the manifest can fall back to the
-  `gh` CLI (and an interactive login) when the anonymous GitHub API is
+  CLI isn't authenticated, because downloading the project file and its sibling
+  files can fall back to the `gh` CLI (and an interactive login) when the anonymous GitHub API is
   rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).
 - **`pre` idempotent setup (Tier 2)** — `2.00-setup-deploy-shared-agent` first runs
   `azd down --force --purge` if a project exists at the current run's

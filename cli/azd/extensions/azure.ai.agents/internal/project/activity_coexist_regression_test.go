@@ -8,8 +8,10 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // TestActivityCoexistenceRegression is an end-to-end, offline regression for the
@@ -84,31 +86,36 @@ func TestActivityCoexistenceRegression(t *testing.T) {
 		})
 	})
 
-	t.Run("init-from-manifest", func(t *testing.T) {
-		// A manifest-authored coexistence definition is passed through verbatim:
-		// azd imposes no activity-exclusive restriction on the manifest path.
-		definition := []byte(`
-kind: hosted
-name: echo
-image: myregistry.azurecr.io/echo:v1
-protocols:
-  - protocol: responses
-    version: 2.0.0
-  - protocol: activity
-    version: 2.0.0
-agent_endpoint:
-  protocols:
-    - responses
-    - activity
-  authorization_schemes:
-    - type: Entra
-      isolation_key_source:
-        kind: Header
-    - type: BotServiceRbac
-`)
-		var ca agent_yaml.ContainerAgent
-		require.NoError(t, yaml.Unmarshal(definition, &ca))
-		require.NoError(t, agent_yaml.ValidateAgentDefinition(definition))
+	t.Run("direct-service-definition", func(t *testing.T) {
+		properties, err := structpb.NewStruct(map[string]any{
+			"kind":  "hosted",
+			"name":  "echo",
+			"image": "myregistry.azurecr.io/echo:v1",
+			"protocols": []any{
+				map[string]any{"protocol": "responses", "version": "2.0.0"},
+				map[string]any{"protocol": "activity", "version": "2.0.0"},
+			},
+			"agentEndpoint": map[string]any{
+				"protocols": []any{"responses", "activity"},
+				"authorizationSchemes": []any{
+					map[string]any{
+						"type":               "Entra",
+						"isolationKeySource": map[string]any{"kind": "Header"},
+					},
+					map[string]any{"type": "BotServiceRbac"},
+				},
+			},
+		})
+		require.NoError(t, err)
+		service := &azdext.ServiceConfig{
+			Name:                 "echo",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: properties,
+		}
+
+		ca, isHosted, _, err := LoadAgentDefinition(service, t.TempDir())
+		require.NoError(t, err)
+		require.True(t, isHosted)
 
 		require.True(t, IsActivityProtocol(ca))
 		require.Equal(t, ActivityUseCaseSimple, ResolveActivityProfile(ca).UseCase)
@@ -117,6 +124,7 @@ agent_endpoint:
 		require.Equal(t, []string{"responses", "activity"}, ca.AgentEndpoint.Protocols)
 		requireHasScheme(t, ca.AgentEndpoint, "Entra")
 		requireHasScheme(t, ca.AgentEndpoint, "BotServiceRbac")
+		require.Equal(t, "Header", ca.AgentEndpoint.AuthorizationSchemes[0].IsolationKeySource.Kind)
 	})
 }
 

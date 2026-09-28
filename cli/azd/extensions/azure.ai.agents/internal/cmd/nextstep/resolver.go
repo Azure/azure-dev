@@ -539,6 +539,8 @@ func runFollowUpDescription(
 		return "start the agent locally once deployment and env values are ready"
 	case hasToolboxEndpoints && hasManualVars:
 		return "start the agent locally once the steps above are complete"
+	case hasSplitToolboxEndpoints && hasBundledToolboxEndpoints:
+		return "start the agent locally once the steps above are complete"
 	case hasSplitToolboxEndpoints && hasToolboxEndpoints:
 		return "start the agent locally once deployment completes"
 	case hasBundledToolboxEndpoints && hasToolboxEndpoints:

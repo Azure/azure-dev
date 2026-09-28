@@ -322,10 +322,7 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	// that supplies the definition. With the definition inline on the service
 	// entry there is no such file, so they are anchored at the service
 	// directory instead — the same place `azd ai agent init` scaffolds them.
-	agentDir := p.servicePath
-	if p.agentDefinitionPath != "" {
-		agentDir = filepath.Dir(p.agentDefinitionPath)
-	}
+	agentDir := p.promptAgentConventionDir()
 	g, err := newPromptGraph(agentDir, managed, settings, env, p.credential)
 	if err != nil {
 		return nil, err
@@ -337,4 +334,11 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 		return nil, err
 	}
 	return g.bindings, nil
+}
+
+func (p *AgentServiceTargetProvider) promptAgentConventionDir() string {
+	if p.agentDefinitionPath != "" {
+		return filepath.Dir(p.agentDefinitionPath)
+	}
+	return p.servicePath
 }

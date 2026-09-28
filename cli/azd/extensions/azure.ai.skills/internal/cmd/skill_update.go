@@ -216,17 +216,9 @@ func (a *updateAction) buildInlineContent() (*skill_api.SkillInlineContent, erro
 	}
 
 	if a.flags.file != "" {
-		data, readErr := readFileWithLimit(a.flags.file)
-		if readErr != nil {
-			return nil, readErr
-		}
-		parsed, parseErr := skill_api.ParseSkillMd(data)
-		if parseErr != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidSkillFile,
-				fmt.Sprintf("failed to parse %s: %s", a.flags.file, parseErr),
-				"ensure the file begins with a YAML front matter block delimited by '---'",
-			)
+		parsed, err := loadSkillMd(a.flags.file)
+		if err != nil {
+			return nil, err
 		}
 		content.Description = parsed.Description
 		content.Instructions = parsed.Instructions

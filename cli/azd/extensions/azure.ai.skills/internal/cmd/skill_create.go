@@ -128,17 +128,9 @@ func (a *createAction) runInline(ctx context.Context, client *skill_api.Client) 
 }
 
 func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) error {
-	data, err := readFileWithLimit(a.flags.file)
+	parsed, err := loadSkillMd(a.flags.file)
 	if err != nil {
 		return err
-	}
-	parsed, parseErr := skill_api.ParseSkillMd(data)
-	if parseErr != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("failed to parse %s: %s", a.flags.file, parseErr),
-			"ensure the file begins with a YAML front matter block delimited by '---'",
-		)
 	}
 
 	if parsed.Name != "" && parsed.Name != a.flags.name && !shouldSuppressWarning(a.flags.noPrompt, a.flags.output) {
@@ -325,17 +317,9 @@ func verifyDirectoryNameMatches(dirPath, positionalName string) error {
 // verifyMdNameMatches reads the SKILL.md front matter and refuses --force on
 // a `name` mismatch. Returns nil when SKILL.md omits `name` or the names agree.
 func verifyMdNameMatches(filePath, positionalName string) error {
-	data, err := readFileWithLimit(filePath)
+	parsed, err := loadSkillMd(filePath)
 	if err != nil {
 		return err
-	}
-	parsed, parseErr := skill_api.ParseSkillMd(data)
-	if parseErr != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("failed to parse %s: %s", filePath, parseErr),
-			"ensure the file begins with a YAML front matter block delimited by '---'",
-		)
 	}
 	if parsed.Name == "" || parsed.Name == positionalName {
 		return nil

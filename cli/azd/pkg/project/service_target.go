@@ -132,6 +132,17 @@ type ServiceTargetPreviewer interface {
 	Preview(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceDeployPreviewResult, error)
 }
 
+// ServiceTargetResourcePreviewer is optionally implemented by built-in service targets that need
+// the resolved Azure resource to describe a deployment preview. Extension service targets continue
+// to use ServiceTargetPreviewer.
+type ServiceTargetResourcePreviewer interface {
+	PreviewWithTarget(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		targetResource *environment.TargetResource,
+	) (*ServiceDeployPreviewResult, error)
+}
+
 func resourceTypeMismatchError(
 	resourceName string,
 	resourceType string,

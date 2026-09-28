@@ -63,6 +63,25 @@ func TestOperationReporterDeduplicatesPerOperation(t *testing.T) {
 	require.Len(t, capture.events, 2)
 }
 
+func TestOperationReporterPreservesSortedUniqueNames(t *testing.T) {
+	t.Parallel()
+	r := newOperationReporter()
+	capture := &operationRecordingReporter{}
+	classes := []agentTelemetry.OperationClass{
+		{Category: "voice_byom", Telephony: "enabled"},
+		{Category: "hosted", Telephony: "none"},
+		{Category: "voice_byom", Telephony: "enabled"},
+	}
+	r.report(t.Context(), capture, "deploy", classes)
+	r.report(t.Context(), capture, "deploy", classes)
+	require.Len(t, capture.events, 2)
+	require.Equal(t, "agent.operation.v1.deploy.hosted.none", capture.events[0].Name)
+	require.Equal(t, "agent.operation.v1.deploy.voice_byom.enabled", capture.events[1].Name)
+	for _, event := range capture.events {
+		require.Nil(t, event.Attributes)
+	}
+}
+
 func TestInitOperationRefinesIntentWithoutChangingContext(t *testing.T) {
 	t.Parallel()
 	ctx := withInitOperationContext(t.Context(), "hosted", false)

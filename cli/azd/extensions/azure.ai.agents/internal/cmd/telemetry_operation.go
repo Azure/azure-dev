@@ -135,10 +135,10 @@ func (r *operationReporter) report(
 	// not one second per service. Keep the original context reporter untouched.
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	names := make(map[string]foundryTelemetry.Event)
+	names := map[string]struct{}{}
 	for _, class := range classes {
 		if event, ok := agentTelemetry.OperationClassified(operation, class); ok {
-			names[event.Name] = event
+			names[event.Name] = struct{}{}
 		}
 	}
 	keys := slices.Sorted(maps.Keys(names))
@@ -148,7 +148,7 @@ func (r *operationReporter) report(
 		r.seen[name] = true
 		r.mu.Unlock()
 		if !seen && ctx.Err() == nil && reporter != nil {
-			reporter.Report(ctx, names[name])
+			reporter.Report(ctx, foundryTelemetry.Event{Name: name})
 		}
 	}
 }

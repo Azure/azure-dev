@@ -101,6 +101,64 @@ func Test_Container_NewScope(t *testing.T) {
 	require.Same(t, scopedInstance2, scopedInstance3)
 }
 
+func Test_Container_LayerEnvironmentManagerOverridesAreIsolated(t *testing.T) {
+	// This is a case I ran into when I was trying to make it so we could inject a new
+	// environment manager instance for each infra provider. Prior to the fix for this
+	// we'd accidentally end up mutating the _root_ environment manager instead of just the
+	// lower level manager.
+
+	rootContainer := NewNestedContainer(nil)
+	rootEnvManager := &fakeEnvironmentManager{name: "root"}
+	RegisterInstance[environmentManager](rootContainer, rootEnvManager)
+
+	// now we're going to register an env manager, but each one is in a new
+	// scope, so the root should be unaffected (there was a bug where this was
+	// NOT the case)
+	layer1Scope, err := rootContainer.NewScope()
+	require.NoError(t, err)
+	layer1EnvManager := &fakeEnvironmentManager{name: "layer-1"}
+	RegisterInstance[environmentManager](layer1Scope, layer1EnvManager) // override with our own env manager
+
+	layer2Scope, err := rootContainer.NewScope()
+	require.NoError(t, err)
+	layer2EnvManager := &fakeEnvironmentManager{name: "layer-2"}
+	RegisterInstance[environmentManager](layer2Scope, layer2EnvManager) // override with our own env manager
+
+	// okay, at this point we've created this structure in our IoC, each independent from
+	// each other:
+	//
+	// root container
+	// |-- root env manager
+	// |-- layer 1 scope
+	// |   |-- layer 1 env manager
+	// |-- layer 2 scope
+	//     |-- layer 2 env manager
+
+	var resolvedRoot environmentManager
+	require.NoError(t, rootContainer.Resolve(&resolvedRoot))
+	require.Same(t, rootEnvManager, resolvedRoot)
+
+	var resolvedLayer1 environmentManager
+	require.NoError(t, layer1Scope.Resolve(&resolvedLayer1))
+	require.Same(t, layer1EnvManager, resolvedLayer1)
+
+	var resolvedLayer2 environmentManager
+	require.NoError(t, layer2Scope.Resolve(&resolvedLayer2))
+	require.Same(t, layer2EnvManager, resolvedLayer2)
+}
+
+type environmentManager interface {
+	Name() string
+}
+
+type fakeEnvironmentManager struct {
+	name string
+}
+
+func (m *fakeEnvironmentManager) Name() string {
+	return m.name
+}
+
 func Test_Container_Transient_Register_Resolve(t *testing.T) {
 	container := NewNestedContainer(nil)
 	container.MustRegisterTransient(newTransientService)
@@ -171,9 +229,11 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, scope2Instance1)
 
-		// Instance 1 & 2 are singletons but overriden in each child scope so they should be different
-		require.NotSame(t, rootInstance, rootInstanceResolved)
-		require.NotSame(t, scope1Instance, scope2Instance)
+		// Each child overrides the inherited registration without changing the root or its sibling.
+		require.Same(t, rootInstance, rootInstanceResolved)
+		require.Same(t, scope1Instance, scope1Instance1)
+		require.Same(t, scope2Instance, scope2Instance1)
+		require.NotSame(t, scope1Instance1, scope2Instance1)
 	})
 }
 

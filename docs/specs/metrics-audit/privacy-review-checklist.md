@@ -23,6 +23,19 @@ the system-metadata type fields. The corresponding unit tests cover
 error-chain bounds, cause-label hashing, type-name validation, mapper
 attribution, tool-name normalization, and extension identity attribution.
 
+## Follow-up Review: Service-target Extension Attribution
+
+The service-target error-attribution change reuses the existing `extension.event`,
+`extension.id`, and `extension.version` fields on failed `cmd.*` spans when an
+extension broker invokes a service target. The operation value is a fixed
+host-side label such as `service_target.deploy` or `service_target.publish`.
+No new event, customer-content field, or unbounded extension-provided string is
+introduced by this follow-up.
+
+| Field or data | Classification | Privacy decision |
+|---------------|----------------|------------------|
+| `extension.event` on failed service-target `cmd.*` spans | SystemMetadata | Limited to the fixed service-target operation label; extension identity remains the extension ID and version already covered by the existing admission path |
+
 ## When to Trigger a Privacy Review
 
 ### Agency usage detection (#10059)

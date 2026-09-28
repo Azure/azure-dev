@@ -216,17 +216,9 @@ func (a *updateAction) buildInlineContent() (*skill_api.SkillInlineContent, erro
 	}
 
 	if a.flags.file != "" {
-		data, readErr := readFileWithLimit(a.flags.file)
-		if readErr != nil {
-			return nil, readErr
-		}
-		parsed, parseErr := skill_api.ParseSkillMd(data)
-		if parseErr != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidSkillFile,
-				fmt.Sprintf("failed to parse %s: %s", a.flags.file, parseErr),
-				"ensure the file begins with a YAML front matter block delimited by '---'",
-			)
+		parsed, err := loadSkillMd(a.flags.file)
+		if err != nil {
+			return nil, err
 		}
 		content.Description = parsed.Description
 		content.Instructions = parsed.Instructions
@@ -362,10 +354,19 @@ layout that ` + "`azd ai skill download`" + ` writes by default.
 
 To repoint default_version at an existing version without uploading new
 content, pass --set-default-version <version>.`,
-		Example: `  azd ai skill update my-skill --description "Updated summary" --instructions "..."
+		Example: `  # Upload new inline instructions as the default version
+  azd ai skill update my-skill --description "Updated summary" --instructions "Greet the user by name."
+
+  # Upload a new version from a Markdown file
   azd ai skill update my-skill --file ./SKILL.md
+
+  # Upload a new version from an archive
   azd ai skill update my-skill --file ./skill.zip
+
+  # Upload a new version from an extracted directory
   azd ai skill update my-skill --file ./skill-src/
+
+  # Restore an existing version as the default
   azd ai skill update my-skill --set-default-version 1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

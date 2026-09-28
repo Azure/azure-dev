@@ -117,7 +117,8 @@ func Test_AIAgent_Init_NoPrompt_Defer(t *testing.T) {
 }
 
 // Test_AIAgent_Init_NoPrompt_WithProject verifies init with --project-id resolves the project,
-// configures models, and generates all scaffold files. Uses recording proxy for ARM calls.
+// configures models, and generates all scaffold files. Uses recording proxy for ARM and
+// Foundry data-plane calls.
 //
 // Record:  AZURE_RECORD_MODE=record TEST_FOUNDRY_PROJECT_ID=<arm-id> go test -tags=record -run Test_AIAgent_Init_NoPrompt_WithProject -v -timeout 10m
 // Replay:  AZURE_RECORD_MODE=playback go test -tags=record -run Test_AIAgent_Init_NoPrompt_WithProject -v -timeout 5m
@@ -157,6 +158,8 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 		"--src", "pr-gate-test-agent",
 	)
 	require.NoError(t, err, "ai agent init failed: stdout=%s, stderr=%s", result.Stdout, result.Stderr)
+	require.NotContains(t, result.Stderr, "unable to check whether agent",
+		"Foundry agent lookup must use the recording proxy during playback")
 
 	// Verify success
 	require.Contains(t, result.Stdout, "Adopted the sample's azure.yaml")

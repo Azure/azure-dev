@@ -1140,8 +1140,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 			}
-			if err := validateFastPathAgentName(flags, isPromptVoice); err != nil {
-				return err
+			if !userProvidedManifest {
+				if err := validateFastPathAgentName(flags, isPromptVoice); err != nil {
+					return err
+				}
+				if flags.image != "" {
+					if _, err := validateExplicitProtocols(flags.protocols); err != nil {
+						return err
+					}
+				}
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -1242,6 +1249,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return err
 			}
 
+			// Project().Get discovers a parent azd project even when init runs
+			// from one of its subdirectories. Validate configured agent services
+			// before any generated init path can prompt or mutate the project.
+			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+			if projectErr == nil && projectResponse.GetProject() != nil {
+				if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+					return err
+				}
+			}
+
 			switch {
 			case requestedKind == AgentKindChoicePrompt:
 				harness, harnessErr := resolveInitHarness(flags.harness, "")
@@ -1253,10 +1270,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if strings.TrimSpace(flags.instructions) != "" {
 				return promptOnlyInstructionsError()
 			}
-
-			// Project().Get discovers a parent azd project even when init runs
-			// from one of its subdirectories.
-			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 
 			// Validate --kind prompt-voice and its incompatible options before either
 			// synthesis branch. The image and prompt-voice fast paths both mutate
@@ -1336,11 +1349,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// protocols, deploy mode) are already recorded there. Offer to
 			// reuse that configuration instead of re-asking (issue #9154).
 			//
-			// This check runs before the bare agent.yaml scan below. A configured
-			// service may legitimately load its definition from agent.yaml; in
-			// that case project reuse must win so init does not add or replace a
-			// service that azure.yaml already owns.
-			//
 			// Any flag that describes the agent to set up states intent to
 			// configure that agent, so it opts out of reuse and falls through
 			// to the normal flow. Without that, a scripted
@@ -1352,7 +1360,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				false,
 				cmd.Flags().Changed("src"),
 			) {
-				detection := detectProjectAgentServices(ctx, azdClient)
+				detection, err := detectProjectAgentServices(ctx, azdClient)
+				if err != nil {
+					return err
+				}
 				if len(detection.services) > 0 &&
 					!positionalSourceOptsOutOfReuse(
 						flags.src,
@@ -1414,19 +1425,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					case TemplateTypeAzureYaml:
 						// Unified azure.yaml template — download and adopt via
 						// the Foundry adoption flow (not git clone).
+						if err := validateCatalogInitFlags(cmd, TemplateTypeAzureYaml); err != nil {
+							return err
+						}
 						flags.manifestPointer = selectedTemplate.Source
-						content, ok := readManifestContentForInitDetection(
-							ctx, azdClient, flags.manifestPointer, httpClient,
-						)
-						if !ok {
-							return exterrors.Dependency(
-								exterrors.CodeProjectInitFailed,
-								fmt.Sprintf(
-									"failed to download template source: %s",
-									selectedTemplate.Source,
-								),
-								"",
-							)
+						content, err := loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
+						if err != nil {
+							return err
 						}
 
 						// Resolve --agent-name only when the user explicitly
@@ -1463,11 +1468,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 
 					case TemplateTypeAzd:
-						if err := validateUnifiedInitFlags(cmd); err != nil {
+						if err := validateCatalogInitFlags(cmd, TemplateTypeAzd); err != nil {
 							return err
 						}
 						if err := runInitFromAzdTemplate(
-							ctx, flags, azdClient, selectedTemplate,
+							ctx, flags, azdClient, httpClient, selectedTemplate,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
@@ -1643,7 +1648,7 @@ func fastPathProjectTarget(
 }
 
 func validateFastPathAgentName(flags *initFlags, isPromptVoice bool) error {
-	if flags.image == "" && !isPromptVoice {
+	if flags.manifestPointer != "" || (flags.image == "" && !isPromptVoice) {
 		return nil
 	}
 	if flags.agentName == "" {
@@ -1761,6 +1766,15 @@ func validateUnifiedInitFlags(cmd *cobra.Command) error {
 		),
 		"Remove the conflicting flags or update the agent services in azure.yaml before running init.",
 	)
+}
+
+func validateCatalogInitFlags(cmd *cobra.Command, templateType string) error {
+	switch templateType {
+	case TemplateTypeAzureYaml, TemplateTypeAzd:
+		return validateUnifiedInitFlags(cmd)
+	default:
+		return nil
+	}
 }
 
 func validateInitKindHarness(requestedKind agentKindChoice, rawKind, harness string, isPromptVoice bool) error {
@@ -3891,8 +3905,12 @@ func (a *InitAction) populateContainerSettings(
 	return containerSettings, nil
 }
 
+type githubContentAPI interface {
+	ApiCall(context.Context, string, string, github.ApiCallOptions) (string, error)
+}
+
 func downloadGithubManifest(
-	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli) (string, error) {
+	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli githubContentAPI) (string, error) {
 	// This method assumes that either the repo is public, or the user has already been prompted to log in to the github cli
 	// through our use of the underlying azd logic.
 
@@ -3954,7 +3972,9 @@ func downloadParentDirectory(
 }
 
 func downloadDirectoryContents(
-	ctx context.Context, hostname string, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, hostname string, repoSlug string, dirPath string, rootDirPath string, branch string,
+	localPath string, ghCli githubContentAPI, console input.Console,
+) error {
 
 	// Get directory contents using GitHub API
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)

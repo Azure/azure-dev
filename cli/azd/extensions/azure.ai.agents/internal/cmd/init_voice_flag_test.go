@@ -232,6 +232,40 @@ func TestValidateFastPathAgentNamePinsNormalizedValue(t *testing.T) {
 	require.Equal(t, "image-agent", flags.agentName)
 }
 
+func TestValidateFastPathAgentNameAppliesOnlyWithoutManifest(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateFastPathAgentName(&initFlags{
+		manifestPointer: "azure.yaml",
+		image:           "example.azurecr.io/agent:v1",
+	}, false))
+
+	err := validateFastPathAgentName(&initFlags{
+		image: "example.azurecr.io/agent:v1",
+	}, false)
+	require.ErrorContains(t, err, "--image requires --agent-name")
+}
+
+func TestImageProtocolsFailBeforeHostOrFilesystemAccess(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{
+		"--image", "example.azurecr.io/agent:v1",
+		"--agent-name", "agent",
+		"--protocol", "unsupported",
+	})
+	require.ErrorContains(t, command.Execute(), `unknown protocol "unsupported"`)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
 func TestVoiceServiceLayoutAnchorsUnderProjectRoot(t *testing.T) {
 	t.Parallel()
 	projectRoot := t.TempDir()

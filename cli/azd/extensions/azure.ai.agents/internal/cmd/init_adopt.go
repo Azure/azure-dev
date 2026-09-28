@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	osExec "os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -26,6 +29,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -280,16 +284,10 @@ func readExplicitManifestContent(
 		return content, nil
 	}
 
-	if content, recognized, err := readPublicGitHubManifest(ctx, manifestPointer, httpClient); err == nil {
+	if content, recognized, err := readPublicGitHubManifest(ctx, manifestPointer, httpClient); recognized && err == nil {
 		return content, nil
 	} else if exterrors.IsCancellation(err) {
 		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
-	} else if !recognized {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidManifestPointer,
-			fmt.Sprintf("%q is not a supported GitHub azure.yaml URL", display),
-			"Provide an existing local azure.yaml path or a supported public/private GitHub azure.yaml URL.",
-		)
 	}
 
 	if readAuthenticated == nil {
@@ -368,6 +366,10 @@ func readAuthenticatedManifestContent(
 			"Run this command through azd and authenticate with `gh auth login`.",
 		)
 	}
+	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
+	if err != nil {
+		return nil, err
+	}
 	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -392,10 +394,6 @@ func readAuthenticatedManifestContent(
 		)
 	}
 
-	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
-	if err != nil {
-		return nil, err
-	}
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
 	if urlInfo.Branch != "" {
 		apiPath += "?ref=" + url.QueryEscape(urlInfo.Branch)
@@ -439,6 +437,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 	if err := yaml.Unmarshal(content, &document); err != nil {
 		return fmt.Errorf("parsing staged azure.yaml: %w", err)
 	}
+	hasResolvedAgentService := false
 	for name, service := range document.Services {
 		resolvedService := service
 		if hasAzureYamlFileRef(service) {
@@ -452,6 +451,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 		if strings.TrimSpace(host) != AiAgentHost {
 			continue
 		}
+		hasResolvedAgentService = true
 		if config, hasConfig := resolvedService["config"]; hasConfig && config != nil {
 			configMap, ok := config.(map[string]any)
 			if !ok {
@@ -492,6 +492,9 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 				"Put the agent definition directly on the azure.ai.agent service or use a root $ref.",
 			)
 		}
+	}
+	if !hasResolvedAgentService {
+		return missingAgentServiceError(manifestPointer)
 	}
 
 	return nil
@@ -677,77 +680,6 @@ func adoptedAgentNameConfig(svc *azdext.ServiceConfig) (string, string) {
 	return "", ""
 }
 
-// readManifestContentForInitDetection returns the pointed-at YAML content for
-// init-mode routing. It first uses the cheap peek path; when that cannot read a
-// GitHub URL (for example, a private repository), it falls back to the
-// authenticated GitHub CLI download path so private unified azure.yaml samples
-// can still be classified and adopted.
-func readManifestContentForInitDetection(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	manifestPointer string,
-	httpClient *http.Client,
-) ([]byte, bool) {
-	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
-		return content, true
-	}
-	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
-	if cached {
-		return cachedContent, true
-	}
-	if templateCacheRoot() != "" {
-		return nil, false
-	}
-	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
-		return nil, false
-	}
-
-	parsedURL, err := url.Parse(manifestPointer)
-	if err != nil || !strings.Contains(parsedURL.Hostname(), "github") {
-		return nil, false
-	}
-
-	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-	})
-	console := input.NewConsole(
-		false, // noPrompt
-		true,  // isTerminal
-		input.Writers{Output: io.Discard},
-		input.ConsoleHandles{
-			Stderr: os.Stderr,
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-		},
-		nil, // formatter
-		nil, // externalPromptCfg
-	)
-	ghCli := github.NewGitHubCli(console, commandRunner)
-	if err := ghCli.EnsureInstalled(ctx); err != nil {
-		log.Printf("detect unified azure.yaml: ensuring gh is installed: %v", err)
-		return nil, false
-	}
-
-	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
-	if err != nil {
-		log.Printf("detect unified azure.yaml: parsing GitHub URL: %v", err)
-		return nil, false
-	}
-
-	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
-	if urlInfo.Branch != "" {
-		apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
-	}
-	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
-	if err != nil {
-		log.Printf("detect unified azure.yaml: downloading GitHub file: %v", err)
-		return nil, false
-	}
-
-	return []byte(content), true
-}
-
 // runInitFromAzureYaml adopts a sample's unified Foundry `azure.yaml` as the
 // project-root manifest instead of generating one from an agent manifest
 // (#8798). The sample's `azure.yaml` and the files it references are placed at
@@ -829,6 +761,7 @@ func runInitFromAzureYaml(
 		folderDisplay,
 		promptOnly,
 		agentNameOverride,
+		TemplateTypeAzureYaml,
 	)
 }
 
@@ -836,6 +769,7 @@ func runInitFromAzdTemplate(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
 	selectedTemplate *AgentTemplate,
 ) error {
 	targetDir := strings.TrimSpace(flags.src)
@@ -858,10 +792,14 @@ func runInitFromAzdTemplate(
 		folderDisplay = filepath.ToSlash(targetDir)
 	}
 	envName := deriveEnvName(flags, targetDir)
-	if err := preflightAzdTemplate(ctx, azdClient, selectedTemplate.Source); err != nil {
-		return err
-	}
-	if err := scaffoldProject(ctx, azdClient, targetDir, selectedTemplate.Source, envName); err != nil {
+	if err := scaffoldAzdTemplateProject(
+		ctx,
+		azdClient,
+		httpClient,
+		targetDir,
+		selectedTemplate.Source,
+		envName,
+	); err != nil {
 		return err
 	}
 	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
@@ -894,41 +832,271 @@ func runInitFromAzdTemplate(
 		folderDisplay,
 		info.promptOnly(),
 		agentNameOverride,
+		TemplateTypeAzd,
 	)
 }
+
+func scaffoldAzdTemplateProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
+	targetDir string,
+	templateSource string,
+	envName string,
+) error {
+	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
+		return err
+	}
+	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
+}
+
+type azdTemplateRepositoryParser func(context.Context, string) (*GitHubUrlInfo, error)
+type azdTemplateRepositoryDownloader func(context.Context, *GitHubUrlInfo, string) error
 
 func preflightAzdTemplate(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
 	templateSource string,
 ) error {
-	originalDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("resolving the current directory before template preflight: %w", err)
-	}
-	preflightRoot, err := os.MkdirTemp("", "azd-agent-template-preflight-*")
-	if err != nil {
-		return fmt.Errorf("creating template preflight directory: %w", err)
-	}
-	defer os.RemoveAll(preflightRoot)
-	defer func() { _ = os.Chdir(originalDir) }()
-
-	if err := os.Chdir(preflightRoot); err != nil {
-		return fmt.Errorf("entering template preflight directory: %w", err)
-	}
-	if err := scaffoldProject(
+	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
-		azdClient,
-		"project",
 		templateSource,
-		"azd-agent-template-preflight",
-	); err != nil {
+		func(ctx context.Context, source string) (*GitHubUrlInfo, error) {
+			return parseGitHubRepositorySource(ctx, azdClient, source)
+		},
+		func(ctx context.Context, source *GitHubUrlInfo, stagingDir string) error {
+			return downloadAzdTemplateRepository(ctx, httpClient, source, stagingDir)
+		},
+	)
+	if err != nil {
 		return err
 	}
-	if err := validateStagedAzureYaml(".", safeInitSourceDisplay(templateSource)); err != nil {
-		return err
+	defer cleanup()
+
+	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+}
+
+func stageAzdTemplateRepository(
+	ctx context.Context,
+	templateSource string,
+	parseSource azdTemplateRepositoryParser,
+	downloadSource azdTemplateRepositoryDownloader,
+) (string, func(), error) {
+	noop := func() {}
+	if !strings.Contains(templateSource, "://") {
+		info, statErr := os.Stat(templateSource)
+		if statErr == nil {
+			if !info.IsDir() {
+				return "", noop, exterrors.Validation(
+					exterrors.CodeInvalidManifestPointer,
+					fmt.Sprintf("full repository template source %q is not a directory", templateSource),
+					"Provide a local template directory or a supported GitHub repository source.",
+				)
+			}
+			return templateSource, noop, nil
+		}
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			return "", noop, fmt.Errorf("inspecting repository template source: %w", statErr)
+		}
+	}
+	if parseSource == nil || downloadSource == nil {
+		return "", noop, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("unsupported full repository template source %q", safeInitSourceDisplay(templateSource)),
+			"Provide a local template directory or a supported GitHub repository source.",
+		)
+	}
+
+	source, err := parseSource(ctx, templateSource)
+	if err != nil {
+		return "", noop, err
+	}
+	if source == nil || strings.TrimSpace(source.RepoSlug) == "" {
+		return "", noop, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("unsupported full repository template source %q", safeInitSourceDisplay(templateSource)),
+			"Provide a local template directory or a supported GitHub repository source.",
+		)
+	}
+	if base := strings.ToLower(filepath.Base(source.FilePath)); base == "azure.yaml" || base == "azure.yml" {
+		return "", noop, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("%q points to a file, not a full repository template", safeInitSourceDisplay(templateSource)),
+			"Use -m for a unified azure.yaml file, or choose a full repository template source.",
+		)
+	}
+
+	stagingDir, err := os.MkdirTemp("", "azd-agent-template-preflight-*")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating repository template staging directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(stagingDir) }
+	if err := downloadSource(ctx, source, stagingDir); err != nil {
+		cleanup()
+		return "", noop, err
+	}
+	return stagingDir, cleanup, nil
+}
+
+func parseGitHubRepositorySource(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	templateSource string,
+) (*GitHubUrlInfo, error) {
+	if azdClient == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			"GitHub repository parsing is unavailable",
+			"Run this command through azd and retry.",
+		)
+	}
+	source, err := azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
+		Url: templateSource,
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("repository template parsing was cancelled")
+		}
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf(
+				"could not parse repository template source %q: %s",
+				safeInitSourceDisplay(templateSource),
+				safeInitSourceError(err, templateSource),
+			),
+			"Provide a local template directory or a supported GitHub repository source.",
+		)
+	}
+	return &GitHubUrlInfo{
+		RepoSlug: source.RepoSlug,
+		Branch:   source.Branch,
+		FilePath: strings.Trim(source.FilePath, "/"),
+		Hostname: source.Hostname,
+	}, nil
+}
+
+func downloadAzdTemplateRepository(
+	ctx context.Context,
+	httpClient *http.Client,
+	source *GitHubUrlInfo,
+	stagingDir string,
+) error {
+	dirPath := strings.Trim(source.FilePath, "/")
+	if strings.EqualFold(source.Hostname, "github.com") && httpClient != nil {
+		err := downloadDirectoryContentsWithoutGhCli(
+			ctx,
+			source.RepoSlug,
+			dirPath,
+			dirPath,
+			source.Branch,
+			stagingDir,
+			httpClient,
+		)
+		if err == nil {
+			return nil
+		}
+		if exterrors.IsCancellation(err) || errors.Is(err, context.Canceled) {
+			return exterrors.Cancelled("repository template download was cancelled")
+		}
+		if err := clearStagingDirectory(stagingDir); err != nil {
+			return err
+		}
+	}
+
+	ghCli, err := newInstalledGitHubContentAPI()
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("an installed GitHub CLI is required to stage the repository template: %s", err),
+			"Install GitHub CLI from https://cli.github.com and run `gh auth login`.",
+		)
+	}
+	console := input.NewConsole(
+		false,
+		true,
+		input.Writers{Output: io.Discard},
+		input.ConsoleHandles{Stderr: io.Discard, Stdin: os.Stdin, Stdout: io.Discard},
+		nil,
+		nil,
+	)
+	if err := downloadDirectoryContents(
+		ctx,
+		source.Hostname,
+		source.RepoSlug,
+		dirPath,
+		dirPath,
+		source.Branch,
+		stagingDir,
+		ghCli,
+		console,
+	); err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("repository template download was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("could not download repository template: %s", err),
+			"Verify repository access and GitHub CLI authentication with `gh auth status`.",
+		)
 	}
 	return nil
+}
+
+type installedGitHubContentAPI struct {
+	path string
+}
+
+func newInstalledGitHubContentAPI() (*installedGitHubContentAPI, error) {
+	if override := strings.TrimSpace(os.Getenv("AZD_GH_TOOL_PATH")); override != "" {
+		//nolint:gosec // the explicit tool override is an established user-controlled executable path
+		if info, err := os.Stat(override); err == nil && !info.IsDir() {
+			return &installedGitHubContentAPI{path: override}, nil
+		}
+	}
+
+	executable := "gh"
+	if runtime.GOOS == "windows" {
+		executable += ".exe"
+	}
+	if configDir, err := config.GetUserConfigDir(); err == nil {
+		bundled := filepath.Join(configDir, "bin", executable)
+		if info, statErr := os.Stat(bundled); statErr == nil && !info.IsDir() {
+			return &installedGitHubContentAPI{path: bundled}, nil
+		}
+	}
+	if path, err := osExec.LookPath("gh"); err == nil {
+		return &installedGitHubContentAPI{path: path}, nil
+	}
+	return nil, errors.New("gh executable was not found")
+}
+
+func (c *installedGitHubContentAPI) ApiCall(
+	ctx context.Context,
+	hostname string,
+	apiPath string,
+	options github.ApiCallOptions,
+) (string, error) {
+	args := []string{"api", "--hostname", hostname, apiPath}
+	for _, header := range options.Headers {
+		args = append(args, "-H", header)
+	}
+	command := osExec.CommandContext(ctx, c.path, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return "", context.Canceled
+		}
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			return "", fmt.Errorf("gh api failed: %w", err)
+		}
+		return "", fmt.Errorf("gh api failed: %w: %s", err, message)
+	}
+	return stdout.String(), nil
 }
 
 func finalizeAdoptedProject(
@@ -939,13 +1107,17 @@ func finalizeAdoptedProject(
 	folderDisplay string,
 	promptOnly bool,
 	agentNameOverride string,
+	templateType string,
 ) error {
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
-	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
-		return err
+	if shouldEnsureFoundryProvider(templateType) {
+		if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
+			return err
+		}
 	}
+
 	if agentNameOverride != "" {
 		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
 			return err
@@ -1172,6 +1344,10 @@ func finalizeAdoptedProject(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
 	return nil
+}
+
+func shouldEnsureFoundryProvider(templateType string) bool {
+	return templateType == TemplateTypeAzureYaml
 }
 
 func wireAdoptedProjectDependency(

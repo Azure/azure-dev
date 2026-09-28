@@ -783,6 +783,20 @@ func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	}
 }
 
+func TestValidateExplicitProtocols(t *testing.T) {
+	t.Parallel()
+
+	got, err := validateExplicitProtocols([]string{"responses", "activity", "responses"})
+	require.NoError(t, err)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "2.0.0"},
+		{Protocol: "activity", Version: "2.0.0"},
+	}, got)
+
+	_, err = validateExplicitProtocols([]string{"unknown"})
+	require.ErrorContains(t, err, `unknown protocol "unknown"`)
+}
+
 func TestKnownProtocolNames(t *testing.T) {
 	t.Parallel()
 

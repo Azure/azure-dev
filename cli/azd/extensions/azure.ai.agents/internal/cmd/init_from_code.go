@@ -47,6 +47,14 @@ type InitFromCodeAction struct {
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
+	if projectResponse, projectErr := a.azdClient.Project().Get(
+		ctx, &azdext.EmptyRequest{},
+	); projectErr == nil && projectResponse.GetProject() != nil {
+		if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+			return err
+		}
+	}
+
 	srcDir := a.flags.src
 	if srcDir == "" {
 		srcDir = "."
@@ -1055,37 +1063,9 @@ func promptProtocols(
 	noPrompt bool,
 	flagProtocols []string,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
-	// Build a lookup from protocol name → version for known protocols.
-	versionOf := make(map[string]string, len(knownProtocols))
-	for _, p := range knownProtocols {
-		versionOf[p.Name] = p.Version
-	}
-
 	// If explicit flag values were provided, use them directly (with dedup).
 	if len(flagProtocols) > 0 {
-		seen := make(map[string]bool, len(flagProtocols))
-		records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
-		for _, name := range flagProtocols {
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-
-			version, ok := versionOf[name]
-			if !ok {
-				return nil, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					fmt.Sprintf("unknown protocol %q; supported values: %s",
-						name, knownProtocolNames()),
-					fmt.Sprintf("Use one of the supported protocol values: %s", knownProtocolNames()),
-				)
-			}
-			records = append(records, agent_yaml.ProtocolVersionRecord{
-				Protocol: name,
-				Version:  version,
-			})
-		}
-		return records, nil
+		return validateExplicitProtocols(flagProtocols)
 	}
 
 	// Non-interactive mode: default to responses.
@@ -1096,6 +1076,7 @@ func promptProtocols(
 	}
 
 	// Build multi-select choices; "responses" is pre-selected.
+	versionOf := knownProtocolVersions()
 	choices := make([]*azdext.MultiSelectChoice, 0, len(knownProtocols))
 	for _, p := range knownProtocols {
 		choices = append(choices, &azdext.MultiSelectChoice{
@@ -1145,6 +1126,41 @@ func promptProtocols(
 		)
 	}
 
+	return records, nil
+}
+
+func knownProtocolVersions() map[string]string {
+	versionOf := make(map[string]string, len(knownProtocols))
+	for _, protocol := range knownProtocols {
+		versionOf[protocol.Name] = protocol.Version
+	}
+	return versionOf
+}
+
+func validateExplicitProtocols(flagProtocols []string) ([]agent_yaml.ProtocolVersionRecord, error) {
+	versionOf := knownProtocolVersions()
+	seen := make(map[string]bool, len(flagProtocols))
+	records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
+	for _, name := range flagProtocols {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		version, ok := versionOf[name]
+		if !ok {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("unknown protocol %q; supported values: %s",
+					name, knownProtocolNames()),
+				fmt.Sprintf("Use one of the supported protocol values: %s", knownProtocolNames()),
+			)
+		}
+		records = append(records, agent_yaml.ProtocolVersionRecord{
+			Protocol: name,
+			Version:  version,
+		})
+	}
 	return records, nil
 }
 

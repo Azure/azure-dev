@@ -1033,6 +1033,44 @@ func TestValidateUnifiedInitFlags(t *testing.T) {
 	}
 }
 
+func TestUnifiedInitFlagValidationParity(t *testing.T) {
+	for _, route := range []struct {
+		name     string
+		validate func(*cobra.Command) error
+	}{
+		{name: "explicit input", validate: validateUnifiedInitFlags},
+		{
+			name: "unified catalog",
+			validate: func(cmd *cobra.Command) error {
+				return validateCatalogInitFlags(cmd, TemplateTypeAzureYaml)
+			},
+		},
+		{
+			name: "full repository catalog",
+			validate: func(cmd *cobra.Command) error {
+				return validateCatalogInitFlags(cmd, TemplateTypeAzd)
+			},
+		},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			for _, flag := range []string{
+				"description", "force", "harness", "instructions",
+				"kind", "protocol", "rai-policy", "voice",
+			} {
+				t.Run(flag, func(t *testing.T) {
+					cmd := newInitCommand(&azdext.ExtensionContext{})
+					value := "value"
+					if flag == "force" {
+						value = "true"
+					}
+					require.NoError(t, cmd.Flags().Set(flag, value))
+					require.ErrorContains(t, route.validate(cmd), "--"+flag)
+				})
+			}
+		})
+	}
+}
+
 func TestScaffoldProjectPassesRepositorySourceToCore(t *testing.T) {
 	t.Chdir(t.TempDir())
 

@@ -9086,6 +9086,43 @@ interactions:
         status: 200 OK
         code: 200
         duration: 1ms
+    - id: 50
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: test-ai-account-000.services.ai.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azd-ext-azure-ai-agents/dev
+        url: https://test-ai-account-000.services.ai.azure.com:443/api/projects/test-proj0/agents/pr-gate-test-agent?api-version=v1
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 0
+        uncompressed: false
+        body: ""
+        headers:
+            Content-Length:
+                - "0"
+            Content-Type:
+                - application/json
+        status: 404 Not Found
+        code: 404
+        duration: 1ms
 ---
 model_deployment: gpt-4o
 project_id: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0

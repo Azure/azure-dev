@@ -17,14 +17,38 @@ applyTo:
   violates any of these principles, include a link to the guide so the user can read it and get
   ahead of some of the problems.
 
-- **Reject explicitly-set flags that cannot take effect; never silently drop them.** When a flag is
-  explicitly supplied (check via `cmd.Flags().Changed("<flag>")`) but the selected code path ignores
-  it — for example, `--inspector-port` with `--no-client`, or any agent-creation flag during a
-  reuse flow, or init-only flags during a standalone-eject run — return a clear error that names the
-  conflicting inputs. Automation scripts that pass explicit flags and receive a success exit code
-  must be able to trust that those flags were honored. In extensions that provide `internal/exterrors`,
-  report flag conflicts with `exterrors.Validation(exterrors.CodeConflictingArguments, message,
-  suggestion)`. Otherwise, follow the extension's established validation-error pattern.
+- **Reject explicitly supplied inputs that cannot take effect; never silently drop them.** For flags,
+  check `cmd.Flags().Changed("<flag>")` so an explicit empty value is not mistaken for an omitted
+  value. Also reject conflicting structured inputs, such as duplicate names with different version
+  pins, before deduplication or defaulting. Return a clear error that names the conflicting inputs.
+  Automation scripts that receive a success exit code must be able to trust that every explicit
+  override was honored. In extensions that provide `internal/exterrors`, report flag conflicts with
+  `exterrors.Validation(exterrors.CodeConflictingArguments, message, suggestion)`. Otherwise,
+  follow the extension's established validation-error pattern.
+
+  _Source: #10104, #10134, #10155_
+
+- Incubate unvalidated extension contract capabilities in `v1beta`; do not add them to stable `v1`
+  contracts or the root `azdext` facade until both host and extension implementations validate the
+  API shape. Beta-only methods without an override return `codes.Unimplemented`, while shared
+  methods continue delegating to stable behavior unless preview fields require a focused override.
+
+  _Source: #10017, #10055_
+
+- Permission and configuration diagnostics must evaluate the resources, scopes, identities, and
+  effective permissions the service actually uses. Do not turn unrelated inherited roles or
+  unbound connections into failures. When the available API cannot rule out a valid configuration,
+  report an unknown or warning result rather than a confirmed failure, and cover supported scoped
+  configurations plus unrelated-resource cases with regressions.
+
+  _Source: #10127_
+
+- In interactive-tester scenarios, move repeated setup or verification logic into parameterized
+  fixture scripts. Keep pass/fail checks deterministic in hooks instead of asking the model to
+  interpret shell commands or inspect files in a goal, and avoid rerunning mutating commands only
+  to verify their first result.
+
+  _Source: #10190_
 
 - **Redact credentials from URLs before printing to terminal, logs, or error messages.** URLs may
   carry credentials in the userinfo component (`user:pass@host`) or in the query string (SAS

@@ -27,6 +27,22 @@ Before flagging missing imports or undefined references, verify the symbol isn't
 already defined in unchanged portions of the file. The diff context may not show
 all existing imports or declarations.
 
+## Static analysis and production-path tests
+
+- Custom AST-based policy scanners must cover named aliases and containers, pointer or map aliases,
+  and lexical shadowing. Prefer type-aware analysis when correctness depends on symbol identity; if
+  a scanner is intentionally best effort, constrain and document that boundary instead of claiming
+  it blocks every invalid construction.
+
+  _Source: #10068_
+
+- Tests for decoding, serialization, persisted metadata, and service-backed fallback behavior must
+  enter through the production loader or resolver with the actual library types. Helper-only tests
+  do not prove that callbacks are registered or that precedence and fallback behavior match the
+  command path.
+
+  _Source: #10116_
+
 ## CLI behavior and domain filtering
 
 - When reviewing command input resolution, explicit CLI args and flags should win over defaults. Do not prompt the user toward a different default when they provided a valid new value; reserve prompts for ambiguous choices and preserve deterministic `--no-prompt` behavior for CI/scripts.

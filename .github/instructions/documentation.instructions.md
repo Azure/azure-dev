@@ -45,3 +45,9 @@ docs/
 - Keep tables and lists scannable
 - Include code examples where they aid understanding
 - Verify environment-variable docs against source behavior and generated config shapes. Distinguish values that `azd` reads directly from template substitutions, and document Bicep parameter files using the nested `parameters.<name>.value` shape rather than flattened JSON.
+- Validate command examples against the actual Cobra/pflag parser and runtime resolver. Use the exact
+  flag syntax the command accepts, do not promise environment or endpoint selection that the
+  implementation ignores, document each newly supported input form, and update matching help
+  snapshots when examples or guidance change.
+
+  _Source: #10104, #10155_

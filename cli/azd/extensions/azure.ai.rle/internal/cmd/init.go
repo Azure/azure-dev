@@ -114,6 +114,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		help.WriteString("      --base-url string        BYOH harness base URL\n")
 		help.WriteString("      --force                  Overwrite generated files in an existing non-empty session directory\n")
 		help.WriteString("      --rle-version string     RLE semantic version (defaults to 1.0.0 for a harness scaffold)\n")
+		help.WriteString("      --sample string          Name of the sample to copy (defaults to prompting)\n")
 		help.WriteString("      --subtype string         RLE control-plane subtype: OpenEnv, HostedAgent, or BYOH\n")
 		help.WriteString("      --type string            RLE control-plane type: Gym or Harness\n")
 		help.WriteString("  -h, --help                   help for init\n")
@@ -134,7 +135,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		&flags.sample,
 		"sample",
 		"",
-		"Name of the sample to copy. Defaults to prompting, or to the only sample when there is just one.",
+		"Name of the sample to copy. Defaults to prompting with the available samples.",
 	)
 	return cmd
 }
@@ -385,6 +386,10 @@ func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 	return err
 }
 
+// resolveHarnessSampleName picks the harness sample to scaffold. It prompts
+// whenever --sample was not supplied, including when the subtype has just one
+// visible sample: the picker is how the CLI tells the user which sample it is
+// about to copy, so silently scaffolding the only option would hide that.
 func (a *initAction) resolveHarnessSampleName(sampleNames []string) (string, error) {
 	requested := strings.TrimSpace(a.flags.sample)
 	if len(sampleNames) == 0 {
@@ -392,12 +397,9 @@ func (a *initAction) resolveHarnessSampleName(sampleNames []string) (string, err
 		// request through so Copy can explain why a name cannot be honored.
 		return requested, nil
 	}
-	if requested == "" && len(sampleNames) == 1 {
-		return sampleNames[0], nil
-	}
 	if requested == "" && a.noPrompt {
 		return "", &azdext.LocalError{
-			Message:    "A sample name is required when several harness samples are available.",
+			Message:    "A sample name is required when prompts are disabled.",
 			Code:       "rle_harness_sample_required",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: fmt.Sprintf("Pass --sample with one of: %s.", strings.Join(sampleNames, ", ")),

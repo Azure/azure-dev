@@ -191,13 +191,17 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 		sampleFlag   string
 		wantSample   string
 		wantFolder   string
+		wantPrompted bool
 		wantExecFail bool
 	}{
 		{
-			name:        "single named sample is taken without prompting",
-			sampleNames: []string{"code_repair"},
-			wantSample:  "code_repair",
-			wantFolder:  "code_repair",
+			// A lone sample is still offered through the picker so the user
+			// always sees which sample is about to be copied.
+			name:         "single named sample is still prompted for",
+			sampleNames:  []string{"code_repair"},
+			wantSample:   "code_repair",
+			wantFolder:   "code_repair",
+			wantPrompted: true,
 		},
 		{
 			name:        "flag selects among several named samples",
@@ -226,10 +230,19 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 
 			oldSelectTarget := selectRleInitTargetFunc
 			oldLoadHarnessCatalog := loadRleHarnessSampleCatalogFunc
+			oldSelectSample := selectRleSampleFunc
 			selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
 				return rleInitTarget{
 					rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
 				}, nil
+			}
+			prompted := false
+			selectRleSampleFunc = func(_ context.Context, sampleNames []string) (string, error) {
+				prompted = true
+				if len(sampleNames) == 0 {
+					t.Fatal("expected the sample picker to be offered at least one sample")
+				}
+				return sampleNames[0], nil
 			}
 			var loadedCatalog *fakeRleHarnessSampleCatalog
 			loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
@@ -240,6 +253,7 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 			t.Cleanup(func() {
 				selectRleInitTargetFunc = oldSelectTarget
 				loadRleHarnessSampleCatalogFunc = oldLoadHarnessCatalog
+				selectRleSampleFunc = oldSelectSample
 			})
 
 			noPrompt := false
@@ -260,6 +274,9 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
+			}
+			if prompted != testCase.wantPrompted {
+				t.Fatalf("expected sample prompt %t, got %t", testCase.wantPrompted, prompted)
 			}
 			if loadedCatalog == nil || loadedCatalog.copiedSample != testCase.wantSample {
 				t.Fatalf("expected sample %q to be copied, got %+v", testCase.wantSample, loadedCatalog)

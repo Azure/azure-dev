@@ -420,6 +420,10 @@ identity, using the model declared in `[defaults.model]`:
 azd ai rle rollout --task '{"...": "..."}'
 ```
 
+When run from a local Gym/OpenEnv recipe, simple reset payloads such as
+`{"seed": 32, "split": "train"}` also work in Windows PowerShell versions that
+remove embedded JSON quotes from native-command arguments.
+
 `--model` is only required when rle.toml has no `defaults.model.name` set, or
 when running source-free from another folder:
 

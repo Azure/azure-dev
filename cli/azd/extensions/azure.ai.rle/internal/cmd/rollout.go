@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,7 @@ type rolloutTarget struct {
 	environmentName string
 	projectEndpoint string
 	version         string
+	isGymOpenEnv    bool
 }
 
 func newRolloutCommand() *cobra.Command {
@@ -180,11 +182,15 @@ func (a *rolloutAction) Run() error {
 		}
 	}
 
-	task, err := readJSONFlagOrFile("--task", a.flags.task, "--task-file", a.flags.taskFile)
+	task, err := readJSONFlagOrFile(
+		"--task", a.flags.task, "--task-file", a.flags.taskFile, target.isGymOpenEnv,
+	)
 	if err != nil {
 		return err
 	}
-	agentInput, err := readJSONFlagOrFile("--agent-input", a.flags.agentInput, "--agent-input-file", a.flags.agentInputFile)
+	agentInput, err := readJSONFlagOrFile(
+		"--agent-input", a.flags.agentInput, "--agent-input-file", a.flags.agentInputFile, false,
+	)
 	if err != nil {
 		return err
 	}
@@ -344,14 +350,14 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 		}
 	}
 	environmentName := strings.TrimSpace(a.environmentName)
+	localConfig, localConfigErr := project.LoadRleConfig(".")
 	if environmentName == "" {
-		config, err := project.LoadRleConfig(".")
-		if err != nil {
-			return rolloutTarget{}, nil, err
+		if localConfigErr != nil {
+			return rolloutTarget{}, nil, localConfigErr
 		}
-		environmentName = config.Rle.Name
+		environmentName = localConfig.Rle.Name
 		if requestedVersion == "" {
-			requestedVersion = config.Rle.Version
+			requestedVersion = localConfig.Rle.Version
 		}
 	} else if requestedVersion == "" {
 		return rolloutTarget{}, nil, &azdext.LocalError{
@@ -377,7 +383,14 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 		environmentName: environmentName,
 		projectEndpoint: projectEndpoint,
 		version:         version,
+		isGymOpenEnv: localConfigErr == nil &&
+			localConfig.Rle.Name == environmentName &&
+			isGymOpenEnv(localConfig.Rle),
 	}, client, nil
+}
+
+func isGymOpenEnv(manifest project.RleManifest) bool {
+	return manifest.Type == project.RleTypeGym && manifest.Subtype == project.RleSubtypeOpenEnv
 }
 
 // defaultModelFromRleConfig best-effort loads rle.toml from the current folder and returns
@@ -394,7 +407,10 @@ func defaultModelFromRleConfig() string {
 
 // readJSONFlagOrFile reads a JSON payload from an inline flag or a file flag (at most one
 // may be set) and validates it parses as JSON. Returns nil if neither is set.
-func readJSONFlagOrFile(inlineName, inline, fileName, file string) (json.RawMessage, error) {
+func readJSONFlagOrFile(
+	inlineName, inline, fileName, file string,
+	allowWindowsPowerShellRepair bool,
+) (json.RawMessage, error) {
 	inline = strings.TrimSpace(inline)
 	file = strings.TrimSpace(file)
 	if inline != "" && file != "" {
@@ -420,15 +436,120 @@ func readJSONFlagOrFile(inlineName, inline, fileName, file string) (json.RawMess
 		return nil, nil
 	}
 
+	payloadName := inlineName
+	if file != "" {
+		payloadName = fileName
+	}
+
 	var probe any
 	if err := json.Unmarshal(raw, &probe); err != nil {
+		if allowWindowsPowerShellRepair && inline != "" && runtime.GOOS == "windows" {
+			if repaired, ok := repairWindowsPowerShellJSONObject(raw); ok {
+				raw = repaired
+				if err := json.Unmarshal(raw, &probe); err == nil {
+					return json.RawMessage(raw), nil
+				}
+			}
+		}
 		return nil, &azdext.LocalError{
-			Message:  fmt.Sprintf("%s must contain valid JSON: %v", firstNonEmpty(fileName, inlineName), err),
+			Message:  fmt.Sprintf("%s must contain valid JSON: %v", payloadName, err),
 			Code:     "rle_rollout_invalid_json_payload",
 			Category: azdext.LocalErrorCategoryUser,
 		}
 	}
 	return json.RawMessage(raw), nil
+}
+
+// repairWindowsPowerShellJSONObject restores a simple object whose JSON quotes Windows PowerShell
+// removes when passing a single-quoted native-command argument. It intentionally supports only
+// top-level scalar fields, which matches Gym reset payloads such as {seed: 32, split: train}.
+func repairWindowsPowerShellJSONObject(raw []byte) ([]byte, bool) {
+	input := strings.TrimSpace(string(raw))
+	if len(input) < 3 || input[0] != '{' || input[len(input)-1] != '}' {
+		return nil, false
+	}
+
+	fields := splitPowerShellObjectFields(input[1 : len(input)-1])
+	repaired := make([]byte, 0, len(input)+8)
+	repaired = append(repaired, '{')
+	for index, field := range fields {
+		key, value, found := strings.Cut(field, ":")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !found || !isPowerShellBareKey(key) || value == "" {
+			return nil, false
+		}
+
+		if index > 0 {
+			repaired = append(repaired, ',')
+		}
+		encodedKey, err := json.Marshal(key)
+		if err != nil {
+			return nil, false
+		}
+		repaired = append(repaired, encodedKey...)
+		repaired = append(repaired, ':')
+		if isJSONScalar(value) {
+			repaired = append(repaired, value...)
+			continue
+		}
+		if strings.ContainsAny(value, "{}[]\"'") {
+			return nil, false
+		}
+		encodedValue, err := json.Marshal(value)
+		if err != nil {
+			return nil, false
+		}
+		repaired = append(repaired, encodedValue...)
+	}
+	repaired = append(repaired, '}')
+	return repaired, true
+}
+
+// splitPowerShellObjectFields separates fields only at commas followed by a bare object key.
+// It leaves commas within scalar string values unchanged.
+func splitPowerShellObjectFields(input string) []string {
+	fields := make([]string, 0, 1)
+	fieldStart := 0
+	for index := range input {
+		if input[index] != ',' {
+			continue
+		}
+		remainder := strings.TrimSpace(input[index+1:])
+		key, _, found := strings.Cut(remainder, ":")
+		if !found || !isPowerShellBareKey(strings.TrimSpace(key)) {
+			continue
+		}
+		fields = append(fields, input[fieldStart:index])
+		fieldStart = index + 1
+	}
+	return append(fields, input[fieldStart:])
+}
+
+func isJSONScalar(value string) bool {
+	var parsed any
+	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
+		return false
+	}
+	switch parsed.(type) {
+	case nil, bool, float64, string:
+		return true
+	default:
+		return false
+	}
+}
+
+func isPowerShellBareKey(value string) bool {
+	for index, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			character == '_' ||
+			(index > 0 && ((character >= '0' && character <= '9') || character == '-')) {
+			continue
+		}
+		return false
+	}
+	return value != ""
 }
 
 func newRolloutID() (string, error) {

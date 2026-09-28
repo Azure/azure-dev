@@ -19,7 +19,7 @@ import (
 )
 
 func TestReadJSONFlagOrFileReturnsNilWhenUnset(t *testing.T) {
-	raw, err := readJSONFlagOrFile("--task", "", "--task-file", "")
+	raw, err := readJSONFlagOrFile("--task", "", "--task-file", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestReadJSONFlagOrFileReturnsNilWhenUnset(t *testing.T) {
 }
 
 func TestReadJSONFlagOrFileReadsInlineValue(t *testing.T) {
-	raw, err := readJSONFlagOrFile("--task", `{"a":1}`, "--task-file", "")
+	raw, err := readJSONFlagOrFile("--task", `{"a":1}`, "--task-file", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestReadJSONFlagOrFileReadsFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"b":2}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := readJSONFlagOrFile("--task", "", "--task-file", path)
+	raw, err := readJSONFlagOrFile("--task", "", "--task-file", path, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,16 +54,78 @@ func TestReadJSONFlagOrFileReadsFile(t *testing.T) {
 }
 
 func TestReadJSONFlagOrFileRejectsBothSet(t *testing.T) {
-	_, err := readJSONFlagOrFile("--task", `{}`, "--task-file", "somefile.json")
+	_, err := readJSONFlagOrFile("--task", `{}`, "--task-file", "somefile.json", false)
 	if err == nil {
 		t.Fatal("expected error when both inline and file flags are set")
 	}
 }
 
 func TestReadJSONFlagOrFileRejectsInvalidJSON(t *testing.T) {
-	_, err := readJSONFlagOrFile("--task", `not json`, "--task-file", "")
+	_, err := readJSONFlagOrFile("--task", `not json`, "--task-file", "", false)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON payload")
+	}
+	if !strings.Contains(err.Error(), "--task must contain valid JSON") {
+		t.Fatalf("expected error to name --task, got %v", err)
+	}
+}
+
+func TestReadJSONFlagOrFileDoesNotRepairWhenDisabled(t *testing.T) {
+	_, err := readJSONFlagOrFile("--agent-input", `{seed: 32, split: train}`, "--agent-input-file", "", false)
+	if err == nil {
+		t.Fatal("expected strict JSON parsing when PowerShell repair is disabled")
+	}
+}
+
+func TestIsGymOpenEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest project.RleManifest
+		want     bool
+	}{
+		{
+			name: "Gym OpenEnv",
+			manifest: project.RleManifest{
+				Type:    project.RleTypeGym,
+				Subtype: project.RleSubtypeOpenEnv,
+			},
+			want: true,
+		},
+		{
+			name: "Harness HostedAgent",
+			manifest: project.RleManifest{
+				Type:    project.RleTypeHarness,
+				Subtype: project.RleSubtypeHostedAgent,
+			},
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isGymOpenEnv(test.manifest); got != test.want {
+				t.Fatalf("expected %t, got %t", test.want, got)
+			}
+		})
+	}
+}
+
+func TestRepairWindowsPowerShellJSONObject(t *testing.T) {
+	repaired, ok := repairWindowsPowerShellJSONObject(
+		[]byte(`{seed: 32, split: FineEnvs/data-agent-harbor-train, prompt: hello, world}`),
+	)
+	if !ok {
+		t.Fatal("expected PowerShell-stripped Gym task to be repaired")
+	}
+	const expected = `{"seed":32,"split":"FineEnvs/data-agent-harbor-train","prompt":"hello, world"}`
+	if string(repaired) != expected {
+		t.Fatalf("expected %s, got %s", expected, repaired)
+	}
+}
+
+func TestRepairWindowsPowerShellJSONObjectRejectsComplexValues(t *testing.T) {
+	if _, ok := repairWindowsPowerShellJSONObject([]byte(`{seed: [32]}`)); ok {
+		t.Fatal("expected complex JSON values to remain invalid")
 	}
 }
 

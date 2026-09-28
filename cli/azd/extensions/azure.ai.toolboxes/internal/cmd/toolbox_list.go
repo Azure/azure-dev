@@ -24,7 +24,9 @@ func newToolboxListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List toolboxes on the project.",
-		Args:  cobra.NoArgs,
+		Example: `  # List toolboxes in the resolved project
+  azd ai toolbox list`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxList(cmd.Context(), readToolboxFlags(cmd, extCtx))
 		},

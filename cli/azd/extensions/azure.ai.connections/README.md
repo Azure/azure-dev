@@ -2,6 +2,12 @@
 
 Manage Microsoft Foundry Connections from your terminal. (Preview)
 
+## Help authoring
+
+See [the help authoring guide](docs/help-authoring.md) for formatter ownership,
+regeneration, and command-help validation across connections, projects,
+routines, skills, and toolboxes.
+
 ## `azure.yaml` ownership
 
 This extension owns `host: azure.ai.connection` services. Each service block

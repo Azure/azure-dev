@@ -1,0 +1,18 @@
+Clear the persisted Foundry project endpoint from the azd global config
+(~/.azd/config.json). This is idempotent — running it when no endpoint is set
+is not an error.
+
+Usage
+  azd ai project unset [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for unset
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Clear the global default without changing environment values
+    azd ai project unset

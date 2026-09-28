@@ -290,6 +290,7 @@ const (
 // Operation names for the microsoft.foundry provisioning provider.
 const (
 	OpArmDeploymentCreate       = "arm_deployment_create"
+	OpArmDeploymentDelete       = "arm_deployment_delete"
 	OpArmDeploymentGet          = "arm_deployment_get"
 	OpArmDeploymentWhatIf       = "arm_deployment_what_if"
 	OpResourceGroupDelete       = "resource_group_delete"

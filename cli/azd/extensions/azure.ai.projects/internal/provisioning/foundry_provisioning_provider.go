@@ -1618,9 +1618,10 @@ func (p *FoundryProvisioningProvider) Preview(
 //   - Force == true on the legacy root provider: delete every model deployment
 //     under the resource group's
 //     Cognitive Services accounts, then delete the resource group (Foundry
-//     account, project, and any ACR). Deployments must go first: Azure refuses
-//     to delete an account that still has them, which would roll the RG delete
-//     back. Idempotent: a missing RG is a no-op success.
+//     account, project, and any ACR), then delete the subscription-scope ARM
+//     deployment record. Model deployments must go first: Azure refuses to
+//     delete an account that still has them, which would roll the RG delete
+//     back. Idempotent: missing resources and deployment records are ignored.
 //   - Purge == true: in addition to deleting the RG, purge each soft-deleted
 //     Cognitive Services account that was inside it. Without --purge the
 //     account stays soft-deleted and Azure refuses to re-create one with the
@@ -1740,21 +1741,17 @@ func (p *FoundryProvisioningProvider) Destroy(
 	progress(fmt.Sprintf("Deleting resource group %s...", p.rgName))
 	poller, err := rgClient.BeginDelete(ctx, p.rgName, nil)
 	if err != nil {
-		if isNotFound(err) {
-			// Already gone; treat as success so re-runs are idempotent. If
-			// --purge was requested but the RG never existed there's nothing
-			// to purge (we never enumerated anything). A soft-deleted
-			// account from a prior incomplete cleanup is out of scope --
-			// the user can purge it manually via `az cognitiveservices
-			// account purge`.
-			return p.destroyResult(), nil
+		if !isNotFound(err) {
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
 		}
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
-	}
-	if _, err := pollWithProgress(ctx, poller, progress,
-		fmt.Sprintf("Deleting resource group %s (this can take several minutes)", p.rgName),
-	); err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
+		// The RG is already gone. Continue so a retry can still remove the
+		// subscription-scope ARM deployment record left by an earlier run.
+	} else {
+		if _, err := pollWithProgress(ctx, poller, progress,
+			fmt.Sprintf("Deleting resource group %s (this can take several minutes)", p.rgName),
+		); err != nil {
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
+		}
 	}
 
 	// After the RG is gone the accounts are in the soft-deleted state.
@@ -1764,8 +1761,58 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return nil, err
 		}
 	}
+	if err := p.deleteArmDeployment(ctx, progress); err != nil {
+		return nil, err
+	}
 
 	return p.destroyResult(), nil
+}
+
+type subscriptionDeploymentsClient interface {
+	BeginDeleteAtSubscriptionScope(
+		context.Context,
+		string,
+		*armresources.DeploymentsClientBeginDeleteAtSubscriptionScopeOptions,
+	) (*runtime.Poller[armresources.DeploymentsClientDeleteAtSubscriptionScopeResponse], error)
+}
+
+// deleteArmDeployment removes the subscription-scope ARM deployment record
+// created by Deploy. Removing the resource group does not remove this record,
+// and abandoned records eventually exhaust Azure's per-scope deployment limit.
+func (p *FoundryProvisioningProvider) deleteArmDeployment(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) error {
+	client, err := p.deploymentsClient(ctx)
+	if err != nil {
+		return err
+	}
+	return p.deleteArmDeploymentWithClient(ctx, progress, client)
+}
+
+func (p *FoundryProvisioningProvider) deleteArmDeploymentWithClient(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+	client subscriptionDeploymentsClient,
+) error {
+	name := p.deploymentName()
+	progress(fmt.Sprintf("Deleting ARM deployment record %s...", name))
+	poller, err := client.BeginDeleteAtSubscriptionScope(ctx, name, nil)
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentDelete)
+	}
+	if _, err := pollWithProgress(ctx, poller, progress,
+		fmt.Sprintf("Deleting ARM deployment record %s", name),
+	); err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentDelete)
+	}
+	return nil
 }
 
 func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(

@@ -84,6 +84,7 @@ func TestAgentsProvisioningErrorCodesMatch(t *testing.T) {
 		"CodeProvisioningServiceNotFound",
 		"CodeTenantLookupFailed",
 		"OpArmDeploymentCreate",
+		"OpArmDeploymentDelete",
 		"OpArmDeploymentGet",
 		"OpArmDeploymentWhatIf",
 		"OpCognitiveAccountList",

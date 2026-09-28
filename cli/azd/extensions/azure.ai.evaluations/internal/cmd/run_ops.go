@@ -77,8 +77,8 @@ func (a *runListAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -198,8 +198,8 @@ func (a *runShowAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -359,8 +359,8 @@ func (a *runCancelAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -443,8 +443,8 @@ func (a *runDeleteAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -489,6 +489,11 @@ const (
 	// metaEvalName is the eval's declared name, recorded on the run because a
 	// run is read on its own and an id is not what the author called it.
 	metaEvalName = "azd_eval"
+	// metaEvaluationLevel records how the run's rows were built. Unprefixed
+	// because it is the service's own key: the same name is sent as a
+	// top-level field, and a run reached by id reads this back to repeat what
+	// it last ran at rather than falling back to turn-shaped rows.
+	metaEvaluationLevel = "evaluation_level"
 	// metaAgent is the agent an eval targets.
 	metaAgent = "azd_agent"
 	// metaDescription carries an eval's description: the create request has no

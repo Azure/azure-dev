@@ -27,6 +27,11 @@ type UxMiddleware struct {
 	formatter       output.Formatter
 }
 
+type serviceTimeoutError interface {
+	error
+	IsServiceOperationTimeoutError() bool
+}
+
 func NewUxMiddleware(
 	options *Options,
 	console input.Console,
@@ -61,6 +66,16 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	}
 
 	if err != nil {
+		if timeoutErr, ok := errors.AsType[serviceTimeoutError](err); ok &&
+			timeoutErr.IsServiceOperationTimeoutError() {
+			errorMessage := output.WithErrorFormat("\nERROR: %s", err.Error())
+			if errorWithTraceId, ok := errors.AsType[*internal.ErrorWithTraceId](err); ok {
+				errorMessage += output.WithErrorFormat("\nTraceID: %s", errorWithTraceId.TraceId)
+			}
+			m.console.Message(ctx, errorMessage)
+			return actionResult, err
+		}
+
 		// Use ErrorWithSuggestion for errors with suggestions (better UX).
 		// This catches errors wrapped by the error pipeline's YAML rules
 		// or other host code that already created an ErrorWithSuggestion.

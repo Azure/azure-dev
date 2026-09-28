@@ -87,6 +87,11 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 // This is separated from Save to allow the recursive vault save without deadlocking
 // on the non-reentrant mutex.
 func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
+	baseConfig, ok := c.(*config)
+	if !ok {
+		return fmt.Errorf("failed casting azd configuration to config")
+	}
+
 	folderPath := filepath.Dir(filePath)
 	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("failed creating config directory: %w", err)
@@ -100,11 +105,6 @@ func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 
 	if err := m.manager.Save(c, file); err != nil {
 		return fmt.Errorf("saving file config: %w", err)
-	}
-
-	baseConfig, ok := c.(*config)
-	if !ok {
-		return fmt.Errorf("failed casting azd configuration to config")
 	}
 
 	// If the configuration contains a vault, then also save the vault configuration

@@ -152,19 +152,65 @@ func BuildGenerationSources(
 // Request builders
 // ---------------------------------------------------------------------------
 
+// Seed-generation types the service offers.
+//
+// A turn eval grades query/response pairs, which is what simple_qna produces. A
+// conversation eval that simulates its conversations grades scenario seeds
+// instead -- rows describing a conversation to create, which a simulation run
+// later turns into one. Asking for the wrong one returns rows the eval cannot
+// grade, so the level the caller asked for has to reach the wire.
+//
+// The values are DataGenerationJobType in the published Foundry contract
+// (specification/ai-foundry/data-plane/Foundry/src/data_generation_jobs).
+const (
+	DataGenerationTypeSimpleQnA = "simple_qna"
+
+	// DataGenerationTypeSimulationSeed is what a request must carry to get
+	// scenario seeds. It is the discriminator on
+	// SimulationSeedDataGenerationJobOptions; the enum has no other member
+	// that means conversations.
+	DataGenerationTypeSimulationSeed = "simulation_seed"
+
+	// DataGenerationTypeConversationSimulation is what the service records on
+	// a generated dataset version, and what the portal writes there too.
+	//
+	// It is NOT a DataGenerationJobType and must never go out on a request.
+	// The two vocabularies genuinely differ: a live job submitted with
+	// `options.type: simulation_seed` came back with
+	// `data_generation_type: conversation_simulation` on its output version.
+	DataGenerationTypeConversationSimulation = "conversation_simulation"
+)
+
+// SimulationSeedGenerationType reports whether a generation type names the
+// simulation-seed shape under any of its known spellings.
+//
+// Read rather than sent, so recognizing both costs nothing and stops the
+// rename landing as silent data loss on the reattach path.
+func SimulationSeedGenerationType(generationType string) bool {
+	return generationType == DataGenerationTypeSimulationSeed ||
+		generationType == DataGenerationTypeConversationSimulation
+}
+
 // NewDataGenerationJobRequest builds a DataGenerationJobRequest from the
-// provided parameters. Currently, it's always "simple_qna" type with multiple sources
+// provided parameters.
+//
+// An empty generationType means the caller expressed no preference and gets
+// simple_qna, which is what every caller got before the type was selectable.
 func NewDataGenerationJobRequest(
 	name, evalModel string,
 	maxSamples int,
 	sources []GenerationSource,
+	generationType string,
 ) *DataGenerationJobRequest {
+	if generationType == "" {
+		generationType = DataGenerationTypeSimpleQnA
+	}
 	return &DataGenerationJobRequest{
 		Inputs: DataGenerationInputs{
 			Name:     name,
 			Scenario: "evaluation",
 			Options: DataGenerationOptions{
-				Type:       "simple_qna",
+				Type:       generationType,
 				MaxSamples: maxSamples,
 				ModelOptions: ModelOptions{
 					Model: evalModel,

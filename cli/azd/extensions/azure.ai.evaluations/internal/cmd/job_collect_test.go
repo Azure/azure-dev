@@ -85,7 +85,7 @@ func TestCollectingASucceededDatasetJobWritesTheArtifact(t *testing.T) {
 	ref, err := ec.collectDataset(
 		t.Context(),
 		datasetJobResult("golden", "3"),
-		"", evalDir, "datasets", &out, false,
+		"", evalDir, "datasets", "", &out, false,
 	)
 
 	require.NoError(t, err)
@@ -139,9 +139,9 @@ func TestCollectingTwiceIsTheSameAsCollectingOnce(t *testing.T) {
 	job := datasetJobResult("golden", "3")
 
 	var out bytes.Buffer
-	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
+	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", "", &out, false)
 	require.NoError(t, err)
-	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
+	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", "", &out, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, first, second, "the same job collects to the same place")
@@ -222,20 +222,16 @@ func TestCollectingAgainLeavesEditedRowsAloneWithoutDownloading(t *testing.T) {
 	job := datasetJobResult("golden", "3")
 
 	var out bytes.Buffer
-	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
+	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", "", &out, false)
 	require.NoError(t, err)
 
 	path := filepath.Join(evalDir, "datasets", "golden.jsonl")
 	const edited = "{\"query\":\"mine\"}\n"
 	require.NoError(t, os.WriteFile(path, []byte(edited), 0o600))
 
-	// Closed, so reaching the download at all fails rather than quietly
-	// succeeding: the skip has to come before the transfer, not after it.
-	srv.Close()
-
 	out.Reset()
-	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
-	require.NoError(t, err, "a re-collection must not need the service at all")
+	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", "", &out, false)
+	require.NoError(t, err, "re-collection recovers metadata without replacing local bytes")
 
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -346,7 +342,7 @@ func TestCollectingRefusesAServiceNameThatEscapesTheOutputDir(t *testing.T) {
 	_, err := evalContextFor(srv).collectDataset(
 		t.Context(),
 		datasetJobResult("../guarded", "3"),
-		"", evalDir, "datasets", &out, false,
+		"", evalDir, "datasets", "", &out, false,
 	)
 
 	require.Error(t, err, "a name that leaves the directory is not a file name")

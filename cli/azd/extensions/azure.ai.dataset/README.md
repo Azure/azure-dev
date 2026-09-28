@@ -73,6 +73,27 @@ $ go build ./...
 $ go test ./...
 ```
 
+## Telemetry
+
+When installed from the official registry, the extension reports the
+`dataset.published` usage event once a dataset version has been written. Its
+`ext.operation` attribute is exactly one of:
+
+- `create` when the version came from `azd ai dataset create`;
+- `update` when it came from `azd ai dataset update`; or
+- `unknown` for a write verb this extension does not recognize.
+
+The event is reported after the publish succeeds and before the version is
+persisted to the azd environment, which is a convenience step that is allowed
+to fail without failing the command.
+
+Event names, attribute keys, and their finite value sets live in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+code, and never include dataset names, versions, tags, file paths, project
+endpoints, or anything else a user typed. Failures and their structured error
+codes are already reported separately by the extension SDK; this event records
+usage only.
+
 ## TODO before release
 
 Both are files the azd extensions team owns, so they are not changed here:

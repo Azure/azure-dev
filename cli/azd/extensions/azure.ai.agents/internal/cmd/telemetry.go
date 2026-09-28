@@ -105,14 +105,13 @@ func (r *agentContextReporter) report(
 		return
 	}
 
-	attributes := map[string]string{
-		agentKindAttribute:      agentCtx.kind,
-		agentHarnessAttribute:   agentCtx.harness,
-		agentOperationAttribute: agentCtx.operation,
-	}
 	if _, err := telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
-		EventName:  agentContextResolvedEvent,
-		Attributes: attributes,
+		EventName: agentContextResolvedEvent,
+		Attributes: map[string]string{
+			agentKindAttribute:      agentCtx.kind,
+			agentHarnessAttribute:   agentCtx.harness,
+			agentOperationAttribute: agentCtx.operation,
+		},
 	}); err != nil {
 		log.Printf("telemetry: failed to report agent context: %v", err)
 	}

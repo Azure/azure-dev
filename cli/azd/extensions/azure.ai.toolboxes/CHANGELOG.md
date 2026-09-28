@@ -1,5 +1,16 @@
 # Release History
 
+## 1.0.0-beta.8 (2026-09-24)
+
+### Bugs Fixed
+
+- [[#10008]](https://github.com/Azure/azure-dev/pull/10008) Fix cross-tenant toolbox deployment to authenticate through the selected subscription's user-access tenant.
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.7 (2026-09-17)
 
 ### Breaking Changes

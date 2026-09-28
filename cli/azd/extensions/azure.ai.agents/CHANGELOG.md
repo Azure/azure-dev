@@ -2,6 +2,25 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.17 (2026-09-24)
+
+### Features Added
+
+- [[#10030]](https://github.com/Azure/azure-dev/pull/10030) Delegate Foundry project and model deployment authoring to the `azure.ai.projects` extension while preserving agent initialization and adoption flows.
+- [[#10155]](https://github.com/Azure/azure-dev/pull/10155) Add versioned skill references to prompt-agent manifests while preserving string shorthand for local skills.
+
+### Bugs Fixed
+
+- [[#10056]](https://github.com/Azure/azure-dev/pull/10056) Fix `--new-session` to also start a new conversation for local and remote Responses invocations.
+- [[#10134]](https://github.com/Azure/azure-dev/pull/10134) Fix prompt-agent invocation, including GitHub Copilot harness agents, to use Foundry conversations instead of previous response IDs.
+- [[#10159]](https://github.com/Azure/azure-dev/pull/10159) Fix `azd ai agent optimize deploy --candidate` for prompt agents, including GitHub Copilot harness agents. Thanks @YoYoJa for the contribution!
+
+### Other Changes
+
+- [[#10057]](https://github.com/Azure/azure-dev/pull/10057) Improve `azd ai agent` help formatting, examples, and environment guidance. Thanks @Siglud for the contribution!
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0
+
 ## 1.0.0-beta.16 (2026-09-17)
 
 ### Breaking Changes

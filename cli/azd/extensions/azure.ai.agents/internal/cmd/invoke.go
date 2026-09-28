@@ -287,11 +287,19 @@ This option does not provide crash recovery or automatic reconnection.`,
 				return err
 			}
 
-			if flags.newSession && flags.conversation != "" {
+			if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--conversation-id cannot be empty",
+					"provide a valid conversation ID or omit --conversation-id",
+				)
+			}
+
+			if flags.forceNewConversation() && flags.conversation != "" {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
-					"cannot use --new-session with --conversation-id; a new session requires a new conversation",
-					"remove --conversation-id to start a new session, or remove --new-session to reuse the conversation",
+					"cannot use conversation reset flags with --conversation-id",
+					"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
 				)
 			}
 

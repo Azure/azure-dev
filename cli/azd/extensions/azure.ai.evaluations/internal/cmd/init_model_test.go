@@ -35,8 +35,8 @@ func projectWithDeployments(t *testing.T, names ...string) *azdext.ProjectConfig
 }
 
 // The deployments live under the Foundry project service, which is where the
-// sibling extensions put them. Reading them is a file read, so `init` keeps
-// making no service calls.
+// sibling extensions put them. Reading them is a file read, so `init` asks the
+// service nothing about them.
 func TestModelDeployments_ReadFromTheProjectService(t *testing.T) {
 	assert.Empty(t, modelDeployments(projectWith("api", "web")),
 		"a project with no Foundry project service declares no deployments")

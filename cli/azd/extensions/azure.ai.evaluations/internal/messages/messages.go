@@ -283,11 +283,6 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
-// ViewFailingSamples points at the command that lists the rows that failed.
-func ViewFailingSamples() string {
-	return "\nView failing samples: azd ai eval run output list --failed-only\n"
-}
-
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
@@ -1451,6 +1446,12 @@ func ReattachToJob(selector, jobID string) string {
 // WroteArtifact reports where a generated artifact landed.
 func WroteArtifact(path string) string {
 	return fmt.Sprintf("%s Downloaded %s\n", doneMark, filepath.ToSlash(path))
+}
+
+// NormalizedSimulationSeeds explains why transformed local rows need publication.
+func NormalizedSimulationSeeds() string {
+	return "Normalized generated turn settings into simulation_configuration. " +
+		"Publish the local dataset with `azd ai eval create` or `azd up` before running it.\n"
 }
 
 // ArtifactExists reports a generation that would overwrite a checked-in file.
@@ -2767,6 +2768,20 @@ func EvaluatorRefNotAPath(ref string) error {
 		"configuration instead", ref)
 }
 
+// EvaluatorBuiltinUnknown reports a builtin.<name> the project's catalogue does
+// not offer.
+//
+// Only raised when the catalogue was actually read: a reference this build
+// cannot check is left as written, so the name is reported as absent from the
+// project rather than as one that does not exist.
+func EvaluatorBuiltinUnknown(ref string, known []string) error {
+	if len(known) == 0 {
+		return fmt.Errorf("this project offers no built-in evaluator named %q", ref)
+	}
+	return fmt.Errorf("this project offers no built-in evaluator named %q; it offers %s",
+		ref, strings.Join(known, ", "))
+}
+
 // GateNeedsATerminalRun refuses to gate a run that is still moving.
 //
 // The counts are partial until the run stops, so a threshold read from them
@@ -2905,6 +2920,14 @@ func SelectEvalPrompt() string {
 	return "Select the eval to use:"
 }
 
+// CancelEvalChoice leaves the eval unselected without interrupting the command.
+func CancelEvalChoice() string { return "Cancel" }
+
+// SelectingEval reports a failed or interrupted eval prompt.
+func SelectingEval(err error) error {
+	return fmt.Errorf("selecting eval: %w", err)
+}
+
 // SelectingJudgeModel reports a failed judge model prompt.
 func SelectingJudgeModel(err error) error {
 	return fmt.Errorf("selecting a judge model deployment: %w", err)
@@ -2913,8 +2936,8 @@ func SelectingJudgeModel(err error) error {
 // UsingTraceSource reports a scaffold that reads production traces.
 //
 // Naming Application Insights is a claim about the project, so it is only made
-// when a connection was actually found. `init` makes no service calls and
-// cannot verify one it did not see.
+// when a connection was actually found. `init` never asks the service about
+// one and cannot verify one it did not see.
 func UsingTraceSource(connected bool) string {
 	if connected {
 		return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", doneMark)
@@ -3034,6 +3057,15 @@ func SeveralEvalsDeclared(count int, names []string) error {
 		"this configuration declares %d evals (%s); name the one you mean, "+
 			"as an argument to `create` or with --eval on the run commands",
 		count, strings.Join(names, ", "))
+}
+
+// EvalSelectionCancelled confirms the reader's explicit Cancel choice.
+//
+// Cancelling is an answer, so it is reported as one. It used to fall through to
+// SeveralEvalsDeclared, which told a reader who had just declined to choose
+// that they had failed to name something.
+func EvalSelectionCancelled() string {
+	return "Cancelled. No eval was selected.\n"
 }
 
 // EvalNotDeclared reports a name the configuration does not carry.
@@ -3238,6 +3270,73 @@ func TraceSourceCannotReadAModelTarget(name string) error {
 func TargetNameMissing() error {
 	return errors.New(
 		"target.name is required; remove the target: to score the dataset as it stands")
+}
+
+// SimulationNeedsConversationLevel reports a simulation graded a turn at a time.
+//
+// A simulation produces whole conversations. Scoring them turn-shaped grades
+// each exchange against a rubric written for the conversation, which returns
+// scores rather than an error and so is not otherwise noticed.
+func SimulationNeedsConversationLevel(declared, conversation string) error {
+	if declared == "" {
+		declared = "unset"
+	}
+	return fmt.Errorf(
+		"evaluation_level is %q, but a simulation produces conversations; "+
+			"set evaluation_level: %s, or remove the simulation: block to score rows as they stand",
+		declared, conversation)
+}
+
+// SimulationAndSourceDescribeDifferentRuns reports an eval declaring both.
+//
+// A simulation creates conversations from scenario seeds; a source collects
+// ones that already happened. Ranking them by which field is read first runs
+// one and silently ignores the other.
+func SimulationAndSourceDescribeDifferentRuns() error {
+	return errors.New(
+		"`source` and `simulation` describe different runs; a simulation creates conversations " +
+			"from the scenario seeds in `dataset`. Remove `source`, or remove `simulation` to " +
+			"score what `source` collected")
+}
+
+// SimulationNeedsATarget reports a simulation with nobody to talk to.
+func SimulationNeedsATarget() error {
+	return errors.New(
+		"target is required for a simulation: a simulated conversation needs an agent to hold it " +
+			"with. Add target: with type: agent and the agent's name")
+}
+
+// SimulationCannotTalkToAModelTarget reports a simulation aimed at a deployment.
+//
+// Its own sentence rather than the general target advice: a deployment answers
+// one prompt at a time and holds no conversation, so the fix is to name the
+// agent rather than to relabel the deployment.
+func SimulationCannotTalkToAModelTarget(agent string) error {
+	return fmt.Errorf(
+		"target.type is model, but a simulated conversation is held with an agent; "+
+			"set target.type: %s, or remove the simulation: block",
+		agent)
+}
+
+// SimulationNeedsSeedDataset reports a simulation with nothing to simulate from.
+func SimulationNeedsSeedDataset() error {
+	return errors.New(
+		"dataset is required for a simulation: it names the registered scenario seeds the " +
+			"conversations are created from")
+}
+
+// SimulationCannotBeSampled refuses a cap a simulation run cannot honour.
+//
+// A simulation is bound to its registered seed dataset as a whole -- the run
+// carries the dataset's id, not a copy of some of its rows -- so there is no
+// row count to cap. Accepting max_samples here would report a bounded run and
+// then create, and bill for, a conversation per seed in the whole dataset.
+func SimulationCannotBeSampled(got int) error {
+	return fmt.Errorf(
+		"max_samples is %d, but a simulation run is bound to its whole registered seed dataset "+
+			"and has no row count to cap. Remove max_samples and register a smaller seed dataset, "+
+			"or use simulation.num_conversations to bound the conversations created per seed",
+		got)
 }
 
 // AmbiguousEvalConfig reports a directory holding both configuration names.

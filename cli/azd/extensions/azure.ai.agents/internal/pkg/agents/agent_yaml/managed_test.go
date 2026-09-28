@@ -26,7 +26,8 @@ template:
   instructions: You are a careful assistant.
   skills:
     - websearch
-    - code_interpreter
+    - name: microsoft-foundry
+      version: "1"
 `)
 	agent, err := ExtractAgentDefinition(yamlContent)
 	if err != nil {
@@ -50,6 +51,12 @@ template:
 	}
 	if len(promptDef.Skills) != 2 {
 		t.Fatalf("skills: got %d entries, want 2", len(promptDef.Skills))
+	}
+	if promptDef.Skills[0] != (HarnessSkillRef{Name: "websearch"}) {
+		t.Errorf("shorthand skill: got %+v", promptDef.Skills[0])
+	}
+	if promptDef.Skills[1] != (HarnessSkillRef{Name: "microsoft-foundry", Version: "1"}) {
+		t.Errorf("versioned skill: got %+v", promptDef.Skills[1])
 	}
 }
 
@@ -270,7 +277,7 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
 		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
-		Skills:          []string{"duplicate-check"},
+		Skills:          []HarnessSkillRef{{Name: "duplicate-check"}},
 		ResolvedSkills: []HarnessSkillRef{
 			{Name: "duplicate-check", Version: "3"},
 			{Name: "severity-triage", Version: "1"},
@@ -290,8 +297,8 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		t.Fatal("expected a harness block")
 	}
 	want := []agent_api.SkillReference{
-		{Name: "duplicate-check", Version: "3"},
-		{Name: "severity-triage", Version: "1"},
+		{Type: "skill_reference", Name: "duplicate-check", Version: "3"},
+		{Type: "skill_reference", Name: "severity-triage", Version: "1"},
 	}
 	if len(def.Skills) != len(want) {
 		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
@@ -309,11 +316,137 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		t.Fatalf("marshal request: %v", err)
 	}
 	body := string(data)
-	if !strings.Contains(body, `"skills":[{"name":"duplicate-check","version":"3"}`) {
+	if !strings.Contains(body,
+		`"skills":[{"type":"skill_reference","name":"duplicate-check","version":"3"},`+
+			`{"type":"skill_reference","name":"severity-triage","version":"1"}]`) {
 		t.Errorf("versioned top-level skills missing from request: %s", body)
 	}
 	if strings.Contains(body, `"harness":{"type":"github_copilot_preview","skills"`) {
 		t.Errorf("skills must not be nested under harness: %s", body)
+	}
+}
+
+func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
+	promptDef := PromptAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Skills: []HarnessSkillRef{
+			{Name: "microsoft-foundry", Version: "1"},
+		},
+		ResolvedSkills: []HarnessSkillRef{{Name: "MICROSOFT-FOUNDRY", Version: "3"}},
+	}
+
+	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
+	if err != nil {
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+	}
+	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
+	if !ok {
+		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
+	}
+	want := []agent_api.SkillReference{{Type: "skill_reference", Name: "microsoft-foundry", Version: "1"}}
+	if len(def.Skills) != len(want) || def.Skills[0] != want[0] {
+		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	if !strings.Contains(string(data), `"skills":[{"type":"skill_reference","name":"microsoft-foundry","version":"1"}]`) {
+		t.Errorf("authored skill reference missing discriminator or version: %s", data)
+	}
+}
+
+func TestCreatePromptAgentAPIRequest_DuplicateAuthoredSkills(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		skills  []HarnessSkillRef
+		wantErr bool
+	}{
+		{
+			name:    "conflicting pins",
+			skills:  []HarnessSkillRef{{Name: "foo", Version: "1"}, {Name: "foo", Version: "2"}},
+			wantErr: true,
+		},
+		{
+			name:    "normalized names conflict",
+			skills:  []HarnessSkillRef{{Name: " Foo ", Version: "1"}, {Name: "foo", Version: "2"}},
+			wantErr: true,
+		},
+		{
+			name: "shorthand between conflicting pins",
+			skills: []HarnessSkillRef{
+				{Name: "foo", Version: "1"}, {Name: "foo"}, {Name: "foo", Version: "2"},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "identical pins",
+			skills: []HarnessSkillRef{{Name: "foo", Version: "1"}, {Name: "foo", Version: " 1 "}},
+		},
+		{
+			name:   "shorthand before pin",
+			skills: []HarnessSkillRef{{Name: "foo"}, {Name: "foo", Version: "1"}},
+		},
+		{
+			name:   "shorthand after pin",
+			skills: []HarnessSkillRef{{Name: "foo", Version: "1"}, {Name: "foo"}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			request, err := CreatePromptAgentAPIRequest(PromptAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+				Model:           "gpt-4.1-mini",
+				Instructions:    "Be helpful.",
+				Skills:          tt.skills,
+				ResolvedSkills:  []HarnessSkillRef{{Name: "foo", Version: "3"}},
+			}, nil)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), `conflicting authored versions "1" and "2"`) {
+					t.Fatalf("expected conflicting pin error, got %v", err)
+				}
+				if request != nil {
+					t.Fatal("conflicting pins must not produce a request")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+			}
+			definition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+			if !ok {
+				t.Fatalf("unexpected definition type %T", request.Definition)
+			}
+			want := agent_api.SkillReference{Type: "skill_reference", Name: "foo", Version: "1"}
+			if len(definition.Skills) != 1 || definition.Skills[0] != want {
+				t.Fatalf("expected authored pin %+v, got %+v", want, definition.Skills)
+			}
+		})
+	}
+}
+
+func TestPromptAgentRejectsMalformedSkillYAML(t *testing.T) {
+	tests := []struct {
+		name  string
+		skill string
+		want  string
+	}{
+		{"misspelled name", `{nam: foo, version: "1"}`, "field nam not found"},
+		{"unknown field", `{name: foo, version: "1", extra: true}`, "field extra not found"},
+		{"missing name", `{version: "1"}`, "requires a non-empty name"},
+		{"empty name", `{name: "", version: "1"}`, "requires a non-empty name"},
+		{"blank name", `{name: "   ", version: "1"}`, "requires a non-empty name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ExtractAgentDefinition([]byte("template:\n  kind: prompt\n  name: agent\n" +
+				"  model: test-model\n  instructions: Be helpful.\n  skills:\n    - " + tt.skill + "\n"))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
 	}
 }
 
@@ -324,12 +457,22 @@ func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
-		Skills:          []string{"severity-triage"},
+		Skills:          []HarnessSkillRef{{Name: "severity-triage"}},
 	}
 
 	_, err := CreatePromptAgentAPIRequest(promptDef, nil)
-	if err == nil || !strings.Contains(err.Error(), "has no published version") {
+	if err == nil {
 		t.Fatalf("expected unresolved skill error, got %v", err)
+	}
+	for _, want := range []string{
+		`prompt skill "severity-triage" requires a version`,
+		`skills: [{name: "severity-triage", version: "<published-version>"}]`,
+		"deploy the matching local skill dependency with 'azd deploy --all'",
+		"azd does not automatically resolve the default version of an existing Foundry skill",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing guidance %q", err.Error(), want)
+		}
 	}
 }
 

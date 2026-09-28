@@ -95,6 +95,13 @@ overrides:
           - Chdir
           - exterrors
           - userinfo
+    - filename: .github/skills/azd-grpc-contracts/**/*.md
+      words:
+          - azdext
+          - grpcserver
+          - oneofs
+          - protos
+          - Protos
     - filename: docs/architecture/**/*.md
       words:
           - azapi

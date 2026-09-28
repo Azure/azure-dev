@@ -94,6 +94,13 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 // preview Digital Worker contract.
 const DigitalWorkerPreviewFeature = "DigitalWorker=V1Preview"
 
+// GitHubCopilotPreviewFeature opts managed prompt agent operations into the
+// preview GitHub Copilot harness contract.
+const GitHubCopilotPreviewFeature = "GitHubCopilot=V1Preview"
+
+// SkillsPreviewFeature opts prompt agent operations into the preview skills contract.
+const SkillsPreviewFeature = "Skills=V1Preview"
+
 func setDigitalWorkerPreviewFeature(req *policy.Request) {
 	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
 }
@@ -643,7 +650,12 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 }
 
 // CreateAgentVersion creates a new version of an agent
-func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, request *CreateAgentVersionRequest, apiVersion string) (*AgentVersionObject, error) {
+func (c *AgentClient) CreateAgentVersion(
+	ctx context.Context,
+	agentName string,
+	request *CreateAgentVersionRequest,
+	apiVersion string,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)

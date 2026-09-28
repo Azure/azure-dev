@@ -5735,6 +5735,10 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--new-project'],
+									description: 'Create a new Foundry project',
+								},
+								{
 									name: ['--output', '-o'],
 									description: 'The output format',
 									args: [
@@ -8216,6 +8220,10 @@ const completionSpec: Fig.Spec = {
 							name: 'file-path|image-tag',
 						},
 					],
+				},
+				{
+					name: ['--preview'],
+					description: 'Preview changes to services without deploying them.',
 				},
 				{
 					name: ['--timeout'],

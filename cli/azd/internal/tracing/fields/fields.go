@@ -42,14 +42,12 @@ const (
 // attribute so it can never overwrite a host-owned field on the span.
 const ExtensionAttributePrefix = "ext."
 
-// ExtensionUsageAttribute namespaces an extension-supplied usage attribute
-// key. Callers must bound the key and value before use; the extension owns
-// what the value means, so it is never customer content by contract.
+// ExtensionUsageAttribute namespaces an extension-supplied usage attribute key.
+// Concrete extension field metadata is declared in extensions/telemetry; this
+// runtime helper does not assign one classification to every dynamic key.
 func ExtensionUsageAttribute(key string) AttributeKey {
 	return AttributeKey{
-		Key:            attribute.Key(ExtensionAttributePrefix + key),
-		Classification: SystemMetadata,
-		Purpose:        FeatureInsight,
+		Key: attribute.Key(ExtensionAttributePrefix + key),
 	}
 }
 

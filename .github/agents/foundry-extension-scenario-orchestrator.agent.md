@@ -49,8 +49,9 @@ Run these in order regardless of which skill selected the scenarios. Each refere
 source — read it, don't restate it.
 
 1. **Prerequisites.** Verify MCP server availability and `profile.local.yaml`; generate the
-   single sweep `run_id`; and derive the base `session_vars` (profile merge +
-   `shared_agent_name` + `fixtures_dir` + `run_id`) per
+   single sweep `run_id`; and derive the base `session_vars` (profile merge, including
+   `model_version` and `model_sku`, plus `shared_agent_name` + `fixtures_dir` + `run_id`) and each applicable
+   bounded `foundry_project_name` per
    `.github/skills/foundry-extension-scenario-pr-regression/references/prerequisites.md`. Thread `session_vars`
    through every worker after adding that scenario's assigned `instance` where applicable.
 2. **`azd` binary gate (mandatory).** Ensure a verified native-Linux `azd` dev build is

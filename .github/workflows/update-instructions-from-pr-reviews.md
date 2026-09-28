@@ -70,6 +70,15 @@ tools:
   edit:
 
 safe-outputs:
+  report-failed-jobs: false
+  # Keep transient runtime failures and empty agent runs in workflow logs instead of opening issues.
+  report-failure-as-issue:
+    - "!missing_safe_outputs"
+    - "!report_incomplete"
+    - "!inference_access_error"
+    - "!ai_credits_rate_limit_error"
+  report-incomplete:
+    create-issue: false
   create-pull-request:
     title-prefix: "[auto] "
     labels: [automation, copilot-instructions]
@@ -289,4 +298,4 @@ the same way; it's reused for the fallback issue.
 - Cluster first; never write one rule per individual comment.
 - Never cite zero source PRs on a promoted rule.
 - Do not declare success from raw comment counts alone — judge signal quality.
-- If there is no qualifying signal, make no edits and open no PR.
+- If there is no qualifying signal, make no edits, open no PR, and call `noop` with the reviewed PR count and why no theme qualified.

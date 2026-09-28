@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -120,6 +121,15 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
 	) ([]string, error)
+}
+
+// ErrDeployPreviewNotSupported is returned when a service target cannot preview a deployment.
+var ErrDeployPreviewNotSupported = errors.New("deployment preview is not supported")
+
+// ServiceTargetPreviewer is optionally implemented by service targets that can preview a deployment
+// without packaging, publishing, deploying, or running lifecycle hooks.
+type ServiceTargetPreviewer interface {
+	Preview(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceDeployPreviewResult, error)
 }
 
 func resourceTypeMismatchError(

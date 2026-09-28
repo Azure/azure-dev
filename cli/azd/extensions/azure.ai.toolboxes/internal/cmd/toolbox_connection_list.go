@@ -22,7 +22,9 @@ func newToolboxConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Com
 	cmd := &cobra.Command{
 		Use:   "list <toolbox>",
 		Short: "List the connection-backed tools attached to a toolbox.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # List the connections attached to the default version
+  azd ai toolbox connection list research`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConnectionList(cmd.Context(), args[0], readToolboxFlags(cmd, extCtx))
 		},

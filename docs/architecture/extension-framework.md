@@ -67,7 +67,7 @@ Extensions can access these azd services via gRPC:
 - **Environment** — Read/write environment values and secrets
 - **User Config** — Read user-level azd configuration
 - **Deployment** — Access deployment information
-- **Account** — Access Azure account details
+- **Account**. List subscriptions and resolve access tenants. The `v1beta` client also retrieves the current principal's resource-tenant object ID and type for role assignments. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events
@@ -83,6 +83,20 @@ Extensions use two structured error types:
 - **`LocalError`** — For client-side validation or configuration errors
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
+
+## Deployment Preview
+
+`azd deploy --preview` calls an optional `Preview` on each selected service target
+instead of packaging, publishing, and deploying. Service targets are not initialized
+and deploy hooks do not run; hosts without preview support are reported and skipped.
+
+Extensions opt in with `WithBetaServiceTargetPreview` and
+`preview.ServiceTargetPreviewProvider`. The contract is **v1beta-only**: the host
+stays on the stable service target stream for normal deployments and also registers
+on a dedicated v1beta stream that carries only preview registration and preview
+messages. Each preview runs on a fresh provider without `Initialize`.
+See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+for registration and provider requirements.
 
 ## First-Party Extensions
 

@@ -1578,6 +1578,50 @@ if err := host.Run(ctx); err != nil {
 
 ```
 
+## Deployment Preview
+
+`azd deploy --preview` asks each selected service's target to describe the
+changes a deployment would make. Nothing is packaged, published, or deployed,
+service targets are not initialized, and deploy hooks do not run. Services whose
+host does not support preview are reported and skipped. The flag cannot be
+combined with `--from-package` or `--timeout`.
+
+Extension service targets opt in through the experimental, **v1beta-only**
+contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
+instead of `WithServiceTarget`, and implement `preview.ServiceTargetPreviewProvider`
+from `pkg/azdext/preview` alongside `azdext.ServiceTargetProvider`:
+
+```go
+host.WithBetaServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
+    return &MyProvider{}
+})
+
+func (p *MyProvider) Preview(
+    ctx context.Context,
+    serviceConfig *v1beta.ServiceConfig,
+) (*v1beta.ServiceDeployPreviewResult, error)
+```
+
+`WithBetaServiceTargetPreview` registers the host on the stable service target
+stream exactly like `WithServiceTarget`, so normal deployments are unchanged.
+It also registers the host on a dedicated v1beta stream that carries only
+`RegisterServiceTargetRequest` (with `supports_preview`) and the preview
+request and response messages. Registration does not invoke the factory.
+The preview registration is sent after the stable registration succeeds and is
+best effort: azd versions without deployment preview reject it, and the service
+target keeps working with preview reported as unsupported.
+
+For each preview request the SDK creates a fresh provider from the factory and
+calls only `Preview`; `Initialize` and the deployment instance cache are not used.
+`Preview` must not build, package, publish, deploy, or persist deployment state.
+`ServiceDeployPreviewResult` carries a human-readable `Message`, shown in text
+output, and a `Data` struct, returned under `services.<name>.data` with
+`--output json`. Redact secrets from both. Provider errors, missing `Preview`
+implementations, and nil results fail the command.
+
+These APIs may change during incubation. The stable `v1` contracts and the
+root `azdext` facade do not include preview types.
+
 ## Developer Artifacts
 
 `azd` uses versioned gRPC contracts for communication between core and
@@ -3070,6 +3114,41 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 - Validate subscription access before performing operations
 - Set up proper authentication context for Azure SDK calls
 
+#### GetCurrentPrincipal
+
+This preview method resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
+
+| Field | Description |
+|---|---|
+| Request `subscription_id` | Required subscription ID. No active environment or default subscription is used. |
+| Response `object_id` | Object ID of the signed-in identity in the resource tenant, not an application client ID. |
+| Response `principal_type` | `PRINCIPAL_TYPE_USER` or `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`, determined from azd's login details. |
+
+The host reuses its principal lookup, including the ARM token `oid` claim and Graph fallback. Service-principal logins and both system-assigned and user-assigned managed identities return `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`. Access tokens are neither accepted nor returned by this RPC. An empty subscription ID returns `InvalidArgument`; authentication, subscription, and principal lookup failures return errors rather than an empty identity.
+
+```go
+// Import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta".
+principal, err := azdClient.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
+    SubscriptionId: subscriptionId,
+})
+if err != nil {
+    return fmt.Errorf("resolving current principal: %w", err)
+}
+
+var principalType string
+switch principal.PrincipalType {
+case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+    principalType = "User"
+case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+    principalType = "ServicePrincipal"
+default:
+    return fmt.Errorf("unsupported principal type: %v", principal.PrincipalType)
+}
+// Pass principal.ObjectId and principalType to the role assignment.
+```
+
+This method and its request, response, and enum types are available only in [`v1beta`](../../grpc/proto/azd/extensions/v1beta/account.proto). `Account()` remains the unchanged stable client; use `AccountBeta()` for principal lookup. Older azd hosts return `Unimplemented`. Extensions must consume an SDK release containing the method and require a host release that supports it before removing their existing principal lookup.
+
 ---
 
 ### Copilot Service
@@ -3138,8 +3217,9 @@ Returns cumulative usage metrics cached for a session.
     - `input_tokens` (double): Total input tokens consumed
     - `output_tokens` (double): Total output tokens consumed
     - `total_tokens` (double): Sum of input + output tokens
-    - `billing_rate` (double): Per-request cost multiplier (e.g., 1.0x, 2.0x)
-    - `premium_requests` (double): Number of premium requests used
+    - `billing_rate` (double, deprecated): Legacy per-request cost multiplier; use `ai_credits` instead
+    - `premium_requests` (double, deprecated): Legacy premium request count; use `ai_credits` instead
+    - `ai_credits` (double): Total AI credits consumed
     - `duration_ms` (double): Total API duration in milliseconds
 
 #### GetFileChanges
@@ -3233,8 +3313,8 @@ metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsR
 if err != nil {
     return fmt.Errorf("failed to get metrics: %w", err)
 }
-fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
-    metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
+fmt.Printf("Total tokens: %.0f, AI credits: %.2f AIC\n",
+  metricsResp.Usage.TotalTokens, metricsResp.Usage.AiCredits)
 
 // Retrieve file changes
 changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{

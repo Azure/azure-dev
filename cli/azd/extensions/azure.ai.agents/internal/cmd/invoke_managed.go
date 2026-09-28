@@ -34,25 +34,43 @@ type managedResponsesRequest struct {
 	Stream         bool                   `json:"stream"`
 	AgentReference *managedAgentReference `json:"agent_reference,omitempty"`
 	Tools          []any                  `json:"tools"`
-	// PreviousResponseID chains this turn to the previous one so the harness
-	// restores prior conversation context (multi-turn memory). Empty on the
-	// first turn of a conversation; omitted from the payload when empty.
-	PreviousResponseID string `json:"previous_response_id,omitempty"`
+	Conversation   *managedConversation   `json:"conversation,omitempty"`
 }
 
-func (a *InvokeAction) managedPreviousResponseID(
+type managedConversation struct {
+	ID string `json:"id"`
+}
+
+func (a *InvokeAction) storedManagedConversationID(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentKey string,
 ) string {
+	if explicit := strings.TrimSpace(a.flags.conversation); explicit != "" {
+		if azdClient != nil {
+			saveContextValue(ctx, azdClient, agentKey, explicit, "conversations")
+		}
+		return explicit
+	}
 	if azdClient == nil || a.flags.forceNewConversation() {
 		return ""
 	}
 	value, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil)
-	if err != nil {
+	if err != nil || !strings.HasPrefix(value, "conv_") {
 		return ""
 	}
 	return value
+}
+
+func promptConversationEndpoint(projectEndpoint, agentName string, harnessed bool) string {
+	projectEndpoint = strings.TrimRight(projectEndpoint, "/")
+	if !harnessed {
+		return projectEndpoint + "/openai/v1/conversations"
+	}
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=v1",
+		projectEndpoint, agentName,
+	)
 }
 
 // runPromptInvoke sends a message to a prompt (kind=managed) agent via the
@@ -62,6 +80,12 @@ func (a *InvokeAction) managedPreviousResponseID(
 // service (promptServiceContext), so prompt agents invoke through the same
 // service resolution as hosted agents.
 func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceContext) error {
+	if timeout := a.httpTimeout(); timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	agentName := pctx.AgentName()
 	if strings.TrimSpace(agentName) == "" {
 		return exterrors.Validation(
@@ -76,11 +100,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		return err
 	}
 
-	// Resolve multi-turn state. Prompt agents chain turns via the OpenAI
-	// Responses `previous_response_id`: azd persists the last response id per
-	// agent and sends it on the next invoke so the harness restores prior
-	// conversation context. Best-effort — a config-store failure degrades to a
-	// stateless (single-turn) invoke rather than blocking the call.
+	// Persist a platform conversation per agent so later turns retain context.
 	agentKey := pctx.agentKey(agentName)
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -91,23 +111,15 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		defer azdClient.Close()
 	}
 
-	previousResponseID := a.managedPreviousResponseID(ctx, azdClient, agentKey)
-
 	request := managedResponsesRequest{
-		Model:              pctx.Agent.Model,
-		Input:              string(body),
-		Stream:             true,
-		Tools:              []any{},
-		PreviousResponseID: previousResponseID,
+		Model:  pctx.Agent.Model,
+		Input:  string(body),
+		Stream: true,
+		Tools:  []any{},
 	}
 	if pctx.Agent.HarnessType() == "" {
 		request.AgentReference = &managedAgentReference{Type: "agent_reference", Name: agentName}
 	}
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("building prompt invoke request: %w", err)
-	}
-
 	client, err := pctx.newClient(ctx)
 	if err != nil {
 		return err
@@ -117,6 +129,26 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		// The harness forwards model calls to this gateway. Required by the
 		// V3 harness engine (see test-e2e-foundry-tools.sh).
 		"x-model-endpoint": pctx.Settings.EffectiveModelEndpoint(),
+	}
+	conversationID := a.storedManagedConversationID(ctx, azdClient, agentKey)
+	if conversationID == "" {
+		harnessed := pctx.Agent.HarnessType() != ""
+		conversationEndpoint := promptConversationEndpoint(pctx.Settings.ProjectEndpoint, agentName, harnessed)
+		if harnessed {
+			headers["Foundry-Features"] = "GitHubCopilot=V1Preview"
+		}
+		conversationID, err = client.CreateConversationAt(ctx, conversationEndpoint, headers)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateConversation)
+		}
+		if azdClient != nil {
+			saveContextValue(ctx, azdClient, agentKey, conversationID, "conversations")
+		}
+	}
+	request.Conversation = &managedConversation{ID: conversationID}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("building prompt invoke request: %w", err)
 	}
 
 	var stream io.ReadCloser
@@ -135,14 +167,8 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 	}
 	defer stream.Close()
 
-	responseID, err := streamManagedSSE(stream, os.Stdout)
-	if err != nil {
+	if err := streamManagedSSE(stream, os.Stdout); err != nil {
 		return fmt.Errorf("reading prompt agent response stream: %w", err)
-	}
-
-	// Persist the new response id so the next invoke continues this thread.
-	if azdClient != nil && responseID != "" {
-		saveContextValue(ctx, azdClient, agentKey, responseID, "conversations")
 	}
 	return nil
 }
@@ -155,21 +181,16 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 // silently. A trailing newline is emitted after the stream ends so the shell
 // prompt returns on its own line.
 //
-// The returned string is the response id parsed from the stream's lifecycle
-// events (when present), which the caller persists so the next invoke can
-// chain via `previous_response_id` for multi-turn memory.
-//
 // Terminal failure events (`error`, `response.failed`, `response.incomplete`)
 // return an error. Reporting success with no output would make a failed
 // invocation indistinguishable from an empty answer and exit 0 in CI.
-func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
+func streamManagedSSE(r io.Reader, w io.Writer) error {
 	scanner := bufio.NewScanner(r)
 	// SSE data lines can be large (full JSON payloads); raise the buffer cap
 	// well above the 64 KiB default so a single event never overflows it.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
 	var event string
-	var responseID string
 	var streamErr error
 	completed := false
 	wroteText := false
@@ -197,17 +218,6 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 				if event == "response.completed" {
 					completed = true
 				}
-				// Capture the response id from any lifecycle event that carries
-				// it (e.g. response.created, response.completed). The last one
-				// seen wins so the persisted id reflects the completed turn.
-				var payload struct {
-					Response struct {
-						ID string `json:"id"`
-					} `json:"response"`
-				}
-				if err := json.Unmarshal([]byte(data), &payload); err == nil && payload.Response.ID != "" {
-					responseID = payload.Response.ID
-				}
 			}
 		case line == "":
 			// Blank line terminates an SSE event block.
@@ -218,12 +228,12 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 		fmt.Fprintln(w)
 	}
 	if err := scanner.Err(); err != nil {
-		return responseID, err
+		return err
 	}
 	if streamErr == nil && !completed {
-		return responseID, fmt.Errorf("managed response stream ended before response.completed")
+		return fmt.Errorf("managed response stream ended before response.completed")
 	}
-	return responseID, streamErr
+	return streamErr
 }
 
 // managedStreamFailure builds an error from a terminal SSE event, preferring

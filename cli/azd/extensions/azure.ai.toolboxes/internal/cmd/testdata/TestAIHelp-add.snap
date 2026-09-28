@@ -1,0 +1,32 @@
+Add a connection or skill reference to a local toolbox definition.
+
+This command only edits the local file (toolbox.yaml by default).
+To create a new toolbox, run 'azd ai toolbox create <name> --from-file <path>'.
+For ongoing deployment, declare the definition fields inline in an
+azure.ai.toolbox service in azure.yaml and run 'azd deploy <service>'.
+Toolbox services do not load the local file automatically or support a root $ref.
+
+Usage
+  azd ai toolbox add [command]
+
+Available Commands
+  connection : Add a connection reference to toolbox.yaml.
+  skill      : Add a skill reference to toolbox.yaml.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for add
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Foundry project endpoint URL for remote operations only (not local add or extension version).
+
+Examples
+  Add an existing project connection to a local definition
+    azd ai toolbox add connection my-mcp --file ./toolbox.yaml
+
+  Pin a skill reference in the same definition
+    azd ai toolbox add skill my-skill@2 --file ./toolbox.yaml
+
+Use azd ai toolbox add [command] --help to view examples and more information about a specific command.

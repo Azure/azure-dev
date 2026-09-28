@@ -37,6 +37,7 @@ type InitFromCodeAction struct {
 	projectTargetDir    string
 	createdFolderPath   string
 	serviceNameOverride string
+	sourceValidated     bool
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -47,11 +48,17 @@ type InitFromCodeAction struct {
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
-	if projectResponse, projectErr := a.azdClient.Project().Get(
-		ctx, &azdext.EmptyRequest{},
-	); projectErr == nil && projectResponse.GetProject() != nil {
-		if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+	if !a.sourceValidated && a.flags.src != "" {
+		if err := validateExplicitInitSource(ctx, a.azdClient, a.flags.src); err != nil {
 			return err
+		}
+	} else if !a.sourceValidated {
+		if projectResponse, projectErr := a.azdClient.Project().Get(
+			ctx, &azdext.EmptyRequest{},
+		); projectErr == nil && projectResponse.GetProject() != nil {
+			if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+				return err
+			}
 		}
 	}
 

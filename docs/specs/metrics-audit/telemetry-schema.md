@@ -277,10 +277,13 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 An extension reports a named event with an attribute map, and `azd` records it
 on an `ext.usage` span alongside `extension.id`, `extension.version`,
 `extension.source`, and `extension.event`. Failed extension commands use
-`extension.id` and `extension.version` on the failed `ext.run` span, but do not
-set `extension.event` or create an `ext.usage` span. Failed lifecycle hooks use
-the enclosing `cmd.*` span and include the extension ID, version, and lifecycle
-event.
+`extension.id` and `extension.version` on the failed `ext.run` span, but do
+not set `extension.event` or create an `ext.usage` span. Failed lifecycle
+hooks and service-target operations use the enclosing `cmd.*` span and include
+the extension ID, version, and host-defined event. Service-target
+values are `service_target.initialize`, `service_target.package`,
+`service_target.publish`, `service_target.deploy`, `service_target.endpoints`,
+and `service_target.get_target_resource`.
 
 First-party fields are declared as exported `AttributeKey` variables in
 `cli/azd/extensions/telemetry/fields.go`. Declarations are keyed by final OTel

@@ -135,7 +135,7 @@ func (r *operationReporter) report(
 	// not one second per service. Keep the original context reporter untouched.
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	names := map[string]foundryTelemetry.Event{}
+	names := make(map[string]foundryTelemetry.Event)
 	for _, class := range classes {
 		if event, ok := agentTelemetry.OperationClassified(operation, class); ok {
 			names[event.Name] = event

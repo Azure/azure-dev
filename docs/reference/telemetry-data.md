@@ -279,6 +279,8 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
 | `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
 | `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
+| `internal.extension_invalid_response` | Extension service target omitted a required deploy result or target resource | — |
+| `internal.timeout` | Operation timed out, including service publish or deploy | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 
@@ -491,7 +493,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
-| `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
+| `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined event on a failed lifecycle-hook or service-target `cmd.*` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. First-party concrete keys are declared in `cli/azd/extensions/telemetry/fields.go` |
 | `ext.demo.mode` | string | Demo telemetry mode: currently `sample` (`demo.telemetry.reported`) |
 | `ext.demo.outcome` | string | Demo telemetry outcome: currently `completed` (`demo.telemetry.reported`) |
@@ -523,8 +525,11 @@ fields. The host writes the identity fields and applies the `ext.` prefix; the
 extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
 the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
-hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
-enclosing `cmd.*` span.
+hooks and service-target operations carry `extension.id`, `extension.version`,
+and the host-defined event on the enclosing `cmd.*` span.
+Service-target values are `service_target.initialize`, `service_target.package`,
+`service_target.publish`, `service_target.deploy`, `service_target.endpoints`,
+and `service_target.get_target_resource`.
 
 Each concrete first-party field has its own classification, purpose, and
 endpoint declaration. The currently declared fields are bounded enums
@@ -851,7 +856,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
-| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command and lifecycle-hook errors, usage events, and remaining legacy gRPC bridge use |
+| **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks and service-target operations), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command, lifecycle-hook, and service-target errors, usage events, and remaining legacy gRPC bridge use |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

@@ -12,6 +12,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -108,6 +109,13 @@ func runInitVoice(
 	if err != nil {
 		return err
 	}
+	serviceDir, serviceRelPath, err := normalizeVoiceServiceDirectory(
+		projectConfig.GetPath(),
+		serviceDir,
+	)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(serviceDir, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("creating voice agent service directory %q: %w", serviceDir, err)
 	}
@@ -115,15 +123,35 @@ func runInitVoice(
 	voiceDef := voiceDefinitionForInit(flags, agentName)
 
 	action.serviceNameOverride = serviceName
-	projectRoot, err := filepath.Abs(projectConfig.GetPath())
-	if err != nil {
-		return fmt.Errorf("resolving project root: %w", err)
-	}
-	serviceRelPath, err := filepath.Rel(projectRoot, serviceDir)
-	if err != nil {
-		return fmt.Errorf("resolving voice agent path relative to project: %w", err)
-	}
 	return action.addVoiceAgentToProject(ctx, filepath.ToSlash(serviceRelPath), voiceDef)
+}
+
+func normalizeVoiceServiceDirectory(projectPath, serviceDir string) (string, string, error) {
+	projectRoot, err := filepath.Abs(projectPath)
+	if err != nil {
+		return "", "", fmt.Errorf("resolving project root: %w", err)
+	}
+
+	relativePath := serviceDir
+	if filepath.IsAbs(serviceDir) {
+		relativePath, err = filepath.Rel(projectRoot, serviceDir)
+		if err != nil {
+			return "", "", fmt.Errorf("resolving voice agent path relative to project: %w", err)
+		}
+	}
+	resolved, err := paths.JoinAllowRoot(projectRoot, relativePath)
+	if err != nil {
+		return "", "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("voice agent service directory %q is outside the resolved project", serviceDir),
+			"Choose a service directory inside the azd project.",
+		)
+	}
+	relativePath, err = filepath.Rel(projectRoot, resolved)
+	if err != nil {
+		return "", "", fmt.Errorf("resolving voice agent path relative to project: %w", err)
+	}
+	return resolved, filepath.ToSlash(relativePath), nil
 }
 
 func resolveVoiceProjectResourceID(

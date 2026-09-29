@@ -131,6 +131,36 @@ func TestPostdeployHandler_NonHostedAgent_NoOp(t *testing.T) {
 	}
 }
 
+// TestPostdeployHandler_InlinePrompt_EntersPostdeployPath verifies an inline
+// `kind: prompt` service is recognized by postdeploy rather than returning
+// through the non-agent early exit.
+func TestPostdeployHandler_InlinePrompt_EntersPostdeployPath(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+	}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	args := &azdext.ServiceEventArgs{
+		Project: &azdext.ProjectConfig{Path: t.TempDir()},
+		Service: &azdext.ServiceConfig{
+			Name: "assistant",
+			Host: AiAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"kind":         "prompt",
+				"name":         "assistant",
+				"model":        "gpt-5-mini",
+				"instructions": "Be helpful.",
+			}),
+		},
+	}
+
+	require.NoError(t, postdeployHandler(t.Context(), azdClient, args))
+	require.Equal(t, 1, envServer.getCurrentCalls,
+		"inline prompt services must gather postdeploy inputs before best-effort reporting")
+}
+
 // TestPostdeployHandler_MissingTelemetryEnv_ReturnsNil verifies that a hosted
 // agent whose environment is missing the optional telemetry inputs
 // (FOUNDRY_PROJECT_ENDPOINT / AZURE_TENANT_ID) does NOT fail the post-deploy

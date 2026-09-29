@@ -48,6 +48,20 @@ func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
 	require.NotNil(t, existingConfig)
 }
 
+func TestFileConfigManagerRejectsUnsupportedConfigWithoutTruncating(t *testing.T) {
+	type wrappedConfig struct{ Config }
+	path := filepath.Join(t.TempDir(), "config.json")
+	manager := NewFileConfigManager(NewManager())
+	require.NoError(t, manager.Save(NewConfig(map[string]any{"original": true}), path))
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	require.ErrorContains(t, manager.Save(wrappedConfig{NewEmptyConfig()}, path), "failed casting")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
+
 func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	tempDir := t.TempDir()
 	azdConfigDir := filepath.Join(tempDir, ".azd")

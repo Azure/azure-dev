@@ -108,6 +108,23 @@ SDK-version bump. An extension using an older released SDK can use ordinary
 gRPC metadata and trailer call options. The wire names are intentionally
 duplicated across the host and such extensions; keep them aligned.
 
+## Deployment Preview
+
+`azd deploy --preview` calls an optional `Preview` on each selected service target
+instead of packaging, publishing, and deploying. Service targets are not initialized
+and deploy hooks do not run; hosts without preview support are reported and skipped.
+The built-in App Service, Container Apps, Functions, Static Web Apps, AKS, and AI
+endpoint hosts report the resolved Azure target and the deployment operation they
+would perform.
+
+Extensions opt in with `WithBetaServiceTargetPreview` and
+`preview.ServiceTargetPreviewProvider`. The contract is **v1beta-only**: the host
+stays on the stable service target stream for normal deployments and also registers
+on a dedicated v1beta stream that carries only preview registration and preview
+messages. Each preview runs on a fresh provider without `Initialize`.
+See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+for registration and provider requirements.
+
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.

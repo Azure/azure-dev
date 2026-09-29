@@ -49,8 +49,9 @@ Your caller gives you everything you need — do not go looking for it yourself:
 - **`scenario_path`** — the scenario YAML, already in the correct path style (WSL `/mnt/c/…`
   on Windows, native absolute path otherwise).
 - **`session_vars`** — the per-scenario map (`prefix`, `subscription`, `region`, `model`,
-  optional `tenant`, `run_id`, `shared_agent_name`, `fixtures_dir`, and `instance` when
-  applicable). Pass it **unchanged** on every `load_scenario` / `run_pre_hooks` /
+  `model_version`, `model_sku`, optional `tenant`, `run_id`, `shared_agent_name`, `fixtures_dir`,
+  `foundry_project_name` when applicable, and `instance` when applicable). Pass it
+  **unchanged** on every `load_scenario` / `run_pre_hooks` /
   `start_session` / `run_post_hooks` call. Tier 1b also receives
   `prerequisite_scaffold_dir`, the verified absolute path returned by its Tier 1 prerequisite.
 - **`run_name`** — the scenario stem (e.g. `1.04-init-from-code`); role-suffixed for

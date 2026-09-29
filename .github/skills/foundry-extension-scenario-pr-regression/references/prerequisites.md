@@ -37,9 +37,9 @@ the user exactly what to fix — do **not** try to work around it.
 
 ### Profiles
 
-The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, and
-`{shared_agent_name}` placeholders, plus optional `tenant`, per-scenario `instance`, and
-Tier 1b `prerequisite_scaffold_dir` session values.
+The scenarios use `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_version}`,
+`{model_sku}`, `{shared_agent_name}`, and `{foundry_project_name}` placeholders, plus optional
+`tenant`, per-scenario `instance`, and Tier 1b `prerequisite_scaffold_dir` session values.
 Tenant-aware goals deliberately avoid a literal `{tenant}` placeholder so a
 missing optional value does not prevent a scenario from loading. You must:
 
@@ -67,13 +67,25 @@ missing optional value does not prevent a scenario from loading. You must:
    hyphens. A Tier 1b scenario must reuse the exact `instance` assigned to its
    `requires:` prerequisite so it finds that scaffold. When running the same scenario
    multiple times, append a distinct ordinal to each copy.
-7. Give each worker a per-scenario copy of the merged map. Include `run_id`,
-   `shared_agent_name`, and `fixtures_dir`, plus `instance` when applicable, and pass
+7. Derive `foundry_project_name` for each Tier 1 producer and Tier 2 setup while preserving
+   the complete run-unique suffix:
+   - Tier 1 suffix: the scenario's exact `instance`.
+   - Tier 2 suffix: the sweep's exact `run_id`.
+   - Set `prefix_budget = 32 - 1 - len(suffix)`. Fail before running if the budget is less
+     than 1. Truncate `prefix` to that budget, remove trailing hyphens, and fail if nothing
+     remains. Set `foundry_project_name = "<bounded-prefix>-<suffix>"` and verify it contains
+     only lowercase letters, digits, and hyphens and is at most 32 characters.
+   A Tier 1b scenario must reuse the exact `foundry_project_name` assigned to its
+   prerequisite; never recompute it independently. Scenarios that do not create or reuse a
+   Foundry project omit this value.
+8. Give each worker a per-scenario copy of the merged map. Include `run_id`,
+   `shared_agent_name`, `fixtures_dir`, `model_version`, and `model_sku`, plus `instance` and
+   `foundry_project_name` when applicable, and pass
    that map unchanged as `session_vars` on **every** `load_scenario`, `run_pre_hooks`,
    `start_session`, and `run_post_hooks` call. Also pass the same value as `instance_id`
    to each hook/session tool that accepts it. Omitting or changing either value can
    render different paths at load and execution time.
-8. A Tier 1 producer declares its output through the scenario YAML's top-level `produces`
+9. A Tier 1 producer declares its output through the scenario YAML's top-level `produces`
    field. The worker renders that field with the producer's `session_vars`, verifies the
    scaffold, resolves it to an absolute path, and returns it as `scaffold_dir`. Before
    dispatching the declared Tier 1b dependent, add that exact path to its per-scenario map as

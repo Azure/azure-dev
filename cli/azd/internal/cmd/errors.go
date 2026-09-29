@@ -35,6 +35,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
@@ -113,9 +114,10 @@ func causeTypesForTelemetry(err error) []string {
 // matched branch wants to expose. Attribute keys returned from this
 // function are NOT yet "error."-prefixed — MapError applies the prefix.
 //
-// Ordering matters: wrapper types that intentionally control outer
-// classification, such as ErrorWithSuggestion, must run before their
-// wrapped typed errors. The generic fallback must remain last.
+// Ordering matters: service-operation timeouts control classification even
+// when their preserved cause has its own typed classification. Other wrapper
+// types, such as ErrorWithSuggestion, run before their wrapped typed errors.
+// The generic fallback must remain last.
 //
 // The branch count mirrors azd's typed error surface; splitting it
 // makes the telemetry contract harder to audit.
@@ -127,6 +129,9 @@ func classify(err error) (string, []attribute.KeyValue) {
 		return "internal.<nil>", []attribute.KeyValue{fields.ErrType.String("<nil>")}
 	}
 
+	if _, ok := errors.AsType[*serviceOperationTimeoutError](err); ok {
+		return "internal.timeout", nil
+	}
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 		return updateErr.Code, nil
 	}
@@ -138,6 +143,9 @@ func classify(err error) (string, []attribute.KeyValue) {
 	}
 	if conversionErr, ok := errors.AsType[*mapper.ConversionError](err); ok {
 		return classifyConversionError(conversionErr)
+	}
+	if _, ok := errors.AsType[*project.ExternalServiceTargetResponseError](err); ok {
+		return "internal.extension_invalid_response", nil
 	}
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return classifyResponseError(respErr)

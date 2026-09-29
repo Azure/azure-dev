@@ -22,6 +22,8 @@ func newRoutineDisableCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Disable a Foundry routine.
 
 This operation is idempotent: disabling an already-disabled routine is a no-op success.`,
+		Example: `  # Pause a routine without deleting it
+  azd ai routine disable nightly-summary`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat

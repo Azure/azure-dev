@@ -46,7 +46,8 @@ func newRoutineUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Update fields on an existing Foundry routine.
 
 Only the named flags change; all other fields are preserved verbatim.
-To change the trigger or action type, delete and recreate the routine.`,
+The trigger, action type, and dispatch identity are create-only. To change
+one, delete and recreate the routine.`,
 		Example: `  # Change the description while preserving other fields
   azd ai routine update nightly-summary --description "Summarize the day's activity"`,
 		Args: cobra.ExactArgs(1),
@@ -128,6 +129,14 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	var changed int
 	if flags.file != "" {
 		manifest, err := readRoutineManifest(flags.file)
+		if err != nil {
+			return err
+		}
+		existing.Authorization, err = routineAuthorizationForUpsert(
+			flags.name,
+			existing,
+			manifest.Authorization,
+		)
 		if err != nil {
 			return err
 		}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -22,8 +23,9 @@ import (
 func TestReadRoutineManifest_JSON(t *testing.T) {
 	t.Parallel()
 	r := &routines.Routine{
-		Name:        "test-routine",
-		Description: "a test routine",
+		Name:          "test-routine",
+		Description:   "a test routine",
+		Authorization: &routines.RoutineAuthorization{Identity: routines.RoutineDispatchIdentityCreator},
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "schedule", CronExpression: "0 8 * * 1-5"},
 		},
@@ -39,6 +41,8 @@ func TestReadRoutineManifest_JSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test-routine", got.Name)
 	assert.Equal(t, "a test routine", got.Description)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, got.Authorization.Identity)
 	assert.Equal(t, "schedule", got.Triggers["default"].Type)
 	assert.Equal(t, "0 8 * * 1-5", got.Triggers["default"].CronExpression)
 	require.NotNil(t, got.Action)
@@ -49,6 +53,8 @@ func TestReadRoutineManifest_YAML(t *testing.T) {
 	t.Parallel()
 	yaml := `name: yaml-routine
 description: yaml desc
+authorization:
+  identity: creator
 triggers:
   default:
     type: timer
@@ -63,9 +69,48 @@ action:
 	got, err := readRoutineManifest(path)
 	require.NoError(t, err)
 	assert.Equal(t, "yaml-routine", got.Name)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, got.Authorization.Identity)
 	assert.Equal(t, "timer", got.Triggers["default"].Type)
 	require.NotNil(t, got.Action)
 	assert.Equal(t, "yaml-agent-name", got.Action.AgentName)
+}
+
+func TestReadRoutineManifest_InvalidAuthorizationIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		file    string
+		content string
+	}{
+		{
+			name:    "unsupported JSON identity",
+			file:    "routine.json",
+			content: `{"authorization":{"identity":"service"}}`,
+		},
+		{
+			name:    "empty YAML identity",
+			file:    "routine.yaml",
+			content: "authorization:\n  identity: \"\"\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), test.file)
+			require.NoError(t, os.WriteFile(path, []byte(test.content), 0600))
+
+			_, err := readRoutineManifest(path)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+			assert.Contains(t, localErr.Message, "authorization.identity")
+			assert.Contains(t, localErr.Suggestion, "agent or creator")
+		})
+	}
 }
 
 func TestReadRoutineManifest_FileNotFound(t *testing.T) {
@@ -92,14 +137,17 @@ func TestMergeRoutineFromFile_FileFieldsMergedWhenBodyEmpty(t *testing.T) {
 	t.Parallel()
 	body := &routines.Routine{Name: "from-cli"}
 	file := &routines.Routine{
-		Description: "from file",
-		Triggers:    map[string]routines.RoutineTrigger{"default": {Type: "schedule", CronExpression: "* * * * *"}},
-		Action:      &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
+		Description:   "from file",
+		Authorization: &routines.RoutineAuthorization{Identity: routines.RoutineDispatchIdentityCreator},
+		Triggers:      map[string]routines.RoutineTrigger{"default": {Type: "schedule", CronExpression: "* * * * *"}},
+		Action:        &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "a"},
 	}
 	mergeRoutineFromFile(body, file)
 
 	assert.Equal(t, "from-cli", body.Name, "name must not be overwritten by file")
 	assert.Equal(t, "from file", body.Description)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 	assert.Equal(t, "schedule", body.Triggers["default"].Type)
 	require.NotNil(t, body.Action)
 	assert.Equal(t, "a", body.Action.AgentName)
@@ -108,16 +156,18 @@ func TestMergeRoutineFromFile_FileFieldsMergedWhenBodyEmpty(t *testing.T) {
 func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
 	t.Parallel()
 	body := &routines.Routine{
-		Name:        "from-cli",
-		Description: "cli description",
-		Enabled:     new(true),
+		Name:          "from-cli",
+		Description:   "cli description",
+		Enabled:       new(true),
+		Authorization: &routines.RoutineAuthorization{Identity: routines.RoutineDispatchIdentityAgent},
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "timer", At: "2026-01-01T00:00:00Z"},
 		},
 		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: "cli-agent"},
 	}
 	file := &routines.Routine{
-		Description: "file description",
+		Description:   "file description",
+		Authorization: &routines.RoutineAuthorization{Identity: routines.RoutineDispatchIdentityCreator},
 		Triggers: map[string]routines.RoutineTrigger{
 			"default": {Type: "schedule", CronExpression: "* * * * *"},
 		},
@@ -126,6 +176,8 @@ func TestMergeRoutineFromFile_BodyFieldsWinOverFile(t *testing.T) {
 	mergeRoutineFromFile(body, file)
 
 	assert.Equal(t, "cli description", body.Description, "body description must win")
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityAgent, body.Authorization.Identity)
 	assert.Equal(t, "timer", body.Triggers["default"].Type, "body trigger must win")
 	require.NotNil(t, body.Action)
 	assert.Equal(t, "cli-agent", body.Action.AgentName, "body action must win")
@@ -173,6 +225,104 @@ func TestOverwriteRoutineFromFile_EmptyManifestChangesNothing(t *testing.T) {
 	n := overwriteRoutineFromFile(existing, &routines.Routine{})
 	assert.Equal(t, 0, n)
 	assert.Equal(t, "keep this", existing.Description)
+}
+
+func TestRoutineAuthorizationForUpsert(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		existing     *routines.Routine
+		requested    *routines.RoutineAuthorization
+		wantIdentity string
+		wantNilAuth  bool
+		wantError    bool
+	}{
+		{
+			name: "new routine keeps requested creator identity",
+			requested: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityCreator,
+			},
+			wantIdentity: routines.RoutineDispatchIdentityCreator,
+		},
+		{
+			name: "existing identity is retained when omitted",
+			existing: &routines.Routine{
+				Authorization: &routines.RoutineAuthorization{
+					Identity: routines.RoutineDispatchIdentityCreator,
+				},
+			},
+			wantIdentity: routines.RoutineDispatchIdentityCreator,
+		},
+		{
+			name: "same existing identity is accepted",
+			existing: &routines.Routine{
+				Authorization: &routines.RoutineAuthorization{
+					Identity: routines.RoutineDispatchIdentityCreator,
+				},
+			},
+			requested: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityCreator,
+			},
+			wantIdentity: routines.RoutineDispatchIdentityCreator,
+		},
+		{
+			name:        "agent is default when stored authorization is omitted",
+			existing:    &routines.Routine{},
+			requested:   &routines.RoutineAuthorization{Identity: routines.RoutineDispatchIdentityAgent},
+			wantNilAuth: true,
+		},
+		{
+			name: "empty stored authorization is normalized to the agent default",
+			existing: &routines.Routine{
+				Authorization: &routines.RoutineAuthorization{},
+			},
+			wantNilAuth: true,
+		},
+		{
+			name:      "creator cannot replace default agent identity",
+			existing:  &routines.Routine{},
+			requested: &routines.RoutineAuthorization{Identity: routines.RoutineDispatchIdentityCreator},
+			wantError: true,
+		},
+		{
+			name: "agent cannot replace creator identity",
+			existing: &routines.Routine{
+				Authorization: &routines.RoutineAuthorization{
+					Identity: routines.RoutineDispatchIdentityCreator,
+				},
+			},
+			requested: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityAgent,
+			},
+			wantError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := routineAuthorizationForUpsert("my-routine", test.existing, test.requested)
+			if test.wantError {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+				assert.Contains(t, localErr.Message, "cannot be changed")
+				assert.Contains(t, localErr.Suggestion, "azd ai routine delete")
+				assert.Contains(t, localErr.Suggestion, "recreate it")
+				return
+			}
+
+			require.NoError(t, err)
+			if test.wantNilAuth {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, test.wantIdentity, got.Identity)
+		})
+	}
 }
 
 func routineWithScheduleAndAgentResp() *routines.Routine {

@@ -152,6 +152,21 @@ func (p *routineServiceTarget) Deploy(
 		return nil, err
 	}
 
+	existing, err := client.GetRoutine(ctx, body.Name)
+	if err != nil && !exterrors.IsNotFound(err) {
+		return nil, fmt.Errorf("checking routine %q before upsert: %w", body.Name, err)
+	}
+	if existing != nil {
+		body.Authorization, err = routineAuthorizationForUpsert(
+			body.Name,
+			existing,
+			body.Authorization,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if _, err := client.PutRoutine(ctx, body.Name, body); err != nil {
 		return nil, fmt.Errorf("upserting routine %q: %w", body.Name, err)
 	}
@@ -182,6 +197,9 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*
 	}
 	if err := json.Unmarshal(b, body); err != nil {
 		return nil, fmt.Errorf("parsing routine service %q config: %w", svc.GetName(), err)
+	}
+	if err := validateRoutineAuthorization(body.Authorization); err != nil {
+		return nil, err
 	}
 	return body, nil
 }

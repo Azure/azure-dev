@@ -1,7 +1,8 @@
 Update fields on an existing Foundry routine.
 
 Only the named flags change; all other fields are preserved verbatim.
-To change the trigger or action type, delete and recreate the routine.
+The trigger, action type, and dispatch identity are create-only. To change
+one, delete and recreate the routine.
 
 Usage
   azd ai routine update <name> [flags]

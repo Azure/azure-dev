@@ -38,7 +38,7 @@ contains only bounded classifications (including a container mode for hosted age
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
-| `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured, not that authentication or deployment succeeded. |
+| `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications

@@ -24,6 +24,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Set-ContentUtf8NoBom {
+    param(
+        [string] $Path,
+        [string] $Value
+    )
+
+    $encoding = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+    [System.IO.File]::WriteAllText($Path, "$Value$([Environment]::NewLine)", $encoding)
+}
+
 $extensionId = "azure.ai.rle"
 $artifactPrefix = "azure-ai-rle"
 # The dev channel ships the same platform matrix as build.ps1 and build.sh.
@@ -86,12 +97,12 @@ if ($VersionBump) {
     }
 
     $Version = "$major.$minor.$patch$suffix"
-    Set-Content -LiteralPath $versionFilePath -Value $Version -Encoding utf8NoBOM
-    # Get-Content -Raw keeps the file's trailing newline and Set-Content adds one of
+    Set-ContentUtf8NoBom -Path $versionFilePath -Value $Version
+    # Get-Content -Raw keeps the file's trailing newline and the writer adds one of
     # its own, so trim before writing to stop blank lines accruing at every bump.
     $manifestContent = (Get-Content -LiteralPath $manifestPath -Raw) `
         -replace "(?m)^version:\s*\S+\s*$", "version: $Version"
-    Set-Content -LiteralPath $manifestPath -Value $manifestContent.TrimEnd() -Encoding utf8NoBOM
+    Set-ContentUtf8NoBom -Path $manifestPath -Value $manifestContent.TrimEnd()
 
     Write-Host "Version: $currentVersion -> $Version"
     $manifestVersion = $Version
@@ -152,12 +163,11 @@ try {
     if (-not (Test-Path $resolvedRegistryPath)) {
         $registryDirectory = Split-Path -Parent $resolvedRegistryPath
         New-Item -ItemType Directory -Path $registryDirectory -Force | Out-Null
-        @{
+        $emptyRegistry = @{
             schemaVersion = "1.0"
             extensions = @()
-        } |
-            ConvertTo-Json -Depth 100 |
-            Set-Content -LiteralPath $resolvedRegistryPath -Encoding utf8NoBOM
+        } | ConvertTo-Json -Depth 100
+        Set-ContentUtf8NoBom -Path $resolvedRegistryPath -Value $emptyRegistry
     }
 
     $existingBreakingChanges = @{}
@@ -254,9 +264,8 @@ foreach ($artifactProperty in $artifactProperties) {
     $artifactProperty.Value.url = "$artifactBaseUrl/$artifactName"
 }
 
-$registry |
-    ConvertTo-Json -Depth 100 |
-    Set-Content -LiteralPath $resolvedRegistryPath -Encoding utf8NoBOM
+$registryContent = $registry | ConvertTo-Json -Depth 100
+Set-ContentUtf8NoBom -Path $resolvedRegistryPath -Value $registryContent
 
 Write-Host ""
 Write-Host "RLE development release prepared."

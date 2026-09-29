@@ -89,9 +89,12 @@ adding new events for extension and hook lifecycle telemetry.
 | ----- | --------- | -------------------- | ---------- |
 | `ext.run` | Running an installed extension command through `azd`. | Command attributes such as `cmd.entry`, `cmd.flags`, `cmd.args.count`, plus `extension.installed` on the root span. | `name=ext.run`, `cmd.entry=cmd.ai.chat`, `cmd.flags=["model"]`, `cmd.args.count=0` |
 | `ext.install` | Installing one extension version. | `extension.id`, `extension.version`, and `extension.source.category`. On failure the span uses OpenTelemetry status `Error`; `EndWithStatus` derives the status description from the error type. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `extension.source.category=azd`, `status=Ok` |
-| `ext.update` | Updating one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.category`, `extension.update.duration_ms`, `extension.update.outcome`. | `name=ext.update`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.source.category=azd`, `extension.update.outcome=updated` |
+| `ext.update` | Updating one extension attempt. Failed dependency reconciliation emits a failed child span with `extension.id` and `extension.dependency_of`. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.category`, `extension.update.duration_ms`, `extension.update.outcome`. | `name=ext.update`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.source.category=azd`, `extension.update.outcome=updated` |
+| `ext.uninstall` | One extension removal attempt, requested by name or triggered by unused dependency cleanup. | `extension.id`, `extension.version`, and `extension.source.category`. Status records success or failure. | `name=ext.uninstall`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `extension.source.category=azd`, `status=Ok` |
 | `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.category.from`, `extension.source.category.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.category.from=dev`, `extension.source.category.to=azd`, `status=Ok` |
 | `hooks.exec` | Executing a project, layer, or service lifecycle hook. | `hooks.name`, `hooks.type`, `hooks.kind`; status description uses hook-specific codes such as `hook.validation_failed`. | `name=hooks.exec`, `hooks.name=predeploy`, `hooks.type=service`, `hooks.kind=sh`, `status=Ok` |
+
+`ext.uninstall` combines requested removals and automatic dependency cleanup without a field that distinguishes them. Internal removals during updates do not emit this event.
 
 ### Extension Attributes
 
@@ -105,7 +108,7 @@ Extension telemetry attributes are defined in [`fields.go`](../internal/tracing/
 | `extension.installed.source.category` | Installed extension source categories, each formatted as `id@category`. | `["microsoft.azd.ai@azd"]` |
 | `extension.version.from` | Version before an update or promotion. | `1.1.0` |
 | `extension.version.to` | Version after an update or promotion. | `1.2.0` |
-| `extension.source.category` | Fixed source category used for an install, update, or source registration. | `azd` |
+| `extension.source.category` | Fixed source category used for an install, update, uninstall, or source registration. | `azd` |
 | `extension.source.category.from` | Fixed source category before a promotion. | `dev` |
 | `extension.source.category.to` | Fixed source category after a promotion. | `azd` |
 | `extension.update.duration_ms` | Update duration in milliseconds. | `1532` |

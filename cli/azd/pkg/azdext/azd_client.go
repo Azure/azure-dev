@@ -22,6 +22,12 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
+// BetaServiceTarget returns the experimental v1beta service target client.
+// Preview capabilities are not available through the stable ServiceTarget client.
+func (c *AzdClient) BetaServiceTarget() v1beta.ServiceTargetServiceClient {
+	return v1beta.NewServiceTargetServiceClient(c.connection)
+}
+
 // AzdClient is the client for the `azd` gRPC server.
 type AzdClient struct {
 	connection          *grpc.ClientConn
@@ -269,6 +275,11 @@ func (c *AzdClient) Account() AccountServiceClient {
 	}
 
 	return c.accountClient
+}
+
+// AccountBeta returns the preview account service client, including current principal lookup.
+func (c *AzdClient) AccountBeta() v1beta.AccountServiceClient {
+	return v1beta.NewAccountServiceClient(c.connection)
 }
 
 // Ai returns the AI model service client.

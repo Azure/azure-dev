@@ -24,6 +24,10 @@ type LoggedIn struct {
 }
 
 func (cr *LoggedIn) ToString(currentIndentation string) string {
+	if cr.LoggedInAs == "" {
+		return currentIndentation + cLoginSuccessMessage
+	}
+
 	switch cr.LoginType {
 	case EmailLoginType:
 		return fmt.Sprintf(
@@ -47,7 +51,11 @@ func (cr *LoggedIn) ToString(currentIndentation string) string {
 }
 
 func (cr *LoggedIn) MarshalJSON() ([]byte, error) {
+	message := cLoginSuccessMessage
+	if cr.LoggedInAs != "" {
+		message = fmt.Sprintf("%s as %s", message, cr.LoggedInAs)
+	}
+
 	// reusing the same envelope from console messages
-	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("%s as %s", cLoginSuccessMessage, cr.LoggedInAs)))
+	return json.Marshal(output.EventForMessage(message))
 }

@@ -86,8 +86,21 @@
     },
     "skills": {
       "type": "array",
-      "description": "Foundry skill names available to the prompt agent.",
-      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      "description": "Foundry skills available to the prompt agent. A string selects a locally resolved skill; an object may pin an existing skill version.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1, "pattern": "\\S" },
+          {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+              "version": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        ]
+      }
     },
     "language": {
       "type": "string",

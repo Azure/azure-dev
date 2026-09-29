@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -296,6 +297,40 @@ func TestEvaluatorRecollectionPreservesAuthoredCatalogMetadata(t *testing.T) {
 			assert.Equal(t, []string{"quality", "agents"}, cfg.Evaluators[0].Categories)
 			assert.Equal(t, []string{"turn", "conversation"}, cfg.Evaluators[0].SupportedEvaluationLevels)
 			assert.Empty(t, *requests, "recollection must not submit a generation or publication request")
+		})
+	}
+}
+
+func TestEvaluatorRecollectionRefreshesExplicitEmptyListsOnlyWhenForced(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprintf("force=%t", force), func(t *testing.T) {
+			ec, _, dir, requests := generationRecoveryFixture(t)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			cmd.SetOut(io.Discard)
+			action := &jobShowAction{cmd: cmd, flags: &jobFlags{path: dir}}
+			_, err := action.collect(t.Context(), ec, evaluatorJobs, recoveryRubricJob(), io.Discard)
+			require.NoError(t, err)
+			job := recoveryRubricJob()
+			job.Result = json.RawMessage(strings.ReplaceAll(strings.ReplaceAll(string(job.Result),
+				`"categories":["quality","agents"]`, `"categories":[]`),
+				`"supported_evaluation_levels":["turn","conversation"]`, `"supported_evaluation_levels":[]`))
+			action.flags.force = force
+			for range 2 {
+				_, err = action.collect(t.Context(), ec, evaluatorJobs, job, io.Discard)
+				require.NoError(t, err)
+				cfg, err := project.OpenEvalConfig(dir)
+				require.NoError(t, err)
+				require.Len(t, cfg.Evaluators, 1)
+				if force {
+					assert.Equal(t, []string{}, cfg.Evaluators[0].Categories)
+					assert.Equal(t, []string{}, cfg.Evaluators[0].SupportedEvaluationLevels)
+				} else {
+					assert.Equal(t, []string{"quality", "agents"}, cfg.Evaluators[0].Categories)
+					assert.Equal(t, []string{"turn", "conversation"}, cfg.Evaluators[0].SupportedEvaluationLevels)
+				}
+			}
+			assert.Empty(t, *requests, "recollection must not create a new generation or version")
 		})
 	}
 }

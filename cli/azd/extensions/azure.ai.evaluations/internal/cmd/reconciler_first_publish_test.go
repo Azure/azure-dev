@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -101,5 +102,61 @@ func TestRegisteredOnlyEvaluatorWithEmptyVersionsIsNotPublished(t *testing.T) {
 			assert.Empty(t, service.created)
 			assert.Empty(t, env.config)
 		})
+	}
+}
+
+func TestFirstPublicationRejectsFailedContinuation(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, tc := range []struct {
+			name   string
+			status int
+			body   string
+		}{
+			{"not found", http.StatusNotFound, ""},
+			{"forbidden", http.StatusForbidden, ""},
+			{"unavailable", http.StatusServiceUnavailable, ""},
+			{"malformed", http.StatusOK, `{"value":null}`},
+		} {
+			t.Run(caller+"/"+tc.name, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				service.listBody = `{"value":[],"nextLink":"/evaluators/custom/versions?page=2"}`
+				service.nextListStatus, service.nextListBody = tc.status, tc.body
+				cfg.Evaluators[0].Version = ""
+				cfg.Evaluators[0].Source = "custom.json"
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "custom.json"),
+					[]byte(`{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`), 0o600))
+				require.Error(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+				assert.Len(t, service.reads, 2)
+				assert.Zero(t, service.publishes)
+				assert.Empty(t, service.created)
+				assert.Empty(t, env.config)
+			})
+		}
+	}
+}
+
+func TestLocalEvaluatorRefusesMalformedSuccessfulRead(t *testing.T) {
+	for _, caller := range []string{"create", "up", "ensure"} {
+		for _, raw := range []string{"", "null", "[]", "not JSON", `{}`, `{"definition":null}`} {
+			t.Run(caller+"/"+raw, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				service.versions = map[string]json.RawMessage{"2": json.RawMessage(raw)}
+				cfg.Evaluators[0].Version = ""
+				cfg.Evaluators[0].Source = "custom.json"
+				path := filepath.Join(dir, "custom.json")
+				require.NoError(t, os.WriteFile(path,
+					[]byte(`{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`), 0o600))
+				var err error
+				if caller == "ensure" {
+					_, _, err = (&evalReconciler{ec: ec}).EnsureEvaluator(t.Context(), cfg.Evaluators[0], path)
+				} else {
+					err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
+				}
+				require.Error(t, err)
+				assert.Zero(t, service.publishes)
+				assert.Empty(t, service.created)
+				assert.Empty(t, env.config)
+			})
+		}
 	}
 }

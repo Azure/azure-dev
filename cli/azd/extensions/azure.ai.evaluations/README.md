@@ -292,7 +292,8 @@ it does not discard the downloaded artifact.
 Recollecting an existing evaluator artifact without `--force` preserves its
 authored catalog metadata, including explicit empty values, while filling
 missing metadata from the job. `--force` replaces the artifact and refreshes
-those catalog fields.
+those catalog fields, including explicitly empty category and evaluation-level
+lists. An omitted list does not clear an existing field.
 
 Use the printed `azd ai eval job show <job-id> --dataset` or `--evaluator`
 command to inspect or collect the existing job without starting another one.
@@ -405,9 +406,12 @@ Standalone `evaluator update` preserves the existing display name, description,
 categories, and supported evaluation levels. A full input document can explicitly
 replace those fields. The download does not modify configuration or attach the
 evaluator to an eval. When using the downloaded rubric as a declaration's
-`source`, keep `display_name`, `categories`, and `supported_evaluation_levels`
-on that declaration: `azd up` carries them into later versions and leaves an
-unchanged rubric unpublished.
+`source`, `create` and `azd up` preserve missing catalog fields from the current
+published version. Explicit fields in a full input document take precedence
+over catalog declarations, which take precedence over inherited service
+metadata. Explicit empty category and evaluation-level lists clear those
+fields. Metadata joins the publication body after digest and reuse decisions,
+so an unchanged rubric remains unpublished.
 
 Omitting `--version` downloads the latest version and reports which one was used.
 Existing files are not replaced unless `--force` is supplied.

@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -196,7 +197,10 @@ func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
 }
 
 func TestEvaluatorUpdateRefusesUnreadableMetadata(t *testing.T) {
-	for _, document := range []string{"null", "[]", "not JSON"} {
+	for _, document := range []string{
+		"", "null", "[]", "not JSON", `{}`, `{"definition":null}`,
+		`{"definition":{},"supported_evaluation_levels":"conversation"}`,
+	} {
 		t.Run(document, func(t *testing.T) {
 			ec, service := evaluatorRoundTripContext(t)
 			service.document = json.RawMessage(document)
@@ -217,4 +221,69 @@ func TestEvaluatorUpdateCancellationDoesNotPublish(t *testing.T) {
 	err := action.write(ctx, ec, json.RawMessage(`{"name":"quality","definition":{"type":"rubric"}}`))
 	require.ErrorIs(t, err, context.Canceled)
 	service.publishedBody(t, 0)
+}
+
+func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, override := range []string{"none", "catalog", "empty catalog lists", "document"} {
+			t.Run(caller+"/"+override, func(t *testing.T) {
+				ec, _, service, cfg, dir := newCatalogPinFixture(t)
+				service.latest = "3"
+				service.versions = map[string]json.RawMessage{
+					"3": json.RawMessage(strings.ReplaceAll(downloadedEvaluator, `"quality"`, `"custom"`)),
+				}
+				path := filepath.Join(dir, "custom.json")
+				action := &evaluatorDownloadAction{
+					cmd: evaluatorDownloadCmd(t), name: "custom", version: "3", outFile: path,
+				}
+				require.NoError(t, action.download(t.Context(), ec))
+				cfg.Evaluators[0] = project.EvaluatorDecl{Name: "custom", Source: path}
+				cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				require.Zero(t, service.publishes, "unchanged download must reuse the published version")
+
+				edited := editDownloadedThreshold(t, path)
+				wantName, wantDescription := "Support quality", "Grades support conversations"
+				wantCategories := []any{"custom", "agents"}
+				wantLevels := []any{"turn", "conversation"}
+				switch override {
+				case "catalog":
+					cfg.Evaluators[0].DisplayName = "Authored catalog name"
+					cfg.Evaluators[0].Categories = []string{"safety"}
+					cfg.Evaluators[0].SupportedEvaluationLevels = []string{"conversation"}
+					wantName, wantCategories, wantLevels = "Authored catalog name", []any{"safety"}, []any{"conversation"}
+				case "empty catalog lists":
+					cfg.Evaluators[0].Categories = []string{}
+					cfg.Evaluators[0].SupportedEvaluationLevels = []string{}
+					wantCategories, wantLevels = []any{}, []any{}
+				case "document":
+					body, err := normalizeRubricBody("custom", edited)
+					require.NoError(t, err)
+					var document map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(body, &document))
+					document["display_name"] = json.RawMessage(`""`)
+					document["description"] = json.RawMessage(`""`)
+					document["categories"] = json.RawMessage(`[]`)
+					document["supported_evaluation_levels"] = json.RawMessage(`[]`)
+					edited, err = json.Marshal(document)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(path, edited, 0o600))
+					wantName, wantDescription, wantCategories, wantLevels = "", "", []any{}, []any{}
+				}
+				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
+				require.Equal(t, 1, service.publishes)
+				published := decodeBody(t, service.versions["4"])
+				assert.Equal(t, wantName, published["display_name"])
+				assert.Equal(t, wantDescription, published["description"])
+				assert.Equal(t, wantCategories, published["categories"])
+				assert.Equal(t, wantLevels, published["supported_evaluation_levels"])
+				assert.NotContains(t, published, "created_at")
+				assert.NotContains(t, published, "agent_metadata")
+				assert.Contains(t, string(service.versions["4"]), "9007199254740993")
+				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
+				assert.Equal(t, 1, service.publishes, "unchanged retry must not publish a fifth version")
+				assert.Len(t, service.created, 1, "metadata inheritance must not turn latest into an authored pin")
+			})
+		}
+	}
 }

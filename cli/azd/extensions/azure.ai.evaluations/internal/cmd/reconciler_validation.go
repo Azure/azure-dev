@@ -106,13 +106,6 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err != nil {
 			return messages.EvaluatorProblem(decl.Name, err)
 		}
-		schema, err := evaluatorContract(body)
-		if err != nil {
-			return messages.EvaluatorProblem(decl.Name, err)
-		}
-		if schema.SupportedEvaluationLevels == nil {
-			schema.SupportedEvaluationLevels = slices.Clone(decl.SupportedEvaluationLevels)
-		}
 		// Authored rubrics omit the schemas Foundry adds on publication.
 		// Reuse that contract when present, without replacing authored
 		// fields or treating a failed read as a missing evaluator.
@@ -120,11 +113,22 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 			return messages.CheckingEvaluatorExists(decl.Name, err)
 		}
+		var published *eval_api.EvaluatorSummary
 		if err == nil {
-			published, err := evaluatorContract(remote)
+			published, err = evaluatorContract(remote)
 			if err != nil {
 				return messages.EvaluatorProblem(decl.Name, err)
 			}
+		}
+		prospective, err := evaluatorPublishBody(body, decl, remote)
+		if err != nil {
+			return messages.EvaluatorProblem(decl.Name, err)
+		}
+		schema, err := evaluatorContract(prospective)
+		if err != nil {
+			return messages.EvaluatorProblem(decl.Name, err)
+		}
+		if published != nil {
 			prior := r.ec.privateValue(ctx, project.FingerprintKey("evaluator", decl.Name))
 			if canReuseEvaluator(prior, digest, remote, body) {
 				schema = published
@@ -134,9 +138,6 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				}
 				if schema.Definition.InitParameters == nil {
 					schema.Definition.InitParameters = published.InitSchema()
-				}
-				if schema.SupportedEvaluationLevels == nil {
-					schema.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
 				}
 			}
 		}

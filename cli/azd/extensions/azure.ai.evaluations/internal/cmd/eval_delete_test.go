@@ -146,7 +146,7 @@ func TestEvalDeleteClearsOnlyConfirmedIDReferences(t *testing.T) {
 				require.JSONEq(t, `{"id":"eval_delete_target","status":"deleted"}`, out)
 				fresh := reader(t, env)
 				for _, key := range removed {
-					assert.Empty(t, fresh.privateValue(t.Context(), key), key)
+					assert.NotContains(t, fresh.loadPrivateState(t.Context()), key, "deleted keys must be absent, not blank")
 				}
 				for key, value := range preserved {
 					assert.Equal(t, value, fresh.privateValue(t.Context(), key), key)
@@ -201,12 +201,22 @@ func TestEvalDeleteKeepsSurvivingScopedLookupReachable(t *testing.T) {
 }
 
 func TestEvalDeleteFailureOrAmbiguousNamePreservesState(t *testing.T) {
-	for _, scenario := range []string{"server failure", "not found", "duplicate names"} {
+	for _, scenario := range []string{
+		"unauthorized", "forbidden", "conflict", "rate limited", "server failure", "not found", "duplicate names",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			state, _, _ := evalDeleteStateFixture()
 			ec, env, service := evalDeleteFixture(t, state)
 			name := deletedEvalID
 			switch scenario {
+			case "unauthorized":
+				service.status = http.StatusUnauthorized
+			case "forbidden":
+				service.status = http.StatusForbidden
+			case "conflict":
+				service.status = http.StatusConflict
+			case "rate limited":
+				service.status = http.StatusTooManyRequests
 			case "server failure":
 				service.status = http.StatusInternalServerError
 			case "not found":

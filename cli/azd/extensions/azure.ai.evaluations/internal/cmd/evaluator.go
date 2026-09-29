@@ -281,18 +281,34 @@ func withCatalogMetadata(body json.RawMessage, decl project.EvaluatorDecl) (json
 	if decl.DisplayName != "" {
 		metadata["display_name"] = decl.DisplayName
 	}
-	if len(decl.Categories) > 0 {
+	if decl.Categories != nil {
 		metadata["categories"] = decl.Categories
 	}
-	if len(decl.SupportedEvaluationLevels) > 0 {
+	if decl.SupportedEvaluationLevels != nil {
 		metadata["supported_evaluation_levels"] = decl.SupportedEvaluationLevels
 	}
 	return withEvaluatorMetadata(body, metadata)
 }
 
+// evaluatorPublishBody fills missing catalog fields without changing the authored
+// definition: explicit document fields win over the catalog, then the service.
+// Callers must make digest and reuse decisions using the original body.
+func evaluatorPublishBody(
+	body json.RawMessage, decl project.EvaluatorDecl, existing json.RawMessage,
+) (json.RawMessage, error) {
+	body, err := withCatalogMetadata(body, decl)
+	if err != nil || len(existing) == 0 {
+		return body, err
+	}
+	return withRemoteCatalogMetadata(body, existing)
+}
+
 // withRemoteCatalogMetadata keeps catalog fields out of the editable rubric
 // without losing them when that rubric is published through standalone update.
 func withRemoteCatalogMetadata(body, existing json.RawMessage) (json.RawMessage, error) {
+	if _, err := evaluatorContract(existing); err != nil {
+		return nil, err
+	}
 	var remote map[string]json.RawMessage
 	if err := json.Unmarshal(existing, &remote); err != nil {
 		return nil, notAnObject(existing, err)

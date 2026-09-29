@@ -28,17 +28,19 @@ import (
 )
 
 type catalogPinService struct {
-	mu            sync.Mutex
-	latest        string
-	deniedVersion string
-	deniedStatus  int
-	listStatus    int
-	listBody      string
-	publishes     int
-	versions      map[string]json.RawMessage
-	reads         []string
-	created       []eval_api.CreateOpenAIEvalRequest
-	evals         map[string]*eval_api.OpenAIEval
+	mu             sync.Mutex
+	latest         string
+	deniedVersion  string
+	deniedStatus   int
+	listStatus     int
+	listBody       string
+	nextListStatus int
+	nextListBody   string
+	publishes      int
+	versions       map[string]json.RawMessage
+	reads          []string
+	created        []eval_api.CreateOpenAIEvalRequest
+	evals          map[string]*eval_api.OpenAIEval
 }
 
 func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
@@ -51,6 +53,12 @@ func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/evaluators/"):
 			s.reads = append(s.reads, r.URL.Path)
 			if strings.HasSuffix(r.URL.Path, "/versions") {
+				if r.URL.Query().Get("page") == "2" {
+					w.WriteHeader(s.nextListStatus)
+					_, err := w.Write([]byte(s.nextListBody))
+					assert.NoError(t, err)
+					return
+				}
 				if s.listStatus != 0 {
 					w.WriteHeader(s.listStatus)
 					return

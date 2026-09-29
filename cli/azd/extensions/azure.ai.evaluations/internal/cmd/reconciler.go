@@ -698,6 +698,9 @@ func (r *evalReconciler) EnsureEvaluator(
 		return "", false, messages.CheckingEvaluatorExists(decl.Name, err)
 	}
 	if err == nil {
+		if _, err := evaluatorContract(existing); err != nil {
+			return "", false, messages.EvaluatorProblem(decl.Name, err)
+		}
 		remote := versionFromRaw(existing, "")
 		if canReuseEvaluator(prior, digest, existing, body) {
 			// Nothing to publish, but the version is still worth recording:
@@ -732,7 +735,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	// drift comparison are taken from the authored definition, and
 	// folding catalog metadata in earlier would make every existing
 	// evaluator look edited and publish a version nobody asked for.
-	published, err := withCatalogMetadata(body, decl)
+	published, err := evaluatorPublishBody(body, decl, known)
 	if err != nil {
 		return "", false, messages.EvaluatorProblem(decl.Name, err)
 	}

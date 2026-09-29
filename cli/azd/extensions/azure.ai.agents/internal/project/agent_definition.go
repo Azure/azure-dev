@@ -390,7 +390,7 @@ func validateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
 			exterrors.CodeUnsupportedAgentDefinitionPath,
 			"AGENT_DEFINITION_PATH is no longer supported for agent runtime configuration",
 			"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
-				"or add a service-level $ref to a direct agent definition",
+				"or add an explicit root $ref on the service entry to a direct agent definition",
 		)
 	}
 	if svc != nil && svc.GetHost() == "azure.ai.agent" &&
@@ -399,7 +399,7 @@ func validateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
 			exterrors.CodeDeprecatedAgentServiceConfig,
 			fmt.Sprintf("service %q uses the unsupported nested config block", svc.GetName()),
 			"move the agent definition to service-level properties in azure.yaml, "+
-				"or add a service-level $ref to a direct agent definition",
+				"or add an explicit root $ref on the service entry to a direct agent definition",
 		)
 	}
 	return nil
@@ -1064,23 +1064,23 @@ func agentDefinitionFromDisk(
 			name: "agent.yaml",
 			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
 				"or move any env, project, language, image, or docker fields onto the service before adding " +
-				"a service-level $ref to the remaining direct definition",
+				"an explicit root $ref on the service entry to the remaining direct definition",
 		},
 		{
 			name: "agent.yml",
 			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
 				"or move any env, project, language, image, or docker fields onto the service before adding " +
-				"a service-level $ref to the remaining direct definition",
+				"an explicit root $ref on the service entry to the remaining direct definition",
 		},
 		{
 			name: "agent.manifest.yaml",
 			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
-				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
 		},
 		{
 			name: "agent.manifest.yml",
 			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
-				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
 		},
 	}
 	for _, legacy := range files {
@@ -1107,7 +1107,7 @@ func agentDefinitionFromDisk(
 		exterrors.CodeAgentDefinitionNotFound,
 		fmt.Sprintf("agent definition not found for service %q", svc.GetName()),
 		"add the direct agent definition to the azure.ai.agent service in azure.yaml, "+
-			"or add a service-level $ref to a direct agent definition",
+			"or add an explicit root $ref on the service entry to a direct agent definition",
 	)
 }
 

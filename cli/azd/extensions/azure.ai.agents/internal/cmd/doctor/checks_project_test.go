@@ -665,23 +665,23 @@ func TestCheckAgentDefinitionValid_LegacyFilesPreserveMigrationGuidance(t *testi
 			filename: "agent.yaml",
 			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
 				"or move any env, project, language, image, or docker fields onto the service before adding " +
-				"a service-level $ref to the remaining direct definition",
+				"an explicit root $ref on the service entry to the remaining direct definition",
 		},
 		{
 			filename: "agent.yml",
 			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
 				"or move any env, project, language, image, or docker fields onto the service before adding " +
-				"a service-level $ref to the remaining direct definition",
+				"an explicit root $ref on the service entry to the remaining direct definition",
 		},
 		{
 			filename: "agent.manifest.yaml",
 			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
-				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
 		},
 		{
 			filename: "agent.manifest.yml",
 			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
-				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
 		},
 	}
 
@@ -723,7 +723,7 @@ func TestCheckAgentDefinitionValid_PreservesStructuredSourceGuidance(t *testing.
 			wantCode:    exterrors.CodeDeprecatedAgentServiceConfig,
 			wantMessage: "unsupported nested config block",
 			wantSuggestion: "move the agent definition to service-level properties in azure.yaml, " +
-				"or add a service-level $ref to a direct agent definition",
+				"or add an explicit root $ref on the service entry to a direct agent definition",
 		},
 		{
 			name:        "missing definition",
@@ -731,7 +731,7 @@ func TestCheckAgentDefinitionValid_PreservesStructuredSourceGuidance(t *testing.
 			wantCode:    exterrors.CodeAgentDefinitionNotFound,
 			wantMessage: "agent definition not found",
 			wantSuggestion: "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
-				"or add a service-level $ref to a direct agent definition",
+				"or add an explicit root $ref on the service entry to a direct agent definition",
 		},
 	}
 
@@ -773,7 +773,7 @@ func TestCheckAgentDefinitionValid_DefinitionPathPreservesMigrationGuidance(t *t
 	require.Contains(t, got.Message, "AGENT_DEFINITION_PATH is no longer supported")
 	require.Equal(t,
 		"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
-			"or add a service-level $ref to a direct agent definition",
+			"or add an explicit root $ref on the service entry to a direct agent definition",
 		got.Suggestion)
 	require.Equal(t, map[string]string{
 		"echo-agent": exterrors.CodeUnsupportedAgentDefinitionPath,

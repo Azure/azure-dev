@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -2677,6 +2678,34 @@ func TestInitCommandPreAuthLocalValidation(t *testing.T) {
 	}
 }
 
+func TestInitCommandRejectsInvalidDeployModeBeforeSideEffects(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	command.SilenceErrors = true
+	command.SilenceUsage = true
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"--deploy-mode", "invalid"})
+
+	err := command.Execute()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	require.Equal(t, "invalid --deploy-mode value \"invalid\"; must be 'container' or 'code'", localErr.Message)
+	require.Equal(t, "Use --deploy-mode container or --deploy-mode code", localErr.Suggestion)
+	require.Empty(t, output.String(), "validation must run before command output or prompts")
+
+	entries, readErr := os.ReadDir(root)
+	require.NoError(t, readErr)
+	require.Empty(t, entries, "validation must run before project or Git initialization")
+}
+
 type initAuthOrderingAiServer struct {
 	azdext.UnimplementedAiModelServiceServer
 }
@@ -3602,7 +3631,7 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			name:           "invalid deploy-mode value fails",
 			flags:          initFlags{noPrompt: true, deployMode: "invalid"},
 			wantErr:        true,
-			wantErrContain: "--deploy-mode must be",
+			wantErrContain: "invalid --deploy-mode value",
 		},
 		{
 			name:           "invalid runtime value fails",

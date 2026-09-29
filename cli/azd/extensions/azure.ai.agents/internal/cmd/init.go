@@ -1091,7 +1091,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   # Non-interactive unified project adoption
   azd ai agent init --no-prompt -m ./azure.yaml --project-id "<resource-id>"
 
-  # Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
+  # Bring your own pre-built image (no source scaffolding, Dockerfile-based build setup, or ACR setup)
   azd ai agent init --no-prompt --agent-name my-agent \
     --image myacr.azurecr.io/agents/my-agent:v1
 
@@ -1157,6 +1157,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+			if err := validateDeployMode(flags.deployMode); err != nil {
+				return err
+			}
 			printBanner(cmd.OutOrStdout())
 
 			var cachedExplicitAzureYaml []byte
@@ -1610,7 +1613,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.image, "image", "",
 		"Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). "+
 			"Skips template/language selection, code scaffolding, "+
-			"Dockerfile generation, and ACR setup, and requires --agent-name. "+
+			"Dockerfile-based source setup and build configuration, and ACR setup, and requires --agent-name. "+
 			"Incompatible with --deploy-mode code.")
 
 	cmd.Flags().StringVar(&flags.registryConnection, "registry-connection", "",
@@ -4716,12 +4719,8 @@ func validateRegistryConnectionFlag(
 // validateCodeDeployInput is the shared validation logic for code deploy flags.
 // Used by both InitAction and InitFromCodeAction.
 func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, depResolution string) error {
-	if deployMode != "" && deployMode != "container" && deployMode != "code" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--deploy-mode must be 'container' or 'code'",
-			"Specify --deploy-mode container or --deploy-mode code",
-		)
+	if err := validateDeployMode(deployMode); err != nil {
+		return err
 	}
 	if runtime != "" {
 		validRuntimes := map[string]bool{
@@ -4761,6 +4760,19 @@ func validateCodeDeployInput(noPrompt bool, deployMode, runtime, entryPoint, dep
 		}
 	}
 	return nil
+}
+
+func validateDeployMode(deployMode string) error {
+	switch deployMode {
+	case "", "container", "code":
+		return nil
+	default:
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid --deploy-mode value %q; must be 'container' or 'code'", deployMode),
+			"Use --deploy-mode container or --deploy-mode code",
+		)
+	}
 }
 
 // formatCreatedFolderMessage builds the user-facing message shown after a new

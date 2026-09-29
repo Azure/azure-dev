@@ -28,6 +28,38 @@ type recordingRegistrar struct {
 	implementations map[string]any
 }
 
+type recordingStableUserConfigService struct {
+	v1.UnimplementedUserConfigServiceServer
+	request *v1.GetUserConfigRequest
+}
+
+func (s *recordingStableUserConfigService) Get(
+	_ context.Context,
+	request *v1.GetUserConfigRequest,
+) (*v1.GetUserConfigResponse, error) {
+	s.request = request
+	return &v1.GetUserConfigResponse{
+		Value: []byte(`"stable-value"`),
+		Found: true,
+	}, nil
+}
+
+type recordingBetaUserConfigOverride struct {
+	request *v1beta.GetUserConfigMapEntryRequest
+}
+
+func (s *recordingBetaUserConfigOverride) GetMapEntry(
+	_ context.Context,
+	request *v1beta.GetUserConfigMapEntryRequest,
+) (*v1beta.GetUserConfigMapEntryResponse, error) {
+	s.request = request
+	return &v1beta.GetUserConfigMapEntryResponse{
+		Value:    []byte(`"preview-value"`),
+		Found:    true,
+		Revision: "revision",
+	}, nil
+}
+
 func (r *recordingRegistrar) RegisterService(description *grpc.ServiceDesc, implementation any) {
 	r.services[description.ServiceName] = description
 	r.implementations[description.ServiceName] = implementation
@@ -47,6 +79,11 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	require.IsType(t, &betaAccountServiceAdapter{}, registrar.implementations[accountService])
 	require.Implements(t, (*v1beta.AccountServiceServer)(nil), registrar.implementations[accountService])
 
+	const userConfigService = "azd.extensions.v1beta.UserConfigService"
+	require.Same(t, &v1beta.UserConfigService_ServiceDesc, registrar.services[userConfigService])
+	require.IsType(t, &betaUserConfigServiceAdapter{}, registrar.implementations[userConfigService])
+	require.Implements(t, (*v1beta.UserConfigServiceServer)(nil), registrar.implementations[userConfigService])
+
 	const composeService = "azd.extensions.v1beta.ComposeService"
 	require.Same(t, &v1beta.ComposeService_ServiceDesc, registrar.services[composeService])
 	require.IsType(t, v1beta.UnimplementedComposeServiceServer{}, registrar.implementations[composeService])
@@ -54,6 +91,70 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	const telemetryService = "azd.extensions.v1beta.TelemetryService"
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
 	require.IsType(t, v1beta.UnimplementedTelemetryServiceServer{}, registrar.implementations[telemetryService])
+}
+
+func TestRegisterBetaServicesUsesUserConfigOverride(t *testing.T) {
+	t.Parallel()
+
+	registrar := &recordingRegistrar{
+		services:        map[string]*grpc.ServiceDesc{},
+		implementations: map[string]any{},
+	}
+	override := &recordingBetaUserConfigOverride{}
+	require.NoError(t, registerBetaServices(
+		registrar,
+		stableServiceImplementations(),
+		map[BetaService]any{BetaUserConfigService: override},
+	))
+
+	adapter, ok := registrar.implementations["azd.extensions.v1beta.UserConfigService"].(*betaUserConfigServiceAdapter)
+	require.True(t, ok)
+	require.Same(t, override, adapter.override)
+}
+
+func TestBetaUserConfigServiceAdapterUsesPreviewOverride(t *testing.T) {
+	t.Parallel()
+
+	override := &recordingBetaUserConfigOverride{}
+	adapter := &betaUserConfigServiceAdapter{
+		stable:   v1.UnimplementedUserConfigServiceServer{},
+		override: override,
+	}
+	request := &v1beta.GetUserConfigMapEntryRequest{
+		Path: "extensions.example.entries",
+		Key:  "opaque.key",
+	}
+
+	response, err := adapter.GetMapEntry(t.Context(), request)
+	require.NoError(t, err)
+	require.Same(t, request, override.request)
+	require.True(t, response.GetFound())
+	require.Equal(t, "revision", response.GetRevision())
+	require.JSONEq(t, `"preview-value"`, string(response.GetValue()))
+}
+
+func TestBetaUserConfigServiceAdapterReturnsUnimplementedWithoutPreviewOverride(t *testing.T) {
+	t.Parallel()
+
+	adapter := &betaUserConfigServiceAdapter{
+		stable: v1.UnimplementedUserConfigServiceServer{},
+	}
+
+	_, err := adapter.GetMapEntry(t.Context(), new(v1beta.GetUserConfigMapEntryRequest))
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+}
+
+func TestBetaUserConfigServiceAdapterDelegatesSharedMethodToStableService(t *testing.T) {
+	t.Parallel()
+
+	stable := &recordingStableUserConfigService{}
+	adapter := &betaUserConfigServiceAdapter{stable: stable}
+
+	response, err := adapter.Get(t.Context(), &v1beta.GetUserConfigRequest{Path: "extensions.example.value"})
+	require.NoError(t, err)
+	require.Equal(t, "extensions.example.value", stable.request.GetPath())
+	require.True(t, response.GetFound())
+	require.JSONEq(t, `"stable-value"`, string(response.GetValue()))
 }
 
 func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {

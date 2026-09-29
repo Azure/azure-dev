@@ -192,6 +192,12 @@ func (c *AzdClient) UserConfig() UserConfigServiceClient {
 	return c.userConfigClient
 }
 
+// UserConfigBeta returns the preview user config service client.
+// Preview map-entry and compare-exchange methods are not available through the stable UserConfig client.
+func (c *AzdClient) UserConfigBeta() v1beta.UserConfigServiceClient {
+	return v1beta.NewUserConfigServiceClient(c.connection)
+}
+
 // Prompt returns the prompt service client.
 func (c *AzdClient) Prompt() PromptServiceClient {
 	if c.promptClient == nil {

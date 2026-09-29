@@ -2087,14 +2087,7 @@ func (a *betaUserConfigServiceAdapter) GetMapEntry(
 	if override, ok := a.override.(BetaUserConfigServiceGetMapEntryOverride); ok {
 		return override.GetMapEntry(ctx, req)
 	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetUserConfigMapEntryRequest),
-		a.stable.GetMapEntry,
-		new(v1beta.GetUserConfigMapEntryResponse),
-		"UserConfigService.GetMapEntry",
-	)
+	return a.UnimplementedUserConfigServiceServer.GetMapEntry(ctx, req)
 }
 
 func (a *betaUserConfigServiceAdapter) SetMapEntry(
@@ -2104,14 +2097,7 @@ func (a *betaUserConfigServiceAdapter) SetMapEntry(
 	if override, ok := a.override.(BetaUserConfigServiceSetMapEntryOverride); ok {
 		return override.SetMapEntry(ctx, req)
 	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.SetUserConfigMapEntryRequest),
-		a.stable.SetMapEntry,
-		new(v1beta.EmptyResponse),
-		"UserConfigService.SetMapEntry",
-	)
+	return a.UnimplementedUserConfigServiceServer.SetMapEntry(ctx, req)
 }
 
 func (a *betaUserConfigServiceAdapter) DeleteMapEntry(
@@ -2121,14 +2107,7 @@ func (a *betaUserConfigServiceAdapter) DeleteMapEntry(
 	if override, ok := a.override.(BetaUserConfigServiceDeleteMapEntryOverride); ok {
 		return override.DeleteMapEntry(ctx, req)
 	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.DeleteUserConfigMapEntryRequest),
-		a.stable.DeleteMapEntry,
-		new(v1beta.EmptyResponse),
-		"UserConfigService.DeleteMapEntry",
-	)
+	return a.UnimplementedUserConfigServiceServer.DeleteMapEntry(ctx, req)
 }
 
 func (a *betaUserConfigServiceAdapter) CompareExchangeMapEntry(
@@ -2138,14 +2117,7 @@ func (a *betaUserConfigServiceAdapter) CompareExchangeMapEntry(
 	if override, ok := a.override.(BetaUserConfigServiceCompareExchangeMapEntryOverride); ok {
 		return override.CompareExchangeMapEntry(ctx, req)
 	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.CompareExchangeUserConfigMapEntryRequest),
-		a.stable.CompareExchangeMapEntry,
-		new(v1beta.CompareExchangeUserConfigMapEntryResponse),
-		"UserConfigService.CompareExchangeMapEntry",
-	)
+	return a.UnimplementedUserConfigServiceServer.CompareExchangeMapEntry(ctx, req)
 }
 
 type betaValidationServiceAdapter struct {

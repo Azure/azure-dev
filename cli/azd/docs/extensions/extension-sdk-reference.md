@@ -509,6 +509,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Project()` | `ProjectServiceClient` |
 | `Environment()` | `EnvironmentServiceClient` |
 | `UserConfig()` | `UserConfigServiceClient` |
+| `UserConfigBeta()` | `v1beta.UserConfigServiceClient` (preview) |
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
@@ -526,13 +527,48 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`AccountBeta()`, `Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their request, response, and enum types. Beta-only methods and types are not exposed through the stable `azdext` contract facade. `Account()` still provides the existing stable account methods.
+`AccountBeta()`, `Compose()`, `Copilot()`, `Telemetry()`, and
+`UserConfigBeta()` are preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. Beta-only methods and types are not exposed
+through the stable `azdext` contract facade. The corresponding stable accessors
+remain unchanged.
 
 #### AccountService
 
 `AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for these preview types. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed. The stable `Account()` client remains unchanged and does not expose this method.
 
 See [GetCurrentPrincipal](extension-framework.md#getcurrentprincipal) for the enum mapping, guest-user behavior, and host compatibility requirements.
+
+#### UserConfigService preview map entries
+
+`UserConfigBeta()` adds preview operations for values stored under opaque map
+keys:
+
+- `GetMapEntry` reads the value, presence, and opaque revision token.
+- `SetMapEntry` and `DeleteMapEntry` update an entry unconditionally.
+- `CompareExchangeMapEntry` updates or deletes only when the expected revision
+  still matches.
+
+Import the preview contract types and call the beta client directly:
+
+```go
+import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+
+entry, err := client.UserConfigBeta().GetMapEntry(
+    ctx,
+    &v1beta.GetUserConfigMapEntryRequest{
+        Path: "extensions.example.sessions",
+        Key:  "https://example.com/agents/name.with.dots",
+    },
+)
+```
+
+The map key is opaque and is not interpreted as a dot-separated config path.
+An absent entry returns `found=false` and an empty revision. Explicit JSON
+`null` returns `found=true` and a nonempty revision. A compare-exchange
+conflict returns `exchanged=false` with the current value and revision so the
+extension can recalculate and retry.
 
 #### TelemetryService
 
@@ -643,23 +679,10 @@ Provides read/write access to azd user and environment configuration:
 | `GetUserJSON(ctx, path, out)` | Unmarshal user config into a struct. |
 | `SetUserJSON(ctx, path, value)` | Write a value to user config. |
 | `UnsetUser(ctx, path)` | Remove a user config key. |
-| `GetUserMapEntryJSON(ctx, path, key, out)` | Read an opaque map key and return its revision and presence. |
-| `SetUserMapEntryJSON(ctx, path, key, value)` | Unconditionally write an opaque map key. |
-| `DeleteUserMapEntry(ctx, path, key)` | Unconditionally remove an opaque map key. |
-| `CompareExchangeSetUserMapEntryJSON(ctx, path, key, revision, value, current)` | Write only when the current revision matches. |
-| `CompareExchangeDeleteUserMapEntry(ctx, path, key, revision, current)` | Delete only when the current revision matches. |
 | `GetEnvString(ctx, path)` | Read a string from env config. |
 | `GetEnvJSON(ctx, path, out)` | Unmarshal env config into a struct. |
 | `SetEnvJSON(ctx, path, value)` | Write a value to env config. |
 | `UnsetEnv(ctx, path)` | Remove an env config key. |
-
-User map-entry keys are opaque and are not interpreted as dot-separated config
-paths. `GetUserMapEntryJSON` and both compare-exchange methods return an opaque
-revision token with the observed value. An absent entry returns `found=false`
-and an empty revision. Explicit JSON `null` returns `found=true` and a nonempty
-revision. Compare-exchange succeeds only when the supplied revision matches;
-on conflict, `current` receives the observed value and the returned revision
-can be used for a retry.
 
 Utility functions:
 

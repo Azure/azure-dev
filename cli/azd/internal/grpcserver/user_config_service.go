@@ -11,6 +11,7 @@ import (
 	"reflect"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
@@ -20,6 +21,13 @@ type userConfigService struct {
 
 	configManager config.UserConfigManager
 }
+
+var (
+	_ BetaUserConfigServiceGetMapEntryOverride             = (*userConfigService)(nil)
+	_ BetaUserConfigServiceSetMapEntryOverride             = (*userConfigService)(nil)
+	_ BetaUserConfigServiceDeleteMapEntryOverride          = (*userConfigService)(nil)
+	_ BetaUserConfigServiceCompareExchangeMapEntryOverride = (*userConfigService)(nil)
+)
 
 // NewConfigService creates a new instance of configService.
 func NewUserConfigService(userConfigManager config.UserConfigManager) (azdext.UserConfigServiceServer, error) {
@@ -145,8 +153,8 @@ func (s *userConfigService) Unset(ctx context.Context, req *azdext.UnsetUserConf
 
 func (s *userConfigService) GetMapEntry(
 	ctx context.Context,
-	req *azdext.GetUserConfigMapEntryRequest,
-) (*azdext.GetUserConfigMapEntryResponse, error) {
+	req *v1beta.GetUserConfigMapEntryRequest,
+) (*v1beta.GetUserConfigMapEntryResponse, error) {
 	userConfig, err := s.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load user config: %w", err)
@@ -162,7 +170,7 @@ func (s *userConfigService) GetMapEntry(
 		return nil, err
 	}
 
-	return &azdext.GetUserConfigMapEntryResponse{
+	return &v1beta.GetUserConfigMapEntryResponse{
 		Value:    valueBytes,
 		Found:    found,
 		Revision: revision,
@@ -171,8 +179,8 @@ func (s *userConfigService) GetMapEntry(
 
 func (s *userConfigService) SetMapEntry(
 	ctx context.Context,
-	req *azdext.SetUserConfigMapEntryRequest,
-) (*azdext.EmptyResponse, error) {
+	req *v1beta.SetUserConfigMapEntryRequest,
+) (*v1beta.EmptyResponse, error) {
 	var value any
 	if err := json.Unmarshal(req.Value, &value); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
@@ -194,13 +202,13 @@ func (s *userConfigService) SetMapEntry(
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	return &azdext.EmptyResponse{}, nil
+	return &v1beta.EmptyResponse{}, nil
 }
 
 func (s *userConfigService) DeleteMapEntry(
 	ctx context.Context,
-	req *azdext.DeleteUserConfigMapEntryRequest,
-) (*azdext.EmptyResponse, error) {
+	req *v1beta.DeleteUserConfigMapEntryRequest,
+) (*v1beta.EmptyResponse, error) {
 	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
 		_, found, err := config.GetRawMapEntry(userConfig, req.Path, req.Key)
 		if err != nil {
@@ -217,25 +225,25 @@ func (s *userConfigService) DeleteMapEntry(
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	return &azdext.EmptyResponse{}, nil
+	return &v1beta.EmptyResponse{}, nil
 }
 
 func (s *userConfigService) CompareExchangeMapEntry(
 	ctx context.Context,
-	req *azdext.CompareExchangeUserConfigMapEntryRequest,
-) (*azdext.CompareExchangeUserConfigMapEntryResponse, error) {
+	req *v1beta.CompareExchangeUserConfigMapEntryRequest,
+) (*v1beta.CompareExchangeUserConfigMapEntryResponse, error) {
 	var setValue any
 	switch req.Operation {
-	case azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET:
+	case v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET:
 		if err := json.Unmarshal(req.Value, &setValue); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal value: %w", err)
 		}
-	case azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE:
+	case v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE:
 	default:
 		return nil, fmt.Errorf("unsupported map entry operation: %s", req.Operation)
 	}
 
-	response := &azdext.CompareExchangeUserConfigMapEntryResponse{}
+	response := &v1beta.CompareExchangeUserConfigMapEntryResponse{}
 	if err := config.MutateUserConfig(ctx, s.configManager, func(_ context.Context, userConfig config.Config) (bool, error) {
 		currentValue, found, err := config.GetRawMapEntry(userConfig, req.Path, req.Key)
 		if err != nil {
@@ -255,7 +263,7 @@ func (s *userConfigService) CompareExchangeMapEntry(
 
 		changed := false
 		switch req.Operation {
-		case azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET:
+		case v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET:
 			changed = !found || !reflect.DeepEqual(currentValue, setValue)
 			if changed {
 				if err := config.SetRawMapEntry(userConfig, req.Path, req.Key, setValue); err != nil {
@@ -264,7 +272,7 @@ func (s *userConfigService) CompareExchangeMapEntry(
 			}
 			response.Value, response.Revision, err = marshalMapEntry(setValue, true)
 			response.Found = true
-		case azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE:
+		case v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE:
 			changed = found
 			if changed {
 				if err := config.DeleteRawMapEntry(userConfig, req.Path, req.Key); err != nil {

@@ -96,6 +96,9 @@ func NewServer(
 	if principalService, ok := accountService.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
 		server.WithOptions(WithBetaServiceOverride(BetaAccountService, principalService))
 	}
+	if previewService, ok := userConfigService.(BetaUserConfigServiceGetMapEntryOverride); ok {
+		server.WithOptions(WithBetaServiceOverride(BetaUserConfigService, previewService))
+	}
 	return server
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -307,13 +308,14 @@ func TestUserConfigService_MapEntryCompareExchange(t *testing.T) {
 	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 	service, err := NewUserConfigService(manager)
 	require.NoError(t, err)
+	previewService := service.(*userConfigService)
 
 	const (
 		path = "extensions.ai-agents.sessions"
 		key  = "endpoint.example.com/agents/my.agent/versions/v1/remote"
 	)
 
-	getResponse, err := service.GetMapEntry(t.Context(), &azdext.GetUserConfigMapEntryRequest{
+	getResponse, err := previewService.GetMapEntry(t.Context(), &v1beta.GetUserConfigMapEntryRequest{
 		Path: path,
 		Key:  key,
 	})
@@ -321,13 +323,13 @@ func TestUserConfigService_MapEntryCompareExchange(t *testing.T) {
 	require.False(t, getResponse.Found)
 	require.Empty(t, getResponse.Revision)
 
-	setResponse, err := service.CompareExchangeMapEntry(
+	setResponse, err := previewService.CompareExchangeMapEntry(
 		t.Context(),
-		&azdext.CompareExchangeUserConfigMapEntryRequest{
+		&v1beta.CompareExchangeUserConfigMapEntryRequest{
 			Path:             path,
 			Key:              key,
 			ExpectedRevision: getResponse.Revision,
-			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+			Operation:        v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
 			Value:            []byte(`"session-1"`),
 		},
 	)
@@ -337,13 +339,13 @@ func TestUserConfigService_MapEntryCompareExchange(t *testing.T) {
 	require.NotEmpty(t, setResponse.Revision)
 	require.JSONEq(t, `"session-1"`, string(setResponse.Value))
 
-	conflictResponse, err := service.CompareExchangeMapEntry(
+	conflictResponse, err := previewService.CompareExchangeMapEntry(
 		t.Context(),
-		&azdext.CompareExchangeUserConfigMapEntryRequest{
+		&v1beta.CompareExchangeUserConfigMapEntryRequest{
 			Path:             path,
 			Key:              key,
 			ExpectedRevision: getResponse.Revision,
-			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+			Operation:        v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
 			Value:            []byte(`"session-2"`),
 		},
 	)
@@ -353,13 +355,13 @@ func TestUserConfigService_MapEntryCompareExchange(t *testing.T) {
 	require.Equal(t, setResponse.Revision, conflictResponse.Revision)
 	require.JSONEq(t, `"session-1"`, string(conflictResponse.Value))
 
-	deleteResponse, err := service.CompareExchangeMapEntry(
+	deleteResponse, err := previewService.CompareExchangeMapEntry(
 		t.Context(),
-		&azdext.CompareExchangeUserConfigMapEntryRequest{
+		&v1beta.CompareExchangeUserConfigMapEntryRequest{
 			Path:             path,
 			Key:              key,
 			ExpectedRevision: setResponse.Revision,
-			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE,
+			Operation:        v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_DELETE,
 		},
 	)
 	require.NoError(t, err)
@@ -372,6 +374,7 @@ func TestUserConfigService_UnchangedMapEntryOperationsSkipSave(t *testing.T) {
 	manager := &mockUserConfigManager{cfg: &mockConfig{data: map[string]any{}}}
 	service, err := NewUserConfigService(manager)
 	require.NoError(t, err)
+	previewService := service.(*userConfigService)
 
 	const (
 		path = "entries"
@@ -379,7 +382,7 @@ func TestUserConfigService_UnchangedMapEntryOperationsSkipSave(t *testing.T) {
 	)
 	value := []byte(`"value"`)
 
-	_, err = service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+	_, err = previewService.SetMapEntry(t.Context(), &v1beta.SetUserConfigMapEntryRequest{
 		Path:  path,
 		Key:   key,
 		Value: value,
@@ -387,7 +390,7 @@ func TestUserConfigService_UnchangedMapEntryOperationsSkipSave(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, manager.saveCount)
 
-	_, err = service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+	_, err = previewService.SetMapEntry(t.Context(), &v1beta.SetUserConfigMapEntryRequest{
 		Path:  path,
 		Key:   key,
 		Value: value,
@@ -395,13 +398,13 @@ func TestUserConfigService_UnchangedMapEntryOperationsSkipSave(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, manager.saveCount)
 
-	response, err := service.CompareExchangeMapEntry(
+	response, err := previewService.CompareExchangeMapEntry(
 		t.Context(),
-		&azdext.CompareExchangeUserConfigMapEntryRequest{
+		&v1beta.CompareExchangeUserConfigMapEntryRequest{
 			Path:             path,
 			Key:              key,
 			ExpectedRevision: "",
-			Operation:        azdext.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
+			Operation:        v1beta.UserConfigMapEntryOperation_USER_CONFIG_MAP_ENTRY_OPERATION_SET,
 			Value:            []byte(`"other"`),
 		},
 	)
@@ -415,15 +418,16 @@ func TestUserConfigService_MapEntryDistinguishesNullFromAbsent(t *testing.T) {
 	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 	service, err := NewUserConfigService(manager)
 	require.NoError(t, err)
+	previewService := service.(*userConfigService)
 
-	_, err = service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+	_, err = previewService.SetMapEntry(t.Context(), &v1beta.SetUserConfigMapEntryRequest{
 		Path:  "entries",
 		Key:   "key.with.dots",
 		Value: []byte("null"),
 	})
 	require.NoError(t, err)
 
-	response, err := service.GetMapEntry(t.Context(), &azdext.GetUserConfigMapEntryRequest{
+	response, err := previewService.GetMapEntry(t.Context(), &v1beta.GetUserConfigMapEntryRequest{
 		Path: "entries",
 		Key:  "key.with.dots",
 	})
@@ -432,12 +436,12 @@ func TestUserConfigService_MapEntryDistinguishesNullFromAbsent(t *testing.T) {
 	require.JSONEq(t, "null", string(response.Value))
 	require.NotEmpty(t, response.Revision)
 
-	_, err = service.DeleteMapEntry(t.Context(), &azdext.DeleteUserConfigMapEntryRequest{
+	_, err = previewService.DeleteMapEntry(t.Context(), &v1beta.DeleteUserConfigMapEntryRequest{
 		Path: "entries",
 		Key:  "key.with.dots",
 	})
 	require.NoError(t, err)
-	response, err = service.GetMapEntry(t.Context(), &azdext.GetUserConfigMapEntryRequest{
+	response, err = previewService.GetMapEntry(t.Context(), &v1beta.GetUserConfigMapEntryRequest{
 		Path: "entries",
 		Key:  "key.with.dots",
 	})
@@ -484,6 +488,7 @@ func TestUserConfigService_ConcurrentMapEntrySetsPreserveAllWrites(t *testing.T)
 	manager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 	service, err := NewUserConfigService(manager)
 	require.NoError(t, err)
+	previewService := service.(*userConfigService)
 
 	const (
 		path    = "grpc.entries"
@@ -493,7 +498,7 @@ func TestUserConfigService_ConcurrentMapEntrySetsPreserveAllWrites(t *testing.T)
 	errs := make(chan error, writers)
 	for i := range writers {
 		wg.Go(func() {
-			_, err := service.SetMapEntry(t.Context(), &azdext.SetUserConfigMapEntryRequest{
+			_, err := previewService.SetMapEntry(t.Context(), &v1beta.SetUserConfigMapEntryRequest{
 				Path:  path,
 				Key:   fmt.Sprintf("agent/%d.endpoint", i),
 				Value: fmt.Appendf(nil, "%q", fmt.Sprintf("value%d", i)),

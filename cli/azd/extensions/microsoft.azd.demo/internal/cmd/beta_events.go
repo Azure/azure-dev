@@ -372,7 +372,7 @@ func (w *betaDeployOutputWriter) Write(data []byte) (int, error) {
 		return written, io.ErrShortWrite
 	}
 
-	text := strings.ToValidUTF8(string(data), "\uFFFD")
+	text := strings.ToValidUTF8(string(data), string(utf8.RuneError))
 	for len(text) > 0 {
 		chunk, rest := splitUTF8Chunk(text, betaDeployOutputChunkBytes)
 		if chunk == "" {

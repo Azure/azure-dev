@@ -23,6 +23,23 @@ func TestOperationClassification(t *testing.T) {
 		{"websocket", map[string]any{"kind": "hosted", "protocols": []any{
 			map[string]any{"protocol": "responses"}, map[string]any{"protocol": "invocations_ws"},
 		}}, OperationClass{"hosted_invocations_ws", "none"}},
+		{"websocket-padded", map[string]any{"kind": "hosted", "protocols": []any{
+			map[string]any{"protocol": " invocations_ws "},
+		}}, OperationClass{"hosted_invocations_ws", "none"}},
+		{"websocket-unicode-whitespace", map[string]any{"kind": "hosted", "protocols": []any{
+			map[string]any{"protocol": "\t\u00a0invocations_ws\r\n"},
+		}}, OperationClass{"hosted_invocations_ws", "none"}},
+		{"websocket-mixed-padded", map[string]any{"kind": "hosted", "protocols": []any{
+			map[string]any{"protocol": " responses "}, map[string]any{"protocol": " invocations_ws "},
+			map[string]any{"protocol": "invocations_ws"},
+		}}, OperationClass{"hosted_invocations_ws", "none"}},
+		{"protocol-case-sensitive", map[string]any{"kind": "hosted", "protocols": []any{
+			map[string]any{"protocol": " INVOCATIONS_WS "},
+		}}, OperationClass{"hosted", "none"}},
+		{"protocol-malformed", map[string]any{"kind": "hosted", "protocols": []any{
+			nil, "invocations_ws", map[string]any{"protocol": 42}, map[string]any{"protocol": " \t"},
+			map[string]any{"protocol": "invocations_ws_extra"},
+		}}, OperationClass{"hosted", "none"}},
 		{"prompt", map[string]any{"kind": "prompt"}, OperationClass{"prompt", "none"}},
 		{"workflow", map[string]any{"kind": "workflow"}, OperationClass{"workflow", "none"}},
 		{"voice-default", map[string]any{"kind": "voice"}, OperationClass{"voice_managed", "none"}},

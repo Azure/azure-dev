@@ -38,7 +38,7 @@ func ClassifyOperation(properties map[string]any) OperationClass {
 		for _, value := range protocols {
 			protocol, _ := value.(map[string]any)
 			name, _ := protocol["protocol"].(string)
-			if name == "invocations_ws" {
+			if strings.TrimSpace(name) == "invocations_ws" {
 				result.Category = "hosted_invocations_ws"
 			}
 		}

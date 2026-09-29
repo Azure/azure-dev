@@ -61,14 +61,12 @@ func (s *invokeUsageProjectThenFail) Get(
 	return &azdext.GetProjectResponse{Project: s.project}, nil
 }
 
-func TestAgentInvokedRequestOverGRPC(t *testing.T) {
-	// Exercise the real Cobra command and the gRPC client; no Azure credentials or service are required.
+func startInvokeUsageRPCServer(t *testing.T, project azdext.ProjectServiceServer) *invokeUsageRPCRecorder {
+	t.Helper()
 	server := grpc.NewServer()
 	recorder := &invokeUsageRPCRecorder{}
 	v1beta.RegisterTelemetryServiceServer(server, recorder)
-	azdext.RegisterProjectServiceServer(server, &helpersProjectServer{
-		err: status.Error(codes.NotFound, "project unavailable in test"),
-	})
+	azdext.RegisterProjectServiceServer(server, project)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() { _ = server.Serve(listener) }()
@@ -79,6 +77,14 @@ func TestAgentInvokedRequestOverGRPC(t *testing.T) {
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Setenv("AZD_ACCESS_TOKEN", "test-token")
 	t.Setenv("NO_COLOR", "1")
+	return recorder
+}
+
+func TestAgentInvokedRequestOverGRPC(t *testing.T) {
+	// Exercise the real Cobra command and the gRPC client; no Azure credentials or service are required.
+	recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{
+		err: status.Error(codes.NotFound, "project unavailable in test"),
+	})
 
 	root := NewRootCommand()
 	root.SetArgs([]string{"invoke", "worker", "private prompt", "--protocol", "invocations", "--no-prompt"})
@@ -106,20 +112,7 @@ func TestAgentLongRunningRequestOverGRPC(t *testing.T) {
 			"worker": {Name: "worker", Host: AiAgentHost, AdditionalProperties: props},
 		},
 	}}
-	server := grpc.NewServer()
-	recorder := &invokeUsageRPCRecorder{}
-	v1beta.RegisterTelemetryServiceServer(server, recorder)
-	azdext.RegisterProjectServiceServer(server, projectServer)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	t.Setenv("AZD_SERVER", listener.Addr().String())
-	t.Setenv("AZD_ACCESS_TOKEN", "test-token")
-	t.Setenv("NO_COLOR", "1")
+	recorder := startInvokeUsageRPCServer(t, projectServer)
 
 	root := NewRootCommand()
 	root.SetArgs([]string{
@@ -136,4 +129,28 @@ func TestAgentLongRunningRequestOverGRPC(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"protocol": "responses", "long_running": "true", "no_wait": "true",
 	}, requests[1].GetAttributes())
+}
+
+func TestPromptAgentInvokeDoesNotReportAgentInvoked(t *testing.T) {
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "prompt", "name": "assistant", "model": "gpt", "instructions": "help",
+	})
+	require.NoError(t, err)
+	recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+			"assistant": {Name: "assistant", Host: AiAgentHost, AdditionalProperties: props},
+		},
+	}})
+
+	root := NewRootCommand()
+	root.SetArgs([]string{"invoke", "assistant", "hello", "--protocol", "responses", "--no-prompt"})
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	// The fake host cannot supply prompt-agent environment settings; route selection still runs first.
+	require.Error(t, root.ExecuteContext(t.Context()))
+
+	requests := recorder.snapshot()
+	require.Len(t, requests, 1)
+	require.Equal(t, "agent.context.resolved", requests[0].GetEventName())
+	require.Equal(t, "prompt", requests[0].GetAttributes()["agent.kind"])
 }

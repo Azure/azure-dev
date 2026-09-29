@@ -94,7 +94,12 @@ func runEndpointUpdate(
 		return err
 	}
 	if err := project.ResolveServiceConfigInPlace(svc, proj.Path); err != nil {
-		return fmt.Errorf("failed to resolve service config: %w", err)
+		return exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			"failed to resolve service config",
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 
 	// Resolve the agent definition from the service entry or its explicit root $ref.

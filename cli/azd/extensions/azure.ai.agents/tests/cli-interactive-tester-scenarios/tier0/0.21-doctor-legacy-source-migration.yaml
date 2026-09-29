@@ -17,12 +17,17 @@ pre:
   - run: "azd env new doctor-legacy-{instance} --no-prompt"
     cwd: "~/working/azd-agents-doctor-legacy-{instance}"
     name: "create and select isolated local environment"
+  - run: "azd env set FOUNDRY_PROJECT_ENDPOINT https://doctor-legacy.services.ai.azure.com/api/projects/placeholder"
+    cwd: "~/working/azd-agents-doctor-legacy-{instance}"
+    name: "set syntactically valid placeholder Foundry project endpoint"
 
 goals:
   - "Run doctor with --local-only and wait for the report to render."
   - "Confirm local.environment-selected passes for the isolated local environment."
+  - "Confirm local.project-endpoint-set passes for the syntactically valid placeholder FOUNDRY_PROJECT_ENDPOINT."
   - "Confirm local.agent-yaml-valid fails and reports the unsupported implicit agent.yaml file."
-  - "Confirm remediation says to move the direct definition onto the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref."
+  - "Confirm local.agent-yaml-valid is the report's only failed check; every other local check must pass or skip rather than fail."
+  - "Confirm remediation says to move the direct definition onto the azure.ai.agent service in azure.yaml or reference it with an explicit root `$ref` on the service entry."
   - "Confirm no check describes agent.yaml, nested agent config, or AGENT_DEFINITION_PATH as a supported runtime source."
   - "Confirm the failed report has no trailing Next: block and the command exits with code 1."
   - "Take a screenshot of the report."

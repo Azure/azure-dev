@@ -1196,16 +1196,10 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 
 	// Explicit flag takes precedence
 	if deployModeFlag != "" {
-		switch deployModeFlag {
-		case "container", "code":
-			return deployModeFlag, nil
-		default:
-			return "", exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("invalid --deploy-mode value %q; must be 'container' or 'code'", deployModeFlag),
-				"Use --deploy-mode container or --deploy-mode code",
-			)
+		if err := validateDeployMode(deployModeFlag); err != nil {
+			return "", err
 		}
+		return deployModeFlag, nil
 	}
 
 	if !showCodeDeploy {

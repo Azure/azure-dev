@@ -140,14 +140,14 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 
 func TestResolveOptimizeAgent_RejectsUnsupportedProjectDefinition(t *testing.T) {
 	missingSuggestion := "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
-		"or add a service-level $ref to a direct agent definition"
+		"or add an explicit root $ref on the service entry to a direct agent definition"
 	legacySuggestion := "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
 		"or move any env, project, language, image, or docker fields onto the service before adding " +
-		"a service-level $ref to the remaining direct definition"
+		"an explicit root $ref on the service entry to the remaining direct definition"
 	nestedSuggestion := "move the agent definition to service-level properties in azure.yaml, " +
-		"or add a service-level $ref to a direct agent definition"
+		"or add an explicit root $ref on the service entry to a direct agent definition"
 	overrideSuggestion := "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
-		"the azure.ai.agent service in azure.yaml, or add a service-level $ref to a direct agent definition"
+		"the azure.ai.agent service in azure.yaml, or add an explicit root $ref on the service entry to a direct agent definition"
 
 	tests := []struct {
 		name           string

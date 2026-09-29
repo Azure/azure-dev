@@ -48,7 +48,7 @@ func writePortalLink(w io.Writer, url string) {
 	if url == "" {
 		return
 	}
-	fmt.Fprint(w, messages.PortalLink(color.CyanString(url)))
+	fmt.Fprint(w, messages.PortalLink(color.CyanString(urlsafe.Text(url))))
 }
 
 // runLink is the one link a run has.

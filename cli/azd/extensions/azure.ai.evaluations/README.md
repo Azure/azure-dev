@@ -243,7 +243,9 @@ block. No additional output fetch or transcript-based turn inference is used.
 
 JSON retains the service's run fields, including unrecognized nested fields;
 missing or null result-count members remain missing or null. It does not add
-estimated conversation or turn counts. Newly submitted
+estimated conversation or turn counts. Numbers in echoed inline datasets,
+including nested source content, retain their exact precision in run JSON.
+Newly submitted
 simulation runs record configuration under `metadata.azd_simulation_*`, with
 `metadata.azd_run_mode` identifying the simulation mode. The JSON handoff from
 `run start --no-wait` is unchanged; read `run show -o json` for the run object.
@@ -295,6 +297,9 @@ available results, not a completed run. For example, a page of 10 failures can
 belong to a run with 12 failures among 18 test cases. Follow the printed page token to read the rest,
 or use `run output export` to save the complete results. Errored rows remain
 separate from failed verdicts and can be selected with `--status errored`.
+The same outcome filters apply to paged output, `--all`, and `--output-file`,
+in both human and JSON modes. `--failed-only` adds failed cases to any outcomes
+selected by `--status`; `--status failed` alone has the same page-count footer.
 
 After a terminal run, waited `run start` summaries and `run show` details
 include an unfiltered output-list command and a JSON export command, both with
@@ -325,6 +330,8 @@ failing rows exist. `run show` also prints the service's run-level failure
 message when one was returned, removing URL credentials, query strings, and
 fragments from the human message. `--output json` keeps its existing document
 shape and exit behavior without appending human guidance.
+Human portal/report links also remove URL credentials, query strings, and
+fragments before display, without rewriting the underlying service fields.
 
 CLI-generated JSON error envelopes, accompanying stderr diagnostics, and the
 run's known `error.code`/`error.message` fields in JSON and exports also redact

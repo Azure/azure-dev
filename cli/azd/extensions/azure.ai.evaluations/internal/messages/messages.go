@@ -960,15 +960,6 @@ func UsingLastRun(runID string) string {
 		"Using last run: %s (select a specific run with --run)\n", runID)
 }
 
-// PortalLinkAfterRows closes a per-sample listing with the run's one link.
-//
-// Labelled the way every other view labels it: the run's report page is in the
-// portal, and a reader looking for the link should not have to know two words
-// for it.
-func PortalLinkAfterRows(url string) string {
-	return fmt.Sprintf("\nPortal: %s\n", url)
-}
-
 // ExportFormatUnsupported reports an --format the export command cannot write.
 //
 // The recipe travels with the refusal. It was in the command's help, which is

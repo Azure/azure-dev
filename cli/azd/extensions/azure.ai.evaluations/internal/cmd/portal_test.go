@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -155,4 +156,36 @@ func TestRenderRunOmitsAnAbsentLink(t *testing.T) {
 	}, nil))
 
 	assert.NotContains(t, buf.String(), "Report:")
+}
+
+func TestHumanRunLinksRedactCredentialsOnInjectedWriter(t *testing.T) {
+	for _, raw := range []string{
+		"https://fixture-user:fixture-password@service.example/report?sig=fixture-signature#fixture-fragment",
+		"https:/fixture-user:fixture-password@service.example/report?sig=fixture-signature#fixture-fragment",
+	} {
+		for _, field := range []string{"report", "portal"} {
+			run := &eval_api.OpenAIEvalRun{ID: "run_link", EvalID: "eval_link", Status: "completed"}
+			if field == "report" {
+				run.ReportURL = raw
+			} else {
+				run.PortalURL = raw
+			}
+			for _, render := range []func(io.Writer) error{
+				func(w io.Writer) error { writePortalLink(w, raw); return nil },
+				func(w io.Writer) error { return renderRun(w, run, nil) },
+				func(w io.Writer) error { return renderRunDetail(w, run) },
+				func(w io.Writer) error { return renderResults(w, run.EvalID, run, nil, false) },
+			} {
+				var out bytes.Buffer
+				require.NoError(t, render(&out))
+				assert.Contains(t, out.String(), "Portal:")
+				for _, secret := range []string{
+					"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
+				} {
+					assert.NotContains(t, out.String(), secret)
+				}
+			}
+			assert.Equal(t, raw, runLink(run.ReportURL, run.PortalURL), "display must not change service data")
+		}
+	}
 }

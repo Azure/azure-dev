@@ -1190,6 +1190,9 @@ func timestampString(value any) string {
 		if seconds, err := t.Int64(); err == nil {
 			return time.Unix(seconds, 0).UTC().Format(time.RFC3339)
 		}
+		if seconds, err := t.Float64(); err == nil {
+			return time.Unix(int64(seconds), 0).UTC().Format(time.RFC3339)
+		}
 		return t.String()
 	default:
 		return fmt.Sprint(value)
@@ -1236,6 +1239,13 @@ func timestampTime(value any) time.Time {
 		return time.Unix(int64(t), 0).UTC()
 	case int64:
 		return time.Unix(t, 0).UTC()
+	case json.Number:
+		if seconds, err := t.Int64(); err == nil {
+			return time.Unix(seconds, 0).UTC()
+		}
+		if seconds, err := t.Float64(); err == nil {
+			return time.Unix(int64(seconds), 0).UTC()
+		}
 	case string:
 		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
 			return parsed.UTC()

@@ -7,6 +7,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -118,5 +122,91 @@ func TestFilteredResultFooterRequiresReportedCounters(t *testing.T) {
 				assert.Contains(t, out.String(), "Full run: 0 failed of 0 total test cases (service-reported).")
 			}
 		})
+	}
+}
+
+func TestOutputFiltersAgreeAcrossPagedBulkAndFileViews(t *testing.T) {
+	for _, selection := range []struct {
+		name, status string
+		failedOnly   bool
+		want         []string
+	}{
+		{"failed", "", true, []string{"row_failed"}},
+		{"status failed", "failed", false, []string{"row_failed"}},
+		{"errored", "errored", false, []string{"row_errored"}},
+		{"combined", "errored", true, []string{"row_failed", "row_errored"}},
+		{"no matches", "skipped", false, []string{}},
+		{"unfiltered", "", false, []string{"row_passed", "row_failed", "row_errored"}},
+	} {
+		for _, view := range []string{"page", "all", "file"} {
+			for _, format := range []string{"table", "json"} {
+				t.Run(selection.name+"/"+view+"/"+format, func(t *testing.T) {
+					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						w.Header().Set("Content-Type", "application/json")
+						if strings.HasSuffix(r.URL.Path, "/output_items") {
+							_, _ = w.Write([]byte(`{"data":[
+								{"id":"row_passed","status":"passed","datasource_item":{"value":9007199254740993}},
+								{"id":"row_failed","status":"failed","datasource_item":{"value":9007199254740993}},
+								{"id":"row_errored","status":"errored","datasource_item":{"value":9007199254740993}}
+							],"has_more":false}`))
+						} else {
+							assert.True(t, strings.HasSuffix(r.URL.Path, "/runs/run_filter"))
+							_, _ = w.Write([]byte(`{"id":"run_filter","status":"completed",
+								"result_counts":{"total":3,"passed":1,"failed":1,"errored":1,"skipped":0}}`))
+						}
+					}))
+					t.Cleanup(srv.Close)
+					var out bytes.Buffer
+					command := jsonCmd(t, format)
+					command.SetContext(t.Context())
+					command.SetOut(&out)
+					flags := &runOutputListFlags{
+						status: selection.status, failedOnly: selection.failedOnly, all: view == "all",
+					}
+					if view == "file" {
+						flags.outFile = filepath.Join(t.TempDir(), "filtered.json")
+					}
+					action := &runOutputListAction{cmd: command, flags: flags, runID: "run_filter"}
+					require.NoError(t, action.list(t.Context(), evalContextFor(srv), "eval_filter"))
+					body := out.Bytes()
+					if view == "file" {
+						var err error
+						body, err = os.ReadFile(flags.outFile)
+						require.NoError(t, err)
+					}
+					if format == "json" || view == "file" {
+						var items []struct{ ID string }
+						if view == "file" {
+							require.NoError(t, json.Unmarshal(body, &items))
+						} else {
+							var page struct {
+								Items []struct{ ID string } `json:"items"`
+								Count int                   `json:"count"`
+							}
+							require.NoError(t, json.Unmarshal(body, &page))
+							assert.Equal(t, len(selection.want), page.Count)
+							items = page.Items
+						}
+						got := make([]string, 0, len(items))
+						for _, item := range items {
+							got = append(got, item.ID)
+						}
+						assert.Equal(t, selection.want, got)
+						if len(items) > 0 {
+							assert.Contains(t, string(body), "9007199254740993")
+						}
+					} else {
+						for _, id := range []string{"row_passed", "row_failed", "row_errored"} {
+							assert.Equal(t, strings.Contains(strings.Join(selection.want, ","), id),
+								strings.Contains(string(body), id), id)
+						}
+						if selection.name == "failed" || selection.name == "status failed" {
+							assert.Contains(t, string(body), "Showing 1 failed test case on this page.")
+							assert.Contains(t, string(body), "Full run: 1 failed of 3 total test cases")
+						}
+					}
+				})
+			}
+		}
 	}
 }

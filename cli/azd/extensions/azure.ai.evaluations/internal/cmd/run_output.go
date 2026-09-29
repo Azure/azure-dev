@@ -9,13 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -180,8 +180,9 @@ func (a *runOutputListAction) list(ctx context.Context, ec *evalContext, evalID 
 		}
 		return emitJSONPage(a.cmd.OutOrStdout(), rows, nil, cursor)
 	}
+	failedOnly := len(keep) == 1 && keep[itemFailed]
 	if err := renderResults(a.cmd.OutOrStdout(), evalID, runForDisplay(run, evalID, runID), rows,
-		a.flags.failedOnly); err != nil {
+		failedOnly); err != nil {
 		return err
 	}
 	if items.HasMore && items.LastID != "" {
@@ -1052,7 +1053,8 @@ func renderResults(
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
-		fmt.Fprint(w, messages.PortalLinkAfterRows(color.CyanString(url)))
+		fmt.Fprintln(w)
+		writePortalLink(w, url)
 	}
 	return nil
 }
@@ -1106,9 +1108,17 @@ func filteredItemPage(
 	if err != nil {
 		return nil, err
 	}
-	// No filter, or no page size to fill: one page is the page.
-	if keep == nil || pageSize <= 0 {
+	if keep == nil {
 		return page, nil
+	}
+	// The client has already fetched every row for bulk/file output, but the
+	// same outcome filter still applies before either human or JSON rendering.
+	if pageSize <= 0 {
+		filtered := *page
+		filtered.Data = slices.DeleteFunc(slices.Clone(page.Data), func(item eval_api.OutputItem) bool {
+			return !keep[classifyItem(item).Status]
+		})
+		return &filtered, nil
 	}
 
 	kept := make([]eval_api.OutputItem, 0, len(page.Data))

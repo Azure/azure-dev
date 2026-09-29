@@ -3,14 +3,19 @@
 
 package eval_api
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // UnmarshalJSON retains fields not yet modeled by the CLI, including nested
 // simulation diagnostics. Human-readable views only use documented fields.
 func (r *OpenAIEvalRun) UnmarshalJSON(data []byte) error {
 	type wire OpenAIEvalRun
 	var decoded wire
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
 		return err
 	}
 	var fields struct {

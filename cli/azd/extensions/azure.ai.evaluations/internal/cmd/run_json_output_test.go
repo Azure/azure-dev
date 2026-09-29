@@ -126,3 +126,78 @@ func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testi
 	}
 	assert.Nil(t, runForJSON(nil))
 }
+
+func TestRunJSONCallersPreserveInlineSourceNumbers(t *testing.T) {
+	const response = `{"id":"run_numbers","status":"completed","created_at":1785575722.75,
+		"data_source":{"type":"jsonl","source":{"type":"file_content","content":[{
+			"large":9007199254740993,"decimal":0.12345678901234567890123456789,
+			"nested":[-9007199254740993,1e400],"empty":null,"zero":0}]}},
+		"result_counts":{"failed":null},"unknown":18446744073709551615}`
+	for _, caller := range []string{"show", "show waited", "start", "export"} {
+		t.Run(caller, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/runs/run_numbers"):
+					_, _ = w.Write([]byte(response))
+				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+					_, _ = w.Write([]byte(`{"id":"run_numbers","status":"queued"}`))
+				case strings.HasSuffix(r.URL.Path, "/runs"):
+					_, _ = w.Write([]byte(`{"data":[{"id":"previous","data_source":{"type":"jsonl"}}]}`))
+				case strings.HasSuffix(r.URL.Path, "/output_items"):
+					_, _ = w.Write([]byte(`{"data":[]}`))
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			var out bytes.Buffer
+			command := jsonCmd(t, "json")
+			command.SetContext(t.Context())
+			command.SetOut(&out)
+			ec := evalContextFor(srv)
+			switch caller {
+			case "start":
+				action := &runStartAction{cmd: command, flags: &runStartFlags{
+					groupName: "eval_numbers", evalPath: t.TempDir(), wait: true,
+				}}
+				require.NoError(t, action.start(t.Context(), ec, gate{}))
+			case "export":
+				action := &runOutputExportAction{cmd: command, runID: "run_numbers", flags: &runOutputExportFlags{}}
+				require.NoError(t, action.export(t.Context(), ec, "eval_numbers", exportToStdout))
+			default:
+				action := &runShowAction{cmd: command, runID: "run_numbers",
+					flags: &runShowFlags{wait: caller == "show waited"}}
+				require.NoError(t, action.show(t.Context(), ec, "eval_numbers", gate{}))
+			}
+			body := out.Bytes()
+			if caller == "export" {
+				var exported exportDocument
+				require.NoError(t, json.Unmarshal(body, &exported))
+				body = exported.Run
+			}
+			var run struct {
+				CreatedAt  json.RawMessage `json:"created_at"`
+				Unknown    json.RawMessage `json:"unknown"`
+				DataSource struct {
+					Source struct {
+						Content []map[string]json.RawMessage `json:"content"`
+					} `json:"source"`
+				} `json:"data_source"`
+			}
+			require.NoError(t, json.Unmarshal(body, &run))
+			assert.Equal(t, "1785575722.75", string(run.CreatedAt))
+			assert.Equal(t, "18446744073709551615", string(run.Unknown))
+			require.Len(t, run.DataSource.Source.Content, 1)
+			for key, want := range map[string]string{
+				"large": "9007199254740993", "decimal": "0.12345678901234567890123456789",
+				"nested": "[-9007199254740993,1e400]", "empty": "null", "zero": "0",
+			} {
+				var compact bytes.Buffer
+				require.NoError(t, json.Compact(&compact, run.DataSource.Source.Content[0][key]))
+				assert.Equal(t, want, compact.String(), key)
+			}
+		})
+	}
+}

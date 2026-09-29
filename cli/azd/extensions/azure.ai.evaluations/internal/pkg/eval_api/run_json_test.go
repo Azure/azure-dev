@@ -5,6 +5,7 @@ package eval_api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -116,4 +117,54 @@ func TestRunJSONUpdatesReportedCountsWithoutOverwritingUnknownCounts(t *testing.
 		"id":"run_partial","result_counts":{"total":2,"passed":2,"failed":null,"future_count":7},
 		"portal_url":"https://ai.azure.com/run_partial"
 	}`, string(encoded))
+}
+
+func TestRunJSONPreservesExactSourceNumbers(t *testing.T) {
+	for _, value := range []string{
+		"9007199254740993", "-9007199254740993", "18446744073709551615",
+		"0.12345678901234567890123456789", "1e400", "0",
+	} {
+		for _, nested := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/nested=%t", value, nested), func(t *testing.T) {
+				source := `{"type":"file_content","content":[{"value":` + value +
+					`,"nested":[{"value":` + value + `}],"empty":null,"zero":0}],"unknown":` + value + `}`
+				dataSource := `"source":` + source
+				if nested {
+					dataSource = `"item_generation_params":{"type":"response_retrieval","source":` + source + `}`
+				}
+				response := `{"id":"run_numbers","data_source":{"type":"jsonl",` + dataSource + `}}`
+				var run OpenAIEvalRun
+				require.NoError(t, json.Unmarshal([]byte(response), &run))
+				require.NotNil(t, run.DataSource)
+				content := run.DataSource.Source
+				if nested {
+					require.NotNil(t, run.DataSource.ItemGenerationParams)
+					content = run.DataSource.ItemGenerationParams.Source
+				}
+				require.NotNil(t, content)
+				require.Len(t, content.Content, 1)
+				assert.Equal(t, json.Number(value), content.Content[0]["value"])
+				run.Status = "completed"
+				body, err := json.Marshal(run)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), `"value":`+value)
+				assert.Contains(t, string(body), `"nested":[{"value":`+value+`}]`)
+				assert.Contains(t, string(body), `"unknown":`+value)
+				assert.Contains(t, string(body), `"empty":null`)
+				assert.Contains(t, string(body), `"zero":0`)
+				assert.Contains(t, string(body), `"status":"completed"`)
+			})
+		}
+	}
+}
+
+func TestRunDecoderRejectsMalformedAndTrailingData(t *testing.T) {
+	for _, input := range []string{
+		`{"id":"1"`, `{"id":"1"}{"id":"2"}`, `{"id":"1"} true`,
+		`{"id":"1"} garbage`, `{"id":"1","created_at":1e}`,
+	} {
+		run := OpenAIEvalRun{ID: "unchanged"}
+		require.Error(t, run.UnmarshalJSON([]byte(input)))
+		assert.Equal(t, "unchanged", run.ID)
+	}
 }

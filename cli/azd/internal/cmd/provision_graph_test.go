@@ -469,7 +469,8 @@ func newPropagationTestDeps(
 	env := environment.New(envName)
 	require.NoError(t, envManager.Save(t.Context(), env))
 
-	envPath := localDataStore.EnvPath(env)
+	envPath, err := localDataStore.EnvPath(env)
+	require.NoError(t, err)
 
 	deps := &provisionLayerDeps{
 		env:        env,

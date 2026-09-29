@@ -1413,7 +1413,7 @@ func newTestEnvRefreshAction(
 	)
 
 	envManager := &mockenv.MockEnvManager{}
-	envManager.On("EnvPath", mock.Anything).Return(filepath.Join(projectDir, ".azure", "test-env", ".env"))
+	envManager.On("EnvPath", mock.Anything).Return(filepath.Join(projectDir, ".azure", "test-env", ".env"), nil)
 
 	pm := &mockProjectManager{}
 

@@ -130,7 +130,8 @@ func Test_StorageBlobDataStore_Path(t *testing.T) {
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
-	actual := dataStore.EnvPath(env)
+	actual, err := dataStore.EnvPath(env)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, actual)
 }
@@ -142,7 +143,8 @@ func Test_StorageBlobDataStore_ConfigPath(t *testing.T) {
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, ConfigFileName)
-	actual := dataStore.ConfigPath(env)
+	actual, err := dataStore.ConfigPath(env)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, actual)
 }

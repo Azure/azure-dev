@@ -21,6 +21,8 @@ func TestEnvironmentNameValidation(t *testing.T) {
 	}{
 		{"dev", true},
 		{"dev.local", true},
+		{"prod.", runtime.GOOS != "windows"},
+		{"prod..", runtime.GOOS != "windows"},
 		{".hidden", true},
 		{"C()mPl3x_ExAmPl3-ThatIsVeryLong", true},
 		{strings.Repeat("a", 64), true},

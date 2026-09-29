@@ -134,7 +134,10 @@ func runLinkedPathOperation(t *testing.T, store LocalDataStore, operation string
 }
 
 func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
-	for _, entryKind := range []string{"invalid-name", "directory-link", "dangling-link", DotEnvFileName, ConfigFileName} {
+	for _, entryKind := range []string{
+		"invalid-name", "directory-link", "dangling-link", "lock-directory-link",
+		DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock",
+	} {
 		t.Run(entryKind, func(t *testing.T) {
 			ctx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 			store := NewLocalFileDataStore(ctx, config.NewFileConfigManager(config.NewManager()))
@@ -149,6 +152,13 @@ func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 					require.NoError(t, os.Mkdir(target, 0700))
 				}
 				ostest.DirectoryLink(t, target, filepath.Join(ctx.EnvironmentDirectory(), "linked"))
+			case "lock-directory-link":
+				root := filepath.Join(ctx.EnvironmentDirectory(), "linked")
+				require.NoError(t, os.Mkdir(root, 0700))
+				require.NoError(t, os.Mkdir(target, 0700))
+				ostest.DirectoryLink(t, target, filepath.Join(root, DotEnvFileName+".lock"))
+				target = filepath.Join(target, "marker")
+				require.NoError(t, os.WriteFile(target, []byte("unchanged"), 0600))
 			default:
 				root := filepath.Join(ctx.EnvironmentDirectory(), "linked")
 				require.NoError(t, os.Mkdir(root, 0700))
@@ -163,7 +173,8 @@ func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 			require.True(t, envs[0].IsDefault)
 			if entryKind == "dangling-link" {
 				require.NoDirExists(t, target)
-			} else if entryKind == DotEnvFileName || entryKind == ConfigFileName {
+			} else if entryKind == DotEnvFileName || entryKind == ConfigFileName ||
+				entryKind == DotEnvFileName+".lock" || entryKind == "lock-directory-link" {
 				raw, err := os.ReadFile(target)
 				require.NoError(t, err)
 				require.Equal(t, "unchanged", string(raw))

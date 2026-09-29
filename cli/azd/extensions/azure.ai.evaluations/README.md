@@ -115,6 +115,11 @@ rows attributed to a now-registered dataset must instead be started from its
 declared eval by name: replacing those possibly capped rows with a whole version
 would silently change what gets scored.
 
+The JSON handoff from `run start --no-wait -o json` retains the submitted dataset
+name and registered version even when the create response omits that metadata.
+Local unregistered runs do not invent a version, and anonymous reruns remain
+unattributed.
+
 `job show --dataset` recovers the registered evaluation level even when the local
 artifact already exists. It preserves edited bytes unless `--force` is given,
 does not download content when preserving the file, and does not record a new

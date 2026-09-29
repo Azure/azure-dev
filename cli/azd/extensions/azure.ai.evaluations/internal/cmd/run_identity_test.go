@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -512,6 +513,92 @@ func TestRunRerunPreservesRegisteredIdentity(t *testing.T) {
 			} else {
 				assert.Nil(t, reused.Target)
 			}
+		})
+	}
+}
+
+func TestRunStartHandoffKeepsSubmittedDatasetAttribution(t *testing.T) {
+	for _, mode := range []string{
+		"declared registered", "declared local", "registered rerun", "local rerun", "anonymous rerun",
+	} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			service := identityService{
+				listStatus: http.StatusNotFound, getStatus: http.StatusNotFound,
+			}
+			registered := strings.Contains(mode, "registered")
+			declared := strings.HasPrefix(mode, "declared")
+			want := map[string]any{
+				"run_id": "evalrun_new", "eval_id": "eval_1", "status": "queued",
+			}
+			if mode != "anonymous rerun" {
+				want["dataset"] = "golden"
+			}
+			version := ""
+			if registered {
+				version = "1"
+				want["dataset_version"] = version
+			}
+			chosen := "eval_1"
+			if declared {
+				chosen = "quality"
+				want["eval_name"] = chosen
+				body, err := json.Marshal(map[string]any{
+					"datasets": []project.DatasetDecl{{Name: "golden", File: "golden.jsonl", Version: version}},
+					"evals":    []project.Eval{{Name: chosen, Dataset: "golden"}},
+				})
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "golden.jsonl"), []byte(oneRow), 0o600))
+				if registered {
+					service = identityService{id: "issued", rows: oneRow, wantVersion: version}
+				}
+			} else {
+				ds := eval_api.NewDatasetOnlyDataSource()
+				ds.SetFileContent([]map[string]any{{"query": "local row"}})
+				metadata := map[string]string{}
+				if mode != "anonymous rerun" {
+					metadata[metaDataset] = "golden"
+				}
+				if registered {
+					ds.SetFileID("previous-service-issued-id")
+					metadata[metaDatasetVersion] = version
+				}
+				service.previous = []*eval_api.OpenAIEvalRun{{
+					ID: "previous", DataSource: ds, Metadata: metadata,
+				}}
+			}
+			ec, requests := identityRunContext(t, service)
+			ec.state = map[string]string{idKey("eval", "quality"): "eval_1"}
+			cmd := buildRunCommand("start", "")
+			cmd.Flags().String("output", "json", "")
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(io.Discard)
+			action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+				groupName: chosen, evalPath: dir, wait: false,
+			}}
+			require.NoError(t, action.start(t.Context(), ec, gate{}))
+
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(output.Bytes(), &got))
+			assert.Equal(t, want, got, "the create response omits metadata; use the submitted attribution")
+			submissions := 0
+			for _, request := range recordedIdentityRequests(requests) {
+				if request.method != http.MethodPost || !strings.HasSuffix(request.path, "/runs") {
+					continue
+				}
+				submissions++
+				var submitted eval_api.CreateOpenAIEvalRunRequest
+				require.NoError(t, json.Unmarshal(request.body, &submitted))
+				assert.Equal(t, version, submitted.Metadata[metaDatasetVersion])
+				if mode != "anonymous rerun" {
+					assert.Equal(t, "golden", submitted.Metadata[metaDataset])
+				} else {
+					assert.NotContains(t, submitted.Metadata, metaDataset)
+				}
+			}
+			assert.Equal(t, 1, submissions)
 		})
 	}
 }

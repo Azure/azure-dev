@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +28,7 @@ func TestStartedRunIsTheHandoffAPipelineNeeds(t *testing.T) {
 		},
 	}
 
-	raw, err := json.Marshal(startedRun(run, "eval_01JQZW", &project.Eval{Name: "support-agent-smoke"}))
+	raw, err := json.Marshal(startedRun(run, "eval_01JQZW", map[string]string{metaEvalName: "support-agent-smoke"}))
 	require.NoError(t, err)
 
 	var out map[string]any
@@ -84,4 +83,32 @@ func TestStartedRunOmitsTheNameItDoesNotHave(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &out))
 	assert.NotContains(t, out, "eval_name")
 	assert.Equal(t, "eval_1", out["eval_id"])
+}
+
+func TestStartedRunDatasetAttributionPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		echoed  map[string]string
+		dataset string
+		version string
+	}{
+		{name: "no echo", dataset: "golden", version: "2"},
+		{name: "partial echo", echoed: map[string]string{metaDataset: "golden"}, dataset: "golden", version: "2"},
+		{
+			name: "service version", dataset: "golden", version: "3",
+			echoed: map[string]string{metaDataset: "golden", metaDatasetVersion: "3"},
+		},
+		{
+			name: "different dataset has no inferred version", dataset: "other",
+			echoed: map[string]string{metaDataset: "other"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handoff := startedRun(
+				&eval_api.OpenAIEvalRun{ID: "evalrun_1", Metadata: tc.echoed}, "eval_1",
+				map[string]string{metaDataset: "golden", metaDatasetVersion: "2"})
+			assert.Equal(t, tc.dataset, handoff.Dataset)
+			assert.Equal(t, tc.version, handoff.DatasetVersion)
+		})
+	}
 }

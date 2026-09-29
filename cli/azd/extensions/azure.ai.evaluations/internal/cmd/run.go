@@ -293,7 +293,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 
 	if !a.flags.wait {
 		if isJSON(a.cmd) {
-			return emitJSON(out, startedRun(run, evalID, group))
+			return emitJSON(out, startedRun(run, evalID, metadata))
 		}
 		fmt.Fprint(out, messages.RunStarted(run.ID, run.Status))
 		fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
@@ -314,7 +314,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		// The run did not fail, the wait ran out. Same contract as
 		// --no-wait: exit 0 and say how to pick it back up.
 		if isJSON(a.cmd) {
-			return emitJSON(out, startedRun(run, evalID, group))
+			return emitJSON(out, startedRun(run, evalID, metadata))
 		}
 		fmt.Fprint(out, messages.WaitBudgetSpent(run.ID, waitBudget))
 		fmt.Fprint(out, messages.ReattachToRun(run.ID, evalID))
@@ -1208,26 +1208,24 @@ type startedRunHandoff struct {
 func startedRun(
 	run *eval_api.OpenAIEvalRun,
 	evalID string,
-	group *project.Eval,
+	submitted map[string]string,
 ) startedRunHandoff {
 	handoff := startedRunHandoff{
 		RunID:     run.ID,
 		EvalID:    evalID,
+		EvalName:  submitted[metaEvalName],
 		Status:    run.Status,
 		CreatedAt: timestampString(run.CreatedAt),
 	}
-	// Read back from the run rather than the configuration, so the handoff
-	// names what this run scored and not what the file says today. The create
-	// response does not always echo metadata, so the declaration is the
-	// fallback for the name.
+	// The create response may omit metadata. Fall back to what this request
+	// submitted, not a declaration or another lookup that could name other rows.
 	handoff.Dataset = run.Metadata[metaDataset]
 	handoff.DatasetVersion = run.Metadata[metaDatasetVersion]
-	// Absent with --eval-id, where there is no config to take a name from.
-	if group != nil {
-		handoff.EvalName = group.Name
-		if handoff.Dataset == "" {
-			handoff.Dataset = group.Dataset
-		}
+	if handoff.Dataset == "" {
+		handoff.Dataset = submitted[metaDataset]
+	}
+	if handoff.DatasetVersion == "" && handoff.Dataset == submitted[metaDataset] {
+		handoff.DatasetVersion = submitted[metaDatasetVersion]
 	}
 	return handoff
 }

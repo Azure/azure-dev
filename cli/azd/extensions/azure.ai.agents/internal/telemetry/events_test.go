@@ -28,8 +28,8 @@ func TestAgentInvokedWireContract(t *testing.T) {
 			map[string]string{"protocol": "invocations", "long_running": "false", "no_wait": "false"}},
 		{"a2a", "a2a", false, false,
 			map[string]string{"protocol": "a2a", "long_running": "false", "no_wait": "false"}},
-		{"unrecognized protocol", "customer-protocol", false, false,
-			map[string]string{"protocol": "unknown", "long_running": "false", "no_wait": "false"}},
+		{"future invocable protocol", "future_protocol", false, false,
+			map[string]string{"protocol": "future_protocol", "long_running": "false", "no_wait": "false"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

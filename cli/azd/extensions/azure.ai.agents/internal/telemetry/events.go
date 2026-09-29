@@ -20,13 +20,8 @@ const (
 
 // AgentInvoked creates the adoption event for a validated remote hosted-agent invoke.
 // It records the selected request mode, not a service response or success.
+// The caller supplies the protocol resolved and validated by the invoke command.
 func AgentInvoked(protocol string, longRunning, noWait bool) foundryTelemetry.Event {
-	switch protocol {
-	case "responses", "invocations", "a2a":
-	default:
-		protocol = "unknown"
-	}
-
 	return foundryTelemetry.Event{
 		Name: agentInvokedEvent,
 		Attributes: map[string]string{

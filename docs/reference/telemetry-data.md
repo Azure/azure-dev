@@ -497,7 +497,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. First-party concrete keys are declared in `cli/azd/extensions/telemetry/fields.go` |
 | `ext.demo.mode` | string | Demo telemetry mode: currently `sample` (`demo.telemetry.reported`) |
 | `ext.demo.outcome` | string | Demo telemetry outcome: currently `completed` (`demo.telemetry.reported`) |
-| `ext.protocol` | string | Remote hosted-agent invoke protocol: `responses`, `invocations`, `a2a`, or defensive `unknown` (`agent.invoked`) |
+| `ext.protocol` | string | Resolved remote hosted-agent invoke protocol, currently `responses`, `invocations`, or `a2a` (`agent.invoked`) |
 | `ext.long_running` | string | Whether remote invoke selected `--long-running`: string-encoded `true` or `false` (`agent.invoked`) |
 | `ext.no_wait` | string | Whether remote invoke selected `--no-wait`: string-encoded `true` or `false` (`agent.invoked`) |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
@@ -552,7 +552,7 @@ Reviewed first-party extension usage events currently include:
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; no agent names or customer content |
-| `azure.ai.agents` | `agent.invoked` | A validated remote hosted-agent invoke enters its protocol path, before authentication or the service request; once per command regardless of outcome. Excludes local and prompt-agent invokes | `ext.protocol`: `responses`, `invocations`, `a2a`, or defensive `unknown`; `ext.long_running`, `ext.no_wait`: string-encoded `true` or `false`. `no_wait=true` requires `long_running=true`, which is supported only with remote Responses; no content or identifiers |
+| `azure.ai.agents` | `agent.invoked` | A validated remote hosted-agent invoke enters its protocol path, before authentication or the service request; once per command regardless of outcome. Excludes local and prompt-agent invokes | `ext.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.long_running`, `ext.no_wait`: string-encoded `true` or `false`. `no_wait=true` requires `long_running=true`, which is supported only with remote Responses; no content or identifiers |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |

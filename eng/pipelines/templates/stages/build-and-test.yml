@@ -13,6 +13,10 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
+        # This job also builds Linux packages, runs injected Copacetic scanning,
+        # and performs disk cleanup. Those required steps no longer fit reliably
+        # within the original cross-build-only 20-minute budget.
+        TimeoutInMinutes: 30
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)
@@ -37,6 +41,7 @@ parameters:
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
+        TimeoutInMinutes: 20
         Variables: 
           BuildTarget: azd-darwin-arm64
           BuildOutputName: azd
@@ -50,6 +55,7 @@ parameters:
         OSVmImage: $(WINDOWSVMIMAGE)
         OS: windows
         ImageKey: image
+        TimeoutInMinutes: 20
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)
@@ -94,6 +100,7 @@ stages:
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
             Variables: ${{ build.value.Variables }}
+            TimeoutInMinutes: ${{ build.value.TimeoutInMinutes }}
 
       - job: MergeLinuxPackages
         pool:

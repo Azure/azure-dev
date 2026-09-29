@@ -246,6 +246,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
 | `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
+| `AGENCY_SESSION_ID` | Set by Agency when launching subprocesses. Any non-empty value appends the fixed `agency` modifier to telemetry's `execution.environment`, preserving the primary environment (for example, `GitHub Copilot CLI;agency`). Unset or empty values have no effect. The session ID itself is not emitted. This does not affect agent detection or prompting and is independent of `AZD_DISABLE_AGENT_DETECT`. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Read by the embedded OpenTelemetry SDK, but not supported for customizing azd telemetry. Its attributes are not included in resources exported by azd. |
 | `OTEL_SERVICE_NAME` | Read by the embedded OpenTelemetry SDK, but does not override azd's exported `service.name`, which is always `azd`. |
 | `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |

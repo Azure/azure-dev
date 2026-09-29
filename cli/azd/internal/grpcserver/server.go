@@ -96,6 +96,9 @@ func NewServer(
 	if eventService, ok := eventServiceImpl.(*eventService); ok {
 		server.betaServiceOverrides[BetaEventService] = &betaEventService{service: eventService}
 	}
+	if principalService, ok := accountService.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
+		server.WithOptions(WithBetaServiceOverride(BetaAccountService, principalService))
+	}
 	return server
 }
 

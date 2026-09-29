@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -14,7 +15,7 @@ import (
 	"testing"
 )
 
-func TestProtoContainerRuntime(t *testing.T) {
+func TestFindContainerRuntime(t *testing.T) {
 	tests := []struct {
 		name      string
 		available map[string]bool
@@ -28,7 +29,7 @@ func TestProtoContainerRuntime(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := protoContainerRuntime(func(name string) (string, error) {
+			got, err := findContainerRuntime(func(name string) (string, error) {
 				if test.available[name] {
 					return name, nil
 				}
@@ -47,6 +48,54 @@ func TestProtoContainerRuntime(t *testing.T) {
 				t.Fatalf("want %q, got %q", test.want, got)
 			}
 		})
+	}
+}
+
+func TestFormatJSONPreservesPropertyOrder(t *testing.T) {
+	input := []byte(`{"z": 1, "nested": {"b": 2, "a": 3}}`)
+	want := "{\n    \"z\": 1,\n    \"nested\": {\n        \"b\": 2,\n        \"a\": 3\n    }\n}\n"
+
+	got, err := formatJSON(input)
+	if err != nil {
+		t.Fatalf("formatJSON() unexpected error: %v", err)
+	}
+	if string(got) != want {
+		t.Fatalf("formatJSON() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatJSONRejectsInvalidJSON(t *testing.T) {
+	if _, err := formatJSON([]byte(`{"missing": }`)); err == nil {
+		t.Fatal("formatJSON() expected an error for invalid JSON")
+	}
+}
+
+func TestFormatSchemaFilesFormatsNestedJSON(t *testing.T) {
+	repoRoot := t.TempDir()
+	schemaPath := filepath.Join(repoRoot, "schemas", "nested", "schema.json")
+	if err := os.MkdirAll(filepath.Dir(schemaPath), 0o755); err != nil {
+		t.Fatalf("mkdir schema directory: %v", err)
+	}
+	if err := os.WriteFile(schemaPath, []byte(`{"first":1,"second":2}`), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	if err := formatSchemaFiles(repoRoot, false); err == nil {
+		t.Fatal("formatSchemaFiles() check expected an unformatted file error")
+	}
+	if err := formatSchemaFiles(repoRoot, true); err != nil {
+		t.Fatalf("formatSchemaFiles() format error: %v", err)
+	}
+	if err := formatSchemaFiles(repoRoot, false); err != nil {
+		t.Fatalf("formatSchemaFiles() check after format error: %v", err)
+	}
+
+	formatted, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatalf("read formatted schema: %v", err)
+	}
+	if !bytes.HasSuffix(formatted, []byte("\n")) || bytes.HasSuffix(formatted, []byte("\n\n")) {
+		t.Fatalf("formatted schema should have exactly one trailing newline: %q", formatted)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 type foundryProjectSetupResult struct {
 	Credential     azcore.TokenCredential
 	FoundryProject *FoundryProjectInfo
+	AuthoringMode  projectAuthoringMode
 }
 
 func validateAcrConnectionInput(acrConnection string, skipACR, createsNewProject bool) error {
@@ -68,6 +69,7 @@ func configureFoundryProject(
 	noPrompt bool,
 	skipACR bool,
 	filterHostedRegions bool,
+	preserveDeferredProjectState bool,
 ) (*foundryProjectSetupResult, error) {
 	if err := validateAcrConnectionInput(
 		acrConnection,
@@ -77,7 +79,9 @@ func configureFoundryProject(
 		return nil, err
 	}
 
-	result := &foundryProjectSetupResult{}
+	result := &foundryProjectSetupResult{
+		AuthoringMode: projectAuthoringCurrent,
+	}
 
 	// When --project-id is provided, validate the ARM format and extract the
 	// subscription ID so ensureSubscription can skip the prompt.
@@ -115,6 +119,7 @@ func configureFoundryProject(
 			return nil, err
 		}
 		result.FoundryProject = selectedProject
+		result.AuthoringMode = projectAuthoringExisting
 
 		if selectedProject == nil {
 			return nil, fmt.Errorf(
@@ -133,9 +138,14 @@ func configureFoundryProject(
 		// Headless init with missing Azure values: defer without blocking.
 		if err := configureDeferredInitAzureContext(
 			ctx, azdClient, envName, azureContext, false,
+			preserveDeferredProjectState,
 		); err != nil {
 			return nil, err
 		}
+		result.AuthoringMode = projectAuthoringCurrent
+	} else if preserveDeferredProjectState {
+		// Preserve an adopted endpoint with complete Azure context.
+		result.AuthoringMode = projectAuthoringCurrent
 	} else if noPrompt {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, azdClient, envName, azureContext,
@@ -145,6 +155,7 @@ func configureFoundryProject(
 			return nil, err
 		}
 		result.Credential = newCred
+		result.AuthoringMode = projectAuthoringNew
 	} else {
 		// Interactive: prompt user to pick an existing Foundry project or create new resources
 		projectChoices := []*azdext.SelectChoice{
@@ -192,6 +203,7 @@ func configureFoundryProject(
 			result.FoundryProject = selectedProject
 
 			if selectedProject == nil {
+				result.AuthoringMode = projectAuthoringNew
 				_, _ = color.New(color.Faint).Println(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				)
@@ -211,6 +223,7 @@ func configureFoundryProject(
 					log.Printf("warning: failed to update project provision signal: %v", err)
 				}
 			} else {
+				result.AuthoringMode = projectAuthoringExisting
 				if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
@@ -219,6 +232,7 @@ func configureFoundryProject(
 				}
 			}
 		default:
+			result.AuthoringMode = projectAuthoringNew
 			if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
 				return nil, err
 			}

@@ -92,6 +92,18 @@ Run tests (including end-to-end [functional][functional tests] tests)
 go test ./...
 ```
 
+### PowerShell engineering script tests
+
+PowerShell tests under `eng/scripts` use Pester. From the repository root, install the same Pester version pinned in the
+[`cli-ci` workflow](../../.github/workflows/cli-ci.yml), then run the test file:
+
+```powershell
+Install-Module -Name Pester -RequiredVersion <version-from-cli-ci.yml> -Force -Scope CurrentUser
+
+# And using ./eng/scripts/Test-CliReleaseReadiness.Tests.ps1, as an example:
+Invoke-Pester -Path ./eng/scripts/Test-CliReleaseReadiness.Tests.ps1 -Output Detailed
+```
+
 Run cspell (install [cspell](https://cspell.org/)):
 
 ```bash
@@ -118,6 +130,13 @@ go fix -diff ./...
 
 If `go fix -diff` reports any changes, apply them with `go fix ./...` and commit the result.
 CI enforces this check — PRs with pending `go fix` suggestions will fail the lint workflow.
+
+Format and validate repository JSON schemas with Mage:
+
+```bash
+go tool mage schema:format
+go tool mage schema:check
+```
 
 ### Code Coverage
 

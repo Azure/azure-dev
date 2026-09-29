@@ -1,67 +1,14 @@
-# Output Examples and Error Handling
+# Reporting and Error Handling
 
-## Output
+## Reporting
 
-### Success
-
-```
-Preflight passed — all 9 checks clean.
-
-  ✓ gofmt
-  ✓ go fix
-  ✓ copyright
-  ✓ lint
-  ✓ cspell
-  ✓ cspell-misc
-  ✓ build
-  ✓ test
-  ✓ playback tests
-
-  − changed changelogs (none changed)
-```
-
-### Success After Fixes
-
-```
-Preflight passed after fixes.
-
-  ✓ gofmt (fixed: 3 files reformatted)
-  ✓ go fix (fixed: 2 modernizations applied)
-  ✓ copyright (no issues)
-  ✓ lint (fixed: 5 findings resolved)
-  ✓ cspell (fixed: 1 word added to dictionary)
-  ✓ cspell-misc (no issues)
-  ✓ build (no issues)
-  ✓ test (no issues)
-  ✓ playback tests (no issues)
-  ✓ changed changelogs (fixed: 1 verified GitHub alias added to dictionary)
-
-Files modified: {list of changed files}
-```
-
-### Partial Success
-
-```
-Preflight partially passed — {N} of 9 checks clean, {M} skipped.
-
-  ✓ gofmt
-  ✓ go fix
-  ✓ copyright
-  ✓ lint
-  ✓ cspell
-  ✓ cspell-misc
-  ✓ build
-  ✗ test (skipped — user chose to skip after 3 attempts)
-  ✓ playback tests
-  ✓ changed changelogs
-
-Skipped checks require manual intervention.
-```
+Treat the `go tool mage preflight` exit status and output as authoritative. Do not reproduce the
+full check-by-check transcript. Report whether preflight passed, any fixes applied, and any
+remaining failed or skipped checks. Never describe a nonzero exit as partial success.
 
 ## Error Handling
 
-- **mage not installed** → offer to install: `go install github.com/magefile/mage@latest`
-- **golangci-lint not installed** → offer: `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4`
+- **golangci-lint not installed** → offer: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4`
 - **cspell not installed** → offer to install: `npm install -g cspell@8.13.1`
 - **gh not installed** → offer installation guidance from https://cli.github.com/
 - **bash/sh not found (Windows)** → suggest Git for Windows: https://git-scm.com/downloads/win

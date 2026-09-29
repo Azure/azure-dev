@@ -26,6 +26,8 @@ func newToolboxPublishCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 This promotes a previously created version so that consumers referencing the
 toolbox without an explicit version will receive it. To create a new version,
 use 'connection add', 'connection remove', 'skill add', or 'skill remove'.`,
+		Example: `  # Promote an existing version to the toolbox default
+  azd ai toolbox publish research 2`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxPublish(cmd.Context(), args[0], args[1], readToolboxFlags(cmd, extCtx))

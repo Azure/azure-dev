@@ -547,10 +547,10 @@ func promptAgentRequestHeaders(
 	headers := map[string]string{"x-model-endpoint": settings.EffectiveModelEndpoint()}
 	var features []string
 	if managed != nil && managed.HarnessType() == agent_api.ManagedAgentHarnessGitHubCopilot {
-		features = append(features, "GitHubCopilot=V1Preview")
+		features = append(features, agent_api.GitHubCopilotPreviewFeature)
 	}
 	if managed != nil && len(agent_yaml.PromptAgentSkillReferences(*managed)) > 0 {
-		features = append(features, "Skills=V1Preview")
+		features = append(features, agent_api.SkillsPreviewFeature)
 	}
 	if len(features) > 0 {
 		headers["Foundry-Features"] = strings.Join(features, ",")

@@ -6,13 +6,17 @@ package cli_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -79,6 +83,85 @@ type Attribute struct {
 }
 
 var Sha256Regex = regexp.MustCompile("^[A-Fa-f0-9]{64}$")
+
+func Test_CLI_Telemetry_AgencyAttribution(t *testing.T) {
+	const sessionID = "synthetic-agency-session-must-not-be-exported"
+	tests := []struct {
+		name      string
+		sessionID *string
+		aiAgent   string
+		want      string
+	}{
+		{name: "unset", want: "GitHub Copilot CLI"},
+		{name: "empty", sessionID: new(""), want: "GitHub Copilot CLI"},
+		{name: "Copilot CLI", sessionID: new(sessionID), want: "GitHub Copilot CLI;agency"},
+		{
+			name: "Copilot App and CLI", sessionID: new(sessionID),
+			aiAgent: "github_copilot_app_agent", want: "GitHub Copilot App;agency",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cli := azdcli.NewCLI(t)
+			dir := tempDirWithDiagnostics(t)
+			tracePath := filepath.Join(dir, "trace.json")
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+
+			// Run directly because the CLI helper unconditionally disables agent detection.
+			/* #nosec G204 - Executes the harness-selected test binary with fixed arguments and a temporary trace path. */
+			cmd := exec.CommandContext(ctx, cli.AzdPath, "config", "list", "--trace-log-file", tracePath)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), cli.Env...)
+			cmd.Env = slices.DeleteFunc(cmd.Env, func(entry string) bool {
+				key, _, _ := strings.Cut(entry, "=")
+				return strings.EqualFold(key, "AGENCY_SESSION_ID")
+			})
+			cmd.Env = append(cmd.Env,
+				"AZD_CONFIG_DIR="+filepath.Join(dir, "config"),
+				// Trace-file export requires telemetry to be enabled.
+				"AZURE_DEV_COLLECT_TELEMETRY=yes",
+				"AZURE_DEV_USER_AGENT=",
+				"AZD_DISABLE_AGENT_DETECT=",
+				"AZD_IN_CLOUDSHELL=",
+				"AI_AGENT="+tt.aiAgent,
+				"COPILOT_CLI=1",
+				"ANTIGRAVITY_AGENT=", "ANTIGRAVITY_CONVERSATION_ID=",
+				"CLAUDECODE=", "CLAUDE_CODE_ENTRYPOINT=",
+				"CODEX_INTERNAL_ORIGINATOR_OVERRIDE=", "CODEX_CI=", "CODEX_THREAD_ID=", "CODEX_SESSION_ID=",
+				"CURSOR_AGENT=", "CURSOR_CONVERSATION_ID=",
+				"NO_COLOR=1",
+			)
+			if tt.sessionID != nil {
+				cmd.Env = append(cmd.Env, "AGENCY_SESSION_ID="+*tt.sessionID)
+			}
+
+			output, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", output)
+			require.NotContains(t, string(output), sessionID)
+			traceContent, err := os.ReadFile(tracePath)
+			require.NoError(t, err)
+			require.NotContains(t, string(traceContent), sessionID)
+
+			scanner := bufio.NewScanner(bytes.NewReader(traceContent))
+			commandFound := false
+			for scanner.Scan() {
+				if scanner.Text() == "" {
+					continue
+				}
+				var span Span
+				require.NoError(t, json.Unmarshal(scanner.Bytes(), &span))
+				require.Equal(t, tt.want, attributesMap(span.Resource)[fields.ExecutionEnvironmentKey.Key])
+				if span.Name == "cmd.config.list" {
+					commandFound = true
+				}
+			}
+			require.NoError(t, scanner.Err())
+			require.True(t, commandFound, "expected an exported config list command span")
+		})
+	}
+}
 
 // Verifies telemetry usage data generated for simple commands, such as when environments are created.
 func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {

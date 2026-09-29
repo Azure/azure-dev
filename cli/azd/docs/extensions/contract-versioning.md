@@ -66,10 +66,18 @@ decoding a beta route directly into a stable message. Conversion failures are
 returned with the service and method context. The same bridge supports unary
 and bidirectional streaming methods.
 
-Additive beta request fields are not exposed to the stable implementation.
-The shared adapter discards fields unknown to the stable request type. A
-preview field therefore must not be documented as functional until that
-method has a beta override. An override implements one or more generated
+For unary methods, additive beta request fields are not exposed to the stable
+implementation. Unary adaptation discards fields unknown to the stable request
+type. A preview field therefore must not be documented as functional until
+that method has a beta override.
+
+Bidirectional stream adaptation preserves unknown wire fields when converting
+beta messages to stable messages. Existing error decoding relies on that
+preservation, but the unknown fields are not exposed as typed fields on the
+stable message. Preview stream behavior that needs typed beta data therefore
+still requires a focused beta stream override.
+
+An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with
 `server.WithOptions(WithBetaServiceOverride(...))`; it receives the true
 generated beta request or stream type before any transcoding. Override values

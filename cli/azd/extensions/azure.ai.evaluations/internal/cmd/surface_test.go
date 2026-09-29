@@ -184,11 +184,12 @@ func TestInitFlagsMatchTheSpec(t *testing.T) {
 	}, got, "init's flags are a table in the spec; change both together")
 }
 
-// `init` makes no service calls, so it must not offer the flag that says where
-// to make them.
+// `init` resolves a project from the environment when it needs one, and its
+// only lookup is best effort, so it must not offer the flag that says where to
+// make service calls.
 func TestInitTakesNoProjectEndpoint(t *testing.T) {
 	assert.Nil(t, find(t, "init").Flags().Lookup("project-endpoint"),
-		"init is offline; a project endpoint would imply otherwise")
+		"init works without a project; an endpoint flag would imply it needs one")
 }
 
 // Every command that does reach the service accepts it, because the shared

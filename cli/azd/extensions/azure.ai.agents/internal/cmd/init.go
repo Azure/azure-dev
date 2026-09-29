@@ -2881,7 +2881,8 @@ func (a *InitAction) configureModelChoice(
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
-			ctx, a.azdClient, a.environment.Name, a.azureContext, hasModelResources,
+			ctx, a.azdClient, a.environment.Name, a.azureContext,
+			hasModelResources, false,
 		); err != nil {
 			return nil, err
 		}
@@ -2900,6 +2901,7 @@ func (a *InitAction) configureModelChoice(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			a.flags.projectResourceId, a.flags.acrConnection, a.flags.noPrompt, a.skipACR(),
 			a.isHostedAgent(), // filterHostedRegions: voice/managed agents are not region-restricted
+			false,
 		)
 		if err != nil {
 			return nil, err
@@ -3764,11 +3766,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	// Each Foundry resource is written as its own azure.yaml service entry, so
-	// the deployments, connections, and toolboxes move out of the agent config
-	// into sibling azure.ai.project/connection/toolbox services emitted below.
-	// The agent keeps its container, resources, tool connections, and startup
-	// command. The owning extensions handle each sibling service's lifecycle.
+	// Each agent-owned Foundry resource is written as its own
+	// azure.yaml service entry. Project deployments are authored by
+	// the projects extension and are not kept in the agent service.
 	resourceDeployments := agentConfig.Deployments
 	resourceConnections := agentConfig.Connections
 	resourceToolboxes := agentConfig.Toolboxes
@@ -3844,21 +3844,42 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return err
 	}
 
-	// Emit the sibling Foundry resource services (project + deployments,
-	// connections, toolboxes) and wire the agent's uses: to them. A selected
-	// existing project contributes its endpoint so provision reuses it. The
-	// endpoint itself lives in the azd environment; azure.yaml only references it.
-	endpointRef, err := recordFoundryProjectEnv(
+	if err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
-	)
-	if err != nil {
+	); err != nil {
+		return err
+	}
+	if err := authorSelectedFoundryProject(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		a.selectedFoundryProject,
+		a.projectConfig.GetPath(),
+		func() projectAuthoringMode {
+			if a.selectedFoundryProject != nil {
+				return projectAuthoringExisting
+			}
+			if a.credential != nil {
+				return projectAuthoringNew
+			}
+			return projectAuthoringCurrent
+		}(),
+		a.flags.noPrompt,
+	); err != nil {
+		return err
+	}
+	if err := authorFoundryDeploymentsPreservingDefault(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		a.projectConfig.GetPath(),
+		resourceDeployments,
+	); err != nil {
 		return err
 	}
 	_, err = emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
-		endpointRef,
 		foundryResources{
-			Deployments: resourceDeployments,
 			Connections: resourceConnections,
 			Toolboxes:   resourceToolboxes,
 		},
@@ -3941,20 +3962,32 @@ func (a *InitAction) addVoiceAgentToProject(
 		return fmt.Errorf("adding voice agent service to project: %w", err)
 	}
 
-	// Emit the sibling Foundry project service so provision reuses/creates the
-	// project. Voice init emits no deployment/connection/toolbox siblings; managed
-	// models are service-hosted, and BYOM model deployments are referenced from
-	// azure.yaml and must already exist. The endpoint itself lives in the azd
-	// environment; azure.yaml only references it.
-	endpointRef, err := recordFoundryProjectEnv(
+	if err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
-	)
-	if err != nil {
+	); err != nil {
+		return err
+	}
+	if err := authorSelectedFoundryProject(
+		ctx,
+		a.azdClient,
+		a.environment.Name,
+		a.selectedFoundryProject,
+		a.projectConfig.GetPath(),
+		func() projectAuthoringMode {
+			if a.selectedFoundryProject != nil {
+				return projectAuthoringExisting
+			}
+			if a.credential != nil {
+				return projectAuthoringNew
+			}
+			return projectAuthoringCurrent
+		}(),
+		a.flags.noPrompt,
+	); err != nil {
 		return err
 	}
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,
-		endpointRef,
 		foundryResources{},
 	); err != nil {
 		return err

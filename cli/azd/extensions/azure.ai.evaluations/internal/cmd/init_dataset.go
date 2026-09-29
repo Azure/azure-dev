@@ -48,18 +48,34 @@ func validateInitDataset(
 	if answers.source == initSourceTraces {
 		return nil
 	}
-	path := answers.datasetRef
+	path, err := resolveInitDatasetLocalPath(location, answers.datasetRef, cfg)
+	if err != nil || path == "" {
+		return err
+	}
+	if answers.simulation == nil {
+		_, err := inspectJSONL(ctx, path, nil)
+		return err
+	}
+	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}
+	_, err = inspectJSONL(ctx, path, func(row map[string]any, index int) error {
+		return refuseUnusableSeedRow(group, row, index)
+	})
+	return err
+}
+
+func resolveInitDatasetLocalPath(location, datasetRef string, cfg *project.EvalConfig) (string, error) {
+	path := datasetRef
 	if looksLikeLocalDataset(path) {
 		if _, err := resolveInitLocalDataset(location, path, cfg); err != nil {
-			return err
+			return "", err
 		}
 	} else {
-		decl, err := project.ReadAuthoredDataset(location, answers.datasetRef)
+		decl, err := project.ReadAuthoredDataset(location, datasetRef)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if decl == nil {
-			return nil // Registered names have no local rows for init to inspect.
+			return "", nil // Registered names have no local rows for init to inspect.
 		}
 		// A ref-only declaration takes its name from the included file. Keep
 		// the name in the add-only accumulator without inlining its content.
@@ -68,14 +84,46 @@ func validateInitDataset(
 		}
 		path = decl.File
 	}
-	if answers.simulation == nil || path == "" {
+	if path == "" {
+		return "", nil
+	}
+	if err := refuseInitDatasetConfigAlias(location, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func refuseInitDatasetConfigAlias(location, datasetPath string) error {
+	configPath, err := project.ResolveEvalConfigPath(location)
+	if err != nil {
+		return err
+	}
+	configAbsolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return fmt.Errorf("resolving configuration path: %w", err)
+	}
+	datasetAbsolute, err := filepath.Abs(datasetPath)
+	if err != nil {
+		return fmt.Errorf("resolving dataset path: %w", err)
+	}
+	if sameFilePath(configAbsolute, datasetAbsolute) {
+		return messages.InitDatasetDestinationConflict(datasetPath, configPath)
+	}
+	datasetInfo, err := os.Stat(datasetAbsolute)
+	if err != nil {
+		return messages.DatasetFileNotFound(datasetPath, err)
+	}
+	configInfo, err := os.Stat(configAbsolute)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}
-	_, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
-		return refuseUnusableSeedRow(group, row, index)
-	})
-	return err
+	if err != nil {
+		return messages.ReadingEvalConfig(configPath, err)
+	}
+	if os.SameFile(datasetInfo, configInfo) {
+		return messages.InitDatasetDestinationConflict(datasetPath, configPath)
+	}
+	return nil
 }
 
 // resolveInitLocalDataset binds the file to its eventual catalog name before

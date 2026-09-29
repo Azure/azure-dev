@@ -37,6 +37,14 @@ func InitDatasetFileConflict(name, path string) error {
 		"Init never replaces dataset declarations. To reuse the existing dataset, supply its name or its current file path.")
 }
 
+// InitDatasetDestinationConflict refuses to replace input rows with authored configuration.
+func InitDatasetDestinationConflict(datasetPath, configPath string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("Dataset %q and configuration destination %q resolve to the same file",
+			datasetPath, configPath),
+		"Choose a separate configuration file or directory with --path; init must not overwrite the input dataset.")
+}
+
 // InitDatasetNameInvalid refuses a filename that cannot name a catalog entry.
 func InitDatasetNameInvalid(path, name string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,

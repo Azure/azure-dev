@@ -170,7 +170,12 @@ retains the scaffold and reports manual recovery instead of promising an
 automatic retry. Inspect the retained eval and its root service reference;
 do not delete preexisting evaluations. This does not require a newer SDK or
 change the minimum supported host version.
-For simulation, init checks every locally available seed row before writing
+For every dataset mode, init checks locally available files for non-empty JSONL
+object rows before creating locks, ignore files, artifact directories, or
+configuration. Malformed JSON, empty datasets, arrays, scalars, and empty objects
+are rejected without those writes. This structural check does not invent required
+columns for an evaluator; evaluator-specific contracts are checked separately.
+For simulation, init also checks every locally available seed row before writing
 configuration, including files in declared datasets and local nested `$ref`
 entries. Each row needs a non-whitespace text `test_case_description` of at most
 2,500 Unicode characters and cannot carry `messages`, `query`, or `response`
@@ -193,6 +198,10 @@ reuse it. Equivalent paths to the same file are accepted, preserving references,
 version pins, and other authored metadata.
 When `--path` names a configuration file, dataset lookup uses that exact file,
 while artifact paths remain relative to its directory.
+The configuration destination must not be the selected local dataset itself,
+including equivalent paths, hard links, or symbolic links to the same file.
+Init rejects that conflict before authoring and rechecks identity before writing;
+choose a separate `--path` destination rather than replacing the input rows.
 The successful human `eval create` next step retains that filename rather than
 selecting the default config in the artifact directory.
 If that path cannot be portably quoted, init displays escaped exact-name/path

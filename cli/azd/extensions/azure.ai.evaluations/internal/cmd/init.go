@@ -100,7 +100,8 @@ func newInitCommand() *cobra.Command {
 			"--conversation-mode implies --source dataset and --evaluation-level conversation when omitted. " +
 			"Simulation requires an independent --simulation-model; interactive init prompts for it. " +
 			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
-			"Simulation init validates all locally available seed rows before writing configuration. " +
+			"Init validates locally available datasets as non-empty JSONL objects before creating " +
+			"locks, directories or configuration. Simulation also validates the seed-row contract. " +
 			"Interactive init asks for a corrected or different dataset when local rows are invalid; " +
 			"--no-prompt and --output json fail without writing configuration. " +
 			"A local file cannot replace a different dataset already declared under its filename stem; " +
@@ -411,6 +412,12 @@ func (a *initAction) Run() error {
 	rootBefore, err := os.ReadFile(rootPath)
 	if err != nil {
 		return messages.ReadingPath(rootPath, err)
+	}
+	// Recheck file identity at the write boundary; a link can change after row validation.
+	if source != initSourceTraces {
+		if _, err := resolveInitDatasetLocalPath(configPath, datasetRef, cfg); err != nil {
+			return err
+		}
 	}
 	rollback, err := project.ApplyScaffoldWithRollback(path, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],

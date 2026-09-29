@@ -24,10 +24,12 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -86,6 +88,7 @@ type InvokeAction struct {
 	resolvedBodyLabel     string
 	bodyResolved          bool
 	credential            azcore.TokenCredential
+	invokeReporter        foundryTelemetry.Reporter
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -628,6 +631,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		}
 	}
 
+	// Count the selected remote invoke mode once, regardless of the eventual request result.
+	a.reportInvokeUsage(ctx, protocol)
+
 	// Remote: route by protocol.
 	switch protocol {
 	case agent_api.AgentProtocolInvocations:
@@ -637,6 +643,26 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	default:
 		return a.responsesRemote(ctx)
 	}
+}
+
+func (a *InvokeAction) reportInvokeUsage(ctx context.Context, protocol agent_api.AgentProtocol) {
+	event := telemetry.AgentInvoked(string(protocol), a.flags.longRunning, a.flags.noWait)
+	if a.invokeReporter != nil {
+		a.invokeReporter.Report(ctx, event)
+		return
+	}
+	if a.resolvedRemoteContext != nil && a.resolvedRemoteContext.azdClient != nil {
+		foundryTelemetry.NewReporter(a.resolvedRemoteContext.azdClient.Telemetry(), nil).Report(ctx, event)
+		return
+	}
+
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		azdext.NewLogger("agent.telemetry").Debug("telemetry client unavailable", "event", event.Name)
+		return
+	}
+	defer azdClient.Close()
+	foundryTelemetry.NewReporter(azdClient.Telemetry(), nil).Report(ctx, event)
 }
 
 func (a *InvokeAction) closeResolvedRemoteContextClient() {

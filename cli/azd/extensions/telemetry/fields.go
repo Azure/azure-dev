@@ -60,6 +60,30 @@ var (
 		Endpoint:       "N/A",
 	}
 
+	// AgentInvokeProtocol records the selected remote hosted-agent invocation protocol.
+	AgentInvokeProtocol = fields.AttributeKey{
+		Key:            attribute.Key("ext.protocol"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
+	// AgentInvokeLongRunning records whether the remote invoke requested background execution.
+	AgentInvokeLongRunning = fields.AttributeKey{
+		Key:            attribute.Key("ext.long_running"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
+	// AgentInvokeNoWait records whether the remote invoke returns after receiving its ID.
+	AgentInvokeNoWait = fields.AttributeKey{
+		Key:            attribute.Key("ext.no_wait"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
 	// LocalClientRoute records the bounded local-client route selected by azure.ai.agents.
 	LocalClientRoute = fields.AttributeKey{
 		Key:            attribute.Key("ext.route"),

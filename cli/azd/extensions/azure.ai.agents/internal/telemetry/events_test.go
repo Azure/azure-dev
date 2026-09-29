@@ -8,6 +8,42 @@ import (
 	"testing"
 )
 
+func TestAgentInvokedWireContract(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		protocol    string
+		longRunning bool
+		noWait      bool
+		want        map[string]string
+	}{
+		{"responses foreground", "responses", false, false,
+			map[string]string{"protocol": "responses", "long_running": "false", "no_wait": "false"}},
+		{"responses attached", "responses", true, false,
+			map[string]string{"protocol": "responses", "long_running": "true", "no_wait": "false"}},
+		{"responses detached", "responses", true, true,
+			map[string]string{"protocol": "responses", "long_running": "true", "no_wait": "true"}},
+		{"invocations", "invocations", false, false,
+			map[string]string{"protocol": "invocations", "long_running": "false", "no_wait": "false"}},
+		{"a2a", "a2a", false, false,
+			map[string]string{"protocol": "a2a", "long_running": "false", "no_wait": "false"}},
+		{"unrecognized protocol", "customer-protocol", false, false,
+			map[string]string{"protocol": "unknown", "long_running": "false", "no_wait": "false"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			event := AgentInvoked(tt.protocol, tt.longRunning, tt.noWait)
+			if event.Name != "agent.invoked" {
+				t.Fatalf("event name = %q, want agent.invoked", event.Name)
+			}
+			if !maps.Equal(event.Attributes, tt.want) {
+				t.Fatalf("event attributes = %#v, want %#v", event.Attributes, tt.want)
+			}
+		})
+	}
+}
+
 func TestLocalClientRouteSelectedWireContract(t *testing.T) {
 	t.Parallel()
 

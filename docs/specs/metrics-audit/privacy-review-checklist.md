@@ -3,6 +3,23 @@
 This document defines when a privacy review is required for telemetry changes in `azd`,
 the data classification framework, hashing requirements, and a PR checklist template.
 
+## Proposed Review: Remote Agent Invoke Adoption
+
+`azure.ai.agents` proposes one `agent.invoked` extension usage event when a validated remote
+hosted-agent invoke enters its selected protocol path. This change requires privacy review
+for the new event and three first-party extension fields; this record is not an approval.
+
+| Field or data | Classification | Privacy decision |
+|---------------|----------------|------------------|
+| `extension.event=agent.invoked` | SystemMetadata | Fixed event name, emitted once per remote invoke attempt before authentication or the service request; no result or service status is inferred |
+| `ext.protocol` | SystemMetadata | Only code-defined `responses`, `invocations`, `a2a`, or defensive `unknown`; never the raw flag value |
+| `ext.long_running`, `ext.no_wait` | SystemMetadata | String-encoded boolean flags for the selected request mode; no user text |
+
+All three fields have purpose `FeatureInsight`, endpoint `N/A`, and require no hashing.
+The event excludes local and prompt-agent invokes and carries no agent name, prompt,
+URL, ID, path, or other customer content. Reporting is best-effort and subject to
+the existing official-registry admission and 100-events-per-invocation limit.
+
 ## PR 9810 Review Record
 
 The error-attribution fields introduced by PR 9810 were reviewed against this

@@ -50,6 +50,9 @@ class FakeCliDriver:
             return test_service.ServiceTests().identity(self.plan)
         if label.startswith("verify approved"):
             extension = next(key for key, value in service.required_extensions(self.plan).items() if value == args[1])
+            if extension == service.AGENT_EXTENSION:
+                self.case.assertIsNone(kwargs["output_format"])
+                return f"Version: {self.plan['versions'][extension]}\nCommit: test-only\nBuild Date: test-only\n".encode()
             return {"name": extension, "version": self.plan["versions"][extension]}
         if label == "invoke approved existing agent through CLI":
             self.case.assertEqual(args[:3], ["ai", "agent", "invoke"])
@@ -206,6 +209,34 @@ class AgentCliTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0][-3:], ["--no-prompt", "--output", "raw"])
             self.assertNotIn("private-value", json.dumps(report))
             self.assertNotIn("private.services", json.dumps(report))
+
+    def test_agents_version_uses_the_actual_text_contract_not_json(self):
+        plan = plan_for()
+        for raw, accepted in (
+            (b"Version: 1.0.0-beta.16\nCommit: fixture\nBuild Date: fixture\n", True),
+            (b"Version: 1.0.0-beta.16\r\nCommit: fixture\r\nBuild Date: fixture\r\n", True),
+            (b"Version: 1.0.0-beta.17\nCommit: fixture\nBuild Date: fixture\n", False),
+            (b'{"name":"azure.ai.agents","version":"1.0.0-beta.16"}', False),
+            (b"Version: 1.0.0-beta.16\n", False),
+        ):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as root:
+                fake = FakeCliDriver(self, Path(root))
+                command = fake.__call__
+
+                def driver(label, args, **kwargs):
+                    return raw if label == "verify approved " + service.AGENT_EXTENSION else command(label, args, **kwargs)
+
+                if accepted:
+                    service.verify_identity(plan, driver)
+                else:
+                    with self.assertRaisesRegex(service.Blocked, "Agents runtime text version"):
+                        service.verify_identity(plan, driver)
+        with tempfile.TemporaryDirectory() as root:
+            driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 15, 30, {})
+            with mock.patch.object(service.subprocess, "run",
+                                   return_value=subprocess.CompletedProcess([], 0, b"version text", b"")) as run:
+                self.assertEqual(driver("version", ["ai", "agent", "version"], output_format=None), b"version text")
+            self.assertEqual(run.call_args.args[0], ["azd", "ai", "agent", "version", "--no-prompt"])
 
     def installed_fixture(self, root):
         plan, settings = test_service.ServiceTests().installed_fixture(root)

@@ -310,7 +310,10 @@ scenario contribution; a compatible core/agents/evaluation/dataset tuple
 must be explicitly selected and approved before activation.
 
 1. Verify the service identity, all installed bytes and all three runtime
-   extension versions. Validate one approved manual query/ground-truth row.
+   extension versions. Agents `version` emits `Version`, `Commit` and `Build Date`
+   text, not JSON; validate its exact version without passing an output-format
+   flag. Evaluation and dataset version commands retain their JSON assertions.
+   Validate one approved manual query/ground-truth row.
 2. Create one uniquely named owned session on the approved existing hosted
    agent through `POST /agents/{name}/endpoint/sessions?api-version=v1`.
    Require the returned `agent_session_id` to match the submitted unique ID

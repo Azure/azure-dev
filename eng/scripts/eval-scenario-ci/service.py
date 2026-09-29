@@ -319,8 +319,10 @@ class Driver:
         })
 
     def __call__(self, label, args, *, private_output=False, cleanup_deadline=None, output_format="json"):
-        expect(output_format in ("json", "raw"), "Unsupported driver output format")
-        argv = [str(self.executable), *args, "--no-prompt", "--output", output_format]
+        expect(output_format in ("json", "raw", None), "Unsupported driver output format")
+        argv = [str(self.executable), *args, "--no-prompt"]
+        if output_format is not None:
+            argv.extend(["--output", output_format])
         deadline = self.deadline if cleanup_deadline is None else cleanup_deadline
         timeout = min(self.timeout, deadline - time.monotonic())
         if timeout <= 0:
@@ -352,7 +354,7 @@ class Driver:
                               stderrSha256=hashlib.sha256(result.stderr).hexdigest())
             if result.returncode != 0:
                 raise RuntimeError(f"{label} returned exit {result.returncode}; raw service output is not published")
-            if output_format == "raw":
+            if output_format in ("raw", None):
                 return result.stdout
             return json.loads(result.stdout, parse_float=Decimal) if result.stdout.strip() else None
         except subprocess.TimeoutExpired:
@@ -442,9 +444,16 @@ def verify_identity(plan, driver):
     verify_native_identity_token(identity, plan)
     del identity
     for extension, command in required_extensions(plan).items():
-        version = driver("verify approved " + extension, ["ai", command, "version"])
-        require(version == {"name": extension, "version": plan["versions"][extension]},
-                "Runtime extension version differs from the approved plan")
+        if extension == AGENT_EXTENSION:
+            version = driver("verify approved " + extension, ["ai", command, "version"], output_format=None)
+            expected = re.escape(plan["versions"][extension]).encode("utf-8")
+            require(isinstance(version, bytes) and re.fullmatch(
+                rb"Version: " + expected + rb"\r?\nCommit: [^\r\n]*\r?\nBuild Date: [^\r\n]*\r?\n", version),
+                "Agents runtime text version differs from the approved plan")
+        else:
+            version = driver("verify approved " + extension, ["ai", command, "version"])
+            require(version == {"name": extension, "version": plan["versions"][extension]},
+                    "Runtime extension version differs from the approved plan")
 
 
 def approved_row(raw, digest, *, prompt=False):

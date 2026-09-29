@@ -789,6 +789,19 @@ The target must be active, declare `invocations_ws/1.0.0`, and include
 instructions, tools, and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
+## After deployment
+
+The endpoint note points to `azd ai eval init` for evaluation setup, not the
+deprecated `azd ai agent eval generate`. This command scaffolds evaluation
+configuration; follow the [evaluations guide](../azure.ai.evaluations/README.md)
+for the subsequent deployment and run steps.
+
+When a service README supplies invocation guidance, the note points to that
+README instead of the generic invocation link and evaluation setup paragraph.
+The `azd ai agent show <service>` and `azd ai agent invoke <service>` next steps
+use the local service key from `azure.yaml`, which can differ from the deployed
+agent name shown in the endpoint.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

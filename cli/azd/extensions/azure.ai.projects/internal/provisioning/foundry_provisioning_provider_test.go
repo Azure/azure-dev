@@ -16,8 +16,6 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -29,20 +27,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-type fakeSubscriptionDeploymentsClient struct {
-	name string
-	err  error
-}
-
-func (c *fakeSubscriptionDeploymentsClient) BeginDeleteAtSubscriptionScope(
-	_ context.Context,
-	name string,
-	_ *armresources.DeploymentsClientBeginDeleteAtSubscriptionScopeOptions,
-) (*runtime.Poller[armresources.DeploymentsClientDeleteAtSubscriptionScopeResponse], error) {
-	c.name = name
-	return nil, c.err
-}
 
 func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
@@ -1172,30 +1156,6 @@ func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {
 	assert.Contains(t, local.Message, "rg-foundry-test")
 	// Suggestion must point at the actual fix.
 	assert.Contains(t, local.Suggestion, "--force")
-}
-
-func TestDeleteArmDeployment_IgnoresMissingRecord(t *testing.T) {
-	p := &FoundryProvisioningProvider{envName: "dev", projectPath: t.TempDir()}
-	client := &fakeSubscriptionDeploymentsClient{
-		err: &azcore.ResponseError{StatusCode: 404},
-	}
-
-	err := p.deleteArmDeploymentWithClient(t.Context(), func(string) {}, client)
-
-	require.NoError(t, err)
-	assert.Equal(t, p.deploymentName(), client.name)
-}
-
-func TestDeleteArmDeployment_ReportsDeleteFailure(t *testing.T) {
-	p := &FoundryProvisioningProvider{envName: "dev", projectPath: t.TempDir()}
-	client := &fakeSubscriptionDeploymentsClient{
-		err: &azcore.ResponseError{StatusCode: 500},
-	}
-
-	err := p.deleteArmDeploymentWithClient(t.Context(), func(string) {}, client)
-
-	require.Error(t, err)
-	assert.Equal(t, p.deploymentName(), client.name)
 }
 
 func TestFindFoundryProjectService_DependencyCategory(t *testing.T) {

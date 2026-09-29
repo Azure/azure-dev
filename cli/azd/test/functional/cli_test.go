@@ -890,20 +890,51 @@ func cfgOrStoredSubscription(session *recording.Session) string {
 }
 
 func randomEnvName() string {
-	bytes := make([]byte, 4)
+	bytes := make([]byte, 5)
 	_, err := rand.Read(bytes)
 	if err != nil {
 		panic(fmt.Errorf("could not read random bytes: %w", err))
 	}
 
-	// Adding first letter initial of the OS for CI identification
 	osName := os.Getenv("AZURE_DEV_CI_OS")
 	if osName == "" {
 		osName = runtime.GOOS
 	}
-	osInitial := osName[:1]
+	osCode := map[string]string{
+		"darwin":    "m",
+		"lin":       "l",
+		"linux":     "l",
+		"mac":       "m",
+		"mac-arm64": "a",
+		"win":       "w",
+		"windows":   "w",
+	}[osName]
+	if osCode == "" {
+		osCode = osName[:1]
+	}
 
-	return ("azdtest-" + osInitial + hex.EncodeToString(bytes))[0:15]
+	return "azd-" + osCode + hex.EncodeToString(bytes)
+}
+
+func TestRandomEnvName_UsesDistinctCIOSCodes(t *testing.T) {
+	for _, test := range []struct {
+		os   string
+		code string
+	}{
+		{os: "win", code: "w"},
+		{os: "lin", code: "l"},
+		{os: "mac", code: "m"},
+		{os: "mac-arm64", code: "a"},
+	} {
+		t.Run(test.os, func(t *testing.T) {
+			t.Setenv("AZURE_DEV_CI_OS", test.os)
+
+			name := randomEnvName()
+
+			require.Len(t, name, 15)
+			require.True(t, strings.HasPrefix(name, "azd-"+test.code))
+		})
+	}
 }
 
 // stdinForInit builds the standard input string that will configure a given environment name

@@ -32,7 +32,11 @@ pre:
   - run: |
       PROJECT=~/working/azd-agents-shared/{shared_agent_name}
       if [ -f "$PROJECT/azure.yaml" ]; then
-        (cd "$PROJECT" && azd down --force --purge) || {
+        (
+          cd "$PROJECT"
+          bash "{fixtures_dir}/scripts/cleanup-subscription-deployments.sh"
+          azd down --force --purge
+        ) || {
           echo "ERROR: Could not tear down the existing project. State retained at $PROJECT."
           exit 1
         }

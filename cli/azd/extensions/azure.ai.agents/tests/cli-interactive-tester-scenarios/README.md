@@ -631,13 +631,16 @@ How they're used here:
   `timeout: 900`.
 - **`pre` precondition guard (Tier 2 reuse)** — `2.01-`…`2.18` print a clear "run
   2.00-setup first" warning if the shared agent isn't deployed (non-fatal).
-- **`post` cleanup (Tier 1b)** — every deploy-verification scenario runs
-  `azd down --force --purge` with `timeout: 900` after the global product barrier, including
-  when product verification fails. Cleanup state is persisted in the run's
+- **`post` cleanup (Tier 1b)** — every deploy-verification scenario first makes a best-effort,
+  non-blocking request to delete its subscription-scope ARM deployment records, then runs
+  `azd down --force --purge` with `timeout: 900` after the global product barrier, including when
+  product verification fails. Deployment-record cleanup failures are warnings and do not prevent
+  the primary `azd down` teardown. Cleanup state is persisted in the run's
   `CLEANUP-STATUS.md`, and hooks are drained one at a time so long cleanup calls cannot block
   active tester sessions.
-- **Success-gated cleanup (Tier 2)** — `2.99-teardown-down` removes the current
-  run's `{shared_agent_name}` project directory only after the in-session
+- **Success-gated cleanup (Tier 2)** — `2.99-teardown-down` requests the same best-effort
+  deployment-record cleanup before `azd down`, while environment metadata is still available. It
+  removes the current run's `{shared_agent_name}` project directory only after the in-session
   `azd down` succeeds. Failed teardown retains the directory for recovery.
 
 ## Fixtures

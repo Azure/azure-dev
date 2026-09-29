@@ -12,6 +12,28 @@ from unittest import mock
 import scenario
 
 
+def producer_manifest(approved, authority):
+    pin = copy.deepcopy(approved)
+    base = f"https://github.com/{scenario.FEED}/releases/download/{pin['releaseTag']}/"
+    pin["scenarioResolution"] = {
+        "schemaVersion": 1, "releaseId": 123,
+        "resolvedFrom": f"https://api.github.com/repos/{scenario.FEED}/releases/latest",
+        "publishedAt": "2026-09-24T00:00:00Z", "resolvedAt": "2026-09-24T01:00:00Z",
+        "sourceEvidence": "Test fixture only", "fixtureContract": "build41-offline-160",
+        "approval": authority,
+        "metadata": {name: {"url": base + name, "sha256": pin["registrySha256"]}
+                     for name in ("registry.json", "source-provenance.json", "SHA256SUMS")},
+        "artifacts": {
+            extension: {platform: {
+                "url": base + extension + "-" + platform.replace("/", "-") + ".zip",
+                "sha256": digest, "entryPoint": "fixture.exe",
+            } for platform, digest in entry["artifacts"].items()}
+            for extension, entry in pin["extensions"].items()
+        },
+    }
+    return pin
+
+
 class ResolutionTests(unittest.TestCase):
     def setUp(self):
         self.tag = "extensions-2026-09-23-41"
@@ -172,6 +194,46 @@ class ResolutionTests(unittest.TestCase):
                 self.assertEqual(report["status"], "BLOCKED")
                 self.assertEqual(report["execution"], "NOT RUN")
 
+    def test_invalid_release_metadata_always_preserves_blocked_receipt(self):
+        latest, original = self.resolution_urls()
+        for kind in ("download", "invalid-json", "null", "missing-assets", "missing-registry",
+                     "duplicate-release-key", "duplicate-provenance-key", "bad-provenance", "bad-sums"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
+                urls = dict(original)
+                if kind == "invalid-json":
+                    urls[latest] = b"{broken"
+                elif kind == "null":
+                    urls[latest] = b"null"
+                elif kind == "missing-assets":
+                    urls[latest] = json.dumps({"tag_name": self.tag}).encode()
+                elif kind == "missing-registry":
+                    release = copy.deepcopy(self.release)
+                    release["assets"] = [item for item in release["assets"] if item["name"] != "registry.json"]
+                    urls[latest] = json.dumps(release).encode()
+                elif kind == "duplicate-release-key":
+                    urls[latest] = original[latest].replace(b'"id": 123', b'"id": 456, "id": 123')
+                elif kind in ("duplicate-provenance-key", "bad-provenance", "bad-sums"):
+                    name = "SHA256SUMS" if kind == "bad-sums" else "source-provenance.json"
+                    raw = (b"bad  registry.json\n" if kind == "bad-sums" else
+                           b'{"releaseTag":"first","releaseTag":"second"}'
+                           if kind == "duplicate-provenance-key" else b"null")
+                    urls[self.base + name] = raw
+                    release = copy.deepcopy(self.release)
+                    next(item for item in release["assets"] if item["name"] == name)["digest"] = (
+                        "sha256:" + scenario.sha256(raw))
+                    urls[latest] = json.dumps(release).encode()
+                fetch = RuntimeError("Release unavailable") if kind == "download" else urls.__getitem__
+                with mock.patch.object(scenario, "reviewed_candidate", return_value=(self.baseline, self.authority)), \
+                     mock.patch.object(scenario, "fetch", side_effect=fetch), \
+                     mock.patch.object(scenario.proof_module, "Proof") as proof:
+                    output = Path(root) / "candidate.json"
+                    with self.assertRaises(scenario.ApprovalBlocked):
+                        scenario.resolve(output)
+                    proof.assert_not_called()
+                self.assertFalse(output.exists())
+                receipt = json.loads((Path(root) / "approval-status.json").read_text())
+                self.assertEqual((receipt["status"], receipt["execution"]), ("BLOCKED", "NOT RUN"))
+
     def test_duplicate_approval_keys_block_before_shape_validation_or_binary_work(self):
         env = {"AZD_SCENARIO_APPROVAL_REPOSITORY": "trusted/repository",
                "AZD_SCENARIO_APPROVED_COMMIT": "e" * 40}
@@ -186,7 +248,7 @@ class ResolutionTests(unittest.TestCase):
                 root = Path(root)
                 with self.assertRaisesRegex(scenario.ApprovalBlocked, "duplicate object keys"):
                     scenario.resolve(root / "producer" / "candidate.json")
-                scenario.write_json(root / "pin.json", self.build())
+                scenario.write_json(root / "pin.json", producer_manifest(self.baseline, self.authority))
                 with self.assertRaisesRegex(scenario.ApprovalBlocked, "duplicate object keys"):
                     scenario.execute(root / "pin.json", root / "consumer")
                 validate.assert_not_called()
@@ -317,8 +379,7 @@ class SafetyTests(unittest.TestCase):
         for kind in ("pins", "approval", "missing-approval"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
                 pin, authority = scenario.reviewed_candidate()
-                pin = copy.deepcopy(pin)
-                pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": authority}
+                pin = producer_manifest(pin, authority)
                 if kind == "pins":
                     pin["extensions"]["azure.ai.evaluations"]["artifacts"]["linux/amd64"] = "c" * 64
                 elif kind == "approval":
@@ -335,6 +396,51 @@ class SafetyTests(unittest.TestCase):
                 self.assertEqual(report["status"], "BLOCKED")
                 self.assertEqual(report["execution"], "NOT RUN")
 
+    def test_incomplete_or_conflicting_producer_metadata_blocks_before_installer(self):
+        for kind in ("missing-artifacts", "null-artifacts", "missing-platform", "wrong-archive-hash",
+                     "moving-archive-url", "unsafe-entrypoint", "missing-metadata", "wrong-registry-hash",
+                     "wrong-metadata-url", "boolean-schema", "boolean-release-id", "bad-time", "numeric-flag"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
+                approved, authority = scenario.reviewed_candidate()
+                pin = producer_manifest(approved, authority)
+                resolution = pin["scenarioResolution"]
+                artifact = resolution["artifacts"]["azure.ai.evaluations"]["linux/amd64"]
+                if kind == "missing-artifacts":
+                    del resolution["artifacts"]
+                elif kind == "null-artifacts":
+                    resolution["artifacts"] = None
+                elif kind == "missing-platform":
+                    del resolution["artifacts"]["azure.ai.dataset"]["windows/amd64"]
+                elif kind == "wrong-archive-hash":
+                    artifact["sha256"] = "d" * 64
+                elif kind == "moving-archive-url":
+                    artifact["url"] = f"https://github.com/{scenario.FEED}/releases/latest/download/archive.zip"
+                elif kind == "unsafe-entrypoint":
+                    artifact["entryPoint"] = "../other"
+                elif kind == "missing-metadata":
+                    del resolution["metadata"]["SHA256SUMS"]
+                elif kind == "wrong-registry-hash":
+                    resolution["metadata"]["registry.json"]["sha256"] = "d" * 64
+                elif kind == "wrong-metadata-url":
+                    resolution["metadata"]["registry.json"]["url"] += "?sig=do-not-publish"
+                elif kind == "boolean-schema":
+                    resolution["schemaVersion"] = True
+                elif kind == "boolean-release-id":
+                    resolution["releaseId"] = True
+                elif kind == "bad-time":
+                    resolution["resolvedAt"] = "not-a-timestamp"
+                else:
+                    pin["initSeedValidation"] = 1
+                manifest, output = Path(root) / "pin.json", Path(root) / "evidence"
+                scenario.write_json(manifest, pin)
+                with mock.patch.object(scenario.proof_module, "Proof") as proof:
+                    with self.assertRaises(scenario.ApprovalBlocked):
+                        scenario.execute(manifest, output)
+                    proof.assert_not_called()
+                receipt = json.loads((output / "approval-status.json").read_text())
+                self.assertEqual((receipt["status"], receipt["execution"]), ("BLOCKED", "NOT RUN"))
+                self.assertNotIn("do-not-publish", json.dumps(receipt))
+
     def test_missing_approval_never_fetches_latest_or_starts_proof(self):
         with tempfile.TemporaryDirectory() as root, \
              mock.patch.object(scenario, "reviewed_candidate",
@@ -348,7 +454,8 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(json.loads((output.parent / "approval-status.json").read_text())["status"], "BLOCKED")
 
     def test_missing_or_corrupt_producer_manifest_persists_block_before_any_work(self):
-        for raw in (None, b"{broken", b"\xff", b'{"azd":{},"azd":{}}'):
+        for raw in (None, b"{broken", b"\xff", b'{"azd":{},"azd":{}}', b"null", b"[]",
+                    b"[" * 2000 + b"0" + b"]" * 2000):
             with self.subTest(raw=raw), tempfile.TemporaryDirectory() as root:
                 manifest, output = Path(root) / "candidate.json", Path(root) / "evidence"
                 if raw is not None:
@@ -488,7 +595,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_cleanup_failure_cannot_produce_pass_receipt(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
+        pin = producer_manifest(pin, self.authority)
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
             scenario.write_json(manifest, pin)
@@ -520,7 +627,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_primary_failure_survives_a_second_cleanup_failure(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
+        pin = producer_manifest(pin, self.authority)
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
             scenario.write_json(manifest, pin)
@@ -550,7 +657,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_success_receipt_keeps_frozen_manifest_bytes_and_waits_for_cleanup(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
+        pin = producer_manifest(pin, self.authority)
         frozen = (json.dumps(pin, indent=2) + "\n").encode("utf-8")
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
@@ -572,7 +679,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_manifest_integrity_failure_is_persisted_after_workspace_cleanup(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
+        pin = producer_manifest(pin, self.authority)
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
             scenario.write_json(manifest, pin)

@@ -94,6 +94,12 @@ Independently fetched approvals and producer manifests reject duplicate JSON
 keys recursively. Missing/corrupt producer files and metadata-byte substitutions
 also preserve that blocked receipt before release lookup or binary work, as
 applicable, rather than failing outside the evidence boundary.
+Malformed or unavailable release metadata, duplicate metadata keys and checksum
+conflicts also produce a blocked receipt. Consumers validate the complete
+resolution schema, both platforms' archive identities, fixed metadata URLs,
+registry digest, timestamps and exact JSON types before constructing the
+installer. An incomplete producer artifact cannot launch even an approved
+executable before discovering the missing evidence.
 The native publication handoff and repository dispatch event do not constitute
 that approval. A non-Latest candidate-pin commit can therefore leave the separate
 Latest scenario blocked until approved configuration and the promoted release
@@ -188,7 +194,7 @@ The existing `static-evaluation` mode retains this sequence:
 
 1. Verify approved core/extension executable digests in the supplied isolated
    **CI service-auth** configuration. The profile must contain exactly the two
-   approved extensions; each persisted ID/namespace/version and relative
+   approved evaluation/dataset extensions for this mode; each persisted ID/namespace/version and relative
    execution path is bound to its contained resolved executable and that file
    is hashed. The persisted path is authoritative, including legitimate custom
    locations; an approved conventional filename elsewhere is not sufficient.
@@ -281,6 +287,89 @@ mode is rejected rather than ignored. Its exact `authorizedOperations` set adds
 `agent-version-create`, `agent-version-delete`, `dataset-create`, and
 `dataset-delete` to the existing five operations.
 
+### Existing-agent CLI smoke, not deployment
+
+The separate `existing-agent-cli-evaluation` mode exercises the actual
+`azure.ai.agents` command through `azd`, then evaluates its returned text.
+It does **not** deploy, update or delete the existing hosted agent. The
+owned v1 prompt-version mode above remains a distinct REST sequence, not
+agents-extension deployment proof.
+
+This mode requires an independently approved installed agents executable in
+addition to core, evaluation and dataset. The profile must contain exactly
+those three approved extension routes, versions and executable hashes; it must
+be exclusive to the job and have no existing `extensions.ai-agents` state.
+No moving registry or producer input authorizes those bytes. Staging compatible
+packages, their dependencies and native authentication is an activation
+prerequisite, not something this executor silently installs or waives.
+The separate agents owner's current local source
+`b185546784fa83ff4eb7b0934888dc843c244ddf` requires core `>=1.34.2`.
+Do not reuse the offline public43 core1.33.0 pin for that agents artifact.
+That local agents build is not published or independently approved by this
+scenario contribution; a compatible core/agents/evaluation/dataset tuple
+must be explicitly selected and approved before activation.
+
+1. Verify the service identity, all installed bytes and all three runtime
+   extension versions. Validate one approved manual query/ground-truth row.
+2. Create one uniquely named owned session on the approved existing hosted
+   agent through `POST /agents/{name}/endpoint/sessions?api-version=v1`.
+   Require the returned `agent_session_id` to match the submitted unique ID
+   and `version_indicator` to confirm the approved `version_ref`/`agent_version`.
+   An ambiguous create is not retried or deleted by guessing.
+3. Write the approved query into a private JSON input file and execute
+   `azd ai agent invoke --agent-endpoint <invocations-endpoint> --input-file <file> --session-id <returned-id> --timeout <seconds> --debug-latency=false --no-prompt --output raw`.
+   Do not add a positional agent name, `--protocol`, or `--version`: the endpoint
+   selects the protocol and the already-created session binds the version.
+   The agents command does not support JSON output for invoke.
+4. Parse the captured raw HTTP response privately. Require one synchronous
+   HTTP200 response with a single JSON content type, no error envelope, and a
+   nonempty string in the approved response field. Reject SSE, HTTP202/LRO,
+   duplicate JSON keys and malformed/empty output. Exit0 alone is not success.
+5. Combine that actual response with the approved query/ground-truth row, create
+   one uniquely named dataset version, download and hash-check those exact
+   derived bytes, then use the static evaluation create/run/wait/export flow.
+   This does not invoke the agent again during evaluation.
+6. Attempt deletion of the owned eval ID, dataset version and returned session
+   ID, sharing one cleanup deadline. Session deletion uses only
+   `DELETE /agents/{approved-name}/endpoint/sessions/{returned-id}?api-version=v1`,
+   accepting success or404 without decoding an empty body. Remove and read back
+   only the initially absent `extensions.ai-agents` local namespace. Preserve
+   the rest of the caller's isolated auth profile. Retain primary and every
+   cleanup failure separately. Never delete the existing agent or its versions.
+
+The additional plan fields are `datasetFile`, `agentName`, `agentVersion`,
+`agentInputField` and `agentResponseField`, replacing `datasetName`.
+Input/response field names are simple top-level JSON property names, not
+expressions. The raw input JSONL SHA256 remains `datasetSha256`; the generated
+response-row hash is recorded as `invokedDatasetSha256`.
+`versions` adds `azure.ai.agents`; `binarySha256` adds its executable digest.
+The exact operation set adds `agent-session-create`, `agent-invoke`,
+`agent-session-delete`, `dataset-create` and `dataset-delete` to the five
+static-evaluation operations. One inference, one row and one evaluation run
+are fixed execution bounds, not monetary enforcement.
+
+The shared entry point remains `service.py --plan <approved-json> --output <new-directory>`.
+`service-status.json` retains `status`, `execution`, `planSha256`, native run
+identity, command timing/output hashes, `quality`, exact owned identities,
+`remoteCleanup`, `datasetCleanup`, `sessionCleanup`, `agentStateCleanup` and
+local `cleanup`. `agentCliInvocation.status` is `NOT RUN`, `FAIL` or `PASS`;
+its success is independent of evaluation quality and cleanup.
+Exit0 requires the complete selected lifecycle and cleanup, exit3 means
+pre-execution `BLOCKED / NOT RUN`, and exit1 means failed started work.
+Mock results are not real GitHub/Azure DevOps service-run evidence.
+
+The command/session contract was checked against the repository's
+[`invoke.go`](../../cli/azd/extensions/azure.ai.agents/internal/cmd/invoke.go),
+[`config_store.go`](../../cli/azd/extensions/azure.ai.agents/internal/cmd/config_store.go)
+and [session operations](../../cli/azd/extensions/azure.ai.agents/internal/pkg/agents/agent_api/operations.go).
+The actual agents surface has no `ai agent create` command. Core
+`azd deploy <service> --no-prompt` requires a separately validated approved
+project, provider/artifact tuple and deployment/teardown contract. Prompt
+agents use a different service path and support whole-agent, not per-version,
+CLI deletion. That core-deployment stage is **NOT IMPLEMENTED**, not an alias
+for this smoke or the v1 REST mode. Whole-agent cleanup would require explicit
+ownership and deletion authorization; no shared-agent teardown is inferred.
+
 ### Executor implementation matrix
 
 All service rows below are default-off and **actual execution NOT RUN** for this
@@ -290,6 +379,8 @@ contribution. Unit/mock coverage is not native approval or live acceptance.
 | --- | --- | --- | --- |
 | Static workflow | Yes: `service.lifecycle`, existing registered row | Existing success, refusal, result and cleanup tests | Both call `service.py --plan`; GitHub additionally binds an existing protected environment |
 | Agent version create | Yes: `owned_prompt_lifecycle`, public v1 prompt-version POST | Existing-name refusal, exact minimal body, returned version9, ambiguous/missing identity | Both select `owned-prompt-evaluation` through the approved plan |
+| Existing-agent CLI smoke | Yes: `existing_agent_cli_lifecycle`, real `ai agent invoke` raw-output contract | Version-bound session, actual response-to-dataset/eval binding, raw/error/SSE/LRO controls, exact session/local-state cleanup | Both select `existing-agent-cli-evaluation` through the approved plan; actual service execution is NOT RUN |
+| Core agent deployment | **No**: supported core command is `azd deploy <service> --no-prompt`, not an agent-create subcommand | No approved complete project/provider/deploy/whole-owned-agent-cleanup contract or deployed-artifact proof | NOT IMPLEMENTED; not interchangeable with v1 prompt version creation or existing-agent smoke |
 | Agent infrastructure deploy | **No**: no separate deploy command is part of this minimal prompt-version contract | No hosted/deployment proof | Not wired. `azd deploy` with an agent service would require an approved code/image artifact, service definition, compute/registry/infra and teardown contract; hosted/A2A/voice infrastructure is outside this scope |
 | Manual dataset create | Yes: published `ai dataset create --from-file --version` | Exact copied bytes/returned version, uncertain write, round-trip mismatch | Both use the same owned-mode executor |
 | Eval create | Yes: published `ai eval create --from-file` | Exact target/catalog, unique name, returned eval ID | Both use the same executor |
@@ -340,6 +431,9 @@ The provider must securely stage the per-run approved plan and existing auth
 configuration before selecting this path; that bootstrap is not implemented
 by these jobs. Supplying a service plan with offline mode is an error, not an
 ignored input.
+Missing or malformed plans and unavailable pre-execution inputs produce
+`BLOCKED / NOT RUN` with exit3. Once command execution starts, command, assertion
+and cleanup failures are `FAIL`, not a new prerequisite block.
 
 **A budget number is not enforcement.** The plan additionally requires a
 reference to an externally verified service-side budget control. This code

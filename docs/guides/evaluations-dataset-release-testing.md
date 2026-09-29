@@ -39,36 +39,38 @@ different evidence types and must never substitute for one another.
 
 ## Isolation, cadence, and spending
 
-Each of the six ongoing testers owns a separate `AZD_CONFIG_DIR`, scenario
+Each authorized tester owns a separate `AZD_CONFIG_DIR`, scenario
 directory, artifact/coverage ledger, and resource prefix. Never mutate the normal
 global registry/configuration or another tester's agents, runs, files, or sessions.
 Follow the [repository testing rules][agent-rules] for `NO_COLOR=1`,
 `AZD_FORCE_TTY=false`, and `AZURE_DEV_COLLECT_TELEMETRY=no`. Set these variables in
 the same process environment as the tested commands.
 
-The six roles are practical, edge-case, docs-only novice, docs-only adversarial,
-stateful, and metamorphic. The practical/edge pair covers realistic journeys,
+Available roles are practical, edge-case, docs-only novice, docs-only adversarial,
+stateful, and metamorphic. Select only the roles needed for the authorized batch.
+The practical/edge pair covers realistic journeys,
 negative inputs, recovery, automation contracts, and confusing UX. The stateful
 tester checks sequences and recovery; the metamorphic tester checks invariants
 across equivalent inputs and environment variations. Keep the docs-only pair
 free of source and prior-finding hints.
 
-Each maintains a replenishing backlog and runs back-to-back bounded, novel
-current-package batches under the latest explicit user authorization, with an
-owned native five-minute watchdog. Verify the saved schedule by reading it back.
-A configured schedule proves neither that a scheduled invocation occurred nor
-that any test passed.
+Default to one finite, explicitly scoped batch with an owner, immutable artifact,
+case list and stop condition. Complete the batch, persist its receipts, report
+remaining blockers and stop. Do not create timers, watchdogs or recurring work
+unless the current request separately authorizes that cadence. The historical
+six-role watchdog campaign below is evidence of that campaign, not continuing
+authorization for a new owner.
 
 At each batch, resolve Latest afresh, persist its immutable identity, compare
 previous artifact/coverage, and select useful new scenarios or regressions.
-An unchanged digest is not an idle condition: replenish local cases rather than
-repeat the same assertions. Coordinate ownership so batches do not duplicate
-coverage or overlap stress work. Use bounded batches and native watchdogs, not
-an unbounded shell loop or broker inbox polling. Pause when requested, when no
-safe novel work can be identified, or when execution becomes unsafe. These
-cadences do not authorize repeated costly cloud cases.
+Reuse existing exact-artifact evidence rather than repeating passed assertions.
+Coordinate ownership so batches do not duplicate coverage or overlap stress work.
+A new batch requires a meaningful untested case, changed artifact or explicit
+new scope. Do not use an unbounded shell loop, status polling or broker inbox
+polling. Stop when the batch finishes, a required external prerequisite blocks
+it, the user requests a pause, or execution becomes unsafe.
 
-Scheduled cycles are **local/offline by default**. Before a live case, obtain an
+Finite batches are **local/offline by default**. Before a live case, obtain an
 explicit authorization record covering the existing project, resource owner,
 native authentication/access, existing deployments, unique owned assets, maximum
 generation jobs/rows/conversations/turns/runs, spending limit, timeout, and cleanup
@@ -76,6 +78,13 @@ scope. Historical grants do not transfer to a new tester or release. Do not copy
 tokens, create infrastructure/IAM grants, mutate a shared agent, broaden trace
 queries, or retry known generation-count/deletion failures to rediscover them.
 Mark missing live authorization `BLOCKED` and continue useful local coverage.
+
+Keep coordination token-efficient: one writer per PR, one concise handoff per
+completed scope, targeted reads of current findings, and links to durable
+receipts instead of copying transcripts. Read each file in context once; revisit
+only changed or unresolved sections. Request one actual current-head Copilot
+review after a meaningful validated push, distinguish it from local review,
+and report queued checks honestly rather than rerunning or waiting indefinitely.
 
 ## Release gate sequence
 
@@ -468,7 +477,7 @@ work. Do not create a different runner or owner for each CI provider.
 | CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `PASS`: resolver pin and both OS artifact sets downloaded; commands, state, cleanup, runtime versions, archive/binary digests and blocked-live receipts verified |
 | CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `PASS` at `d6818868d81ee59b5782c0a0a12413d008cbb9ff`; live branch was not requested and is not counted as a pass |
 | CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED`: YAML/local validation passed, but scoped native metadata discovery found no matching authorized scenario-pipeline tuple; no Azure DevOps execution claimed |
-| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED` execution, implemented code: static evaluation plus an opt-in owned prompt-version/manual one-row dataset create/eval/run/export/identity-specific-cleanup sequence. Only mock validation is claimed. Infrastructure deployment, generation, auth/plan bootstrap and monetary enforcement remain `NOT IMPLEMENTED`; see the exact [executor matrix][scenario-guide]. |
+| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED` execution, implemented code: static evaluation, owned v1 prompt-version/manual dataset lifecycle, and a separate existing-agent CLI invocation smoke whose actual response is registered/evaluated/exported. Only mock validation is claimed. Core agent deployment, infrastructure deployment, generation, auth/plan bootstrap and monetary enforcement remain `NOT IMPLEMENTED`; see the exact [executor matrix][scenario-guide]. |
 
 The first new scenario producer resolved build 41 at
 **2026-09-24T03:14:18.582604Z**, before build 42's Latest promotion. Its manifest
@@ -498,6 +507,34 @@ case is blocked; keep both results visible. Publish real failures as failures,
 not successful skips or fallback outputs. Retain the monetary-control limits
 described above.
 
+### Verified persisted-head scenario receipt
+
+Fresh artifact inspection at **2026-09-29T22:40:31Z** verified
+[run35993122623, attempt1][scenario-a21] at
+`a21dd81f492e592dc9be57b649e23acf4fa1c0dc`. The producer selected public43/source067b
+at **2026-09-24T11:27:50.492254Z**, registry
+`4027cd85bf2a5853db90b4bed12c225eb125197e758e3015a88f9e9aca7a3215`,
+with frozen manifest
+`11f2fb604c4e7f9e17db0c8046e625e1dbbeca88fb82a21db5118e1af0b04029`.
+Downloaded producer and both OS manifests are byte-identical. Each OS receipt
+has168 unique command outcomes, canonical160 IDs,8 additional checks,50 seed
+refusals,36 binding checks, timing/timeouts, matching archive/installed binary
+digests, exact independent approval identity and successful cleanup.
+The live jobs were skipped; the retained live receipts say `BLOCKED / NOT RUN`.
+This is a verified historical exact-head run, not execution of later local
+corrections or the new agents CLI smoke.
+
+At the fresh discovery checkpoint, the fork's only visible environment was
+unprotected `copilot`; the upstream protected deployment environment serves
+an unrelated workflow and is not a scenario authorization. Variable reads
+were denied. Native Azure DevOps discovery confirmed the existing agents
+packaging definition7951, but did not establish an authorized scenario
+pipeline/repository-connection/capacity tuple. No pipeline was borrowed,
+registered, queued or changed. Real service execution on either provider still
+needs a named protected target, an approved existing project/service identity,
+and a bounded operation/cleanup/spend authorization. Core deployment also needs
+the separately verified project/provider/deploy/teardown implementation contract.
+
 ### Fresh black-box contexts
 
 Two additional contexts test only intended public user docs and published
@@ -521,19 +558,18 @@ instruction-based access restrictions are **not an OS sandbox**.
 | BLIND-02 | Follow discovery/install/setup/no-prompt authoring and the documented create/run/results/export journey within approved permissions. | Preserve original commands, observations, failures, and interpretation before recovery or coaching. Help is not runtime proof. |
 | BLIND-03 | The adversarial profile tries plausible input/path/flag variations and recovery using only docs/help and safe local fixtures. | Distinguish product defect, doc gap, authentication/environment prerequisite, and mistaken user/model interpretation. |
 | BLIND-04 | Send the original finding to the coordinator before historical-issue deduplication; independently repeat the same reproduction on repaired published bytes. | Do not rewrite initial evidence after receiving an explanation or leak the prior answer into the first attempt. |
-| BLIND-05 | Persist coverage, replenish novel current-package cases, and execute back-to-back bounded batches with an owned five-minute native watchdog. | Read back schedule configuration; report actual invocations separately. An unchanged digest alone is not a reason to idle or repeat old assertions. Preserve the original docs-only input boundary. |
+| BLIND-05 | Persist coverage and complete the finite authorized current-package batch, preserving the original docs-only input boundary. | Do not repeat exact-artifact assertions or create recurring work without separate current authorization. Historical schedule configuration is not a new invocation or test result. |
 
-The latest explicit user override expands the pool to six roles: the existing
+The historical 2026-09-24 campaign expanded the pool to six roles: the existing
 practical/edge pair, the docs-only novice/adversarial pair, and the new
-stateful/metamorphic pair. It supersedes the earlier finite-sweep/change-only
-30/60-minute tester cadence, not the identity and spending restrictions.
-Coordinate bounded batches without broker inbox polling, duplicate workers,
-overlapping stress, or repeated paid attempts. While the user is away, choose
-safe local work and queue missing approvals instead of asking new questions.
+stateful/metamorphic pair. For that campaign only, it superseded the earlier
+finite-sweep/change-only 30/60-minute tester cadence, not the identity and
+spending restrictions. It does not grant a fresh owner inherited schedules,
+workers or reservations. Current work follows the finite-batch rules above.
 Publication authorization does not authorize cloud testing or remove
 exact-package acceptance requirements.
 
-The testing coordinator confirmed saved five-minute watchdog configuration for
+For that historical campaign, the testing coordinator confirmed saved five-minute watchdog configuration for
 all six roles; configuration alone is not a test result. The first separately
 observed novice watchdog invocation at **2026-09-24T02:44:52.494Z** executed six
 new cases, nine CLI commands, and 27 assertions. Preserve that receipt separately
@@ -623,6 +659,7 @@ optional recommendations.
 [feed43]: https://github.com/m7md7sien/azd-foundry-feed/tree/0f49946b48dab8d2d09c01f380d7e1d3e2c05e07
 [scenario41]: https://github.com/m7md7sien/azure-dev/actions/runs/35950594406
 [scenario42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992378
+[scenario-a21]: https://github.com/m7md7sien/azure-dev/actions/runs/35993122623
 [candidate-repair42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992376
 [scenario-guide]: evaluation-scenario-ci.md
 [source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6

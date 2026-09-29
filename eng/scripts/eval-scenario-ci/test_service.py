@@ -70,6 +70,27 @@ class ServiceTests(unittest.TestCase):
             self.assertIn("approval digest", report["error"]["message"])
             self.assertEqual(report["remoteCleanup"]["status"], "NOT RUN")
 
+    def test_missing_or_malformed_plan_blocks_before_install_or_commands(self):
+        for raw in (None, b"{broken", b"\xff", b"null",
+                    json.dumps({**self.plan(), "expiresAt": "invalid"}).encode()):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                plan = root / "plan.json"
+                if raw is not None:
+                    plan.write_bytes(raw)
+                env = {**self.github_env(),
+                       "AZD_SCENARIO_LIVE_APPROVAL_SHA256": service.scenario.sha256(raw or b"")}
+                with mock.patch.object(service, "verify_install") as verify, \
+                     mock.patch.object(service, "Driver") as driver:
+                    with self.assertRaises(service.Blocked):
+                        service.execute(plan, root / "evidence", env)
+                    verify.assert_not_called()
+                    driver.assert_not_called()
+                report = json.loads((root / "evidence" / "service-status.json").read_text())
+                self.assertEqual((report["status"], report["execution"]), ("BLOCKED", "NOT RUN"))
+                self.assertEqual(report["cleanup"]["status"], "NOT RUN")
+                self.assertNotIn(str(root), json.dumps(report))
+
     def test_duplicate_authorization_fields_are_rejected_before_validation_or_commands(self):
         for raw in ('{"approvedBudget":1,"approvedBudget":1000}',
                     '{"versions":{"azure.ai.evaluations":"approved","azure.ai.evaluations":"other"}}',
@@ -294,7 +315,7 @@ class ServiceTests(unittest.TestCase):
             plan, settings = self.installed_fixture(root)
             settings["extension"]["installed"]["another-extension"] = {"namespace": "ai.eval"}
             (root / "config.json").write_text(json.dumps(settings))
-            with self.assertRaisesRegex(service.Blocked, "exactly the two"):
+            with self.assertRaisesRegex(service.Blocked, "exactly the mode-specific"):
                 service.verify_install(plan, root)
 
     def test_resolved_reparse_target_outside_profile_is_rejected(self):

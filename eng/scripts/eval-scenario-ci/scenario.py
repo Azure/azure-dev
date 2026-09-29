@@ -58,7 +58,7 @@ def approval_object(pairs):
 def parse_approval_json(raw, description):
     try:
         return json.loads(raw, object_pairs_hook=approval_object)
-    except ValueError as error:
+    except (ValueError, RecursionError) as error:
         raise ApprovalBlocked(f"{description} is not valid JSON") from error
 
 
@@ -127,15 +127,59 @@ def require_reviewed_candidate(pin, approved, authority):
     require_approval(isinstance(pin, dict) and isinstance(approved, dict)
                      and set(pin) <= set(approved) | {"scenarioResolution"},
                      "Manifest is outside the repository-reviewed candidate contract")
+    validate_approval_manifest({key: value for key, value in pin.items() if key != "scenarioResolution"})
     for key, value in approved.items():
         if key != "sourceNote":
             require_approval(pin.get(key) == value,
                              f"Candidate {key} differs from repository-reviewed immutable pins; no binary may execute")
-    resolution = pin.get("scenarioResolution", {})
-    require_approval(isinstance(resolution, dict), "Producer resolution metadata must be an object")
-    claimed = resolution.get("approval")
-    require_approval(claimed == authority,
+    resolution = pin.get("scenarioResolution")
+    fields = {"schemaVersion", "resolvedFrom", "releaseId", "publishedAt", "resolvedAt",
+              "metadata", "artifacts", "sourceEvidence", "fixtureContract", "approval"}
+    require_approval(isinstance(resolution, dict) and set(resolution) == fields,
+                     "Producer resolution metadata is incomplete or unsupported")
+    require_approval(resolution["approval"] == authority,
                      "Producer approval claim differs from independent configuration")
+    require_approval(type(resolution["schemaVersion"]) is int and resolution["schemaVersion"] == 1
+                     and type(resolution["releaseId"]) is int and resolution["releaseId"] > 0
+                     and resolution["resolvedFrom"] == f"https://api.github.com/repos/{FEED}/releases/latest"
+                     and resolution["fixtureContract"] == "build41-offline-160"
+                     and isinstance(resolution["sourceEvidence"], str),
+                     "Producer resolution identity or fixture contract is malformed")
+    for key in ("publishedAt", "resolvedAt"):
+        require_approval(isinstance(resolution[key], str), "Producer timestamp must be an ISO timestamp")
+        try:
+            timestamp = datetime.fromisoformat(resolution[key].replace("Z", "+00:00"))
+        except ValueError as error:
+            raise ApprovalBlocked("Producer timestamp must be an ISO timestamp") from error
+        require_approval(timestamp.tzinfo is not None, "Producer timestamp must include a time zone")
+    base = f"https://github.com/{FEED}/releases/download/{pin['releaseTag']}/"
+    metadata = resolution["metadata"]
+    require_approval(isinstance(metadata, dict)
+                     and set(metadata) == {"registry.json", "source-provenance.json", "SHA256SUMS"},
+                     "Producer metadata records are incomplete")
+    for name, record in metadata.items():
+        require_approval(isinstance(record, dict) and set(record) == {"url", "sha256"}
+                         and record["url"] == base + name
+                         and isinstance(record["sha256"], str) and HEX.fullmatch(record["sha256"]),
+                         "Producer metadata URL or digest is malformed")
+    require_approval(metadata["registry.json"]["sha256"] == pin["registrySha256"],
+                     "Producer metadata registry differs from the approved digest")
+    artifacts = resolution["artifacts"]
+    require_approval(isinstance(artifacts, dict) and set(artifacts) == set(EXTENSIONS),
+                     "Producer archive records are incomplete")
+    for extension, platforms in artifacts.items():
+        require_approval(isinstance(platforms, dict) and set(platforms) == set(PLATFORMS),
+                         "Producer archive platforms are incomplete")
+        for platform, artifact in platforms.items():
+            require_approval(isinstance(artifact, dict) and set(artifact) == {"url", "sha256", "entryPoint"}
+                             and artifact["sha256"] == pin["extensions"][extension]["artifacts"][platform]
+                             and isinstance(artifact["url"], str) and artifact["url"].startswith(base)
+                             and re.fullmatch(r"[A-Za-z0-9._-]+", artifact["url"][len(base):])
+                             and artifact["url"][len(base):] not in (".", "..")
+                             and isinstance(artifact["entryPoint"], str)
+                             and re.fullmatch(r"[A-Za-z0-9._-]+", artifact["entryPoint"])
+                             and artifact["entryPoint"] not in (".", ".."),
+                             "Producer archive identity differs from the approved release")
 
 
 def record_approval_block(directory, error):
@@ -265,7 +309,8 @@ def resolve(output):
     require(not output.exists(), "Refusing to overwrite a frozen manifest")
     try:
         approved, authority = reviewed_candidate()
-        release = json.loads(fetch(f"https://api.github.com/repos/{FEED}/releases/latest"))
+        release = parse_approval_json(fetch(f"https://api.github.com/repos/{FEED}/releases/latest"),
+                                      "Latest release metadata")
         tag = release["tag_name"]
         require(TAG.fullmatch(tag), "Unexpected bug-bash release tag")
         require_approval(tag == approved["releaseTag"],
@@ -278,12 +323,16 @@ def resolve(output):
             data = fetch(assets[name]["url"])
             require_approval(sha256(data) == assets[name]["sha256"], "Metadata differs from release API digest")
             documents[name] = data
-        pin = build_manifest(release, assets, json.loads(documents["registry.json"].decode("utf-8-sig")),
-                             json.loads(documents["source-provenance.json"].decode("utf-8-sig")),
+        pin = build_manifest(release, assets, parse_approval_json(documents["registry.json"], "Registry metadata"),
+                             parse_approval_json(documents["source-provenance.json"], "Source provenance"),
                              parse_sums(documents["SHA256SUMS"]), approved, authority)
-    except ApprovalBlocked as error:
-        record_approval_block(output.parent, error)
-        raise
+    except (AssertionError, KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+        blocked = error if isinstance(error, ApprovalBlocked) else ApprovalBlocked(
+            f"Release metadata is unavailable or invalid ({type(error).__name__}); no binary may execute")
+        record_approval_block(output.parent, blocked)
+        if blocked is error:
+            raise
+        raise blocked from error
     output.parent.mkdir(parents=True, exist_ok=True)
     write_json(output, pin)
     print(f"Resolved Latest once: {tag}, source {pin['sourceCommit']}", flush=True)
@@ -310,7 +359,7 @@ def live_status():
     return {
         "status": "BLOCKED", "execution": "NOT RUN",
         "executorSelected": False,
-        "implementedServiceModes": ["static-evaluation", "owned-prompt-evaluation"],
+        "implementedServiceModes": ["static-evaluation", "owned-prompt-evaluation", "existing-agent-cli-evaluation"],
         "unimplementedServiceOperations": ["agent-infrastructure-deploy", "generation"],
         "operations": ["agent-create", "agent-deploy", "dataset-create",
                        "eval-create", "eval-run", "eval-export"],
@@ -450,6 +499,7 @@ def execute(manifest, output):
         except OSError as error:
             raise ApprovalBlocked("Producer manifest is unavailable") from error
         pin = parse_approval_json(pin_bytes, "Producer manifest")
+        require_approval(isinstance(pin, dict), "Producer manifest must be a JSON object")
         approved, authority = reviewed_candidate()
         require_reviewed_candidate(pin, approved, authority)
         require_approval(pin["scenarioResolution"].get("fixtureContract") == "build41-offline-160",

@@ -200,6 +200,10 @@ actionable feedback, including minor clarity, naming, documentation, help, error
 test, style, and correctness improvements; explain any rejected or deferred
 suggestions. Record actual GitHub Copilot review evidence separately from local
 agent reviews rather than treating one as proof of the other.
+Keep review rounds finite: inspect current findings, make a cohesive correction,
+run the targeted checks, then request one current-head review. Reuse durable
+exact-head evidence and report queued or externally blocked checks without
+polling, duplicate workers, repeated no-change reruns, or automatic review loops.
 
 Before marking a pull request ready for human review or changing its draft state,
 recheck the actual base and head, merge conflicts, a genuine closing issue link,

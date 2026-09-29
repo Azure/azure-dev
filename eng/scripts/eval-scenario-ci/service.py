@@ -28,6 +28,15 @@ import uuid
 import scenario
 
 HTTP_TRANSPORT = Path(__file__).with_name("http_transport.py")
+AGENT_CLI_MODE = "existing-agent-cli-evaluation"
+AGENT_EXTENSION = "azure.ai.agents"
+
+
+def required_extensions(plan):
+    extensions = dict(scenario.EXTENSIONS)
+    if plan["mode"] == AGENT_CLI_MODE:
+        extensions[AGENT_EXTENSION] = "agent"
+    return extensions
 
 
 def transport_exchange(encoded, deadline, environment, workspace):
@@ -143,9 +152,11 @@ def validate_ci_identity(plan, env):
 
 
 def validate_plan(plan, digest, env):
-    require(isinstance(plan, dict) and plan.get("mode") in ("static-evaluation", "owned-prompt-evaluation"),
-            "Only static evaluation or owned prompt-version evaluation is implemented")
+    require(isinstance(plan, dict)
+            and plan.get("mode") in ("static-evaluation", "owned-prompt-evaluation", AGENT_CLI_MODE),
+            "Only static, owned prompt-version or existing-agent CLI evaluation is implemented")
     owned_prompt = plan["mode"] == "owned-prompt-evaluation"
+    agent_cli = plan["mode"] == AGENT_CLI_MODE
     allowed = {
         "schemaVersion", "mode", "provider", "workflowCommit", "runId", "expiresAt", "authorizedOperations",
         "approvalReference", "resourceOwner", "budgetControlReference", "budgetControlExternallyVerified",
@@ -154,7 +165,10 @@ def validate_plan(plan, digest, env):
         "azdExecutable", "binarySha256", "versions",
         "durationSeconds", "ciIdentity",
     }
-    allowed.update({"datasetFile", "agentModel", "agentInstructions"} if owned_prompt else {"datasetName"})
+    if agent_cli:
+        allowed.update({"datasetFile", "agentName", "agentVersion", "agentInputField", "agentResponseField"})
+    else:
+        allowed.update({"datasetFile", "agentModel", "agentInstructions"} if owned_prompt else {"datasetName"})
     require(isinstance(plan, dict) and set(plan) == allowed,
             "Plan contains unknown fields or omits required fields")
     for key in ("mode", "provider", "workflowCommit", "runId", "expiresAt", "approvalReference",
@@ -179,6 +193,9 @@ def validate_plan(plan, digest, env):
     operations = {"dataset-download", "eval-create", "eval-run", "eval-export", "eval-delete"}
     if owned_prompt:
         operations.update({"agent-version-create", "agent-version-delete", "dataset-create", "dataset-delete"})
+    if agent_cli:
+        operations.update({"agent-session-create", "agent-invoke", "agent-session-delete",
+                           "dataset-create", "dataset-delete"})
     require(isinstance(plan["authorizedOperations"], list)
             and all(isinstance(operation, str) for operation in plan["authorizedOperations"])
             and len(plan["authorizedOperations"]) == len(operations)
@@ -204,9 +221,20 @@ def validate_plan(plan, digest, env):
     for key in ("datasetVersion", "evaluator", "judgeModel", "ownerPrefix"):
         require(isinstance(plan[key], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,100}", plan[key]),
                 f"Invalid {key}")
-    if owned_prompt:
+    if owned_prompt or agent_cli:
         require(isinstance(plan["datasetFile"], str) and plan["datasetFile"],
                 "An approved manual JSONL file is required")
+    if agent_cli:
+        require(isinstance(plan["agentName"], str)
+                and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", plan["agentName"]),
+                "An explicitly approved existing hosted agent name is required")
+        require(isinstance(plan["agentVersion"], str)
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,100}", plan["agentVersion"]),
+                "An explicitly approved existing hosted agent version is required")
+        for key in ("agentInputField", "agentResponseField"):
+            require(isinstance(plan[key], str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", plan[key])
+                    and plan[key] != "error", f"Invalid {key}")
+    elif owned_prompt:
         require(isinstance(plan["agentModel"], str)
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,100}", plan["agentModel"]),
                 "An existing prompt-agent model deployment is required")
@@ -217,9 +245,9 @@ def validate_plan(plan, digest, env):
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,100}", plan["datasetName"]), "Invalid datasetName")
     require(re.fullmatch(r"ci-[a-z0-9-]{1,20}", plan["ownerPrefix"]), "Owned names require a short ci- prefix")
     require(plan["evaluator"].startswith("builtin."), "Custom evaluator publication is not implemented")
-    require(isinstance(plan["versions"], dict) and set(plan["versions"]) == set(scenario.EXTENSIONS)
+    require(isinstance(plan["versions"], dict) and set(plan["versions"]) == set(required_extensions(plan))
             and all(isinstance(version, str) and version for version in plan["versions"].values()),
-            "Both approved extension versions are required")
+            "The exact mode-specific approved extension versions are required")
     require(isinstance(plan["datasetSha256"], str) and scenario.HEX.fullmatch(plan["datasetSha256"]),
             "An approved immutable dataset-content digest is required")
     endpoint = urllib.parse.urlsplit(plan["projectEndpoint"])
@@ -236,17 +264,23 @@ def verify_install(plan, config):
     config = config.resolve()
     executable = Path(plan["azdExecutable"]).resolve()
     expected = plan["binarySha256"]
-    require(isinstance(expected, dict) and set(expected) == {"azd", *scenario.EXTENSIONS}
+    extensions = required_extensions(plan)
+    require(isinstance(expected, dict) and set(expected) == {"azd", *extensions}
             and all(isinstance(value, str) and scenario.HEX.fullmatch(value) for value in expected.values()),
-            "All three installed binary digests are required")
+            "All mode-specific installed binary digests are required")
     require(executable.is_file() and scenario.sha256(executable.read_bytes()) == expected["azd"],
             "Core executable does not match the approved bytes")
-    settings = json.loads((config / "config.json").read_text(encoding="utf-8-sig"))
+    settings = json.loads((config / "config.json").read_text(encoding="utf-8-sig"),
+                          object_pairs_hook=unique_plan_object)
+    if plan["mode"] == AGENT_CLI_MODE:
+        state = settings.get("extensions", {}) if isinstance(settings, dict) else None
+        require(isinstance(state, dict) and "ai-agents" not in state,
+                "Agent CLI smoke requires a fresh agent-state namespace in its exclusive CI auth profile")
     extension_settings = settings.get("extension", {}) if isinstance(settings, dict) else {}
     installed = extension_settings.get("installed", {}) if isinstance(extension_settings, dict) else {}
-    require(isinstance(installed, dict) and set(installed) == set(scenario.EXTENSIONS),
-            "The isolated profile must contain exactly the two approved extensions")
-    for extension, command in scenario.EXTENSIONS.items():
+    require(isinstance(installed, dict) and set(installed) == set(extensions),
+            "The isolated profile must contain exactly the mode-specific approved extensions")
+    for extension, command in extensions.items():
         record = installed[extension]
         require(isinstance(record, dict) and record.get("id") == extension
                 and record.get("namespace") == "ai." + command
@@ -284,8 +318,9 @@ class Driver:
             "AZD_FORCE_TTY": "false", "NO_COLOR": "1", "CI": "true",
         })
 
-    def __call__(self, label, args, *, private_output=False, cleanup_deadline=None):
-        argv = [str(self.executable), *args, "--no-prompt", "--output", "json"]
+    def __call__(self, label, args, *, private_output=False, cleanup_deadline=None, output_format="json"):
+        expect(output_format in ("json", "raw"), "Unsupported driver output format")
+        argv = [str(self.executable), *args, "--no-prompt", "--output", output_format]
         deadline = self.deadline if cleanup_deadline is None else cleanup_deadline
         timeout = min(self.timeout, deadline - time.monotonic())
         if timeout <= 0:
@@ -300,6 +335,8 @@ class Driver:
             safe_args[safe_args.index("--project-endpoint") + 1] = "<approved-project>"
         if "--tenant-id" in safe_args:
             safe_args[safe_args.index("--tenant-id") + 1] = "<approved-tenant>"
+        if "--agent-endpoint" in safe_args:
+            safe_args[safe_args.index("--agent-endpoint") + 1] = "<approved-agent-endpoint>"
         record = {"name": label, "startedAt": datetime.now(timezone.utc).isoformat(),
                   "timeoutSeconds": timeout, "exitCode": None, "command": safe_args}
         self.report.setdefault("commands", []).append(record)
@@ -315,6 +352,8 @@ class Driver:
                               stderrSha256=hashlib.sha256(result.stderr).hexdigest())
             if result.returncode != 0:
                 raise RuntimeError(f"{label} returned exit {result.returncode}; raw service output is not published")
+            if output_format == "raw":
+                return result.stdout
             return json.loads(result.stdout, parse_float=Decimal) if result.stdout.strip() else None
         except subprocess.TimeoutExpired:
             record["timedOut"] = True
@@ -377,6 +416,19 @@ class Driver:
                      cleanup_deadline=cleanup_deadline or time.monotonic() + self.timeout)
         return {"id": eval_id, "status": "deleted"}
 
+    def clear_agent_state(self, *, cleanup_deadline):
+        config = Path(self.env["AZD_CONFIG_DIR"]) / "config.json"
+        settings = json.loads(config.read_text(encoding="utf-8-sig"), object_pairs_hook=unique_plan_object)
+        state = settings.get("extensions", {}) if isinstance(settings, dict) else None
+        expect(isinstance(state, dict), "Owned local agent state is malformed")
+        if "ai-agents" not in state:
+            return
+        self("remove this smoke's local agent state", ["config", "unset", "extensions.ai-agents"],
+             cleanup_deadline=cleanup_deadline)
+        settings = json.loads(config.read_text(encoding="utf-8-sig"), object_pairs_hook=unique_plan_object)
+        state = settings.get("extensions", {}) if isinstance(settings, dict) else None
+        expect(isinstance(state, dict) and "ai-agents" not in state, "Owned local agent state remains after cleanup")
+
 
 def verify_identity(plan, driver):
     auth = driver("verify existing service identity", ["auth", "status"])
@@ -389,7 +441,7 @@ def verify_identity(plan, driver):
     ], private_output=True)
     verify_native_identity_token(identity, plan)
     del identity
-    for extension, command in scenario.EXTENSIONS.items():
+    for extension, command in required_extensions(plan).items():
         version = driver("verify approved " + extension, ["ai", command, "version"])
         require(version == {"name": extension, "version": plan["versions"][extension]},
                 "Runtime extension version differs from the approved plan")
@@ -415,6 +467,131 @@ def begin_cleanup(plan, state):
     if "deadline" not in state:
         state["deadline"] = time.monotonic() + plan["timeoutSeconds"]
     return state["deadline"]
+
+
+def delete_owned_dataset(plan, driver, dataset, cleanup_state):
+    deleted = driver("delete only owned dataset version", [
+        "ai", "dataset", "delete", dataset["name"], "--version", dataset["version"],
+        "--force", "--project-endpoint", plan["projectEndpoint"],
+    ], cleanup_deadline=begin_cleanup(plan, cleanup_state))
+    expect(deleted == {**dataset, "status": "deleted"}, "Owned dataset-version deletion was not confirmed")
+    return {"status": "PASS", **dataset}
+
+
+def invocation_response(raw, field):
+    """Accept one synchronous JSON invocation, not an SSE/LRO or HTTP-only success."""
+    expect(isinstance(raw, bytes) and len(raw) <= 1024 * 1024, "Agent response exceeds the supported raw contract")
+    headers, separator, body = raw.partition(b"\r\n\r\n")
+    lines = headers.split(b"\r\n")
+    expect(separator and re.fullmatch(rb"HTTP/[0-9.]+ 200(?: [^\r\n]*)?", lines[0]),
+           "Agent CLI smoke requires one synchronous HTTP 200 response; SSE/LRO is not supported")
+    content_types = [line.partition(b":")[2].strip().lower() for line in lines[1:]
+                     if line.partition(b":")[0].lower() == b"content-type"]
+    expect(len(content_types) == 1 and content_types[0].split(b";")[0] == b"application/json",
+           "Agent CLI smoke requires one JSON content type")
+    result = json.loads(body, object_pairs_hook=unique_plan_object)
+    expect(isinstance(result, dict) and "error" not in result
+           and isinstance(result.get(field), str) and result[field].strip(),
+           "Agent invocation did not return the approved nonempty response field")
+    return result[field]
+
+
+def existing_agent_cli_lifecycle(plan, driver, workspace, report, raw_row):
+    """Smoke-test an existing hosted agent; never deploy or delete the shared agent."""
+    document = approved_row(raw_row, plan["datasetSha256"], prompt=True)
+    endpoint, tenant = plan["projectEndpoint"], plan["tenantId"]
+    agent_path = "/agents/" + urllib.parse.quote(plan["agentName"], safe="") + "/endpoint"
+    session_id = None
+    dataset = None
+    session_attempted = dataset_attempted = False
+    cleanup_state = {}
+    report["agentCliInvocation"] = {"status": "NOT RUN", "scope": "Existing hosted agent, invocations protocol"}
+    report["sessionCleanup"] = {"status": "NOT RUN"}
+    report["agentDeployment"] = "NOT RUN; existing agent is never deployed, modified or deleted"
+    report["datasetStorageRetention"] = "NOT VERIFIED; logical version deletion only"
+    report["remoteBillingStopped"] = "NOT VERIFIED; session deletion is not a monetary control"
+    body_completed = False
+    try:
+        verify_identity(plan, driver)
+        requested_session = "ci-" + uuid.uuid4().hex
+        session_attempted = True
+        _, session = driver.request(
+            "create owned version-bound session", "POST", endpoint, agent_path + "/sessions?api-version=v1", tenant,
+            body={"agent_session_id": requested_session,
+                  "version_indicator": {"type": "version_ref", "agent_version": plan["agentVersion"]}},
+            accepted=(200, 201))
+        expect(isinstance(session, dict) and session.get("agent_session_id") == requested_session,
+               "Session creation did not return the owned session identity")
+        session_id = session["agent_session_id"]
+        report["ownedSessionId"] = session_id
+        expect(session.get("version_indicator") == {"type": "version_ref", "agent_version": plan["agentVersion"]},
+               "Created session does not bind the approved agent version")
+        request_file = workspace / "agent-input.json"
+        scenario.write_json(request_file, {plan["agentInputField"]: document["query"]})
+        report["agentCliInvocation"]["status"] = "FAIL"
+        raw = driver("invoke approved existing agent through CLI", [
+            "ai", "agent", "invoke", "--agent-endpoint", endpoint + agent_path + "/protocols/invocations?api-version=v1",
+            "--input-file", str(request_file), "--session-id", session_id,
+            "--timeout", str(plan["timeoutSeconds"]), "--debug-latency=false",
+        ], output_format="raw")
+        response = invocation_response(raw, plan["agentResponseField"])
+        report["agentCliInvocation"]["status"] = "PASS"
+        report["agentCliInvocation"]["responseSha256"] = scenario.sha256(response.encode("utf-8"))
+        row = (json.dumps({**document, "response": response}) + "\n").encode("utf-8")
+        row_file = workspace / "invoked-row.jsonl"
+        row_file.write_bytes(row)
+        name = f"{plan['ownerPrefix']}-data-{uuid.uuid4().hex}"
+        report["ownedDatasetName"] = name
+        dataset_attempted = True
+        created = driver("create owned invocation dataset version", [
+            "ai", "dataset", "create", name, "--from-file", str(row_file),
+            "--version", plan["datasetVersion"], "--project-endpoint", endpoint,
+        ])
+        expect(isinstance(created, dict) and created.get("name") == name
+               and created.get("version") == plan["datasetVersion"], "Dataset creation did not return the owned identity")
+        dataset = {"name": name, "version": created["version"]}
+        report["ownedDatasetVersion"] = dataset
+        report["invokedDatasetSha256"] = scenario.sha256(row)
+        lifecycle({**plan, "datasetName": name, "datasetSha256": scenario.sha256(row)},
+                  driver, workspace, report, identity_verified=True, cleanup_state=cleanup_state)
+        body_completed = True
+    finally:
+        primary = None if body_completed else sys.exception()
+        if primary is not None and "failure" not in report:
+            report["failure"] = {"type": type(primary).__name__,
+                                 "message": scenario.proof_module.sanitize(str(primary), workspace)}
+        cleanup_errors = []
+        if dataset is not None:
+            try:
+                report["datasetCleanup"] = delete_owned_dataset(plan, driver, dataset, cleanup_state)
+            except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
+                report["datasetCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+                cleanup_errors.append(error)
+        elif dataset_attempted:
+            report["datasetCleanup"] = {"status": "BLOCKED", "manualReconciliationRequired": True,
+                                        "reason": "Ambiguous dataset create; no retry or guessed deletion"}
+        if session_id is not None:
+            try:
+                driver.request(
+                    "delete only owned invocation session", "DELETE", endpoint,
+                    agent_path + "/sessions/" + urllib.parse.quote(session_id, safe="") + "?api-version=v1",
+                    tenant, accepted=(200, 204, 404), read_json=False,
+                    cleanup_deadline=begin_cleanup(plan, cleanup_state))
+                report["sessionCleanup"] = {"status": "PASS", "id": session_id}
+            except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
+                report["sessionCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+                cleanup_errors.append(error)
+        elif session_attempted:
+            report["sessionCleanup"] = {"status": "BLOCKED", "manualReconciliationRequired": True,
+                                        "reason": "Ambiguous session create; no retry or guessed deletion"}
+        try:
+            driver.clear_agent_state(cleanup_deadline=begin_cleanup(plan, cleanup_state))
+            report["agentStateCleanup"] = {"status": "PASS"}
+        except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
+            report["agentStateCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+            cleanup_errors.append(error)
+        if cleanup_errors:
+            raise RuntimeError("Owned smoke resource cleanup failed; retained per-resource outcomes") from cleanup_errors[0]
 
 
 def lifecycle(plan, driver, workspace, report, name=None, *, target=None, identity_verified=False,
@@ -586,12 +763,7 @@ def owned_prompt_lifecycle(plan, driver, workspace, report, raw_row):
         cleanup_errors = []
         if dataset is not None:
             try:
-                deleted = driver("delete only owned dataset version", [
-                    "ai", "dataset", "delete", dataset["name"], "--version", dataset["version"],
-                    "--force", *endpoint_flags,
-                ], cleanup_deadline=begin_cleanup(plan, cleanup_state))
-                expect(deleted == {**dataset, "status": "deleted"}, "Owned dataset-version deletion was not confirmed")
-                report["datasetCleanup"] = {"status": "PASS", **dataset}
+                report["datasetCleanup"] = delete_owned_dataset(plan, driver, dataset, cleanup_state)
             except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
                 report["datasetCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
                 cleanup_errors.append(error)
@@ -625,12 +797,15 @@ def execute(plan_path, output, env=None):
     output.mkdir(parents=True)
     report = {"status": "BLOCKED", "execution": "NOT RUN", "remoteCleanup": {"status": "NOT RUN"},
               "datasetCleanup": {"status": "NOT RUN"}, "agentCleanup": {"status": "NOT RUN"},
-              "implemented": ["static evaluation lifecycle", "owned prompt version/manual dataset lifecycle"],
+              "implemented": ["static evaluation lifecycle", "owned prompt version/manual dataset lifecycle",
+                              "existing hosted agent CLI smoke with owned session and static evaluation"],
               "executorImplemented": {
-                  "staticWorkflow": True, "agentVersionCreate": True, "agentInfrastructureDeploy": False,
-                  "datasetCreate": True, "evalCreate": True, "runWait": True, "export": True, "ownedCleanup": True,
+                  "staticWorkflow": True, "agentVersionCreate": True,
+                  "agentInfrastructureDeploy": False, "coreAgentDeploy": False,
+                  "agentCliInvoke": True, "datasetCreate": True, "evalCreate": True,
+                  "runWait": True, "export": True, "ownedCleanup": True,
               },
-              "notImplemented": ["agent infrastructure deployment", "generation",
+              "notImplemented": ["core agent deployment", "agent infrastructure deployment", "generation",
                                  "provider authentication/bootstrap", "service-side budget enforcement"]}
     workspace_state = {}
     try:
@@ -639,7 +814,7 @@ def execute(plan_path, output, env=None):
         report["planSha256"] = scenario.sha256(raw)
         report.update(validate_plan(plan, report["planSha256"], env))
         raw_row = None
-        if plan["mode"] == "owned-prompt-evaluation":
+        if plan["mode"] in ("owned-prompt-evaluation", AGENT_CLI_MODE):
             dataset_file = Path(plan["datasetFile"])
             require(dataset_file.is_file(), "Manual dataset input must be an existing regular file")
             raw_row = dataset_file.read_bytes()
@@ -656,15 +831,21 @@ def execute(plan_path, output, env=None):
                            (expires - datetime.now(timezone.utc)).total_seconds() - plan["timeoutSeconds"])
             require(duration > 0, "Approval expired before execution and its reserved cleanup window")
             driver = Driver(executable, config, workspace, plan["timeoutSeconds"], duration, report)
-            if raw_row is None:
+            if plan["mode"] == AGENT_CLI_MODE:
+                existing_agent_cli_lifecycle(plan, driver, workspace, report, raw_row)
+            elif raw_row is None:
                 lifecycle(plan, driver, workspace, report)
             else:
                 owned_prompt_lifecycle(plan, driver, workspace, report, raw_row)
         report["status"], report["execution"] = "PASS", "COMPLETED"
     except (Blocked, RuntimeError, KeyError, ValueError, OSError, InvalidOperation) as error:
         before_execution = report["execution"] == "NOT RUN"
-        report["status"] = "BLOCKED" if isinstance(error, Blocked) and before_execution else "FAIL"
-        report["error"] = {"type": type(error).__name__, "message": scenario.safe_text(error)}
+        reported = (Blocked(f"Service prerequisites are unavailable or malformed ({type(error).__name__})")
+                    if before_execution and not isinstance(error, Blocked) else error)
+        report["status"] = "BLOCKED" if before_execution else "FAIL"
+        report["error"] = {"type": type(reported).__name__, "message": scenario.safe_text(reported)}
+        if reported is not error:
+            raise reported from error
         if isinstance(error, Blocked) and not before_execution:
             raise RuntimeError(str(error)) from error
         raise

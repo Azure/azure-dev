@@ -1,0 +1,28 @@
+Update an agent's endpoint and card configuration without deploying a new version.
+
+This command reads the agentEndpoint and agentCard fields from the azure.ai.agent
+service in azure.yaml, or agent_endpoint and agent_card from a legacy agent.yaml,
+and patches the existing agent with those values. No new agent version is created.
+
+The agent must already exist (i.e., it must have been previously deployed).
+
+Usage
+  azd ai agent endpoint update [name] [flags]
+
+Flags
+      --force : Skip confirmation prompts for breaking changes
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for update
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Update endpoint/card for the default agent service
+    azd ai agent endpoint update
+
+  Update a specific agent service
+    azd ai agent endpoint update my-agent

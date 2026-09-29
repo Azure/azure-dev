@@ -9,7 +9,6 @@ namespace Microsoft.Azd{
         private readonly GrpcChannel _channel;
 
         // Expose your gRPC service clients here
-        public ComposeService.ComposeServiceClient Compose { get; }
         public DeploymentService.DeploymentServiceClient Deployment { get; }
         public EnvironmentService.EnvironmentServiceClient Environment { get; }
         public EventService.EventServiceClient Events { get; }
@@ -45,7 +44,6 @@ namespace Microsoft.Azd{
             var callInvoker = _channel.Intercept(new AuthHeaderInterceptor(accessToken));
 
             // Initialize gRPC service clients
-            Compose = new ComposeService.ComposeServiceClient(callInvoker);
             Deployment = new DeploymentService.DeploymentServiceClient(callInvoker);
             Environment = new EnvironmentService.EnvironmentServiceClient(callInvoker);
             Events = new EventService.EventServiceClient(callInvoker);

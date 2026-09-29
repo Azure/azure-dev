@@ -42,14 +42,12 @@ const (
 // attribute so it can never overwrite a host-owned field on the span.
 const ExtensionAttributePrefix = "ext."
 
-// ExtensionUsageAttribute namespaces an extension-supplied usage attribute
-// key. Callers must bound the key and value before use; the extension owns
-// what the value means, so it is never customer content by contract.
+// ExtensionUsageAttribute namespaces an extension-supplied usage attribute key.
+// Concrete extension field metadata is declared in extensions/telemetry; this
+// runtime helper does not assign one classification to every dynamic key.
 func ExtensionUsageAttribute(key string) AttributeKey {
 	return AttributeKey{
-		Key:            attribute.Key(ExtensionAttributePrefix + key),
-		Classification: SystemMetadata,
-		Purpose:        FeatureInsight,
+		Key: attribute.Key(ExtensionAttributePrefix + key),
 	}
 }
 
@@ -354,6 +352,7 @@ const (
 
 	EnvModifierAzureSpace            = "Azure App Spaces Portal"
 	EnvModifierMicrosoftFoundrySkill = "Microsoft Foundry Skill"
+	EnvModifierAgency                = "agency"
 )
 
 // All possible enumerations of AccountTypeKey
@@ -1272,8 +1271,15 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionEvent identifies a usage report or failed invocation event.
-	// Extensions own this value, which lets queries filter their events.
+	// ExtensionLegacyGrpcCallCount counts calls made through the temporary pre-versioning gRPC bridge.
+	ExtensionLegacyGrpcCallCount = AttributeKey{
+		Key:            attribute.Key("extension.grpc.legacy_call_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// ExtensionEvent identifies usage and failed-invocation events.
+	// Extensions own usage values; the host owns failure labels.
 	ExtensionEvent = AttributeKey{
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,
@@ -1475,16 +1481,9 @@ var (
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
 	}
-	// CopilotMessageBillingRate is the billing rate multiplier per message.
-	CopilotMessageBillingRate = AttributeKey{
-		Key:            attribute.Key("copilot.message.billingRate"),
-		Classification: SystemMetadata,
-		Purpose:        BusinessInsight,
-		IsMeasurement:  true,
-	}
-	// CopilotMessagePremiumRequests is the number of premium requests used per message.
-	CopilotMessagePremiumRequests = AttributeKey{
-		Key:            attribute.Key("copilot.message.premiumRequests"),
+	// CopilotMessageAICredits is the number of AI credits consumed per session.
+	CopilotMessageAICredits = AttributeKey{
+		Key:            attribute.Key("copilot.message.aiCredits"),
 		Classification: SystemMetadata,
 		Purpose:        BusinessInsight,
 		IsMeasurement:  true,

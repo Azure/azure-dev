@@ -1,0 +1,159 @@
+Send a message to your prompt or hosted agent.
+
+Invocation Target
+By default the agent is invoked remotely on Foundry. When a single
+argument is provided it is treated as the message and the agent name
+is auto-detected from azure.yaml. With two arguments the first is the
+agent name and the second is the message.
+
+When --protocol is omitted, complete deployed endpoint data is used when
+available. Endpoint data created by an older extension must be refreshed by
+redeploying or bypassed with --protocol. Otherwise the agent definition is
+used. If neither identifies exactly one invocable protocol, pass --protocol
+explicitly.
+
+Voice Agents
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
+
+Request Body
+Use --input-file/-f to send the contents of a file as the request body
+instead of a positional message argument. This is useful for structured
+or large payloads with the invocations protocol, or for sending a complete
+JSON-RPC request with the a2a protocol.
+
+Local Development
+Use --local to target a locally running agent (started via 'azd ai agent run')
+instead of Foundry. The a2a protocol is remote-only and cannot be used with
+--local.
+
+Sessions & Identity
+Sessions are persisted per-agent — consecutive invokes reuse the same
+session automatically. Pass --new-session to force a reset.
+
+Use --version to invoke a specific deployed agent version. When provided,
+azd creates or reuses a hosted agent session backed by that version.
+
+For agents configured with header-based isolation, pass --user-identity
+on each invoke. Locally it is sent as the x-agent-user-id header; for
+remote invokes it is sent as the x-ms-user-identity header.
+
+Use --call-id to send a call ID with a local invoke. It is sent as the
+x-agent-foundry-call-id header and applies only to local invocations; it is
+ignored for remote requests.
+
+Use --client-header to send custom x-client-* request headers in "Name: Value"
+format (repeatable). The responses and invocations protocols forward the
+x-client-* header family to the agent; other header names are rejected, and
+the flag is not supported with the a2a protocol (which does not propagate
+x-client-* headers). For identity headers use --user-identity or --call-id.
+
+Response Output
+Use --output raw (or -o raw) to dump the unmodified server response (status
+line, headers, and body verbatim) to stdout. Useful for debugging server
+behavior and inspecting response headers (for example, the agent version
+header). Friendly summary lines like "Session:" and "Invocation:" are
+suppressed in raw mode.
+
+Platform Latency
+Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
+by default. A compact summary is shown after a successful invocation when the
+service returns timing headers. Use --debug-latency=false to disable collection
+and the summary. This is independent of the global --debug logging flag.
+Local, prompt-agent, and a2a invokes do not collect platform latency.
+Explicit --debug-latency=true is rejected for these routes; omit the flag
+or use --debug-latency=false.
+Raw output includes the returned headers without a formatted latency summary.
+
+Long-running Invocations
+Use --long-running with the Responses protocol to start work that continues running in
+the service if this command disconnects. The command remains attached until the work
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.
+
+Usage
+  azd ai agent invoke [name] [message] [flags]
+
+Flags
+      --agent-endpoint string     : Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). Invokes without requiring an azd project; protocol is derived from the URL.
+      --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)
+      --client-header stringArray : Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.
+      --conversation-id string    : Explicit conversation ID override
+      --debug-latency             : Collect and show platform latency for remote responses/invocations; use --debug-latency=false to disable (default true)
+  -f, --input-file string         : Path to a file whose contents are sent as the request body
+  -l, --local                     : Invoke on localhost instead of Foundry
+      --long-running              : Continue service-side execution after disconnection; remain attached unless --no-wait is specified
+      --new-conversation          : Force a new conversation (discard saved one)
+      --new-session               : Force a new session (discard saved one)
+      --no-wait                   : Return after receiving the service-assigned ID; requires --long-running
+      --port int                  : Local server port (default 8088)
+  -p, --protocol string           : Protocol to use: responses, invocations, or a2a. Auto-detected from deployment data or the agent definition; pass --protocol when it cannot be determined.
+  -s, --session-id string         : Explicit session ID override
+  -t, --timeout int               : Request timeout in seconds (0 for no timeout) (default 1800)
+      --user-identity string      : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --version string            : Agent version to invoke (creates or reuses a session backed by that version)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for invoke
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: default, raw) (default "default")
+
+Examples
+  Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
+    azd ai agent invoke "Hello!"
+
+  Invoke a specific remote agent by name
+    azd ai agent invoke my-agent "Hello!"
+
+  Invoke using a specific protocol
+    azd ai agent invoke --protocol invocations "Hello!"
+
+  Invoke a deployed agent over the a2a protocol
+    azd ai agent invoke --protocol a2a "Hello!"
+
+  Invoke the a2a protocol with a complete JSON-RPC request from a file
+    azd ai agent invoke --protocol a2a -f a2a-request.json
+
+  Invoke with a file as the request body
+    azd ai agent invoke -f request.json
+
+  Invoke a named agent with a file body
+    azd ai agent invoke my-agent -f request.json
+
+  Invoke locally (agent must be running via 'azd ai agent run')
+    azd ai agent invoke --local "Hello!"
+
+  Invoke a specific agent locally (useful in multi-agent projects)
+    azd ai agent invoke my-agent --local "Hello!"
+
+  Start background work and remain attached until it finishes
+    azd ai agent invoke --long-running "Run the long task"
+
+  Start background work and return after its Response ID is received
+    azd ai agent invoke --long-running --no-wait "Run the long task"
+
+  Start a new session (discard conversation history)
+    azd ai agent invoke --new-session "Hello!"
+
+  Invoke a specific deployed agent version
+    azd ai agent invoke --version 3 "Hello!"
+
+  Dump the raw server response (status line, headers, body) for debugging
+    azd ai agent invoke --output raw "Hello!"
+
+  Disable platform latency diagnostics
+    azd ai agent invoke --debug-latency=false "Hello!"
+
+  Send custom x-client-* headers (repeatable)
+    azd ai agent invoke --client-header "x-client-request-id: abc123" --client-header "x-client-tenant: contoso" "Hello!"
+
+  Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
+    azd ai agent invoke \
+      --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1 \
+      "Hello!"

@@ -66,7 +66,9 @@ func resolvePromptHarnessTarget(
 	// --model-deployment / the manifest, so agent.yaml is complete.
 	if strings.TrimSpace(flags.projectResourceId) == "" &&
 		shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
-		if err := configureDeferredInitAzureContext(ctx, azdClient, env.Name, azureContext, true); err != nil {
+		if err := configureDeferredInitAzureContext(
+			ctx, azdClient, env.Name, azureContext, true, false,
+		); err != nil {
 			return nil, false, nil, nil, err
 		}
 		return nil, false, nil, nil, nil

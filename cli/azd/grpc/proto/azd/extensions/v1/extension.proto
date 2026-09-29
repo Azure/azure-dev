@@ -1,0 +1,29 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
+
+import "azd/extensions/v1/errors.proto";
+
+// Top-level service for extension registration and lifecycle
+service ExtensionService {
+  // Signal that the extension is done registering all capabilities
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+
+  // Report a structured error from the extension back to the host.
+  // Called by the extension SDK before the process exits on failure.
+  rpc ReportError(ReportErrorRequest) returns (ReportErrorResponse);
+}
+
+message ReadyRequest {}
+
+message ReadyResponse {}
+
+message ReportErrorRequest {
+  ExtensionError error = 1;
+}
+
+message ReportErrorResponse {}

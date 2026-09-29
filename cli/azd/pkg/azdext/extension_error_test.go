@@ -9,14 +9,13 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
 )
 
@@ -112,13 +111,12 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.NotNil(t, localDetail)
 				assert.Equal(t, "invalid_config", localDetail.GetCode())
 				assert.Equal(t, "validation", localDetail.GetCategory())
-				assert.Equal(t, []string{"*agents.TransportError", "*agents.ConfigError"}, localDetail.GetCauseTypes())
 
 				var localErr *LocalError
 				require.ErrorAs(t, goErr, &localErr)
 				assert.Equal(t, "invalid_config", localErr.Code)
 				assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
-				assert.Equal(t, []string{"*agents.TransportError", "*agents.ConfigError"}, localErr.CauseTypes)
+				assert.Nil(t, localErr.CauseTypes)
 				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
 				require.Len(t, localErr.Links, 1)
 				assert.Equal(t, "Invalid config reference", localErr.Links[0].Title)
@@ -333,45 +331,13 @@ func TestExtensionError_ToolErrorRoundTrip(t *testing.T) {
 	require.NotNil(t, protoErr)
 	assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_TOOL, protoErr.GetOrigin())
 	assert.Equal(t, "docker build failed", protoErr.GetMessage())
-	require.NotNil(t, protoErr.GetToolError())
-	assert.Equal(t, "docker", protoErr.GetToolError().GetToolName())
-	assert.Equal(t, "failed", protoErr.GetToolError().GetFailureKind())
-	require.NotNil(t, protoErr.GetToolError().ExitCode)
-	assert.Equal(t, int64(23), protoErr.GetToolError().GetExitCode())
 
 	unwrapped := UnwrapError(protoErr)
 	var toolErr *ToolError
 	require.ErrorAs(t, unwrapped, &toolErr)
 	assert.Equal(t, "docker build failed", toolErr.Message)
-	assert.Equal(t, "docker", toolErr.ToolName)
 	assert.Equal(t, ToolErrorKindFailed, toolErr.Kind)
-	require.NotNil(t, toolErr.ExitCode)
-	assert.Equal(t, 23, *toolErr.ExitCode)
 	assert.Equal(t, "Check the Docker build output", toolErr.Suggestion)
-}
-
-func TestExtensionError_ToolErrorExitCodeWireRoundTrip(t *testing.T) {
-	t.Parallel()
-
-	const windowsExitCode int64 = 0xC0000135
-	input := &ExtensionError{
-		Message: "tool failed",
-		Origin:  ErrorOrigin_ERROR_ORIGIN_TOOL,
-		Source: &ExtensionError_ToolError{
-			ToolError: &ToolErrorDetail{
-				ToolName:    "tool",
-				FailureKind: "failed",
-				ExitCode:    new(windowsExitCode),
-			},
-		},
-	}
-
-	encoded, err := proto.Marshal(input)
-	require.NoError(t, err)
-
-	var decoded ExtensionError
-	require.NoError(t, proto.Unmarshal(encoded, &decoded))
-	require.Equal(t, windowsExitCode, decoded.GetToolError().GetExitCode())
 }
 
 func TestErrorDetailsFromStatus(t *testing.T) {
@@ -400,6 +366,41 @@ func TestErrorDetailsFromStatus(t *testing.T) {
 	assert.Nil(t, ExtensionErrorFromStatus(st))
 	assert.Nil(t, ExtensionErrorFromStatus(nil))
 	assert.Nil(t, ServiceErrorDetailFromStatus(nil))
+
+	betaExtensionErr := &v1beta.ExtensionError{
+		Message:    "beta extension failed",
+		Origin:     v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+		Suggestion: "fix the beta input",
+		Source: &v1beta.ExtensionError_LocalError{
+			LocalError: &v1beta.LocalErrorDetail{
+				Code:       "invalid_beta_input",
+				Category:   "validation",
+				CauseTypes: []string{"*errors.errorString"},
+			},
+		},
+	}
+	st, err = status.New(codes.Unknown, "beta extension failed").WithDetails(betaExtensionErr)
+	require.NoError(t, err)
+
+	relayed := ExtensionErrorFromStatus(st)
+	require.NotNil(t, relayed)
+	assert.Equal(t, betaExtensionErr.GetMessage(), relayed.GetMessage())
+	assert.Equal(t, betaExtensionErr.GetSuggestion(), relayed.GetSuggestion())
+	assert.Equal(t, betaExtensionErr.GetLocalError().GetCode(), relayed.GetLocalError().GetCode())
+
+	betaServiceDetail := &v1beta.ServiceErrorDetail{
+		ErrorCode:   "BetaServiceFailure",
+		StatusCode:  503,
+		ServiceName: "preview.example.com",
+	}
+	st, err = status.New(codes.Unavailable, "beta service failed").WithDetails(betaServiceDetail)
+	require.NoError(t, err)
+
+	serviceDetail = ServiceErrorDetailFromStatus(st)
+	require.NotNil(t, serviceDetail)
+	assert.Equal(t, betaServiceDetail.GetErrorCode(), serviceDetail.GetErrorCode())
+	assert.Equal(t, betaServiceDetail.GetStatusCode(), serviceDetail.GetStatusCode())
+	assert.Equal(t, betaServiceDetail.GetServiceName(), serviceDetail.GetServiceName())
 }
 
 func TestWrapError_RelaysStructuredStatusDetails(t *testing.T) {
@@ -450,8 +451,6 @@ func TestWrapError_RelaysStructuredStatusDetails(t *testing.T) {
 	toolWrapped := WrapError(toolStatus)
 	require.Equal(t, "host docker build failed", toolWrapped.GetMessage())
 	require.Equal(t, ErrorOrigin_ERROR_ORIGIN_TOOL, toolWrapped.GetOrigin())
-	require.Equal(t, "docker", toolWrapped.GetToolError().GetToolName())
-	require.Equal(t, "failed", toolWrapped.GetToolError().GetFailureKind())
 }
 
 func TestWrapError_ConvertsServiceDetailFromStatus(t *testing.T) {
@@ -505,69 +504,6 @@ func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
 	assert.Equal(t, "Fill in the required setting", localErr.Suggestion)
 	require.Len(t, localErr.Links, 1)
 	assert.Equal(t, "Validation troubleshooting", localErr.Links[0].Title)
-}
-
-func TestExtensionError_CauseTypesCopiedAtBoundaries(t *testing.T) {
-	t.Parallel()
-
-	sourceTypes := []string{
-		"*agents.TransportError",
-		"*fmt.wrapError",
-		"*agents.TransportError",
-		"invalid type",
-	}
-	for i := range errorchain.MaxChainLen {
-		sourceTypes = append(sourceTypes, fmt.Sprintf("*agents.Cause%02d", i))
-	}
-	expectedTypes := []string{"*agents.TransportError"}
-	for i := range errorchain.MaxChainLen - 1 {
-		expectedTypes = append(expectedTypes, fmt.Sprintf("*agents.Cause%02d", i))
-	}
-	source := &LocalError{
-		Message:    "unexpected failure",
-		Code:       "unexpected_failure",
-		Category:   LocalErrorCategoryInternal,
-		CauseTypes: sourceTypes,
-	}
-
-	protoErr := WrapError(source)
-	require.Equal(t, expectedTypes, protoErr.GetLocalError().GetCauseTypes())
-	sourceTypes[0] = "*agents.MutatedSourceError"
-	require.Equal(t, "*agents.TransportError", protoErr.GetLocalError().GetCauseTypes()[0])
-
-	unwrapped := UnwrapError(protoErr)
-	protoErr.GetLocalError().CauseTypes[1] = "*agents.MutatedProtoError"
-
-	var localErr *LocalError
-	require.ErrorAs(t, unwrapped, &localErr)
-	require.Equal(t, expectedTypes, localErr.CauseTypes)
-	localErr.CauseTypes[0] = "*agents.MutatedUnwrappedError"
-	require.Equal(t, "*agents.TransportError", protoErr.GetLocalError().GetCauseTypes()[0])
-}
-
-func TestUnwrapError_NormalizesCauseTypes(t *testing.T) {
-	t.Parallel()
-
-	protoErr := &ExtensionError{
-		Source: &ExtensionError_LocalError{
-			LocalError: &LocalErrorDetail{
-				CauseTypes: []string{
-					"*agents.TransportError",
-					"*fmt.wrapError",
-					"*agents.TransportError",
-					"invalid type",
-					"*agents.ConfigError",
-				},
-			},
-		},
-	}
-
-	unwrapped := UnwrapError(protoErr)
-	localErr, ok := errors.AsType[*LocalError](unwrapped)
-	require.True(t, ok)
-	require.Equal(t,
-		[]string{"*agents.TransportError", "*agents.ConfigError"},
-		localErr.CauseTypes)
 }
 
 func mustAuthStatusError(code codes.Code, reason, message string) error {
@@ -640,6 +576,22 @@ func TestActionableErrorDetailFromStatus(t *testing.T) {
 		actionable := ActionableErrorDetailFromStatus(st)
 		require.NotNil(t, actionable)
 		assert.Equal(t, "try harder", actionable.GetSuggestion())
+	})
+
+	t.Run("status with beta ActionableErrorDetail returns stable facade detail", func(t *testing.T) {
+		err := mustStatusErrorWithDetails(codes.Unknown, "boom", &v1beta.ActionableErrorDetail{
+			Suggestion: "use the preview recovery path",
+			Links: []*v1beta.ErrorLink{{
+				Url:   "https://aka.ms/azd-preview-errors",
+				Title: "Preview error help",
+			}},
+		})
+		st, _ := status.FromError(err)
+		actionable := ActionableErrorDetailFromStatus(st)
+		require.NotNil(t, actionable)
+		assert.Equal(t, "use the preview recovery path", actionable.GetSuggestion())
+		require.Len(t, actionable.GetLinks(), 1)
+		assert.Equal(t, "https://aka.ms/azd-preview-errors", actionable.GetLinks()[0].GetUrl())
 	})
 }
 

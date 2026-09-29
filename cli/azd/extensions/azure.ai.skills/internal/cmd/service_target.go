@@ -32,7 +32,7 @@ var _ azdext.ServiceTargetProvider = (*skillServiceTarget)(nil)
 // service key, not a body field.
 type skillServiceConfig struct {
 	Description   string            `json:"description,omitempty"`
-	Instructions  string            `json:"instructions,omitempty"`
+	Instructions  skillInstructions `json:"instructions,omitzero"`
 	License       string            `json:"license,omitempty"`
 	Compatibility string            `json:"compatibility,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
@@ -166,7 +166,7 @@ func (p *skillServiceTarget) Deploy(
 		defer archive.Reader.Close()
 	} else {
 		projectPath := ""
-		if isInstructionFilePath(cfg.Instructions) {
+		if cfg.Instructions.IsFile {
 			projectPath, err = p.resolveProjectPath(ctx)
 			if err != nil {
 				return nil, err
@@ -249,7 +249,7 @@ func (p *skillServiceTarget) resolveProjectPath(ctx context.Context) (string, er
 func validateSkillServiceConfig(name string, cfg *skillServiceConfig) error {
 	hasArchive := strings.TrimSpace(cfg.Archive) != ""
 	hasInline := strings.TrimSpace(cfg.Description) != "" ||
-		strings.TrimSpace(cfg.Instructions) != "" ||
+		strings.TrimSpace(cfg.Instructions.Value) != "" ||
 		strings.TrimSpace(cfg.License) != "" ||
 		strings.TrimSpace(cfg.Compatibility) != "" ||
 		len(cfg.Metadata) > 0 ||
@@ -265,11 +265,11 @@ func validateSkillServiceConfig(name string, cfg *skillServiceConfig) error {
 			"configure either archive, or inline description/instructions/license/compatibility/metadata/tools",
 		)
 	}
-	if !hasArchive && strings.TrimSpace(cfg.Instructions) == "" {
+	if !hasArchive && strings.TrimSpace(cfg.Instructions.Value) == "" {
 		return exterrors.Validation(
 			exterrors.CodeMissingRequiredField,
 			fmt.Sprintf("skill service %q requires instructions or archive", name),
-			"set instructions to inline text/a .md or .txt path, or set archive to a .zip/directory path",
+			"set instructions to inline text or {file: path}, or set archive to a .zip/directory path",
 		)
 	}
 	return nil
@@ -335,20 +335,20 @@ func parseSkillServiceConfig(svc *azdext.ServiceConfig) (*skillServiceConfig, er
 func resolveSkillInstructions(
 	projectPath string,
 	svc *azdext.ServiceConfig,
-	instructions string,
+	instructions skillInstructions,
 ) (string, error) {
-	if !isInstructionFilePath(instructions) {
-		return instructions, nil
+	if !instructions.IsFile {
+		return instructions.Value, nil
 	}
 
-	path := strings.TrimSpace(instructions)
+	path := strings.TrimSpace(instructions.Value)
 	if !filepath.IsAbs(path) {
 		// Reject path traversal: a relative instructions path is read from disk
 		// under the service directory, so a value like "../../secret.md" must not
 		// be allowed to escape it via filepath.Join.
 		if hasParentTraversal(path) {
 			return "", fmt.Errorf(
-				"skill instructions path %q must not contain '..' or escape the service directory", instructions)
+				"skill instructions path %q must not contain '..' or escape the service directory", instructions.Value)
 		}
 		path = filepath.Join(skillServiceRoot(projectPath, svc), path)
 	}
@@ -438,6 +438,9 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 		if err != nil {
 			return nil, classifyArchiveDirectoryError(err, path)
 		}
+		if err := validateSkillArchiveUploadSize(path, int64(len(data))); err != nil {
+			return nil, err
+		}
 		return &preparedSkillArchive{
 			Name:   filepath.Base(filepath.Clean(path)) + ".zip",
 			Reader: io.NopCloser(bytes.NewReader(data)),
@@ -459,12 +462,8 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 			"set archive to a .zip file or a directory containing SKILL.md",
 		)
 	}
-	if info.Size() > skill_api.MaxUploadBytes {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
-			"reduce the archive size to 25 MB or less",
-		)
+	if err := validateSkillArchiveUploadSize(path, info.Size()); err != nil {
+		return nil, err
 	}
 	file, err := os.Open(path) //nolint:gosec // user-authored azure.yaml path opened on user's behalf
 	if err != nil {
@@ -480,6 +479,17 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 	}, nil
 }
 
+func validateSkillArchiveUploadSize(path string, size int64) error {
+	if size <= skill_api.MaxUploadBytes {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidSkillFile,
+		fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
+		"reduce the archive size to 25 MB or less",
+	)
+}
+
 // hasParentTraversal reports whether a relative path contains a ".." segment
 // that could escape its base directory, treating both '/' and '\' as separators.
 func hasParentTraversal(p string) bool {
@@ -489,17 +499,4 @@ func hasParentTraversal(p string) bool {
 		}
 	}
 	return false
-}
-
-func isInstructionFilePath(instructions string) bool {
-	value := strings.TrimSpace(instructions)
-	if strings.ContainsAny(value, "\r\n") {
-		return false
-	}
-	switch strings.ToLower(filepath.Ext(value)) {
-	case ".md", ".txt":
-		return true
-	default:
-		return false
-	}
 }

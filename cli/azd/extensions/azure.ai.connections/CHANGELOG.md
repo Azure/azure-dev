@@ -1,5 +1,23 @@
 # Release History
 
+## 1.0.0-beta.8 (2026-09-24)
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
+## 1.0.0-beta.7 (2026-09-17)
+
+### Breaking Changes
+
+- [[#9997]](https://github.com/Azure/azure-dev/pull/9997) Move declared Foundry Connection reconciliation from project provisioning to `azure.ai.connection` service deployment through `azd deploy` or `azd up`. Thanks @JerryYangKai for the contribution!
+- [[#10024]](https://github.com/Azure/azure-dev/pull/10024) Remove the standalone `azd ai connection deploy` command in favor of `azd deploy <service>`. Thanks @JerryYangKai for the contribution!
+
+### Other Changes
+
+- [[#9841]](https://github.com/Azure/azure-dev/pull/9841) Add a shared best-effort telemetry reporting foundation without emitting new Connection usage events. Thanks @JerryYangKai for the contribution!
+
 ## 1.0.0-beta.6 (2026-09-04)
 
 ### Features Added

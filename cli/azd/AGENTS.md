@@ -97,6 +97,8 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 Additional mage targets:
 
+- `go tool mage schema:format` — format every JSON file below the repository's `schemas/` directory with four-space indentation.
+- `go tool mage schema:check` — verify that every JSON file below the repository's `schemas/` directory is formatted.
 - `go tool mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
 - `go tool mage generateProtos` — regenerate the checked-in Go, Python, and JavaScript protobuf bindings using the pinned containerized toolchain.
 - `go tool mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
@@ -288,20 +290,27 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
   `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
   `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
-  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
-  members.
+  `PerformanceAndHealth`); telemetry metadata also includes the optional `Endpoint` and
+  `IsMeasurement` members.
+- **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
+  same-package compile-time constant and declare its final `ext.*` name as an exported
+  `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Declarations are shared by final key
+  across first-party extensions; reuse an existing key only when its meaning, allowed values,
+  classification, and purpose are identical. Run
+  `go test ./extensions/telemetry`; repository validation rejects undeclared or dynamically keyed
+  fields, missing classification/purpose/endpoint metadata, measurements, and `CustomerContent`.
+  If a value would require `CustomerContent`, do not report it.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
-  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  contains `Event` (end it with `Prefix` for a prefix-match group) so repository metadata tooling
   discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
   or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
   (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw
-  `attribute.String("my.key", v)`. The GDPR classifier discovers fields by statically scanning
-  the `fields` package for exported `AttributeKey` vars; a raw literal key is invisible to it, so the
-  property reaches App Insights but its data-catalog row stays Unclassified / `Complete=false`. Enforced by
-  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`); dynamic
-  `ext.*` keys are the only sanctioned exception.
+  `attribute.String("my.key", v)`. Telemetry metadata is derived from exported
+  `AttributeKey` declarations; raw literal keys bypass that contract and are rejected by
+  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`). Dynamic `ext.*` keys are the
+  only sanctioned exception.
 - **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
   (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
   repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).

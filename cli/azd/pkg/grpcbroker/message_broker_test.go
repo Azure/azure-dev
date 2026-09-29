@@ -41,6 +41,7 @@ type TestResponse struct {
 type SimulatedBidiStream struct {
 	clientToServer chan *TestMessage
 	serverToClient chan *TestMessage
+	done           chan struct{}
 	closed         bool
 	mu             sync.Mutex
 }
@@ -49,6 +50,7 @@ func NewSimulatedBidiStream() *SimulatedBidiStream {
 	return &SimulatedBidiStream{
 		clientToServer: make(chan *TestMessage, 10),
 		serverToClient: make(chan *TestMessage, 10),
+		done:           make(chan struct{}),
 	}
 }
 
@@ -57,8 +59,7 @@ func (s *SimulatedBidiStream) Close() {
 	defer s.mu.Unlock()
 	if !s.closed {
 		s.closed = true
-		close(s.clientToServer)
-		close(s.serverToClient)
+		close(s.done)
 	}
 }
 
@@ -80,20 +81,24 @@ func (c *clientSideStream) Send(msg *TestMessage) error {
 	c.sim.mu.Lock()
 	closed := c.sim.closed
 	c.sim.mu.Unlock()
-
 	if closed {
 		return io.EOF
 	}
-	c.sim.clientToServer <- msg
-	return nil
+	select {
+	case c.sim.clientToServer <- msg:
+		return nil
+	case <-c.sim.done:
+		return io.EOF
+	}
 }
 
 func (c *clientSideStream) Recv() (*TestMessage, error) {
-	msg, ok := <-c.sim.serverToClient
-	if !ok {
+	select {
+	case msg := <-c.sim.serverToClient:
+		return msg, nil
+	case <-c.sim.done:
 		return nil, io.EOF
 	}
-	return msg, nil
 }
 
 type serverSideStream struct {
@@ -104,20 +109,24 @@ func (s *serverSideStream) Send(msg *TestMessage) error {
 	s.sim.mu.Lock()
 	closed := s.sim.closed
 	s.sim.mu.Unlock()
-
 	if closed {
 		return io.EOF
 	}
-	s.sim.serverToClient <- msg
-	return nil
+	select {
+	case s.sim.serverToClient <- msg:
+		return nil
+	case <-s.sim.done:
+		return io.EOF
+	}
 }
 
 func (s *serverSideStream) Recv() (*TestMessage, error) {
-	msg, ok := <-s.sim.clientToServer
-	if !ok {
+	select {
+	case msg := <-s.sim.clientToServer:
+		return msg, nil
+	case <-s.sim.done:
 		return nil, io.EOF
 	}
-	return msg, nil
 }
 
 // SimpleMessageEnvelope is a simple implementation of MessageEnvelope for testing

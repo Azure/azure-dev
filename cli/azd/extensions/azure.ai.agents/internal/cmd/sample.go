@@ -26,6 +26,8 @@ The catalog is the same source the interactive ` + "`azd ai agent init`" + ` pic
 Subcommands emit machine-readable JSON or human-readable text so coding agents
 and humans can both discover manifests and repos to feed back into
 ` + "`azd ai agent init -m <url>`" + ` or ` + "`azd init -t <url>`" + `.`,
+		Example: `  # Browse samples before initializing an agent
+  azd ai agent sample list`,
 	}
 
 	cmd.AddCommand(newSampleListCommand(extCtx))

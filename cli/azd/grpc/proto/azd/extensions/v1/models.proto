@@ -1,0 +1,165 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
+
+import "google/protobuf/struct.proto";
+
+// Messages for requests and responses
+message EmptyRequest {}
+
+// EmptyResponse message for methods with no output.
+message EmptyResponse {}
+
+// Message representing a Subscription
+message Subscription {
+  string id = 1;
+  string name = 2;
+  string tenant_id = 3;
+  string user_tenant_id = 4;
+  bool is_default = 5;
+}
+
+message ResourceGroup {
+  string id = 1;
+  string name = 2;
+  string location = 3;
+}
+
+message Location {
+  string name = 1;
+  string display_name = 2;
+  string regional_display_name = 3;
+}
+
+message AzureScope {
+  string tenant_id = 1;
+  string subscription_id = 2;
+  string location = 3;
+  string resource_group = 4;
+}
+
+message AzureContext {
+  AzureScope scope = 1;
+  repeated string resources = 2;
+}
+
+message Resource {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string location = 4;
+}
+
+message ResourceExtended {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string location = 4;
+  string kind = 5;
+}
+
+// ProjectConfig message definition
+message ProjectConfig {
+  string name = 1;
+  string resource_group_name = 2;
+  string path = 3;
+  ProjectMetadata metadata = 4;
+  map<string, ServiceConfig> services = 5;
+  InfraOptions infra = 6;
+  google.protobuf.Struct additional_properties = 7;
+}
+
+// RequiredVersions message definition
+message RequiredVersions {
+  string azd = 1;
+}
+
+// ProjectMetadata message definition
+message ProjectMetadata {
+  string template = 1;
+}
+
+// ServiceConfig message definition
+message ServiceConfig {
+  string name = 1;
+  string resource_group_name = 2;
+  string resource_name = 3;
+  string api_version = 4;
+  string relative_path = 5;
+  string host = 6;
+  string language = 7;
+  string output_path = 8;
+  string image = 9;
+  DockerProjectOptions docker = 10;
+  google.protobuf.Struct config = 11;
+  google.protobuf.Struct additional_properties = 12;
+  repeated string uses = 13;
+  map<string, string> environment = 14;
+}
+
+// InfraOptions message definition
+message InfraOptions {
+  string provider = 1;
+  string path = 2;
+  string module = 3;
+}
+
+// DockerProjectOptions message definition
+message DockerProjectOptions {
+  string path = 1;
+  string context = 2;
+  string platform = 3;
+  string target = 4;
+  string registry = 5;
+  string image = 6;
+  string tag = 7;
+  bool remote_build = 8;
+  repeated string build_args = 9;
+  string network = 10;
+  bool image_passthrough = 11;
+}
+
+// ServiceContext defines the shared pipeline state across all phases of the service lifecycle
+message ServiceContext {
+  repeated Artifact restore = 1;
+  repeated Artifact build = 2;
+  repeated Artifact package = 3;
+  repeated Artifact publish = 4;
+  repeated Artifact deploy = 5;
+}
+
+// ArtifactList represents a list of artifacts for map values in ServiceContext
+message ArtifactList {
+  repeated Artifact artifacts = 1;
+}
+
+// Artifact kinds - matching the existing Go ArtifactKind enum
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;         // Default/unknown artifact kind
+  ARTIFACT_KIND_DIRECTORY = 1;           // Directory containing project or build artifacts
+  ARTIFACT_KIND_CONFIG = 2;              // Configuration file
+  ARTIFACT_KIND_ARCHIVE = 3;             // Zip/archive package
+  ARTIFACT_KIND_CONTAINER = 4;           // Docker/container image
+  ARTIFACT_KIND_ENDPOINT = 5;            // Service endpoint URL
+  ARTIFACT_KIND_DEPLOYMENT = 6;          // Deployment result or endpoint
+  ARTIFACT_KIND_RESOURCE = 7;            // Azure Resource
+}
+
+// Location kinds - matching the existing Go LocationKind enum
+enum LocationKind {
+  LOCATION_KIND_UNSPECIFIED = 0;         // Default/unknown location
+  LOCATION_KIND_LOCAL = 1;               // Local file system path
+  LOCATION_KIND_REMOTE = 2;              // Remote URL/URI
+}
+
+// Artifact represents a build, package, or deployment artifact with its location and metadata
+message Artifact {
+  ArtifactKind kind = 1;                  // Required: type of artifact
+  string location = 2;                    // Optional: location of the artifact (local path or remote reference)
+  LocationKind location_kind = 3;         // Required: where the artifact is stored
+  map<string, string> metadata = 4;       // Optional: arbitrary key/value pairs for extension-specific data
+}

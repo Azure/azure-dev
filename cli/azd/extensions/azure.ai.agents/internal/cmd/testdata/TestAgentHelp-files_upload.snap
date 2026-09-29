@@ -1,0 +1,44 @@
+Upload a file to a hosted agent session.
+
+Reads a local file and uploads it to the specified remote path
+in the session's filesystem. If --target-path is not provided,
+the remote path defaults to the local filename.
+
+Positional arguments mirror 'azd ai agent invoke [agent] [message]'. With two
+arguments the first is the agent name and the second is the file to upload.
+With a single argument it is the agent name when --file/-f already supplies the
+file, otherwise it is the file itself. The agent is auto-detected from
+azure.yaml when not provided.
+
+Agent details are automatically resolved from the azd environment.
+
+Usage
+  azd ai agent files upload [agent] [file] [flags]
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+  -f, --file string          : Local file path to upload
+  -s, --session-id string    : Session ID override (defaults to last invoke session)
+  -t, --target-path string   : Remote destination path (defaults to local filename)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for upload
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Upload a file (agent auto-detected, remote path defaults to filename)
+    azd ai agent files upload ./data/input.csv
+
+  Upload a file to a specific agent
+    azd ai agent files upload my-agent ./data/input.csv
+
+  Upload to a specific remote path
+    azd ai agent files upload ./input.csv --target-path /data/input.csv
+
+  Upload using flags
+    azd ai agent files upload --file ./input.csv --agent-name my-agent

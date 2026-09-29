@@ -24,6 +24,19 @@ type projectServiceConfig struct {
 	Deployments []synthesis.Deployment `json:"deployments,omitempty"`
 }
 
+func firstProjectDeploymentName(value map[string]any) string {
+	deployments, ok := value["deployments"].([]any)
+	if !ok || len(deployments) == 0 {
+		return ""
+	}
+	deployment, ok := deployments[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	name, _ := deployment["name"].(string)
+	return strings.TrimSpace(name)
+}
+
 func projectLifecycleHandler(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

@@ -1,0 +1,35 @@
+Download a file from a hosted agent session.
+
+Downloads a file from the specified remote path in the session's
+filesystem and saves it locally. If --target-path is not provided,
+the local path defaults to the basename of the remote file.
+
+Agent details are automatically resolved from the azd environment.
+
+Usage
+  azd ai agent files download [file] [flags]
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+  -f, --file string          : Remote file path to download
+  -s, --session-id string    : Session ID override (defaults to last invoke session)
+  -t, --target-path string   : Local destination path (defaults to remote filename)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for download
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Download a file (local path defaults to remote filename)
+    azd ai agent files download /data/output.csv
+
+  Download to a specific local path
+    azd ai agent files download /data/output.csv --target-path ./output.csv
+
+  Download with flags
+    azd ai agent files download --file /data/output.csv --session-id <session-id>

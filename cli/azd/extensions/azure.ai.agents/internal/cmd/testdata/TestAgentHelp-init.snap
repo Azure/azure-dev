@@ -1,0 +1,121 @@
+Initialize a new prompt, hosted, or voice agent project.
+
+Manifests
+When -m points at a sample's unified azure.yaml (a project manifest that
+declares services with host: azure.ai.project / azure.ai.agent / ...), that
+azure.yaml is adopted as the project manifest and its referenced files are
+placed at the project root. When -m points at an agent manifest instead, the
+project's azure.yaml is generated from it. An agent manifest that declares
+kind: prompt scaffolds a prompt agent (or a managed agent when it also declares
+a harness), carrying over its model, instructions, skills, and tools.
+
+Voice Agents
+Use --kind prompt-voice to initialize a managed prompt voice agent without
+source code or container scaffolding.
+The managed model defaults to gpt-realtime and does not require a model deployment.
+--voice sets the output voice only when creating a new prompt voice agent through
+--kind prompt-voice or the interactive voice option.
+Edit azure.yaml to customize existing voice settings.
+
+New prompt voice initialization does not use source directories or code/container
+settings. Explicit --src (including a positional directory), --protocol,
+--deploy-mode, --runtime, --entry-point, and --dep-resolution are rejected on
+the voice path. Use --model for the managed voice model; --model-deployment and
+prompt-only or registry options are not supported by this voice initialization.
+
+Prompt voice services support modelType: managed or self_deployed (bring your own model
+deployment), audio input/output, structured inputs, tools, greeting, avatar,
+handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+conversationEngine.type: hosted_agent and conversationEngine.name to reference
+the hosted target service in azure.yaml. The old modelType: hosted_agent and
+targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
+azure.yaml containing both the hosted target and the voice wrapper.
+Configure advanced settings in azure.yaml.
+Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
+the voice WebSocket endpoint with a Voice Live client.
+
+Agent Names
+The agent name written to agent.yaml is the Foundry agent identity. Foundry
+agents are unique by name within a project, so deploying with an existing name
+creates a new version of that existing agent instead of a separate agent.
+
+Use --agent-name to choose a unique Foundry agent name when initializing from
+a reusable sample or manifest.
+
+File Exclusions
+A default .agentignore file is generated to control which files are excluded
+from code-deploy ZIP packaging (uses .gitignore syntax).
+
+Usage
+  azd ai agent init [<path>] [-m <manifest pointer>] [--src <source directory>] [flags]
+
+Flags
+      --acr-connection string      : Foundry Azure Container Registry connection name to use for an existing project; incompatible with code deploy, --image, and prompt-voice agents
+      --agent-name string          : Foundry agent name to write to azure.yaml. Reusing a name creates a new version of the existing agent.
+      --dep-resolution string      : Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.
+      --deploy-mode string         : Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.
+      --description string         : Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.
+      --entry-point string         : Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.
+      --force                      : Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need overwrite confirmation.
+      --image string               : Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). When set without --manifest, skips template/language selection, code scaffolding, Dockerfile generation, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.
+      --infra string[="bicep"]     : Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and Foundry files are generated as a separate infra/foundry layer. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.
+      --instructions string        : System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.
+      --kind string                : Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' (model + instructions; Foundry runs the agent), or 'prompt-voice' (a declarative voice agent; use --model for the speech-to-speech model and --voice for the output voice agent). When omitted, when --manifest is supplied, the manifest determines the runtime and --kind is ignored; otherwise the hosted runtime is used. With --no-prompt, 'prompt' requires --agent-name and either --model or --model-deployment (unless supplied by --manifest).
+  -m, --manifest string            : Path or URI to an agent manifest (hosted or 'kind: prompt'), or to a sample's unified azure.yaml to adopt as the project manifest
+      --model string               : For hosted and prompt agents, name of the AI model to deploy. Defaults to 'gpt-5.4-mini' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.
+  -d, --model-deployment string    : Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts
+  -p, --project-id string          : Existing Microsoft Foundry Project Id to initialize your azd environment with
+      --protocol strings           : Protocols supported by the agent (responses, invocations, invocations_ws, activity). Can be specified multiple times.
+      --rai-policy string          : Responsible AI policy for a prompt or managed agent: 'none' to inherit the account's default content filters, a policy name on the selected Foundry account, or a policy's full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents and when --manifest already declares policies.
+      --registry-connection string : Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.
+      --runtime string             : Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.
+  -s, --src string                 : Directory to download the agent definition to (defaults to 'src/<agent-id>')
+      --voice string               : Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). Rejected for other init flows. For existing voice services, edit azure.yaml. Example: en-US-Ava:DragonHDLatestNeural.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for init
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Adopt a sample's unified azure.yaml as the project manifest
+    azd ai agent init -m ./azure.yaml
+    azd ai agent init -m https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
+
+  Initialize from an agent manifest
+    azd ai agent init -m ./agent.manifest.yaml
+
+  Initialize from a manifest with a unique Foundry agent name
+    azd ai agent init -m ./agent.manifest.yaml --agent-name my-unique-agent
+
+  Initialize from local agent code
+    azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  Initialize a managed prompt voice agent
+    azd ai agent init --kind prompt-voice --agent-name support-voice
+
+  Initialize a prompt voice agent with an explicit realtime model and voice
+    azd ai agent init --kind prompt-voice --agent-name support-voice \
+      --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
+
+  Non-interactive code deploy (CI/CD)
+    azd ai agent init --no-prompt --project-id "<resource-id>" \
+      --deploy-mode code --runtime python_3_13 --entry-point app.py
+
+  Non-interactive prompt agent against an existing Foundry project
+    azd ai agent init --no-prompt --kind prompt --agent-name my-agent \
+      --project-id "<resource-id>" --model-deployment gpt-4.1-mini
+
+  Non-interactive prompt agent from a prompt agent template
+    azd ai agent init --no-prompt -m ./agent.yaml --project-id "<resource-id>"
+
+  Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
+    azd ai agent init --no-prompt --agent-name my-agent \
+      --image myacr.azurecr.io/agents/my-agent:v1
+
+  Use an existing Foundry connection for a private pre-built image
+    azd ai agent init --no-prompt --agent-name my-agent --project-id "<resource-id>" \
+      --image registry.example.com/agents/my-agent:v1 --registry-connection production-registry

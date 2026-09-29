@@ -1,0 +1,460 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package project
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"strings"
+
+	"azureaieval/internal/messages"
+
+	"github.com/braydonk/yaml"
+)
+
+// ScaffoldWrite is what `init` decided to add to the configuration.
+//
+// Additions only. What the author already wrote is not represented here at
+// all, which is what keeps it from being rewritten -- and there is no way to
+// express a removal, because `init` adds evals and never replaces one.
+type ScaffoldWrite struct {
+	Datasets   []DatasetDecl
+	Evaluators []EvaluatorDecl
+	Evals      []Eval
+}
+
+// Empty reports whether this would change nothing.
+func (w ScaffoldWrite) Empty() bool {
+	return len(w.Datasets) == 0 && len(w.Evaluators) == 0 && len(w.Evals) == 0
+}
+
+// ApplyScaffold writes what `init` decided, editing the file rather than
+// rewriting it.
+//
+// The same reasoning as UpsertCatalogEntry, for the command that adds an eval:
+// decisions are made from the decoded configuration, but only the new entries
+// are written, so comments and any key these structs do not model survive.
+func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
+	if write.Empty() {
+		return nil
+	}
+	if err := checkOneConfig(evalDir); err != nil {
+		return err
+	}
+	if _, err := ensureEvalDir(evalDir); err != nil {
+		return err
+	}
+	path := resolvedConfigPath(evalDir)
+
+	doc, err := readConfigDocument(path)
+	if err != nil {
+		return err
+	}
+	root, err := documentMapping(doc)
+	if err != nil {
+		return err
+	}
+
+	for _, decl := range write.Datasets {
+		seq, err := mappingSequence(root, "datasets")
+		if err != nil {
+			return err
+		}
+		if err := appendEncoded(seq, decl); err != nil {
+			return err
+		}
+	}
+	for _, decl := range write.Evaluators {
+		seq, err := mappingSequence(root, "evaluators")
+		if err != nil {
+			return err
+		}
+		if err := appendEncoded(seq, decl); err != nil {
+			return err
+		}
+	}
+	for _, eval := range write.Evals {
+		seq, err := mappingSequence(root, "evals")
+		if err != nil {
+			return err
+		}
+		if err := appendEncoded(seq, eval); err != nil {
+			return err
+		}
+	}
+
+	out, err := marshalConfigDocument(doc)
+	if err != nil {
+		return messages.SerializingEvalConfig(err)
+	}
+	return writeConfigBytes(path, out)
+}
+
+// appendEncoded renders one entry and appends it to a sequence.
+//
+// Through the struct's own yaml tags, so a field added to the model is written
+// without this file having to learn about it.
+func appendEncoded(seq *yaml.Node, entry any) error {
+	body, err := yaml.Marshal(entry)
+	if err != nil {
+		return messages.SerializingEvalConfig(err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return messages.SerializingEvalConfig(err)
+	}
+	if len(doc.Content) == 0 {
+		return nil
+	}
+	seq.Content = append(seq.Content, doc.Content[0])
+	return nil
+}
+
+// readConfigDocument parses the configuration at path, answering an empty
+// document when there is nothing there yet.
+func readConfigDocument(path string) (*yaml.Node, error) {
+	// #nosec G304 -- reading the configuration the caller named is the point.
+	body, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+	case errors.Is(err, os.ErrNotExist):
+		return &yaml.Node{}, nil
+	default:
+		return nil, messages.ReadingEvalConfig(path, err)
+	}
+
+	doc := &yaml.Node{}
+	if len(body) > 0 {
+		if err := yaml.Unmarshal(body, doc); err != nil {
+			return nil, messages.ParsingEvalConfig(path, err)
+		}
+	}
+	return doc, nil
+}
+
+// UpsertCatalogEntry records one field on a named catalog entry, editing the
+// file rather than rewriting it.
+//
+// `generate` used to read the configuration into structs, change a field, and
+// marshal the whole thing back. That deleted every comment the author had
+// written and changed the indentation of the file, and it silently dropped any
+// key the structs did not model -- which is why `$ref` had to be added to three
+// of them, and why a directive anywhere the structs did not reach could not
+// survive an edit at all.
+//
+// Editing the node tree fixes both at once: what this function does not touch
+// is written back exactly as it was found, whether or not this package knows
+// what it means.
+//
+// CatalogField is one key to set on a catalog entry.
+//
+// A declaration carries more than the field naming its artifact: generation
+// returns catalog metadata -- an evaluator's categories and the levels it
+// supports -- that `azd up` republishes, and losing it publishes a version with
+// a blank catalog name and narrower compatibility than the one before it.
+//
+// Key may name a nested key with a dot, which is how `tags.evaluation_level`
+// reaches the map it belongs in. List replaces Value for a sequence. A field
+// with neither writes nothing, so one the service did not return is omitted
+// rather than written blank.
+type CatalogField struct {
+	Key   string
+	Value string
+	List  []string
+}
+
+// empty reports a field with nothing to write.
+func (f CatalogField) empty() bool {
+	return f.Value == "" && len(f.List) == 0
+}
+
+// UpsertCatalogEntry adds or updates one field of a catalog entry.
+func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool, created bool, err error) {
+	return UpsertCatalogFields(evalDir, kind, name, []CatalogField{{Key: field, Value: value}})
+}
+
+// UpsertCatalogFields adds or updates a catalog entry, setting every field.
+//
+// kind is the top-level sequence (`datasets` or `evaluators`). Reports whether
+// anything changed, and whether the file had to be created.
+func UpsertCatalogFields(
+	evalDir, kind, name string,
+	fields []CatalogField,
+) (changed bool, created bool, err error) {
+	if err := checkOneConfig(evalDir); err != nil {
+		return false, false, err
+	}
+	if _, err := ensureEvalDir(evalDir); err != nil {
+		return false, false, err
+	}
+	path := resolvedConfigPath(evalDir)
+
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+		created = true
+	}
+	doc, err := readConfigDocument(path)
+	if err != nil {
+		return false, false, err
+	}
+
+	root, err := documentMapping(doc)
+	if err != nil {
+		return false, false, err
+	}
+	seq, err := mappingSequence(root, kind)
+	if err != nil {
+		return false, false, err
+	}
+	entry := sequenceEntryNamed(seq, name)
+
+	if entry == nil {
+		entry = namedEntryNode(name)
+		seq.Content = append(seq.Content, entry)
+		changed = true
+	}
+	for _, f := range fields {
+		if f.empty() {
+			continue
+		}
+		set, setErr := setCatalogField(entry, f)
+		if setErr != nil {
+			return false, false, setErr
+		}
+		changed = changed || set
+	}
+	if !changed {
+		// The entry already says all of this. Rewriting the file to change
+		// nothing would still rewrite it, and this is the repeated-generate path.
+		return false, false, nil
+	}
+
+	out, err := marshalConfigDocument(doc)
+	if err != nil {
+		return false, false, messages.SerializingEvalConfig(err)
+	}
+	if err := writeConfigBytes(path, out); err != nil {
+		return false, false, err
+	}
+	return true, created, nil
+}
+
+// documentMapping returns the mapping at the root of doc, filling in an empty
+// document so a configuration that does not exist yet can be built up.
+//
+// A root of any other kind is refused rather than replaced. It used to be
+// overwritten with an empty mapping, and the caller then serialized that over
+// the file -- so a valid YAML document of the wrong shape was erased instead of
+// being reported. Nothing decoded the file first on this path, so there was no
+// earlier guard to catch it.
+func documentMapping(doc *yaml.Node) (*yaml.Node, error) {
+	if doc.Kind == 0 {
+		doc.Kind = yaml.DocumentNode
+	}
+	if len(doc.Content) == 0 {
+		doc.Content = []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil, messages.EvalConfigNotAMapping()
+	}
+	return root, nil
+}
+
+// mappingSequence returns the sequence under key, adding it when absent.
+//
+// An existing value of another kind is refused for the same reason: replacing
+// it discards whatever the author wrote there. A key with nothing under it is
+// not that case -- `evals:` on its own is an empty list, and stays one.
+func mappingSequence(mapping *yaml.Node, key string) (*yaml.Node, error) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		value := mapping.Content[i+1]
+		switch {
+		case value.Kind == yaml.SequenceNode:
+			return value, nil
+		case value.Tag == "!!null":
+			value.Kind = yaml.SequenceNode
+			value.Tag = "!!seq"
+			value.Value = ""
+			return value, nil
+		default:
+			return nil, messages.EvalConfigKeyNotASequence(key)
+		}
+	}
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		seq)
+	return seq, nil
+}
+
+// sequenceEntryNamed returns the mapping in seq whose `name` is name.
+//
+// An entry that is only a `$ref` has no name here, and is deliberately not
+// matched: what it declares is decided by the file it points at, and the
+// caller's guard refuses those before this is reached.
+func sequenceEntryNamed(seq *yaml.Node, name string) *yaml.Node {
+	for _, item := range seq.Content {
+		if mappingHasName(item, name) {
+			return item
+		}
+	}
+	return nil
+}
+
+// mappingHasName reports whether a sequence entry declares this name here.
+func mappingHasName(item *yaml.Node, name string) bool {
+	if item.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(item.Content); i += 2 {
+		if item.Content[i].Value == "name" && item.Content[i+1].Value == name {
+			return true
+		}
+	}
+	return false
+}
+
+// setMappingScalar sets key on mapping, reporting whether that changed anything.
+//
+// Only Value, Tag and Style are replaced, so an existing mapping or sequence
+// would keep its Kind and its children and serialize as a tagged mapping --
+// written as a success, and refused by the next strict read of the file.
+func setMappingScalar(mapping *yaml.Node, key, value string) (bool, error) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		existing := mapping.Content[i+1]
+		if existing.Kind != yaml.ScalarNode {
+			return false, messages.ConfigValueNotAScalar(key)
+		}
+		if existing.Value == value {
+			return false, nil
+		}
+		existing.Value = value
+		existing.Tag = "!!str"
+		existing.Style = 0
+		return true, nil
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
+	return true, nil
+}
+
+// setCatalogField writes one field, resolving a dotted key into the nested
+// mapping it names.
+func setCatalogField(entry *yaml.Node, f CatalogField) (bool, error) {
+	mapping := entry
+	key := f.Key
+	if parent, leaf, nested := strings.Cut(key, "."); nested {
+		var err error
+		if mapping, err = mappingChild(entry, parent); err != nil {
+			return false, err
+		}
+		key = leaf
+	}
+	if len(f.List) > 0 {
+		return setMappingSequence(mapping, key, f.List)
+	}
+	return setMappingScalar(mapping, key, f.Value)
+}
+
+// mappingChild returns the mapping stored under key, creating it when absent.
+func mappingChild(mapping *yaml.Node, key string) (*yaml.Node, error) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		if mapping.Content[i+1].Kind != yaml.MappingNode {
+			return nil, messages.ConfigValueNotAScalar(key)
+		}
+		return mapping.Content[i+1], nil
+	}
+	child := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		child)
+	return child, nil
+}
+
+// setMappingSequence sets key to a list of strings, reporting whether that
+// changed anything.
+func setMappingSequence(mapping *yaml.Node, key string, values []string) (bool, error) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		existing := mapping.Content[i+1]
+		if existing.Kind != yaml.SequenceNode {
+			return false, messages.ConfigValueNotAScalar(key)
+		}
+		if sameStringSequence(existing, values) {
+			return false, nil
+		}
+		mapping.Content[i+1] = sequenceNode(values)
+		return true, nil
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		sequenceNode(values))
+	return true, nil
+}
+
+// sequenceNode builds a block sequence of plain strings.
+func sequenceNode(values []string) *yaml.Node {
+	node := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, v := range values {
+		node.Content = append(node.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v})
+	}
+	return node
+}
+
+// sameStringSequence reports a sequence that already holds exactly these
+// values, in this order.
+func sameStringSequence(node *yaml.Node, values []string) bool {
+	if len(node.Content) != len(values) {
+		return false
+	}
+	for i, child := range node.Content {
+		if child.Kind != yaml.ScalarNode || child.Value != values[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// namedEntryNode builds the entry appended for a name the file does not declare
+// yet, carrying only its name; its fields follow through setCatalogField.
+func namedEntryNode(name string) *yaml.Node {
+	return &yaml.Node{
+		Kind: yaml.MappingNode,
+		Tag:  "!!map",
+		Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "name"},
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: name},
+		},
+	}
+}
+
+// marshalConfigDocument renders the edited tree at the indentation azd uses for
+// azure.yaml, so an edited file keeps the shape of the ones beside it.
+func marshalConfigDocument(doc *yaml.Node) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(doc); err != nil {
+		_ = enc.Close()
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}

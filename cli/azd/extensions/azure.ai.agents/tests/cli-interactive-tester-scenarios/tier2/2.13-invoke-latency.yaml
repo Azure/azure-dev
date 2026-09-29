@@ -1,0 +1,19 @@
+# Tier 2 (cloud E2E) — latency output; reuses the shared Responses agent and incurs invoke costs.
+name: "invoke-latency-default-and-opt-out"
+command: 'azd ai agent invoke --protocol responses "Reply with exactly: latency-scenario-ok"'
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:invoke", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+goals:
+  - "Wait for the initial invocation to exit with code 0 and return latency-scenario-ok without an agent picker, login prompt, or endpoint error."
+  - "Confirm ordinary output includes one 'Client elapsed:' line with seconds to three decimal places, not the old 'Server responded in' line or a client 'first byte:' detail."
+  - "Confirm diagnostics appear without supplying --debug-latency: a 'Platform latency' summary reports cold, warm, or resume and 'response headers' in integer milliseconds, followed by one indented line of phase measurements. These are two logical lines; normal terminal wrapping is allowed."
+  - "Confirm preprocess and container are non-negative integer milliseconds, and all displayed phases sum to the platform response-header value. If the service reports warm, infra and readiness must be omitted rather than synthesized as zero. Do not require a fixed latency value or infer the start type from session flags."
+  - 'Run azd ai agent invoke --protocol responses --debug-latency=false "Reply with exactly: latency-scenario-ok". Confirm it exits with code 0, returns latency-scenario-ok, retains Client elapsed, and emits no Platform latency summary.'
+  - 'Run azd ai agent invoke --protocol responses --output raw "Reply with exactly: latency-scenario-ok". Confirm it exits with code 0 and displays the HTTP status, x-ms-debug-latency-session-start-type, x-ms-debug-latency-platform-preprocessing-ms, x-ms-debug-latency-container-response-ms, and x-ms-debug-latency-response-begin-ms response headers (case-insensitive), plus a completed SSE response containing latency-scenario-ok.'
+  - "Confirm raw output contains neither the friendly Client elapsed line nor the formatted Platform latency summary."
+  - 'Run azd ai agent invoke --protocol responses --debug-latency=false --output raw "Reply with exactly: latency-scenario-ok". Confirm it exits with code 0, still returns a completed SSE response containing latency-scenario-ok, and contains no x-ms-debug-latency-* response headers or friendly timing summary.'
+  - "The existing Next guidance in ordinary interactive output is unrelated to latency; do not count it as newly added diagnostic lines. No product prompt is expected during these invocations."
+  - "Take screenshots of default, opt-out, and raw output."
+  - "Report a finding if any invocation fails, metrics are unavailable or malformed, phase totals do not add up, opt-out still emits metrics, or raw output is mixed with friendly diagnostics. Missing metrics must not be treated as a passing default-on test."

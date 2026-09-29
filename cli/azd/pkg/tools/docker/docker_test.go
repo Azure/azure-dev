@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -739,7 +740,7 @@ func Test_CheckInstalled_Docker(t *testing.T) {
 
 	err := docker.CheckInstalled(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "docker", docker.containerEngine)
+	require.Equal(t, tools.ContainerEngineDocker, docker.ContainerEngine())
 	require.Equal(t, "Docker", docker.Name())
 }
 
@@ -773,7 +774,7 @@ func Test_CheckInstalled_Podman(t *testing.T) {
 
 	err := docker.CheckInstalled(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "podman", docker.containerEngine)
+	require.Equal(t, tools.ContainerEnginePodman, docker.ContainerEngine())
 	require.Equal(t, "Podman", docker.Name())
 }
 
@@ -806,7 +807,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 
 		err := docker.CheckInstalled(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "docker", docker.containerEngine)
+		require.Equal(t, tools.ContainerEngineDocker, docker.ContainerEngine())
 	})
 
 	t.Run("PodmanOverride", func(t *testing.T) {
@@ -837,7 +838,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 
 		err := docker.CheckInstalled(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "podman", docker.containerEngine)
+		require.Equal(t, tools.ContainerEnginePodman, docker.ContainerEngine())
 	})
 
 	t.Run("InvalidOverride", func(t *testing.T) {
@@ -877,7 +878,7 @@ func Test_ContainerEngine_LazyDetection(t *testing.T) {
 
 		// ContainerEngine() should lazily detect podman without CheckInstalled()
 		engine := cli.ContainerEngine()
-		require.Equal(t, "podman", engine)
+		require.Equal(t, tools.ContainerEnginePodman, engine)
 	})
 
 	t.Run("detects docker when both in PATH", func(t *testing.T) {
@@ -889,7 +890,7 @@ func Test_ContainerEngine_LazyDetection(t *testing.T) {
 		mockContext.CommandRunner.MockToolInPath("podman", nil)
 
 		engine := cli.ContainerEngine()
-		require.Equal(t, "docker", engine)
+		require.Equal(t, tools.ContainerEngineDocker, engine)
 	})
 
 	t.Run("respects AZD_CONTAINER_RUNTIME env var", func(t *testing.T) {
@@ -899,7 +900,7 @@ func Test_ContainerEngine_LazyDetection(t *testing.T) {
 		t.Setenv("AZD_CONTAINER_RUNTIME", "podman")
 
 		engine := cli.ContainerEngine()
-		require.Equal(t, "podman", engine)
+		require.Equal(t, tools.ContainerEnginePodman, engine)
 	})
 
 	t.Run("defaults to docker when neither in PATH", func(t *testing.T) {
@@ -911,7 +912,7 @@ func Test_ContainerEngine_LazyDetection(t *testing.T) {
 		mockContext.CommandRunner.MockToolInPath("podman", errors.New("not found"))
 
 		engine := cli.ContainerEngine()
-		require.Equal(t, "docker", engine)
+		require.Equal(t, tools.ContainerEngineDocker, engine)
 	})
 
 	t.Run("does not override CheckInstalled result", func(t *testing.T) {
@@ -934,7 +935,7 @@ func Test_ContainerEngine_LazyDetection(t *testing.T) {
 
 		// ContainerEngine should use the already-set value, not re-detect
 		engine := cli.ContainerEngine()
-		require.Equal(t, "podman", engine)
+		require.Equal(t, tools.ContainerEnginePodman, engine)
 	})
 }
 

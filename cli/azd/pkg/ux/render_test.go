@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/fatih/color"
@@ -233,6 +235,134 @@ func TestTaskList_Run_warningContinues(t *testing.T) {
 	assert.Contains(t, output, "Warn task")
 	assert.Contains(t, output, "validation warning")
 	assert.Contains(t, output, "Next task")
+}
+
+func TestTaskList_Run_waitsForRenderer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Keep the task running until the renderer has started its first update.
+		blockTask := make(chan struct{})
+
+		// Allows us to block the background rendering loop
+		blockTheRenderer := make(chan struct{})
+
+		runHasExited := make(chan error, 1)
+		var updates atomic.Int32
+
+		tl := NewTaskList(&TaskListOptions{Writer: io.Discard})
+		tl.WithCanvas(&testCanvas{update: func() error {
+			// The first Update call is the background rendering loop in Run(). We'll block
+			// here so that goroutine is stuck until we're ready.
+			if updates.Add(1) == 1 {
+				<-blockTheRenderer
+			}
+			return nil
+		}})
+
+		tl.AddTask(TaskOptions{
+			Title: "Running task",
+			Action: func(SetProgressFunc) (TaskState, error) {
+				<-blockTask
+				return Success, nil
+			},
+		})
+
+		go func() {
+			runHasExited <- tl.Run()
+		}()
+
+		synctest.Wait()
+		// okay, we've blocked two things:
+		// - the background rendering loop, via blockTheRenderer
+		// - the Run() call itself using blockTask
+		assert.Equal(t, int32(1), updates.Load(), "background update has run and is paused")
+
+		close(blockTask) // unblock Run()'s main thread
+		synctest.Wait()
+
+		// note, the task has finished, and prior to our fix, Run() would exit _now_, but now it waits
+		// until the background render goroutine exits too.
+		assert.Empty(t, runHasExited, "Run() is waiting on the background loop to stop")
+		assert.Equal(t, int32(1), updates.Load(), "the final update must wait for the renderer to exit")
+
+		// now, we unblock the renderer, so the background loop can exit...
+		close(blockTheRenderer)
+		synctest.Wait()
+
+		require.Len(t, runHasExited, 1, "Run() has finally exited")
+		require.NoError(t, <-runHasExited)
+		assert.Equal(t, int32(2), updates.Load())
+	})
+}
+
+type testCanvas struct {
+	Canvas
+	update func() error
+}
+
+func (canvas *testCanvas) Run() error {
+	return nil
+}
+
+func (canvas *testCanvas) Update() error {
+	return canvas.update()
+}
+
+func TestTaskList_RenderWhileTaskUpdates(t *testing.T) {
+	tests := []struct {
+		name  string
+		async bool
+	}{
+		{name: "sync", async: false},
+		{name: "async", async: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			started := make(chan struct{})
+			stop := make(chan struct{})
+			done := make(chan error, 1)
+
+			tl := NewTaskList(&TaskListOptions{Writer: io.Discard})
+			tl.AddTask(TaskOptions{
+				Title: "Running task",
+				Async: test.async,
+				Action: func(setProgress SetProgressFunc) (TaskState, error) {
+					close(started)
+					for {
+						select {
+						case <-stop:
+							return Success, nil
+						default:
+							setProgress("working")
+						}
+					}
+				},
+			})
+
+			go func() {
+				done <- tl.Run()
+			}()
+
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("task did not start")
+			}
+
+			printer := NewPrinter(io.Discard)
+			for range 100 {
+				require.NoError(t, tl.Render(printer))
+			}
+
+			close(stop)
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("task list did not finish")
+			}
+		})
+	}
 }
 
 func TestShouldCollectTaskError(t *testing.T) {

@@ -50,6 +50,42 @@ See the shared [AI extension non-interactive input reference](../ai-non-interact
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
 
+## Project storage diagnostics
+
+Run `azd ai agent doctor` to check project managed identity permissions for the
+Storage connections named in the project capability host's `storageConnections`.
+The `Project storage permissions` check resolves those names from project
+connections or account connections shared with the project, using Storage
+resource IDs rather than probing arbitrary endpoints. Unbound connections are
+ignored. Projects without a capability host or Storage bindings are skipped.
+Unreadable or incomplete capability host metadata produces a warning. See
+[capability hosts](https://learn.microsoft.com/azure/foundry/agents/concepts/capability-hosts)
+for the project storage binding model.
+
+The check recognizes direct assignments of Storage Blob Data Contributor,
+Storage Blob Data Owner, and equivalent built-in roles with Blob read, write,
+and delete data permissions, accounting for `NotDataActions`. Assignments can
+be inherited from an ancestor scope. Supported project-identity authentication
+includes AAD and ProjectManagedIdentity connections.
+
+Connections using account keys, SAS, or a separate service principal are skipped.
+Missing metadata, unsupported identity selection, unreadable assignments, and
+unresolved custom or conditional permissions produce a warning instead
+of a missing-permission claim. Container-scoped Blob grants also produce a warning
+when the project's exact container access cannot be verified; the check does not
+recommend expanding those grants to the entire account. Unrecognized role
+definitions are read as needed. Managed identity group memberships are not
+resolved by this check: when sufficient direct permissions are absent, it warns
+that group access remains unverified instead of claiming permissions are missing.
+Invalid bound connection or identity configuration still fails the check.
+
+The check never reads connection secrets, accesses
+blob data, or creates role assignments. A pass does not verify network access.
+
+Use `--debug` for per-connection findings and `--unredacted` to include identity
+and resource identifiers when sharing them is safe. `--local-only` skips this
+remote check along with the other remote diagnostics.
+
 ## Choosing a Foundry project name
 
 During interactive `azd ai agent init`, azd prompts for the name of a new
@@ -138,6 +174,45 @@ not by a definition-file path. A sibling `toolbox.yaml` is not automatically
 deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
 first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
 dependencies automatically.
+
+## Invoke latency diagnostics
+
+Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations
+request platform latency diagnostics by default. Successful calls show a compact
+summary after the client timing line, for example:
+
+```text
+Client elapsed: 9.172s
+Platform latency (cold): response headers 8859 ms
+  preprocess 178 ms | infra 1439 ms | readiness 4493 ms | container 2749 ms
+```
+
+Use `azd ai agent invoke --debug-latency=false "Hello"` to disable collection and
+the summary. The setting is independent of the global `--debug` logging flag.
+`--output raw` includes the returned HTTP headers without adding a formatted
+summary. Local, prompt-agent, and A2A invokes do not request platform diagnostics.
+Explicitly enabling diagnostics with `--debug-latency` or `--debug-latency=true`
+on these routes is rejected after route resolution. Omit the flag or use
+`--debug-latency=false` to invoke them without platform diagnostics.
+
+`Client elapsed` measures the client-observed invocation duration, including
+response reading. It replaces the previous `Server responded in ... (first byte: ...)`
+line and remains available when platform diagnostics are disabled or unavailable.
+Neither timing includes CLI startup, token acquisition, or separate
+conversation/session creation. The platform values describe the original
+invocation up to response headers. Response headers are not
+the first response body byte or the first model token. Container response time
+also includes request forwarding, connections, retries, and policy buffering; it
+is not a model-only inference measurement.
+
+Warm requests omit infrastructure setup and container readiness instead of
+reporting zero. Missing fields are not synthesized. Background Responses
+(`--long-running`, including `--no-wait`) and `202` Invocations show platform
+overhead only. With `--no-wait`, the summary describes request setup, not completion
+of background work. Existing invocation polling can pick up the original POST's
+persisted metrics, without an additional request. Unavailable or invalid diagnostics
+do not turn a successful agent call into an error. This summary does not wait for
+trailers or change SSE termination.
 
 ## Running Local Agents
 
@@ -327,6 +402,10 @@ services:
     instructions: Use web research when requested.
     harness:
       type: github_copilot_preview
+    skills:
+      - local-review
+      - name: published-review
+        version: "2"
     tools:
       - type: github_copilot_toolset_preview
         default_config:
@@ -340,6 +419,14 @@ Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
 and `subagents`. `default_config.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
+
+The string form (`local-review`) requires a matching locally deployed skill;
+deploy the local skill dependency with `azd deploy --all` to supply its version.
+The object form (`published-review`) pins an existing Foundry skill to the
+specified published version. Authored pins take precedence over locally resolved
+versions. azd does not automatically resolve remote default versions, and rejects
+conflicting authored versions for the same skill. You do not need to specify a
+`type` field: azd adds the API discriminator automatically.
 
 Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
 Foundry API's snake_case fields during deployment:

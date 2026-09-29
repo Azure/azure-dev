@@ -1,0 +1,29 @@
+Create and run quick evals for an agent.
+
+Generate an eval config and dataset, run evaluations, and inspect the results.
+Use 'azd ai agent eval update' to upload changes to local evaluators and datasets.
+
+Usage
+  azd ai agent eval [command]
+
+Available Commands
+  generate : Generate a local eval suite for a deployed agent.
+  list     : List evaluations for the current project.
+  run      : Execute an evaluation run from eval.yaml.
+  show     : Show an eval definition, run history, or run details.
+  update   : Update evaluators and datasets from local files.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for eval
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Generate an eval suite and run it
+    azd ai agent eval generate
+    azd ai agent eval run
+
+Use azd ai agent eval [command] --help to view examples and more information about a specific command.

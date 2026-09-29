@@ -36,27 +36,27 @@ class UserConfigServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Get = channel.unary_unary(
-                '/azdext.UserConfigService/Get',
+                '/azd.extensions.v1.UserConfigService/Get',
                 request_serializer=user__config__pb2.GetUserConfigRequest.SerializeToString,
                 response_deserializer=user__config__pb2.GetUserConfigResponse.FromString,
                 _registered_method=True)
         self.GetString = channel.unary_unary(
-                '/azdext.UserConfigService/GetString',
+                '/azd.extensions.v1.UserConfigService/GetString',
                 request_serializer=user__config__pb2.GetUserConfigStringRequest.SerializeToString,
                 response_deserializer=user__config__pb2.GetUserConfigStringResponse.FromString,
                 _registered_method=True)
         self.GetSection = channel.unary_unary(
-                '/azdext.UserConfigService/GetSection',
+                '/azd.extensions.v1.UserConfigService/GetSection',
                 request_serializer=user__config__pb2.GetUserConfigSectionRequest.SerializeToString,
                 response_deserializer=user__config__pb2.GetUserConfigSectionResponse.FromString,
                 _registered_method=True)
         self.Set = channel.unary_unary(
-                '/azdext.UserConfigService/Set',
+                '/azd.extensions.v1.UserConfigService/Set',
                 request_serializer=user__config__pb2.SetUserConfigRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
         self.Unset = channel.unary_unary(
-                '/azdext.UserConfigService/Unset',
+                '/azd.extensions.v1.UserConfigService/Unset',
                 request_serializer=user__config__pb2.UnsetUserConfigRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
@@ -130,9 +130,9 @@ def add_UserConfigServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azdext.UserConfigService', rpc_method_handlers)
+            'azd.extensions.v1.UserConfigService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azdext.UserConfigService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.UserConfigService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -153,7 +153,7 @@ class UserConfigService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.UserConfigService/Get',
+            '/azd.extensions.v1.UserConfigService/Get',
             user__config__pb2.GetUserConfigRequest.SerializeToString,
             user__config__pb2.GetUserConfigResponse.FromString,
             options,
@@ -180,7 +180,7 @@ class UserConfigService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.UserConfigService/GetString',
+            '/azd.extensions.v1.UserConfigService/GetString',
             user__config__pb2.GetUserConfigStringRequest.SerializeToString,
             user__config__pb2.GetUserConfigStringResponse.FromString,
             options,
@@ -207,7 +207,7 @@ class UserConfigService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.UserConfigService/GetSection',
+            '/azd.extensions.v1.UserConfigService/GetSection',
             user__config__pb2.GetUserConfigSectionRequest.SerializeToString,
             user__config__pb2.GetUserConfigSectionResponse.FromString,
             options,
@@ -234,7 +234,7 @@ class UserConfigService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.UserConfigService/Set',
+            '/azd.extensions.v1.UserConfigService/Set',
             user__config__pb2.SetUserConfigRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,
@@ -261,7 +261,7 @@ class UserConfigService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.UserConfigService/Unset',
+            '/azd.extensions.v1.UserConfigService/Unset',
             user__config__pb2.UnsetUserConfigRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,

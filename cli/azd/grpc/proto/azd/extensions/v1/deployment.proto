@@ -1,0 +1,36 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
+
+import "azd/extensions/v1/models.proto";
+
+service DeploymentService {
+  // GetDeployment retrieves the current deployment.
+  rpc GetDeployment(EmptyRequest) returns (GetDeploymentResponse);
+
+  // GetDeploymentContext retrieves the current deployment context.
+  rpc GetDeploymentContext(EmptyRequest) returns (GetDeploymentContextResponse);
+}
+
+message GetDeploymentResponse {
+    Deployment deployment = 1;
+}
+
+message GetDeploymentContextResponse {
+    azd.extensions.v1.AzureContext AzureContext = 1;
+}
+
+message Deployment {
+    string id = 1;
+    string location = 2;
+    string deploymentId = 3;
+    string name = 4;
+    string type = 5;
+    map<string, string> tags = 6;
+    map<string,string> outputs = 7;
+    repeated string resources = 8;
+}

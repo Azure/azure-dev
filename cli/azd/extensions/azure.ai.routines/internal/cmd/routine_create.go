@@ -53,6 +53,11 @@ func newRoutineCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 A routine pairs a trigger (--trigger) with an action (--action).
 Use --file to create from a YAML/JSON manifest file instead of individual flags.`,
+		Example: `  # Create a routine from a YAML manifest
+  azd ai routine create nightly-summary --file ./routine.yaml
+
+  # Schedule an agent response every day at midnight UTC
+  azd ai routine create nightly-summary --trigger recurring --cron "0 0 * * *" --agent-name summarizer`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

@@ -1,0 +1,27 @@
+Show an eval definition, run history, or run details.
+
+If eval-id is omitted, the most recent eval from the current environment is used.
+
+Usage
+  azd ai agent eval show [eval-id] [flags]
+
+Flags
+      --eval-run-id string      : Show details for a specific eval run
+      --limit int               : Maximum number of runs to show (default 20)
+  -O, --out-file string         : Export full run results to a JSON file
+  -p, --project-endpoint string : Microsoft Foundry project endpoint URL
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Show the most recent evaluation in the current environment
+    azd ai agent eval show
+
+  Show a specific evaluation
+    azd ai agent eval show <eval-id>

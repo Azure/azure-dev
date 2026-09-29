@@ -544,6 +544,19 @@ rules:
 
   - errorType: "MissingToolErrors"
     patterns:
+      - "Docker is unavailable:"
+      - "Podman is unavailable:"
+    message: "The container runtime is unavailable."
+    suggestion: >-
+      Check that Docker or Podman is running and accessible, then run the command again.
+    links:
+      - url: "https://aka.ms/azure-dev/docker-install"
+        title: "Set up Docker"
+      - url: "https://aka.ms/azure-dev/podman-install"
+        title: "Set up Podman"
+
+  - errorType: "MissingToolErrors"
+    patterns:
       - "is not running"
     message: "The container runtime (Docker/Podman) is not running."
     suggestion: >-

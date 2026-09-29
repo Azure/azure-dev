@@ -549,8 +549,9 @@ func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {
 // Before 1.25.0, azd up used a workflow runner that invoked azd provision + azd deploy as
 // sub-commands. Each ran independently and hooks used ShowPreviewer normally — output was visible.
 //
-// The fix moved PausePreviewer() to only be called when the deploy progress table ticker
-// actually starts (publish/deploy phase), not upfront before any graph steps execute.
+// The first fix moved PausePreviewer() to the publish/deploy phase, restoring output for hooks
+// that run before the tracker starts. The up graph must also ResumePreviewer before its terminal
+// postdeploy command hook so that hook receives a real previewer writer instead of io.Discard.
 func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	formatter, err := output.NewFormatter(string(output.NoneFormat))
 	require.NoError(t, err)
@@ -602,7 +603,7 @@ func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	// After ResumePreviewer, ShowPreviewer should work again.
 	ps.ResumePreviewer()
 	writerAfterResume := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
-		Title:        "postprovision Hook Output",
+		Title:        "postdeploy Hook Output",
 		MaxLineCount: 8,
 	})
 	require.NotEqual(t, io.Discard, writerAfterResume,

@@ -25,22 +25,22 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eworkflow.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\"8\n\x12RunWorkflowRequest\x12\"\n\x08workflow\x18\x01 \x01(\x0b\x32\x10.azdext.Workflow\"=\n\x08Workflow\x12\x0c\n\x04name\x18\x01 \x01(\t\x12#\n\x05steps\x18\x02 \x03(\x0b\x32\x14.azdext.WorkflowStep\"8\n\x0cWorkflowStep\x12(\n\x07\x63ommand\x18\x01 \x01(\x0b\x32\x17.azdext.WorkflowCommand\"\x1f\n\x0fWorkflowCommand\x12\x0c\n\x04\x61rgs\x18\x01 \x03(\t2K\n\x0fWorkflowService\x12\x38\n\x03Run\x12\x1a.azdext.RunWorkflowRequest\x1a\x15.azdext.EmptyResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eworkflow.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"C\n\x12RunWorkflowRequest\x12-\n\x08workflow\x18\x01 \x01(\x0b\x32\x1b.azd.extensions.v1.Workflow\"H\n\x08Workflow\x12\x0c\n\x04name\x18\x01 \x01(\t\x12.\n\x05steps\x18\x02 \x03(\x0b\x32\x1f.azd.extensions.v1.WorkflowStep\"C\n\x0cWorkflowStep\x12\x33\n\x07\x63ommand\x18\x01 \x01(\x0b\x32\".azd.extensions.v1.WorkflowCommand\"\x1f\n\x0fWorkflowCommand\x12\x0c\n\x04\x61rgs\x18\x01 \x03(\t2a\n\x0fWorkflowService\x12N\n\x03Run\x12%.azd.extensions.v1.RunWorkflowRequest\x1a .azd.extensions.v1.EmptyResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'workflow_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\252\002\rMicrosoft.Azd'
-  _globals['_RUNWORKFLOWREQUEST']._serialized_start=40
-  _globals['_RUNWORKFLOWREQUEST']._serialized_end=96
-  _globals['_WORKFLOW']._serialized_start=98
-  _globals['_WORKFLOW']._serialized_end=159
-  _globals['_WORKFLOWSTEP']._serialized_start=161
-  _globals['_WORKFLOWSTEP']._serialized_end=217
-  _globals['_WORKFLOWCOMMAND']._serialized_start=219
-  _globals['_WORKFLOWCOMMAND']._serialized_end=250
-  _globals['_WORKFLOWSERVICE']._serialized_start=252
-  _globals['_WORKFLOWSERVICE']._serialized_end=327
+  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
+  _globals['_RUNWORKFLOWREQUEST']._serialized_start=51
+  _globals['_RUNWORKFLOWREQUEST']._serialized_end=118
+  _globals['_WORKFLOW']._serialized_start=120
+  _globals['_WORKFLOW']._serialized_end=192
+  _globals['_WORKFLOWSTEP']._serialized_start=194
+  _globals['_WORKFLOWSTEP']._serialized_end=261
+  _globals['_WORKFLOWCOMMAND']._serialized_start=263
+  _globals['_WORKFLOWCOMMAND']._serialized_end=294
+  _globals['_WORKFLOWSERVICE']._serialized_start=296
+  _globals['_WORKFLOWSERVICE']._serialized_end=393
 # @@protoc_insertion_point(module_scope)

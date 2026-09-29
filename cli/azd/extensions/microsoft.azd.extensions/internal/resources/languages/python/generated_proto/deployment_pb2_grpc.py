@@ -36,12 +36,12 @@ class DeploymentServiceStub(object):
             channel: A grpc.Channel.
         """
         self.GetDeployment = channel.unary_unary(
-                '/azdext.DeploymentService/GetDeployment',
+                '/azd.extensions.v1.DeploymentService/GetDeployment',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=deployment__pb2.GetDeploymentResponse.FromString,
                 _registered_method=True)
         self.GetDeploymentContext = channel.unary_unary(
-                '/azdext.DeploymentService/GetDeploymentContext',
+                '/azd.extensions.v1.DeploymentService/GetDeploymentContext',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=deployment__pb2.GetDeploymentContextResponse.FromString,
                 _registered_method=True)
@@ -51,7 +51,7 @@ class DeploymentServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def GetDeployment(self, request, context):
-        """Gets the current environment.
+        """GetDeployment retrieves the current deployment.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -79,9 +79,9 @@ def add_DeploymentServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azdext.DeploymentService', rpc_method_handlers)
+            'azd.extensions.v1.DeploymentService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azdext.DeploymentService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.DeploymentService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -102,7 +102,7 @@ class DeploymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.DeploymentService/GetDeployment',
+            '/azd.extensions.v1.DeploymentService/GetDeployment',
             models__pb2.EmptyRequest.SerializeToString,
             deployment__pb2.GetDeploymentResponse.FromString,
             options,
@@ -129,7 +129,7 @@ class DeploymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.DeploymentService/GetDeploymentContext',
+            '/azd.extensions.v1.DeploymentService/GetDeploymentContext',
             models__pb2.EmptyRequest.SerializeToString,
             deployment__pb2.GetDeploymentContextResponse.FromString,
             options,

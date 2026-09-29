@@ -1,4 +1,8 @@
 import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: ["internal/helpformat/*.go", "internal/cmd/root.go"]
+    words:
+      - helpformat
 words:
   # Connection commands
   - tavily

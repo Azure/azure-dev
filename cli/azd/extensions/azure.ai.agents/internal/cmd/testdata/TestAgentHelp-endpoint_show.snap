@@ -1,0 +1,25 @@
+Show the current endpoint and card configuration of an agent.
+
+Displays protocols, version selector (traffic split), authorization schemes,
+and agent card (A2A discovery) as configured on the live agent.
+
+Usage
+  azd ai agent endpoint show [name] [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Show endpoint config (auto-resolves from azure.yaml)
+    azd ai agent endpoint show
+
+  Show for a specific agent service
+    azd ai agent endpoint show my-agent
+
+  Output as JSON
+    azd ai agent endpoint show --output json

@@ -2,7 +2,6 @@ const grpc = require("@grpc/grpc-js");
 const logger = require("./logger");
 const {
   EventMessage,
-  ExtensionReadyEvent,
   SubscribeProjectEvent,
   SubscribeServiceEvent,
   ProjectHandlerStatus,
@@ -41,35 +40,12 @@ class EventManager {
 
         this._stream = this._client.Events.eventStream(this._client._metadata);
         logger.info("Event stream established");
-        await this._sendReadyEvent();
       } catch (err) {
         const errorMsg = `Failed to establish event stream: ${err.message}`;
         logger.error(errorMsg, { error: err });
         throw err;
       }
     }
-  }
-
-  async _sendReadyEvent() {
-    const event = new EventMessage();
-    const payload = new ExtensionReadyEvent();
-    payload.setStatus("ready");
-    payload.setMessage("JavaScript extension is initialized and ready");
-
-    event.setExtensionReadyEvent(payload);
-    this._logEvent("SEND", event.toObject());
-
-    return new Promise((resolve, reject) => {
-      this._stream.write(event, (err) => {
-        if (err) {
-          logger.error(`Failed to send ready event: ${err.message}`, { error: err });
-          reject(err);
-        } else {
-          logger.info("Extension ready event sent successfully");
-          resolve();
-        }
-      });
-    });
   }
 
   _listen() {

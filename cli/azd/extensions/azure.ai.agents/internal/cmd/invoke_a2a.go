@@ -182,7 +182,6 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", a2aURL, err)
 	}
-	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Always capture session state from response headers (needed even in raw mode
@@ -202,7 +201,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	}
 	totalDuration := time.Since(invokeStart)
 	if !raw {
-		printInvokeTiming(os.Stdout, totalDuration, ttfb)
+		printInvokeTiming(os.Stdout, totalDuration)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	}
 	return nil

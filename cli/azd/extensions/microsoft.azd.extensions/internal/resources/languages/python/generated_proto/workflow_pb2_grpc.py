@@ -36,7 +36,7 @@ class WorkflowServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Run = channel.unary_unary(
-                '/azdext.WorkflowService/Run',
+                '/azd.extensions.v1.WorkflowService/Run',
                 request_serializer=workflow__pb2.RunWorkflowRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
@@ -46,7 +46,7 @@ class WorkflowServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Run(self, request, context):
-        """ListResources retrieves all configured composability resources in the current project.
+        """Run executes a workflow.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -62,9 +62,9 @@ def add_WorkflowServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azdext.WorkflowService', rpc_method_handlers)
+            'azd.extensions.v1.WorkflowService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azdext.WorkflowService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.WorkflowService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -85,7 +85,7 @@ class WorkflowService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.WorkflowService/Run',
+            '/azd.extensions.v1.WorkflowService/Run',
             workflow__pb2.RunWorkflowRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,

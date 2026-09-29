@@ -19,6 +19,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         curl \
+        make \
         python3 \
         python3-venv \
         unzip \
@@ -41,10 +42,15 @@ RUN apt-get update \
 
 COPY --from=go-tools /out/protoc-gen-go /usr/local/bin/protoc-gen-go
 COPY --from=go-tools /out/protoc-gen-go-grpc /usr/local/bin/protoc-gen-go-grpc
+COPY --from=go-tools /usr/local/go /usr/local/go
 
-ENV PATH="/opt/proto-tools/bin:${PATH}"
+ENV GOCACHE=/tmp/go-build
+ENV GOMODCACHE=/tmp/go-mod
+ENV HOME=/tmp
+ENV PATH="/usr/local/go/bin:/opt/proto-tools/bin:${PATH}"
 
 COPY --chmod=0755 generate-protos.sh /usr/local/bin/generate-protos
+COPY --chmod=0755 validate-scaffold-compatibility.py /usr/local/bin/validate-scaffold-compatibility.py
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/generate-protos"]

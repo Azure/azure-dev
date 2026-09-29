@@ -7,11 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	osexec "os/exec"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -376,6 +378,44 @@ func TestMapContainerPublishError_PreservesResponseError(t *testing.T) {
 	err := errors.Join(responseErr, remoteBuildErr)
 
 	require.Same(t, err, mapContainerPublishError(err))
+}
+
+func TestMapContainerPublishError_LocalFallbackFailure(t *testing.T) {
+	t.Parallel()
+
+	buildErr := &azdexec.ExitError{Cmd: "docker", ExitCode: 1}
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"RuntimeUnavailable", errors.New("local container runtime unavailable")},
+		{"BuildFailed", buildErr},
+		{"PushFailed", &internal.ErrorWithSuggestion{Err: buildErr, Suggestion: "Check registry authentication."}},
+		{"Canceled", context.Canceled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			responseErr := &azcore.ResponseError{
+				StatusCode: http.StatusForbidden,
+				ErrorCode:  "TasksOperationsNotAllowed",
+			}
+			remoteErr := &containerregistry.RemoteBuildUnavailableError{Err: responseErr}
+			err := fmt.Errorf("remote build failed: %w\n\nLocal fallback failed: %w", remoteErr, tt.err)
+			mapped := mapContainerToolError(mapContainerPublishError(err))
+			require.Same(t, err, mapped)
+			require.ErrorIs(t, mapped, responseErr)
+			require.ErrorIs(t, mapped, tt.err)
+
+			st, ok := status.FromError(mapHostError(mapped))
+			require.True(t, ok)
+			require.Equal(t, err.Error(), st.Message())
+			detail := requireServiceErrorDetail(t, st)
+			require.Equal(t, "TasksOperationsNotAllowed", detail.GetErrorCode())
+			require.Equal(t, int32(http.StatusForbidden), detail.GetStatusCode())
+			require.Empty(t, relayedExtensionErrorDetails(st))
+		})
+	}
 }
 
 func TestMapContainerToolError(t *testing.T) {

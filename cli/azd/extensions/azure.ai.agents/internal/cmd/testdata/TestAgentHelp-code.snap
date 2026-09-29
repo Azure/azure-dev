@@ -1,0 +1,21 @@
+Commands for managing the source code of code-based hosted agents.
+
+Usage
+  azd ai agent code [command]
+
+Available Commands
+  download : Download agent source code from Foundry. (Preview)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for code
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Download the deployed agent source code
+    azd ai agent code download
+
+Use azd ai agent code [command] --help to view examples and more information about a specific command.

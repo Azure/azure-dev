@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently a beta feature (Public Preview) within `azd`.
+The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
@@ -123,7 +123,11 @@ Lists matching extensions from one or more extension sources.
 
 #### `azd extension show <extension-id> [flags]`
 
-Shows detailed information for a specific extension, including description, tags, versions, and installation status.
+Shows versions, compatibility, dependencies, and installed dependents. Dependency installs have a separate `Installed as: Dependency` row.
+
+Prefers the installed source when several sources match. If no registry lists the extension, uses installed metadata. Legacy dependency details require matching source and version metadata.
+
+If registry lookup returns an error and no `--source` was specified, installed extensions are shown from local metadata with a warning. Registry-only fields, such as the latest available version, are omitted. Cancellation and explicit source requests do not use this fallback.
 
 - `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
@@ -144,20 +148,24 @@ Installs one or more extensions from any configured extension source.
 
 #### `azd extension uninstall <extension-ids> [flags]`
 
-Uninstalls one or more previously installed extensions.
+Removes the requested extensions and, after confirmation, their unused dependency installs. `--no-prompt` accepts dependency removal. Required extensions are blocked unless their dependents are also removed or `--force` is set.
 
 - `--all` Removes all installed extensions when specified.
+- `-f, --force` Bypasses dependency protection with a warning.
+- `--no-dependencies` Keeps dependency installs.
+
+See [uninstall flow and ownership](./extension-resolution-and-versioning.md#uninstall-flow) for the full rules.
 
 #### `azd extension update <extension-ids>`
 
 > Aliased as `azd extension upgrade` for backward compatibility.
 
-Updates one or more extensions to the latest versions.
+Updates extensions and their installed dependencies to compatible versions. Uses each extension's stored source or the main registry, unless `--source` overrides it. See [source promotion](./extension-resolution-and-versioning.md#update-and-devmain-promotion) and [update results](./extension-resolution-and-versioning.md#update-results) for source selection and failure reporting.
 
 - `--all` Updates all previously installed extensions when specified.
 - `-v, --version` Updates a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the source used for the update. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful update, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
-- `--no-dependency-updates` Skips updating dependencies declared by extension packs.
+- `-s, --source` Uses a source name or registry URL/file. New locations require interactive registration; existing locations are reused.
+- `--no-dependency-updates` Keeps installed dependency versions.
 
 ## Developing Extensions
 
@@ -648,7 +656,7 @@ Once installed the extension registers a suite of commands under the `x` namespa
 
 Usage: `azd x init`
 
-- Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Collects information for the extension and scaffolds an extension in a specified language of choice.
 - Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension
@@ -1126,7 +1134,8 @@ Extensions can declare the following capabilities in their manifest:
 Telemetry is not a capability. Internal telemetry is currently available to
 Microsoft-built extensions in this repository after a privacy review and
 publication to the official `azd` registry. Those extensions can call the
-telemetry gRPC service, and events are recorded when the configured source
+preview telemetry gRPC service using request and response types from
+`pkg/azdext/contracts/v1beta`, and events are recorded when the configured source
 matches the verified official `azd` registry name, type, and normalized URL —
 see [Extension Telemetry](./extension-telemetry.md). Published versions that
 depend on the service should set `requiredAzdVersion` to the first `azd`
@@ -1239,6 +1248,8 @@ dependencies:
 Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
 Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
+
+Uninstalling a pack also removes its unused dependency installs after confirmation. Explicit and shared installations stay. See [uninstall flow](./extension-resolution-and-versioning.md#uninstall-flow) for ownership, confirmation, and protection rules.
 
 #### Provider Registration
 
@@ -1434,7 +1445,9 @@ For extensions built using Go, the `azdext` package provides an `AzdClient` whic
 
 #### Other Languages
 
-For extensions authored in other programming languages, the [gRPC proto files](../../grpc/proto/) can be used to generate clients in your preferred language.
+For extensions authored in other programming languages, use the
+[stable or beta gRPC proto files](contract-versioning.md) to generate clients
+in your preferred language.
 
 ### How to set `azd` access token on requests
 
@@ -1565,21 +1578,72 @@ if err := host.Run(ctx); err != nil {
 
 ```
 
-## Developer Artifacts
+## Deployment Preview
 
-The `azd` CLI and its extensions communicate over gRPC. The client and server code is generated from protobuf files.
+`azd deploy --preview` asks each selected service's target to describe the
+changes a deployment would make. Nothing is packaged, published, or deployed,
+service targets are not initialized, and deploy hooks do not run. Services whose
+host does not support preview are reported and skipped. The flag cannot be
+combined with `--from-package` or `--timeout`.
 
-- Proto files @ [grpc/proto](../../grpc/proto/)
-- Generated files @ [pkg/azdext](../../pkg/azdext)
+Core built-in service targets resolve their Azure resource before generating the
+preview. Extension service targets receive the effective service configuration
+through the contract below and can perform their own read-only lookups as needed.
 
-To regenerate the checked-in Go, Python, and JavaScript protobuf bindings, run this command from `cli/azd`:
+Extension service targets opt in through the experimental, **v1beta-only**
+contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
+instead of `WithServiceTarget`, and implement `preview.ServiceTargetPreviewProvider`
+from `pkg/azdext/preview` alongside `azdext.ServiceTargetProvider`:
 
-```bash
-go tool mage generateProtos
+```go
+host.WithBetaServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
+    return &MyProvider{}
+})
+
+func (p *MyProvider) Preview(
+    ctx context.Context,
+    serviceConfig *v1beta.ServiceConfig,
+) (*v1beta.ServiceDeployPreviewResult, error)
 ```
 
-Mage is included in `go.mod`, so you do not need to install it separately. The target runs the pinned protobuf
-tools in a container and writes the generated files back to the repository.
+`WithBetaServiceTargetPreview` registers the host on the stable service target
+stream exactly like `WithServiceTarget`, so normal deployments are unchanged.
+It also registers the host on a dedicated v1beta stream that carries only
+`RegisterServiceTargetRequest` (with `supports_preview`) and the preview
+request and response messages. Registration does not invoke the factory.
+The preview registration is sent after the stable registration succeeds and is
+best effort: azd versions without deployment preview reject it, and the service
+target keeps working with preview reported as unsupported.
+
+For each preview request the SDK creates a fresh provider from the factory and
+calls only `Preview`; `Initialize` and the deployment instance cache are not used.
+`Preview` must not build, package, publish, deploy, or persist deployment state.
+`ServiceDeployPreviewResult` carries a human-readable `Message`, shown in text
+output, and a `Data` struct, returned under `services.<name>.data` with
+`--output json`. Redact secrets from both. Provider errors, missing `Preview`
+implementations, and nil results fail the command.
+
+These APIs may change during incubation. The stable `v1` contracts and the
+root `azdext` facade do not include preview types.
+
+## Developer Artifacts
+
+`azd` uses versioned gRPC contracts for communication between core and
+extensions. See [Extension contract versioning](contract-versioning.md) for
+the stable and beta channel policy.
+
+- Stable proto files @ [grpc/proto/azd/extensions/v1](../../grpc/proto/azd/extensions/v1/)
+- Beta proto files @ [grpc/proto/azd/extensions/v1beta](../../grpc/proto/azd/extensions/v1beta/)
+- Generation details @ [Extension protobuf contracts](../../grpc/README.md)
+
+To regenerate the checked-in Go, Python, and JavaScript gRPC clients:
+
+- Ensure Docker or WSL Containers is available.
+- Run `go tool mage generateProtos` from `cli/azd`.
+
+The Mage target runs the pinned protobuf toolchain in a container. See
+[Extension protobuf contracts](../../grpc/README.md) for its generated
+artifacts and the Buf compatibility checks.
 
 ## gRPC Services
 
@@ -1625,7 +1689,7 @@ the expanded results in place of the original `${VAR}` references.
 
 This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
-> See [project.proto](../../grpc/proto/project.proto) for more details.
+> See [project.proto](../../grpc/proto/azd/extensions/v1/project.proto) for more details.
 
 #### Get
 
@@ -1757,7 +1821,7 @@ Removes a service configuration value or section at the specified path from serv
 
 This service handles environment management including retrieval, selection, and key-value operations.
 
-> See [environment.proto](../../grpc/proto/environment.proto) for more details.
+> See [environment.proto](../../grpc/proto/azd/extensions/v1/environment.proto) for more details.
 
 #### GetCurrent
 
@@ -1879,7 +1943,7 @@ Removes a config value at a given path.
 
 This service manages user-specific configuration retrieval and updates.
 
-> See [user_config.proto](../../grpc/proto/user_config.proto) for more details.
+> See [user_config.proto](../../grpc/proto/azd/extensions/v1/user_config.proto) for more details.
 
 #### Get
 
@@ -1941,7 +2005,7 @@ Removes a user configuration value.
 
 This service provides operations for deployment retrieval and context management.
 
-> See [deployment.proto](../../grpc/proto/deployment.proto) for more details.
+> See [deployment.proto](../../grpc/proto/azd/extensions/v1/deployment.proto) for more details.
 
 #### GetDeployment
 
@@ -1979,7 +2043,7 @@ Retrieves the current deployment context.
 
 This service manages user prompt interactions for subscriptions, locations, resources, and confirmations.
 
-> See [prompt.proto](../../grpc/proto/prompt.proto) for more details.
+> See [prompt.proto](../../grpc/proto/azd/extensions/v1/prompt.proto) for more details.
 
 #### PromptSubscription
 
@@ -2206,7 +2270,7 @@ Prompts the user to select a location for a specific model and shows quota avail
 
 This service provides non-interactive AI catalog, deployment resolution, and quota usage primitives.
 
-> See [ai_model.proto](../../grpc/proto/ai_model.proto) for more details.
+> See [ai_model.proto](../../grpc/proto/azd/extensions/v1/ai_model.proto) for more details.
 
 #### ListModels
 
@@ -2371,7 +2435,7 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../../grpc/proto/event.proto) for more details.
+> See [event.proto](../../grpc/proto/azd/extensions/v1/event.proto) for more details.
 
 #### Message Types
 
@@ -2380,12 +2444,6 @@ Clients can subscribe to events and receive notifications via a bidirectional st
 
   Contains:
   - Uses a oneof field to encapsulate different event types.
-- **ExtensionReadyEvent**
-  Signals that an extension is ready, including any status updates.
-
-  Contains:
-  - `status`: Indicates the readiness state of the extension.
-  - `message`: Provides additional details.
 - **SubscribeProjectEvent**
   Allows clients to subscribe to events specific to project lifecycle changes.
 
@@ -2502,7 +2560,7 @@ host := azdext.NewExtensionHost(azdClient).
 
 This service provides container build, package, and publish operations for extensions that need to work with containers but don't want to implement the full complexity of Docker CLI integration, registry authentication, etc.
 
-> See [container.proto](../../grpc/proto/container.proto) for more details.
+> See [container.proto](../../grpc/proto/azd/extensions/v1/container.proto) for more details.
 
 #### Build
 
@@ -2616,7 +2674,7 @@ fmt.Printf("Container published successfully with %d artifacts\n", len(publishRe
 
 This service handles language and framework-specific operations like restore, build, and package for services. Extensions can register framework service providers to handle custom languages or override default behavior.
 
-> See [framework_service.proto](../../grpc/proto/framework_service.proto) for more details.
+> See [framework_service.proto](../../grpc/proto/azd/extensions/v1/framework_service.proto) for more details.
 
 #### Provider Interface
 
@@ -2738,7 +2796,7 @@ func main() {
 
 This service handles the full deployment lifecycle for services, including packaging, publishing, and deploying to Azure resources. Extensions can register service target providers for custom deployment scenarios.
 
-> See [service_target.proto](../../grpc/proto/service_target.proto) for more details.
+> See [service_target.proto](../../grpc/proto/azd/extensions/v1/service_target.proto) for more details.
 
 #### Provider Interface
 
@@ -2854,7 +2912,7 @@ func main() {
 
 This service manages composability resources in an azd project.
 
-> See [compose.proto](../../grpc/proto/compose.proto) for more details.
+> See [compose.proto](../../grpc/proto/azd/extensions/v1beta/compose.proto) for more details.
 
 #### ListResources
 
@@ -2911,7 +2969,7 @@ Adds a new composability resource to the project.
 
 This service executes workflows defined within the project.
 
-> See [workflow.proto](../../grpc/proto/workflow.proto) for more details.
+> See [workflow.proto](../../grpc/proto/azd/extensions/v1/workflow.proto) for more details.
 
 #### Run
 
@@ -2928,7 +2986,7 @@ Executes a workflow consisting of sequential steps.
 
 This service provides information about the currently logged-in user or identity.
 
-> See [account.proto](../../grpc/proto/account.proto) for more details.
+> See [account.proto](../../grpc/proto/azd/extensions/v1/account.proto) for more details.
 
 #### ListSubscriptions
 
@@ -3060,13 +3118,48 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 - Validate subscription access before performing operations
 - Set up proper authentication context for Azure SDK calls
 
+#### GetCurrentPrincipal
+
+This preview method resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
+
+| Field | Description |
+|---|---|
+| Request `subscription_id` | Required subscription ID. No active environment or default subscription is used. |
+| Response `object_id` | Object ID of the signed-in identity in the resource tenant, not an application client ID. |
+| Response `principal_type` | `PRINCIPAL_TYPE_USER` or `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`, determined from azd's login details. |
+
+The host reuses its principal lookup, including the ARM token `oid` claim and Graph fallback. Service-principal logins and both system-assigned and user-assigned managed identities return `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`. Access tokens are neither accepted nor returned by this RPC. An empty subscription ID returns `InvalidArgument`; authentication, subscription, and principal lookup failures return errors rather than an empty identity.
+
+```go
+// Import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta".
+principal, err := azdClient.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
+    SubscriptionId: subscriptionId,
+})
+if err != nil {
+    return fmt.Errorf("resolving current principal: %w", err)
+}
+
+var principalType string
+switch principal.PrincipalType {
+case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+    principalType = "User"
+case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+    principalType = "ServicePrincipal"
+default:
+    return fmt.Errorf("unsupported principal type: %v", principal.PrincipalType)
+}
+// Pass principal.ObjectId and principalType to the role assignment.
+```
+
+This method and its request, response, and enum types are available only in [`v1beta`](../../grpc/proto/azd/extensions/v1beta/account.proto). `Account()` remains the unchanged stable client; use `AccountBeta()` for principal lookup. Older azd hosts return `Unimplemented`. Extensions must consume an SDK release containing the method and require a host release that supports it before removing their existing principal lookup.
+
 ---
 
 ### Copilot Service
 
 This service provides Copilot agent capabilities to extensions. Sessions are created lazily on the first `SendMessage` call and can be reused across multiple calls. Sessions run in headless/autopilot mode by default when invoked via gRPC, suppressing all console output.
 
-> See [copilot.proto](../../grpc/proto/copilot.proto) for more details.
+> See [copilot.proto](../../grpc/proto/azd/extensions/v1beta/copilot.proto) for more details.
 
 #### Initialize
 
@@ -3128,8 +3221,9 @@ Returns cumulative usage metrics cached for a session.
     - `input_tokens` (double): Total input tokens consumed
     - `output_tokens` (double): Total output tokens consumed
     - `total_tokens` (double): Sum of input + output tokens
-    - `billing_rate` (double): Per-request cost multiplier (e.g., 1.0x, 2.0x)
-    - `premium_requests` (double): Number of premium requests used
+    - `billing_rate` (double, deprecated): Legacy per-request cost multiplier; use `ai_credits` instead
+    - `premium_requests` (double, deprecated): Legacy premium request count; use `ai_credits` instead
+    - `ai_credits` (double): Total AI credits consumed
     - `duration_ms` (double): Total API duration in milliseconds
 
 #### GetFileChanges
@@ -3168,6 +3262,9 @@ Returns the session event log from the Copilot SDK. Each event contains a type, 
 
 **Example Usage (Go):**
 
+Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta`
+as `v1beta` for the preview request and response types used below.
+
 ```go
 ctx := azdext.WithAccessToken(cmd.Context())
 azdClient, err := azdext.NewAzdClient()
@@ -3178,8 +3275,9 @@ defer azdClient.Close()
 
 copilot := azdClient.Copilot()
 
+// Copilot request and response messages are in the preview v1beta contract package.
 // Optional: warm up the client and resolve configuration
-initResp, err := copilot.Initialize(ctx, &azdext.InitializeCopilotRequest{
+initResp, err := copilot.Initialize(ctx, &v1beta.InitializeCopilotRequest{
     Model:           "gpt-4o",
     ReasoningEffort: "medium",
 })
@@ -3189,7 +3287,7 @@ if err != nil {
 fmt.Printf("Model: %s, Reasoning: %s\n", initResp.Model, initResp.ReasoningEffort)
 
 // Send the first message — creates a new session
-sendResp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
+sendResp, err := copilot.SendMessage(ctx, &v1beta.SendCopilotMessageRequest{
     Prompt:          "Add a health check endpoint to the API",
     Mode:            "autopilot",
     Headless:        true,
@@ -3203,7 +3301,7 @@ if err != nil {
 sessionID := sendResp.SessionId
 
 // Send a follow-up message in the same session
-followUp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
+followUp, err := copilot.SendMessage(ctx, &v1beta.SendCopilotMessageRequest{
     Prompt:    "Now add tests for the health check endpoint",
     SessionId: sessionID,
 })
@@ -3213,17 +3311,17 @@ if err != nil {
 fmt.Printf("Turn usage: %.0f tokens\n", followUp.Usage.TotalTokens)
 
 // Retrieve cumulative metrics
-metricsResp, err := copilot.GetUsageMetrics(ctx, &azdext.GetCopilotUsageMetricsRequest{
+metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsRequest{
     SessionId: sessionID,
 })
 if err != nil {
     return fmt.Errorf("failed to get metrics: %w", err)
 }
-fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
-    metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
+fmt.Printf("Total tokens: %.0f, AI credits: %.2f AIC\n",
+  metricsResp.Usage.TotalTokens, metricsResp.Usage.AiCredits)
 
 // Retrieve file changes
-changesResp, err := copilot.GetFileChanges(ctx, &azdext.GetCopilotFileChangesRequest{
+changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{
     SessionId: sessionID,
 })
 if err != nil {
@@ -3234,7 +3332,7 @@ for _, change := range changesResp.FileChanges {
 }
 
 // Clean up the session
-_, err = copilot.StopSession(ctx, &azdext.StopCopilotSessionRequest{
+_, err = copilot.StopSession(ctx, &v1beta.StopCopilotSessionRequest{
     SessionId: sessionID,
 })
 if err != nil {

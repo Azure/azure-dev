@@ -10,6 +10,46 @@
 
 ### Other Changes
 
+## 1.34.2 (2026-09-23)
+
+### Features Added
+
+- [[#9866]](https://github.com/Azure/azure-dev/pull/9866) Add dependency-aware `azd extension uninstall` that records why each extension was installed, blocks removing extensions other extensions depend on unless `--force` is used, and offers to remove dependencies that are no longer needed unless `--no-dependencies` is set.
+- [[#10049]](https://github.com/Azure/azure-dev/pull/10049) Add `Account.GetCurrentPrincipal` to the preview extension gRPC contract so extensions can read the current identity's object ID and principal type without decoding access tokens.
+
+### Bugs Fixed
+
+- [[#10033]](https://github.com/Azure/azure-dev/pull/10033) Fix project-level `predeploy` and `postdeploy` hook output not being shown during `azd up`. Thanks @jongio for the contribution!
+- [[#10049]](https://github.com/Azure/azure-dev/pull/10049) Fix login details for system-assigned managed identities being reported as not logged in.
+
+### Other Changes
+
+- [[#9866]](https://github.com/Azure/azure-dev/pull/9866) Update `azd extension show` to display compatibility, ownership, dependencies, and installed dependents. JSON output now uses camelCase keys and omits empty fields.
+- [[#10052]](https://github.com/Azure/azure-dev/pull/10052) Update the agentic `azd init` flow to report AI credits instead of premium requests.
+- [[#10061]](https://github.com/Azure/azure-dev/pull/10061) Update the `execution.environment` telemetry field to report `agency` when `azd` runs inside an Agency session.
+- [[#10095]](https://github.com/Azure/azure-dev/pull/10095) Update the published Homebrew casks to use Homebrew's declarative `postflight_steps`.
+- [[#10132]](https://github.com/Azure/azure-dev/pull/10132) Update the bundled GitHub CLI to v2.101.0.
+
+## 1.34.1 (2026-09-16)
+
+### Features Added
+
+- [[#9752]](https://github.com/Azure/azure-dev/pull/9752) Add per-phase concurrency limits for package, provision, publish, and deploy operations.
+- [[#9913]](https://github.com/Azure/azure-dev/pull/9913) Add support for top-level infrastructure and service layers in `azure.yaml`.
+- [[#9747]](https://github.com/Azure/azure-dev/pull/9747) Add stable and preview versioned extension gRPC contracts while preserving compatibility with existing extensions.
+
+### Bugs Fixed
+
+- [[#10010]](https://github.com/Azure/azure-dev/pull/10010) Fix a shutdown panic when telemetry is disabled.
+- [[#9957]](https://github.com/Azure/azure-dev/pull/9957) Fix Azure Container Registry log streaming failures when a remote build replaces or truncates its log.
+- [[#9987]](https://github.com/Azure/azure-dev/pull/9987) Fix intermittent extension startup timeouts caused by concurrent initialization.
+- [[#9939]](https://github.com/Azure/azure-dev/pull/9939) Fix local fallback for remote container builds when Azure Container Registry rejects task scheduling.
+- [[#10038]](https://github.com/Azure/azure-dev/pull/10038) Fix a panic when `azure.yaml` contains invalid YAML. Thanks @Siglud for the contribution!
+
+### Other Changes
+
+- [[#9909]](https://github.com/Azure/azure-dev/pull/9909) Update the bundled Bicep CLI to v0.47.16.
+
 ## 1.34.0 (2026-09-09)
 
 ### Features Added

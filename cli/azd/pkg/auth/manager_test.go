@@ -1060,6 +1060,14 @@ func TestLoginWithManagedIdentity(t *testing.T) {
 		cred2, err := m.CredentialForCurrentUser(t.Context(), nil)
 		require.NoError(t, err)
 		require.IsType(t, new(azidentity.ManagedIdentityCredential), cred2)
+
+		details, err := m.LogInDetails(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, ClientIdLoginType, details.LoginType)
+		require.Empty(t, details.Account)
+		principalType, err := m.CurrentPrincipalType(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, ServicePrincipalType, principalType)
 	})
 
 	t.Run("WithClientID", func(t *testing.T) {
@@ -1073,6 +1081,14 @@ func TestLoginWithManagedIdentity(t *testing.T) {
 		cred, err := m.LoginWithManagedIdentity(t.Context(), "my-client-id")
 		require.NoError(t, err)
 		require.IsType(t, new(azidentity.ManagedIdentityCredential), cred)
+
+		details, err := m.LogInDetails(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, ClientIdLoginType, details.LoginType)
+		require.Equal(t, "my-client-id", details.Account)
+		principalType, err := m.CurrentPrincipalType(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, ServicePrincipalType, principalType)
 	})
 }
 
@@ -1373,6 +1389,10 @@ func TestLogInDetails_ServicePrincipalNative(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ClientIdLoginType, details.LoginType)
 	assert.Equal(t, "myClientId", details.Account)
+
+	principalType, err := m.CurrentPrincipalType(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, ServicePrincipalType, principalType)
 }
 
 func TestLogInDetails_InteractiveUser(t *testing.T) {
@@ -1400,6 +1420,10 @@ func TestLogInDetails_InteractiveUser(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, EmailLoginType, details.LoginType)
 	assert.Equal(t, "user@example.com", details.Account)
+
+	principalType, err := m.CurrentPrincipalType(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, UserPrincipalType, principalType)
 }
 
 func TestLogInDetails_NotLoggedIn(t *testing.T) {
@@ -1412,6 +1436,9 @@ func TestLogInDetails_NotLoggedIn(t *testing.T) {
 	_, err := m.LogInDetails(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNoCurrentUser)
+	principalType, err := m.CurrentPrincipalType(t.Context())
+	require.ErrorIs(t, err, ErrNoCurrentUser)
+	assert.Empty(t, principalType)
 }
 
 func TestLogInDetails_HomeAccountNotFound(t *testing.T) {

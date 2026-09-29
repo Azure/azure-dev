@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -315,6 +315,7 @@ func convertUsageMetrics(usage agent.UsageMetrics) *azdext.CopilotUsageMetrics {
 		BillingRate:     usage.BillingRate,
 		PremiumRequests: usage.PremiumRequests,
 		DurationMs:      usage.DurationMS,
+		AiCredits:       usage.AICredits,
 	}
 }
 

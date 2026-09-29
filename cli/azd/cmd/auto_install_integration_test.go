@@ -6,6 +6,7 @@ package cmd
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -15,6 +16,41 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T) {
+	originalArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+
+	clearAgentEnvVarsForTest(t)
+	agentdetect.ResetDetection()
+	t.Cleanup(agentdetect.ResetDetection)
+
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("NO_COLOR", "1")
+
+	err := os.WriteFile(
+		filepath.Join(projectDir, "azure.yaml"),
+		[]byte("name: test\nservices:\n  api:\n    project: src\n1\n"),
+		0o600,
+	)
+	require.NoError(t, err)
+	os.Args = []string{"azd", "package", "--no-prompt"}
+	rootContainer := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(rootContainer, t.Context())
+
+	var result *ExecuteResult
+	require.NotPanics(t, func() {
+		result = ExecuteWithAutoInstall(t.Context(), rootContainer)
+	})
+
+	require.ErrorContains(t, result.Err, "unable to parse azure.yaml file")
+}
 
 // TestExecuteWithAutoInstallIntegration tests the integration between
 // extractFlagsWithValues and findFirstNonFlagArg in the context of

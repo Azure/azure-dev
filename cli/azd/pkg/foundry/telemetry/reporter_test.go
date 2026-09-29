@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -21,17 +22,17 @@ import (
 
 type recordingClient struct {
 	ctx      context.Context
-	request  *azdext.ReportUsageRequest
-	response *azdext.ReportUsageResponse
+	request  *contracts.ReportUsageRequest
+	response *contracts.ReportUsageResponse
 	err      error
 	calls    atomic.Int64
 }
 
 func (c *recordingClient) ReportUsage(
 	ctx context.Context,
-	request *azdext.ReportUsageRequest,
+	request *contracts.ReportUsageRequest,
 	_ ...grpc.CallOption,
-) (*azdext.ReportUsageResponse, error) {
+) (*contracts.ReportUsageResponse, error) {
 	c.ctx = ctx
 	c.request = request
 	c.calls.Add(1)
@@ -41,7 +42,7 @@ func (c *recordingClient) ReportUsage(
 func TestReporterForwardsEvent(t *testing.T) {
 	t.Parallel()
 
-	client := &recordingClient{response: &azdext.ReportUsageResponse{Accepted: true}}
+	client := &recordingClient{response: &contracts.ReportUsageResponse{Accepted: true}}
 	reporter := NewReporter(client, nil)
 	attributes := map[string]string{"mode": "declarative"}
 	reporter.Report(t.Context(), Event{Name: "resource.created", Attributes: attributes})
@@ -63,7 +64,7 @@ func TestReporterIsBestEffort(t *testing.T) {
 		client   Client
 		wantLogs bool
 	}{
-		{name: "not accepted", client: &recordingClient{response: &azdext.ReportUsageResponse{}}},
+		{name: "not accepted", client: &recordingClient{response: &contracts.ReportUsageResponse{}}},
 		{name: "empty response", client: &recordingClient{}, wantLogs: true},
 		{name: "RPC error", client: &recordingClient{err: errors.New("secret transport detail")}, wantLogs: true},
 		{name: "no client"},
@@ -140,18 +141,18 @@ type concurrentClient struct {
 
 func (c *concurrentClient) ReportUsage(
 	_ context.Context,
-	_ *azdext.ReportUsageRequest,
+	_ *contracts.ReportUsageRequest,
 	_ ...grpc.CallOption,
-) (*azdext.ReportUsageResponse, error) {
+) (*contracts.ReportUsageResponse, error) {
 	c.calls.Add(1)
-	return &azdext.ReportUsageResponse{Accepted: true}, nil
+	return &contracts.ReportUsageResponse{Accepted: true}, nil
 }
 
 func (c *blockingClient) ReportUsage(
 	ctx context.Context,
-	_ *azdext.ReportUsageRequest,
+	_ *contracts.ReportUsageRequest,
 	_ ...grpc.CallOption,
-) (*azdext.ReportUsageResponse, error) {
+) (*contracts.ReportUsageResponse, error) {
 	c.calls.Add(1)
 	<-ctx.Done()
 	c.err = ctx.Err()

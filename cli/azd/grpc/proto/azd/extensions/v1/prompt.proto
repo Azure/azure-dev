@@ -1,0 +1,308 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
+
+import "azd/extensions/v1/models.proto";
+import "azd/extensions/v1/ai_model.proto";
+
+service PromptService {
+  // PromptSubscription prompts the user to select a subscription.
+  rpc PromptSubscription (PromptSubscriptionRequest) returns (PromptSubscriptionResponse);
+
+  // PromptLocation prompts the user to select a location.
+  rpc PromptLocation (PromptLocationRequest) returns (PromptLocationResponse);
+
+  // PromptResourceGroup prompts the user to select a resource group.
+  rpc PromptResourceGroup (PromptResourceGroupRequest) returns (PromptResourceGroupResponse);
+
+  // Confirm prompts the user to confirm an action.
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+
+  // Prompt prompts the user for text input.
+  rpc Prompt(PromptRequest) returns (PromptResponse);
+
+  // Select prompts the user to select an option from a list.
+  rpc Select(SelectRequest) returns (SelectResponse);
+
+  // MultiSelect prompts the user to select multiple options from a list.
+  rpc MultiSelect(MultiSelectRequest) returns (MultiSelectResponse);
+
+  // PromptSubscriptionResource prompts the user to select a resource from a subscription.
+  rpc PromptSubscriptionResource(PromptSubscriptionResourceRequest) returns (PromptSubscriptionResourceResponse);
+
+  // PromptResourceGroupResource prompts the user to select a resource from a resource group.
+  rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
+
+  // PromptAiModel prompts the user to select an AI model scoped by effective location.
+  // Effective location only affects which models are eligible for selection;
+  // the returned model keeps canonical metadata (including full locations).
+  // Effective location is defined by filter.locations.
+  // If filter.locations is empty, models are considered across subscription locations.
+  // If quota is set:
+  // - one location in filter.locations: quota is evaluated at that location.
+  // - multiple locations in filter.locations: quota is evaluated for each location and
+  //   models are kept when quota is sufficient in at least one location.
+  // - empty filter.locations: quota is evaluated across model-declared locations.
+  rpc PromptAiModel(PromptAiModelRequest) returns (PromptAiModelResponse);
+
+  // PromptAiDeployment prompts for version, SKU, and capacity sequentially.
+  // This is the primary interactive primitive for model deployment selection.
+  // Effective location is defined by options.locations.
+  // If options.locations is empty, model catalog is considered across subscription locations.
+  // Quota requires exactly one effective location (via options.locations).
+  rpc PromptAiDeployment(PromptAiDeploymentRequest) returns (PromptAiDeploymentResponse);
+
+  // PromptAiLocationWithQuota prompts for a location filtered by quota requirements.
+  rpc PromptAiLocationWithQuota(PromptAiLocationWithQuotaRequest) returns (PromptAiLocationWithQuotaResponse);
+
+  // PromptAiModelLocationWithQuota prompts for a model location and displays remaining quota.
+  rpc PromptAiModelLocationWithQuota(PromptAiModelLocationWithQuotaRequest) returns (PromptAiModelLocationWithQuotaResponse);
+}
+
+message PromptSubscriptionRequest {
+  string Message = 1;
+  string HelpMessage = 2;
+}
+
+message PromptSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message PromptLocationRequest {
+  AzureContext azure_context = 1;
+  repeated string allowed_locations = 2;
+}
+
+message PromptLocationResponse {
+  Location location = 1;
+}
+
+message PromptResourceGroupRequest {
+  AzureContext azure_context = 1;
+  PromptResourceGroupOptions options = 2;
+}
+
+message PromptResourceGroupResponse {
+  ResourceGroup resource_group = 1;
+}
+
+message ConfirmRequest {
+  ConfirmOptions options = 1;
+}
+
+message ConfirmResponse {
+  optional bool value = 1;
+}
+
+message PromptRequest {
+  PromptOptions options = 1;
+}
+
+message PromptResponse {
+  string value = 1;
+}
+
+message SelectRequest {
+  SelectOptions options = 1;
+}
+
+message SelectResponse {
+  optional int32 value = 1;
+}
+
+message MultiSelectRequest {
+  MultiSelectOptions options = 1;
+}
+
+message MultiSelectResponse {
+  repeated MultiSelectChoice values = 1;
+}
+
+message PromptSubscriptionResourceRequest {
+  AzureContext azure_context = 1;
+  PromptResourceOptions options = 2;
+}
+
+message PromptSubscriptionResourceResponse {
+  azd.extensions.v1.ResourceExtended resource = 1;
+}
+
+message PromptResourceGroupResourceRequest {
+  AzureContext azure_context = 1;
+  PromptResourceOptions options = 2;
+}
+
+message PromptResourceGroupResourceResponse {
+  azd.extensions.v1.ResourceExtended resource = 1;
+}
+
+message ConfirmOptions {
+  optional bool default_value = 1;
+  string message = 2;
+  string help_message = 3;
+  string hint = 4;
+  string placeholder = 5;
+}
+
+message PromptOptions {
+  string message = 1;
+  string help_message = 2;
+  string hint = 3;
+  string placeholder = 4;
+  string validation_message = 5;
+  string required_message = 6;
+  bool required = 7;
+  string default_value = 8;
+  bool clear_on_completion = 9;
+  bool ignore_hint_keys = 10;
+  bool secret = 11;
+}
+
+message SelectChoice {
+  string value = 1;
+  string label = 2;
+}
+
+message MultiSelectChoice {
+  string value = 1;
+  string label = 2;
+  bool selected = 3;
+}
+
+message SelectOptions {
+  optional int32 selected_index = 1;
+  string message = 2;
+  repeated SelectChoice choices = 3;
+  string help_message = 4;
+  string hint = 5;
+  int32 display_count = 6;
+  optional bool display_numbers = 7;
+  optional bool enable_filtering = 8;
+}
+
+message MultiSelectOptions {
+  string message = 1;
+  repeated MultiSelectChoice choices = 2;
+  string help_message = 3;
+  string hint = 4;
+  int32 display_count = 5;
+  optional bool display_numbers = 6;
+  optional bool enable_filtering = 7;
+  optional bool allow_empty_selection = 8;
+}
+
+message PromptResourceOptions {
+  string resource_type = 1;
+  repeated string kinds = 2;
+  string resource_type_display_name = 3;
+  PromptResourceSelectOptions select_options = 4;
+}
+
+message PromptResourceSelectOptions {
+  optional bool force_new_resource = 1;
+  optional bool allow_new_resource = 2;
+  string new_resource_message = 3;
+  string creating_message = 4;
+  string message = 5;
+  string help_message = 6;
+  string loading_message = 7;
+  optional bool display_numbers = 8;
+  int32 display_count = 9;
+  string hint = 10;
+  optional bool enable_filtering = 11;
+}
+
+message PromptResourceGroupOptions {
+  PromptResourceSelectOptions select_options = 1;
+}
+
+// --- AI Model Prompt messages ---
+// These messages reference types from ai_model.proto.
+
+message PromptAiModelRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Optional model filter criteria.
+  AiModelFilterOptions filter = 2;
+  // Optional select prompt customization (for example, message override).
+  SelectOptions select_options = 3;
+  // Optional quota filter.
+  // Quota is evaluated using effective locations from filter.locations.
+  // With multiple locations, a model is kept if any location has sufficient quota.
+  QuotaCheckOptions quota = 4;
+  // Optional default model name to pre-select in the list.
+  string default_value = 5;
+}
+
+message PromptAiModelResponse {
+  // Selected model from the filtered catalog.
+  AiModel model = 1;
+}
+
+message PromptAiDeploymentRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required model name to resolve deployment options for.
+  string model_name = 2;
+  // Optional deployment filters (locations/versions/SKUs/capacity).
+  AiModelDeploymentOptions options = 3;
+  // Optional quota filter. Requires options.locations with exactly one location.
+  QuotaCheckOptions quota = 4;
+  // Skip version prompt and use the default version when available.
+  bool use_default_version = 5;
+  // Skip capacity prompt and use resolved/default capacity.
+  bool use_default_capacity = 6;
+  // Include fine-tune SKUs (usage names ending with "-finetune").
+  bool include_finetune_skus = 7;
+}
+
+message PromptAiDeploymentResponse {
+  // Selected deployment configuration.
+  AiModelDeployment deployment = 1;
+}
+
+message PromptAiLocationWithQuotaRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required quota requirements that each returned location must satisfy.
+  repeated QuotaRequirement requirements = 2;
+  // Optional allow-list for candidate locations.
+  repeated string allowed_locations = 3;
+  // Optional select prompt customization (for example, message override).
+  SelectOptions select_options = 4;
+  // Optional default location name to pre-select in the list.
+  string default_value = 5;
+}
+
+message PromptAiLocationWithQuotaResponse {
+  // Selected location.
+  Location location = 1;
+}
+
+message PromptAiModelLocationWithQuotaRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required model name to evaluate across locations.
+  string model_name = 2;
+  // Optional allow-list for candidate locations.
+  repeated string allowed_locations = 3;
+  // Optional min remaining quota threshold.
+  QuotaCheckOptions quota = 4;
+  // Optional select prompt customization (for example, message override).
+  SelectOptions select_options = 5;
+  // Optional default location name to pre-select in the list.
+  string default_value = 6;
+}
+
+message PromptAiModelLocationWithQuotaResponse {
+  // Selected location.
+  Location location = 1;
+  // Maximum remaining quota at the selected location across model SKUs.
+  // A value of -1 indicates that usage data was unavailable (e.g. free-tier
+  // subscriptions) and the actual remaining quota is unknown.
+  double max_remaining_quota = 2;
+}

@@ -1,0 +1,38 @@
+List files in a hosted agent session.
+
+Lists files and directories at the specified path in the session's filesystem.
+When no path is provided, lists the root directory.
+
+Agent details are automatically resolved from the azd environment.
+
+Usage
+  azd ai agent files list [remote-path] [flags]
+
+Aliases
+  list, ls
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+  -s, --session-id string    : Session ID override (defaults to last invoke session)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+  List files in the root directory (agent auto-detected)
+    azd ai agent files list
+
+  List files in a specific directory
+    azd ai agent files list /data
+
+  List files in table format
+    azd ai agent files list /data --output table
+
+  List with explicit session
+    azd ai agent files list --session-id <session-id>

@@ -1,0 +1,17 @@
+# Tier 0 (offline) — latency flag discovery and invalid-value validation.
+name: "invoke-latency-validation"
+command: "azd ai agent invoke --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:invoke", "cmd:help", "negative-path", "parallel-safe"]
+
+goals:
+  - "Confirm invoke help exits with code 0 and lists --debug-latency with a default of true."
+  - "Confirm help explains that --debug-latency=false disables collection and the summary, independently of the global --debug logging flag."
+  - "Confirm help limits platform diagnostics to remote Hosted Agent Responses and Invocations calls and excludes local, prompt-agent, and A2A calls."
+  - "Confirm help explains that explicit --debug-latency=true is rejected on unsupported routes, while omitting the flag or using --debug-latency=false preserves invocation without platform diagnostics."
+  - "Run 'azd ai agent invoke --debug-latency=invalid \"hello\"'. Confirm it exits non-zero with an invalid-value error naming --debug-latency."
+  - 'Run azd ai agent invoke --local --protocol responses --debug-latency=true "hello". Confirm it exits non-zero with a parameter conflict explaining that diagnostics require a remote Hosted Agent using responses or invocations, without attempting a local connection.'
+  - 'Run azd ai agent invoke --protocol a2a --debug-latency "hello". Confirm the same parameter conflict is reported before authentication or agent execution.'
+  - "Confirm the invalid command does not prompt for an agent or login and does not begin agent execution. Do not run a valid invocation in this offline scenario."
+  - "Take a screenshot of the help and validation output."
+  - "Report a finding if help omits the default or opt-out, validation accepts an invalid value, or either command prompts or hangs."

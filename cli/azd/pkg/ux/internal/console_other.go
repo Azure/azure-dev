@@ -5,9 +5,7 @@
 
 package internal
 
-import "os"
-
 // disableVirtualTerminalInput is a no-op on non-Windows platforms.
-func disableVirtualTerminalInput(_ *os.File) error {
+func disableVirtualTerminalInput(_ FileReader) error {
 	return nil
 }

@@ -276,6 +276,24 @@ func TestRunWithProgress(t *testing.T) {
 		assert.True(t, observerFinished, "Observer should have finished processing all progress updates")
 		assert.Equal(t, []string{"first", "last"}, observedProgress)
 	})
+
+	t.Run("handles panic in work function", func(t *testing.T) {
+		var observedProgress []string
+		observer := func(p string) {
+			observedProgress = append(observedProgress, p)
+		}
+
+		workFunc := func(p *Progress[string]) (string, error) {
+			p.SetProgress("before panic")
+			panic("test panic")
+		}
+
+		assert.Panics(t, func() {
+			RunWithProgress(observer, workFunc)
+		})
+
+		assert.Equal(t, []string{"before panic"}, observedProgress)
+	})
 }
 
 func TestRunWithProgressE(t *testing.T) {

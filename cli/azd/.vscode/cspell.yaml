@@ -108,6 +108,7 @@ words:
   - santhosh
   - tekuri
   - jsonschema
+  - innererror
   - rustc
   - figspec
   - finetune
@@ -177,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "**/internal/agent/types.go"
+    words:
+      - billionized
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock
@@ -287,6 +291,7 @@ overrides:
       - Chdir
       - creds
       - Moby
+      - postflight
       - upsert
   - filename: docs/proxy-configuration.md
     words:
@@ -499,6 +504,9 @@ overrides:
     words:
       - forbidigo
       - Logf
+  - filename: extensions/azure.ai.dataset/README.md
+    words:
+      - CODEOWNERS
   - filename: .golangci.yaml
     words:
       - forbidigo
@@ -516,6 +524,30 @@ overrides:
       - Getsockopt
       - PEERCRED
       - Xucred
+  - filename: grpc/generateadapters/main.go
+    words:
+      - generateadapters
+  - filename: grpc/generatefacade/main.go
+    words:
+      - generatefacade
+  - filename: internal/grpcserver/versioned_services.go
+    words:
+      - anypb
+      - protoregistry
+  - filename: internal/grpcserver/versioned_services_generated.go
+    words:
+      - generateadapters
+  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go}"
+    words:
+      - legacybridge
+  - filename: pkg/azdext/contracts_v1_aliases.go
+    words:
+      - generatefacade
+  - filename: extensions/telemetry/*.go
+    words:
+      - elts
+      - fset
+      - unkeyed
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

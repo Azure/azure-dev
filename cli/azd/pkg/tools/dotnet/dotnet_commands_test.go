@@ -19,6 +19,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
@@ -740,77 +741,44 @@ func Test_Cli_ArtifactsPathContext(t *testing.T) {
 func Test_Cli_ContainerEngine(t *testing.T) {
 	t.Parallel()
 
-	t.Run("podman engine appends ContainerEngine property", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
+	tests := []struct {
+		name    string
+		engine  tools.ContainerEngine
+		publish bool
+		wantArg string
+	}{
+		{name: "local podman", engine: tools.ContainerEnginePodman, wantArg: "-p:ContainerEngine=podman"},
+		{name: "local docker", engine: tools.ContainerEngineDocker},
+		{name: "local default"},
+		{name: "publish podman", engine: tools.ContainerEnginePodman, publish: true, wantArg: "-p:ContainerEngine=podman"},
+		{name: "publish docker", engine: tools.ContainerEngineDocker, publish: true},
+		{name: "publish default", publish: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cli, runner := newCliWithMock(t)
+			var captured exec.RunArgs
+			runner.When(matchDotnetArg0("publish")).
+				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					captured = args
+					return exec.NewRunResult(0, successContainerOutput, ""), nil
+				})
 
-		_, _, err := cli.BuildContainerLocal(
-			t.Context(), "p.csproj", "Release", "img", "podman",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.Contains(t, joined, "-p:ContainerEngine=podman")
-	})
-
-	t.Run("docker engine does not append ContainerEngine property", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
-
-		_, _, err := cli.BuildContainerLocal(
-			t.Context(), "p.csproj", "Release", "img", "docker",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.NotContains(t, joined, "-p:ContainerEngine=")
-	})
-
-	t.Run("empty engine does not append ContainerEngine property", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
-
-		_, _, err := cli.BuildContainerLocal(
-			t.Context(), "p.csproj", "Release", "img", "",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.NotContains(t, joined, "-p:ContainerEngine=")
-	})
-
-	t.Run("podman engine on PublishContainer", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
-
-		_, err := cli.PublishContainer(
-			t.Context(), "p.csproj", "Release", "img", "r", "u", "p", "podman",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.Contains(t, joined, "-p:ContainerEngine=podman")
-	})
+			if tt.publish {
+				_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p", tt.engine)
+				require.NoError(t, err)
+			} else {
+				_, _, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "img", tt.engine)
+				require.NoError(t, err)
+			}
+			if tt.wantArg != "" {
+				require.Contains(t, captured.Args, tt.wantArg)
+			} else {
+				require.NotContains(t, strings.Join(captured.Args, " "), "-p:ContainerEngine=")
+			}
+		})
+	}
 }
 
 func Test_Cli_getTargetPort_Branches(t *testing.T) {

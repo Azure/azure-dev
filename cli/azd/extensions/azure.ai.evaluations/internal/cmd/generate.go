@@ -362,6 +362,7 @@ func (ec *evalContext) collectRubric(
 	// over an edited file made those two claims contradict each other.
 	if !replaceExisting && artifactAlreadyCollected(path) {
 		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
+		ref.PreserveCatalogMetadata = true
 		return ref, nil
 	}
 	if err := writeRubric(path, completed.Result); err != nil {

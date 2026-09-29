@@ -150,6 +150,7 @@ const downloadedEvaluator = `{
 	"categories":["quality","agents"],
 	"supported_evaluation_levels":["turn","conversation"],
 	"created_at":"2026-09-17T00:00:00Z",
+	"agent_metadata":{"wiring":"service-only-agent-wiring"},
 	"definition":{
 		"type":"rubric",
 		"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5}],
@@ -185,10 +186,14 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 	require.Equal(t, json.RawMessage(`0.6`), rubric["pass_threshold"])
 	require.JSONEq(t, `{"count":9007199254740993}`, string(rubric["future_option"]))
 	require.Contains(t, string(raw), "9007199254740993", "unknown editable values retain their exact numeric precision")
-	for _, key := range append([]string{"name", "version", "definition", "display_name", "created_at"},
-		rubricOwnedByTheService...) {
+	for _, key := range append([]string{
+		"name", "version", "definition", "display_name", "description", "categories",
+		"supported_evaluation_levels", "created_at", "agent_metadata",
+	}, rubricOwnedByTheService...) {
 		require.NotContains(t, rubric, key)
 	}
+	require.NotContains(t, string(raw), "service-only-agent-wiring")
+	require.NotContains(t, output.String(), "service-only-agent-wiring")
 	encodedPath, err := json.Marshal(path)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"evaluator":"quality","version":"3","path":`+string(encodedPath)+`}`, output.String())

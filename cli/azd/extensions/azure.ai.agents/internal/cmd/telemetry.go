@@ -19,10 +19,17 @@ import (
 )
 
 const (
-	agentContextResolvedEvent = "agent.context.resolved"
-	agentKindAttribute        = "agent.kind"
-	agentHarnessAttribute     = "agent.harness"
-	agentOperationAttribute   = "agent.operation"
+	agentContextResolvedEvent   = "agent.context.resolved"
+	agentKindAttribute          = "agent.kind"
+	agentHarnessAttribute       = "agent.harness"
+	agentOperationAttribute     = "agent.operation"
+	agentContainerModeAttribute = "agent.container.mode"
+
+	containerModeBuild           = "build"
+	containerModeCode            = "code"
+	containerModePassthrough     = "passthrough"
+	containerModePassthroughAuth = "passthrough_auth"
+	containerModeUnknown         = "unknown"
 
 	agentKindUnknown  = "unknown"
 	agentHarnessNone  = "none"
@@ -30,9 +37,10 @@ const (
 )
 
 type agentTelemetryContext struct {
-	kind      string
-	harness   string
-	operation string
+	kind          string
+	harness       string
+	operation     string
+	containerMode string // empty for non-hosted agents
 }
 
 type agentContextReporter struct {
@@ -67,7 +75,7 @@ func (r *agentContextReporter) reportProjectConfig(
 	operation string,
 ) {
 	for _, agentCtx := range agentTelemetryContexts(project, operation) {
-		key := agentCtx.kind + "\x00" + agentCtx.harness
+		key := agentCtx.kind + "\x00" + agentCtx.harness + "\x00" + agentCtx.containerMode
 		r.mu.Lock()
 		_, exists := r.seen[key]
 		if !exists {
@@ -106,14 +114,28 @@ func (r *agentContextReporter) report(
 		return
 	}
 
-	if _, err := telemetry.ReportUsage(ctx, &v1beta.ReportUsageRequest{
-		EventName: agentContextResolvedEvent,
-		Attributes: map[string]string{
-			agentKindAttribute:      agentCtx.kind,
-			agentHarnessAttribute:   agentCtx.harness,
-			agentOperationAttribute: agentCtx.operation,
-		},
-	}); err != nil {
+	var err error
+	if agentCtx.containerMode != "" {
+		_, err = telemetry.ReportUsage(ctx, &v1beta.ReportUsageRequest{
+			EventName: agentContextResolvedEvent,
+			Attributes: map[string]string{
+				agentKindAttribute:          agentCtx.kind,
+				agentHarnessAttribute:       agentCtx.harness,
+				agentOperationAttribute:     agentCtx.operation,
+				agentContainerModeAttribute: agentCtx.containerMode,
+			},
+		})
+	} else {
+		_, err = telemetry.ReportUsage(ctx, &v1beta.ReportUsageRequest{
+			EventName: agentContextResolvedEvent,
+			Attributes: map[string]string{
+				agentKindAttribute:      agentCtx.kind,
+				agentHarnessAttribute:   agentCtx.harness,
+				agentOperationAttribute: agentCtx.operation,
+			},
+		})
+	}
+	if err != nil {
 		log.Printf("telemetry: failed to report agent context: %v", err)
 	}
 }
@@ -141,13 +163,52 @@ func agentTelemetryContexts(project *azdext.ProjectConfig, operation string) []a
 			}
 		}
 
+		containerMode := ""
+		if kind == string(agent_yaml.AgentKindHosted) {
+			containerMode = telemetryContainerMode(svc, project.GetPath())
+		}
+
 		contexts = append(contexts, agentTelemetryContext{
-			kind:      kind,
-			harness:   harness,
-			operation: operation,
+			kind:          kind,
+			harness:       harness,
+			operation:     operation,
+			containerMode: containerMode,
 		})
 	}
 	return contexts
+}
+
+// telemetryContainerMode classifies the effective hosted definition without emitting
+// image references or connection identifiers. A legacy image without explicit
+// passthrough can take either the build or pre-built path, so it stays unknown.
+func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) string {
+	agentDef, isHosted, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
+	if err != nil || !isHosted {
+		return containerModeUnknown
+	}
+	if agentDef.CodeConfiguration != nil {
+		return containerModeCode
+	}
+	image := strings.TrimSpace(agentDef.Image)
+	// Legacy disk definitions do not incorporate a service-level image override.
+	if image == "" && strings.TrimSpace(svc.GetImage()) != "" {
+		return containerModeUnknown
+	}
+	connection := strings.TrimSpace(agentDef.RegistryConnectionID)
+	if svc.GetDocker().GetImagePassthrough() {
+		if image == "" || (agentDef.RegistryConnectionID != "" && connection == "") ||
+			svc.GetDocker().GetRemoteBuild() {
+			return containerModeUnknown
+		}
+		if connection != "" {
+			return containerModePassthroughAuth
+		}
+		return containerModePassthrough
+	}
+	if image != "" || connection != "" {
+		return containerModeUnknown
+	}
+	return containerModeBuild
 }
 
 func telemetryAgentKind(kind string) string {

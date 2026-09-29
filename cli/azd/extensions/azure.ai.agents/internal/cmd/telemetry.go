@@ -12,6 +12,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/containerref"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -201,6 +202,9 @@ func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) strin
 			return containerModeUnknown
 		}
 		if connection != "" {
+			if !containerref.IsFullyQualified(image) {
+				return containerModeUnknown
+			}
 			return containerModePassthroughAuth
 		}
 		return containerModePassthrough

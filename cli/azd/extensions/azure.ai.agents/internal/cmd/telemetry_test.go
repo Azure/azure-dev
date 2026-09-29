@@ -132,6 +132,9 @@ func TestTelemetryContainerModeClassifiesHostedConfiguration(t *testing.T) {
 		{name: "invalid connection without passthrough", properties: map[string]any{
 			"kind": "hosted", "registryConnectionId": connectionID},
 			image: privateImage, want: containerModeUnknown},
+		{name: "registry connection with unqualified image", properties: map[string]any{
+			"kind": "hosted", "registryConnectionId": connectionID},
+			image: "agent:v1", passthrough: true, want: containerModeUnknown},
 		{name: "invalid missing image", properties: map[string]any{"kind": "hosted"},
 			passthrough: true, want: containerModeUnknown},
 		{name: "invalid whitespace connection", properties: map[string]any{

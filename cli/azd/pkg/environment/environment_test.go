@@ -99,9 +99,10 @@ func TestFromRoot(t *testing.T) {
 		t.Parallel()
 
 		envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
-		envRoot := azdCtx.EnvironmentRoot("testEnv")
+		envRoot, err := azdCtx.EnvironmentRoot("testEnv")
+		require.NoError(t, err)
 
-		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
+		err = os.MkdirAll(envRoot, osutil.PermissionDirectory)
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(envRoot, ".env"), []byte("TEST=yes\n"), osutil.PermissionFile)
@@ -132,7 +133,8 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate another process writing to .env file
-	envRoot := azdCtx.EnvironmentRoot("test")
+	envRoot, err := azdCtx.EnvironmentRoot("test")
+	require.NoError(t, err)
 	envPath := filepath.Join(envRoot, azdcontext.DotEnvFileName)
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)

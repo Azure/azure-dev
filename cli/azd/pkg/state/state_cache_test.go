@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStateCacheManager_SaveAndLoad(t *testing.T) {
 	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 	ctx := t.Context()
 
 	cache := &StateCache{
@@ -45,7 +46,7 @@ func TestStateCacheManager_SaveAndLoad(t *testing.T) {
 
 func TestStateCacheManager_LoadNonExistent(t *testing.T) {
 	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 	ctx := t.Context()
 
 	// Load non-existent cache
@@ -56,7 +57,7 @@ func TestStateCacheManager_LoadNonExistent(t *testing.T) {
 
 func TestStateCacheManager_Invalidate(t *testing.T) {
 	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 	ctx := t.Context()
 
 	cache := &StateCache{
@@ -80,7 +81,7 @@ func TestStateCacheManager_Invalidate(t *testing.T) {
 
 func TestStateCacheManager_TTL(t *testing.T) {
 	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 	manager.SetTTL(1 * time.Hour) // Use a large TTL — we test expiration by backdating, not sleeping
 	ctx := t.Context()
 
@@ -103,7 +104,9 @@ func TestStateCacheManager_TTL(t *testing.T) {
 	loaded.UpdatedAt = time.Now().Add(-2 * time.Hour)
 	data, err := json.MarshalIndent(loaded, "", "  ")
 	require.NoError(t, err)
-	err = os.WriteFile(manager.GetCachePath("test-env"), data, 0600)
+	cachePath, err := manager.GetCachePath("test-env")
+	require.NoError(t, err)
+	err = os.WriteFile(cachePath, data, 0600)
 	require.NoError(t, err)
 
 	// Load after backdating should return nil (TTL expired)
@@ -114,7 +117,7 @@ func TestStateCacheManager_TTL(t *testing.T) {
 
 func TestStateCacheManager_StateChangeFile(t *testing.T) {
 	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 	ctx := t.Context()
 
 	cache := &StateCache{
@@ -126,7 +129,8 @@ func TestStateCacheManager_StateChangeFile(t *testing.T) {
 	err := manager.Save(ctx, "test-env", cache)
 	require.NoError(t, err)
 
-	stateChangePath := manager.GetStateChangePath()
+	stateChangePath, err := manager.GetStateChangePath()
+	require.NoError(t, err)
 	_, err = os.Stat(stateChangePath)
 	require.NoError(t, err, "State change file should exist")
 
@@ -150,19 +154,23 @@ func TestStateCacheManager_StateChangeFile(t *testing.T) {
 }
 
 func TestStateCacheManager_GetCachePath(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	tempDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 
-	cachePath := manager.GetCachePath("test-env")
-	expectedPath := filepath.Join(tempDir, "test-env", StateCacheFileName)
+	cachePath, err := manager.GetCachePath("test-env")
+	require.NoError(t, err)
+	expectedPath := filepath.Join(tempDir, ".azure", "test-env", StateCacheFileName)
 	require.Equal(t, expectedPath, cachePath)
 }
 
 func TestStateCacheManager_GetStateChangePath(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewStateCacheManager(tempDir)
+	tempDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	manager := NewStateCacheManager(azdcontext.NewAzdContextWithDirectory(tempDir))
 
-	stateChangePath := manager.GetStateChangePath()
-	expectedPath := filepath.Join(tempDir, StateChangeFileName)
+	stateChangePath, err := manager.GetStateChangePath()
+	require.NoError(t, err)
+	expectedPath := filepath.Join(tempDir, ".azure", StateChangeFileName)
 	require.Equal(t, expectedPath, stateChangePath)
 }

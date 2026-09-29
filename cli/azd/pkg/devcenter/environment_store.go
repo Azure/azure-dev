@@ -46,13 +46,16 @@ func NewEnvironmentStore(
 }
 
 // EnvPath returns the path for the environment
-func (s *EnvironmentStore) EnvPath(env *environment.Environment) string {
-	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name())
+func (s *EnvironmentStore) EnvPath(env *environment.Environment) (string, error) {
+	if !environment.IsValidEnvironmentName(env.Name()) {
+		return "", environment.InvalidEnvironmentNameError(env.Name())
+	}
+	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name()), nil
 }
 
 // ConfigPath returns the path for the environment configuration
-func (s *EnvironmentStore) ConfigPath(env *environment.Environment) string {
-	return ""
+func (s *EnvironmentStore) ConfigPath(env *environment.Environment) (string, error) {
+	return "", nil
 }
 
 // List returns a list of environments for the devcenter configuration

@@ -249,6 +249,9 @@ overrides:
     words:
       - ents
       - unmarshalled
+  - filename: test/ostest/links.go
+    words:
+      - mklink
   - filename: pkg/exec/util_test.go
     words:
       - keychain

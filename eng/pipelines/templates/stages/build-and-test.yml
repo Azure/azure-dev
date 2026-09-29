@@ -13,7 +13,7 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
-        JobTimeoutInMinutes: 40
+        JobTimeoutInMinutes: 60
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)

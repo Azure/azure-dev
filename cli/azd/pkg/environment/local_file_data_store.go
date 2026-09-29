@@ -156,6 +156,14 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 			if err != nil {
 				return nil, err
 			}
+			_, err = fs.azdContext.EnvironmentFilePath(ent.Name(), DotEnvFileName+".lock")
+			if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
+				log.Printf("skipping environment entry %q: %v", ent.Name(), err)
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
 			ev := &contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,

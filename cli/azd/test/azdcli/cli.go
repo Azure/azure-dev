@@ -98,7 +98,7 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 			}
 
 			// Start test credential server for Playback mode
-			credentialServer := startTestCredentialServer(t)
+			credentialServer := StartTestCredentialServer(t)
 			t.Cleanup(func() {
 				credentialServer.Close()
 			})
@@ -374,7 +374,8 @@ type tokenRequestBody struct {
 
 // startTestCredentialServer creates a mock HTTP server that implements the remote credential protocol.
 // This is used in Playback mode to provide OAuth tokens for functional tests
-func startTestCredentialServer(t *testing.T) *httptest.Server {
+// StartTestCredentialServer serves synthetic tokens for local CLI tests. The caller must close the server.
+func StartTestCredentialServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check method and path
 		if r.Method != http.MethodPost {

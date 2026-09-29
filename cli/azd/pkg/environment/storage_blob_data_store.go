@@ -41,13 +41,19 @@ func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.Bl
 }
 
 // EnvPath returns the path to the .env file for the given environment
-func (fs *StorageBlobDataStore) EnvPath(env *Environment) string {
-	return fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
+func (fs *StorageBlobDataStore) EnvPath(env *Environment) (string, error) {
+	if !IsValidEnvironmentName(env.Name()) {
+		return "", InvalidEnvironmentNameError(env.Name())
+	}
+	return fmt.Sprintf("%s/%s", env.name, DotEnvFileName), nil
 }
 
 // ConfigPath returns the path to the config.json file for the given environment
-func (fs *StorageBlobDataStore) ConfigPath(env *Environment) string {
-	return fmt.Sprintf("%s/%s", env.name, ConfigFileName)
+func (fs *StorageBlobDataStore) ConfigPath(env *Environment) (string, error) {
+	if !IsValidEnvironmentName(env.Name()) {
+		return "", InvalidEnvironmentNameError(env.Name())
+	}
+	return fmt.Sprintf("%s/%s", env.name, ConfigFileName), nil
 }
 
 func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
@@ -121,6 +127,15 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 }
 
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
+	configPath, err := sbd.ConfigPath(env)
+	if err != nil {
+		return err
+	}
+	envPath, err := sbd.EnvPath(env)
+	if err != nil {
+		return err
+	}
+
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
 
@@ -128,7 +143,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	if err := sbd.blobClient.Upload(ctx, sbd.ConfigPath(env), cfgWriter); err != nil {
+	if err := sbd.blobClient.Upload(ctx, configPath, cfgWriter); err != nil {
 		return fmt.Errorf("uploading config: %w", describeError(err))
 	}
 
@@ -139,7 +154,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 
 	buffer := bytes.NewBuffer([]byte(marshalled))
 
-	if err := sbd.blobClient.Upload(ctx, sbd.EnvPath(env), buffer); err != nil {
+	if err := sbd.blobClient.Upload(ctx, envPath, buffer); err != nil {
 		return fmt.Errorf("uploading .env: %w", describeError(err))
 	}
 
@@ -148,8 +163,17 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 }
 
 func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) error {
+	envPath, err := sbd.EnvPath(env)
+	if err != nil {
+		return err
+	}
+	configPath, err := sbd.ConfigPath(env)
+	if err != nil {
+		return err
+	}
+
 	// Reload .env file
-	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.EnvPath(env))
+	dotEnvBuffer, err := sbd.blobClient.Download(ctx, envPath)
 	if err != nil {
 		return describeError(err)
 	}
@@ -162,7 +186,7 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	}
 
 	// Reload config file
-	configBuffer, err := sbd.blobClient.Download(ctx, sbd.ConfigPath(env))
+	configBuffer, err := sbd.blobClient.Download(ctx, configPath)
 	if err != nil {
 		return describeError(err)
 	}

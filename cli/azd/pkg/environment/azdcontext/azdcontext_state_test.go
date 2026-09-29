@@ -47,6 +47,48 @@ func TestGetDefaultEnvironmentName_MalformedJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "deserializing config file")
 }
 
+// A malformed config is no longer repaired by overwriting it, so every caller must report the
+// path the user has to remove in order to recover the project.
+func TestMalformedConfig_ErrorNamesRecoveryPath(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	ctx := NewAzdContextWithDirectory(tempDir)
+
+	require.NoError(t, os.MkdirAll(ctx.EnvironmentDirectory(), 0755))
+	path := filepath.Join(ctx.EnvironmentDirectory(), ConfigFileName)
+	require.NoError(t, os.WriteFile(path, []byte("{bad json"), 0600))
+
+	resolved, err := ctx.ProjectStateFilePath(ConfigFileName)
+	require.NoError(t, err)
+
+	for name, operation := range map[string]func() error{
+		"GetDefaultEnvironmentName": func() error {
+			_, err := ctx.GetDefaultEnvironmentName()
+			return err
+		},
+		"SetProjectState": func() error {
+			return ctx.SetProjectState(ProjectState{DefaultEnvironment: "prod"})
+		},
+		"GetCopilotSession": func() error {
+			_, err := ctx.GetCopilotSession()
+			return err
+		},
+		"ClearCopilotSession": ctx.ClearCopilotSession,
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := operation()
+			require.ErrorContains(t, err, "deserializing config file")
+			require.ErrorContains(t, err, resolved)
+			require.ErrorContains(t, err, "reset the project state")
+		})
+	}
+
+	// The failing write must leave the original file untouched rather than silently resetting it.
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "{bad json", string(contents))
+}
+
 func TestSetProjectState_WritesConfigAndGitignore(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
@@ -80,7 +122,8 @@ func TestSetProjectState_PreservesCopilotSession(t *testing.T) {
 	require.NoError(t, ctx.SetCopilotSession(sess))
 	require.NoError(t, ctx.SetProjectState(ProjectState{DefaultEnvironment: "stage"}))
 
-	got := ctx.GetCopilotSession()
+	got, err := ctx.GetCopilotSession()
+	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.Equal(t, *sess, *got)
 
@@ -93,17 +136,22 @@ func TestCopilotSession_RoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := NewAzdContextWithDirectory(t.TempDir())
 
-	require.Nil(t, ctx.GetCopilotSession(), "expected no session before set")
+	got, err := ctx.GetCopilotSession()
+	require.NoError(t, err)
+	require.Nil(t, got, "expected no session before set")
 
 	sess := &CopilotSession{SessionID: "s1", Command: "init", StartedAt: "2026-04-20T00:00:00Z"}
 	require.NoError(t, ctx.SetCopilotSession(sess))
 
-	got := ctx.GetCopilotSession()
+	got, err = ctx.GetCopilotSession()
+	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.Equal(t, *sess, *got)
 
 	require.NoError(t, ctx.ClearCopilotSession())
-	require.Nil(t, ctx.GetCopilotSession())
+	got, err = ctx.GetCopilotSession()
+	require.NoError(t, err)
+	require.Nil(t, got)
 }
 
 func TestGetCopilotSession_MalformedConfig(t *testing.T) {
@@ -115,8 +163,15 @@ func TestGetCopilotSession_MalformedConfig(t *testing.T) {
 	path := filepath.Join(ctx.EnvironmentDirectory(), ConfigFileName)
 	require.NoError(t, os.WriteFile(path, []byte("{not-json"), 0600))
 
-	// Malformed config silently yields empty config; no session.
-	require.Nil(t, ctx.GetCopilotSession())
+	session, err := ctx.GetCopilotSession()
+	require.ErrorContains(t, err, "deserializing config file")
+	require.Nil(t, session)
+	require.Error(t, ctx.SetCopilotSession(&CopilotSession{SessionID: "new"}))
+	require.Error(t, ctx.ClearCopilotSession())
+	require.Error(t, ctx.SetProjectState(ProjectState{DefaultEnvironment: "dev"}))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "{not-json", string(raw))
 }
 
 func TestNewAzdContext_FromProjectDir(t *testing.T) {

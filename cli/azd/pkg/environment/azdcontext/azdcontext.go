@@ -55,29 +55,64 @@ func ProjectName(projectDirectory string) string {
 	return names.LabelName(filepath.Base(projectDirectory))
 }
 
-func (c *AzdContext) EnvironmentRoot(name string) string {
-	return filepath.Join(c.EnvironmentDirectory(), name)
+// EnvironmentRoot returns a canonical path contained within the project's environment directory.
+// Missing directories are allowed, but environment directories cannot be filesystem links.
+func (c *AzdContext) EnvironmentRoot(name string) (string, error) {
+	if !IsValidEnvironmentName(name) {
+		return "", InvalidEnvironmentNameError(name)
+	}
+	base, err := c.EnvironmentDirectoryPath()
+	if err != nil {
+		return "", err
+	}
+	return resolveEnvironmentChild(base, name)
 }
 
-func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
-	return filepath.Join(c.EnvironmentRoot(name), "wd")
+// EnvironmentDirectoryPath returns the canonical environment directory, rejecting filesystem links at .azure.
+func (c *AzdContext) EnvironmentDirectoryPath() (string, error) {
+	projectRoot, err := resolveExistingPath(c.ProjectDirectory())
+	if err != nil {
+		return "", fmt.Errorf("resolving project directory: %w", err)
+	}
+	return resolveEnvironmentChild(projectRoot, EnvironmentDirectoryName)
+}
+
+// EnvironmentFilePath returns a contained path to a file in an environment, rejecting filesystem links.
+func (c *AzdContext) EnvironmentFilePath(name, fileName string) (string, error) {
+	root, err := c.EnvironmentRoot(name)
+	if err != nil {
+		return "", err
+	}
+	return resolveEnvironmentChild(root, fileName)
+}
+
+// ProjectStateFilePath returns a contained path to a file directly in .azure, rejecting filesystem links.
+func (c *AzdContext) ProjectStateFilePath(fileName string) (string, error) {
+	base, err := c.EnvironmentDirectoryPath()
+	if err != nil {
+		return "", err
+	}
+	return resolveEnvironmentChild(base, fileName)
+}
+
+func (c *AzdContext) GetEnvironmentWorkDirectory(name string) (string, error) {
+	root, err := c.EnvironmentRoot(name)
+	if err != nil {
+		return "", err
+	}
+	return resolveEnvironmentChild(root, "wd")
 }
 
 // GetDefaultEnvironmentName returns the name of the default environment. Returns
 // an empty string if a default environment has not been set.
 func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
-	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	file, err := os.ReadFile(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return "", nil
-	case err != nil:
-		return "", fmt.Errorf("reading config file: %w", err)
+	config, err := c.readConfig()
+	if err != nil {
+		return "", err
 	}
 
-	var config configFile
-	if err := json.Unmarshal(file, &config); err != nil {
-		return "", fmt.Errorf("deserializing config file: %w", err)
+	if config.DefaultEnvironment != "" && !IsValidEnvironmentName(config.DefaultEnvironment) {
+		return "", fmt.Errorf("reading default environment: %w", InvalidEnvironmentNameError(config.DefaultEnvironment))
 	}
 
 	return config.DefaultEnvironment, nil
@@ -90,8 +125,22 @@ type ProjectState struct {
 
 // SetProjectState persists the state of the project to the file system, like the default environment.
 func (c *AzdContext) SetProjectState(state ProjectState) error {
-	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	config := c.readConfig()
+	if state.DefaultEnvironment != "" && !IsValidEnvironmentName(state.DefaultEnvironment) {
+		return InvalidEnvironmentNameError(state.DefaultEnvironment)
+	}
+
+	path, err := c.ProjectStateFilePath(ConfigFileName)
+	if err != nil {
+		return err
+	}
+	ignorePath, err := c.ProjectStateFilePath(".gitignore")
+	if err != nil {
+		return err
+	}
+	config, err := c.readConfig()
+	if err != nil {
+		return err
+	}
 	config.Version = ConfigFileVersion
 	config.DefaultEnvironment = state.DefaultEnvironment
 
@@ -100,26 +149,30 @@ func (c *AzdContext) SetProjectState(state ProjectState) error {
 	}
 
 	// make sure to ignore the environment directory
-	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
-	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
+	return os.WriteFile(ignorePath, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 
 // GetCopilotSession returns the in-progress Copilot session, if any.
-func (c *AzdContext) GetCopilotSession() *CopilotSession {
-	config := c.readConfig()
-	return config.CopilotSession
+func (c *AzdContext) GetCopilotSession() (*CopilotSession, error) {
+	config, err := c.readConfig()
+	if err != nil {
+		return nil, err
+	}
+	return config.CopilotSession, nil
 }
 
 // SetCopilotSession saves a Copilot session ID for resume support.
 func (c *AzdContext) SetCopilotSession(session *CopilotSession) error {
-	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	config := c.readConfig()
+	path, err := c.ProjectStateFilePath(ConfigFileName)
+	if err != nil {
+		return err
+	}
+	config, err := c.readConfig()
+	if err != nil {
+		return err
+	}
 	config.Version = ConfigFileVersion
 	config.CopilotSession = session
-
-	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment directory: %w", err)
-	}
 
 	return writeConfig(path, config)
 }
@@ -130,19 +183,28 @@ func (c *AzdContext) ClearCopilotSession() error {
 }
 
 // readConfig reads the current config file, returning an empty config if it doesn't exist.
-func (c *AzdContext) readConfig() configFile {
-	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	file, err := os.ReadFile(path)
+func (c *AzdContext) readConfig() (configFile, error) {
+	path, err := c.ProjectStateFilePath(ConfigFileName)
 	if err != nil {
-		return configFile{Version: ConfigFileVersion}
+		return configFile{}, err
+	}
+	file, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return configFile{Version: ConfigFileVersion}, nil
+	case err != nil:
+		return configFile{}, fmt.Errorf("reading config file: %w", err)
 	}
 
 	var config configFile
 	if err := json.Unmarshal(file, &config); err != nil {
-		return configFile{Version: ConfigFileVersion}
+		// Repairing the file by overwriting it would silently discard the recorded default
+		// environment, so surface the failure with the path needed to recover manually.
+		return configFile{}, fmt.Errorf(
+			"deserializing config file: %w; delete %s to reset the project state", err, path)
 	}
 
-	return config
+	return config, nil
 }
 
 // Creates context with project directory set to the desired directory.

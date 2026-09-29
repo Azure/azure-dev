@@ -151,6 +151,56 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 	})
 }
 
+func Test_EnvManager_RejectsInvalidNamesBeforeDataStoreAccess(t *testing.T) {
+	for _, name := range []string{"..", ".", "../../trusted-project/.azure/prod", `..\prod`} {
+		t.Run(name, func(t *testing.T) {
+			for _, operation := range []string{"Get", "LoadOrInit", "Save", "Reload", "Delete"} {
+				t.Run(operation, func(t *testing.T) {
+					local := &MockDataStore{}
+					remote := &MockDataStore{}
+					// No console or datastore calls should be needed to reject the name.
+					manager := newManagerForTest(nil, nil, local, remote)
+					var err error
+					switch operation {
+					case "Get":
+						_, err = manager.Get(t.Context(), name)
+					case "LoadOrInit":
+						_, err = manager.LoadOrInitInteractive(t.Context(), name)
+					case "Save":
+						err = manager.Save(t.Context(), New(name))
+					case "Reload":
+						err = manager.Reload(t.Context(), New(name))
+					case "Delete":
+						err = manager.Delete(t.Context(), name)
+					}
+					require.ErrorContains(t, err, "is invalid")
+					require.Empty(t, local.Calls)
+					require.Empty(t, remote.Calls)
+				})
+			}
+		})
+	}
+}
+
+func Test_EnvManager_RejectsInvalidDefaultBeforeDataStoreAccess(t *testing.T) {
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	require.NoError(t, os.MkdirAll(azdContext.EnvironmentDirectory(), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(azdContext.EnvironmentDirectory(), ConfigFileName),
+		[]byte(`{"defaultEnvironment":"../../trusted-project/.azure/prod"}`), 0600))
+	local := &MockDataStore{}
+	remote := &MockDataStore{}
+	manager := newManagerForTest(azdContext, nil, local, remote)
+
+	env, err := manager.LoadOrInitInteractive(t.Context(), "")
+	require.ErrorContains(t, err, "is invalid")
+	require.Nil(t, env)
+	envs, err := manager.List(t.Context())
+	require.ErrorContains(t, err, "is invalid")
+	require.Nil(t, envs)
+	require.Empty(t, local.Calls)
+	require.Empty(t, remote.Calls)
+}
+
 func Test_EnvManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
@@ -438,14 +488,14 @@ type MockDataStore struct {
 	mock.Mock
 }
 
-func (m *MockDataStore) EnvPath(env *Environment) string {
+func (m *MockDataStore) EnvPath(env *Environment) (string, error) {
 	args := m.Called(env)
-	return args.String(0)
+	return args.String(0), args.Error(1)
 }
 
-func (m *MockDataStore) ConfigPath(env *Environment) string {
+func (m *MockDataStore) ConfigPath(env *Environment) (string, error) {
 	args := m.Called(env)
-	return args.String(0)
+	return args.String(0), args.Error(1)
 }
 
 func (m *MockDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {

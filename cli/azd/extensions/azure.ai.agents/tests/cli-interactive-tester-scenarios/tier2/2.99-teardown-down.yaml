@@ -7,13 +7,6 @@ command: "azd down --force --purge"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
 tags: ["tier:2", "cmd:down", "serial-only"]
 
-pre:
-  - run: 'bash "{fixtures_dir}/scripts/cleanup-subscription-deployments.sh"'
-    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
-    name: "request subscription deployment cleanup"
-    timeout: 120
-    continue_on_error: true
-
 goals:
   - "Run 'azd down --force --purge' in the shared project directory."
   - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."

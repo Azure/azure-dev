@@ -37,11 +37,6 @@ pre:
     timeout: 300
 
 post:
-  - run: 'bash "{fixtures_dir}/scripts/cleanup-subscription-deployments.sh"'
-    cwd: "{prerequisite_scaffold_dir}"
-    name: "request subscription deployment cleanup"
-    timeout: 120
-    continue_on_error: true
   - run: "azd down --force --purge"
     cwd: "{prerequisite_scaffold_dir}"
     name: "tear down scenario Azure resources"

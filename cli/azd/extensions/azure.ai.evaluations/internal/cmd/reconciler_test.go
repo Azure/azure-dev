@@ -79,3 +79,45 @@ func TestSameDefinitionCannotSeeARemovedField(t *testing.T) {
 	require.True(t, sameDefinition(onService, authored),
 		"this is the blind spot the digest exists to cover, not a property to rely on")
 }
+
+func TestSameDefinitionComparesAuthoredDimensionFields(t *testing.T) {
+	existing := []byte(`{"definition":{"type":"rubric","dimensions":[` +
+		`{"id":"a","description":"Correct.","weight":5,"always_applicable":false,"metadata":{"service":"only"}},` +
+		`{"id":"b","weight":3}]}}`)
+	for _, tc := range []struct {
+		name       string
+		dimensions string
+		equal      bool
+	}{
+		{
+			"projected",
+			`[{"id":"a","description":"Correct.","weight":5,"always_applicable":false},{"id":"b","weight":3}]`, true,
+		},
+		{
+			"renamed",
+			`[{"id":"new","description":"Correct.","weight":5,"always_applicable":false},{"id":"b","weight":3}]`, false,
+		},
+		{
+			"description",
+			`[{"id":"a","description":"Edited.","weight":5,"always_applicable":false},{"id":"b","weight":3}]`, false,
+		},
+		{"weight", `[{"id":"a","weight":6},{"id":"b","weight":3}]`, false},
+		{"applicability", `[{"id":"a","always_applicable":true},{"id":"b","weight":3}]`, false},
+		{"order", `[{"id":"b","weight":3},{"id":"a","weight":5}]`, false},
+		{"removed", `[{"id":"a","weight":5}]`, false},
+		{"empty", `[]`, false},
+		{"null", `null`, false},
+		{"null dimension", `[null,{"id":"b"}]`, false},
+		{"wrong shape", `{}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authored := []byte(`{"definition":{"type":"rubric","dimensions":` + tc.dimensions + `}}`)
+			require.Equal(t, tc.equal, sameDefinition(existing, authored))
+		})
+	}
+	authored := []byte(`{"definition":{"type":"rubric","dimensions":[{"id":"a"},{"id":"b"}]}}`)
+	require.True(t, sameDefinition(existing, authored))
+	require.False(t, canReuseEvaluator("previous-digest", "edited-digest", existing, authored),
+		"the persisted digest must still detect removal of an authored dimension field")
+	require.False(t, sameAuthoredDimensions([]byte(`[]`), []byte(`null`)))
+}

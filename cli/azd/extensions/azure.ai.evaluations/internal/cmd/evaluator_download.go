@@ -37,7 +37,8 @@ func newEvaluatorDownloadCommand() *cobra.Command {
 		Use:   "download <name>",
 		Short: "Download an editable evaluator rubric.",
 		Long: "Download an editable evaluator rubric.\n\n" +
-			"Rubrics contain dimensions, weights, and the pass threshold, without service-generated wiring.\n" +
+			"Rubrics contain only type, dimensions (id, description, weight, always_applicable), and pass_threshold.\n" +
+			"Catalog metadata, generated wiring, and prompt_text are omitted from rubric files.\n" +
 			"Other evaluator kinds retain their complete document.\n" +
 			"Use evaluator show -o json for the full service response.\n" +
 			"Publishing with evaluator update preserves existing catalog metadata unless the input explicitly replaces it.",
@@ -152,14 +153,8 @@ func evaluatorDocument(raw json.RawMessage) []byte {
 		Definition json.RawMessage `json:"definition"`
 	}
 	if json.Unmarshal(raw, &envelope) == nil {
-		var definition struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(envelope.Definition, &definition) == nil &&
-			(definition.Type == "" || definition.Type == rubricDefinitionType) {
-			if editable, ok := editableRubric(envelope.Definition); ok {
-				return editable
-			}
+		if editable, ok := editableRubric(envelope.Definition); ok {
+			return editable
 		}
 	}
 	var indented bytes.Buffer

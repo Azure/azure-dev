@@ -395,11 +395,13 @@ azd ai eval evaluator download support-quality --version 3 --output-file ./suppo
 azd ai eval evaluator update support-quality --from-file ./support-quality.json
 ```
 
-A rubric download uses the same editable JSON shape as generation: `type`,
-`dimensions`, and `pass_threshold`, plus any additional editable definition
-fields. It omits the service envelope and generated wiring such as
-`data_schema`, `init_parameters`, `metrics`, and `prompt_text`. Other evaluator
-kinds retain their full document. To inspect or export the full service response,
+A rubric download uses the same editable JSON shape as generation and job
+collection: only `type: "rubric"`, `dimensions`, and `pass_threshold` when supplied.
+Each dimension retains only `id`, `description`, `weight`, and
+`always_applicable`. Unknown service fields, the service envelope, catalog
+metadata, and generated wiring such as `data_schema`, `init_parameters`,
+`metrics`, and `prompt_text` are omitted. Prompt-based evaluators retain their
+separate full document, including their authored prompt. To inspect or export the full service response,
 use `azd ai eval evaluator show support-quality --version 3 -o json`.
 
 Standalone `evaluator update` preserves the existing display name, description,

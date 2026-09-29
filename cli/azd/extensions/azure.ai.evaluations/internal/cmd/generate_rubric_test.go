@@ -16,7 +16,7 @@ import (
 // The generated rubric is the file the next deploy compares against, so a field
 // dropped on the way to disk republishes the evaluator without it. pass_threshold
 // is what decides pass or fail, so losing it changes grading silently.
-func TestWriteRubricKeepsTheWholeDefinition(t *testing.T) {
+func TestWriteRubricKeepsOnlyTheAuthoredDefinition(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rubric.json")
 
 	result := json.RawMessage(`{
@@ -39,8 +39,9 @@ func TestWriteRubricKeepsTheWholeDefinition(t *testing.T) {
 
 	assert.Equal(t, 0.5, got["pass_threshold"],
 		"the threshold decides pass or fail, so losing it changes grading")
-	assert.Equal(t, true, got["something_the_service_added_later"],
-		"the definition is written through, so a new field is not lost either")
+	assert.NotContains(t, got, "something_the_service_added_later",
+		"an unknown service field is not part of the authored rubric contract")
+	assert.Len(t, got, 3)
 	assert.Equal(t, "rubric", got["type"])
 	assert.Len(t, got["dimensions"], 1)
 	assert.NotContains(t, got, "name", "only the definition is written, not the envelope")

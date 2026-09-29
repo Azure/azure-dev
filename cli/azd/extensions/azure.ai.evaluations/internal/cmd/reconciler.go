@@ -1176,8 +1176,38 @@ func sameDefinition(existing, candidate []byte) bool {
 
 	for key, want := range authored {
 		got, ok := onService[key]
-		if !ok || !equalJSON(got, want) {
+		if !ok {
 			return false
+		}
+		if key == "dimensions" && equalJSON(authored["type"], []byte(`"rubric"`)) {
+			if !sameAuthoredDimensions(got, want) {
+				return false
+			}
+		} else if !equalJSON(got, want) {
+			return false
+		}
+	}
+	return true
+}
+
+// sameAuthoredDimensions ignores service-added fields without ignoring authored
+// edits, dimension order, or removals detected by the persisted file digest.
+func sameAuthoredDimensions(existing, candidate json.RawMessage) bool {
+	var have, want []map[string]json.RawMessage
+	if json.Unmarshal(existing, &have) != nil || json.Unmarshal(candidate, &want) != nil || len(have) != len(want) {
+		return false
+	}
+	if have == nil || want == nil {
+		return have == nil && want == nil
+	}
+	for i, dimension := range want {
+		if dimension == nil || have[i] == nil {
+			return false
+		}
+		for key, value := range dimension {
+			if !equalJSON(have[i][key], value) {
+				return false
+			}
 		}
 	}
 	return true

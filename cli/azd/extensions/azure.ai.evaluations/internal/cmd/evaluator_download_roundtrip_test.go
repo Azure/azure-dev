@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -134,10 +135,7 @@ func TestEvaluatorDownloadRoundTripWithDeclaration(t *testing.T) {
 	definition, ok := body["definition"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, 0.7, definition["pass_threshold"])
-	require.Contains(t, definition, "future_option")
-	for _, key := range rubricOwnedByTheService {
-		require.NotContains(t, definition, key)
-	}
+	require.Len(t, definition, 3, "only authored rubric fields are published")
 
 	ec.state = nil
 	version, published, err = r.EnsureEvaluator(t.Context(), decl, path)
@@ -188,9 +186,7 @@ func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
 			definition, ok := published["definition"].(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, 0.7, definition["pass_threshold"])
-			for _, key := range rubricOwnedByTheService {
-				require.NotContains(t, definition, key)
-			}
+			require.Len(t, definition, 3, "only authored rubric fields are published")
 			require.True(t, json.Valid([]byte(out.String())), "update stdout remains one JSON document")
 		})
 	}
@@ -279,11 +275,91 @@ func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
 				assert.Equal(t, wantLevels, published["supported_evaluation_levels"])
 				assert.NotContains(t, published, "created_at")
 				assert.NotContains(t, published, "agent_metadata")
-				assert.Contains(t, string(service.versions["4"]), "9007199254740993")
+				assert.NotContains(t, string(service.versions["4"]), "9007199254740993",
+					"unknown service metadata must not return through the editable file")
 				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
 				assert.Equal(t, 1, service.publishes, "unchanged retry must not publish a fifth version")
 				assert.Len(t, service.created, 1, "metadata inheritance must not turn latest into an authored pin")
 			})
 		}
+	}
+}
+
+func TestRubricDownloadAndCollectionDimensionEditLifecycle(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := newCatalogPinFixture(t)
+			datasets, _, datasetService, _, _ := validationFixture(t)
+			ec.datasetClient = datasets.datasetClient
+			datasetService.dataset = true
+			datasetService.registeredRows = "{\"query\":\"hello\",\"messages\":[]}\n"
+			service.latest = "3"
+			remote := json.RawMessage(strings.Replace(downloadedEvaluator, `"name":"quality"`, `"name":"custom"`, 1))
+			service.versions = map[string]json.RawMessage{"3": remote}
+
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			cmd.SetOut(io.Discard)
+			job := &eval_api.GenerationJob{ID: "existing-job", Status: "succeeded", Result: remote}
+			_, err := (&jobShowAction{cmd: cmd, flags: &jobFlags{path: dir}}).
+				collect(t.Context(), ec, evaluatorJobs, job, io.Discard)
+			require.NoError(t, err)
+			catalog, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			require.Len(t, catalog.Evaluators, 1)
+			decl := catalog.Evaluators[0]
+			require.Equal(t, "Support quality", decl.DisplayName)
+			require.Equal(t, []string{"quality", "agents"}, decl.Categories)
+			require.Equal(t, []string{"turn", "conversation"}, decl.SupportedEvaluationLevels)
+			require.NotEmpty(t, decl.Source)
+			collected, err := os.ReadFile(project.ResolveSource(dir, decl.Source))
+			require.NoError(t, err)
+			require.JSONEq(t, editableDownloadedRubric, string(collected))
+
+			path := filepath.Join(dir, "download-v3.json")
+			action := &evaluatorDownloadAction{cmd: cmd, name: "custom", version: "3", outFile: path}
+			require.NoError(t, action.download(t.Context(), ec))
+			downloaded, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, collected, downloaded, "generation/job-show and explicit download must use one shape")
+			cfg.Evaluators = catalog.Evaluators
+			cfg.Evaluators[0].Source = filepath.Base(path)
+			cfg.Datasets = []project.DatasetDecl{{Name: "turn-tests", Version: "1.0"}}
+			cfg.Evals[0].Source = nil
+			cfg.Evals[0].Dataset = "turn-tests"
+			cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+			first := env.stored(t, idKey("eval", cfg.Evals[0].Name))
+			require.NotEmpty(t, first)
+			require.Zero(t, service.publishes, "an unchanged download must not republish enriched service fields")
+
+			edited := strings.Replace(string(downloaded), "Is it correct?", "Is it correct and complete?", 1)
+			require.NotEqual(t, string(downloaded), edited)
+			require.NoError(t, os.WriteFile(path, []byte(edited), 0o600))
+			for range 2 {
+				ec.state = nil
+				require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+				assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
+				assert.Equal(t, first, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
+				assert.Equal(t, 1, service.publishes)
+				assert.Len(t, service.created, 1)
+			}
+			published := decodeBody(t, service.versions["4"])
+			assert.Equal(t, "Support quality", published["display_name"])
+			assert.Equal(t, "Grades support conversations", published["description"])
+			assert.Equal(t, []any{"quality", "agents"}, published["categories"])
+			assert.Equal(t, []any{"turn", "conversation"}, published["supported_evaluation_levels"])
+			var body map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(service.versions["4"], &body))
+			require.JSONEq(t, edited, string(body["definition"]), "only the dimension description changed")
+			final, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, edited, string(final), "reconciliation must leave the local edit intact")
+			for _, request := range datasetService.requests {
+				assert.True(t, strings.HasPrefix(request, "GET ") ||
+					request == "POST /datasets/turn-tests/versions/1.0/credentials",
+					"rubric edits must not mutate datasets: %s", request)
+			}
+		})
 	}
 }

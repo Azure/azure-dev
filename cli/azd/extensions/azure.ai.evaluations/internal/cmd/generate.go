@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -698,11 +695,8 @@ func (ec *evalContext) pollGeneration(
 // writeRubric persists the rubric so the developer can edit weights and
 // descriptions and publish a new version.
 //
-// The definition is written through as it arrived rather than re-marshalled
-// from a struct. Re-marshalling keeps only the fields the struct models, and
-// dropped pass_threshold: the file then differed from the version that had just
-// been published, so the next deploy republished it, silently without a
-// threshold. Anything the service adds later would have been lost the same way.
+// Only authored rubric fields are written. Numeric values remain raw JSON so
+// projecting the service response cannot round the threshold or weights.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
@@ -724,95 +718,37 @@ func writeRubric(path string, result json.RawMessage) error {
 	return writeFileAtomic(path, result)
 }
 
-// rubricOwnedByTheService names the keys a reader cannot usefully edit.
+// editableRubric projects the authored rubric contract, not arbitrary service
+// fields. Catalog metadata and runtime schemas stay on the registered resource.
 //
-// init_parameters, metrics and data_schema are the service's description of how
-// the evaluator is wired, and prompt_text on a rubric is generated from the
-// dimensions rather than authored. Left in the file they outnumbered the
-// dimensions several times over, so the one thing this artifact exists to be
-// edited for was the hardest part of it to find.
-var rubricOwnedByTheService = []string{
-	"init_parameters", "initParameters",
-	"metrics",
-	"data_schema", "dataSchema",
-	"prompt_text", "promptText",
-}
-
-// editableRubric reduces a returned rubric to the part worth editing.
-//
-// It reports false for anything that is not a rubric, so a payload this does
-// not understand is written whole rather than filtered down to nothing: losing
-// a generated artifact is far worse than a wide one.
+// Other evaluator kinds retain their separate authoring contracts.
 func editableRubric(definition json.RawMessage) ([]byte, bool) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(definition, &fields); err != nil {
+	var rubric struct {
+		Type       string `json:"type"`
+		Dimensions []*struct {
+			ID               *string         `json:"id,omitempty"`
+			Description      *string         `json:"description,omitempty"`
+			Weight           json.RawMessage `json:"weight,omitempty"`
+			AlwaysApplicable *bool           `json:"always_applicable,omitempty"`
+		} `json:"dimensions"`
+		PassThreshold json.RawMessage `json:"pass_threshold,omitempty"`
+	}
+	if json.Unmarshal(definition, &rubric) != nil || rubric.Dimensions == nil ||
+		(rubric.Type != "" && rubric.Type != rubricDefinitionType) {
 		return nil, false
 	}
-	var probe struct {
-		Dimensions []json.RawMessage `json:"dimensions"`
+	for _, dimension := range rubric.Dimensions {
+		if dimension == nil {
+			return nil, false
+		}
 	}
-	if json.Unmarshal(definition, &probe) != nil || len(probe.Dimensions) == 0 {
-		return nil, false
-	}
-	for _, key := range rubricOwnedByTheService {
-		delete(fields, key)
-	}
+	rubric.Type = rubricDefinitionType
 
-	// Ordered, because this file is committed and read in diffs: Go ranges maps
-	// at random, so marshalling the map directly rewrote the whole rubric on
-	// every regeneration whether or not anything about it had changed.
-	pretty, err := json.MarshalIndent(orderedJSON(fields), "", "  ")
+	pretty, err := json.MarshalIndent(rubric, "", "  ")
 	if err != nil {
 		return nil, false
 	}
 	return append(pretty, '\n'), true
-}
-
-// orderedJSON marshals a decoded object with its keys in a fixed order.
-//
-// The rubric's own three come first, in the order someone reads them, and
-// anything the service adds later follows in sorted order rather than being
-// dropped.
-type orderedJSON map[string]json.RawMessage
-
-func (o orderedJSON) MarshalJSON() ([]byte, error) {
-	leading := []string{"type", "dimensions", "pass_threshold", "passThreshold"}
-	rest := make([]string, 0, len(o))
-	for key := range o {
-		if !slices.Contains(leading, key) {
-			rest = append(rest, key)
-		}
-	}
-	sort.Strings(rest)
-
-	var b bytes.Buffer
-	b.WriteByte('{')
-	first := true
-	write := func(key string) {
-		raw, ok := o[key]
-		if !ok {
-			return
-		}
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		name, err := json.Marshal(key)
-		if err != nil {
-			return
-		}
-		b.Write(name)
-		b.WriteByte(':')
-		b.Write(raw)
-	}
-	for _, key := range leading {
-		write(key)
-	}
-	for _, key := range rest {
-		write(key)
-	}
-	b.WriteByte('}')
-	return b.Bytes(), nil
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

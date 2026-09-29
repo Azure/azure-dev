@@ -1005,7 +1005,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewFollowUpManager)
 	container.MustRegisterScoped(grpcserver.NewEventService)
-	container.MustRegisterScoped(grpcserver.NewFollowUpService)
+	container.MustRegisterScoped(grpcserver.NewCommandResultService)
 	container.MustRegisterScoped(grpcserver.NewContainerService)
 	container.MustRegisterSingleton(grpcserver.NewAccountService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)

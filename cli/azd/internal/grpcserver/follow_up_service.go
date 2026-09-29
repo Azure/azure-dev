@@ -112,17 +112,17 @@ func (m *followUpManager) finish(invocationID string, commit bool) (string, bool
 	return invocation.text, invocation.hasText
 }
 
-type followUpService struct {
-	v1beta.UnimplementedFollowUpServiceServer
+type commandResultService struct {
+	v1beta.UnimplementedCommandResultServiceServer
 	manager *followUpManager
 }
 
-// NewFollowUpService creates the host follow-up contribution service.
-func NewFollowUpService(manager *followUpManager) v1beta.FollowUpServiceServer {
-	return &followUpService{manager: manager}
+// NewCommandResultService creates the host command result service.
+func NewCommandResultService(manager *followUpManager) v1beta.CommandResultServiceServer {
+	return &commandResultService{manager: manager}
 }
 
-func (s *followUpService) SetFollowUp(
+func (s *commandResultService) SetFollowUp(
 	ctx context.Context,
 	req *v1beta.SetFollowUpRequest,
 ) (*v1beta.SetFollowUpResponse, error) {

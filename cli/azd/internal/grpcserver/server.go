@@ -37,7 +37,7 @@ type Server struct {
 	userConfigService    azdext.UserConfigServiceServer
 	deploymentService    azdext.DeploymentServiceServer
 	eventService         azdext.EventServiceServer
-	followUpService      v1beta.FollowUpServiceServer
+	commandResultService v1beta.CommandResultServiceServer
 	composeService       v1beta.ComposeServiceServer
 	workflowService      azdext.WorkflowServiceServer
 	extensionService     azdext.ExtensionServiceServer
@@ -72,7 +72,7 @@ func NewServer(
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
 	telemetryService v1beta.TelemetryServiceServer,
-	followUpService v1beta.FollowUpServiceServer,
+	commandResultService v1beta.CommandResultServiceServer,
 ) *Server {
 	server := &Server{
 		projectService:       projectService,
@@ -81,7 +81,7 @@ func NewServer(
 		userConfigService:    userConfigService,
 		deploymentService:    deploymentService,
 		eventService:         eventServiceImpl,
-		followUpService:      followUpService,
+		commandResultService: commandResultService,
 		composeService:       composeService,
 		workflowService:      workflowService,
 		extensionService:     extensionService,

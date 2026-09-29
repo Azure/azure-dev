@@ -213,7 +213,7 @@ if err := host.Run(ctx); err != nil {
 ##### Command-level follow-up text
 
 Successful beta project `post*` handlers may provide command-level guidance
-by calling `FollowUp().SetFollowUp` with the invocation ID from
+by calling `CommandResult().SetFollowUp` with the invocation ID from
 `EventsBeta()` before sending a completed project handler status.
 
 azd appends committed text to the parent command's human-readable completion
@@ -2450,7 +2450,8 @@ The message types below describe the stable
 also adds `request_id` for correlating stream requests and responses,
 structured `error` details, and project and service subscription
 acknowledgements. Its `InvokeProjectHandler` includes an `invocation_id`
-used with the beta [FollowUpService](../../grpc/proto/azd/extensions/v1beta/follow_up.proto).
+used with the beta
+[CommandResultService](../../grpc/proto/azd/extensions/v1beta/command_result.proto).
 
 #### Message Types
 

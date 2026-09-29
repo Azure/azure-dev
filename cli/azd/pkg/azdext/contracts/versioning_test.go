@@ -61,8 +61,8 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 
 	for _, fileName := range []string{
 		"compose.proto",
+		"command_result.proto",
 		"copilot.proto",
-		"follow_up.proto",
 		"telemetry.proto",
 	} {
 		require.NotContains(t, stable, fileName)
@@ -71,16 +71,18 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 	}
 }
 
-func TestFollowUpContractIsBetaOnly(t *testing.T) {
+func TestCommandResultContractIsBetaOnly(t *testing.T) {
 	t.Parallel()
 
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	require.NotContains(t, stable, "follow_up.proto")
-	followUp := beta["follow_up.proto"].Services().ByName("FollowUpService")
-	require.NotNil(t, followUp)
-	require.NotNil(t, followUp.Methods().ByName("SetFollowUp"))
+	require.NotContains(t, stable, "command_result.proto")
+	commandResultFile := beta["command_result.proto"]
+	require.NotNil(t, commandResultFile)
+	commandResult := commandResultFile.Services().ByName("CommandResultService")
+	require.NotNil(t, commandResult)
+	require.NotNil(t, commandResult.Methods().ByName("SetFollowUp"))
 
 	stableInvocation := stable["event.proto"].
 		Messages().ByName("InvokeProjectHandler").

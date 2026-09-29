@@ -50,7 +50,7 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project
-handler. The extension calls the beta `FollowUpService` with that ID over
+handler. The extension calls the beta `CommandResultService` with that ID over
 gRPC; both services use a host-owned invocation store. Only successful
 project `post*` invocations are committed to the command's follow-up
 collector. The UX middleware appends the resolved text to human-readable

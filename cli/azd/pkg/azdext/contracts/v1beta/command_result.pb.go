@@ -5,7 +5,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.32.1
-// source: azd/extensions/v1beta/follow_up.proto
+// source: azd/extensions/v1beta/command_result.proto
 
 package v1beta
 
@@ -36,7 +36,7 @@ type SetFollowUpRequest struct {
 
 func (x *SetFollowUpRequest) Reset() {
 	*x = SetFollowUpRequest{}
-	mi := &file_azd_extensions_v1beta_follow_up_proto_msgTypes[0]
+	mi := &file_azd_extensions_v1beta_command_result_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -48,7 +48,7 @@ func (x *SetFollowUpRequest) String() string {
 func (*SetFollowUpRequest) ProtoMessage() {}
 
 func (x *SetFollowUpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_follow_up_proto_msgTypes[0]
+	mi := &file_azd_extensions_v1beta_command_result_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -61,7 +61,7 @@ func (x *SetFollowUpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFollowUpRequest.ProtoReflect.Descriptor instead.
 func (*SetFollowUpRequest) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_follow_up_proto_rawDescGZIP(), []int{0}
+	return file_azd_extensions_v1beta_command_result_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *SetFollowUpRequest) GetInvocationId() string {
@@ -86,7 +86,7 @@ type SetFollowUpResponse struct {
 
 func (x *SetFollowUpResponse) Reset() {
 	*x = SetFollowUpResponse{}
-	mi := &file_azd_extensions_v1beta_follow_up_proto_msgTypes[1]
+	mi := &file_azd_extensions_v1beta_command_result_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -98,7 +98,7 @@ func (x *SetFollowUpResponse) String() string {
 func (*SetFollowUpResponse) ProtoMessage() {}
 
 func (x *SetFollowUpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_follow_up_proto_msgTypes[1]
+	mi := &file_azd_extensions_v1beta_command_result_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -111,41 +111,41 @@ func (x *SetFollowUpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFollowUpResponse.ProtoReflect.Descriptor instead.
 func (*SetFollowUpResponse) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_follow_up_proto_rawDescGZIP(), []int{1}
+	return file_azd_extensions_v1beta_command_result_proto_rawDescGZIP(), []int{1}
 }
 
-var File_azd_extensions_v1beta_follow_up_proto protoreflect.FileDescriptor
+var File_azd_extensions_v1beta_command_result_proto protoreflect.FileDescriptor
 
-const file_azd_extensions_v1beta_follow_up_proto_rawDesc = "" +
+const file_azd_extensions_v1beta_command_result_proto_rawDesc = "" +
 	"\n" +
-	"%azd/extensions/v1beta/follow_up.proto\x12\x15azd.extensions.v1beta\"M\n" +
+	"*azd/extensions/v1beta/command_result.proto\x12\x15azd.extensions.v1beta\"M\n" +
 	"\x12SetFollowUpRequest\x12#\n" +
 	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\"\x15\n" +
-	"\x13SetFollowUpResponse2w\n" +
-	"\x0fFollowUpService\x12d\n" +
+	"\x13SetFollowUpResponse2|\n" +
+	"\x14CommandResultService\x12d\n" +
 	"\vSetFollowUp\x12).azd.extensions.v1beta.SetFollowUpRequest\x1a*.azd.extensions.v1beta.SetFollowUpResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
 var (
-	file_azd_extensions_v1beta_follow_up_proto_rawDescOnce sync.Once
-	file_azd_extensions_v1beta_follow_up_proto_rawDescData []byte
+	file_azd_extensions_v1beta_command_result_proto_rawDescOnce sync.Once
+	file_azd_extensions_v1beta_command_result_proto_rawDescData []byte
 )
 
-func file_azd_extensions_v1beta_follow_up_proto_rawDescGZIP() []byte {
-	file_azd_extensions_v1beta_follow_up_proto_rawDescOnce.Do(func() {
-		file_azd_extensions_v1beta_follow_up_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_follow_up_proto_rawDesc), len(file_azd_extensions_v1beta_follow_up_proto_rawDesc)))
+func file_azd_extensions_v1beta_command_result_proto_rawDescGZIP() []byte {
+	file_azd_extensions_v1beta_command_result_proto_rawDescOnce.Do(func() {
+		file_azd_extensions_v1beta_command_result_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_command_result_proto_rawDesc), len(file_azd_extensions_v1beta_command_result_proto_rawDesc)))
 	})
-	return file_azd_extensions_v1beta_follow_up_proto_rawDescData
+	return file_azd_extensions_v1beta_command_result_proto_rawDescData
 }
 
-var file_azd_extensions_v1beta_follow_up_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_azd_extensions_v1beta_follow_up_proto_goTypes = []any{
+var file_azd_extensions_v1beta_command_result_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_azd_extensions_v1beta_command_result_proto_goTypes = []any{
 	(*SetFollowUpRequest)(nil),  // 0: azd.extensions.v1beta.SetFollowUpRequest
 	(*SetFollowUpResponse)(nil), // 1: azd.extensions.v1beta.SetFollowUpResponse
 }
-var file_azd_extensions_v1beta_follow_up_proto_depIdxs = []int32{
-	0, // 0: azd.extensions.v1beta.FollowUpService.SetFollowUp:input_type -> azd.extensions.v1beta.SetFollowUpRequest
-	1, // 1: azd.extensions.v1beta.FollowUpService.SetFollowUp:output_type -> azd.extensions.v1beta.SetFollowUpResponse
+var file_azd_extensions_v1beta_command_result_proto_depIdxs = []int32{
+	0, // 0: azd.extensions.v1beta.CommandResultService.SetFollowUp:input_type -> azd.extensions.v1beta.SetFollowUpRequest
+	1, // 1: azd.extensions.v1beta.CommandResultService.SetFollowUp:output_type -> azd.extensions.v1beta.SetFollowUpResponse
 	1, // [1:2] is the sub-list for method output_type
 	0, // [0:1] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
@@ -153,26 +153,26 @@ var file_azd_extensions_v1beta_follow_up_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_azd_extensions_v1beta_follow_up_proto_init() }
-func file_azd_extensions_v1beta_follow_up_proto_init() {
-	if File_azd_extensions_v1beta_follow_up_proto != nil {
+func init() { file_azd_extensions_v1beta_command_result_proto_init() }
+func file_azd_extensions_v1beta_command_result_proto_init() {
+	if File_azd_extensions_v1beta_command_result_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_follow_up_proto_rawDesc), len(file_azd_extensions_v1beta_follow_up_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_command_result_proto_rawDesc), len(file_azd_extensions_v1beta_command_result_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_azd_extensions_v1beta_follow_up_proto_goTypes,
-		DependencyIndexes: file_azd_extensions_v1beta_follow_up_proto_depIdxs,
-		MessageInfos:      file_azd_extensions_v1beta_follow_up_proto_msgTypes,
+		GoTypes:           file_azd_extensions_v1beta_command_result_proto_goTypes,
+		DependencyIndexes: file_azd_extensions_v1beta_command_result_proto_depIdxs,
+		MessageInfos:      file_azd_extensions_v1beta_command_result_proto_msgTypes,
 	}.Build()
-	File_azd_extensions_v1beta_follow_up_proto = out.File
-	file_azd_extensions_v1beta_follow_up_proto_goTypes = nil
-	file_azd_extensions_v1beta_follow_up_proto_depIdxs = nil
+	File_azd_extensions_v1beta_command_result_proto = out.File
+	file_azd_extensions_v1beta_command_result_proto_goTypes = nil
+	file_azd_extensions_v1beta_command_result_proto_depIdxs = nil
 }

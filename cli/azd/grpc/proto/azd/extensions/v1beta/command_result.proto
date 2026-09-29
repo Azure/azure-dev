@@ -5,9 +5,10 @@ syntax = "proto3";
 package azd.extensions.v1beta;
 
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
-// FollowUpService accepts command follow-up contributions from extensions.
-service FollowUpService {
-  // Sets or clears the contribution for a project handler invocation.
+// CommandResultService accepts command-result contributions.
+service CommandResultService {
+  // Sets or clears the follow-up contribution for a project
+  // handler invocation.
   rpc SetFollowUp(SetFollowUpRequest) returns (SetFollowUpResponse);
 }
 

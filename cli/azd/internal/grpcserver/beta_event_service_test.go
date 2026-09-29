@@ -192,7 +192,7 @@ func TestBetaEventServiceProjectHandlerCommitsFollowUp(t *testing.T) {
 			return nil
 		}
 		require.Equal(t, invoke.InvocationId, msg.RequestId)
-		_, err := NewFollowUpService(service.followUps).SetFollowUp(
+		_, err := NewCommandResultService(service.followUps).SetFollowUp(
 			streamCtx,
 			&v1beta.SetFollowUpRequest{
 				InvocationId: invoke.InvocationId,
@@ -302,7 +302,7 @@ func TestBetaEventServiceProjectHandlerDiscardsFollowUp(t *testing.T) {
 				invoke := msg.GetInvokeProjectHandler()
 				require.NotNil(t, invoke)
 				invocationID = invoke.InvocationId
-				_, setErr = NewFollowUpService(service.followUps).SetFollowUp(
+				_, setErr = NewCommandResultService(service.followUps).SetFollowUp(
 					streamCtx,
 					&v1beta.SetFollowUpRequest{
 						InvocationId: invocationID,
@@ -364,7 +364,7 @@ func TestBetaEventServiceProjectHandlerDiscardsFollowUp(t *testing.T) {
 			require.NotEmpty(t, invocationID)
 			require.Empty(t, collector.Text())
 
-			_, err = NewFollowUpService(service.followUps).SetFollowUp(
+			_, err = NewCommandResultService(service.followUps).SetFollowUp(
 				streamCtx,
 				&v1beta.SetFollowUpRequest{
 					InvocationId: invocationID,
@@ -432,7 +432,7 @@ func TestBetaEventServiceBetaClientFollowUpEndToEnd(t *testing.T) {
 	)
 	implementations := stableServiceImplementations()
 	implementations[BetaEventService] = service
-	implementations[BetaFollowUpService] = NewFollowUpService(service.followUps)
+	implementations[BetaCommandResultService] = NewCommandResultService(service.followUps)
 	require.NoError(t, registerBetaServices(
 		server,
 		implementations,
@@ -503,7 +503,7 @@ func TestBetaEventServiceBetaClientFollowUpEndToEnd(t *testing.T) {
 	require.NotNil(t, handler)
 	require.Equal(t, "postdeploy", handler.GetEventName())
 	require.NotEmpty(t, handler.GetInvocationId())
-	_, err = client.FollowUp().SetFollowUp(
+	_, err = client.CommandResult().SetFollowUp(
 		streamCtx,
 		&v1beta.SetFollowUpRequest{
 			InvocationId: handler.GetInvocationId(),

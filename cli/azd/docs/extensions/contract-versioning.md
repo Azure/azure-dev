@@ -14,12 +14,13 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`ComposeService`, `CopilotService`, `FollowUpService`, and
+`CommandResultService`, `ComposeService`, `CopilotService`, and
 `TelemetryService` are beta-only and therefore do not have stable `v1`
 generated types or facade aliases. The corresponding `AzdClient` convenience
 accessors return generated `v1beta` clients, and their request and response
 types come from `contracts/v1beta`. Preview project lifecycle events use
-`EventsBeta()` and `FollowUp()` with generated beta request and response types.
+`EventsBeta()` and `CommandResult()` with generated beta request and response
+types.
 Stable event handlers and default language scaffolds do not expose follow-up APIs.
 See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
 for the preview SDK contract.
@@ -54,7 +55,7 @@ descriptors.
 
 A service that exists only in beta is implemented directly with the generated
 `v1beta` server interface and registered without a stable adapter.
-`ComposeService`, `CopilotService`, `FollowUpService`, and
+`CommandResultService`, `ComposeService`, `CopilotService`, and
 `TelemetryService` currently use this model. Focused beta overrides apply
 only to beta additions on services that also exist in stable; registration
 rejects an override for a beta-only service because its native implementation

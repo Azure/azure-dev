@@ -55,10 +55,18 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
 	require.IsType(t, v1beta.UnimplementedTelemetryServiceServer{}, registrar.implementations[telemetryService])
 
-	const followUpService = "azd.extensions.v1beta.FollowUpService"
-	require.Same(t, &v1beta.FollowUpService_ServiceDesc, registrar.services[followUpService])
-	require.IsType(t, v1beta.UnimplementedFollowUpServiceServer{}, registrar.implementations[followUpService])
-	require.Implements(t, (*v1beta.FollowUpServiceServer)(nil), registrar.implementations[followUpService])
+	const commandResultService = "azd.extensions.v1beta.CommandResultService"
+	require.Same(t, &v1beta.CommandResultService_ServiceDesc, registrar.services[commandResultService])
+	require.IsType(
+		t,
+		v1beta.UnimplementedCommandResultServiceServer{},
+		registrar.implementations[commandResultService],
+	)
+	require.Implements(
+		t,
+		(*v1beta.CommandResultServiceServer)(nil),
+		registrar.implementations[commandResultService],
+	)
 }
 
 func TestBetaEventServiceUsesFocusedOverride(t *testing.T) {
@@ -350,7 +358,7 @@ func stableServiceImplementations() map[BetaService]any {
 		BetaEnvironmentService:   v1.UnimplementedEnvironmentServiceServer{},
 		BetaEventService:         v1.UnimplementedEventServiceServer{},
 		BetaExtensionService:     v1.UnimplementedExtensionServiceServer{},
-		BetaFollowUpService:      v1beta.UnimplementedFollowUpServiceServer{},
+		BetaCommandResultService: v1beta.UnimplementedCommandResultServiceServer{},
 		BetaFrameworkService:     v1.UnimplementedFrameworkServiceServer{},
 		BetaProjectService:       v1.UnimplementedProjectServiceServer{},
 		BetaPromptService:        v1.UnimplementedPromptServiceServer{},

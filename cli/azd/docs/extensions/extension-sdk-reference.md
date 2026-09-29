@@ -218,7 +218,7 @@ extension from becoming ready. Process each `InvokeProjectHandler` with its
 `invocation_id`; while the handler is active, call:
 
 ```go
-_, err := client.FollowUp().SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
+_, err := client.CommandResult().SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
     InvocationId: invocation.GetInvocationId(),
     Text:         "Next: azd show",
 })
@@ -236,10 +236,10 @@ to clear a contribution. Calls outside a project `post*` invocation return
 an error. Stable `Events()` handlers and default language scaffolds do not
 expose this preview capability.
 
-This preview API requires an azd host that provides beta `FollowUpService` and
-invocation IDs. For a published extension that uses it, set
-`requiredAzdVersion` to the first released azd version containing
-`FollowUpService`. For the current release line, use:
+This preview API requires an azd host that provides beta
+`CommandResultService` and invocation IDs. For a published extension that uses
+it, set `requiredAzdVersion` to the first released azd version containing
+`CommandResultService`. For the current release line, use:
 
 ```yaml
 requiredAzdVersion: ">=1.35.0"
@@ -570,7 +570,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
 | `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
-| `FollowUp()` | `v1beta.FollowUpServiceClient` (preview) |
+| `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
@@ -585,8 +585,8 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`AccountBeta()`, `Compose()`, `Copilot()`, `EventsBeta()`, `FollowUp()`, and `Telemetry()` are
-preview accessors. Import
+`AccountBeta()`, `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`,
+and `Telemetry()` are preview accessors. Import
 `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
 request, response, and enum types. Beta-only methods and types are not
 exposed through the stable `azdext` contract facade. `Account()` still

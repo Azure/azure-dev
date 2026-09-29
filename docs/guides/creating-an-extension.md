@@ -88,7 +88,7 @@ For extensions that are still in development or preview, consider publishing to 
 Beta project `post*` handlers can contribute next-step guidance to the
 parent command's human-readable completion message. Use the preview
 `EventsBeta()` client to subscribe and receive an invocation ID, then call
-`FollowUp().SetFollowUp` while processing that invocation.
+`CommandResult().SetFollowUp` while processing that invocation.
 
 For published extensions using this preview API, set `requiredAzdVersion`
 to `>=1.35.0` for the current release line. See the

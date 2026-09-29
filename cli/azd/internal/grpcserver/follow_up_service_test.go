@@ -105,9 +105,9 @@ func TestFollowUpManagerSerializesSetAndFinish(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestFollowUpServiceSetFollowUp(t *testing.T) {
+func TestCommandResultServiceSetFollowUp(t *testing.T) {
 	manager := NewFollowUpManager()
-	service := NewFollowUpService(manager)
+	service := NewCommandResultService(manager)
 	invocationID := manager.Begin("test.extension", "postdeploy")
 
 	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
@@ -124,9 +124,9 @@ func TestFollowUpServiceSetFollowUp(t *testing.T) {
 	require.Equal(t, "next", text)
 }
 
-func TestFollowUpServiceSetFollowUpRejectsInvalidRequests(t *testing.T) {
+func TestCommandResultServiceSetFollowUpRejectsInvalidRequests(t *testing.T) {
 	manager := NewFollowUpManager()
-	service := NewFollowUpService(manager)
+	service := NewCommandResultService(manager)
 
 	_, err := service.SetFollowUp(t.Context(), nil)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
@@ -160,9 +160,9 @@ func TestFollowUpServiceSetFollowUpRejectsInvalidRequests(t *testing.T) {
 	manager.Discard(nonPostID)
 }
 
-func TestFollowUpServiceSetFollowUpRejectsClosedInvocation(t *testing.T) {
+func TestCommandResultServiceSetFollowUpRejectsClosedInvocation(t *testing.T) {
 	manager := NewFollowUpManager()
-	service := NewFollowUpService(manager)
+	service := NewCommandResultService(manager)
 	invocationID := manager.Begin("test.extension", "postdeploy")
 	manager.Discard(invocationID)
 

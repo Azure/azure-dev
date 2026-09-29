@@ -147,11 +147,11 @@ func Test_AzdClient_Telemetry(t *testing.T) {
 	require.NotSame(t, first, second)
 }
 
-func Test_AzdClient_FollowUp_ReturnsSameClient(t *testing.T) {
+func Test_AzdClient_CommandResult_ReturnsSameClient(t *testing.T) {
 	client := &AzdClient{}
 
-	first := client.FollowUp()
-	second := client.FollowUp()
+	first := client.CommandResult()
+	second := client.CommandResult()
 
 	require.NotNil(t, first)
 	require.Same(t, first, second)
@@ -167,20 +167,20 @@ func Test_AzdClient_EventsBeta_ReturnsSameClient(t *testing.T) {
 	require.Same(t, first, second)
 }
 
-func Test_AzdClient_FollowUp_IsStableAcrossConcurrentCalls(t *testing.T) {
+func Test_AzdClient_CommandResult_IsStableAcrossConcurrentCalls(t *testing.T) {
 	client := &AzdClient{}
-	clients := make([]v1beta.FollowUpServiceClient, 100)
+	clients := make([]v1beta.CommandResultServiceClient, 100)
 	var wg sync.WaitGroup
 
 	for i := range clients {
 		wg.Go(func() {
-			clients[i] = client.FollowUp()
+			clients[i] = client.CommandResult()
 		})
 	}
 	wg.Wait()
 
-	for _, followUpClient := range clients {
-		require.NotNil(t, followUpClient)
-		require.Same(t, clients[0], followUpClient)
+	for _, commandResultClient := range clients {
+		require.NotNil(t, commandResultClient)
+		require.Same(t, clients[0], commandResultClient)
 	}
 }

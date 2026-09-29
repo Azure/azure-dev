@@ -39,8 +39,8 @@ type AzdClient struct {
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
 	betaEventsClient    v1beta.EventServiceClient
-	followUpClient      v1beta.FollowUpServiceClient
-	followUpOnce        sync.Once
+	commandResultClient v1beta.CommandResultServiceClient
+	commandResultOnce   sync.Once
 	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
@@ -231,15 +231,15 @@ func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
 	return c.betaEventsClient
 }
 
-// FollowUp returns the preview follow-up contribution service client.
-func (c *AzdClient) FollowUp() v1beta.FollowUpServiceClient {
-	c.followUpOnce.Do(func() {
-		if c.followUpClient == nil {
-			c.followUpClient = v1beta.NewFollowUpServiceClient(c.connection)
+// CommandResult returns the preview command result service client.
+func (c *AzdClient) CommandResult() v1beta.CommandResultServiceClient {
+	c.commandResultOnce.Do(func() {
+		if c.commandResultClient == nil {
+			c.commandResultClient = v1beta.NewCommandResultServiceClient(c.connection)
 		}
 	})
 
-	return c.followUpClient
+	return c.commandResultClient
 }
 
 // Compose returns the preview compose service client.

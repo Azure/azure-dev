@@ -124,6 +124,20 @@ to dispatch with the creator identity; agent is the default.`,
 }
 
 func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCreateFlags) error {
+	return runRoutineCreateWithClientFactory(
+		ctx,
+		cmd,
+		flags,
+		routineUpsertClientFactoryFromCommand(cmd),
+	)
+}
+
+func runRoutineCreateWithClientFactory(
+	ctx context.Context,
+	cmd *cobra.Command,
+	flags *routineCreateFlags,
+	clientFactory routineUpsertClientFactory,
+) error {
 	authorizationOverride, err := routineAuthorizationOverride(cmd, flags.dispatchIdentity)
 	if err != nil {
 		return err
@@ -205,7 +219,7 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 		body.Enabled = new(true)
 	}
 
-	client, _, err := newRoutineClient(ctx, cmd)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return err
 	}
@@ -238,7 +252,7 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 	}
 
 	if flags.output == "json" {
-		return printJSON(result)
+		return printJSONTo(cmd.OutOrStdout(), result)
 	}
 
 	fmt.Printf("Routine '%s' created.\n\n", result.Name)

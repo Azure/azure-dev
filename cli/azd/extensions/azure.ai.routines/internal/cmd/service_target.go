@@ -118,6 +118,26 @@ func (p *routineServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	return p.deployWithClientFactory(
+		ctx,
+		serviceConfig,
+		serviceContext,
+		targetResource,
+		progress,
+		func(ctx context.Context) (routineUpsertClient, error) {
+			return p.newRoutineServiceClient(ctx)
+		},
+	)
+}
+
+func (p *routineServiceTarget) deployWithClientFactory(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+	targetResource *azdext.TargetResource,
+	progress azdext.ProgressReporter,
+	clientFactory routineUpsertClientFactory,
+) (*azdext.ServiceDeployResult, error) {
 	ctx = azdext.WithAccessToken(ctx)
 
 	projectRoot, err := routineProjectRoot(ctx, p.projectClient, serviceConfig)
@@ -147,7 +167,7 @@ func (p *routineServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting routine %q", serviceConfig.GetName()))
 	}
 
-	client, err := p.newRoutineServiceClient(ctx)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return nil, err
 	}

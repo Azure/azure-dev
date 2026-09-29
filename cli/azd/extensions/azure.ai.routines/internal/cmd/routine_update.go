@@ -94,6 +94,20 @@ one, delete and recreate the routine.`,
 }
 
 func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpdateFlags) error {
+	return runRoutineUpdateWithClientFactory(
+		ctx,
+		cmd,
+		flags,
+		routineUpsertClientFactoryFromCommand(cmd),
+	)
+}
+
+func runRoutineUpdateWithClientFactory(
+	ctx context.Context,
+	cmd *cobra.Command,
+	flags *routineUpdateFlags,
+	clientFactory routineUpsertClientFactory,
+) error {
 	// Type-switch guard: --trigger and --action are not allowed on update.
 	if flags.trigger != "" {
 		return exterrors.Validation(
@@ -110,7 +124,7 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 		)
 	}
 
-	client, _, err := newRoutineClient(ctx, cmd)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return err
 	}
@@ -202,7 +216,7 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	}
 
 	if flags.output == "json" {
-		return printJSON(result)
+		return printJSONTo(cmd.OutOrStdout(), result)
 	}
 
 	fmt.Printf("Routine '%s' updated (%d field(s) changed).\n\n", result.Name, changed)

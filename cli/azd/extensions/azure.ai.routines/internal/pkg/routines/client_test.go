@@ -107,6 +107,23 @@ func TestGetRoutine_Success(t *testing.T) {
 	assert.True(t, *got.Enabled)
 }
 
+func TestGetRoutine_PreservesCreatorAuthorizationFromRawResponse(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "api-version=v1", r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(
+			`{"name":"creator-routine","authorization":{"identity":"creator"}}`,
+		))
+	}))
+
+	got, err := client.GetRoutine(t.Context(), "creator-routine")
+	require.NoError(t, err)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, got.Authorization.Identity)
+}
+
 func TestGetRoutine_NotFound(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

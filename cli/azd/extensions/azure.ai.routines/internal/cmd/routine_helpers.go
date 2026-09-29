@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -24,6 +25,13 @@ const (
 	routineHTTPTimeoutEnvVar = "AZURE_AI_ROUTINES_HTTP_TIMEOUT"
 	routineHTTPTimeoutFlag   = "timeout"
 )
+
+type routineUpsertClient interface {
+	GetRoutine(ctx context.Context, name string) (*routines.Routine, error)
+	PutRoutine(ctx context.Context, name string, body *routines.Routine) (*routines.Routine, error)
+}
+
+type routineUpsertClientFactory func(context.Context) (routineUpsertClient, error)
 
 // newRoutineClient resolves an authenticated routine client.
 func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client, string, error) {
@@ -55,6 +63,16 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 		cred,
 		routineClientOptions(requestTimeout),
 	), resolved.Endpoint, nil
+}
+
+func routineUpsertClientFactoryFromCommand(cmd *cobra.Command) routineUpsertClientFactory {
+	return func(ctx context.Context) (routineUpsertClient, error) {
+		client, _, err := newRoutineClient(ctx, cmd)
+		if err != nil {
+			return nil, err
+		}
+		return client, nil
+	}
 }
 
 func routineClientOptions(timeoutOverride time.Duration) *routines.ClientOptions {
@@ -99,11 +117,17 @@ func parseRoutineHTTPTimeout(raw, source string) (time.Duration, error) {
 
 // printJSON marshals v to indented JSON and writes to stdout.
 func printJSON(v any) error {
+	return printJSONTo(os.Stdout, v)
+}
+
+func printJSONTo(writer io.Writer, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON output: %w", err)
 	}
-	fmt.Println(string(data))
+	if _, err := fmt.Fprintln(writer, string(data)); err != nil {
+		return fmt.Errorf("failed to write JSON output: %w", err)
+	}
 	return nil
 }
 

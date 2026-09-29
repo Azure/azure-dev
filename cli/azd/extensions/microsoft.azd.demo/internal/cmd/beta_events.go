@@ -456,8 +456,7 @@ func wrapDemoBetaError(err error) *v1beta.ExtensionError {
 			FailureKind: string(toolErr.Kind),
 		}
 		if toolErr.ExitCode != nil {
-			exitCode := int64(*toolErr.ExitCode)
-			detail.ExitCode = &exitCode
+			detail.ExitCode = new(int64(*toolErr.ExitCode))
 		}
 		betaError.Source = &v1beta.ExtensionError_ToolError{ToolError: detail}
 	}

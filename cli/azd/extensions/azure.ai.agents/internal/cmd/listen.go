@@ -583,8 +583,8 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 	))
 }
 
-// postdownHandler cleans up saved session, conversation, Response, Invocation, and State Store selection for agent services
-// that were torn down. This is best-effort — failures are logged but do not block azd down.
+// postdownHandler cleans up available saved agent context for services that were torn down.
+// This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -600,8 +600,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 		}
 
 		if cleanupAgentState(ctx, azdClient, envName, svc.Name) {
-			fmt.Printf("Cleaned up saved session, conversation, Response, Invocation, and State Store selection "+
-				"for agent %q\n", svc.Name)
+			fmt.Printf("Cleaned up saved agent context for agent %q\n", svc.Name)
 		}
 	}
 
@@ -714,8 +713,9 @@ func cleanupPromptAgentState(
 	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
 }
 
-// cleanupAgentState removes saved session, conversation, Response, Invocation, and State Store selection
-// for a single agent service. Returns true if cleanup succeeded, false otherwise.
+// cleanupAgentState removes saved agent context for a single service. When only project metadata
+// remains, it can remove the State Store selection but not version-scoped state.
+// Returns true if the available cleanup succeeded, false otherwise.
 // Shared by postdownHandler and delete command.
 func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
 	serviceKey := toServiceKey(serviceName)

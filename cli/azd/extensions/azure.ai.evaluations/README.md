@@ -276,6 +276,11 @@ path and requires permission to read those rows; unavailable or malformed
 content is not treated as an unknown schema that accepts every binding.
 Required evaluator columns must be present in every row. Reconciliation keeps
 the inspected version even if a newer version appears during the command.
+Primary interaction bindings in the prepared criteria are also checked:
+mapped `messages`, or mapped `query` and `response`, must resolve to columns
+present in every dataset row. Optional tool columns are not made required by
+this check, and generated sample bindings and simulation outputs are not
+mistaken for input dataset columns.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's

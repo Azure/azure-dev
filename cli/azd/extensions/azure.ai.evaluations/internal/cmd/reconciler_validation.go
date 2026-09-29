@@ -184,6 +184,9 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err != nil {
 			return messages.EvalProblem(group.Name, err)
 		}
+		if err := validateDatasetInteractions(&group, request, columns[group.Dataset]); err != nil {
+			return messages.EvalProblem(group.Name, err)
+		}
 		prepared[group.Name] = preparedEval{
 			declared: declared, group: group, request: request, schemas: schemas,
 			columns: columns[group.Dataset], localEvaluators: localEvaluators,
@@ -194,6 +197,34 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	}
 	r.prepared = prepared
 	r.datasetVersions = datasetVersions
+	return nil
+}
+
+// validateDatasetInteractions checks primary inputs in the final mappings, not
+// optional tool columns. Simulation outputs are generated from seed rows, while
+// trace and response sources have no dataset columns to inspect here.
+func validateDatasetInteractions(
+	group *project.Eval, request *eval_api.CreateOpenAIEvalRequest, columns map[string]bool,
+) error {
+	if columns == nil || group.Simulation != nil {
+		return nil
+	}
+	for _, criterion := range request.TestingCriteria {
+		fields := []string{"query", "response"}
+		if _, messages := criterion.DataMapping[conversationField]; messages {
+			fields = []string{conversationField}
+		}
+		var missing []string
+		for _, field := range fields {
+			if column, item := itemColumn(criterion.DataMapping[field]); item && !columns[column] &&
+				!slices.Contains(missing, column) {
+				missing = append(missing, column)
+			}
+		}
+		if len(missing) > 0 {
+			return messages.EvaluatorNeedsFields(criterion.EvaluatorName, missing)
+		}
+	}
 	return nil
 }
 

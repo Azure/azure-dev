@@ -903,6 +903,10 @@ func (r *evalReconciler) EnsureEval(
 	// changing, and reusing the eval would let that reach a run unreported.
 	prepared, validated := r.prepared[group.Name]
 	req := prepared.request
+	columns := prepared.columns
+	if !validated {
+		columns = datasetColumnsFromPath(datasetPath)
+	}
 	if validated && len(prepared.localEvaluators) > 0 {
 		// Publishing a rubric can add a schema that the authored file does not
 		// carry. Refresh only these local, unpinned references; every other
@@ -931,11 +935,14 @@ func (r *evalReconciler) EnsureEval(
 		req, err = buildEvalRequest(
 			&group,
 			r.ec.evaluatorSchemas(ctx),
-			datasetColumnsFromPath(datasetPath),
+			columns,
 		)
 		if err != nil {
 			return "", false, err
 		}
+	}
+	if err := validateDatasetInteractions(&group, req, columns); err != nil {
+		return "", false, err
 	}
 
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)

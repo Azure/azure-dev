@@ -37,9 +37,36 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	current := container.New()
 
 	if parent != nil {
-		// Copy the bindings to the new container
-		// The bindings hold the concrete instance of singleton registrations
-		maps.Copy(current, parent.inner)
+		// Copy bindings into independent name maps so registrations remain isolated by scope.
+		for abstraction, bindings := range parent.inner {
+			current[abstraction] = maps.Clone(bindings)
+
+			for name, binding := range bindings {
+				bindingValue := reflect.ValueOf(binding).Elem()
+				isSingleton := getUnexportedField(bindingValue.FieldByName("isSingleton")).(bool)
+				if !isSingleton {
+					continue
+				}
+
+				// Resolve inherited singletons through the container where they were registered.
+				// Otherwise, the underlying container invokes a lazy singleton resolver with the
+				// requesting child and can promote child-scoped dependencies into the singleton.
+				resolverType := reflect.FuncOf(
+					nil,
+					[]reflect.Type{abstraction, reflect.TypeFor[error]()},
+					false)
+				resolver := reflect.MakeFunc(resolverType, func(_ []reflect.Value) []reflect.Value {
+					instance := reflect.New(abstraction)
+					err := parent.ResolveNamed(name, instance.Interface())
+					if err != nil {
+						return []reflect.Value{reflect.Zero(abstraction), reflect.ValueOf(err)}
+					}
+
+					return []reflect.Value{instance.Elem(), reflect.Zero(reflect.TypeFor[error]())}
+				})
+				container.MustNamedSingletonLazy(current, name, resolver.Interface())
+			}
+		}
 	}
 
 	instance := &NestedContainer{

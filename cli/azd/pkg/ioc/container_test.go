@@ -171,9 +171,11 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, scope2Instance1)
 
-		// Instance 1 & 2 are singletons but overriden in each child scope so they should be different
-		require.NotSame(t, rootInstance, rootInstanceResolved)
-		require.NotSame(t, scope1Instance, scope2Instance)
+		// Each registration is isolated to its container.
+		require.Same(t, rootInstance, rootInstanceResolved)
+		require.Same(t, scope1Instance, scope1Instance1)
+		require.Same(t, scope2Instance, scope2Instance1)
+		require.NotSame(t, scope1Instance1, scope2Instance1)
 	})
 }
 
@@ -232,6 +234,14 @@ type depService struct {
 }
 
 func newDepService(c *counterService) *depService { return &depService{counter: c} }
+
+type scopeDependency struct {
+	name string
+}
+
+type singletonWithScopeDependency struct {
+	dependency *scopeDependency
+}
 
 // fillTarget is used to test Fill().
 type fillTarget struct {
@@ -865,6 +875,89 @@ func Test_NewNestedContainer_InheritsParent(t *testing.T) {
 	require.NoError(t, err)
 	// Child inherits parent's cached singleton
 	require.Same(t, parentInst, childInst)
+}
+
+func Test_SingletonResolvesDependenciesFromRegistrationScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		registerInScopeA  bool
+		namedRegistration bool
+	}{
+		{
+			name: "RootRegistration",
+		},
+		{
+			name:              "NamedRootRegistration",
+			namedRegistration: true,
+		},
+		{
+			name:             "AncestorRegistration",
+			registerInScopeA: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := NewNestedContainer(nil)
+			rootDependency := &scopeDependency{name: "root"}
+			RegisterInstance(root, rootDependency)
+
+			registerSingleton := func(c *NestedContainer) {
+				resolver := func(dependency *scopeDependency) *singletonWithScopeDependency {
+					return &singletonWithScopeDependency{dependency: dependency}
+				}
+				if tt.namedRegistration {
+					c.MustRegisterNamedSingleton("singleton", resolver)
+				} else {
+					c.MustRegisterSingleton(resolver)
+				}
+			}
+			if !tt.registerInScopeA {
+				registerSingleton(root)
+			}
+
+			scopeA, err := root.NewScope()
+			require.NoError(t, err)
+			scopeADependency := &scopeDependency{name: "scope-a"}
+			RegisterInstance(scopeA, scopeADependency)
+			if tt.registerInScopeA {
+				registerSingleton(scopeA)
+			}
+
+			scopeB, err := scopeA.NewScope()
+			require.NoError(t, err)
+			RegisterInstance(scopeB, &scopeDependency{name: "scope-b"})
+
+			var resolved *singletonWithScopeDependency
+			if tt.namedRegistration {
+				err = scopeB.ResolveNamed("singleton", &resolved)
+			} else {
+				err = scopeB.Resolve(&resolved)
+			}
+			require.NoError(t, err)
+
+			expectedDependency := rootDependency
+			registrationScope := root
+			if tt.registerInScopeA {
+				expectedDependency = scopeADependency
+				registrationScope = scopeA
+			}
+			require.Same(t, expectedDependency, resolved.dependency)
+
+			var resolvedFromRegistrationScope *singletonWithScopeDependency
+			if tt.namedRegistration {
+				err = registrationScope.ResolveNamed("singleton", &resolvedFromRegistrationScope)
+			} else {
+				err = registrationScope.Resolve(&resolvedFromRegistrationScope)
+			}
+			require.NoError(t, err)
+			require.Same(t, resolved, resolvedFromRegistrationScope)
+		})
+	}
 }
 
 // ---------- inspectResolveError ----------

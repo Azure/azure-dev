@@ -27,7 +27,7 @@ post:
     name: "remove run-owned probe item"
 
 goals:
-  - "Run 'azd ai agent state-stores list --output json'. Confirm the seeded store 'azd-state-stores-{run_id}' appears; report failure if it does not."
+  - "Run 'azd ai agent state-stores list --output json'. Search the returned data for 'azd-state-stores-{run_id}'. If absent and has_more is true, pass last_id unchanged as --after on the next page, keeping the same --order and --limit; repeat until found or has_more is false. Report failure only if all pages lack the seeded store."
   - "Run 'azd ai agent state-stores show azd-state-stores-{run_id} --output json'. Confirm the returned name matches."
   - "Run 'azd ai agent state-stores items set azd-probe-{run_id} --store azd-state-stores-{run_id} --value '{\"step\":1}' and confirm it succeeds."
   - "Run 'azd ai agent state-stores items show azd-probe-{run_id} --store azd-state-stores-{run_id} --output json'. Confirm value.step is 1 and note the quoted ETag."

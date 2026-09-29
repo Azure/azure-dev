@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -723,12 +724,42 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 		EnvName: envName,
 		Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
 	})
-	if err != nil || endpointResp.Value == "" {
+	if err != nil {
 		return false
 	}
+	if endpointResp != nil && endpointResp.Value != "" {
+		agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+		return cleanupAgentStateForKey(ctx, azdClient, agentKey)
+	}
 
-	agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
-	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
+	// Version-only delete clears the agent endpoint but leaves the deployed name
+	// and project endpoint. There is no versioned key for sessions in this case,
+	// but the version-independent State Store selection must still be removed.
+	nameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+	})
+	if err != nil || nameResp == nil || nameResp.Value == "" {
+		return false
+	}
+	projectResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     envkey.AgentProjectEndpoint(serviceName),
+	})
+	if err != nil || projectResp == nil || projectResp.Value == "" {
+		return false
+	}
+	target, err := stateStoreTargetFromEndpoint(strings.TrimRight(projectResp.Value, "/") +
+		"/agents/" + url.PathEscape(nameResp.Value) + "/endpoint/protocols/invocations")
+	if err != nil {
+		log.Printf("cleanupAgentState: invalid State Store target for service %q: %v", serviceName, err)
+		return false
+	}
+	if err := deleteContextValue(ctx, azdClient, stateStoreConfigField, target.agentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", target.agentKey, err)
+		return false
+	}
+	return true
 }
 
 func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, agentKey string) bool {

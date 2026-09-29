@@ -28,6 +28,7 @@ import (
 func generateCmd(t *testing.T, noPromptSet bool) *cobra.Command {
 	t.Helper()
 	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
 	cmd.Flags().Bool("no-prompt", noPromptSet, "")
 	require.NoError(t, cmd.Flags().Set("no-prompt", boolText(noPromptSet)))
 	return cmd
@@ -87,12 +88,14 @@ func TestTypedInstructionsAreNamedRatherThanQuoted(t *testing.T) {
 
 type instructionPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
-	mu        sync.Mutex
-	choice    *int32
-	answer    string
-	promptErr error
-	choices   []string
-	prompts   int
+	mu          sync.Mutex
+	choice      *int32
+	answer      string
+	answers     []string
+	cancelAfter int
+	promptErr   error
+	choices     []string
+	prompts     int
 }
 
 func (s *instructionPromptServer) Select(
@@ -112,6 +115,14 @@ func (s *instructionPromptServer) Prompt(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.prompts++
+	if s.cancelAfter > 0 && s.prompts > s.cancelAfter {
+		return nil, status.Error(codes.Canceled, "cancelled")
+	}
+	if len(s.answers) > 0 {
+		answer := s.answers[0]
+		s.answers = s.answers[1:]
+		return &azdext.PromptResponse{Value: answer}, nil
+	}
 	return &azdext.PromptResponse{Value: s.answer}, s.promptErr
 }
 
@@ -279,4 +290,73 @@ func TestGenerationInstructionHelpNamesBothInputRoutes(t *testing.T) {
 	assert.Contains(t, cmd.Long, "--no-prompt and --output json never ask")
 	assert.Contains(t, cmd.Flags().Lookup("agent-instruction-file").Usage, "local text file")
 	assert.Contains(t, messages.EnterInstructionFileHelp(), "spaces are supported")
+}
+
+func TestGenerationInstructionFileCorrectionAndNondisclosure(t *testing.T) {
+	for _, absolute := range []bool{false, true} {
+		t.Run(boolText(absolute), func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &instructionPromptServer{choice: new(int32(1))}
+			h := newInitHarness(t, nil, prompts)
+			require.NoError(t, os.MkdirAll("instruction files", 0o700))
+			require.NoError(t, os.WriteFile("empty.txt", []byte(" \r\n"), 0o600))
+			path := filepath.Join("instruction files", "corrected.txt")
+			const instructions = "Use only synthetic information from this fixture."
+			require.NoError(t, os.WriteFile(path, []byte(instructions), 0o600))
+			if absolute {
+				path = filepath.Join(h.dir, path)
+			}
+			prompts.answers = []string{"missing.txt", ".", "empty.txt", path}
+			before := initFileSnapshot(t, h.dir)
+			var out bytes.Buffer
+			cmd := generateCmd(t, false)
+			cmd.SetContext(t.Context())
+			cmd.SetOut(&out)
+			got, source, err := (&evalContext{}).resolveGenerationInstruction(cmd, "", "", "", &out, false)
+			require.NoError(t, err)
+			fromFlag, err := resolveInstruction("", path)
+			require.NoError(t, err)
+			assert.Equal(t, fromFlag, got, "interactive and flag paths use the same resolution base and reader")
+			assert.Equal(t, instructions, got)
+			writeGenerationPlan(&out, generationSummary{instructed: source,
+				plans: []generationPlan{{Name: "quality", Kind: generateKindEvaluator, Instruction: got}}})
+			assert.Contains(t, out.String(), filepath.ToSlash(path))
+			assert.Contains(t, out.String(), "Enter a corrected file path")
+			assert.NotContains(t, out.String(), instructions)
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+			prompts.mu.Lock()
+			defer prompts.mu.Unlock()
+			assert.Equal(t, 4, prompts.prompts)
+			assert.Equal(t, []string{"Type instructions", "Load from file"}, prompts.choices)
+		})
+	}
+}
+
+func TestGenerationInstructionFileCorrectionCancellationAndBound(t *testing.T) {
+	for _, cancel := range []bool{false, true} {
+		t.Run(boolText(cancel), func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &instructionPromptServer{choice: new(int32(1)), answer: "missing.txt"}
+			if cancel {
+				prompts.cancelAfter = 1
+			}
+			h := newInitHarness(t, nil, prompts)
+			before := initFileSnapshot(t, h.dir)
+			cmd := generateCmd(t, false)
+			cmd.SetContext(t.Context())
+			var out bytes.Buffer
+			_, _, err := (&evalContext{}).resolveGenerationInstruction(cmd, "", "", "", &out, false)
+			require.Error(t, err)
+			prompts.mu.Lock()
+			defer prompts.mu.Unlock()
+			if cancel {
+				assert.Equal(t, codes.Canceled, status.Code(err))
+				assert.Equal(t, 2, prompts.prompts)
+			} else {
+				assert.ErrorContains(t, err, "missing.txt")
+				assert.Equal(t, 8, prompts.prompts)
+			}
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+		})
+	}
 }

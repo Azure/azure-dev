@@ -159,10 +159,16 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	// someone gave is theirs, and a collision is refused rather than worked
 	// around -- in place, so answering it does not cost the answers already
 	// given.
+	nameTarget := answers.target
+	if answers.conversationMode == conversationModeStatic {
+		if agents := agentServices(ctx.azdProject); len(agents) == 1 {
+			nameTarget = agents[0]
+		}
+	}
 	answers.evalName, err = resolveEvalName(
 		a.cmd, ctx.cfg, ctx.configPath, a.flags.evalName,
 		uniqueEvalName(ctx.cfg, defaultEvalName(
-			answers.target, source, answers.evaluationLevel, answers.conversationMode)))
+			nameTarget, source, answers.evaluationLevel, answers.conversationMode)))
 	if err != nil {
 		return initAnswers{}, err
 	}

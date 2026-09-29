@@ -147,8 +147,8 @@ func TestInitDefaultNamesIdentifySourceModeAndLevel(t *testing.T) {
 				{"agent-trace-turn-eval", []string{"--source", "traces", "--evaluation-level", "turn", "--target", "agent"}},
 				{"agent-trace-conversation-eval", []string{"--source", "traces",
 					"--evaluation-level", "conversation", "--target", "agent"}},
-				{"dataset-static-conversation-eval", []string{"--conversation-mode", "static", "--dataset", "completed"}},
-				{"agent-dataset-simulation-conversation-eval", []string{"--conversation-mode", "simulation",
+				{"static-conversation-eval", []string{"--conversation-mode", "static", "--dataset", "completed"}},
+				{"agent-simulation-conversation-eval", []string{"--conversation-mode", "simulation",
 					"--target", "agent", "--dataset", "seeds", "--simulation-model", "connection/simulator"}},
 				{"agent-dataset-turn-eval-2", []string{"--source", "dataset", "--evaluation-level", "turn",
 					"--target", "agent", "--dataset", "different-turn-data"}},
@@ -181,6 +181,38 @@ func TestInitDefaultNamesIdentifySourceModeAndLevel(t *testing.T) {
 			assert.Contains(t, string(body), "x-owner: team")
 			assert.Contains(t, string(body), "name: agent-dataset-eval\n", "existing names must not be migrated")
 			assert.NoFileExists(t, filepath.Join(h.dir, "evals", project.EvalConfigBase))
+		})
+	}
+}
+
+func TestInitStaticNamingUsesOnlyUnambiguousLocalAgentHint(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		agents []string
+		want   string
+	}{
+		{"known local agent", []string{"travel-planner"}, "travel-planner-static-conversation-eval"},
+		{"no agent", nil, "static-conversation-eval"},
+		{"ambiguous agents", []string{"one", "two"}, "static-conversation-eval"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := newInitCommand()
+			command.SetContext(t.Context())
+			command.Flags().Bool("no-prompt", true, "")
+			action := &initAction{cmd: command, flags: &initFlags{
+				conversationMode: conversationModeStatic, dataset: "completed", judgeModel: "judge",
+			}}
+			proj := projectWith(tc.agents...)
+			for _, service := range proj.Services {
+				service.Host = project.AgentHost
+			}
+			answers, err := action.ask(initContext{
+				cfg: &project.EvalConfig{}, azdProject: proj,
+				configPath: filepath.Join(t.TempDir(), "quality.yml"),
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, answers.evalName)
+			assert.Empty(t, answers.target, "the naming hint must not turn static scoring into target invocation")
 		})
 	}
 }

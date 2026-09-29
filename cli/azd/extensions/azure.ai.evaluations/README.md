@@ -21,6 +21,9 @@ interactive `generate` offers **Type instructions** or **Load from file**.
 File selection reads a non-empty local text file, including paths containing spaces;
 enter the path without shell quotes at the prompt. Both routes report the source,
 not the instruction contents, and reach the same generation confirmation.
+An unreadable, missing, directory, or empty file is reported before any job;
+the interactive file prompt accepts a corrected path without restarting the
+other selections. Ctrl+C cancels without submitting jobs or writing artifacts.
 Explicit `--agent-instruction` or `--agent-instruction-file` values take precedence
 and skip detection and selection. Empty explicit values are rejected.
 Under `--no-prompt` or `--output json`, missing instructions produce an error naming
@@ -29,6 +32,18 @@ these flags instead of a prompt. For example:
 ```bash
 azd ai eval generate --agent-instruction-file "./instruction files/agent.txt" --target support-agent --generation-model generation-deployment --no-prompt
 ```
+
+Generation derives default artifact names from the agent's deployed name in local
+project metadata, not from its service key or instruction source. A bare invocation,
+`--target` with that key, and `--target` with the deployed name therefore use the same
+prefix. If the project lookup fails, provide explicit artifact names or retry;
+the CLI does not silently switch prefixes.
+Dataset generation names are limited to 50 characters. Long default prefixes use
+a deterministic shortened stem with a hash, shared by turn and conversation
+datasets, while retaining `-turn-tests` or `-conversation-tests` and room for a
+collision number. Explicit overlong `--dataset-name` values are rejected, never
+truncated. This generation-specific dataset limit is not imposed on evaluators
+or on existing asset lookups. Existing files and catalog entries are not renamed.
 
 ## What gets deployed
 
@@ -133,11 +148,14 @@ evaluation level, rather than distinguishing different flows only by a number:
 | Turn dataset | `<target>-dataset-turn-eval` |
 | Turn traces | `<target>-trace-turn-eval` |
 | Conversation traces | `<target>-trace-conversation-eval` |
-| Static conversation dataset | `dataset-static-conversation-eval` |
-| Simulated conversation dataset | `<target>-dataset-simulation-conversation-eval` |
+| Static conversation dataset | `<local-agent>-static-conversation-eval` |
+| Simulated conversation dataset | `<target>-simulation-conversation-eval` |
 
 An explicit `--name` still wins. Only a collision with the descriptive name adds
 `-2`, `-3`, and so on. Existing eval names and declarations are not renamed.
+Static mode uses the sole local agent service only as a naming hint, not an
+invocation target. With no single local agent, the fallback is
+`static-conversation-eval`; init does not invent an agent identity.
 
 | Init flag | Applies to | Meaning |
 |---|---|---|

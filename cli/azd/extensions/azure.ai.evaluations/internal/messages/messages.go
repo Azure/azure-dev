@@ -1074,6 +1074,19 @@ func GeneratedNameNeedsATarget(kind string) error {
 			"pass --%s-name, or --target", kind, kind)
 }
 
+// GeneratedDatasetNameTooLong preserves an explicit name by refusing it, not truncating it.
+func GeneratedDatasetNameTooLong(name string, maximum int) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--dataset-name %q exceeds the generation limit of %d characters", name, maximum),
+		"Choose a shorter --dataset-name, or omit it to use a bounded default derived from the deployed agent.")
+}
+
+// GenerationNameTargetUnresolved refuses to derive default names from an unverified local key.
+func GenerationNameTargetUnresolved(err error) error {
+	return fmt.Errorf("resolving the deployed agent name for default artifact names: %w; "+
+		"retry the project lookup, or provide explicit --dataset-name and --evaluator-name for the artifacts selected", err)
+}
+
 // GenerationFailed labels one half of a composite generate that did not finish.
 //
 // The label goes inside a structured error rather than around it: azd
@@ -1228,6 +1241,11 @@ func EnterInstructionFilePrompt() string { return "Path to the agent instruction
 func EnterInstructionFileHelp() string {
 	return "Path to a non-empty local text file, relative to the current directory or absolute. " +
 		"Enter the path without shell quotes; spaces are supported."
+}
+
+// InstructionFileRejected asks for a corrected path without restarting generation.
+func InstructionFileRejected(err error) string {
+	return fmt.Sprintf("\n  %v\n  Enter a corrected file path, or press Ctrl+C to cancel.\n", err)
 }
 
 // EnterAgentInstructionPrompt asks what the agent is for.

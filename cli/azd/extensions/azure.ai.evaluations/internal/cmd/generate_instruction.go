@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -60,25 +61,26 @@ func promptAgentInstruction(cmd *cobra.Command) (instruction, source string, err
 		options.HelpMessage = messages.EnterInstructionFileHelp()
 		options.Placeholder = "./instructions.txt"
 	}
-	resp, err := azdClient.Prompt().Prompt(commandContext(cmd), &azdext.PromptRequest{
-		Options: options,
-	})
-	if err != nil {
-		return "", "", messages.AskingForAgentInstruction(err)
-	}
-	// Required is the host's rule and this is ours: a blank answer is the
-	// question unanswered, and submitting on it bills the job this prompt
-	// exists to make worth running.
-	if resp == nil || strings.TrimSpace(resp.GetValue()) == "" {
-		return "", "", messages.InstructionsRequired()
-	}
-	answer := strings.TrimSpace(resp.GetValue())
-	if fromFile {
-		text, err := resolveInstruction("", answer)
+	var problem error
+	for range 8 {
+		resp, err := azdClient.Prompt().Prompt(commandContext(cmd), &azdext.PromptRequest{
+			Options: options,
+		})
 		if err != nil {
-			return "", "", err
+			return "", "", messages.AskingForAgentInstruction(err)
 		}
-		return text, messages.InstructionSourceFile(answer), nil
+		if resp == nil || strings.TrimSpace(resp.GetValue()) == "" {
+			return "", "", messages.InstructionsRequired()
+		}
+		answer := strings.TrimSpace(resp.GetValue())
+		if !fromFile {
+			return answer, messages.InstructionSourceTyped(), nil
+		}
+		instruction, problem = resolveInstruction("", answer)
+		if problem == nil {
+			return instruction, messages.InstructionSourceFile(answer), nil
+		}
+		fmt.Fprint(cmd.OutOrStdout(), messages.InstructionFileRejected(problem))
 	}
-	return answer, messages.InstructionSourceTyped(), nil
+	return "", "", problem
 }

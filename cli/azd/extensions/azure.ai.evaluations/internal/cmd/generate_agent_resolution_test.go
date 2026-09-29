@@ -10,6 +10,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -27,20 +30,31 @@ import (
 // serves only the environment service, so a generate test needs its own.
 type projectService struct {
 	azdext.UnimplementedProjectServiceServer
-	proj *azdext.ProjectConfig
+	proj      *azdext.ProjectConfig
+	mu        sync.Mutex
+	getErrors []error
 }
 
 func (s *projectService) Get(
 	_ context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.getErrors) > 0 {
+		err := s.getErrors[0]
+		s.getErrors = s.getErrors[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &azdext.GetProjectResponse{Project: s.proj}, nil
 }
 
-func projectServingClient(t *testing.T, proj *azdext.ProjectConfig) *azdext.AzdClient {
+func projectServingClient(t *testing.T, proj *azdext.ProjectConfig, getErrors ...error) *azdext.AzdClient {
 	t.Helper()
 
 	server := grpc.NewServer()
-	azdext.RegisterProjectServiceServer(server, &projectService{proj: proj})
+	azdext.RegisterProjectServiceServer(server, &projectService{proj: proj, getErrors: getErrors})
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -208,4 +222,84 @@ func TestGenerateDataset_RefusesWhenTwoServicesClaimTheSameAgent(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Empty(t, submitted, "an ambiguous target must not reach the service at all")
+}
+
+func TestGenerationDefaultNamesUseCanonicalDeployedAgent(t *testing.T) {
+	const local, deployed = "travel-planner", "aprilk-b43-hands-on-travel"
+	for _, target := range []string{"", local, deployed} {
+		for _, unattended := range []bool{false, true} {
+			for _, level := range []string{"turn", "conversation"} {
+				t.Run(target+"/"+boolText(unattended)+"/"+level, func(t *testing.T) {
+					ec := &evalContext{azdClient: projectServingClient(t, publishingProject(t, local, deployed))}
+					cmd := generateCmd(t, unattended)
+					cmd.SetContext(t.Context())
+					selected := target
+					var err error
+					if selected == "" {
+						selected, err = ec.detectAgentTarget(cmd)
+						require.NoError(t, err)
+					}
+					prefix, err := ec.generationNameTarget(t.Context(), selected)
+					require.NoError(t, err)
+					assert.Equal(t, deployed, prefix)
+					plans, err := buildGeneratePlans(generateRequest{
+						flags:  &generateFlags{path: t.TempDir(), target: target},
+						target: prefix, dataset: true, evaluator: true, evaluationLevel: level,
+					})
+					require.NoError(t, err)
+					require.Len(t, plans, 2)
+					want := deployed + "-" + level + "-tests"
+					assert.Equal(t, want, plans[0].Name)
+					assert.Equal(t, deployed+"-evaluator", plans[1].Name)
+					assert.Equal(t, deployed, plans[0].Agent)
+					assert.Equal(t, want+".jsonl", filepath.Base(project.ArtifactPath(
+						plans[0].BaseDir, plans[0].OutputDir, plans[0].Name, ".jsonl")))
+					var planOutput bytes.Buffer
+					writeGenerationPlan(&planOutput, generationSummary{plans: plans})
+					assert.Contains(t, planOutput.String(), want)
+					ref := &project.ArtifactRef{
+						Name: plans[0].Name, Source: "./datasets/" + plans[0].Name + ".jsonl", EvaluationLevel: level,
+					}
+					require.NoError(t, addDatasetToCatalog(cmd, plans[0].BaseDir, ref))
+					catalog, err := project.OpenEvalConfig(plans[0].BaseDir)
+					require.NoError(t, err)
+					require.NotNil(t, catalog)
+					decl, found := catalog.DatasetDeclaration(want)
+					require.True(t, found)
+					assert.Equal(t, ref.Source, decl.File)
+					handoff := initHandoff([]generationOutcome{{
+						plan: plans[0], ref: ref,
+					}}, "")
+					assert.Contains(t, handoff, "--dataset "+want)
+
+					var submitted []byte
+					writer := &bytes.Buffer{}
+					backend := capturingGenerationServer(t, &submitted)
+					plans[0].Instruction, plans[0].Model = "Synthetic recovered instructions.", "generation"
+					plans[0].From = []string{project.GenerateFromPrompt}
+					_, err = backend.generateDataset(t.Context(), plans[0], writer, true, &generationReport{}, refuseRetry)
+					require.NoError(t, err)
+					assert.Contains(t, string(submitted), want)
+					assert.NotContains(t, string(submitted), `"name":"`+local+"-"+level+"-tests\"")
+				})
+			}
+		}
+	}
+}
+
+func TestGenerationNameLookupFailureDoesNotFallBackToLocalKey(t *testing.T) {
+	const local, deployed = "travel-planner", "aprilk-b43-hands-on-travel"
+	ec := &evalContext{azdClient: projectServingClient(t, publishingProject(t, local, deployed), assert.AnError)}
+	name, err := ec.generationNameTarget(t.Context(), local)
+	require.ErrorContains(t, err, "resolving the deployed agent name")
+	assert.ErrorContains(t, err, "--dataset-name")
+	assert.Empty(t, name)
+	name, err = ec.generationNameTarget(t.Context(), local)
+	require.NoError(t, err)
+	assert.Equal(t, deployed, name)
+	for _, level := range []string{"turn", "conversation"} {
+		derived, err := generatedName("", name, "dataset", datasetNameSuffix(level))
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(derived, deployed+"-"))
+	}
 }

@@ -136,8 +136,12 @@ func TestDefaultEvalName(t *testing.T) {
 		"the source is in the name so the two do not collide")
 	long := defaultEvalName(strings.Repeat("a", assetNameMaxLength), "dataset", "conversation", "simulation")
 	assert.Len(t, long, assetNameMaxLength)
-	assert.True(t, strings.HasSuffix(long, "-dataset-simulation-conversation-eval"))
+	assert.True(t, strings.HasSuffix(long, "-simulation-conversation-eval"))
 	assert.True(t, validAssetName(long))
+	assert.Equal(t, "travel-planner-static-conversation-eval",
+		defaultEvalName("travel-planner", "dataset", "conversation", "static"))
+	assert.Equal(t, "travel-planner-simulation-conversation-eval",
+		defaultEvalName("travel-planner", "dataset", "conversation", "simulation"))
 }
 
 // A second init in the same project used to suggest the name it had already

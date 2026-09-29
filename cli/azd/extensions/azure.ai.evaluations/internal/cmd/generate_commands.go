@@ -204,6 +204,14 @@ func (ec *evalContext) detectAgentTarget(cmd *cobra.Command) (string, error) {
 	return promptAgentTarget(cmd, agents)
 }
 
+func (ec *evalContext) generationNameTarget(ctx context.Context, target string) (string, error) {
+	proj, err := ec.azdProject(ctx)
+	if err != nil {
+		return "", messages.GenerationNameTargetUnresolved(err)
+	}
+	return project.RemoteAgentName(proj, target)
+}
+
 // agentDeployment reads the deployment the target agent answers with.
 //
 // Best effort, but not silent: a misspelled --target and an agent with no

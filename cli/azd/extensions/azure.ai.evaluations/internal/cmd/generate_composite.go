@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
@@ -81,10 +83,10 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&flags.wantEvaluator, "evaluator", false,
 		"Generate only the evaluator. Omit both flags to generate both.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset-name", "",
-		"Name for the generated dataset. Defaults to <target>-turn-tests or "+
-			"<target>-conversation-tests, following --evaluation-level.")
+		"Name for the generated dataset (at most 50 characters). Defaults to <deployed-agent>-turn-tests or "+
+			"<deployed-agent>-conversation-tests. Long default prefixes are shortened consistently; explicit names are not.")
 	cmd.Flags().StringVar(&flags.evaluatorName, "evaluator-name", "",
-		"Name for the generated evaluator. Defaults to <target>-evaluator.")
+		"Name for the generated evaluator. Defaults to <deployed-agent>-evaluator.")
 	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
 		fmt.Sprintf("What one generated row is: %s. Defaults to %s. Dataset only.",
 			strings.Join(evaluationLevels, " or "), project.EvaluationLevelTurn))
@@ -136,6 +138,9 @@ func (a *generateAction) Run() error {
 	}
 
 	if dataset {
+		if err := validateGeneratedDatasetName(a.flags.datasetName); err != nil {
+			return err
+		}
 		for _, src := range a.flags.from {
 			if err := project.ValidateGenerateSource(src); err != nil {
 				return err
@@ -221,6 +226,7 @@ func (a *generateAction) Run() error {
 	var plans []generationPlan
 	level := ""
 	levelSettled := false
+	nameTarget, nameTargetResolved := target, false
 	for {
 		// Asked before the dataset is named, because the name says which level
 		// its rows hold. Asked at most once: a second pass through the
@@ -232,11 +238,19 @@ func (a *generateAction) Run() error {
 			}
 			levelSettled = true
 		}
+		if !nameTargetResolved &&
+			(choices.dataset && a.flags.datasetName == "" || choices.evaluator && a.flags.evaluatorName == "") {
+			nameTarget, err = ec.generationNameTarget(a.cmd.Context(), target)
+			if err != nil {
+				return err
+			}
+			nameTargetResolved = true
+		}
 
 		plans, err = buildGeneratePlans(generateRequest{
 			flags:           &a.flags.shared,
 			cmd:             a.cmd,
-			target:          target,
+			target:          nameTarget,
 			dataset:         choices.dataset,
 			evaluator:       choices.evaluator,
 			datasetName:     a.flags.datasetName,
@@ -367,6 +381,9 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 			return nil, err
 		}
 		plan.Kind = generateKindDataset
+		if req.target != "" {
+			plan.Agent = req.target
+		}
 		plan.From = req.from
 		plan.EvaluationLevel = req.evaluationLevel
 		plan.SampleSize = req.maxSamples
@@ -397,6 +414,9 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 			return nil, err
 		}
 		plan.Kind = generateKindEvaluator
+		if req.target != "" {
+			plan.Agent = req.target
+		}
 		plan.TraceDays = req.traceDays
 		name, replaceApproved, err := resolveArtifactCollision(req.cmd, "Evaluator", name,
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".json"),
@@ -431,12 +451,43 @@ func generatedName(explicit, target, kind, suffix string) (string, error) {
 		if target == "" {
 			return "", messages.GeneratedNameNeedsATarget(kind)
 		}
+		if kind == string(generateKindDataset) {
+			target = generatedDatasetPrefix(target)
+		}
 		name = target + "-" + suffix
 	}
 	if !nameIsAPathComponent(name) {
 		return "", messages.GeneratedNameNotAFileName(kind, name)
 	}
+	if kind == string(generateKindDataset) {
+		if err := validateGeneratedDatasetName(name); err != nil {
+			return "", err
+		}
+	}
 	return name, nil
+}
+
+// Dataset generation has a narrower name limit than the general asset APIs.
+const generatedDatasetNameMaxLength = 50
+
+func validateGeneratedDatasetName(name string) error {
+	if utf8.RuneCountInString(name) > generatedDatasetNameMaxLength {
+		return messages.GeneratedDatasetNameTooLong(name, generatedDatasetNameMaxLength)
+	}
+	return nil
+}
+
+func generatedDatasetPrefix(target string) string {
+	// Use one stem for both levels and leave room for every offered collision suffix.
+	reserve := len("-"+datasetNameSuffix(project.EvaluationLevelConversation)) +
+		len("-"+strconv.Itoa(collisionSuffixLimit))
+	limit := generatedDatasetNameMaxLength - reserve
+	runes := []rune(target)
+	if len(runes) <= limit {
+		return target
+	}
+	digest := project.FingerprintBytes([]byte(target))[:8]
+	return string(runes[:limit-len(digest)-1]) + "-" + digest
 }
 
 // nameIsAPathComponent reports whether a name stays where it is put.

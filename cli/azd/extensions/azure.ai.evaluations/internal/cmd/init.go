@@ -117,9 +117,10 @@ func newInitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flags.evalName, "name", "",
-		"Name of the eval. Defaults to <target>-<source>[-<mode>]-<level>-eval, "+
-			"using trace or dataset, static or simulation for conversation datasets, and turn or conversation. "+
-			"Static mode omits the target. Numbered only when that descriptive name is taken.")
+		"Name of the eval. Defaults to <agent>-<source-or-mode>-<level>-eval, "+
+			"using trace, dataset, static or simulation and turn or conversation. "+
+			"Static mode uses the sole local agent as a naming hint, or omits the prefix when ambiguous or absent. "+
+			"Numbered only when that descriptive name is taken.")
 	cmd.Flags().StringVar(&flags.target, "target", "",
 		"Agent to invoke for turn datasets or simulation, or filter for traces. Not allowed in static mode. "+
 			"Detected when the project has one agent; prompts when it has several.")
@@ -719,7 +720,7 @@ func defaultEvalName(target, source, level, mode string) string {
 	}
 	parts := []string{source}
 	if mode != "" {
-		parts = append(parts, mode)
+		parts = []string{mode}
 	}
 	parts = append(parts, cmp.Or(level, project.EvaluationLevelTurn), "eval")
 	suffix := strings.Join(parts, "-")

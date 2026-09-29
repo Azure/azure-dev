@@ -66,7 +66,10 @@ func newGenerateCommand() *cobra.Command {
 			"Neither is an input to the other, so the jobs run together and each " +
 			"reports its own outcome; the command fails if either did.\n\n" +
 			"--from selects one or more of the sources the service generates the " +
-			"dataset from, and is repeatable.",
+			"dataset from, and is repeatable.\n\n" +
+			"When no instructions are supplied or detected, interactive generation offers " +
+			"Type instructions or Load from file. Use --agent-instruction or --agent-instruction-file " +
+			"to supply them directly; --no-prompt and --output json never ask.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&generateAction{cmd: cmd, flags: flags}).Run()
@@ -101,6 +104,9 @@ func newGenerateCommand() *cobra.Command {
 }
 
 func (a *generateAction) Run() error {
+	if err := validateInstructionFlags(a.cmd, &a.flags.shared); err != nil {
+		return err
+	}
 	dataset, evaluator := selectedArtifacts(a.flags.wantDataset, a.flags.wantEvaluator)
 	// Checked before any network work, so a flag that cannot apply
 	// costs nothing to find out about. Changed() rather than the value,

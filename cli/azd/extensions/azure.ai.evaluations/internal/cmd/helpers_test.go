@@ -123,17 +123,21 @@ func TestItemColumn(t *testing.T) {
 // An eval is named after what it evaluates and what it reads, so two evals over
 // the same agent from different sources do not collide.
 func TestDefaultEvalName(t *testing.T) {
-	assert.Equal(t, "support-agent-trace-eval",
-		defaultEvalName("support-agent", initSourceTraces))
-	assert.Equal(t, "support-agent-dataset-eval",
-		defaultEvalName("support-agent", "dataset"))
-	assert.Equal(t, "support-agent-dataset-eval",
-		defaultEvalName("support-agent", ""))
+	assert.Equal(t, "support-agent-trace-turn-eval",
+		defaultEvalName("support-agent", initSourceTraces, "turn", ""))
+	assert.Equal(t, "support-agent-dataset-turn-eval",
+		defaultEvalName("support-agent", "dataset", "turn", ""))
+	assert.Equal(t, "support-agent-dataset-turn-eval",
+		defaultEvalName("support-agent", "", "", ""))
 
 	assert.NotEqual(t,
-		defaultEvalName("support-agent", initSourceTraces),
-		defaultEvalName("support-agent", "dataset"),
+		defaultEvalName("support-agent", initSourceTraces, "turn", ""),
+		defaultEvalName("support-agent", "dataset", "turn", ""),
 		"the source is in the name so the two do not collide")
+	long := defaultEvalName(strings.Repeat("a", assetNameMaxLength), "dataset", "conversation", "simulation")
+	assert.Len(t, long, assetNameMaxLength)
+	assert.True(t, strings.HasSuffix(long, "-dataset-simulation-conversation-eval"))
+	assert.True(t, validAssetName(long))
 }
 
 // A second init in the same project used to suggest the name it had already

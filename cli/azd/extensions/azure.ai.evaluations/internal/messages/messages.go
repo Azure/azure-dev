@@ -1210,6 +1210,26 @@ func InstructionsNotDetected() string {
 	return "Agent instructions: not detected\n"
 }
 
+// SelectInstructionSourcePrompt asks how to supply missing generation context.
+func SelectInstructionSourcePrompt() string {
+	return "How would you like to provide agent instructions?"
+}
+
+// TypeInstructionsChoice selects direct instruction entry.
+func TypeInstructionsChoice() string { return "Type instructions" }
+
+// LoadInstructionsChoice selects an existing local instruction file.
+func LoadInstructionsChoice() string { return "Load from file" }
+
+// EnterInstructionFilePrompt asks for the file to read, not its contents.
+func EnterInstructionFilePrompt() string { return "Path to the agent instructions file:" }
+
+// EnterInstructionFileHelp describes the same input as --agent-instruction-file.
+func EnterInstructionFileHelp() string {
+	return "Path to a non-empty local text file, relative to the current directory or absolute. " +
+		"Enter the path without shell quotes; spaces are supported."
+}
+
 // EnterAgentInstructionPrompt asks what the agent is for.
 func EnterAgentInstructionPrompt() string {
 	return "What does this agent do, and what should good responses do?"

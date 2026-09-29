@@ -4,10 +4,16 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,15 +29,15 @@ func configWithEvals(names ...string) *project.EvalConfig {
 // The spec's default: init proposes a name, and proposes one the file can
 // still accept rather than failing on its own suggestion.
 func TestEvalName_TakesTheSuggestionWhenNoneWasGiven(t *testing.T) {
-	cfg := configWithEvals("support-agent-trace-eval")
-	suggested := uniqueEvalName(cfg, defaultEvalName("support-agent", initSourceTraces))
-	require.Equal(t, "support-agent-trace-eval-2", suggested)
+	cfg := configWithEvals("support-agent-trace-turn-eval")
+	suggested := uniqueEvalName(cfg, defaultEvalName("support-agent", initSourceTraces, "turn", ""))
+	require.Equal(t, "support-agent-trace-turn-eval-2", suggested)
 
 	got, err := resolveEvalName(
 		noPromptCmd(t, true), cfg, "evals/azure.eval.yaml", "", suggested)
 
 	require.NoError(t, err)
-	assert.Equal(t, "support-agent-trace-eval-2", got)
+	assert.Equal(t, "support-agent-trace-turn-eval-2", got)
 }
 
 // A name the caller gave and the file has room for is the answer, and asking
@@ -108,4 +114,73 @@ func TestEvalNameUsable_SeparatesTakenFromMalformed(t *testing.T) {
 	malformed := evalNameUsable(cfg, "c.yaml", "not a name")
 	require.Error(t, malformed)
 	assert.Contains(t, malformed.Error(), "not a usable eval name")
+}
+
+type defaultNamePromptServer struct {
+	conversationPromptServer
+}
+
+func (s *defaultNamePromptServer) Prompt(
+	ctx context.Context, req *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	if req.GetOptions().GetMessage() == messages.EvalNamePrompt() {
+		return &azdext.PromptResponse{Value: req.GetOptions().GetDefaultValue()}, nil
+	}
+	return s.conversationPromptServer.Prompt(ctx, req)
+}
+
+func TestInitDefaultNamesIdentifySourceModeAndLevel(t *testing.T) {
+	for _, format := range []string{"interactive", "no-prompt", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			h := newInitHarness(t, nil, &defaultNamePromptServer{})
+			path := filepath.Join("team evals", "custom quality.yml")
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			original := "# Preserve older names\nx-owner: team\nevals:\n  - name: agent-dataset-eval\n"
+			require.NoError(t, os.WriteFile(path, []byte(original), 0o600))
+			cases := []struct {
+				name string
+				args []string
+			}{
+				{"agent-dataset-turn-eval", []string{"--source", "dataset", "--evaluation-level", "turn",
+					"--target", "agent", "--dataset", "turn-data"}},
+				{"agent-trace-turn-eval", []string{"--source", "traces", "--evaluation-level", "turn", "--target", "agent"}},
+				{"agent-trace-conversation-eval", []string{"--source", "traces",
+					"--evaluation-level", "conversation", "--target", "agent"}},
+				{"dataset-static-conversation-eval", []string{"--conversation-mode", "static", "--dataset", "completed"}},
+				{"agent-dataset-simulation-conversation-eval", []string{"--conversation-mode", "simulation",
+					"--target", "agent", "--dataset", "seeds", "--simulation-model", "connection/simulator"}},
+				{"agent-dataset-turn-eval-2", []string{"--source", "dataset", "--evaluation-level", "turn",
+					"--target", "agent", "--dataset", "different-turn-data"}},
+			}
+			for _, tc := range cases {
+				args := append([]string{"--path", path, "--judge-model", "judge"}, tc.args...)
+				switch format {
+				case "no-prompt":
+					args = append(args, "--no-prompt")
+				case "json":
+					args = append(args, "--output", "json")
+				}
+				text, err := executeConversationInit(t, args...)
+				require.NoError(t, err)
+				if format == "json" {
+					var doc map[string]any
+					require.NoError(t, json.Unmarshal([]byte(text), &doc))
+					assert.Equal(t, tc.name, doc["eval"])
+				} else {
+					assert.Contains(t, text, "Next: azd ai eval create "+tc.name)
+					assert.Contains(t, text, `--path "team evals/custom quality.yml"`)
+				}
+				authored, err := project.ReadAuthoredConfig(path)
+				require.NoError(t, err)
+				assert.Contains(t, authored.Names(project.SectionEvals), tc.name)
+			}
+			body, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Contains(t, string(body), "# Preserve older names")
+			assert.Contains(t, string(body), "x-owner: team")
+			assert.Contains(t, string(body), "name: agent-dataset-eval\n", "existing names must not be migrated")
+			assert.NoFileExists(t, filepath.Join(h.dir, "evals", project.EvalConfigBase))
+		})
+	}
 }

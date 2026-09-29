@@ -116,9 +116,9 @@ func newInitCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flags.evalName, "name", "",
-		"Name of the eval. Defaults to <target>-dataset-eval, or <target>-trace-eval "+
-			"under --source traces. Static conversations default to conversation-dataset-eval. "+
-			"Numbered when that name is taken.")
+		"Name of the eval. Defaults to <target>-<source>[-<mode>]-<level>-eval, "+
+			"using trace or dataset, static or simulation for conversation datasets, and turn or conversation. "+
+			"Static mode omits the target. Numbered only when that descriptive name is taken.")
 	cmd.Flags().StringVar(&flags.target, "target", "",
 		"Agent to invoke for turn datasets or simulation, or filter for traces. Not allowed in static mode. "+
 			"Detected when the project has one agent; prompts when it has several.")
@@ -703,12 +703,24 @@ func relativeToRoot(projectRoot, configPath string) string {
 	return relative
 }
 
-// defaultEvalName names an eval after what it evaluates and what it reads.
-func defaultEvalName(target, source string) string {
+// defaultEvalName distinguishes the source, conversation mode and evaluation level.
+func defaultEvalName(target, source, level, mode string) string {
 	if source == initSourceTraces {
-		return target + "-trace-eval"
+		source = "trace"
+	} else {
+		source = initSourceDataset
 	}
-	return target + "-dataset-eval"
+	parts := []string{source}
+	if mode != "" {
+		parts = append(parts, mode)
+	}
+	parts = append(parts, cmp.Or(level, project.EvaluationLevelTurn), "eval")
+	suffix := strings.Join(parts, "-")
+	if target == "" {
+		return suffix
+	}
+	// Shorten the target, not the distinguishing source/mode/level.
+	return trimEvalName(target, len(suffix)+1) + "-" + suffix
 }
 
 // uniqueEvalName is the suggested name, made one the file can still accept.

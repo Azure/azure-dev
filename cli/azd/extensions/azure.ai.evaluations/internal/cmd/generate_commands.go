@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -47,9 +49,10 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 			"init scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&f.target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&f.instruction, "agent-instruction", "",
-		"What the agent does and what to test.")
+		"What the agent does and what to test. Skips instruction detection and selection.")
 	cmd.Flags().StringVar(&f.instructionFile, "agent-instruction-file", "",
-		"Read the agent instruction from this file. Mutually exclusive with --agent-instruction.")
+		"Read instructions from a local text file. Mutually exclusive with --agent-instruction; "+
+			"skips instruction detection and selection.")
 	cmd.MarkFlagsMutuallyExclusive("agent-instruction", "agent-instruction-file")
 	cmd.Flags().StringVar(&f.model, "generation-model", "",
 		"Model deployment that generates the artifact.")
@@ -71,6 +74,20 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 	cmd.Flags().BoolVar(&f.force, "force", false,
 		"Overwrite an artifact file that already exists.")
 	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")
+}
+
+func validateInstructionFlags(cmd *cobra.Command, f *generateFlags) error {
+	for _, input := range []struct{ flag, value string }{
+		{"agent-instruction", f.instruction},
+		{"agent-instruction-file", f.instructionFile},
+	} {
+		if cmd.Flags().Changed(input.flag) && strings.TrimSpace(input.value) == "" {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--%s must not be empty", input.flag),
+				"Supply instruction text or a local file path, or omit the flag to use instruction detection.")
+		}
+	}
+	return nil
 }
 
 // resolvePlan settles every input that does not need the network.

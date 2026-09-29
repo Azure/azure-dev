@@ -16,6 +16,20 @@ unattended use. When using `--no-prompt`, supply an independently selected
 `--simulation-model <connection-name/model-deployment>`. The printed command never assumes that the
 generation model should fill either role.
 
+When no instructions are supplied or detected locally or from the deployed agent,
+interactive `generate` offers **Type instructions** or **Load from file**.
+File selection reads a non-empty local text file, including paths containing spaces;
+enter the path without shell quotes at the prompt. Both routes report the source,
+not the instruction contents, and reach the same generation confirmation.
+Explicit `--agent-instruction` or `--agent-instruction-file` values take precedence
+and skip detection and selection. Empty explicit values are rejected.
+Under `--no-prompt` or `--output json`, missing instructions produce an error naming
+these flags instead of a prompt. For example:
+
+```bash
+azd ai eval generate --agent-instruction-file "./instruction files/agent.txt" --target support-agent --generation-model generation-deployment --no-prompt
+```
+
 ## What gets deployed
 
 Eval resources are one service entry in `azure.yaml`, normally a `$ref` to a
@@ -110,6 +124,20 @@ interactive init offers **Static** or **Simulation** for a conversation dataset;
 `target:` nor `simulation:` and rejects `--target`, because completed transcripts
 are scored as they stand. Trace-backed conversations continue to use
 `--source traces --evaluation-level conversation` and filter by the selected agent.
+
+Default eval names identify the source, conversation mode where applicable, and
+evaluation level, rather than distinguishing different flows only by a number:
+
+| Authoring flow | Default name |
+|---|---|
+| Turn dataset | `<target>-dataset-turn-eval` |
+| Turn traces | `<target>-trace-turn-eval` |
+| Conversation traces | `<target>-trace-conversation-eval` |
+| Static conversation dataset | `dataset-static-conversation-eval` |
+| Simulated conversation dataset | `<target>-dataset-simulation-conversation-eval` |
+
+An explicit `--name` still wins. Only a collision with the descriptive name adds
+`-2`, `-3`, and so on. Existing eval names and declarations are not renamed.
 
 | Init flag | Applies to | Meaning |
 |---|---|---|

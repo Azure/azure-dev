@@ -96,8 +96,7 @@ func resolveInstruction(inline, path string) (string, error) {
 	if path == "" {
 		return inline, nil
 	}
-	// #nosec G304 -- path is the file the caller named on the command line.
-	raw, err := os.ReadFile(path)
+	raw, err := project.ReadFileNoBOM(path)
 	if err != nil {
 		return "", messages.ReadingInstructionFile(path, err)
 	}
@@ -195,15 +194,13 @@ func (ec *evalContext) resolveGenerationInstruction(
 	// service marked input_quality, so this is asked rather than shrugged at:
 	// the caller knows what the agent is for, and one sentence is the whole
 	// difference between a usable rubric and a billed job that grades noise.
-	fmt.Fprint(out, messages.InstructionsNotDetected())
+	if !quiet {
+		fmt.Fprint(out, messages.InstructionsNotDetected())
+	}
 	if noPrompt(cmd) {
 		return "", "", messages.InstructionsRequired()
 	}
-	typed, err := promptAgentInstruction(cmd)
-	if err != nil {
-		return "", "", err
-	}
-	return typed, messages.InstructionSourceTyped(), nil
+	return promptAgentInstruction(cmd)
 }
 
 // agentInstructionsFromProject reads the agent's instructions out of the azd

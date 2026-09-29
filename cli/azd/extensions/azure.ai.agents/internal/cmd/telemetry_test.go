@@ -122,6 +122,10 @@ func TestTelemetryContainerModeClassifiesHostedConfiguration(t *testing.T) {
 			},
 		},
 			want: containerModeCode},
+		{name: "invalid code deploy with registry connection", properties: map[string]any{
+			"kind": "hosted", "registryConnectionId": connectionID,
+			"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "app.py"},
+		}, want: containerModeUnknown},
 		{name: "prebuilt image", properties: map[string]any{"kind": "hosted"},
 			image: privateImage, passthrough: true, want: containerModePassthrough},
 		{name: "prebuilt image with connection", properties: map[string]any{

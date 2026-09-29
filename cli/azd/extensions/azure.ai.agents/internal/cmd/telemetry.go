@@ -188,6 +188,9 @@ func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) strin
 		return containerModeUnknown
 	}
 	if agentDef.CodeConfiguration != nil {
+		if agentDef.RegistryConnectionID != "" {
+			return containerModeUnknown
+		}
 		return containerModeCode
 	}
 	image := strings.TrimSpace(agentDef.Image)

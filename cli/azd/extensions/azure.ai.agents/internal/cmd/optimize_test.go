@@ -147,7 +147,8 @@ func TestResolveOptimizeAgent_RejectsUnsupportedProjectDefinition(t *testing.T) 
 	nestedSuggestion := "move the agent definition to service-level properties in azure.yaml, " +
 		"or add an explicit root $ref on the service entry to a direct agent definition"
 	overrideSuggestion := "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
-		"the azure.ai.agent service in azure.yaml, or add an explicit root $ref on the service entry to a direct agent definition"
+		"the azure.ai.agent service in azure.yaml, or add an explicit root $ref on the service entry " +
+		"to a direct agent definition"
 
 	tests := []struct {
 		name           string

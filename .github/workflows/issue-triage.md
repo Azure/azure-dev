@@ -25,6 +25,15 @@ tools:
   bash: [jq, rg]
 safe-outputs:
   group-reports: true
+  report-failed-jobs: false
+  # Keep transient runtime failures and empty agent runs in workflow logs instead of opening issues.
+  report-failure-as-issue:
+    - "!missing_safe_outputs"
+    - "!report_incomplete"
+    - "!inference_access_error"
+    - "!ai_credits_rate_limit_error"
+  report-incomplete:
+    create-issue: false
   add-labels:
     allowed:
       - area/*
@@ -35,8 +44,10 @@ safe-outputs:
       - automation
       - bug
       - copilot-instructions
+      - engineering item
       - enhancement
       - engsys
+      - epic
       - flaky test
       - question
       - registry
@@ -82,9 +93,12 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
    - `Task` for maintenance, documentation, testing, investigation, refactoring, release, process work, or a pure usage or support question
 5. Add only existing labels that are clearly supported by the issue:
    - request a label only when confidence is `HIGH`; omit labels supported only by a possible or indirect relationship
+   - apply each label directly; do not set `suggest`, which only proposes the label for human review
    - add `bug` for a `Bug`
    - add `enhancement` for a `Feature`
    - add `question` for a pure usage or support question, with issue type `Task`; do not add `bug` or `enhancement` for these questions
+   - add `engineering item` for internal implementation, maintenance, testing, documentation, or process work
+   - add `epic` only when the issue coordinates a large initiative made up of multiple related issues
    - add relevant `area/*` and `ext-*` labels based on their descriptions
    - add another allowed label only when the issue directly matches its description
    - add no more than four labels unless a cross-cutting issue clearly needs a fifth
@@ -97,4 +111,4 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
 
 Do not apply priority, ownership, workflow-state, or contributor labels. In particular, do not add `blocker`, `customer-reported`, `production`, `needs-*`, `good first issue`, `help wanted`, `need-upvotes`, or `keep`.
 
-Use only the configured safe outputs. Include issue number `${{ github.event.issue.number }}` when calling `add_labels`. Call `noop` with a short reason when no label or issue type change is needed. If a required tool or data source is unavailable, use `missing_tool` or `missing_data` instead of guessing.
+Use only the configured safe outputs. Include issue number `${{ github.event.issue.number }}` when calling `add_labels`. Call `noop` with a short reason when no label or issue type change is needed. If a required tool or data source is unavailable, use `missing_tool` or `missing_data` instead of guessing. Do not finish without calling `add_labels`, `set_issue_type`, `noop`, `missing_tool`, or `missing_data`.

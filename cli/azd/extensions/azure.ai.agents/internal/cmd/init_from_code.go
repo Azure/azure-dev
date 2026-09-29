@@ -1009,12 +1009,14 @@ var knownProtocols = []protocolInfo{
 	{Name: "invocations", Version: "2.0.0"},
 	{Name: "invocations_ws", Version: "2.0.0"},
 	// "activity" is the canonical protocol name (legacy alias: "activity_protocol").
-	// The version selects the platform's internal container route ("v1"/"1.0.0" ->
-	// /api/messages, "2.0.0" -> /activity/messages), but that hop is Bot Service ->
-	// container inside the platform: the client, the Bot Service messaging endpoint,
-	// and the agent sample are all unaffected by the choice. "2.0.0" is the service's
-	// official/recommended version ("1.0.0" is accepted but deprecated going forward),
-	// so new agents default to it, matching the latest-version convention responses uses.
+	// The version selects the platform's internal container route
+	// ("v1"/"1.0"/"1.0.0" -> /api/messages, "2.0.0" ->
+	// /activity/messages). In deployed environments that hop is Bot Service ->
+	// container inside the platform; local run selects the matching container
+	// route for the Microsoft 365 Agents Playground. "2.0.0" is the service's
+	// official/recommended version (1.x is accepted but deprecated going
+	// forward), so new agents default to it, matching the latest-version
+	// convention responses uses.
 	{Name: "activity", Version: "2.0.0"},
 }
 

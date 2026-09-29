@@ -1002,7 +1002,7 @@ func TestInitializeRejectsLegacyDiskDefinition(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Equal(t, exterrors.CodeAgentDefinitionNotFound, localErr.Code)
-	require.Contains(t, localErr.Suggestion, "service-level $ref")
+	require.Contains(t, localErr.Suggestion, "explicit root $ref on the service entry")
 }
 
 func TestInitializeRejectsProjectLocalAgentYaml(t *testing.T) {

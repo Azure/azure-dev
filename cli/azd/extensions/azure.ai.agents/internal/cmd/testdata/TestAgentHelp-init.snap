@@ -55,7 +55,7 @@ Flags
       --description string         : Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.
       --entry-point string         : Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.
       --force                      : Create a new agent service instead of reusing an existing unified project agent configuration.
-      --image string               : Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). Skips template/language selection, code scaffolding, Dockerfile generation, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.
+      --image string               : Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). Skips template/language selection, code scaffolding, Dockerfile-based source setup and build configuration, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.
       --infra string[="bicep"]     : Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and Foundry files are generated as a separate infra/foundry layer. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.
       --instructions string        : System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.
       --kind string                : Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' (model + instructions; Foundry runs the agent), or 'prompt-voice' (a declarative voice agent; use --model for the speech-to-speech model and --voice for the output voice agent). When omitted, the hosted runtime is used. With --no-prompt, 'prompt' requires --agent-name and either --model or --model-deployment.
@@ -107,7 +107,7 @@ Examples
   Non-interactive unified project adoption
     azd ai agent init --no-prompt -m ./azure.yaml --project-id "<resource-id>"
 
-  Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
+  Bring your own pre-built image (no source scaffolding, Dockerfile-based build setup, or ACR setup)
     azd ai agent init --no-prompt --agent-name my-agent \
       --image myacr.azurecr.io/agents/my-agent:v1
 

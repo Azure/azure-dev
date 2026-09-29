@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -1319,6 +1320,34 @@ func TestInitCommandPreAuthLocalValidation(t *testing.T) {
 	}
 }
 
+func TestInitCommandRejectsInvalidDeployModeBeforeSideEffects(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	command.SilenceErrors = true
+	command.SilenceUsage = true
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"--deploy-mode", "invalid"})
+
+	err := command.Execute()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	require.Equal(t, "invalid --deploy-mode value \"invalid\"; must be 'container' or 'code'", localErr.Message)
+	require.Equal(t, "Use --deploy-mode container or --deploy-mode code", localErr.Suggestion)
+	require.Empty(t, output.String(), "validation must run before command output or prompts")
+
+	entries, readErr := os.ReadDir(root)
+	require.NoError(t, readErr)
+	require.Empty(t, entries, "validation must run before project or Git initialization")
+}
+
 type initAuthOrderingAiServer struct {
 	azdext.UnimplementedAiModelServiceServer
 }
@@ -2123,16 +2152,6 @@ func TestParseAuthStatusJSON(t *testing.T) {
 		})
 	}
 }
-
-// TestDownloadAgentYaml_NoPromptManifestInSrcWithoutForce verifies that a
-// headless caller pointing --manifest at a file inside `<cwd>/src/<name>` is
-// refused with a structured error whose suggestion explicitly mentions
-// `--force` as the pre-consent escape hatch.
-//
-// The InitAction is constructed with a nil azdClient because the validation
-// branch returns before any prompt is invoked. The manifest is parsed (so it
-// must contain a name field) but no downstream container / GitHub paths are
-// reached.
 
 // ---------------------------------------------------------------------------
 // createdFolder path computation after Chdir

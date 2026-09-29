@@ -31,11 +31,13 @@ var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 	appdetect.JavaScript: project.ServiceLanguageJavaScript,
 	appdetect.TypeScript: project.ServiceLanguageTypeScript,
 	appdetect.Python:     project.ServiceLanguagePython,
+	appdetect.Go:         project.ServiceLanguageGo,
 }
 
 var HostMap = map[project.ResourceType]project.ServiceTargetKind{
 	project.ResourceTypeHostAppService:   project.AppServiceTarget,
 	project.ResourceTypeHostContainerApp: project.ContainerAppTarget,
+	project.ResourceTypeHostFunctionApp:  project.AzureFunctionTarget,
 }
 
 // TODO: Dynamic support for versions using /providers/Microsoft.Web/webAppStacks API
@@ -54,6 +56,15 @@ var ServiceLanguageMap = map[project.ServiceLanguageKind]project.AppServiceRunti
 	},
 }
 
+var functionRuntimeByLanguage = map[project.ServiceLanguageKind]project.FunctionAppRuntime{
+	project.ServiceLanguagePython:     {Stack: "python", Version: "3.12"},
+	project.ServiceLanguageJavaScript: {Stack: "node", Version: "22"},
+	project.ServiceLanguageTypeScript: {Stack: "node", Version: "22"},
+	project.ServiceLanguageDotNet:     {Stack: "dotnet-isolated", Version: "8.0"},
+	project.ServiceLanguageJava:       {Stack: "java", Version: "21"},
+	project.ServiceLanguageGo:         {Stack: "go", Version: "1.0"},
+}
+
 func (a *AddAction) configureHost(
 	console input.Console,
 	ctx context.Context,
@@ -64,7 +75,7 @@ func (a *AddAction) configureHost(
 		return nil, nil, fmt.Errorf("unsupported host type: %s", hostType)
 	}
 
-	prj, err := a.promptCodeProject(ctx)
+	prj, err := a.promptCodeProject(ctx, hostType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,7 +98,10 @@ func (a *AddAction) configureHost(
 }
 
 // promptCodeProject prompts the user to add a code project.
-func (a *AddAction) promptCodeProject(ctx context.Context) (*appdetect.Project, error) {
+func (a *AddAction) promptCodeProject(
+	ctx context.Context,
+	hostTypes ...project.ResourceType,
+) (*appdetect.Project, error) {
 	path, err := promptDir(ctx, a.console, "Where is your app code project located?")
 	if err != nil {
 		return nil, err
@@ -99,6 +113,14 @@ func (a *AddAction) promptCodeProject(ctx context.Context) (*appdetect.Project, 
 	}
 
 	if prj == nil {
+		if len(hostTypes) > 0 && hostTypes[0] == project.ResourceTypeHostFunctionApp {
+			if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+				return &appdetect.Project{Path: path, Language: appdetect.Go}, nil
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("checking Go project: %w", err)
+			}
+		}
+
 		// fallback, prompt for language
 		a.console.MessageUxItem(ctx, &ux.WarningMessage{Description: "Could not automatically detect language"})
 		languages := slices.SortedFunc(maps.Keys(LanguageMap),
@@ -115,6 +137,10 @@ func (a *AddAction) promptCodeProject(ctx context.Context) (*appdetect.Project, 
 		entries := make([]any, 0, len(languages)+len(frameworks))
 
 		for _, lang := range languages {
+			if lang == appdetect.Go && (len(hostTypes) == 0 ||
+				hostTypes[0] != project.ResourceTypeHostFunctionApp) {
+				continue
+			}
 			selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
 			entries = append(entries, lang)
 		}
@@ -182,6 +208,12 @@ func (a *AddAction) projectAsService(
 	_, supported := LanguageMap[prj.Language]
 	if !supported {
 		return nil, fmt.Errorf("unsupported language: %s", prj.Language)
+	}
+
+	if kind == project.AzureFunctionTarget {
+		if err := validateFunctionCodeProject(prj); err != nil {
+			return nil, err
+		}
 	}
 
 	svcName := azdcontext.ProjectName(prj.Path)
@@ -259,6 +291,43 @@ func (a *AddAction) projectAsService(
 	return svc, nil
 }
 
+func validateFunctionCodeProject(prj *appdetect.Project) error {
+	if prj.Docker != nil {
+		return fmt.Errorf("container-based Function Apps are not supported by `azd add` with Flex Consumption")
+	}
+	if prj.HasWebUIFramework() {
+		return fmt.Errorf("a web UI project cannot be deployed as a Function App")
+	}
+	if _, ok := functionRuntimeByLanguage[LanguageMap[prj.Language]]; !ok {
+		return fmt.Errorf("unsupported Function App language: %s", prj.Language)
+	}
+	if info, err := os.Stat(filepath.Join(prj.Path, "host.json")); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no host.json found in Function App project %q", prj.Path)
+		}
+		return fmt.Errorf("checking Function App project: %w", err)
+	} else if info.IsDir() {
+		return fmt.Errorf("host.json must be a file in Function App project %q", prj.Path)
+	}
+	if prj.Language == appdetect.DotNet {
+		files, err := filepath.Glob(filepath.Join(prj.Path, "*.csproj"))
+		if err != nil {
+			return fmt.Errorf("finding .NET Function App project: %w", err)
+		}
+		for _, file := range files {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				return fmt.Errorf("reading .NET Function App project %q: %w", file, err)
+			}
+			if strings.Contains(strings.ToLower(string(data)), "microsoft.net.sdk.functions") {
+				return fmt.Errorf("Flex Consumption requires a .NET isolated Function App; %q uses in-process Functions",
+					file)
+			}
+		}
+	}
+	return nil
+}
+
 func addServiceAsResource(
 	ctx context.Context,
 	console input.Console,
@@ -267,6 +336,15 @@ func addServiceAsResource(
 ) (*project.ResourceConfig, error) {
 	resSpec := project.ResourceConfig{
 		Name: svc.Name,
+	}
+	if svc.Host == project.AzureFunctionTarget {
+		runtime, ok := functionRuntimeByLanguage[svc.Language]
+		if !ok {
+			return nil, fmt.Errorf("unsupported Function App language: %s", svc.Language)
+		}
+		resSpec.Type = project.ResourceTypeHostFunctionApp
+		resSpec.Props = project.FunctionAppProps{Runtime: runtime}
+		return &resSpec, nil
 	}
 	if svc.Host != project.ContainerAppTarget && svc.Host != project.AppServiceTarget {
 		return nil, fmt.Errorf("unsupported service target: %s", svc.Host)

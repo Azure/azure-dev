@@ -137,6 +137,8 @@ type ServiceSpec struct {
 	// App Service specific configuration
 	Runtime        *RuntimeInfo
 	StartupCommand string
+	// FunctionStorage is set only for Function App services.
+	FunctionStorage *FunctionStorage
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -176,7 +178,16 @@ type HostKind string
 const (
 	AppServiceKind   HostKind = "appservice"
 	ContainerAppKind HostKind = "containerapp"
+	FunctionAppKind  HostKind = "functionapp"
 )
+
+// FunctionStorage identifies the backing account for a Function App service.
+type FunctionStorage struct {
+	// ExistingName is the Bicep symbol for a referenced existing storage account.
+	ExistingName string
+	// Implicit means the Function App owns a dedicated backing storage account.
+	Implicit bool
+}
 
 type RuntimeInfo struct {
 	Type    string

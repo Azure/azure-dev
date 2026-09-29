@@ -24,6 +24,10 @@ A deployable unit defined in `azure.yaml`. Each service has a source path, a lan
 
 The Azure resource that hosts a deployed service. Supported targets include Azure App Service, Azure Container Apps, Azure Functions, Azure Static Web Apps, Azure Kubernetes Service (AKS), and Azure AI.
 
+### Flex Consumption Function App
+
+A Linux Azure Functions app on the FC1 plan. In compose projects, the `host.functionapp` resource generates the infrastructure for a source-based `host: function` service, including identity-based storage access. Go Functions support on this plan is in Azure public preview. See [Function App configuration](../reference/azure-yaml-schema.md#function-app-host-function).
+
 ### Framework Service
 
 A language/build framework that knows how to restore, build, and package a service's source code. Built-in frameworks include .NET, Python, Java, JavaScript/TypeScript, and Docker. Extensions can add support for additional frameworks.

@@ -86,6 +86,84 @@ func TestExecInfra(t *testing.T) {
 			},
 		},
 		{
+			"Function App with implicit storage",
+			InfraSpec{
+				Services: []ServiceSpec{{
+					Name: "api",
+					Host: FunctionAppKind,
+					Runtime: &RuntimeInfo{
+						Type: "python", Version: "3.12",
+					},
+					FunctionStorage: &FunctionStorage{Implicit: true},
+				}},
+			},
+		},
+		{
+			"Function App with managed storage",
+			InfraSpec{
+				StorageAccount: &StorageAccount{},
+				Services: []ServiceSpec{{
+					Name: "api",
+					Host: FunctionAppKind,
+					Runtime: &RuntimeInfo{
+						Type: "node", Version: "22",
+					},
+					FunctionStorage: &FunctionStorage{},
+					StorageAccount:  &StorageReference{},
+				}},
+			},
+		},
+		{
+			"Function App with existing storage",
+			InfraSpec{
+				Existing: []ExistingResource{{
+					Name:             "existingStorage",
+					ResourceType:     "Microsoft.Storage/storageAccounts",
+					ApiVersion:       "2023-05-01",
+					ResourceIdEnvVar: "AZURE_RESOURCE_STORAGE_ID",
+				}},
+				Services: []ServiceSpec{{
+					Name: "api",
+					Host: FunctionAppKind,
+					Runtime: &RuntimeInfo{
+						Type: "dotnet-isolated", Version: "8.0",
+					},
+					FunctionStorage: &FunctionStorage{ExistingName: "existingStorage"},
+				}},
+			},
+		},
+		{
+			"Go Function App and mixed hosts with dependencies",
+			InfraSpec{
+				StorageAccount: &StorageAccount{},
+				DbCosmos:       &DatabaseCosmos{DatabaseName: "appdb"},
+				DbRedis:        &DatabaseRedis{},
+				KeyVault:       &KeyVault{},
+				ServiceBus:     &ServiceBus{},
+				EventHubs:      &EventHubs{},
+				Services: []ServiceSpec{
+					{
+						Name: "goapi", Host: FunctionAppKind,
+						Runtime:         &RuntimeInfo{Type: "go", Version: "1.0"},
+						FunctionStorage: &FunctionStorage{Implicit: true},
+						DbCosmos:        &DatabaseReference{DatabaseName: "appdb"},
+						DbRedis:         &DatabaseReference{DatabaseName: "redis"},
+						ServiceBus:      &ServiceBus{},
+						EventHubs:       &EventHubs{},
+					},
+					{
+						Name: "pyapi", Host: FunctionAppKind,
+						Runtime:         &RuntimeInfo{Type: "python", Version: "3.12"},
+						FunctionStorage: &FunctionStorage{},
+						StorageAccount:  &StorageReference{},
+					},
+					{Name: "web", Host: AppServiceKind, Port: 3100,
+						Runtime: &RuntimeInfo{Type: "node", Version: "22-lts"}},
+					{Name: "worker", Host: ContainerAppKind, Port: 3100},
+				},
+			},
+		},
+		{
 			"API and web",
 			InfraSpec{
 				Services: []ServiceSpec{
@@ -240,6 +318,14 @@ func TestExecInfra(t *testing.T) {
 				tt.spec,
 				dir)
 			require.NoError(t, err)
+			if tt.name == "Go Function App and mixed hosts with dependencies" {
+				bicep, err := os.ReadFile(filepath.Join(dir, "resources.bicep"))
+				require.NoError(t, err)
+				assert.Contains(t, string(bicep), "http20Enabled: false")
+				assert.Contains(t, string(bicep), "FUNCTIONS_WORKER_RUNTIME: 'native'")
+				assert.Contains(t, string(bicep), "AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name")
+				assert.Contains(t, string(bicep), "REDIS_HOST: redis.outputs.hostName")
+			}
 
 			if v := os.Getenv("SCAFFOLD_SAVE"); v != "" {
 				dest := filepath.Join("testdata", strings.ReplaceAll(t.Name(), "/", "-"))

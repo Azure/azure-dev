@@ -811,6 +811,7 @@
                             "ai.search",
                             "host.containerapp",
                             "host.appservice",
+                            "host.functionapp",
                             "messaging.eventhubs",
                             "messaging.servicebus",
                             "storage",
@@ -855,6 +856,18 @@
                         },
                         "then": {
                             "$ref": "#/definitions/containerAppResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "host.functionapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/functionAppResource"
                         }
                     },
                     {
@@ -2049,6 +2062,75 @@
                     "type": "string",
                     "title": "Startup command",
                     "description": "Optional. Startup command that will be run as part of web app startup."
+                }
+            }
+        },
+        "functionAppResource": {
+            "type": "object",
+            "description": "A Linux Azure Function App on the Flex Consumption (FC1) plan.",
+            "additionalProperties": false,
+            "required": [
+                "runtime"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "host.functionapp"
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "Other resources that the Function App uses",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "runtime": {
+                    "type": "object",
+                    "title": "Flex Consumption runtime",
+                    "required": [
+                        "stack",
+                        "version"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "stack": {
+                            "type": "string",
+                            "enum": [
+                                "python",
+                                "node",
+                                "dotnet-isolated",
+                                "java",
+                                "go"
+                            ]
+                        },
+                        "version": {
+                            "type": "string",
+                            "pattern": "^[0-9]+(\\.[0-9]+)?$"
+                        }
+                    }
+                },
+                "env": {
+                    "type": "array",
+                    "title": "Additional Function App settings",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "value": {
+                                "type": "string"
+                            },
+                            "secret": {
+                                "type": "string"
+                            }
+                        }
+                    }
                 }
             }
         },

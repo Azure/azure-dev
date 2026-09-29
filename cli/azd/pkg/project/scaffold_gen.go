@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -264,6 +265,23 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			}
 
 			infraSpec.Services = append(infraSpec.Services, svcSpec)
+		case ResourceTypeHostFunctionApp:
+			svcConfig, ok := projectConfig.Services[res.Name]
+			if !ok {
+				return nil, fmt.Errorf("service %s not found in project config", res.Name)
+			}
+			svcSpec := scaffold.ServiceSpec{
+				Name: res.Name,
+				Env:  map[string]string{},
+				Host: scaffold.FunctionAppKind,
+			}
+			if err := mapFunctionApp(res, &svcSpec, &infraSpec, svcConfig, projectConfig, existingMap); err != nil {
+				return nil, err
+			}
+			if err := mapHostUses(res, &svcSpec, backendMapping, existingMap, projectConfig); err != nil {
+				return nil, err
+			}
+			infraSpec.Services = append(infraSpec.Services, svcSpec)
 		case ResourceTypeOpenAiModel:
 			props := res.Props.(AIModelProps)
 			if len(props.Model.Name) == 0 {
@@ -389,6 +407,24 @@ func mapHostProps(
 	port int,
 	env []ServiceEnvVar,
 ) error {
+	if err := mapHostEnv(res, svcSpec, infraSpec, env); err != nil {
+		return err
+	}
+
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("port value %d for host %s must be between 1 and 65535", port, res.Name)
+	}
+
+	svcSpec.Port = port
+	return nil
+}
+
+func mapHostEnv(
+	res *ResourceConfig,
+	svcSpec *scaffold.ServiceSpec,
+	infraSpec *scaffold.InfraSpec,
+	env []ServiceEnvVar,
+) error {
 	for _, envVar := range env {
 		if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
 			return fmt.Errorf(
@@ -419,12 +455,82 @@ func mapHostProps(
 		svcSpec.Env[envVar.Name] = evaluatedValue
 	}
 
-	if port < 1 || port > 65535 {
-		return fmt.Errorf("port value %d for host %s must be between 1 and 65535", port, res.Name)
+	return nil
+}
+
+var functionRuntimeVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+
+func mapFunctionApp(
+	res *ResourceConfig,
+	svcSpec *scaffold.ServiceSpec,
+	infraSpec *scaffold.InfraSpec,
+	svcConfig *ServiceConfig,
+	prj *ProjectConfig,
+	existingMap map[string]*scaffold.ExistingResource,
+) error {
+	if svcConfig.Host != AzureFunctionTarget || !svcConfig.Image.Empty() ||
+		svcConfig.Docker.Path != "" || svcConfig.Language == ServiceLanguageDocker {
+		return fmt.Errorf("resources.%s requires a code-based service with host: function (Flex Consumption)", res.Name)
+	}
+	props, ok := res.Props.(FunctionAppProps)
+	if !ok {
+		return fmt.Errorf("resources.%s requires Function App runtime properties", res.Name)
+	}
+	expectedStack := ""
+	switch {
+	case svcConfig.Language.IsDotNet():
+		expectedStack = "dotnet-isolated"
+	case svcConfig.Language == ServiceLanguagePython:
+		expectedStack = "python"
+	case svcConfig.Language == ServiceLanguageJavaScript || svcConfig.Language == ServiceLanguageTypeScript:
+		expectedStack = "node"
+	case svcConfig.Language == ServiceLanguageJava:
+		expectedStack = "java"
+	case svcConfig.Language == ServiceLanguageGo:
+		expectedStack = "go"
+	}
+	if expectedStack == "" || props.Runtime.Stack != expectedStack {
+		return fmt.Errorf("resources.%s.runtime.stack must match the service language (%s)", res.Name, expectedStack)
+	}
+	if !functionRuntimeVersion.MatchString(props.Runtime.Version) {
+		return fmt.Errorf("resources.%s.runtime.version must be a numeric runtime version", res.Name)
+	}
+	svcSpec.Runtime = &scaffold.RuntimeInfo{Type: props.Runtime.Stack, Version: props.Runtime.Version}
+	svcSpec.FunctionStorage = &scaffold.FunctionStorage{Implicit: true}
+
+	for _, use := range res.Uses {
+		dep, ok := prj.Resources[use]
+		if !ok {
+			return fmt.Errorf("resource %s uses %s, which does not exist", res.Name, use)
+		}
+		if dep.Type != ResourceTypeStorage {
+			if strings.HasPrefix(string(dep.Type), "host.") {
+				return fmt.Errorf("Function App %s cannot use host resource %s", res.Name, use)
+			}
+			continue
+		}
+		if !svcSpec.FunctionStorage.Implicit {
+			return fmt.Errorf("Function App %s uses multiple storage resources", res.Name)
+		}
+		svcSpec.FunctionStorage.Implicit = false
+		if dep.Existing {
+			existing, ok := existingMap[use]
+			if !ok {
+				return fmt.Errorf("existing storage resource %s has no declaration", use)
+			}
+			svcSpec.FunctionStorage.ExistingName = existing.Name
+		}
 	}
 
-	svcSpec.Port = port
-	return nil
+	for _, env := range props.Env {
+		if strings.HasPrefix(env.Name, "AzureWebJobsStorage") ||
+			env.Name == "FUNCTIONS_WORKER_RUNTIME" ||
+			env.Name == "APPLICATIONINSIGHTS_CONNECTION_STRING" ||
+			env.Name == "AZURE_CLIENT_ID" {
+			return fmt.Errorf("resources.%s.env cannot override required Function App setting %s", res.Name, env.Name)
+		}
+	}
+	return mapHostEnv(res, svcSpec, infraSpec, props.Env)
 }
 
 func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
@@ -538,6 +644,8 @@ func mapHostUses(
 			svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
 				scaffold.ServiceReference{Name: use})
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
+		case ResourceTypeHostFunctionApp:
+			return fmt.Errorf("resource %s cannot use Function App %s as a host dependency", res.Name, use)
 		case ResourceTypeOpenAiModel:
 			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
 		case ResourceTypeMessagingEventHubs:

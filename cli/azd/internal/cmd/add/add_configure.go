@@ -74,7 +74,8 @@ func Configure(
 
 	switch r.Type {
 	case project.ResourceTypeHostAppService,
-		project.ResourceTypeHostContainerApp:
+		project.ResourceTypeHostContainerApp,
+		project.ResourceTypeHostFunctionApp:
 		return fillUses(ctx, r, console, p)
 	case project.ResourceTypeOpenAiModel:
 		return fillOpenAiModelName(ctx, r, console, p)
@@ -243,8 +244,8 @@ func fillUses(
 	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
 		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
-		// Linking between different host types is not supported yet
-		if isHost && otherIsHost && r.Type != other.Type {
+		// Function Apps do not support host-to-host dependencies in compose.
+		if isHost && otherIsHost && (r.Type != other.Type || r.Type == project.ResourceTypeHostFunctionApp) {
 			continue
 		}
 		res = append(res, resourceDisplay{
@@ -307,8 +308,7 @@ func promptUsedBy(
 	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
 		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
-		// Linking between different host types is not supported yet
-		if isHost && otherIsHost && r.Type != other.Type {
+		if isHost && otherIsHost && (r.Type != other.Type || r.Type == project.ResourceTypeHostFunctionApp) {
 			continue
 		}
 		if otherIsHost && !slices.Contains(other.Uses, r.Name) {

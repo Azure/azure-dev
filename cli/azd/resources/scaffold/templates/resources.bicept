@@ -94,6 +94,22 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.4.1' = {
   }
 }
 {{- end}}
+
+{{- if hasFunctionApp .Services}}
+module functionAppPlan 'br/public:avm/res/web/serverfarm:0.1.1' = {
+  name: 'function-app-plan'
+  params: {
+    name: '${abbrs.webServerFarms}func-${resourceToken}'
+    location: location
+    tags: tags
+    sku: {
+      name: 'FC1'
+      tier: 'FlexConsumption'
+    }
+    reserved: true
+  }
+}
+{{- end}}
 {{- end}}
 
 {{- if .DbCosmosMongo}}
@@ -893,6 +909,243 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
+  }
+}
+{{- end}}
+
+{{- if isFunctionApp .Host}}
+{{- if .FunctionStorage.Implicit}}
+module {{bicepName .Name}}FunctionStorage 'br/public:avm/res/storage/storage-account:0.25.0' = {
+  name: '{{bicepName .Name}}-function-storage'
+  params: {
+    name: {{bicepName .Name}}BackingStorageName
+    location: location
+    tags: tags
+    allowSharedKeyAccess: false
+    allowBlobPublicAccess: false
+    publicNetworkAccess: 'Enabled'
+    blobServices: {}
+    queueServices: {}
+    tableServices: {}
+  }
+}
+{{- end}}
+
+{{- if .FunctionStorage.ExistingName}}
+var {{bicepName .Name}}BackingStorageName = {{.FunctionStorage.ExistingName}}.name
+{{- else if .FunctionStorage.Implicit}}
+var {{bicepName .Name}}BackingStorageName = '${abbrs.storageStorageAccounts}${resourceToken}${take(uniqueString('{{.Name}}'), 4)}'
+{{- else}}
+var {{bicepName .Name}}BackingStorageName = storageAccountName
+{{- end}}
+
+resource {{bicepName .Name}}BackingStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  {{- if .FunctionStorage.ExistingName}}
+  scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
+  {{- end}}
+  name: {{bicepName .Name}}BackingStorageName
+}
+
+var {{bicepName .Name}}DeploymentContainerName = 'app-package-${take('{{.Name}}', 32)}-${take(uniqueString('{{.Name}}'), 6)}-${take(resourceToken, 7)}'
+
+{{- if .FunctionStorage.ExistingName}}
+module {{bicepName .Name}}DeploymentContainer 'modules/function-storage-container.bicep' = {
+  name: '{{bicepName .Name}}-function-container'
+  scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
+  params: {
+    storageAccountName: {{bicepName .Name}}BackingStorageName
+    containerName: {{bicepName .Name}}DeploymentContainerName
+  }
+}
+{{- else}}
+resource {{bicepName .Name}}BlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = {
+  parent: {{bicepName .Name}}BackingStorage
+  name: 'default'
+}
+
+resource {{bicepName .Name}}DeploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: {{bicepName .Name}}BlobService
+  name: {{bicepName .Name}}DeploymentContainerName
+  properties: {
+    publicAccess: 'None'
+  }
+  dependsOn: [
+    {{- if .FunctionStorage.Implicit}}
+    {{bicepName .Name}}FunctionStorage
+    {{- else}}
+    storageAccount
+    {{- end}}
+  ]
+}
+{{- end}}
+
+module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
+  name: 'function-app-{{bicepName .Name}}'
+  params: {
+    name: '${abbrs.webSitesFunctions}{{.Name}}-${resourceToken}'
+    location: location
+    tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+    kind: 'functionapp,linux'
+    serverFarmResourceId: functionAppPlan.outputs.resourceId
+    managedIdentities: {
+      systemAssigned: true
+      userAssignedResourceIds: [{{bicepName .Name}}Identity.outputs.resourceId]
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          {{- if .FunctionStorage.ExistingName}}
+          value: {{bicepName .Name}}DeploymentContainer.outputs.containerUri
+          {{- else}}
+          value: '{{printf "${%sBackingStorage.properties.primaryEndpoints.blob}" (bicepName .Name)}}{{printf "${%sDeploymentContainer.name}" (bicepName .Name)}}'
+          {{- end}}
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 100
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: '{{.Runtime.Type}}'
+        version: '{{.Runtime.Version}}'
+      }
+    }
+    siteConfig: {
+      alwaysOn: false
+      {{- if eq .Runtime.Type "go"}}
+      http20Enabled: false
+      {{- end}}
+    }
+    configs: [{
+      name: 'appsettings'
+      properties: {
+        AzureWebJobsStorage__credential: 'managedidentity'
+        AzureWebJobsStorage__blobServiceUri: 'https://{{printf "${%sBackingStorage.name}" (bicepName .Name)}}.blob.${environment().suffixes.storage}'
+        AzureWebJobsStorage__queueServiceUri: 'https://{{printf "${%sBackingStorage.name}" (bicepName .Name)}}.queue.${environment().suffixes.storage}'
+        AzureWebJobsStorage__tableServiceUri: 'https://{{printf "${%sBackingStorage.name}" (bicepName .Name)}}.table.${environment().suffixes.storage}'
+        FUNCTIONS_WORKER_RUNTIME: '{{if eq .Runtime.Type "go"}}native{{else}}{{.Runtime.Type}}{{end}}'
+        APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
+        APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'Authorization=AAD'
+        AZURE_CLIENT_ID: {{bicepName .Name}}Identity.outputs.clientId
+        {{- if .DbCosmos}}
+        AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
+        {{- end}}
+        {{- if .DbCosmosMongo}}
+        MONGODB_URL: '@Microsoft.KeyVault(SecretUri=${cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri})'
+        {{- end}}
+        {{- if .DbPostgres}}
+        POSTGRES_HOST: postgresServer.outputs.fqdn
+        POSTGRES_USERNAME: postgresDatabaseUser
+        POSTGRES_DATABASE: postgresDatabaseName
+        POSTGRES_PORT: '5432'
+        POSTGRES_PASSWORD: postgresDatabasePassword
+        POSTGRES_URL: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
+        {{- end}}
+        {{- if .DbMySql}}
+        MYSQL_HOST: mysqlServer.outputs.fqdn
+        MYSQL_USERNAME: mysqlDatabaseUser
+        MYSQL_DATABASE: mysqlDatabaseName
+        MYSQL_PORT: '3306'
+        MYSQL_PASSWORD: mysqlDatabasePassword
+        MYSQL_URL: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
+        {{- end}}
+        {{- if .DbRedis}}
+        REDIS_HOST: redis.outputs.hostName
+        REDIS_PORT: string(redis.outputs.sslPort)
+        REDIS_ENDPOINT: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+        REDIS_PASSWORD: '@Microsoft.KeyVault(SecretUri=${redis.outputs.exportedSecrets['redis-password'].secretUri})'
+        REDIS_URL: '@Microsoft.KeyVault(SecretUri=${redis.outputs.exportedSecrets['redis-url'].secretUri})'
+        {{- end}}
+        {{- if .EventHubs}}
+        AZURE_EVENT_HUBS_NAME: eventHubNamespace.outputs.name
+        AZURE_EVENT_HUBS_HOST: '${eventHubNamespace.outputs.name}.servicebus.windows.net'
+        {{- end}}
+        {{- if .ServiceBus}}
+        AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name
+        AZURE_SERVICE_BUS_HOST: '${serviceBusNamespace.outputs.name}.servicebus.windows.net'
+        {{- end}}
+        {{- if .StorageAccount}}
+        AZURE_STORAGE_ACCOUNT_NAME: {{bicepName .Name}}BackingStorage.name
+        AZURE_STORAGE_BLOB_ENDPOINT: {{bicepName .Name}}BackingStorage.properties.primaryEndpoints.blob
+        {{- end}}
+        {{- if $infra.KeyVault}}
+        AZURE_KEY_VAULT_NAME: keyVault.outputs.name
+        AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
+        {{- end}}
+        {{- if .AIModels}}
+        AZURE_OPENAI_ENDPOINT: account.outputs.endpoint
+        {{- end}}
+        {{- if .AISearch}}
+        AZURE_AI_SEARCH_ENDPOINT: search.outputs.endpoint
+        {{- end}}
+        {{- if .AiFoundryProject}}
+        AZURE_AI_PROJECT_ENDPOINT: aiFoundryProjectEndpoint
+        {{- end}}
+        {{- range $key, $value := .Env}}
+        {{ $key }}: {{ $value }}
+        {{- end}}
+      }
+    }]
+  }
+}
+
+{{- if .FunctionStorage.ExistingName}}
+module {{bicepName .Name}}StorageRoles 'modules/function-storage-roles.bicep' = {
+  name: '{{bicepName .Name}}-function-storage-roles'
+  scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
+  params: {
+    storageAccountName: {{bicepName .Name}}BackingStorageName
+    serviceName: '{{.Name}}'
+    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
+  }
+}
+{{- else}}
+resource {{bicepName .Name}}StorageBlobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName .Name}}BackingStorage.id, '{{.Name}}', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+  scope: {{bicepName .Name}}BackingStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource {{bicepName .Name}}StorageQueueContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName .Name}}BackingStorage.id, '{{.Name}}', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+  scope: {{bicepName .Name}}BackingStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource {{bicepName .Name}}StorageTableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName .Name}}BackingStorage.id, '{{.Name}}', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+  scope: {{bicepName .Name}}BackingStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end}}
+
+resource {{bicepName .Name}}Insights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: '${abbrs.insightsComponents}${resourceToken}'
+}
+
+resource {{bicepName .Name}}InsightsMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName .Name}}Insights.id, '{{.Name}}', '3913510d-42f4-4e42-8a64-420c390055eb')
+  scope: {{bicepName .Name}}Insights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
+    principalType: 'ServicePrincipal'
   }
 }
 {{- end}}

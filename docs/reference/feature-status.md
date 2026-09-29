@@ -34,6 +34,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | JavaScript / TypeScript | Stable |
 | Java | Stable |
 | .NET (C#) | Stable |
+| Go (Azure Functions on Flex Consumption only) | Preview |
 
 ## Infrastructure as Code
 
@@ -50,6 +51,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Azure Static Web Apps | Stable |
 | Azure Container Apps | Stable |
 | Azure Functions | Stable |
+| Azure Functions via `azd add` (Flex Consumption compose) | Beta |
 | Azure Kubernetes Service (AKS) | Beta |
 | Azure AI | Beta |
 

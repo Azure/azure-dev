@@ -1284,7 +1284,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Example: en-US-Ava:DragonHDLatestNeural.")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Create a new agent service instead of reusing an existing unified project agent configuration.")
+		"Allow existing agent service configurations to be overwritten. "+
+			"With --no-prompt, pre-consent when init requires overwrite confirmation.")
 
 	cmd.Flags().StringVar(&flags.kind, "kind", "",
 		"Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' "+

@@ -328,7 +328,14 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// speaks the Activity protocol); everything else uses Agent Inspector. Both
 	// are suppressed by --no-inspector or its neutral alias --no-client.
 	if activityProfile.IsActivity {
-		handlePlaygroundAutoLaunch(ctx, flags.port, flags.channel, suppressClient, os.Stderr)
+		handlePlaygroundAutoLaunch(
+			ctx,
+			flags.port,
+			flags.channel,
+			activityProfile.MessagesPath,
+			suppressClient,
+			os.Stderr,
+		)
 	} else {
 		handleInspectorAutoLaunch(
 			ctx,

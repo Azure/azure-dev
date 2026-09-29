@@ -110,19 +110,6 @@ configuration:
     - if:
       - payloadType: Issues
       - isAction:
-          action: Labeled
-      - hasLabel:
-          label: needs-triage
-      - not:
-          labelAdded:
-            label: needs-triage
-      then:
-      - removeLabel:
-          label: needs-triage
-      description: 
-    - if:
-      - payloadType: Issues
-      - isAction:
           action: Opened
       - and:
         - not:
@@ -137,11 +124,13 @@ configuration:
         - not:
             activitySenderHasPermission:
               permission: Admin
+        - not:
+            isActivitySender:
+              user: github-actions[bot]
+              issueAuthor: False
       then:
       - addLabel:
           label: customer-reported
-      - addLabel:
-          label: question
       description: 
     - if:
       - payloadType: Pull_Request
@@ -160,6 +149,18 @@ configuration:
         - not:
             activitySenderHasPermission:
               permission: Admin
+        - not:
+            isActivitySender:
+              user: dependabot[bot]
+              issueAuthor: False
+        - not:
+            isActivitySender:
+              user: azure-sdk-automation[bot]
+              issueAuthor: False
+        - not:
+            isActivitySender:
+              user: github-actions[bot]
+              issueAuthor: False
       then:
       - addLabel:
           label: customer-reported
@@ -168,43 +169,11 @@ configuration:
       description: 
     - if:
       - payloadType: Issues
-      - isAction:
-          action: Labeled
-      - not:
-          hasLabel:
-            label: needs-triage
-      - not:
-          hasLabel:
-            label: needs-team-triage
-      - not:
-          hasLabel:
-            label: needs-author-feedback
-      - hasLabel:
-          label: customer-reported
-      - not:
-          isInMilestone:
-            milestone: ''
-      - isOpen
-      - not:
-          hasLabel:
-            label: issue-addressed
-      then:
-      - addLabel:
-          label: needs-team-attention
-      description: 
-    - if:
-      - payloadType: Issues
       - labelAdded:
           label: issue-addressed
       then:
       - addReply:
           reply: Hi @${issueAuthor}. Thank you for opening this issue and giving us the opportunity to assist. We believe that this has been addressed. If you feel that further discussion is needed, please add a comment with the text “`/unresolve`” to remove the “issue-addressed” label and continue the conversation.
-      - removeLabel:
-          label: needs-triage
-      - removeLabel:
-          label: needs-team-triage
-      - removeLabel:
-          label: needs-team-attention
       - removeLabel:
           label: needs-author-feedback
       - removeLabel:
@@ -228,8 +197,6 @@ configuration:
       - reopenIssue
       - removeLabel:
           label: issue-addressed
-      - addLabel:
-          label: needs-team-attention
       description: 
     - if:
       - payloadType: Issue_Comment
@@ -257,15 +224,8 @@ configuration:
       - isOpen
       - hasLabel:
           label: issue-addressed
-      - or:
-        - labelAdded:
-            label: needs-team-attention
-        - labelAdded:
-            label: needs-author-feedback
-        - labelAdded:
-            label: needs-triage
-        - labelAdded:
-            label: needs-team-triage
+      - labelAdded:
+          label: needs-author-feedback
       then:
       - removeLabel:
           label: issue-addressed

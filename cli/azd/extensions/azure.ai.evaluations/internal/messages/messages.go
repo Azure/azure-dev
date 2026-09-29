@@ -3220,6 +3220,11 @@ func ResponsesSourceNeedsResponseIDs() error {
 	return errors.New("source.response_ids is required for a responses source")
 }
 
+// ResponsesSourceBlankResponseID identifies an invalid entry without printing stored response IDs.
+func ResponsesSourceBlankResponseID(index int) error {
+	return fmt.Errorf("source.response_ids[%d] must not be blank; supply a stored response ID or remove this entry", index)
+}
+
 // SourceSampleConflict refuses a dataset cap on a source-backed evaluation.
 func SourceSampleConflict(evalName string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,

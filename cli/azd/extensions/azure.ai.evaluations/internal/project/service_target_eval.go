@@ -444,9 +444,9 @@ func FingerprintGroup(group Eval) (string, error) {
 
 // FingerprintDefinition hashes only what the service stores.
 //
-// max_samples and source: are applied per run, not at creation --
-// CreateOpenAIEvalRequest carries neither and buildEvalRequest reads neither.
-// Recreating the eval when one of them changes points the declaration at a new
+// max_samples and source settings are applied per run. The reconciler separately
+// checks schema compatibility when switching to or from a responses source.
+// Recreating the eval when only the sampling or source window changes points the declaration at a new
 // id and leaves every run taken before it reachable only through the old one,
 // for an edit the stored eval cannot even express.
 //

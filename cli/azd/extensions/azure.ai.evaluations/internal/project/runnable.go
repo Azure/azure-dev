@@ -79,9 +79,9 @@ func ValidateRunnable(eval *Eval) error {
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsResponseIDs()
 			}
-			for _, id := range eval.Source.ResponseIDs {
+			for i, id := range eval.Source.ResponseIDs {
 				if strings.TrimSpace(id) == "" {
-					return messages.ResponsesSourceNeedsResponseIDs()
+					return messages.ResponsesSourceBlankResponseID(i)
 				}
 			}
 		case "":

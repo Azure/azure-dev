@@ -357,7 +357,8 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 	for _, mode := range []string{
 		"valid", "custom eval", "bare rows", "missing params", "read failure", "explicit cap zero", "explicit cap one",
 		"alternate mapped key", "missing mapped key", "empty item", "empty ID", "whitespace ID", "non-string ID",
-		"invalid mapping", "invalid later item",
+		"invalid mapping", "invalid later item", "file ID", "file ID alternate mapped key",
+		"empty file ID", "blank file ID", "file ID missing mapping",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			source := eval_api.NewResponsesDataSource([]string{"resp_fixed"}, 1)
@@ -390,6 +391,20 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 			case "invalid later item":
 				source.ItemGenerationParams.Source.Content = append(source.ItemGenerationParams.Source.Content,
 					map[string]any{"item": map[string]any{"response_id": ""}})
+			case "file ID", "file ID alternate mapped key", "empty file ID", "blank file ID", "file ID missing mapping":
+				source.ItemGenerationParams.Source = &eval_api.EvalRunDataContent{
+					Type: eval_api.EvalRunDataContentTypeFileID, ID: "file_fixed",
+				}
+				switch mode {
+				case "file ID alternate mapped key":
+					source.ItemGenerationParams.DataMapping["response_id"] = "{{item.resp_id}}"
+				case "empty file ID":
+					source.ItemGenerationParams.Source.ID = ""
+				case "blank file ID":
+					source.ItemGenerationParams.Source.ID = " \t\u2003"
+				case "file ID missing mapping":
+					source.ItemGenerationParams.DataMapping = nil
+				}
 			}
 			original, err := json.Marshal(source)
 			require.NoError(t, err)
@@ -445,7 +460,8 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 				},
 			}
 			err = action.Run()
-			if mode == "valid" || mode == "alternate mapped key" {
+			if mode == "valid" || mode == "alternate mapped key" ||
+				mode == "file ID" || mode == "file ID alternate mapped key" {
 				require.NoError(t, err)
 				require.Equal(t, 1, posts)
 				var result map[string]any
@@ -561,4 +577,25 @@ func TestResponseBuilderRejectsEmptyIDsAndCaps(t *testing.T) {
 	require.ErrorContains(t, err, "max_samples")
 	_, _, err = (&evalContext{}).buildRunDataSource(t.Context(), nil, "", 0)
 	require.Error(t, err)
+}
+
+func TestResponseBuilderBlankIDNamesEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ids  []string
+		want string
+	}{
+		{"empty first", []string{""}, "source.response_ids[0]"},
+		{"blank first", []string{" \t"}, "source.response_ids[0]"},
+		{"blank later", []string{"resp_keep", "\u0085\u00a0\u2003"}, "source.response_ids[1]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			group := responseGroup()
+			group.Source.ResponseIDs = tc.ids
+			_, _, err := (&evalContext{}).buildRunDataSource(t.Context(), &group, "", 0)
+			require.ErrorContains(t, err, tc.want)
+			assert.Contains(t, err.Error(), "must not be blank")
+			assert.NotContains(t, err.Error(), "resp_keep")
+		})
+	}
 }

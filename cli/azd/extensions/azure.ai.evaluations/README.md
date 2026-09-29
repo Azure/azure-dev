@@ -278,10 +278,11 @@ not local metadata overrides, before writing reconciliation state or publishing
 dependencies. Authored metadata still applies when a rubric edit creates a new version.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
-  sampling creates a new group and a new id. The id is cached in the extension's
-  own private state (`eval.state`) so repeat runs stay comparable. That is not
-  an azd environment value: it does not appear in `azd env get-values`, which
-  shows only what you put there.
+evaluation level creates a new group and a new id. Per-run sampling and source
+settings retain the same ID while the stored schema remains compatible.
+The id is cached in the extension's own private state (`eval.state`) so repeat
+runs stay comparable. That is not an azd environment value: it does not appear
+in `azd env get-values`, which shows only what you put there.
 
 Stored-response evaluations (`source.type: responses`) use Foundry's
 `azure_ai_source` schema with `scenario: responses`. Human `azd ai eval show <eval>`

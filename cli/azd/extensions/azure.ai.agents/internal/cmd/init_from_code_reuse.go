@@ -79,6 +79,7 @@ func runReuseDefinition(
 			fmt.Sprintf("Fix %s and retry, or remove the file to start a fresh init.", displayPath),
 		)
 	}
+	recordInitDefinition(ctx, def)
 
 	fmt.Println(color.HiBlackString(
 		"Detected existing agent definition: %s (name: %s).",

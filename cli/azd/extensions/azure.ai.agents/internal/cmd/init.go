@@ -1335,7 +1335,15 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --no-prompt --agent-name my-agent --project-id "<resource-id>" \
     --image registry.example.com/agents/my-agent:v1 --registry-connection production-registry`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			// Capture failures as unknown until existing positional parsing resolves the input.
+			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), "", false)
+			cmd.SetContext(ctx)
+			defer func() {
+				if runErr != nil {
+					reportInitOperation(ctx)
+				}
+			}()
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment
@@ -1346,6 +1354,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
 				}
+			}
+			// A source directory is equivalent to --src, not an explicit manifest.
+			// Record kind intent before later validation can fail, without extra reads.
+			if flags.manifestPointer == "" && flags.kind != "" {
+				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
 			}
 
 			// Capture whether the user explicitly provided a manifest (via -m flag
@@ -1365,7 +1378,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
-			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
@@ -1526,6 +1538,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// and code scaffolding. The image is wired into azure.yaml and ACR is
 			// skipped by the existing --image handling in InitAction.Run.
 			if flags.image != "" && flags.manifestPointer == "" {
+				recordInitProperties(ctx, map[string]any{"kind": "hosted"})
 				// Validate early so we fail before initializing a project/template.
 				if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
 					return err
@@ -1680,6 +1693,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						useExisting = *confirmResp.Value
 					}
 					if useExisting {
+						recordInitProject(ctx, detection.project)
 						if err := runReuseProjectAgentServices(
 							ctx, flags, azdClient, detection.services,
 						); err != nil {
@@ -1978,6 +1992,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					}
 
 				case initModeVoice:
+					recordInitProperties(ctx, map[string]any{"kind": "voice", "modelType": "managed"})
 					// User chose to create a declarative (managed) voice agent.
 					// Resolve the agent name, synthesize a prompt-voice manifest,
 					// and route it through the manifest flow — the same path as
@@ -2328,6 +2343,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
+		recordInitDefinition(ctx, agentManifest.Template)
 		// Prompt for deploy mode (code vs container) for hosted agents.
 		// Code deploy is supported for Python and .NET projects.
 		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {

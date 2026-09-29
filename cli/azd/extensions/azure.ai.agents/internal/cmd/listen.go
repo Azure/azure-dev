@@ -20,9 +20,11 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
+	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -38,6 +40,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 
 func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
+	operationReporter := newOperationReporter()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
@@ -46,6 +49,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "provision")
+			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+			if classes := operationProjectClasses(args.Project); len(classes) > 0 {
+				operationReporter.report(ctx, usage, "provision", classes)
+			}
 			return preprovisionHandler(ctx, azdClient, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -53,6 +60,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
+			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
+				operationServiceClass(args.Service),
+			})
 			return predeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {

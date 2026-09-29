@@ -58,6 +58,7 @@ func NewRootCommand() *cobra.Command {
 		operation := telemetryOperation(cmd.CommandPath())
 		if operation == "init" {
 			telemetryReporter.reportProject(cmd.Context(), operation)
+			reportInitOperation(cmd.Context())
 		}
 	}
 

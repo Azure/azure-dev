@@ -44,6 +44,7 @@ type InitFromCodeAction struct {
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
+	recordInitProperties(ctx, map[string]any{"kind": "hosted"})
 	var err error
 	a.projectConfig, err = a.ensureProject(ctx)
 	if err != nil {
@@ -94,6 +95,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
+		recordInitDefinition(ctx, localDefinition)
 
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.

@@ -35,6 +35,7 @@ type projectAgentService struct {
 type projectAgentDetection struct {
 	services    []projectAgentService
 	projectRoot string
+	project     *azdext.ProjectConfig
 }
 
 // detectProjectAgentServices returns the agent services the azd host reports for
@@ -67,6 +68,7 @@ func detectProjectAgentServices(ctx context.Context, azdClient *azdext.AzdClient
 	}
 
 	return projectAgentDetection{
+		project:     project,
 		services:    services,
 		projectRoot: project.GetPath(),
 	}

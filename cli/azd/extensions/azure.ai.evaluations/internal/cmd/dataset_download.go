@@ -207,7 +207,7 @@ func (a *datasetDownloadAction) write(
 		}
 	}
 
-	if err := replaceDir(staging, dest); err != nil {
+	if err := replaceDir(staging, dest, a.force); err != nil {
 		return 0, "", err
 	}
 	return len(content.Files), dest, nil
@@ -218,16 +218,6 @@ func (a *datasetDownloadAction) write(
 // gone by the time the restore runs.
 var renameFunc = os.Rename
 
-// replaceDir moves staging onto dest, which may already exist.
-//
-// Renaming onto an existing directory fails whatever --force said, so the old
-// one moves aside first and is discarded only once the new one is in place, and
-// is put back if the rename fails: --force is permission to replace the
-// destination, not to lose both.
-//
-// The holding name is created rather than composed. A fixed sibling such as
-// `<dest>.azd-replaced` is a path this command does not own, and clearing it to
-// make room would destroy whatever a caller had already put there.
 // claimStagedPath refuses a second entry that lands where the first one did.
 //
 // Staging is created empty, so anything already at this path is another entry
@@ -242,9 +232,16 @@ func claimStagedPath(local, entry string) error {
 	return nil
 }
 
-func replaceDir(staging, dest string) error {
+// replaceDir installs staging, preserving an existing destination unless forced.
+// Recheck after the transfer: the destination may have appeared in the meantime.
+// A forced replacement is held at a unique sibling path until installation
+// succeeds, or restored if installation fails.
+func replaceDir(staging, dest string, force bool) error {
 	replaced := ""
 	if _, err := os.Lstat(dest); err == nil {
+		if !force {
+			return messages.DownloadDestinationExists(dest)
+		}
 		held, err := os.MkdirTemp(filepath.Dir(dest), ".azd-replaced-*")
 		if err != nil {
 			return messages.CannotWriteInDirectory(filepath.Dir(dest), err)

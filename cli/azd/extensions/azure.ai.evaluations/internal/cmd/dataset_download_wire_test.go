@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"azureaieval/internal/pkg/dataset_api"
 
@@ -243,5 +245,109 @@ func TestDownloadFolderPreservesEveryFile(t *testing.T) {
 			}
 			assert.Contains(t, stdout.String(), "Downloaded dataset")
 		})
+	}
+}
+
+func TestDownloadWriteHonorsForceWhenDestinationAppears(t *testing.T) {
+	for _, singleFile := range []bool{false, true} {
+		for _, force := range []bool{false, true} {
+			t.Run(fmt.Sprintf("single=%t/force=%t", singleFile, force), func(t *testing.T) {
+				dir := t.TempDir()
+				dest := filepath.Join(dir, "sample-1.0")
+				original := filepath.Join(dest, "original.txt")
+				if singleFile {
+					dest += ".jsonl"
+					original = dest
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.NoError(t, os.MkdirAll(filepath.Dir(original), 0o750))
+					assert.NoError(t, os.WriteFile(original, []byte("original\n"), 0o600))
+					fmt.Fprint(w, "downloaded\n")
+				}))
+				t.Cleanup(server.Close)
+				client := dataset_api.NewDatasetClientFromPipeline(
+					server.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+				action, _, _ := downloadAction(t, dir, "")
+				action.force = force
+				content := &dataset_api.DatasetContent{
+					Container: server.URL, Files: []string{"data.jsonl"}, SingleFile: singleFile,
+				}
+				count, path, err := action.write(t.Context(), &evalContext{datasetClient: client}, content, "1.0")
+				if force {
+					require.NoError(t, err)
+					assert.Equal(t, 1, count)
+					assert.Equal(t, dest, path)
+					if !singleFile {
+						assert.NoFileExists(t, original)
+						dest = filepath.Join(dest, "data.jsonl")
+					}
+				} else {
+					require.ErrorContains(t, err, "--force")
+					assert.Zero(t, count)
+					assert.Empty(t, path)
+					dest = original
+				}
+				got, readErr := os.ReadFile(dest)
+				require.NoError(t, readErr)
+				want := "original\n"
+				if force {
+					want = "downloaded\n"
+				}
+				assert.Equal(t, want, string(got))
+				entries, readErr := os.ReadDir(dir)
+				require.NoError(t, readErr)
+				require.Len(t, entries, 1, "staging and holding paths must be removed")
+			})
+		}
+	}
+}
+
+func TestDownloadWriteCancellationPreservesDestination(t *testing.T) {
+	for _, singleFile := range []bool{false, true} {
+		for _, force := range []bool{false, true} {
+			t.Run(fmt.Sprintf("single=%t/force=%t", singleFile, force), func(t *testing.T) {
+				dir := t.TempDir()
+				dest := filepath.Join(dir, "sample-1.0")
+				original := filepath.Join(dest, "original.txt")
+				if singleFile {
+					dest += ".jsonl"
+					original = dest
+				}
+				if force {
+					require.NoError(t, os.MkdirAll(filepath.Dir(original), 0o750))
+					require.NoError(t, os.WriteFile(original, []byte("original\n"), 0o600))
+				}
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fmt.Fprint(w, "partial")
+					assert.NoError(t, http.NewResponseController(w).Flush())
+					cancel()
+					<-r.Context().Done()
+				}))
+				t.Cleanup(server.Close)
+				client := dataset_api.NewDatasetClientFromPipeline(
+					server.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+				action, _, _ := downloadAction(t, dir, "")
+				action.force = force
+				content := &dataset_api.DatasetContent{
+					Container: server.URL, Files: []string{"data.jsonl"}, SingleFile: singleFile,
+				}
+				count, path, err := action.write(ctx, &evalContext{datasetClient: client}, content, "1.0")
+				require.ErrorIs(t, err, context.Canceled)
+				assert.Zero(t, count)
+				assert.Empty(t, path)
+				entries, readErr := os.ReadDir(dir)
+				require.NoError(t, readErr)
+				if force {
+					got, readErr := os.ReadFile(original)
+					require.NoError(t, readErr)
+					assert.Equal(t, "original\n", string(got))
+					assert.Len(t, entries, 1)
+				} else {
+					assert.Empty(t, entries)
+				}
+			})
+		}
 	}
 }

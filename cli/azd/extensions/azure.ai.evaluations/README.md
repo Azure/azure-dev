@@ -271,6 +271,10 @@ selects the latest version. Existing destinations require `--force` to replace,
 including with `--no-prompt`. JSON output reports the resolved version, path,
 file count, and single-file status.
 
+Overwrite protection also applies to destinations created while a download is
+in progress. A cancelled transfer leaves existing content unchanged and removes
+its temporary download files, even with `--force`.
+
 ## Evaluators
 
 Built-ins need no declaration — reference them as `builtin.<name>` and list

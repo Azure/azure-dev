@@ -48,6 +48,10 @@ Existing destinations are refused unless `--force` is supplied, including with
 `--no-prompt`. `-o json` reports the resolved version, destination path, file count,
 and whether the download is a single file.
 
+Overwrite protection also applies to destinations created while a download is
+in progress. A cancelled transfer leaves existing content unchanged and removes
+its temporary download files, even with `--force`.
+
 ## Generating a dataset
 
 Generation is `azd ai eval generate`, in `azure.ai.evaluations`, and stays

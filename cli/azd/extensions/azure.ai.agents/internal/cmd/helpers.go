@@ -1242,12 +1242,12 @@ func resolveAgentServiceFromProject(
 		}
 	}
 	if resolutionOptions.requireHostedKind {
-		kind, err := agentkind.Kind(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
+		kind, err := agentkind.Kind(svc, projectConfig.Path)
 		if err != nil {
-			return nil, fmt.Errorf("determining agent kind for State Stores: %w", err)
+			return nil, exterrors.ValidationFromError(err, exterrors.CodeInvalidServiceConfig,
+				"determining agent kind for State Stores", "fix the agent service configuration in azure.yaml")
 		}
-		// Older service definitions may not declare a kind. Let the service
-		// determine support rather than treating an unknown kind as non-hosted.
+		// Let the service determine support when the definition does not declare a kind.
 		if kind != "" && kind != string(agent_yaml.AgentKindHosted) {
 			return nil, exterrors.Validation(exterrors.CodeUnsupportedAgentKind,
 				fmt.Sprintf("State Stores require a hosted agent; service %q has kind %q", svc.Name, kind),

@@ -203,9 +203,11 @@ func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) strin
 		return containerModeUnknown
 	}
 	connection := strings.TrimSpace(agentDef.RegistryConnectionID)
+	if agentDef.RegistryConnectionID != "" && connection == "" {
+		return containerModeUnknown
+	}
 	if svc.GetDocker().GetImagePassthrough() {
-		if image == "" || (agentDef.RegistryConnectionID != "" && connection == "") ||
-			svc.GetDocker().GetRemoteBuild() || !containerref.IsFullyQualified(image) {
+		if image == "" || svc.GetDocker().GetRemoteBuild() || !containerref.IsFullyQualified(image) {
 			return containerModeUnknown
 		}
 		if connection != "" {

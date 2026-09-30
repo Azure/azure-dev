@@ -147,6 +147,9 @@ func TestTelemetryContainerModeClassifiesHostedConfiguration(t *testing.T) {
 		{name: "invalid whitespace connection", properties: map[string]any{
 			"kind": "hosted", "registryConnectionId": "   "},
 			image: privateImage, passthrough: true, want: containerModeUnknown},
+		{name: "invalid whitespace connection without passthrough", properties: map[string]any{
+			"kind": "hosted", "registryConnectionId": "   "},
+			want: containerModeUnknown},
 		{name: "conflicting remote build", properties: map[string]any{"kind": "hosted"},
 			image: privateImage, passthrough: true, remoteBuild: true, want: containerModeUnknown},
 		{name: "missing definition", want: containerModeUnknown},

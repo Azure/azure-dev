@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -34,10 +35,10 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		services     map[string]*azdext.ServiceConfig
-		want         []projectAgentService
-		wantErrCount int
+		name     string
+		services map[string]*azdext.ServiceConfig
+		want     []projectAgentService
+		wantErr  string
 	}{
 		{
 			name: "inline agent definition on the service entry",
@@ -51,14 +52,14 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 			services: map[string]*azdext.ServiceConfig{
 				"chat": legacyConfigAgentService("chat", "legacy-agent"),
 			},
-			want: []projectAgentService{{ServiceName: "chat", AgentName: "legacy-agent"}},
+			wantErr: "unsupported nested config block",
 		},
 		{
 			name: "service without a definition is not reusable",
 			services: map[string]*azdext.ServiceConfig{
 				"chat": {Name: "chat", Host: AiAgentHost},
 			},
-			wantErrCount: 1,
+			wantErr: "agent definition not found",
 		},
 		{
 			name: "multiple agents are sorted by service name",
@@ -90,9 +91,14 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, errs := projectAgentServicesFrom(tt.services, t.TempDir())
+			got, err := projectAgentServicesFrom(tt.services, t.TempDir())
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, got)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
-			assert.Len(t, errs, tt.wantErrCount)
 		})
 	}
 }
@@ -114,7 +120,7 @@ func TestProjectAgentServicesFrom_DiskDefinition(t *testing.T) {
 				0o600,
 			))
 
-			services, errs := projectAgentServicesFrom(map[string]*azdext.ServiceConfig{
+			services, err := projectAgentServicesFrom(map[string]*azdext.ServiceConfig{
 				"chat": {
 					Name:         "chat",
 					Host:         AiAgentHost,
@@ -122,15 +128,8 @@ func TestProjectAgentServicesFrom_DiskDefinition(t *testing.T) {
 				},
 			}, projectRoot)
 
-			require.Empty(t, errs)
-			assert.Equal(t,
-				[]projectAgentService{{
-					ServiceName:  "chat",
-					AgentName:    "disk-agent",
-					RelativePath: "src/chat",
-				}},
-				services,
-			)
+			require.ErrorContains(t, err, "legacy file")
+			assert.Empty(t, services)
 		})
 	}
 }
@@ -162,20 +161,17 @@ func TestProjectAgentServicesFrom_RejectsUnsafeServicePaths(t *testing.T) {
 			svc := inlineAgentService(t, "chat", "inline-agent")
 			svc.RelativePath = tt.relativePath
 
-			services, diagnostics := projectAgentServicesFrom(
+			services, err := projectAgentServicesFrom(
 				map[string]*azdext.ServiceConfig{"chat": svc},
 				projectRoot,
 			)
 			assert.Empty(t, services)
-			require.Len(t, diagnostics, 1)
-			assert.Contains(t, diagnostics[0], "invalid project path")
+			require.ErrorContains(t, err, "invalid project path")
 		})
 	}
 }
 
-// Project detection runs before the bare agent.yaml reuse path. A service that
-// already owns an on-disk definition must therefore be recognized from a
-// service subdirectory instead of being scaffolded as a second service.
+// An implicit on-disk definition is not a reusable unified project service.
 func TestDetectProjectAgentServices_ConfiguredDiskDefinitionFromServiceDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	serviceDir := filepath.Join(projectRoot, "src", "chat")
@@ -202,18 +198,9 @@ func TestDetectProjectAgentServices_ConfiguredDiskDefinitionFromServiceDir(t *te
 		&helpersPromptServer{},
 	)
 
-	detection := detectProjectAgentServices(t.Context(), client)
-	assert.Equal(t, projectRoot, detection.projectRoot)
-	assert.Equal(t,
-		[]projectAgentService{{
-			ServiceName:  "chat",
-			AgentName:    "disk-agent",
-			RelativePath: "src/chat",
-		}},
-		detection.services,
-	)
-	assert.False(t, positionalSourceOptsOutOfReuse(".", projectRoot, detection.services),
-		"a positional dot from the configured service directory must reuse the project service")
+	detection, err := detectProjectAgentServices(t.Context(), client)
+	require.Error(t, err)
+	assert.Empty(t, detection.services)
 }
 
 // Ordering must not depend on Go's randomized map iteration, so the same input
@@ -236,10 +223,136 @@ func TestProjectAgentServicesFrom_OrderingIsStable(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	for range 20 {
-		got, errs := projectAgentServicesFrom(services, projectRoot)
-		require.Empty(t, errs)
+		got, err := projectAgentServicesFrom(services, projectRoot)
+		require.NoError(t, err)
 		assert.Equal(t, want, got)
 	}
+}
+
+func TestValidateExistingProjectAgentServices(t *testing.T) {
+	t.Run("direct and root ref ignore stale unreferenced legacy files", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "definition.yaml"),
+			[]byte("kind: hosted\nname: referenced-agent\n"),
+			0o600,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "agent.yaml"),
+			[]byte("not: [valid"),
+			0o600,
+		))
+		refProps, err := structpb.NewStruct(map[string]any{"$ref": "./definition.yaml"})
+		require.NoError(t, err)
+
+		project := &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"direct": inlineAgentService(t, "direct", "direct-agent"),
+				"ref": {
+					Name:                 "ref",
+					Host:                 AiAgentHost,
+					AdditionalProperties: refProps,
+				},
+			},
+		}
+		require.NoError(t, validateExistingProjectAgentServices(project))
+	})
+
+	for _, tt := range []struct {
+		name    string
+		setup   func(t *testing.T, root string) *azdext.ServiceConfig
+		wantErr string
+	}{
+		{
+			name: "implicit legacy file",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost}
+			},
+			wantErr: "found legacy file agent.yaml",
+		},
+		{
+			name: "missing definition",
+			setup: func(*testing.T, string) *azdext.ServiceConfig {
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost}
+			},
+			wantErr: "agent definition not found",
+		},
+		{
+			name: "nested config",
+			setup: func(*testing.T, string) *azdext.ServiceConfig {
+				return legacyConfigAgentService("agent", "legacy")
+			},
+			wantErr: "unsupported nested config block",
+		},
+		{
+			name: "malformed authoritative ref",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				props, err := structpb.NewStruct(map[string]any{"$ref": "./missing.yaml"})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					AdditionalProperties: props,
+				}
+			},
+			wantErr: "missing.yaml",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			err := validateExistingProjectAgentServices(&azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": tt.setup(t, root),
+				},
+			})
+			require.ErrorContains(t, err, tt.wantErr)
+			_, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected structured validation error, got %T", err)
+		})
+	}
+
+	t.Run("environment override is rejected", func(t *testing.T) {
+		root := t.TempDir()
+		t.Setenv("AGENT_DEFINITION_PATH", filepath.Join(root, "agent.yaml"))
+		err := validateExistingProjectAgentServices(&azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": inlineAgentService(t, "agent", "agent"),
+			},
+		})
+		require.ErrorContains(t, err, "AGENT_DEFINITION_PATH")
+	})
+
+	t.Run("no agent services is allowed", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, validateExistingProjectAgentServices(&azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"web": {Name: "web", Host: "containerapp"},
+			},
+		}))
+	})
+
+	t.Run("validation order is deterministic", func(t *testing.T) {
+		t.Parallel()
+		err := validateExistingProjectAgentServices(&azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"zeta":  {Name: "zeta", Host: AiAgentHost},
+				"alpha": {Name: "alpha", Host: AiAgentHost},
+			},
+		})
+		require.ErrorContains(t, err, `service "alpha"`)
+	})
 }
 
 // Reuse is only safe when the caller did not describe an agent to set up.

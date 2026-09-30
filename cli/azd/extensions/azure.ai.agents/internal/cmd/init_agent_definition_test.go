@@ -40,32 +40,20 @@ func TestProbeAgentDefinitionForInitIgnoresRuntimeDefinitionPath(t *testing.T) {
 			},
 		},
 		{
-			name: "nested config definition",
-			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
-				t.Helper()
-				return &azdext.ServiceConfig{
-					Name: "agent",
-					Host: AiAgentHost,
-					Config: mustStruct(t, map[string]any{
-						"kind": "hosted",
-						"name": "nested-agent",
-					}),
-				}
-			},
-		},
-		{
-			name: "implicit agent yaml",
+			name: "root ref definition",
 			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
 				t.Helper()
 				require.NoError(t, os.WriteFile(
-					filepath.Join(root, "agent.yaml"),
-					[]byte("kind: hosted\nname: disk-agent\n"),
+					filepath.Join(root, "definition.yaml"),
+					[]byte("kind: hosted\nname: referenced-agent\n"),
 					0o600,
 				))
 				return &azdext.ServiceConfig{
-					Name:         "agent",
-					Host:         AiAgentHost,
-					RelativePath: ".",
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./definition.yaml",
+					}),
 				}
 			},
 		},

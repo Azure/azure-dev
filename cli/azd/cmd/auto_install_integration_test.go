@@ -106,7 +106,7 @@ func TestExecuteWithAutoInstall_FormatsHostFollowUpToChildStderr(t *testing.T) {
 	const followUp = "Your project requires support for host 'unsupported-host'. " +
 		"Install the required extension to continue.\n"
 	followUpFound := false
-	for _, line := range bytes.Split(stderr.Bytes(), []byte("\n")) {
+	for line := range bytes.SplitSeq(stderr.Bytes(), []byte("\n")) {
 		if len(line) == 0 {
 			continue
 		}

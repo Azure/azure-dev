@@ -786,6 +786,57 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 	}
 }
 
+func TestAdoptedExternalRegistryConnections_LegacyDefinitions(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, projectRoot string) *azdext.ServiceConfig
+	}{
+		{
+			name: "config nested",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				config, err := structpb.NewStruct(map[string]any{
+					"kind":                 "hosted",
+					"name":                 "legacy-agent",
+					"registryConnectionId": "external-registry",
+				})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, Config: config}
+			},
+		},
+		{
+			name: "implicit disk",
+			setup: func(t *testing.T, projectRoot string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectRoot, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy-agent\n"+
+						"registryConnectionId: external-registry\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			connections, err := adoptedExternalRegistryConnections(
+				&azdext.ProjectConfig{
+					Path: projectRoot,
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": tt.setup(t, projectRoot),
+					},
+				},
+				"",
+			)
+			require.NoError(t, err)
+			require.Equal(t, []string{"external-registry"}, connections)
+		})
+	}
+}
+
 func TestAdoptedAgentNameConflictSuggestion(t *testing.T) {
 	t.Parallel()
 

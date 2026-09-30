@@ -100,33 +100,39 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 func TestProjectAgentServicesFrom_DiskDefinition(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := t.TempDir()
-	serviceDir := filepath.Join(projectRoot, "src", "chat")
-	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(serviceDir, "agent.yaml"),
-		[]byte("kind: hosted\nname: disk-agent\nprotocols:\n"+
-			"  - protocol: responses\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
+	for _, filename := range []string{"agent.yaml", "agent.yml"} {
+		t.Run(filename, func(t *testing.T) {
+			t.Parallel()
 
-	services, errs := projectAgentServicesFrom(map[string]*azdext.ServiceConfig{
-		"chat": {
-			Name:         "chat",
-			Host:         AiAgentHost,
-			RelativePath: "src/chat",
-		},
-	}, projectRoot)
+			projectRoot := t.TempDir()
+			serviceDir := filepath.Join(projectRoot, "src", "chat")
+			require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(serviceDir, filename),
+				[]byte("kind: hosted\nname: disk-agent\nprotocols:\n"+
+					"  - protocol: responses\n    version: \"1.0.0\"\n"),
+				0o600,
+			))
 
-	require.Empty(t, errs)
-	assert.Equal(t,
-		[]projectAgentService{{
-			ServiceName:  "chat",
-			AgentName:    "disk-agent",
-			RelativePath: "src/chat",
-		}},
-		services,
-	)
+			services, errs := projectAgentServicesFrom(map[string]*azdext.ServiceConfig{
+				"chat": {
+					Name:         "chat",
+					Host:         AiAgentHost,
+					RelativePath: "src/chat",
+				},
+			}, projectRoot)
+
+			require.Empty(t, errs)
+			assert.Equal(t,
+				[]projectAgentService{{
+					ServiceName:  "chat",
+					AgentName:    "disk-agent",
+					RelativePath: "src/chat",
+				}},
+				services,
+			)
+		})
+	}
 }
 
 func TestProjectAgentServicesFrom_RejectsUnsafeServicePaths(t *testing.T) {

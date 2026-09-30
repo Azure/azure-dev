@@ -4,10 +4,12 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/project"
 
@@ -16,6 +18,69 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestEndpointUpdatePreservesStructuredServiceConfigErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		definitionPath string
+		config         map[string]any
+		wantCode       string
+		wantSuggestion string
+	}{
+		{
+			name:           "definition path",
+			definitionPath: "legacy-agent.yaml",
+			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
+			wantSuggestion: "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
+				"the azure.ai.agent service in azure.yaml, " +
+				"or add an explicit root $ref on the service entry to a direct agent definition",
+		},
+		{
+			name:     "nested config",
+			config:   map[string]any{"kind": "hosted", "name": "legacy-agent"},
+			wantCode: exterrors.CodeDeprecatedAgentServiceConfig,
+			wantSuggestion: "move the agent definition to service-level properties in azure.yaml, " +
+				"or add an explicit root $ref on the service entry to a direct agent definition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", tt.definitionPath)
+
+			svc := &azdext.ServiceConfig{
+				Name: "agent",
+				Host: AiAgentHost,
+			}
+			if tt.config != nil {
+				config, err := structpb.NewStruct(tt.config)
+				require.NoError(t, err)
+				svc.Config = config
+			}
+
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{
+				project: &azdext.ProjectConfig{
+					Path: t.TempDir(),
+					Services: map[string]*azdext.ServiceConfig{
+						svc.Name: svc,
+					},
+				},
+			}, &helpersPromptServer{})
+
+			err := runEndpointUpdate(
+				t.Context(),
+				client,
+				&endpointUpdateFlags{name: svc.Name},
+				&azdext.ExtensionContext{NoPrompt: true},
+			)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+		})
+	}
+}
 
 func TestEndpointUpdateResolvesActivitySettingsFromServiceRef(t *testing.T) {
 	t.Parallel()

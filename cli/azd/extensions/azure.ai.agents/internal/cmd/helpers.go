@@ -1128,9 +1128,14 @@ var errVoiceInvocationUnsupported = exterrors.Validation(
 func voiceInvocationError(svc *azdext.ServiceConfig, projectRoot string) error {
 	// An unreadable definition is not evidence of a non-voice agent. Preserve the
 	// detection error so invocation cannot fall back to stale deployment metadata.
-	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, os.Getenv("AGENT_DEFINITION_PATH"))
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot)
 	if err != nil {
-		return fmt.Errorf("determining agent kind for invocation: %w", err)
+		return exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			"determining agent kind for invocation",
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 	if isVoice {
 		return errVoiceInvocationUnsupported
@@ -1216,9 +1221,14 @@ func resolveAgentServiceFromProject(
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
 	if resolutionOptions.includeVoiceKind {
-		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
+		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path)
 		if err != nil {
-			return nil, fmt.Errorf("determining agent kind: %w", err)
+			return nil, exterrors.ValidationFromError(
+				err,
+				exterrors.CodeInvalidServiceConfig,
+				"determining agent kind",
+				"fix the agent service configuration in azure.yaml",
+			)
 		}
 		info.IsVoice = isVoice
 	}
@@ -1355,8 +1365,8 @@ type ServiceRunContext struct {
 	StartupCommand        string            // startupCommand from AdditionalProperties (may be empty)
 	ServiceEnvironment    map[string]string // values already expanded by azd core
 	HasServiceEnvironment bool              // service declares env: even when empty
-	// Definition is the resolved agent definition (from the inline azure.yaml
-	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
+	// Definition is the resolved hosted-agent definition from the azure.yaml
+	// service entry or its explicit root $ref. It is nil for supported non-hosted kinds.
 	Definition *agent_yaml.ContainerAgent
 }
 
@@ -1371,13 +1381,10 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		svc,
 		project.Path,
 	); err != nil {
-		return nil, exterrors.Validation(
+		return nil, exterrors.ValidationFromError(
+			err,
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to resolve agent service %s: %s",
-				svc.Name,
-				err,
-			),
+			fmt.Sprintf("failed to resolve agent service %s", svc.Name),
 			"fix the agent service configuration in azure.yaml",
 		)
 	}
@@ -1400,11 +1407,20 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	projectpkg.WarnOrphanedConfigEnv(svc)
 
 	var definition *agent_yaml.ContainerAgent
-	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {
+	def, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, project.Path)
+	if err != nil {
+		return nil, exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to load agent definition for service %s", svc.Name),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
+	if isHosted {
 		definition = &def
-		if source.IsLegacy() {
-			projectpkg.WarnLegacyAgentShape(source)
-		}
+	}
+	if source.IsLegacy() {
+		projectpkg.WarnLegacyAgentShape(source)
 	}
 
 	// A read failure must not be read as "no env: declared":
@@ -1537,9 +1553,10 @@ func resolveAgentProtocol(
 	}
 	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return "", "", exterrors.Validation(
+		return "", "", exterrors.ValidationFromError(
+			err,
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("could not resolve the agent definition for %s: %s", svc.Name, err),
+			fmt.Sprintf("could not resolve the agent definition for %s", svc.Name),
 			"ensure the agent definition is present in azure.yaml or run `azd ai agent init`",
 		)
 	}
@@ -1582,13 +1599,10 @@ func resolveAgentInvocableProtocols(
 
 	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return nil, exterrors.Validation(
+		return nil, exterrors.ValidationFromError(
+			err,
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not resolve the agent definition for %s: %s",
-				svc.Name,
-				err,
-			),
+			fmt.Sprintf("could not resolve the agent definition for %s", svc.Name),
 			"ensure the agent definition is present in azure.yaml or "+
 				"run `azd ai agent init`",
 		)

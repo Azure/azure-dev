@@ -216,10 +216,8 @@ func newCheckAgentDefinitionValid(deps Dependencies) Check {
 					Message: fmt.Sprintf(
 						"agent definition validation failed for %d service(s): %s",
 						len(failures), strings.Join(failures, "; ")),
-					Suggestion: "Fix the agent definition at its source " +
-						"(azure.yaml, a referenced file, or a legacy " +
-						"agent.yaml/agent.yml), or re-run " +
-						"`azd ai agent init`.",
+					Suggestion: "Fix the agent definition in azure.yaml or its " +
+						"explicitly referenced file, or re-run `azd ai agent init`.",
 					Details: map[string]any{
 						"failures":          failures,
 						"validatedServices": validatedServices,

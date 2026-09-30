@@ -570,6 +570,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
 				return pErr
 			}
+			if localErr, ok := errors.AsType[*azdext.LocalError](pErr); ok {
+				return localErr
+			}
 			if _, ok := errors.AsType[agentServiceLookupNotFoundError](pErr); !ok || a.flags.name == "" {
 				return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
 			}

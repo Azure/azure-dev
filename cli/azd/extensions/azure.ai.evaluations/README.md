@@ -295,7 +295,7 @@ declaration is unchanged. The old eval and its runs are retained; subsequent
 unchanged deployments reuse the new ID. Other evaluation modes retain compatible
 custom schemas without recreating their histories. Trace declarations also accept
 existing SDK-created `azure_ai_source` definitions with `scenario: traces` or
-`traces_preview`; unknown schema types are not assumed compatible. Switching a declaration from stored
+`traces_preview`; declarations do not assume unknown schema types are compatible. Switching a declaration from stored
 responses to another source also creates an eval with the required custom schema.
 
 Stored-response turn evaluations bind retrieved output through the sample
@@ -309,8 +309,15 @@ incompatible text/items response bindings are replaced once, retaining the origi
 eval and its run history. Missing mappings and unrelated service enrichment do not
 trigger blanket migration. An explicit `id:` with conflicting stored-response
 mappings is refused before dependency publication; remove the `id:` and deploy the
-declaration to migrate. Changing default mappings in other modes requires a deliberate
-criterion change rather than silently rewriting an existing evaluation policy.
+declaration to migrate.
+
+A trace target names an agent filter, not a new invocation. Managed trace evals
+with positively identified legacy sample bindings or conflicting custom sample-schema
+settings migrate to completed-item bindings once, including when the agent filter
+is declared with `target.name`. The old eval and its runs are retained. Explicit
+`data_mapping` values still win, and compatible SDK trace scenarios ignore unrelated
+sample-schema enrichment. Missing or unknown evidence does not trigger this migration;
+unrelated optional/default mapping changes require a deliberate criterion change.
 
 An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
 schema. An incompatible response eval fails before starting a run. Remove the
@@ -330,6 +337,9 @@ it returns HTTP 400. Such reruns are rejected locally; the CLI never silently
 downloads or expands a selected file into response IDs.
 The run checks schema compatibility in both directions, including a trace source
 switch or `--dataset` override of a response eval, before submitting a run.
+Bare-ID reruns retain other source/schema pairs from their previous run unless
+there is a known response/trace scenario mismatch. The schema read is required:
+an unreadable definition does not establish compatibility.
 Editor validation and create/deploy preflight reject positive `max_samples`
 for source-backed declarations, including sources loaded through `$ref`.
 

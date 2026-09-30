@@ -52,7 +52,7 @@ func incompatibleResponsesSchema(id string, responses bool) error {
 }
 
 func (ec *evalContext) validateResponsesRun(
-	ctx context.Context, evalID string, source *eval_api.EvalRunDataSource,
+	ctx context.Context, evalID string, source *eval_api.EvalRunDataSource, declared bool,
 ) error {
 	if source == nil {
 		return messages.NoEvalToRun()
@@ -68,6 +68,14 @@ func (ec *evalContext) validateResponsesRun(
 		group.Source = &project.SourceDecl{Type: project.SourceTypeResponses}
 	case eval_api.EvalRunDataSourceTypeTraces, eval_api.EvalRunDataSourceTypeTracePreview:
 		group.Source = &project.SourceDecl{Type: project.SourceTypeTraces}
+	}
+	if !declared && !responses && !hasResponsesSchema(remote) {
+		// A bare-ID rerun repeats a service-accepted source, not a new declaration.
+		traceSchema := remote != nil && remote.DataSourceConfig["type"] == "azure_ai_source" &&
+			(remote.DataSourceConfig["scenario"] == "traces" || remote.DataSourceConfig["scenario"] == "traces_preview")
+		if !traceSchema || group.Source != nil {
+			return nil
+		}
 	}
 	if !responseSchemaMatches(group, remote) {
 		return incompatibleResponsesSchema(evalID, responses)

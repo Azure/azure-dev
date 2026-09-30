@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,16 +263,7 @@ func TestResponsePreparedMappingMigration(t *testing.T) {
 					service.evals[first].DataSourceConfig["include_sample_schema"] = true
 					original, err := json.Marshal(service.evals[first])
 					require.NoError(t, err)
-					seedLegacyCatalogPinState(t, env, cfg.Evals[0], first)
-					var state map[string]string
-					require.NoError(t, json.Unmarshal(env.config[privateStatePath], &state))
-					legacy := cfg.Evals[0]
-					legacy.Source = nil
-					definition, err := project.FingerprintDefinition(legacy)
-					require.NoError(t, err)
-					state[project.FingerprintKey("eval", cfg.Evals[0].Name)] = fingerprintEra + definition
-					env.config[privateStatePath], err = json.Marshal(state)
-					require.NoError(t, err)
+					seedSourceOmittingState(t, env, cfg.Evals[0], first)
 					if lookup == "rename" {
 						cfg.Evals[0].Name = "renamed"
 					}
@@ -314,11 +306,169 @@ func TestExplicitResponseMappingConflictBeforePublication(t *testing.T) {
 					DataMapping: map[string]string{"query": "{{item.query}}", "response": "{{item.response}}"},
 				}},
 			}
+
 			err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
 			require.ErrorContains(t, err, "stored-response mappings incompatible")
 			assert.Zero(t, service.publishes)
 			assert.Empty(t, service.created)
 			assert.Empty(t, env.config)
+		})
+	}
+}
+
+func seedSourceOmittingState(t *testing.T, env *testEnvServer, group project.Eval, id string) {
+	t.Helper()
+	seedLegacyCatalogPinState(t, env, group, id)
+	var state map[string]string
+	require.NoError(t, json.Unmarshal(env.config[privateStatePath], &state))
+	legacy := group
+	legacy.Source = nil
+	definition, err := project.FingerprintDefinition(legacy)
+	require.NoError(t, err)
+	state[project.FingerprintKey("eval", group.Name)] = fingerprintEra + definition
+	env.config[privateStatePath], err = json.Marshal(state)
+	require.NoError(t, err)
+}
+
+func TestTraceHistoryIgnoresScenarioEnrichment(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, lookup := range []string{"cached", "rename"} {
+			for _, tc := range []struct {
+				name, typ, scenario string
+				sampled, conflict   bool
+			}{
+				{"SDK traces", "azure_ai_source", "traces", true, false},
+				{"SDK traces preview", "azure_ai_source", "traces_preview", true, false},
+				{"custom matching", "custom", "", false, false},
+				{"custom conflict", "custom", "", true, true},
+			} {
+				t.Run(caller+"/"+lookup+"/"+tc.name, func(t *testing.T) {
+					ec, env, service, cfg, dir := newCatalogPinFixture(t)
+					service.versions = map[string]json.RawMessage{"1": responseReviewContract("string")}
+					first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+					service.evals[first].DataSourceConfig = map[string]any{
+						"type": tc.typ, "include_sample_schema": tc.sampled,
+					}
+					if tc.scenario != "" {
+						service.evals[first].DataSourceConfig["scenario"] = tc.scenario
+					}
+					seedSourceOmittingState(t, env, cfg.Evals[0], first)
+					if lookup == "rename" {
+						cfg.Evals[0].Name = "renamed"
+					}
+					next := reconcileCatalogPin(t, caller, ec, cfg, dir)
+					if tc.conflict {
+						assert.NotEqual(t, first, next)
+						assert.Len(t, service.created, 2)
+						assert.Equal(t, "quality", service.evals[first].Name)
+					} else {
+						assert.Equal(t, first, next)
+						assert.Len(t, service.created, 1)
+						assert.Equal(t, cfg.Evals[0].Name, service.evals[first].Name)
+					}
+					assert.Equal(t, next, reconcileCatalogPin(t, caller, ec, cfg, dir))
+					assert.Equal(t, "1", service.evals[next].TestingCriteria[0].EvaluatorVersion)
+					assert.Zero(t, service.publishes)
+				})
+			}
+		}
+	}
+}
+
+func TestTraceTargetMigratesLegacySampleMappings(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, lookup := range []string{"cached", "rename", "explicit mapping"} {
+			t.Run(caller+"/"+lookup, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				service.versions = map[string]json.RawMessage{"1": responseReviewContract("string")}
+				cfg.Evals[0].Source = &project.SourceDecl{Type: project.SourceTypeTraces}
+				cfg.Evals[0].Target = &project.Target{Type: project.TargetTypeAgent, Name: "agent"}
+				wantBinding := "{{item.response}}"
+				if lookup == "explicit mapping" {
+					wantBinding = "{{sample.output_items}}"
+					cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"response": wantBinding}
+				}
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				service.evals[first].DataSourceConfig = map[string]any{"type": "custom", "include_sample_schema": true}
+				service.evals[first].TestingCriteria[0].DataMapping["response"] = "{{sample.output_items}}"
+				seedSourceOmittingState(t, env, cfg.Evals[0], first)
+				if lookup == "rename" {
+					cfg.Evals[0].Name = "renamed"
+				}
+				next := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				require.NotEqual(t, first, next)
+				require.Equal(t, next, reconcileCatalogPin(t, caller, ec, cfg, dir))
+				assert.Len(t, service.created, 2)
+				assert.Equal(t, "quality", service.evals[first].Name)
+				assert.Equal(t, "{{sample.output_items}}", service.evals[first].TestingCriteria[0].DataMapping["response"])
+				assert.Equal(t, wantBinding, service.evals[next].TestingCriteria[0].DataMapping["response"])
+				assert.Equal(t, false, service.evals[next].DataSourceConfig["include_sample_schema"])
+				assert.Equal(t, "1", service.evals[next].TestingCriteria[0].EvaluatorVersion)
+				assert.Zero(t, service.publishes)
+			})
+		}
+	}
+}
+
+func TestBareRerunPreservesUnrelatedSchema(t *testing.T) {
+	for _, typ := range []string{"logs", "stored_completions", "future", "custom", "responses", "traces", "read failure"} {
+		t.Run(typ, func(t *testing.T) {
+			source := eval_api.NewDatasetOnlyDataSource()
+			source.SetFileContent([]map[string]any{{"query": "historical"}})
+			reads, posts := 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": []any{
+						map[string]any{"id": "previous", "data_source": source},
+					}}))
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_history"):
+					reads++
+					if typ == "read failure" {
+						w.WriteHeader(http.StatusForbidden)
+						return
+					}
+					config := map[string]any{"type": typ}
+					if typ == "responses" || typ == "traces" {
+						config = map[string]any{"type": "azure_ai_source", "scenario": typ}
+					}
+					assert.NoError(t, json.NewEncoder(w).Encode(eval_api.OpenAIEval{
+						ID: "eval_history", DataSourceConfig: config,
+					}))
+				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+					posts++
+					var request eval_api.CreateOpenAIEvalRunRequest
+					assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					assert.Equal(t, source, request.DataSource)
+					assert.NoError(t, json.NewEncoder(w).Encode(eval_api.OpenAIEvalRun{ID: "run_history", Status: "queued"}))
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			t.Cleanup(server.Close)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			err := (&runStartAction{
+				cmd: cmd, flags: &runStartFlags{groupName: "eval_history", evalPath: t.TempDir()},
+				newContext: func(context.Context, string) (*evalContext, error) { return evalContextFor(server), nil },
+			}).Run()
+			assert.Equal(t, 1, reads)
+			switch typ {
+			case "read failure":
+				require.ErrorContains(t, err, `reading eval "eval_history"`)
+			case "responses", "traces":
+				require.ErrorContains(t, err, "does not use")
+			default:
+				require.NoError(t, err)
+				assert.Equal(t, 1, posts)
+				return
+			}
+			assert.Zero(t, posts)
+			assert.Empty(t, out.String())
 		})
 	}
 }

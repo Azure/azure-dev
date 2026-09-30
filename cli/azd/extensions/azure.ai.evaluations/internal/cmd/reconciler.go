@@ -1076,8 +1076,8 @@ func conflictingSourceContract(
 			return true
 		}
 	}
-	// Response scenarios omit this field; their zero-value Go field is not a contract.
-	if want.DataSourceConfig.Type == "custom" {
+	// Service-defined scenarios omit this field; enrichment is not a custom contract.
+	if want.DataSourceConfig.Type == "custom" && have.DataSourceConfig["type"] == "custom" {
 		if sampled, known := have.DataSourceConfig["include_sample_schema"].(bool); known &&
 			sampled != want.DataSourceConfig.IncludeSampleSchema {
 			return true

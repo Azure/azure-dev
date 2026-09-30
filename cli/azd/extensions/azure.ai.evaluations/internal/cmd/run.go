@@ -252,7 +252,7 @@ func (a *runStartAction) Run() error {
 		return err
 	}
 
-	if err := ec.validateResponsesRun(ctx, evalID, dataSource); err != nil {
+	if err := ec.validateResponsesRun(ctx, evalID, dataSource, ref.Declared()); err != nil {
 		return err
 	}
 

@@ -73,8 +73,8 @@ func recordInitProjectContent(ctx context.Context, content []byte) {
 	var classes []agentTelemetry.OperationClass
 	for _, properties := range doc.Services {
 		if properties["host"] == AiAgentHost {
-			// Use the same inline/legacy precedence as lifecycle reporting. These
-			// are copies of already-held YAML; never resolve files or mutate it.
+			// Use the same service-level accessor as lifecycle reporting. Retired
+			// config-only definitions remain unknown; never restore a runtime fallback.
 			inline, inlineErr := structpb.NewStruct(properties)
 			legacyProperties, _ := properties["config"].(map[string]any)
 			legacy, legacyErr := structpb.NewStruct(legacyProperties)

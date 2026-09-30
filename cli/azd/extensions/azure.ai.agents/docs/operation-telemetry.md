@@ -25,8 +25,8 @@ identifiers, credentials, prompts or configuration payloads are emitted.
 - Extension init collects explicit kind intent, refining it at existing selection,
   definition/adoption and reuse points. Kind intent is recorded after the existing
   positional-input parser: a source directory and its equivalent `--src` input
-  retain the same kind; explicit manifest input suppresses kind intent until the
-  definition is parsed. Positional-input errors retain `unknown` and their original
+  retain the same kind; explicit unified `azure.yaml` input suppresses kind intent
+  until its service definitions are parsed. Positional-input errors retain `unknown` and their original
   error behavior. Failed RunE returns attempt to report the
   last classification; successful init reports after the existing post-run context
   event so the original event has priority in the shared budget. Unknown intent is not inferred from
@@ -36,9 +36,12 @@ identifiers, credentials, prompts or configuration payloads are emitted.
   before their existing work. Failures before the hooks (such as package or config
   errors) may lack markers. Skipped services that never enter the hook are absent.
 - No additional project/file/Azure queries are made for classification. Unresolved
-  root `$ref` or an external definition override is unknown; no speculative reads.
-  Lifecycle classification is also unknown when the kind exists only in an on-disk
-  `agent.yaml`/`agent.yml`, rather than the in-memory service properties.
+  root `$ref` is unknown; no speculative reads. Retired nested `config`-only or
+  on-disk agent definitions do not provide classification. A nonempty retired
+  `AGENT_DEFINITION_PATH` also leaves service classification unknown. This does not
+  restore any retired runtime/init source: main's validation/migration errors remain
+  authoritative. New voice init uses main's direct `azure.yaml` path, not a temporary
+  agent manifest. Init intent/refinements remain independent of business validation.
 - Distinct operation/category/telephony tuples are attempted once per reporter
   process. Provision cannot suppress deploy, and init refinements do not double
   count earlier intent. The original reporter's behavior is unchanged.

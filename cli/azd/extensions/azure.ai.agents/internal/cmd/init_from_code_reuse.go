@@ -4,23 +4,21 @@
 package cmd
 
 import (
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
-	"go.yaml.in/yaml/v3"
 )
 
-// agentYamlCandidates lists the file names (in priority order) scanned by the
-// reuse path. Order matches detectLocalManifest in init_from_templates_helpers.go.
+// agentYamlCandidates lists the legacy filenames recognized for migration
+// guidance. Detection is metadata-only; init never parses these files.
 var agentYamlCandidates = []string{
 	"agent.manifest.yaml",
 	"agent.yaml",
@@ -28,11 +26,8 @@ var agentYamlCandidates = []string{
 	"agent.yml",
 }
 
-// findExistingAgentYaml returns the first agent yaml file found in srcDir, or
-// an empty string when none exists. The scan is shallow.
-//
-// Called from RunE after detectLocalManifest. A path returned here is either a
-// bare definition or a malformed manifest; runReuseDefinition distinguishes them.
+// findExistingAgentYaml returns the first legacy agent YAML filename found
+// directly under srcDir, or an empty string when none exists.
 func findExistingAgentYaml(srcDir string) (string, error) {
 	for _, name := range agentYamlCandidates {
 		candidate := filepath.Join(srcDir, name)
@@ -52,127 +47,74 @@ func findExistingAgentYaml(srcDir string) (string, error) {
 	return "", nil
 }
 
-// runReuseDefinition wires an existing bare agent.yaml definition into
-// azure.yaml without rewriting the file or running the from-code prompts.
-//
-// Foundry project resolution and model deployment selection are intentionally
-// skipped (issue #7268: "less to ask and just setup azure.yaml"). Users who
-// need a project bound before azd deploy can set AZURE_AI_PROJECT_ID by hand.
-func runReuseDefinition(
+func sameInitSourceDirectory(left, right string) bool {
+	left, leftErr := filepath.Abs(left)
+	right, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if left == right {
+		return true
+	}
+
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
+}
+
+func validateExplicitInitSource(
 	ctx context.Context,
-	flags *initFlags,
 	azdClient *azdext.AzdClient,
-	httpClient *http.Client,
-	srcDir string,
-	existingPath string,
+	sourceDir string,
 ) error {
-	displayPath, err := filepath.Rel(srcDir, existingPath)
-	if err != nil || displayPath == "" {
-		displayPath = existingPath
+	if strings.TrimSpace(sourceDir) == "" {
+		return nil
 	}
 
-	def, err := loadAgentDefinitionFile(existingPath)
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent definition in %s is invalid: %s", displayPath, err),
-			fmt.Sprintf("Fix %s and retry, or remove the file to start a fresh init.", displayPath),
-		)
-	}
-	recordInitDefinition(ctx, def)
-
-	fmt.Println(color.HiBlackString(
-		"Detected existing agent definition: %s (name: %s).",
-		displayPath, def.Name,
-	))
-
-	projectConfig, err := ensureProject(ctx, flags, azdClient, ".")
+	legacyPath, err := findExistingAgentYaml(sourceDir)
 	if err != nil {
 		return err
 	}
 
-	// Mirror InitFromCodeAction.Run: convert absolute --src to project-relative
-	// so azure.yaml's RelativePath stays portable.
-	if flags.src != "" && filepath.IsAbs(flags.src) {
-		relPath, err := filepath.Rel(projectConfig.Path, flags.src)
-		if err != nil {
-			return fmt.Errorf("failed to convert src path to relative path: %w", err)
+	response, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if projectErr != nil || response.GetProject() == nil {
+		if legacyPath != "" {
+			return legacyInitSourceError(legacyPath)
 		}
-		flags.src = relPath
-		srcDir = relPath
+		return nil
 	}
 
-	env := getExistingEnvironment(ctx, flags.env, azdClient)
-	if env == nil {
-		envName := flags.env
-		if envName == "" {
-			envName = sanitizeAgentName(def.Name + "-dev")
+	configuredServices, err := projectAgentServicesFrom(
+		response.GetProject().GetServices(),
+		response.GetProject().GetPath(),
+	)
+	if err != nil {
+		return err
+	}
+	if legacyPath == "" {
+		return nil
+	}
+
+	for _, service := range configuredServices {
+		serviceDir := filepath.Join(response.GetProject().GetPath(), filepath.FromSlash(service.RelativePath))
+		if sameInitSourceDirectory(sourceDir, serviceDir) {
+			return nil
 		}
-		env, err = createNewEnvironment(ctx, azdClient, envName)
-		if err != nil {
-			return fmt.Errorf("failed to create azd environment: %w", err)
-		}
-		flags.env = env.Name
 	}
 
-	action := &InitFromCodeAction{
-		azdClient:     azdClient,
-		flags:         flags,
-		projectConfig: projectConfig,
-		environment:   env,
-		httpClient:    httpClient,
-	}
-
-	isCodeDeploy := def.CodeConfiguration != nil
-	if err := action.addToProject(ctx, srcDir, def, isCodeDeploy); err != nil {
-		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-	}
-
-	fmt.Println(color.HiBlackString("Reusing existing %s (name: %s).", displayPath, def.Name))
-
-	validatePostInit(srcDir, def.CodeConfiguration)
-
-	return nil
+	return legacyInitSourceError(legacyPath)
 }
 
-// loadAgentDefinitionFile parses path as a bare AgentDefinition (no surrounding
-// "template:" wrapper) and runs the same schema validation the manifest
-// pipeline does.
-func loadAgentDefinitionFile(path string) (*agent_yaml.ContainerAgent, error) {
-	//nolint:gosec // path comes from findExistingAgentYaml against a user-controlled directory
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-
-	// Reject manifest-shaped files. A valid manifest would have been routed
-	// upstream; an invalid one reaching here is a malformed template.
-	var top map[string]any
-	if err := yaml.Unmarshal(data, &top); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if _, hasTemplate := top["template"]; hasTemplate {
-		return nil, fmt.Errorf(
-			"file contains a 'template:' field but did not parse as a valid agent manifest; " +
-				"fix the manifest schema and retry",
-		)
-	}
-	if kind, _ := top["kind"].(string); agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(kind)) {
-		return nil, fmt.Errorf(
-			"prompt-voice agent definitions cannot be reused through the current-code path; " +
-				"run 'azd ai agent init' and choose 'Create a prompt voice agent', or use " +
-				"'azd ai agent init --kind prompt-voice --agent-name <name>'",
-		)
-	}
-
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return nil, err
-	}
-
-	var def agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &def); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	return &def, nil
+func legacyInitSourceError(path string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf(
+			"legacy agent configuration %q is no longer accepted by 'azd ai agent init'",
+			filepath.ToSlash(path),
+		),
+		"Move the agent definition into an azure.ai.agent service in azure.yaml, "+
+			"or reference a direct definition from that service with $ref.",
+	)
 }

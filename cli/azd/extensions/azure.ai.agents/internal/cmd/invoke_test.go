@@ -88,11 +88,16 @@ func (s *invokeUserConfigServer) getJSON(t *testing.T, path string, value any) {
 	}
 }
 
-func newInvokeTestAzdClient(t *testing.T, userConfigServer azdext.UserConfigServiceServer) *azdext.AzdClient {
+func newInvokeTestAzdClient(
+	t *testing.T, userConfigServer azdext.UserConfigServiceServer, environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

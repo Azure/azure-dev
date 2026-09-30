@@ -129,7 +129,7 @@ func agentTelemetryContexts(project *azdext.ProjectConfig, operation string) []a
 			continue
 		}
 
-		kind, err := agentkind.Kind(svc, project.GetPath(), "")
+		kind, err := agentkind.Kind(svc, project.GetPath())
 		if err != nil {
 			kind = agentKindUnknown
 		}

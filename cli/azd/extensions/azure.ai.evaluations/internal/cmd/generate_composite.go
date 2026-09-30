@@ -322,7 +322,8 @@ type generateRequest struct {
 	// cmd is what the collision prompt asks through, and what --no-prompt is
 	// read from. Nil in tests that only exercise the naming rules, which never
 	// reach a prompt because nothing is on disk to collide with.
-	cmd             *cobra.Command
+	cmd *cobra.Command
+	// target supplies default names only; resolvePlan preserves the execution selector.
 	target          string
 	dataset         bool
 	evaluator       bool
@@ -381,9 +382,6 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 			return nil, err
 		}
 		plan.Kind = generateKindDataset
-		if req.target != "" {
-			plan.Agent = req.target
-		}
 		plan.From = req.from
 		plan.EvaluationLevel = req.evaluationLevel
 		plan.SampleSize = req.maxSamples
@@ -414,9 +412,6 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 			return nil, err
 		}
 		plan.Kind = generateKindEvaluator
-		if req.target != "" {
-			plan.Agent = req.target
-		}
 		plan.TraceDays = req.traceDays
 		name, replaceApproved, err := resolveArtifactCollision(req.cmd, "Evaluator", name,
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".json"),

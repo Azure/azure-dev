@@ -38,6 +38,8 @@ project metadata, not from its service key or instruction source. A bare invocat
 `--target` with that key, and `--target` with the deployed name therefore use the same
 prefix. If the project lookup fails, provide explicit artifact names or retry;
 the CLI does not silently switch prefixes.
+The naming prefix stays separate from the original target selector, so deriving
+artifact names does not introduce an additional deployed-name lookup at submission.
 Dataset generation names are limited to 50 characters. Long default prefixes use
 a deterministic shortened stem with a hash, shared by turn and conversation
 datasets, while retaining `-turn-tests` or `-conversation-tests` and room for a

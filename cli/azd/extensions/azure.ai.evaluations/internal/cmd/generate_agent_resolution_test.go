@@ -85,7 +85,7 @@ func publishingProject(t *testing.T, key, published string) *azdext.ProjectConfi
 }
 
 // capturingGenerationServer records the job request body generate submits.
-func capturingGenerationServer(t *testing.T, submitted *[]byte) *evalContext {
+func capturingGenerationServer(t *testing.T, submitted *[]byte, responseStatus ...int) *evalContext {
 	t.Helper()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +95,13 @@ func capturingGenerationServer(t *testing.T, submitted *[]byte) *evalContext {
 			*submitted = body.Bytes()
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if len(responseStatus) > 0 {
+			w.WriteHeader(responseStatus[0])
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]string{"code": "FixtureStop", "message": "recorded fixture rejection"},
+			}))
+			return
+		}
 		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"id": "job_1", "status": "running",
 		}))
@@ -243,7 +250,7 @@ func TestGenerationDefaultNamesUseCanonicalDeployedAgent(t *testing.T) {
 					require.NoError(t, err)
 					assert.Equal(t, deployed, prefix)
 					plans, err := buildGeneratePlans(generateRequest{
-						flags:  &generateFlags{path: t.TempDir(), target: target},
+						flags:  &generateFlags{path: t.TempDir(), target: selected},
 						target: prefix, dataset: true, evaluator: true, evaluationLevel: level,
 					})
 					require.NoError(t, err)
@@ -251,7 +258,7 @@ func TestGenerationDefaultNamesUseCanonicalDeployedAgent(t *testing.T) {
 					want := deployed + "-" + level + "-tests"
 					assert.Equal(t, want, plans[0].Name)
 					assert.Equal(t, deployed+"-evaluator", plans[1].Name)
-					assert.Equal(t, deployed, plans[0].Agent)
+					assert.Equal(t, selected, plans[0].Agent)
 					assert.Equal(t, want+".jsonl", filepath.Base(project.ArtifactPath(
 						plans[0].BaseDir, plans[0].OutputDir, plans[0].Name, ".jsonl")))
 					var planOutput bytes.Buffer
@@ -275,6 +282,7 @@ func TestGenerationDefaultNamesUseCanonicalDeployedAgent(t *testing.T) {
 					var submitted []byte
 					writer := &bytes.Buffer{}
 					backend := capturingGenerationServer(t, &submitted)
+					backend.azdClient = ec.azdClient
 					plans[0].Instruction, plans[0].Model = "Synthetic recovered instructions.", "generation"
 					plans[0].From = []string{project.GenerateFromPrompt}
 					_, err = backend.generateDataset(t.Context(), plans[0], writer, true, &generationReport{}, refuseRetry)
@@ -301,5 +309,67 @@ func TestGenerationNameLookupFailureDoesNotFallBackToLocalKey(t *testing.T) {
 		derived, err := generatedName("", name, "dataset", datasetNameSuffix(level))
 		require.NoError(t, err)
 		assert.True(t, strings.HasPrefix(derived, deployed+"-"))
+	}
+}
+
+func TestGenerationKeepsSelectorWhenServiceKeysOverlapDeployedNames(t *testing.T) {
+	for _, explicitNames := range []bool{false, true} {
+		t.Run(boolText(explicitNames), func(t *testing.T) {
+			const selector, deployed = "support", "published-support"
+			proj := publishingProject(t, selector, deployed)
+			proj.Services[deployed] = &azdext.ServiceConfig{
+				Name: deployed, Host: project.AgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{"name": "other-agent"}),
+			}
+			var submitted []byte
+			ec := capturingGenerationServer(t, &submitted, http.StatusBadRequest)
+			ec.azdClient = projectServingClient(t, proj)
+			namePrefix := selector
+			if !explicitNames {
+				var err error
+				namePrefix, err = ec.generationNameTarget(t.Context(), selector)
+				require.NoError(t, err)
+				require.Equal(t, deployed, namePrefix)
+			}
+			request := generateRequest{
+				flags: &generateFlags{
+					path: t.TempDir(), target: selector,
+					instruction: "Synthetic explicit instruction.", model: "explicit-model",
+				},
+				target: namePrefix, dataset: true, evaluator: true, evaluationLevel: "turn",
+				from: []string{project.GenerateFromAgent},
+			}
+			wantNames := []string{deployed + "-turn-tests", deployed + "-evaluator"}
+			if explicitNames {
+				request.datasetName, request.evaluatorName = "chosen-dataset", "chosen-evaluator"
+				wantNames = []string{request.datasetName, request.evaluatorName}
+			}
+			plans, err := buildGeneratePlans(request)
+			require.NoError(t, err)
+			require.Len(t, plans, 2)
+			for index, plan := range plans {
+				t.Run(string(plan.Kind), func(t *testing.T) {
+					assert.Equal(t, wantNames[index], plan.Name)
+					submitted = nil
+					var out bytes.Buffer
+					if plan.Kind == generateKindDataset {
+						_, err = ec.generateDataset(t.Context(), plan, &out, false, &generationReport{}, refuseRetry)
+					} else {
+						_, err = ec.generateRubric(t.Context(), plan, &out, false, &generationReport{})
+					}
+					require.ErrorContains(t, err, "recorded fixture rejection",
+						"a unique selector must reach submission, not fail as an ambiguous deployed-name lookup")
+					require.NotEmpty(t, submitted)
+					assert.Contains(t, string(submitted), `"published-support"`)
+					assert.NotContains(t, string(submitted), `"other-agent"`)
+					assert.Contains(t, string(submitted), wantNames[index])
+					assert.Equal(t, selector, plan.Agent, "the naming prefix is not an execution selector")
+					handoff := initHandoff([]generationOutcome{{
+						plan: plan, ref: &project.ArtifactRef{Name: plan.Name},
+					}}, "")
+					assert.Contains(t, handoff, "--target support")
+				})
+			}
+		})
 	}
 }

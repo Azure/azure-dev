@@ -17,13 +17,13 @@ import (
 )
 
 // connectionRefPattern matches ${{connections.<name>.credentials.<key>}} references
-// in agent manifest environment variable values.
+// in agent definition environment variable values.
 var connectionRefPattern = regexp.MustCompile(
 	`\$\{\{connections\.([^.]+)\.credentials\.([^}]+)\}\}`,
 )
 
 // connRef represents a single connection credential reference found in an
-// agent manifest's environment_variables section.
+// agent definition's environmentVariables section.
 type connRef struct {
 	EnvName  string // the env var name (e.g., TAVILY_API_KEY)
 	ConnName string // connection name (e.g., my-test-conn)

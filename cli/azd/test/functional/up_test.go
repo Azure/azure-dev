@@ -50,6 +50,8 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, nil, envName)
+
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -167,6 +169,8 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "funcapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -330,6 +334,8 @@ func Test_CLI_Up_Down_GoFuncApp(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "gofuncapp")
 	require.NoError(t, err, "failed expanding sample")

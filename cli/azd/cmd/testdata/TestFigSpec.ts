@@ -7488,7 +7488,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7522,7 +7522,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7535,7 +7535,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7600,7 +7600,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7625,7 +7625,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7664,7 +7664,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7677,7 +7677,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7711,7 +7711,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7741,7 +7741,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7775,7 +7775,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7800,7 +7800,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7825,7 +7825,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7881,7 +7881,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7906,7 +7906,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7945,7 +7945,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7958,7 +7958,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7983,7 +7983,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -8012,7 +8012,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -8025,7 +8025,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',

@@ -1,5 +1,19 @@
 # Release History
 
+## 1.0.0-beta.13 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2` for host-based Foundry principal resolution.
+
+### Bugs Fixed
+
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Fix Foundry provisioning principal resolution for guest users and service principals by using the azd host account API.
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai project` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
 ## 1.0.0-beta.12 (2026-09-24)
 
 ### Features Added

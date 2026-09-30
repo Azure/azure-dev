@@ -72,7 +72,7 @@ func TestResolvePromptRaiPolicyFlags(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := resolvePromptRaiPolicy(t.Context(), nil, &test.flags, nil, test.project, nil)
+			got, err := resolvePromptRaiPolicy(t.Context(), nil, &test.flags, test.project, nil)
 			require.NoError(t, err)
 			require.Equal(t, test.want, got)
 		})
@@ -86,29 +86,9 @@ func TestResolvePromptRaiPolicyShortNameWithoutAccount(t *testing.T) {
 	t.Parallel()
 
 	_, err := resolvePromptRaiPolicy(
-		t.Context(), nil, &initFlags{raiPolicy: "strict"}, nil, nil, nil,
+		t.Context(), nil, &initFlags{raiPolicy: "strict"}, nil, nil,
 	)
 	require.ErrorContains(t, err, "no existing Foundry account was selected")
-}
-
-// TestResolvePromptRaiPolicyManifestWins verifies an authored policy set is not
-// second-guessed: init neither prompts nor overwrites it.
-func TestResolvePromptRaiPolicyManifestWins(t *testing.T) {
-	t.Parallel()
-
-	manifest := &promptAgentManifest{
-		definition: agent_yaml.PromptAgent{
-			Policies: []agent_yaml.Policy{
-				{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: testRaiPolicyID},
-			},
-		},
-	}
-
-	got, err := resolvePromptRaiPolicy(
-		t.Context(), nil, &initFlags{raiPolicy: "none"}, manifest, testFoundryProject(), nil,
-	)
-	require.NoError(t, err)
-	require.Equal(t, raiPolicySelection{}, got)
 }
 
 // TestApplyRaiPolicySelectionDetached verifies the no-policy choice leaves the

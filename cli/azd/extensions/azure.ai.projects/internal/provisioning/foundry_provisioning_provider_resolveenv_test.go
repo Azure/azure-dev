@@ -16,6 +16,7 @@ import (
 	"azure.ai.projects/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -112,18 +113,37 @@ func (s *resolveEnvStubPromptServer) PromptLocation(
 	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: s.location}}, nil
 }
 
-// newResolveEnvTestClient spins up a gRPC server exposing the given environment
-// and prompt stubs and returns an AzdClient connected to it.
+type principalStubAccountServer struct {
+	v1beta.UnimplementedAccountServiceServer
+	response       *v1beta.GetCurrentPrincipalResponse
+	err            error
+	calls          atomic.Int32
+	subscriptionID atomic.Value
+}
+
+func (s *principalStubAccountServer) GetCurrentPrincipal(
+	_ context.Context, req *v1beta.GetCurrentPrincipalRequest,
+) (*v1beta.GetCurrentPrincipalResponse, error) {
+	s.calls.Add(1)
+	s.subscriptionID.Store(req.GetSubscriptionId())
+	return s.response, s.err
+}
+
+// newResolveEnvTestClient connects an AzdClient to the supplied host service stubs.
 func newResolveEnvTestClient(
 	t *testing.T,
 	envSrv azdext.EnvironmentServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	accountSrv ...v1beta.AccountServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
 	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	for _, account := range accountSrv {
+		v1beta.RegisterAccountServiceServer(srv, account)
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -449,11 +469,13 @@ func TestResolveEnvTracksExplicitPrincipalID(t *testing.T) {
 			assert.Equal(t, test.configured, provider.principalIDConfigured)
 			assert.Equal(t, test.wantID, provider.principalID)
 			assert.Equal(t, test.wantType, provider.principalType)
-			credential := &stubTokenCredential{err: errors.New("unexpected credential lookup")}
-			provider.credential = credential
 			if test.configured {
-				require.NoError(t, provider.ensurePrincipalID(t.Context()))
-				assert.Empty(t, credential.options)
+				provider.armTemplate = map[string]any{"resources": []any{}}
+				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"value": test.wantID}, source.parameters["principalId"])
+				assert.Equal(t, map[string]any{"value": test.wantType}, source.parameters["principalType"])
+				assert.Nil(t, provider.credential)
 			}
 		})
 	}

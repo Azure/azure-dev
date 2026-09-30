@@ -142,10 +142,9 @@ to `azure.ai.connection` services and attach them through `uses`. Agent
 remain unsupported. To reuse an external toolbox, set `endpoint` on
 its split toolbox service instead of setting a legacy MCP environment marker.
 Run `azd deploy --all` to reconcile these dependencies before their agents;
-`azd provision` does not create Connections or Toolboxes. Agent manifest
-Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
-which generates split services. Agent runtime `toolConnections` and environment
-references remain agent-owned.
+`azd provision` does not create Connections or Toolboxes. Unified projects must
+declare Connection and Toolbox resources as sibling services. Agent runtime
+`toolConnections` and environment references remain agent-owned.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 sibling `azure.ai.connection` service names. These are references, not resource
@@ -165,15 +164,14 @@ still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration
 path in the Agent command tree.
 
-For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
-project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
-directory and deployment settings. The definition can be inline or referenced
-using `$ref`, following the service schema; declare core-owned fields such as
-`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
-not by a definition-file path. A sibling `toolbox.yaml` is not automatically
-deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
-first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
-dependencies automatically.
+For an existing agent source project, declare an `azure.ai.agent` service in
+`azure.yaml` with its source directory and deployment settings. The definition
+can be inline or referenced using `$ref`, following the service schema; declare
+core-owned fields such as `host`, `project`, `language`, and `uses` in
+`azure.yaml`. Deploy by **service name**, not by a definition-file path. A
+sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
+and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
+targeted Agent deployment does not deploy its dependencies automatically.
 
 ## Invoke latency diagnostics
 
@@ -327,28 +325,11 @@ launch.
 
 New Foundry agent projects keep the agent definition directly on the
 `azure.ai.agent` service entry in `azure.yaml`. Older projects may still have the
-definition in an `agent.yaml` file or under the service's `config:` block. Those
-legacy shapes continue to work during the migration window, but azd prints a
-deprecation warning when it loads them.
+definition in an `agent.yaml`/`agent.yml` file, an AgentManifest file, or under
+the service's `config:` block. Runtime commands reject those implicit and nested
+sources with migration guidance.
 
-To migrate, re-run `azd ai agent init` from the project root and keep the
-generated `azure.yaml` service entry. After confirming `azd deploy` still works,
-remove the old `agent.yaml` or nested `config:` definition.
-
-Before:
-
-```yaml
-services:
-  my-agent:
-    host: azure.ai.agent
-    project: .
-    config:
-      kind: hosted
-      name: my-agent
-      description: My hosted agent
-```
-
-After:
+Move a direct agent definition to service-level properties in `azure.yaml`:
 
 ```yaml
 services:
@@ -360,13 +341,20 @@ services:
     description: My hosted agent
 ```
 
+Alternatively, keep a direct definition in a separate file and reference it
+explicitly from the service with a root `$ref`. The basename can be anything,
+including a legacy-looking name such as `agent.yaml`, but prompt-agent references
+must use a `.yaml` or `.yml` extension. The file content must be a supported
+direct agent definition. An `agent.manifest.yaml` template wrapper must first be
+converted or extracted.
+
 ### Environment variables under `config:`
 
 Older projects could also set environment variables in an `env:` block nested
 under the service's `config:`. That position is no longer read: azd takes the
-service environment only from the service-level `env:`. A service that still
-carries `config: env:` gets a warning naming the affected variables on both
-`azd ai agent run` and `azd deploy`.
+service environment only from the service-level `env:`. Runtime commands fail
+when an agent service still carries a non-empty `config:` block. Move those
+environment values to the service-level `env:` before running the agent.
 
 Move them up one level to fix it:
 
@@ -495,11 +483,6 @@ Details:
   policy, it only associates the agent with an existing one. For prompt and
   managed agents, `azd ai agent init` lists the policies on the selected account
   and can bind one for you; see `--rai-policy`.
-
-> **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
-> (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
-> the other inline agent properties such as `codeConfiguration` and
-> `environmentVariables`.
 
 ## Voice agents (public preview)
 
@@ -712,11 +695,6 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
-As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
-keys throughout this block (`invocations_moderation`, `response_mode`,
-`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
-(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
-
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
@@ -817,9 +795,16 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
-- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
-  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
-  camelCase, like the other inline agent properties.
+
+## State Stores
+
+Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,
+replace, or delete their JSON object items. Select a store once, or supply `--store`
+for a one-off item operation. Store creation, updates, and deletion are not included.
+
+See [State Store commands and examples](docs/state-stores.md) for selection,
+conditional writes with ETags, and pagination. Editing state does not resume or
+stop agent work.
 
 ## Session carry-over across deploys
 

@@ -183,6 +183,153 @@ func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
 	require.Contains(t, output, "disconnected hook warning")
 }
 
+func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
+	extension := &extensions.Extension{
+		Id:           "test.beta.concurrent",
+		Version:      "1.0.0",
+		Namespace:    "test",
+		Capabilities: []extensions.CapabilityType{extensions.LifecycleEventsCapability},
+	}
+	service, _ := createTestEventService()
+	service.extensionManager = newStreamTestExtensionManager(t, extension)
+	server := newServerWithEventService(service)
+
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, server.Stop())
+	}()
+
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	ctx = azdext.WithAccessToken(ctx, accessToken)
+	stream, err := client.EventsBeta().EventStream(ctx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&v1beta.EventMessage{
+		RequestId: "service-subscription",
+		MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+			SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{
+				EventNames: []string{"predeploy"},
+			},
+		},
+	}))
+	ack, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "service-subscription", ack.GetRequestId())
+	require.NotNil(t, ack.GetSubscribeServiceEventResponse())
+
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+	results := make(map[string]chan error)
+	for _, name := range []string{"api", "web"} {
+		serviceConfig := projectConfig.Services[name]
+		require.NotNil(t, serviceConfig)
+		done := make(chan error, 1)
+		results[name] = done
+		go func() {
+			done <- serviceConfig.RaiseEvent(
+				ctx,
+				ext.Event("predeploy"),
+				project.ServiceLifecycleEventArgs{
+					Project:        projectConfig,
+					Service:        serviceConfig,
+					ServiceContext: project.NewServiceContext(),
+				},
+			)
+		}()
+	}
+
+	// Both hooks must be in flight before either receives a status.
+	invocations := make([]*v1beta.EventMessage, 2)
+	names := make([]string, 2)
+	for index := range invocations {
+		invocations[index], err = stream.Recv()
+		require.NoError(t, err)
+		invocation := invocations[index].GetInvokeServiceHandler()
+		require.NotNil(t, invocation)
+		require.Equal(t, "predeploy", invocation.GetEventName())
+		require.NotEmpty(t, invocations[index].GetRequestId())
+		names[index] = invocation.GetService().GetName()
+	}
+	require.ElementsMatch(t, []string{"api", "web"}, names)
+	require.NotEqual(t, invocations[0].GetRequestId(), invocations[1].GetRequestId())
+	for _, done := range results {
+		select {
+		case err := <-done:
+			t.Fatalf("hook completed before returning a status: %v", err)
+		default:
+		}
+	}
+
+	for _, part := range []string{"first", "second"} {
+		for index, invocation := range invocations {
+			require.NoError(t, stream.Send(&v1beta.EventMessage{
+				RequestId: invocation.GetRequestId(),
+				MessageType: &v1beta.EventMessage_HandlerOutput{
+					HandlerOutput: &v1beta.HandlerOutput{
+						Output: names[index] + " " + part + " warning\n",
+					},
+				},
+			}))
+		}
+	}
+
+	// Complete in reverse receive order with different outcomes.
+	for _, index := range []int{1, 0} {
+		status := "completed"
+		message := ""
+		if index == 1 {
+			status = "failed"
+			message = names[index] + " hook failed"
+		}
+		require.NoError(t, stream.Send(&v1beta.EventMessage{
+			RequestId: invocations[index].GetRequestId(),
+			MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+					EventName:   "predeploy",
+					ServiceName: names[index],
+					Status:      status,
+					Message:     message,
+				},
+			},
+		}))
+		select {
+		case err := <-results[names[index]]:
+			if index == 1 {
+				require.ErrorContains(t, err,
+					"service hook "+names[index]+".predeploy failed: "+message)
+			} else {
+				require.NoError(t, err)
+			}
+		case <-ctx.Done():
+			t.Fatalf("hook %s did not complete: %v", names[index], ctx.Err())
+		}
+		if index == 1 {
+			select {
+			case err := <-results[names[0]]:
+				t.Fatalf("first hook consumed the second hook's status: %v", err)
+			default:
+			}
+		}
+	}
+
+	console := service.console.(*mockinput.MockConsole)
+	require.ElementsMatch(t, []string{
+		"api first warning\napi second warning",
+		"web first warning\nweb second warning",
+	}, console.Output())
+	require.NoError(t, stream.CloseSend())
+	message, err := stream.Recv()
+	require.Nil(t, message)
+	require.ErrorIs(t, err, io.EOF)
+}
+
 func TestServer_BetaEventStreamCompletesLegacyHookWithoutAck(t *testing.T) {
 	extension := &extensions.Extension{
 		Id:           "test.beta.legacy",

@@ -201,6 +201,8 @@ class Proof:
                           stderr=sanitize(result.stderr, self.root))
         except subprocess.TimeoutExpired as error:
             record["timedOut"] = True
+            if getattr(error, "__notes__", None):
+                record["processCleanupErrors"] = [sanitize(note, self.root) for note in error.__notes__]
             for stream in ("stdout", "stderr"):
                 value = getattr(error, stream)
                 if isinstance(value, bytes):

@@ -100,6 +100,11 @@ def run(args, *, cwd, env, timeout, text=False, encoding="utf-8"):
     terminate_lock = threading.Lock()
     observer = None
     observer_errors = []
+    completed = False
+
+    def note_cleanup_error(error, cleanup_error):
+        error.add_note(
+            f"Owned CLI process cleanup also failed ({type(cleanup_error).__name__}); termination or reaping may be incomplete")
 
     def terminate():
         nonlocal terminated
@@ -148,35 +153,46 @@ def run(args, *, cwd, env, timeout, text=False, encoding="utf-8"):
         try:
             stdout, stderr = process.communicate(json.dumps({"argv": [str(arg) for arg in args]}).encode(),
                                                  timeout=remaining)
-        except subprocess.TimeoutExpired:
-            terminate()
-            stdout, stderr = process.communicate(timeout=5)
-            raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr) from None
+        except subprocess.TimeoutExpired as error:
+            failure = subprocess.TimeoutExpired(args, timeout, output=error.output, stderr=error.stderr)
+            try:
+                terminate()
+                failure.output, failure.stderr = process.communicate(timeout=5)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as cleanup_error:
+                note_cleanup_error(failure, cleanup_error)
+            raise failure from None
         result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
         if text:
             result.stdout, result.stderr = stdout.decode(encoding), stderr.decode(encoding)
+        completed = True
         return result
     finally:
+        primary = None if completed else sys.exception()
         try:
-            terminate()
-        finally:
             try:
-                if process is not None:
-                    process.wait(timeout=5)
-                    if observer is not None:
-                        observer.join(timeout=5)
-                        if observer.is_alive():
-                            raise RuntimeError("Owned CLI exit observer did not stop within the cleanup bound")
-                    for stream in (process.stdin, process.stdout, process.stderr):
-                        if stream is not None:
-                            stream.close()
-                if job is not None and assigned:
-                    job.wait_empty(5)
-                if observer_errors:
-                    raise observer_errors[0]
+                terminate()
             finally:
-                if job is not None:
-                    job.close()
+                try:
+                    if process is not None:
+                        process.wait(timeout=5)
+                        if observer is not None:
+                            observer.join(timeout=5)
+                            if observer.is_alive():
+                                raise RuntimeError("Owned CLI exit observer did not stop within the cleanup bound")
+                        for stream in (process.stdin, process.stdout, process.stderr):
+                            if stream is not None:
+                                stream.close()
+                    if job is not None and assigned:
+                        job.wait_empty(5)
+                    if observer_errors:
+                        raise observer_errors[0]
+                finally:
+                    if job is not None:
+                        job.close()
+        except (OSError, RuntimeError, subprocess.SubprocessError) as cleanup_error:
+            if primary is None:
+                raise
+            note_cleanup_error(primary, cleanup_error)
 
 
 def main():
@@ -187,9 +203,9 @@ def main():
         raise ValueError("Invalid owned CLI launch request")
     try:
         return subprocess.run(request["argv"], stdin=subprocess.DEVNULL, check=False).returncode
-    except OSError:
+    except OSError as error:
         print("Owned CLI executable could not be started.", file=sys.stderr)
-        return 127
+        return 126 if os.name != "nt" and isinstance(error, PermissionError) else 127
 
 
 if __name__ == "__main__":

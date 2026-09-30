@@ -357,8 +357,11 @@ class Driver:
             if output_format in ("raw", None):
                 return result.stdout
             return json.loads(result.stdout, parse_float=Decimal) if result.stdout.strip() else None
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
             record["timedOut"] = True
+            if getattr(error, "__notes__", None):
+                record["processCleanupErrors"] = [
+                    scenario.proof_module.sanitize(note, self.workspace) for note in error.__notes__]
             raise RuntimeError(f"{label} timed out; remote completion and billing are unknown") from None
         finally:
             record["finishedAt"] = datetime.now(timezone.utc).isoformat()

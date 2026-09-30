@@ -457,7 +457,11 @@ assert that a deliberately detached group/session is contained or perform a
 Windows-style group-empty check. Windows additionally verifies its job drains.
 Local regressions start a real child heartbeat and verify that activity stops
 before return, including inherited-pipe parent exit. A missing executable
-returns a fixed launcher error rather than a Python traceback or private path.
+returns127, and POSIX permission-denied launch returns126; Windows launch errors
+retain127. Both use a fixed error rather than a Python traceback or private
+path. A primary timeout remains a timeout if
+process cleanup also fails; command receipts retain secondary
+`processCleanupErrors` rather than losing the `timedOut` outcome.
 This is owned-process cleanup with platform-specific limits, not a
 general-purpose sandbox, remote cancellation confirmation or proof that billing
 stopped.

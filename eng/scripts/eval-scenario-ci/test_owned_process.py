@@ -1,6 +1,9 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+from contextlib import redirect_stderr
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -89,6 +92,71 @@ class OwnedProcessTests(unittest.TestCase):
             self.assertEqual(result.returncode, 127)
             self.assertEqual(result.stdout, "")
             self.assertEqual(result.stderr.strip(), "Owned CLI executable could not be started.")
+
+    def test_permission_denied_respects_platform_launch_exit_contract(self):
+        for platform, expected in (("posix", 126), ("nt", 127)):
+            with self.subTest(platform=platform):
+                output = io.StringIO()
+                with mock.patch.object(owned_process.sys, "stdin", io.StringIO(json.dumps({"argv": ["private-path"]}))), \
+                     mock.patch.object(owned_process.subprocess, "run", side_effect=PermissionError("private-detail")), \
+                     mock.patch.object(owned_process.os, "name", platform), redirect_stderr(output):
+                    self.assertEqual(owned_process.main(), expected)
+                self.assertEqual(output.getvalue().strip(), "Owned CLI executable could not be started.")
+
+    @unittest.skipUnless(os.name == "nt", "Inject a secondary error after real Windows job drain")
+    def test_timeout_and_secondary_cleanup_failure_survive_both_callers(self):
+        drain = owned_process.WindowsJob.wait_empty
+
+        def failed_drain(job, timeout):
+            drain(job, timeout)
+            raise OSError("private-cleanup-diagnostic")
+
+        for caller in ("helper", "offline", "service"):
+            with self.subTest(caller=caller), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                args, heartbeat = self.command(root, parent_exits=False)
+                with mock.patch.object(owned_process.WindowsJob, "wait_empty", failed_drain):
+                    if caller == "helper":
+                        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                            owned_process.run(args, cwd=root, env=self.environment(), timeout=2)
+                        self.assertIn(b"parent ready", raised.exception.output)
+                        errors = raised.exception.__notes__
+                    elif caller == "offline":
+                        runner = scenario.proof_module.Proof(root, root, {})
+                        runner.azd = Path(sys.executable)
+                        with self.assertRaises(subprocess.TimeoutExpired):
+                            runner.run("timeout fixture", args[1:], timeout=2)
+                        self.assertTrue(runner.commands[-1]["timedOut"])
+                        errors = runner.commands[-1]["processCleanupErrors"]
+                    else:
+                        report = {}
+                        runner = service.Driver(Path(sys.executable), root / "auth", root, 2, 10, report)
+                        with self.assertRaisesRegex(RuntimeError, "timed out"):
+                            runner("timeout fixture", args[1:], output_format=None)
+                        self.assertTrue(report["commands"][-1]["timedOut"])
+                        errors = report["commands"][-1]["processCleanupErrors"]
+                self.assertIn("cleanup also failed (OSError)", errors[0])
+                self.assertNotIn("private-cleanup-diagnostic", str(errors))
+                before = heartbeat.read_bytes()
+                time.sleep(0.1)
+                self.assertEqual(heartbeat.read_bytes(), before)
+
+    @unittest.skipUnless(os.name == "nt", "Inject a secondary error after real Windows job drain")
+    def test_success_cleanup_failure_is_not_hidden_by_an_ambient_handled_exception(self):
+        drain = owned_process.WindowsJob.wait_empty
+
+        def failed_drain(job, timeout):
+            drain(job, timeout)
+            raise OSError("cleanup failed")
+
+        with tempfile.TemporaryDirectory() as root:
+            try:
+                raise ValueError("already handled")
+            except ValueError:
+                with mock.patch.object(owned_process.WindowsJob, "wait_empty", failed_drain):
+                    with self.assertRaisesRegex(OSError, "cleanup failed"):
+                        owned_process.run([sys.executable, "-c", "print('done')"],
+                                          cwd=Path(root), env=self.environment(), timeout=5)
 
     def test_both_cli_callers_return_only_after_inherited_child_activity_stops(self):
         for caller in ("offline", "service"):

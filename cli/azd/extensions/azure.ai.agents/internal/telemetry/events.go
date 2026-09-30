@@ -10,20 +10,20 @@ import (
 )
 
 const (
-	agentInvokedEvent             = "agent.invoked"
-	invokeProtocolAttribute       = "protocol"
-	invokeLongRunningAttribute    = "long_running"
-	invokeNoWaitAttribute         = "no_wait"
+	agentInvokeSelectedEvent      = "agent.invoke.selected"
+	invokeProtocolAttribute       = "agent.invoke.protocol"
+	invokeLongRunningAttribute    = "agent.invoke.long_running"
+	invokeNoWaitAttribute         = "agent.invoke.no_wait"
 	localClientRouteSelectedEvent = "local_client.route.selected"
 	localClientRouteAttribute     = "route"
 )
 
-// AgentInvoked creates the adoption event for a validated remote hosted-agent invoke.
+// AgentInvokeSelected creates the adoption event for a resolved remote hosted-agent invoke.
 // It records the selected request mode, not a service response or success.
 // The caller supplies the protocol resolved and validated by the invoke command.
-func AgentInvoked(protocol string, longRunning, noWait bool) foundryTelemetry.Event {
+func AgentInvokeSelected(protocol string, longRunning, noWait bool) foundryTelemetry.Event {
 	return foundryTelemetry.Event{
-		Name: agentInvokedEvent,
+		Name: agentInvokeSelectedEvent,
 		Attributes: map[string]string{
 			invokeProtocolAttribute:    protocol,
 			invokeLongRunningAttribute: strconv.FormatBool(longRunning),

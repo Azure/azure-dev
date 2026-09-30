@@ -631,10 +631,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		}
 	}
 
-	// Count the selected remote invoke mode once, regardless of the eventual request result.
-	a.reportInvokeUsage(ctx, protocol)
-
-	// Remote: route by protocol.
+	// Remote: route by protocol. Each handler reports usage after resolving its target.
 	switch protocol {
 	case agent_api.AgentProtocolInvocations:
 		return a.invocationsRemote(ctx)
@@ -645,8 +642,19 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 }
 
+func (a *InvokeAction) reportInvokeUsageForRemote(
+	ctx context.Context, protocol agent_api.AgentProtocol, rc *remoteContext,
+) {
+	// Explicit endpoints have no project-backed kind to inspect. For project-backed
+	// routes, count only hosted agents; prompt, voice and workflow are excluded.
+	if a.endpoint == nil && !rc.hosted {
+		return
+	}
+	a.reportInvokeUsage(ctx, protocol)
+}
+
 func (a *InvokeAction) reportInvokeUsage(ctx context.Context, protocol agent_api.AgentProtocol) {
-	event := telemetry.AgentInvoked(string(protocol), a.flags.longRunning, a.flags.noWait)
+	event := telemetry.AgentInvokeSelected(string(protocol), a.flags.longRunning, a.flags.noWait)
 	if a.invokeReporter != nil {
 		a.invokeReporter.Report(ctx, event)
 		return
@@ -1248,6 +1256,7 @@ type remoteContext struct {
 	apiVersion                         string
 	version                            string
 	deployedVersion                    string
+	hosted                             bool
 	invocableProtocols                 []agent_api.AgentProtocol
 	deployedProtocolMetadata           bool
 	deployedProtocolMetadataIncomplete bool
@@ -1353,6 +1362,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
 		withVoiceInvocationGuidance(),
+		withHostedKind(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(
@@ -1389,6 +1399,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		}
 	} else {
 		rc.serviceName = info.ServiceName
+		rc.hosted = info.IsHosted
 		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
 		rc.deployedProtocolMetadata = info.ProtocolEndpointsPresent
@@ -1568,6 +1579,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
+	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolResponses, rc)
 
 	agentKey := rc.agentKey
 	if agentKey == "" && rc.azdClient != nil {
@@ -1892,6 +1904,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
+	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolInvocations, rc)
 
 	agentKey := rc.agentKey
 	if agentKey == "" && rc.azdClient != nil {

@@ -47,18 +47,20 @@ service keys, paths, URLs, prompts, or other customer content.
 
 ### Remote invoke adoption telemetry
 
-`agent.invoked` reports the selected mode once a remote hosted-agent invoke
-passes validation and resolves its protocol. It runs before the invoke request,
-not necessarily before authentication: protocol resolution can check whether a
-brownfield agent exists in Foundry. Failures before protocol resolution are not
-counted, while later request failures do not prevent the usage report. Local
-and prompt-agent invokes are excluded.
+`agent.invoke.selected` reports the selected mode once a remote invoke has
+resolved its protocol and target. For project-backed routes, only hosted-agent
+services are counted; an explicit `--agent-endpoint` has no project service kind
+to verify. The event runs before the invoke request, not necessarily before
+authentication: protocol or target resolution can check whether a brownfield
+agent exists in Foundry. Failures before resolution are not counted, while
+later request failures do not prevent the usage report. Local and non-hosted
+project routes (prompt, voice, workflow) are excluded.
 
 | Attribute | Values | Description |
 |---|---|---|
-| `ext.protocol` | `responses`, `invocations`, `a2a` (currently) | Resolved invocable protocol. |
-| `ext.long_running` | `true`, `false` | String-encoded choice of `--long-running`; supported for remote Responses only. |
-| `ext.no_wait` | `true`, `false` | String-encoded choice of `--no-wait`; requires `--long-running`. |
+| `ext.agent.invoke.protocol` | `responses`, `invocations`, `a2a` (currently) | Resolved invocable protocol. |
+| `ext.agent.invoke.long_running` | `true`, `false` | String-encoded choice of `--long-running`; supported for remote Responses only. |
+| `ext.agent.invoke.no_wait` | `true`, `false` | String-encoded choice of `--no-wait`; requires `--long-running`. |
 
 This records command-path adoption, not whether the service accepted or
 completed work. No prompt, agent name, endpoint, or service response is sent.

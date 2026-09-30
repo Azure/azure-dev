@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestAgentInvokedWireContract(t *testing.T) {
+func TestAgentInvokeSelectedWireContract(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
@@ -19,23 +19,29 @@ func TestAgentInvokedWireContract(t *testing.T) {
 		want        map[string]string
 	}{
 		{"responses foreground", "responses", false, false,
-			map[string]string{"protocol": "responses", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 		{"responses attached", "responses", true, false,
-			map[string]string{"protocol": "responses", "long_running": "true", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "false"}},
 		{"responses detached", "responses", true, true,
-			map[string]string{"protocol": "responses", "long_running": "true", "no_wait": "true"}},
+			map[string]string{
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "true"}},
 		{"invocations", "invocations", false, false,
-			map[string]string{"protocol": "invocations", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "invocations", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 		{"a2a", "a2a", false, false,
-			map[string]string{"protocol": "a2a", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "a2a", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 		{"future invocable protocol", "future_protocol", false, false,
-			map[string]string{"protocol": "future_protocol", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "future_protocol", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			event := AgentInvoked(tt.protocol, tt.longRunning, tt.noWait)
-			if event.Name != "agent.invoked" {
-				t.Fatalf("event name = %q, want agent.invoked", event.Name)
+			event := AgentInvokeSelected(tt.protocol, tt.longRunning, tt.noWait)
+			if event.Name != "agent.invoke.selected" {
+				t.Fatalf("event name = %q, want agent.invoke.selected", event.Name)
 			}
 			if !maps.Equal(event.Attributes, tt.want) {
 				t.Fatalf("event attributes = %#v, want %#v", event.Attributes, tt.want)

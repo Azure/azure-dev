@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -14,8 +15,6 @@ import (
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -42,25 +41,6 @@ func (r *invokeUsageRPCRecorder) snapshot() []*v1beta.ReportUsageRequest {
 	return append([]*v1beta.ReportUsageRequest(nil), r.requests...)
 }
 
-type invokeUsageProjectThenFail struct {
-	azdext.UnimplementedProjectServiceServer
-	mu      sync.Mutex
-	gets    int
-	project *azdext.ProjectConfig
-}
-
-func (s *invokeUsageProjectThenFail) Get(
-	_ context.Context, _ *azdext.EmptyRequest,
-) (*azdext.GetProjectResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.gets++
-	if s.gets > 2 {
-		return nil, status.Error(codes.NotFound, "project unavailable after protocol selection")
-	}
-	return &azdext.GetProjectResponse{Project: s.project}, nil
-}
-
 func startInvokeUsageRPCServer(t *testing.T, project azdext.ProjectServiceServer) *invokeUsageRPCRecorder {
 	t.Helper()
 	server := grpc.NewServer()
@@ -80,77 +60,67 @@ func startInvokeUsageRPCServer(t *testing.T, project azdext.ProjectServiceServer
 	return recorder
 }
 
-func TestAgentInvokedRequestOverGRPC(t *testing.T) {
-	// Exercise the real Cobra command and the gRPC client; no Azure credentials or service are required.
-	recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{
-		err: status.Error(codes.NotFound, "project unavailable in test"),
-	})
+func TestAgentInvokeSelectedRequestOverGRPC(t *testing.T) {
+	for _, tt := range []struct {
+		name, protocol string
+		longRunning    bool
+		noWait         bool
+	}{
+		{"invocations", "invocations", false, false},
+		{"long-running responses", "responses", true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{})
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					protocol: tt.protocol, message: "private prompt", longRunning: tt.longRunning, noWait: tt.noWait,
+				},
+				endpoint:              &parsedAgentEndpoint{},
+				resolvedRemoteContext: &remoteContext{name: "test"},
+				credential:            invokeUsageFailingCredential{},
+			}
+			// After target resolution, authentication fails; telemetry still travels over gRPC.
+			require.ErrorContains(t, action.Run(t.Context()), "failed to get auth token")
 
-	root := NewRootCommand()
-	root.SetArgs([]string{"invoke", "worker", "private prompt", "--protocol", "invocations", "--no-prompt"})
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-	// Project lookup fails after the invoke mode is chosen; telemetry is still sent over gRPC.
-	require.Error(t, root.ExecuteContext(t.Context()))
-
-	requests := recorder.snapshot()
-	require.Len(t, requests, 1)
-	require.Equal(t, "agent.invoked", requests[0].GetEventName())
-	require.Equal(t, map[string]string{
-		"protocol": "invocations", "long_running": "false", "no_wait": "false",
-	}, requests[0].GetAttributes())
+			requests := recorder.snapshot()
+			require.Len(t, requests, 1)
+			require.Equal(t, "agent.invoke.selected", requests[0].GetEventName())
+			require.Equal(t, map[string]string{
+				"agent.invoke.protocol":     tt.protocol,
+				"agent.invoke.long_running": strconv.FormatBool(tt.longRunning),
+				"agent.invoke.no_wait":      strconv.FormatBool(tt.noWait),
+			}, requests[0].GetAttributes())
+		})
+	}
 }
 
-func TestAgentLongRunningRequestOverGRPC(t *testing.T) {
-	props, err := structpb.NewStruct(map[string]any{
-		"kind": "hosted", "name": "worker",
-		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
-	})
-	require.NoError(t, err)
-	projectServer := &invokeUsageProjectThenFail{project: &azdext.ProjectConfig{
-		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
-			"worker": {Name: "worker", Host: AiAgentHost, AdditionalProperties: props},
-		},
-	}}
-	recorder := startInvokeUsageRPCServer(t, projectServer)
+func TestNonHostedAgentInvokeDoesNotReportAgentInvokeSelected(t *testing.T) {
+	for _, tt := range []struct{ kind, protocol string }{
+		{"prompt", "responses"}, {"prompt", "invocations"}, {"prompt", "a2a"},
+		{"voice", "invocations"}, {"workflow", "invocations"},
+	} {
+		t.Run(tt.kind+"/"+tt.protocol, func(t *testing.T) {
+			props, err := structpb.NewStruct(map[string]any{
+				"kind": tt.kind, "name": "assistant", "model": "gpt", "instructions": "help",
+			})
+			require.NoError(t, err)
+			recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					"assistant": {Name: "assistant", Host: AiAgentHost, AdditionalProperties: props},
+				},
+			}})
 
-	root := NewRootCommand()
-	root.SetArgs([]string{
-		"invoke", "worker", "private prompt", "--protocol", "responses", "--long-running", "--no-wait", "--no-prompt",
-	})
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-	require.ErrorContains(t, root.ExecuteContext(t.Context()), "project unavailable after protocol selection")
+			root := NewRootCommand()
+			root.SetArgs([]string{"invoke", "assistant", "hello", "--protocol", tt.protocol, "--no-prompt"})
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			// The fake host cannot supply prompt-agent environment settings.
+			require.Error(t, root.ExecuteContext(t.Context()))
 
-	requests := recorder.snapshot()
-	require.Len(t, requests, 2) // root context and exactly one invoke event
-	require.Equal(t, "agent.context.resolved", requests[0].GetEventName())
-	require.Equal(t, "agent.invoked", requests[1].GetEventName())
-	require.Equal(t, map[string]string{
-		"protocol": "responses", "long_running": "true", "no_wait": "true",
-	}, requests[1].GetAttributes())
-}
-
-func TestPromptAgentInvokeDoesNotReportAgentInvoked(t *testing.T) {
-	props, err := structpb.NewStruct(map[string]any{
-		"kind": "prompt", "name": "assistant", "model": "gpt", "instructions": "help",
-	})
-	require.NoError(t, err)
-	recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{project: &azdext.ProjectConfig{
-		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
-			"assistant": {Name: "assistant", Host: AiAgentHost, AdditionalProperties: props},
-		},
-	}})
-
-	root := NewRootCommand()
-	root.SetArgs([]string{"invoke", "assistant", "hello", "--protocol", "responses", "--no-prompt"})
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-	// The fake host cannot supply prompt-agent environment settings; route selection still runs first.
-	require.Error(t, root.ExecuteContext(t.Context()))
-
-	requests := recorder.snapshot()
-	require.Len(t, requests, 1)
-	require.Equal(t, "agent.context.resolved", requests[0].GetEventName())
-	require.Equal(t, "prompt", requests[0].GetAttributes()["agent.kind"])
+			requests := recorder.snapshot()
+			require.Len(t, requests, 1)
+			require.Equal(t, "agent.context.resolved", requests[0].GetEventName())
+			require.Equal(t, tt.kind, requests[0].GetAttributes()["agent.kind"])
+		})
+	}
 }

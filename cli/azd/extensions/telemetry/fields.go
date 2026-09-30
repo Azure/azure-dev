@@ -62,7 +62,7 @@ var (
 
 	// AgentInvokeProtocol records the selected remote hosted-agent invocation protocol.
 	AgentInvokeProtocol = fields.AttributeKey{
-		Key:            attribute.Key("ext.protocol"),
+		Key:            attribute.Key("ext.agent.invoke.protocol"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.FeatureInsight,
 		Endpoint:       "N/A",
@@ -70,7 +70,7 @@ var (
 
 	// AgentInvokeLongRunning records whether the remote invoke requested background execution.
 	AgentInvokeLongRunning = fields.AttributeKey{
-		Key:            attribute.Key("ext.long_running"),
+		Key:            attribute.Key("ext.agent.invoke.long_running"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.FeatureInsight,
 		Endpoint:       "N/A",
@@ -78,7 +78,7 @@ var (
 
 	// AgentInvokeNoWait records whether the remote invoke returns after receiving its ID.
 	AgentInvokeNoWait = fields.AttributeKey{
-		Key:            attribute.Key("ext.no_wait"),
+		Key:            attribute.Key("ext.agent.invoke.no_wait"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.FeatureInsight,
 		Endpoint:       "N/A",

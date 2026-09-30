@@ -12,8 +12,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type invokeUsageFailingCredential struct{}
@@ -22,6 +24,29 @@ func (invokeUsageFailingCredential) GetToken(
 	_ context.Context, _ policy.TokenRequestOptions,
 ) (azcore.AccessToken, error) {
 	return azcore.AccessToken{}, errors.New("test credential unavailable")
+}
+
+func TestInvokeResolverClassifiesHostedKindForTelemetry(t *testing.T) {
+	for _, tt := range []struct {
+		kind       string
+		wantHosted bool
+	}{
+		{"hosted", true}, {"prompt", false}, {"voice", false}, {"workflow", false},
+	} {
+		t.Run(tt.kind, func(t *testing.T) {
+			props, err := structpb.NewStruct(map[string]any{"kind": tt.kind, "name": "worker"})
+			require.NoError(t, err)
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					"worker": {Name: "worker", Host: AiAgentHost, AdditionalProperties: props},
+				},
+			}}
+			client := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
+			info, err := resolveAgentServiceFromProject(t.Context(), client, "worker", true, withHostedKind())
+			require.NoError(t, err)
+			require.Equal(t, tt.wantHosted, info.IsHosted)
+		})
+	}
 }
 
 func TestInvokeUsageReportsSelectedRemoteModeBeforeAuthentication(t *testing.T) {
@@ -33,15 +58,20 @@ func TestInvokeUsageReportsSelectedRemoteModeBeforeAuthentication(t *testing.T) 
 		want        map[string]string
 	}{
 		{"responses foreground", agent_api.AgentProtocolResponses, false, false,
-			map[string]string{"protocol": "responses", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 		{"responses attached", agent_api.AgentProtocolResponses, true, false,
-			map[string]string{"protocol": "responses", "long_running": "true", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "false"}},
 		{"responses detached", agent_api.AgentProtocolResponses, true, true,
-			map[string]string{"protocol": "responses", "long_running": "true", "no_wait": "true"}},
+			map[string]string{
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "true"}},
 		{"invocations", agent_api.AgentProtocolInvocations, false, false,
-			map[string]string{"protocol": "invocations", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "invocations", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 		{"a2a", agent_api.AgentProtocolA2A, false, false,
-			map[string]string{"protocol": "a2a", "long_running": "false", "no_wait": "false"}},
+			map[string]string{
+				"agent.invoke.protocol": "a2a", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &telemetryRecordingClient{}
@@ -59,10 +89,24 @@ func TestInvokeUsageReportsSelectedRemoteModeBeforeAuthentication(t *testing.T) 
 			// The invoke fails during authentication, after the usage event but before any service request.
 			require.Error(t, action.Run(t.Context()))
 			require.Len(t, client.requests, 1)
-			require.Equal(t, "agent.invoked", client.requests[0].EventName)
+			require.Equal(t, "agent.invoke.selected", client.requests[0].EventName)
 			require.Equal(t, tt.want, client.requests[0].Attributes)
 		})
 	}
+}
+
+func TestInvokeUsageReportsHostedProjectRoute(t *testing.T) {
+	client := &telemetryRecordingClient{}
+	action := &InvokeAction{
+		flags:                 &invokeFlags{protocol: "invocations", message: "private prompt"},
+		resolvedRemoteContext: &remoteContext{name: "worker", serviceName: "worker", hosted: true},
+		credential:            invokeUsageFailingCredential{},
+		invokeReporter:        foundryTelemetry.NewReporter(client, nil),
+	}
+
+	require.ErrorContains(t, action.Run(t.Context()), "failed to get auth token")
+	require.Len(t, client.requests, 1)
+	require.Equal(t, "agent.invoke.selected", client.requests[0].EventName)
 }
 
 func TestInvokeUsageSkipsInvalidResolvedMode(t *testing.T) {

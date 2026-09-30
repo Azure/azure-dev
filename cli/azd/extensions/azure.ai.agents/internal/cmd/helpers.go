@@ -623,6 +623,7 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
+	IsHosted                    bool                               // populated only when hosted classification is requested
 	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
 	AgentName                   string                             // deployed name; may use brownfield fallback
@@ -1107,9 +1108,16 @@ type agentServiceResolutionOptions struct {
 	rejectVoiceInvocation          bool
 	allowMissingDefaultEnvironment bool
 	includeVoiceKind               bool
+	includeHostedKind              bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func withHostedKind() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.includeHostedKind = true
+	}
+}
 
 func withVoiceKind() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
@@ -1215,6 +1223,12 @@ func resolveAgentServiceFromProject(
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
+	if resolutionOptions.includeHostedKind {
+		// Telemetry classification must never change whether invocation proceeds.
+		if hosted, err := agentkind.IsHosted(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH")); err == nil {
+			info.IsHosted = hosted
+		}
+	}
 	if resolutionOptions.includeVoiceKind {
 		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
 		if err != nil {

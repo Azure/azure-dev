@@ -8,10 +8,11 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -236,8 +237,8 @@ func TestBetaEventServiceProjectHandlerCommitsFollowUp(t *testing.T) {
 		"postdeploy",
 		broker,
 	)
-	collector := guidance.NewFollowUpCollector()
-	handlerCtx := guidance.WithFollowUpCollector(t.Context(), collector)
+	collector := commandresult.NewFollowUpCollector()
+	handlerCtx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 	err = handler(handlerCtx, project.ProjectLifecycleEventArgs{
 		Project: projectConfig,
@@ -349,8 +350,8 @@ func TestBetaEventServiceProjectHandlerDiscardsFollowUp(t *testing.T) {
 				"postdeploy",
 				broker,
 			)
-			collector := guidance.NewFollowUpCollector()
-			handlerCtx := guidance.WithFollowUpCollector(t.Context(), collector)
+			collector := commandresult.NewFollowUpCollector()
+			handlerCtx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 			err = handler(handlerCtx, project.ProjectLifecycleEventArgs{
 				Project: projectConfig,
@@ -487,8 +488,8 @@ func TestBetaEventServiceBetaClientFollowUpEndToEnd(t *testing.T) {
 
 	projectConfig, err := service.lazyProject.GetValue()
 	require.NoError(t, err)
-	collector := guidance.NewFollowUpCollector()
-	eventCtx := guidance.WithFollowUpCollector(t.Context(), collector)
+	collector := commandresult.NewFollowUpCollector()
+	eventCtx := commandresult.WithFollowUpCollector(t.Context(), collector)
 	eventDone := make(chan error, 1)
 	go func() {
 		eventDone <- projectConfig.RaiseEvent(
@@ -522,6 +523,94 @@ func TestBetaEventServiceBetaClientFollowUpEndToEnd(t *testing.T) {
 	}))
 	require.NoError(t, <-eventDone)
 	require.Equal(t, "Run azd show", collector.Text())
+}
+
+func TestBetaEventServiceLegacyBetaClientProjectHandlerCompletes(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	extension.Capabilities = []extensions.CapabilityType{
+		extensions.LifecycleEventsCapability,
+	}
+	service.extensionManager = testExtensionLookup{extension: extension}
+
+	streamCtx, cancel := context.WithCancel(extensionClaimsContext(t.Context(), extension.Id))
+	t.Cleanup(cancel)
+	baseStream := &scriptedBetaEventStream{
+		ctx:    streamCtx,
+		recvCh: make(chan *v1beta.EventMessage, 1),
+	}
+	invocations := make(chan *v1beta.EventMessage, 1)
+	baseStream.sendFn = func(message *v1beta.EventMessage) error {
+		if message.GetInvokeProjectHandler() == nil {
+			return errors.New("expected project invocation")
+		}
+		invocations <- message
+		return nil
+	}
+	baseStream.recvCh <- &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+			SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
+				EventNames: []string{"postdeploy"},
+			},
+		},
+	}
+	closeStream := sync.OnceFunc(func() { close(baseStream.recvCh) })
+	t.Cleanup(closeStream)
+
+	streamDone := make(chan error, 1)
+	go func() {
+		streamDone <- (&betaEventService{service: service}).EventStream(baseStream)
+	}()
+
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	var invocation *v1beta.EventMessage
+	var eventDone chan error
+	timeout := time.After(5 * time.Second)
+	for invocation == nil {
+		eventDone = make(chan error, 1)
+		go func(done chan<- error) {
+			done <- projectConfig.RaiseEvent(
+				streamCtx,
+				ext.Event("postdeploy"),
+				project.ProjectLifecycleEventArgs{Project: projectConfig},
+			)
+		}(eventDone)
+
+		select {
+		case invocation = <-invocations:
+		case err := <-eventDone:
+			require.NoError(t, err)
+			select {
+			case <-timeout:
+				t.Fatal("legacy client did not receive a project invocation")
+			case <-time.After(10 * time.Millisecond):
+			}
+		case <-timeout:
+			t.Fatal("legacy subscription was not processed")
+		}
+	}
+	require.Empty(t, invocation.GetRequestId())
+	require.Empty(t, invocation.GetInvokeProjectHandler().GetInvocationId())
+
+	baseStream.recvCh <- &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+				EventName: "postdeploy",
+				Status:    "completed",
+			},
+		},
+	}
+	select {
+	case err := <-eventDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("legacy project handler status did not complete the hook")
+	}
+
+	closeStream()
+	require.NoError(t, <-streamDone)
 }
 
 func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {

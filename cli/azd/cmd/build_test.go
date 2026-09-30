@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -76,7 +76,7 @@ func TestBuildAction_StandaloneRestoreAndBuildUseSameCommandOrder(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			collector := guidance.NewFollowUpCollector()
+			collector := commandresult.NewFollowUpCollector()
 			eventOrders := make(map[string]uint64)
 			restoreOrder := uint64(0)
 			projectConfig := &project.ProjectConfig{
@@ -90,9 +90,9 @@ func TestBuildAction_StandaloneRestoreAndBuildUseSameCommandOrder(t *testing.T) 
 				t.Context(),
 				ext.Event("postrestore"),
 				func(ctx context.Context, _ project.ProjectLifecycleEventArgs) error {
-					order := guidance.FollowUpCommandOrderFromContext(ctx)
+					order := commandresult.FollowUpCommandOrderFromContext(ctx)
 					eventOrders["postrestore"] = order
-					collector.Add(guidance.FollowUp{
+					collector.Add(commandresult.FollowUp{
 						ExtensionID:  "test.extension",
 						CommandOrder: order,
 						EventName:    "postrestore",
@@ -105,9 +105,9 @@ func TestBuildAction_StandaloneRestoreAndBuildUseSameCommandOrder(t *testing.T) 
 				t.Context(),
 				ext.Event("postbuild"),
 				func(ctx context.Context, _ project.ProjectLifecycleEventArgs) error {
-					order := guidance.FollowUpCommandOrderFromContext(ctx)
+					order := commandresult.FollowUpCommandOrderFromContext(ctx)
 					eventOrders["postbuild"] = order
-					collector.Add(guidance.FollowUp{
+					collector.Add(commandresult.FollowUp{
 						ExtensionID:  "test.extension",
 						CommandOrder: order,
 						EventName:    "postbuild",
@@ -126,7 +126,7 @@ func TestBuildAction_StandaloneRestoreAndBuildUseSameCommandOrder(t *testing.T) 
 				args []string,
 			) error {
 				require.Equal(t, []string{"restore", "--all"}, args)
-				restoreOrder = guidance.FollowUpCommandOrderFromContext(ctx)
+				restoreOrder = commandresult.FollowUpCommandOrderFromContext(ctx)
 				return projectConfig.Invoke(
 					ctx,
 					project.ProjectEventRestore,
@@ -144,7 +144,7 @@ func TestBuildAction_StandaloneRestoreAndBuildUseSameCommandOrder(t *testing.T) 
 				writer:         io.Discard,
 				workflowRunner: runner,
 			}
-			ctx := guidance.WithFollowUpCollector(t.Context(), collector)
+			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 			_, err := action.Run(ctx)
 			require.NoError(t, err)

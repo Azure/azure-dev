@@ -9,7 +9,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -519,13 +519,13 @@ func TestEventService_createProjectEventHandler_DoesNotCollectFollowUp(t *testin
 				tt.eventName,
 				broker,
 			)
-			collector := guidance.NewFollowUpCollector()
-			collector.Add(guidance.FollowUp{
+			collector := commandresult.NewFollowUpCollector()
+			collector.Add(commandresult.FollowUp{
 				ExtensionID: extension.Id,
 				EventName:   "postprovision",
 				Text:        tt.initial,
 			})
-			ctx := guidance.WithFollowUpCollector(t.Context(), collector)
+			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
 
 			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
 			if tt.wantError {

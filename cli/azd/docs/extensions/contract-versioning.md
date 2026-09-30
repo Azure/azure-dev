@@ -84,6 +84,16 @@ preservation, but the unknown fields are not exposed as typed fields on the
 stable message. Preview stream behavior that needs typed beta data therefore
 still requires a focused beta stream override.
 
+The beta lifecycle `EventStream` override selects compatibility behavior from
+the first subscription. A subscription without `request_id` is delegated to
+the stable event implementation, preserving legacy correlation for existing
+beta clients. This mode has no beta subscription acknowledgements or
+invocation IDs and cannot use beta-only follow-up APIs. A subscription with
+`request_id` selects the current beta mode; later subscriptions and project
+handler status messages must also carry IDs. Missing IDs on those messages
+are rejected; service handler statuses retain their existing service/event
+correlation. Stable `v1` behavior is unchanged.
+
 An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with
 `server.WithOptions(WithBetaServiceOverride(...))`; it receives the true

@@ -229,6 +229,15 @@ replying with `ProjectHandlerStatus` on the stream, using the invocation
 message's `request_id` for correlation. Handle stream errors and cancellation;
 send status `completed` only when processing succeeds.
 
+The first subscription selects the beta event stream mode. New clients must
+set a nonempty `request_id` on that subscription, retain request IDs on later
+subscriptions, and echo each project invocation's ID in its status message.
+Request-ID mode rejects later subscriptions or project statuses without an
+ID; service statuses continue to use service and event correlation. A first
+subscription without `request_id` uses legacy stable-event behavior for
+compatibility; that mode has no beta subscription acknowledgement or invocation
+ID and cannot use the beta follow-up API.
+
 The host stages the latest contribution for that invocation and commits it
 only after a successful handler status. Failed, cancelled, disconnected, or
 incomplete invocations are discarded. Call `SetFollowUp` with empty `Text`

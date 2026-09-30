@@ -57,6 +57,9 @@ collector. The UX middleware appends the resolved text to human-readable
 completion output without changing JSON output. Within a custom workflow,
 later command steps take precedence over earlier steps.
 
+The host's [command-result collector](../../cli/azd/internal/commandresult/follow_up.go)
+is separate from the [gRPC service and invocation store](../../cli/azd/internal/grpcserver/command_result_service.go).
+
 See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 for the API, host compatibility, and contribution ordering rules.
 

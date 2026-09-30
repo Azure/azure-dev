@@ -7,10 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
@@ -48,6 +49,29 @@ func (s *betaEventService) EventStream(
 	if !extension.HasCapability(extensions.LifecycleEventsCapability) {
 		return status.Error(codes.PermissionDenied, "extension does not support lifecycle events")
 	}
+
+	first, err := stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+			return nil
+		}
+		if streamStatus, ok := status.FromError(err); ok &&
+			streamStatus.Code() == codes.Canceled {
+			return nil
+		}
+		return fmt.Errorf("failed to receive initial event subscription: %w", err)
+	}
+
+	mode, err := betaEventStreamModeFor(first)
+	if err != nil {
+		return err
+	}
+
+	betaStream := newBetaEventStream(stream, first, mode)
+	if mode == betaEventStreamLegacy {
+		return delegateLegacyBetaEventStream(betaStream, s.service)
+	}
+	stream = betaStream
 
 	broker := grpcbroker.NewMessageBroker(
 		stream,
@@ -185,10 +209,10 @@ func (s *betaEventService) createProjectHandler(
 		if err == nil && completed {
 			text, hasText := s.service.followUps.Commit(invocationID)
 			if strings.HasPrefix(eventName, "post") && hasText {
-				if collector := guidance.FollowUpCollectorFromContext(ctx); collector != nil {
-					collector.Add(guidance.FollowUp{
+				if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+					collector.Add(commandresult.FollowUp{
 						ExtensionID:  extension.Id,
-						CommandOrder: guidance.FollowUpCommandOrderFromContext(ctx),
+						CommandOrder: commandresult.FollowUpCommandOrderFromContext(ctx),
 						EventName:    eventName,
 						Layer:        betaFollowUpLayer(args),
 						Text:         text,

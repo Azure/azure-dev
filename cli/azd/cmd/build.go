@@ -12,7 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -109,7 +109,7 @@ type BuildResult struct {
 }
 
 func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	ctx = guidance.EnsureFollowUpCommandOrder(ctx)
+	ctx = commandresult.EnsureFollowUpCommandOrder(ctx)
 
 	// When the --only flag is NOT specified, we need to restore the project before building it.
 	if !ba.flags.only {

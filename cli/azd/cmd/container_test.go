@@ -14,7 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -471,7 +471,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 						executedCommands = append(executedCommands, name)
 						commandOrders = append(
 							commandOrders,
-							guidance.FollowUpCommandOrderFromContext(ctx),
+							commandresult.FollowUpCommandOrderFromContext(ctx),
 						)
 						return nil
 					},
@@ -485,9 +485,9 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter := &workflowCmdAdapter{newCommand: newCommand}
-		ctx := guidance.WithFollowUpCollector(
+		ctx := commandresult.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
-			guidance.NewFollowUpCollector(),
+			commandresult.NewFollowUpCollector(),
 		)
 
 		// Simulate the default "up" workflow steps
@@ -518,20 +518,20 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 				&cobra.Command{
 					Use: "build",
 					RunE: func(cmd *cobra.Command, args []string) error {
-						ctx := guidance.EnsureFollowUpCommandOrder(cmd.Context())
-						order := guidance.FollowUpCommandOrderFromContext(ctx)
+						ctx := commandresult.EnsureFollowUpCommandOrder(cmd.Context())
+						order := commandresult.FollowUpCommandOrderFromContext(ctx)
 						commandOrders = append(
 							commandOrders,
 							order,
 						)
-						collector := guidance.FollowUpCollectorFromContext(ctx)
-						collector.Add(guidance.FollowUp{
+						collector := commandresult.FollowUpCollectorFromContext(ctx)
+						collector.Add(commandresult.FollowUp{
 							ExtensionID:  "test.extension",
 							CommandOrder: order,
 							EventName:    "postrestore",
 							Text:         "restore",
 						})
-						collector.Add(guidance.FollowUp{
+						collector.Add(commandresult.FollowUp{
 							ExtensionID:  "test.extension",
 							CommandOrder: order,
 							EventName:    "postbuild",
@@ -545,7 +545,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 					RunE: func(cmd *cobra.Command, args []string) error {
 						commandOrders = append(
 							commandOrders,
-							guidance.FollowUpCommandOrderFromContext(cmd.Context()),
+							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
 						)
 						return nil
 					},
@@ -553,10 +553,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 				&cobra.Command{
 					Use: "deploy",
 					RunE: func(cmd *cobra.Command, args []string) error {
-						order := guidance.FollowUpCommandOrderFromContext(cmd.Context())
+						order := commandresult.FollowUpCommandOrderFromContext(cmd.Context())
 						commandOrders = append(commandOrders, order)
-						guidance.FollowUpCollectorFromContext(cmd.Context()).Add(
-							guidance.FollowUp{
+						commandresult.FollowUpCollectorFromContext(cmd.Context()).Add(
+							commandresult.FollowUp{
 								ExtensionID:  "test.extension",
 								CommandOrder: order,
 								EventName:    "postdeploy",
@@ -571,8 +571,8 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter = &workflowCmdAdapter{newCommand: newCommand}
-		collector := guidance.NewFollowUpCollector()
-		ctx := guidance.WithFollowUpCollector(
+		collector := commandresult.NewFollowUpCollector()
+		ctx := commandresult.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
 			collector,
 		)

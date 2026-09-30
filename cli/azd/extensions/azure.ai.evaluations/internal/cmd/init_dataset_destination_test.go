@@ -25,7 +25,9 @@ const sameFileConversationRows = "{\"messages\":[{\"role\":\"user\",\"content\":
 	"{\"role\":\"assistant\",\"content\":\"Hello\"}]}\r\n"
 
 func TestInitRefusesDatasetAsConfigDestinationBeforeWrites(t *testing.T) {
-	for _, form := range []string{"relative input", "absolute input", "normalized dots", "Windows case", "hard link", "symlink"} {
+	for _, form := range []string{
+		"relative input", "absolute input", "normalized dots", "Windows case", "hard link", "symlink",
+	} {
 		t.Run(form, func(t *testing.T) {
 			if form == "Windows case" && runtime.GOOS != "windows" {
 				t.Skip("case-insensitive identity is Windows-specific")

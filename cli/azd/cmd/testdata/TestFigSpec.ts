@@ -7104,12 +7104,64 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add or update a Foundry skill service in azure.yaml.',
+							options: [
+								{
+									name: ['--description'],
+									description: 'Inline mode: required human-readable summary of the skill',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to SKILL.md, a .zip package, or a directory containing SKILL.md at its root',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--instructions'],
+									description: 'Inline mode: required Markdown body defining skill behavior (literal text, not a file path)',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7166,7 +7218,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7196,7 +7248,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7235,7 +7287,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7273,7 +7325,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7298,7 +7350,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7350,7 +7402,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7374,7 +7426,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',

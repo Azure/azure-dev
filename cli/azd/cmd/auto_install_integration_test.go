@@ -4,6 +4,9 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,10 +15,98 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExecuteWithAutoInstall_UsesSameConsoleAsChild(t *testing.T) {
+	projectDir := t.TempDir()
+	t.Chdir(projectDir)
+	configDir := t.TempDir()
+
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("AZD_FORCE_TTY", "false")
+	t.Setenv("NO_COLOR", "1")
+
+	azureYAML := `name: repro
+services:
+  api:
+    project: src
+    language: js
+    # we're purposefully going to trigger an error so we can ensure
+    # that it goes through the correct input.Console
+    host: unsupported-host
+`
+
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "src"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(azureYAML), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
+
+	originalArgs, originalStdout, originalStderr := os.Args, os.Stdout, os.Stderr
+	t.Cleanup(func() {
+		os.Args, os.Stdout, os.Stderr = originalArgs, originalStdout, originalStderr
+	})
+	os.Args = []string{"azd", "package", "--output", "json", "--no-prompt"}
+
+	// setup our streams so we can tell if we're using the correct ones
+	// when we print out our error message
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	require.NoError(t, err)
+	defer stdoutReader.Close()
+	os.Stdout = stdoutWriter
+
+	stderrReader, stderrWriter, err := os.Pipe()
+	require.NoError(t, err)
+	defer stderrReader.Close()
+	os.Stderr = stderrWriter
+
+	rootContainer := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(rootContainer, t.Context())
+	result := ExecuteWithAutoInstall(t.Context(), rootContainer)
+
+	os.Stdout, os.Stderr = originalStdout, originalStderr
+	require.NoError(t, stdoutWriter.Close())
+	require.NoError(t, stderrWriter.Close())
+
+	stdout, err := io.ReadAll(stdoutReader)
+	require.NoError(t, err)
+	stderr, err := io.ReadAll(stderrReader)
+	require.NoError(t, err)
+
+	_, unsupported := errors.AsType[*project.UnsupportedServiceHostError](result.Err)
+	require.True(t, unsupported)
+	require.Empty(t, stdout, "JSON command errors must not write text to stdout")
+
+	lines := bytes.Split(stderr, []byte("\n"))
+
+	errMessageFound := false
+
+	// the output is JSONL, so we'll just make sure each line parses to proper JSON, which is the point of our fix.
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+
+		var v *struct {
+			Error string `json:"error"`
+		}
+
+		err = json.Unmarshal(line, &v)
+		require.NoError(t, err, "Error output should use the same output format as the main stream, which would make it valid JSON")
+
+		if v.Error == "service host 'unsupported-host' for service 'api' is unsupported" {
+			errMessageFound = true
+		}
+	}
+
+	require.True(t, errMessageFound)
+	require.Contains(t, string(stderr), `"suggestion":"Suggestion: install an extension`)
+}
 
 func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T) {
 	originalArgs := os.Args

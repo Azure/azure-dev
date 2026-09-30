@@ -734,21 +734,28 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = commandErr
 			return result
 		}
-		if projectExtensions.handled {
-			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
-				fmt.Fprintln(os.Stderr, unsupportedErr.ErrorMessage)
-			} else {
-				console.Message(ctx, unsupportedErr.ErrorMessage)
+
+		// Follow-up output belongs to the parsed command, not the root console used during preflight
+		// so we'll just swap out our current console instance for the child command's...
+		{
+			formatter, formatErr := output.GetCommandFormatter(foundCmd)
+			if formatErr != nil {
+				result.Err = errors.Join(commandErr, fmt.Errorf("resolving output format for %s: %w",
+					foundCmd.CommandPath(), formatErr))
+				return result
 			}
+
+			console = newCommandConsole(globalOpts, formatter, foundCmd)
+		}
+
+		if projectExtensions.handled {
+			console.Message(ctx, unsupportedErr.ErrorMessage)
 			result.Err = commandErr
 			return result
 		}
 
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
-		}
-		if err := rootContainer.Resolve(&console); err != nil {
-			log.Panic("failed to resolve console for unknown flags error:", err)
 		}
 
 		requiredHost := unsupportedErr.Host

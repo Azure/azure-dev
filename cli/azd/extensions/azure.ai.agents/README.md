@@ -31,18 +31,23 @@ The events currently emitted by this extension are documented under
 
 When azd telemetry is enabled, the extension reports `agent.context.resolved`
 for each distinct agent classification involved in an invocation. The event
-contains only bounded classifications:
+contains only bounded classifications (including a container mode for hosted agents):
 
 | Attribute | Values | Description |
 |---|---|---|
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
+| `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
-reports one row for each classification. The event never includes agent names,
-service keys, paths, URLs, prompts, or other customer content.
+reports one row for each distinct kind, harness, and container mode; it does
+not count individual agents or prove a deployment succeeded. `build` includes
+both azd-created and existing ACR destinations. Ambiguous legacy or invalid
+hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
+are reported as `unknown`. The event never includes agent names, service keys,
+registry connections, image references, paths, URLs, prompts, or other customer content.
 
 ## Non-interactive automation
 

@@ -1510,20 +1510,6 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 			wantPath: "name",
 		},
 		{
-			name: "deprecated config-nested agent",
-			svc: &azdext.ServiceConfig{
-				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"docker": structpb.NewStructValue(&structpb.Struct{}),
-				}},
-				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-					"name": structpb.NewStringValue("legacy-agent"),
-				}},
-			},
-			wantName: "legacy-agent",
-			wantPath: "config.name",
-		},
-		{
 			name: "inline definition remains authoritative during partial migration",
 			svc: &azdext.ServiceConfig{
 				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
@@ -1551,7 +1537,8 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotName, gotPath := adoptedAgentNameConfig(tt.svc)
+			gotName, gotPath, err := adoptedAgentNameConfig(tt.svc, "")
+			require.NoError(t, err)
 			require.Equal(t, tt.wantName, gotName)
 			require.Equal(t, tt.wantPath, gotPath)
 		})
@@ -1700,36 +1687,125 @@ func TestUpdateAdoptedAgentNames_PersistsReplacement(t *testing.T) {
 	require.Equal(t, "replacement-agent", server.configValues["name"].value)
 }
 
-func TestUpdateAdoptedAgentNames_UsesLegacyConfigPath(t *testing.T) {
+func TestUpdateAdoptedAgentNames_PersistsReplacementForRootRef(t *testing.T) {
 	t.Parallel()
 
+	projectRoot := t.TempDir()
+	mustWriteFile(
+		t,
+		filepath.Join(projectRoot, "agent.yaml"),
+		"kind: hosted\nname: existing-agent\n",
+	)
 	server := &recordingProjectServer{
+		projectPath: projectRoot,
 		existing: map[string]*azdext.ServiceConfig{
 			"agent-service": {
 				Name: "agent-service",
 				Host: AiAgentHost,
-				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-					"name": structpb.NewStringValue("existing-agent"),
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"$ref": structpb.NewStringValue("./agent.yaml"),
 				}},
 			},
 		},
 	}
 	client := newProjectRecorderClient(t, server)
 
+	var checkedNames []string
 	err := updateAdoptedAgentNames(
 		t.Context(),
 		client,
-		func(_ context.Context, _ string) (string, error) {
+		func(_ context.Context, agentName string) (string, error) {
+			checkedNames = append(checkedNames, agentName)
 			return "replacement-agent", nil
 		},
 	)
 	require.NoError(t, err)
+	require.Equal(t, []string{"existing-agent"}, checkedNames)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	require.Equal(t, "agent-service", server.configValues["config.name"].serviceName)
-	require.Equal(t, "replacement-agent", server.configValues["config.name"].value)
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["name"].value)
+}
+
+func TestUpdateAdoptedAgentNames_PreservesStructuredRefErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		ref   any
+		setup func(t *testing.T, projectRoot string)
+	}{
+		{
+			name: "missing ref",
+			ref:  "./missing.yaml",
+		},
+		{
+			name: "malformed ref document",
+			ref:  "./malformed.yaml",
+			setup: func(t *testing.T, projectRoot string) {
+				t.Helper()
+				mustWriteFile(t, filepath.Join(projectRoot, "malformed.yaml"), "kind: [hosted\n")
+			},
+		},
+		{
+			name: "out-of-tree missing ref",
+			ref:  "../outside/missing.yaml",
+		},
+		{
+			name: "non-string ref",
+			ref:  42,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectRoot := filepath.Join(t.TempDir(), "project")
+			require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+			if tt.setup != nil {
+				tt.setup(t, projectRoot)
+			}
+			properties, err := structpb.NewStruct(map[string]any{"$ref": tt.ref})
+			require.NoError(t, err)
+			service := &azdext.ServiceConfig{
+				Name:                 "agent-service",
+				Host:                 AiAgentHost,
+				AdditionalProperties: properties,
+			}
+
+			_, _, expectedErr := adoptedAgentNameConfig(service, projectRoot)
+			expected, ok := errors.AsType[*azdext.LocalError](expectedErr)
+			require.True(t, ok)
+
+			server := &recordingProjectServer{
+				projectPath: projectRoot,
+				existing: map[string]*azdext.ServiceConfig{
+					"agent-service": service,
+				},
+			}
+			client := newProjectRecorderClient(t, server)
+			actualErr := updateAdoptedAgentNames(
+				t.Context(),
+				client,
+				func(_ context.Context, agentName string) (string, error) {
+					t.Fatalf("name resolver must not run for invalid ref %q", agentName)
+					return "", nil
+				},
+			)
+
+			actual, ok := errors.AsType[*azdext.LocalError](actualErr)
+			require.True(t, ok)
+			require.Same(t, actual, actualErr)
+			require.Equal(t, expected.Code, actual.Code)
+			require.Equal(t, expected.Category, actual.Category)
+			require.Equal(t, expected.Message, actual.Message)
+			require.Equal(t, expected.Suggestion, actual.Suggestion)
+			require.Equal(t, expected.Links, actual.Links)
+			require.NotContains(t, actual.Error(), "resolving adopted agent name")
+		})
+	}
 }
 
 func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {

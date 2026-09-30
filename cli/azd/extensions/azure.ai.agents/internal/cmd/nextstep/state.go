@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -74,14 +72,7 @@ const (
 	azureLocationVar       = "AZURE_LOCATION"
 )
 
-// placeholderPattern aliases agent_yaml.PlaceholderPattern. nextstep
-// surfaces the same placeholders that agent_yaml's
-// injectParameterValues warns about, so the two MUST stay in lockstep.
-// Keeping a single shared regex (defined in agent_yaml, where the
-// substitution logic lives) makes that constraint explicit and avoids
-// drift if the placeholder syntax is ever broadened again. See
-// agent_yaml/placeholders.go for the full rationale on the regex
-// shape (hyphens, dots, whitespace in capture group).
+// placeholderPattern aliases the shared agent definition placeholder syntax.
 var placeholderPattern = agent_yaml.PlaceholderPattern
 
 // Source is the read-only view of azd that AssembleState needs.
@@ -332,9 +323,6 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 
 	var splitToolboxState splitToolboxResult
 	if project != nil {
-		if len(state.Services) > 0 {
-			populateManifestResources(project.Path, state)
-		}
 		splitToolboxState = populateToolboxes(
 			ctx,
 			src,
@@ -629,61 +617,26 @@ func collectServices(
 	return services
 }
 
-// loadServiceProtocol returns the protocol the service's agent.yaml declares
-// for next-step hint purposes. The lookup is best-effort: missing or
-// malformed manifests, empty protocols sections, or any I/O error all return
-// an empty string, and the resolver falls back to ProtocolResponses. When the
-// manifest declares multiple protocols, ProtocolResponses wins over
-// ProtocolInvocations so the suggested payload works on the broadest set of
-// agents.
+// loadServiceProtocol returns the protocol declared by the supported service
+// definition for next-step hint purposes.
 func loadServiceProtocol(projectPath string, svc *azdext.ServiceConfig) string {
 	protocol, _ := loadServiceProtocolInfo(projectPath, svc)
 	return protocol
 }
 
 func loadServiceProtocolInfo(projectPath string, svc *azdext.ServiceConfig) (string, bool) {
-	if protocol, multiProtocol := loadServiceProtocolFromConfig(svc); protocol != "" {
-		return protocol, multiProtocol
-	}
 	if svc == nil {
 		return "", false
 	}
-	return loadServiceProtocolFromFile(projectPath, svc.RelativePath)
-}
-
-func loadServiceProtocolFromConfig(svc *azdext.ServiceConfig) (string, bool) {
-	props := nextStepServiceConfigProps(svc)
-	if len(props) == 0 {
+	resolved, err := resolveServiceProperties(svc, projectPath)
+	if err != nil || !guidanceDefinitionHasKind(resolved) {
 		return "", false
 	}
-	data, err := yaml.Marshal(props)
+	data, err := yaml.Marshal(resolved)
 	if err != nil {
 		return "", false
 	}
 	return loadServiceProtocolFromBytes(data)
-}
-
-func nextStepServiceConfigProps(svc *azdext.ServiceConfig) map[string]any {
-	if svc == nil {
-		return nil
-	}
-	inline := svc.GetAdditionalProperties()
-	if structHasKind(inline) {
-		return inline.AsMap()
-	}
-	cfg := svc.GetConfig()
-	if structHasKind(cfg) {
-		return cfg.AsMap()
-	}
-	return nil
-}
-
-func structHasKind(s *structpb.Struct) bool {
-	if s == nil {
-		return false
-	}
-	v, ok := s.GetFields()["kind"]
-	return ok && strings.TrimSpace(v.GetStringValue()) != ""
 }
 
 // isVoiceService reports whether the service declares kind: prompt-voice. It
@@ -693,21 +646,6 @@ func structHasKind(s *structpb.Struct) bool {
 func isVoiceService(projectPath string, svc *azdext.ServiceConfig) bool {
 	isVoice, err := agentkind.IsPromptVoice(svc, projectPath)
 	return err == nil && isVoice
-}
-
-func loadServiceProtocolFromFile(projectPath, relativePath string) (string, bool) {
-	if projectPath == "" {
-		return "", false
-	}
-	manifestPath, err := paths.JoinAllowRoot(projectPath, relativePath, "agent.yaml")
-	if err != nil {
-		return "", false
-	}
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // path is validated under the project root
-	if err != nil {
-		return "", false
-	}
-	return loadServiceProtocolFromBytes(data)
 }
 
 func loadServiceProtocolFromBytes(data []byte) (string, bool) {
@@ -751,8 +689,8 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 //     <projectPath>/infra/main.bicep (provision outputs)
 //  2. manual:       unset ${VAR} refs that do NOT name a Bicep output
 //     (user inputs the user must `azd env set`)
-//  3. placeholders: surviving {{NAME}} Mustache placeholders (init failed
-//     to substitute these from agent.manifest.yaml's parameters block)
+//  3. placeholders: surviving {{NAME}} Mustache placeholders in the
+//     direct/root-$ref agent definition
 //
 // Only bare-form ${VAR} refs participate in (1) and (2): when the
 // configuration author supplies an explicit fallback via
@@ -877,9 +815,8 @@ func bicepOutputSet(projectPath string) map[string]struct{} {
 //     via `${VAR:-default}` are skipped — the deploy-time expander
 //     honors the default, so the variable is not required and never
 //     warrants a missing-var hint.
-//  2. placeholders: unique {{NAME}} Mustache-style placeholders that
-//     init's manifest processing failed to substitute. These would land
-//     in the container literally as `{{NAME}}` at deploy time.
+//  2. placeholders: unique {{NAME}} Mustache-style placeholders. These
+//     would land in the container literally as `{{NAME}}` at deploy time.
 //
 // Order matches the sorted environment-variable names. Foundry
 // expressions are excluded from placeholder detection.

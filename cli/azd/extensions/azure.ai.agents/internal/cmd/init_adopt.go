@@ -665,7 +665,20 @@ func updateAdoptedAgentNames(
 	slices.Sort(serviceNames)
 
 	for _, serviceName := range serviceNames {
-		agentName, configPath := adoptedAgentNameConfig(services[serviceName])
+		agentName, configPath, err := adoptedAgentNameConfig(
+			services[serviceName],
+			resp.GetProject().GetPath(),
+		)
+		if err != nil {
+			if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+				return localErr
+			}
+			return fmt.Errorf(
+				"resolving adopted agent name for service %q: %w",
+				serviceName,
+				err,
+			)
+		}
 		if agentName == "" {
 			continue
 		}
@@ -723,7 +736,7 @@ func applyAdoptedAgentNameOverride(
 			)
 		}
 		serviceName = name
-		configPath = adoptedAgentNameOverrideConfigPath(svc)
+		configPath = "name"
 	}
 	if serviceName == "" {
 		return exterrors.Validation(
@@ -748,39 +761,43 @@ func applyAdoptedAgentNameOverride(
 	return nil
 }
 
-func adoptedAgentNameOverrideConfigPath(svc *azdext.ServiceConfig) string {
+// adoptedAgentNameConfig returns the Foundry agent name and the service-level
+// path where a replacement must be written. Root $refs are resolved only to
+// read the effective name; replacements remain service-level overrides so the
+// referenced definition is not mutated.
+func adoptedAgentNameConfig(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (string, string, error) {
 	if svc == nil {
-		return "name"
-	}
-	if legacy := svc.GetConfig(); legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
-		return "config.name"
-	}
-	return "name"
-}
-
-// adoptedAgentNameConfig returns the Foundry agent name and its service-relative
-// config path for the unified inline shape or deprecated config-nested shape.
-func adoptedAgentNameConfig(svc *azdext.ServiceConfig) (string, string) {
-	if svc == nil {
-		return "", ""
+		return "", "", nil
 	}
 
-	inline := svc.GetAdditionalProperties()
-	if inline != nil && inline.GetFields()["kind"].GetStringValue() != "" {
-		return strings.TrimSpace(inline.GetFields()["name"].GetStringValue()), "name"
+	properties := svc.GetAdditionalProperties()
+	if properties == nil {
+		return "", "", nil
 	}
 
-	legacy := svc.GetConfig()
-	if legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
-		return strings.TrimSpace(legacy.GetFields()["name"].GetStringValue()), "config.name"
+	values := properties.AsMap()
+	if _, hasRef := values["$ref"]; hasRef {
+		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		if err != nil {
+			return "", "", err
+		}
+		values = resolved
 	}
 
-	return "", ""
+	kind, _ := values["kind"].(string)
+	if strings.TrimSpace(kind) == "" {
+		return "", "", nil
+	}
+
+	name, _ := values["name"].(string)
+	return strings.TrimSpace(name), "name", nil
 }
 
 // runInitFromAzureYaml adopts a sample's unified Foundry `azure.yaml` as the
-// project-root manifest instead of generating one from an agent manifest
-// (#8798). The sample's `azure.yaml` and the files it references are placed at
+// project-root manifest (#8798). The sample's `azure.yaml` and referenced files are placed at
 // the project root via azd-core's native template adoption; the services it
 // already declares (project, connections, toolboxes, agents) are not
 // re-derived. `content` is the already-fetched azure.yaml used to derive the
@@ -1224,7 +1241,7 @@ func finalizeAdoptedProject(
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
 	// The scaffolding created an environment; load it and run the same Foundry
-	// project selection flow as the agent-manifest path so the user ends up
+	// project selection flow as the generated-agent path so the user ends up
 	// with a provision-ready environment.
 	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
@@ -1696,11 +1713,11 @@ func projectManifestExists(dir string) bool {
 
 // stageAzureYamlTemplate produces a local directory that azd-core can adopt as a
 // template (`azd init -t <dir>`): it contains the sample's azure.yaml at its
-// root alongside the sibling files/dirs the manifest references.
+// root alongside the sibling files/dirs the project file references.
 //
 // For a local pointer the pointer's parent directory is used directly when the
 // file is already named azure.yaml(.yml); otherwise a temp copy of the
-// directory is staged with the manifest written as azure.yaml. For a remote
+// directory is staged with the project file written as azure.yaml. For a remote
 // GitHub pointer the azure.yaml's containing directory is downloaded into a temp
 // staging dir. The returned cleanup removes any temp directory created.
 func stageAzureYamlTemplate(
@@ -1807,7 +1824,7 @@ func clearStagingDirectory(staging string) error {
 // stageRemoteAzureYaml downloads the directory containing the remote azure.yaml
 // into staging. It first tries an unauthenticated public download (no gh CLI),
 // then falls back to the GitHub CLI for private repositories or URL forms the
-// naive parser can't handle — mirroring downloadAgentYaml's resolution order.
+// naive parser cannot handle.
 func stageRemoteAzureYaml(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -2223,7 +2240,7 @@ func applyDeployModeToService(
 			return false, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"a registry connection requires a pre-built image",
-				"pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
+				"pass --image <registry/image:tag> or provide an image on the hosted agent service",
 			)
 		}
 		if err := validateHostedContainerImage(effectiveImage); err != nil {
@@ -2332,7 +2349,7 @@ func applyDeployModeToService(
 		)
 	}
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
-	// userProvidedManifest is true: -m was explicitly provided.
+	// The final argument is true because -m supplied unified project input.
 	deployMode, err := promptDeployMode(
 		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
 	)
@@ -2406,7 +2423,7 @@ func applyCodeDeployToService(
 		runtime:       flags.runtime,
 		entryPoint:    flags.entryPoint,
 		depResolution: flags.depResolution,
-	}, true) // userProvidedManifest=true since -m was provided
+	}, true)
 	if err != nil {
 		return fmt.Errorf("resolving code configuration for adopted project: %w", err)
 	}

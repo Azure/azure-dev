@@ -46,6 +46,9 @@ type projectAgentDetection struct {
 // sees exactly the manifest every other azd command does, including when init
 // runs from a subdirectory of the project.
 //
+// The agent definition is carried directly on the service entry or through an
+// explicit root $ref.
+//
 // A project that cannot be loaded (none present, or a manifest azd rejects)
 // yields no detections, so init falls through to its normal prompts rather than
 // hard-failing on a file the user has not been asked about yet.
@@ -110,7 +113,15 @@ func projectAgentServicesFrom(
 			)
 		}
 
-		agentName, _ := adoptedAgentNameConfig(svc)
+		agentName, _, err := adoptedAgentNameConfig(svc, projectRoot)
+		if err != nil {
+			return nil, exterrors.ValidationFromError(
+				err,
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q is not valid", serviceName),
+				"Move the agent definition onto the azure.ai.agent service or use a valid service-level root $ref.",
+			)
+		}
 		if agentName == "" {
 			agentName = definition.Name
 		}

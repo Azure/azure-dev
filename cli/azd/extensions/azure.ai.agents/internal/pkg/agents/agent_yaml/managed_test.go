@@ -13,57 +13,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestExtractAgentDefinition_Prompt_TemplateWrapper verifies the manifest
-// parser routes a "prompt" kind to a PromptAgent value with all declared
-// fields preserved.
-func TestExtractAgentDefinition_Prompt_TemplateWrapper(t *testing.T) {
-	yamlContent := []byte(`
-name: my-prompt-manifest
-template:
-  kind: prompt
-  name: my-prompt
-  model: gpt-4.1-mini
-  instructions: You are a careful assistant.
-  skills:
-    - websearch
-    - name: microsoft-foundry
-      version: "1"
-`)
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed: %v", err)
-	}
-	promptDef, ok := agent.(PromptAgent)
-	if !ok {
-		t.Fatalf("expected PromptAgent from template wrapper, got %T", agent)
-	}
-	if promptDef.Name != "my-prompt" {
-		t.Errorf("name: got %q, want %q", promptDef.Name, "my-prompt")
-	}
-	if promptDef.Kind != AgentKindPrompt {
-		t.Errorf("kind: got %q, want %q", promptDef.Kind, AgentKindPrompt)
-	}
-	if promptDef.Model != "gpt-4.1-mini" {
-		t.Errorf("model: got %q, want %q", promptDef.Model, "gpt-4.1-mini")
-	}
-	if promptDef.Instructions != "You are a careful assistant." {
-		t.Errorf("instructions: got %q", promptDef.Instructions)
-	}
-	if len(promptDef.Skills) != 2 {
-		t.Fatalf("skills: got %d entries, want 2", len(promptDef.Skills))
-	}
-	if promptDef.Skills[0] != (HarnessSkillRef{Name: "websearch"}) {
-		t.Errorf("shorthand skill: got %+v", promptDef.Skills[0])
-	}
-	if promptDef.Skills[1] != (HarnessSkillRef{Name: "microsoft-foundry", Version: "1"}) {
-		t.Errorf("versioned skill: got %+v", promptDef.Skills[1])
-	}
-}
-
 // TestPromptAgent_YAMLRoundTrip verifies a PromptAgent value round-trips
 // through yaml.Marshal / yaml.Unmarshal cleanly. This is the path used when
-// writing agent.yaml from the init scaffolding and later reading it from disk
-// as a bare AgentDefinition (without the manifest `template:` wrapper).
+// writing and reading direct prompt-agent definitions in azure.yaml.
 func TestPromptAgent_YAMLRoundTrip(t *testing.T) {
 	original := PromptAgent{
 		AgentDefinition: AgentDefinition{
@@ -441,8 +393,8 @@ func TestPromptAgentRejectsMalformedSkillYAML(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ExtractAgentDefinition([]byte("template:\n  kind: prompt\n  name: agent\n" +
-				"  model: test-model\n  instructions: Be helpful.\n  skills:\n    - " + tt.skill + "\n"))
+			err := ValidateAgentDefinition([]byte("kind: prompt\nname: agent\n" +
+				"model: test-model\ninstructions: Be helpful.\nskills:\n  - " + tt.skill + "\n"))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q, got %v", tt.want, err)
 			}

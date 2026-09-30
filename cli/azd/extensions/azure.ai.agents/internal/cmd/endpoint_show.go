@@ -82,8 +82,7 @@ func runEndpointShow(
 		return err
 	}
 
-	// Resolve the agent definition (inline on the service entry, or a legacy
-	// agent.yaml on disk) to get the agent name.
+	// Resolve the direct/root-$ref service definition to get the agent name.
 	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return exterrors.ValidationFromError(

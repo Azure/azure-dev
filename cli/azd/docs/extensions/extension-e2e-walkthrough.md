@@ -213,15 +213,25 @@ func newTagCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 Create `internal/cmd/mcp.go`:
 
+For the optional audit webhook, replace `audit.example.com` below with an HTTPS
+service you operate or explicitly trust, including its DNS administration. Keep
+this hostname fixed in the extension, not supplied by tool arguments or an AI
+client. The handler accepts only that host on the default HTTPS port and does
+not follow redirects. This trust boundary matters because `CheckURL` checks DNS
+before the HTTP transport resolves it again; it does not pin the dial address
+or protect against DNS rebinding by an attacker who controls an allowed host.
+
 ```go
 package cmd
 
 import (
+    "bytes"
     "context"
-    "fmt"
+    "encoding/json"
     "net/http"
+    "net/url"
     "os"
-    "strings"
+    "time"
 
     "github.com/azure/azure-dev/cli/azd/pkg/azdext"
     mcp "github.com/mark3labs/mcp-go/mcp"
@@ -273,7 +283,7 @@ Always confirm tag operations with the user before applying.`)
                         mcp.Description("Tag value"),
                     ),
                     mcp.WithString("auditWebhookUrl",
-                        mcp.Description("HTTPS webhook that receives the completed tag operation"),
+                        mcp.Description("HTTPS audit.example.com webhook for the completed tag operation"),
                     ),
                 ).
                 Build()
@@ -323,12 +333,18 @@ func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
         auditWebhookURL := args.OptionalString("auditWebhookUrl", "")
 
         if auditWebhookURL != "" {
+            webhook, err := url.Parse(auditWebhookURL)
+            if err != nil || webhook.Scheme != "https" || webhook.User != nil ||
+                (webhook.Host != "audit.example.com" && webhook.Host != "audit.example.com:443") {
+                return azdext.MCPErrorResult(
+                    "audit webhook must use the trusted HTTPS host audit.example.com on port 443 without userinfo"), nil
+            }
             policy := builder.SecurityPolicy()
             if policy == nil {
                 return azdext.MCPErrorResult("audit webhook URL validation is not configured"), nil
             }
             if err := policy.CheckURL(auditWebhookURL); err != nil {
-                return azdext.MCPErrorResult("audit webhook URL blocked: %v", err), nil
+                return azdext.MCPErrorResult("audit webhook URL blocked by security policy"), nil
             }
         }
 
@@ -338,23 +354,35 @@ func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
         // ... Azure SDK call to set tag ...
 
         if auditWebhookURL != "" {
-            payload := fmt.Sprintf(`{"resourceGroup":%q,"key":%q,"value":%q}`, rg, key, value)
-            req, err := http.NewRequestWithContext(
-                ctx, http.MethodPost, auditWebhookURL, strings.NewReader(payload))
+            payload, err := json.Marshal(map[string]string{
+                "resourceGroup": rg,
+                "key":           key,
+                "value":         value,
+            })
             if err != nil {
-                return azdext.MCPErrorResult("creating audit webhook request: %v", err), nil
+                return azdext.MCPErrorResult("encoding audit webhook payload: %v", err), nil
+            }
+            req, err := http.NewRequestWithContext(
+                ctx, http.MethodPost, auditWebhookURL, bytes.NewReader(payload))
+            if err != nil {
+                return azdext.MCPErrorResult("creating audit webhook request failed"), nil
             }
             req.Header.Set("Content-Type", "application/json")
 
-            client := &http.Client{CheckRedirect: azdext.SSRFSafeRedirect}
+            client := &http.Client{
+                Timeout: 10 * time.Second,
+                CheckRedirect: func(req *http.Request, via []*http.Request) error {
+                    return http.ErrUseLastResponse
+                },
+            }
             resp, err := client.Do(req)
             if err != nil {
-                return azdext.MCPErrorResult("sending audit webhook: %v", err), nil
+                return azdext.MCPErrorResult("sending audit webhook failed or timed out"), nil
             }
             defer resp.Body.Close()
-            if resp.StatusCode >= http.StatusBadRequest {
+            if resp.StatusCode >= http.StatusMultipleChoices {
                 return azdext.MCPErrorResult(
-                    "audit webhook returned status %s", resp.Status), nil
+                    "audit webhook returned unsuccessful status %d (redirects are not followed)", resp.StatusCode), nil
             }
         }
 
@@ -372,6 +400,10 @@ func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
 - Explicit, handler-owned URL validation with `SecurityPolicy().CheckURL` before
   using user-provided URLs. Attaching `DefaultMCPSecurityPolicy` alone does not
   inspect tool arguments or enforce SSRF protection.
+- A fixed trusted webhook host, no redirects, and a 10-second HTTP timeout.
+  Webhook failures are tool errors; they do not undo the already completed tag
+  operation. Errors omit raw URLs and underlying HTTP errors to avoid exposing
+  URL credentials or query tokens.
 
 ---
 

@@ -4,6 +4,7 @@
 
 ### Features Added
 
+- [[#10055]](https://github.com/Azure/azure-dev/pull/10055) Add extension SDK contracts for read-only service-target deployment previews.
 - [[#10204]](https://github.com/Azure/azure-dev/pull/10204) Add `azd deploy --preview` support for built-in service hosts, including App Service, Container Apps, Functions, Static Web Apps, AKS, and AI endpoints.
 - [[#10223]](https://github.com/Azure/azure-dev/pull/10223) Add support for deploying to Container Apps Express environments.
 

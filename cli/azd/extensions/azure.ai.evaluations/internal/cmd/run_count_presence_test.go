@@ -6,9 +6,13 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -248,15 +252,105 @@ func TestMovingGateUsesResolvedIDWithoutChangingJSON(t *testing.T) {
 	}
 }
 
+func TestRunGateWithOnlyUnaccountedRowsStillFails(t *testing.T) {
+	const helper = "AZD_TEST_UNACCOUNTED_GATE_DIR"
+	const response = `{"id":"run_counts","status":"completed",
+		"result_counts":{"total":3,"passed":0,"failed":0,"errored":0,"skipped":0}}`
+	if os.Getenv(helper) == "" {
+		binary, err := os.Executable()
+		require.NoError(t, err)
+		for _, caller := range []string{"start", "show"} {
+			for _, format := range []string{"table", "json"} {
+				t.Run(caller+"/"+format, func(t *testing.T) {
+					dir := t.TempDir()
+					child := exec.CommandContext(t.Context(), binary,
+						"-test.run=^TestRunGateWithOnlyUnaccountedRowsStillFails$")
+					child.Env = append(os.Environ(), helper+"="+dir,
+						"AZD_TEST_GATE_CALLER="+caller, "AZD_TEST_GATE_FORMAT="+format, "NO_COLOR=1")
+					output, err := child.CombinedOutput()
+					exitErr, ok := errors.AsType[*exec.ExitError](err)
+					require.True(t, ok, "expected gate exit, got %v: %s", err, output)
+					assert.Equal(t, exitCodeGateBreached, exitErr.ExitCode(), "%s", output)
+					stdout, err := os.ReadFile(filepath.Join(dir, "stdout.txt"))
+					require.NoError(t, err)
+					stderr, err := os.ReadFile(filepath.Join(dir, "stderr.txt"))
+					require.NoError(t, err)
+					assert.Contains(t, string(stderr),
+						"3 of 3 rows are not accounted for by the reported counts; the pass-rate gate covers 0 scored rows")
+					assert.Contains(t, string(stderr), "ERROR: evaluation quality gate not met.")
+					assert.NotContains(t, string(stderr), "3 errored")
+					if format == "json" {
+						assert.JSONEq(t, response, string(stdout))
+					} else if caller == "start" {
+						assert.Contains(t, string(stdout), "Errored       0")
+					} else {
+						assert.Contains(t, string(stdout), "0 passed, 0 failed, 0 errored")
+					}
+				})
+			}
+		}
+		return
+	}
+
+	dir := os.Getenv(helper)
+	out, err := os.Create(filepath.Join(dir, "stdout.txt"))
+	require.NoError(t, err)
+	defer out.Close()
+	stderr, err := os.Create(filepath.Join(dir, "stderr.txt"))
+	require.NoError(t, err)
+	defer stderr.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):
+			_, _ = io.WriteString(w, response)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+			_, _ = io.WriteString(w, `{"id":"run_counts","status":"queued"}`)
+		case strings.HasSuffix(r.URL.Path, "/runs"):
+			_, _ = io.WriteString(w, `{"data":[{"id":"previous","data_source":{"type":"jsonl"}}]}`)
+		case strings.HasSuffix(r.URL.Path, "/output_items"):
+			_, _ = io.WriteString(w, `{"data":[]}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	command := jsonCmd(t, os.Getenv("AZD_TEST_GATE_FORMAT"))
+	command.SetContext(t.Context())
+	command.SetOut(out)
+	command.SetErr(stderr)
+	threshold, err := parseGate("pass-rate=0.5")
+	require.NoError(t, err)
+	if os.Getenv("AZD_TEST_GATE_CALLER") == "start" {
+		action := &runStartAction{cmd: command, flags: &runStartFlags{
+			groupName: "eval_counts", evalPath: dir, wait: true,
+		}}
+		require.NoError(t, action.start(t.Context(), evalContextFor(srv), threshold))
+	} else {
+		action := &runShowAction{cmd: command, runID: "run_counts", flags: &runShowFlags{}}
+		require.NoError(t, action.show(t.Context(), evalContextFor(srv), "eval_counts", threshold))
+	}
+	t.Fatal("a run with no scored rows must not pass the gate")
+}
+
 func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
 	for _, counts := range []struct {
 		name, raw, warning string
 	}{
-		{"explicit zero", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":0}`, ""},
-		{"reported errors", `{"total":10,"passed":5,"failed":2,"errored":1,"skipped":0}`, "1 errored of 10"},
-		{"reported skips", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":1}`, "1 skipped of 10"},
+		{"explicit zero", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":0}`,
+			"3 of 10 rows are not accounted for by the reported counts; the pass-rate gate covers 7 scored rows"},
+		{"reported errors", `{"total":10,"passed":5,"failed":2,"errored":1,"skipped":0}`,
+			"2 of 10 rows are not accounted for by the reported counts; the pass-rate gate covers 7 scored rows"},
+		{"reported skips", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":1}`,
+			"2 of 10 rows are not accounted for by the reported counts; the pass-rate gate covers 7 scored rows"},
 		{"legacy remainder", `{"total":10,"passed":5,"failed":2,"skipped":0}`, "3 errored of 10"},
-		{"partial", `{"total":10,"passed":5}`, ""},
+		{"consistent errors", `{"total":10,"passed":5,"failed":2,"errored":3,"skipped":0}`, "3 errored of 10"},
+		{"consistent scored", `{"total":7,"passed":5,"failed":2,"errored":0,"skipped":0}`, ""},
+		{"partial", `{"total":10,"passed":5}`,
+			"not all passed/failed counts were reported; the pass-rate gate used a denominator of 5 for 10 total rows"},
+		{"null failed", `{"total":10,"passed":5,"failed":null}`,
+			"not all passed/failed counts were reported; the pass-rate gate used a denominator of 5 for 10 total rows"},
 	} {
 		for _, caller := range []string{"start", "show"} {
 			for _, format := range []string{"table", "json"} {
@@ -297,9 +391,13 @@ func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
 						require.NoError(t, action.show(t.Context(), ec, "eval_counts", threshold))
 					}
 					if counts.warning == "" {
-						assert.Empty(t, stderr.String(), "do not infer errors over explicit zero or missing operands")
+						assert.Empty(t, stderr.String(), "a fully accounted scored run needs no warning")
 					} else {
 						assert.Contains(t, stderr.String(), counts.warning)
+						assert.Equal(t, 1, strings.Count(stderr.String(), "warning:"))
+						if strings.Contains(counts.warning, "reported") {
+							assert.NotContains(t, stderr.String(), "errored", "unaccounted rows are not reported errors")
+						}
 					}
 					if format == "json" {
 						assert.JSONEq(t, response, out.String())

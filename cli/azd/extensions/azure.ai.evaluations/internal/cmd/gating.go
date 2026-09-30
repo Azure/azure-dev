@@ -157,10 +157,19 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 			_, passedKnown := counts["passed"]
 			_, failedKnown := counts["failed"]
 			errored, skipped := unscoredRunCounts(counts)
-			if _, scored, ok := scoredPassRate(c); ok && c.Total > scored &&
-				totalKnown && passedKnown && failedKnown && (errored > 0 || skipped > 0) {
-				fmt.Fprint(cmd.ErrOrStderr(),
-					messages.Warning(messages.GateSawUnscoredRows(errored, skipped, c.Total)))
+			if _, scored, _ := scoredPassRate(c); totalKnown && c.Total > scored {
+				var warning error
+				switch unaccounted := c.Total - scored - errored - skipped; {
+				case !passedKnown || !failedKnown:
+					warning = messages.GateIncompleteCounts(c.Total, scored)
+				case unaccounted > 0:
+					warning = messages.GateUnaccountedRows(unaccounted, c.Total, scored)
+				case errored > 0 || skipped > 0:
+					warning = messages.GateSawUnscoredRows(errored, skipped, c.Total)
+				}
+				if warning != nil {
+					fmt.Fprint(cmd.ErrOrStderr(), messages.Warning(warning))
+				}
 			}
 		}
 	}

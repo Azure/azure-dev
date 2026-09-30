@@ -604,6 +604,20 @@ func GateSawUnscoredRows(errored, skipped, total int) error {
 		unscoredBreakdown(errored, skipped), total)
 }
 
+// GateUnaccountedRows identifies a count mismatch without assigning an outcome.
+func GateUnaccountedRows(unaccounted, total, scored int) error {
+	return fmt.Errorf(
+		"%d of %d rows are not accounted for by the reported counts; the pass-rate gate covers %d scored rows",
+		unaccounted, total, scored)
+}
+
+// GateIncompleteCounts distinguishes the gate's denominator from unreported outcomes.
+func GateIncompleteCounts(total, denominator int) error {
+	return fmt.Errorf(
+		"not all passed/failed counts were reported; the pass-rate gate used a denominator of %d for %d total rows",
+		denominator, total)
+}
+
 // unscoredBreakdown counts what a pass rate left out, by what it was.
 func unscoredBreakdown(errored, skipped int) string {
 	switch {

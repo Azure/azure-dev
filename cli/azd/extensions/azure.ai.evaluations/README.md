@@ -327,6 +327,10 @@ their pass rate is `-` because no rows were scored.
 Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
 between the total and reported result counts does not replace an explicit zero
 with inferred errors; gate thresholds and exit behavior are unchanged.
+When reported totals leave rows unaccounted for, a neutral warning names that
+gap and the scored denominator without assigning failed, errored, or skipped
+outcomes. If passed/failed counts are missing, the warning instead identifies
+the incomplete counts and the denominator the gate used.
 
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics

@@ -745,8 +745,9 @@ func executeWithAutoInstallCommand(
 			return result
 		}
 
-		if childConsole, err := getChildConsole(globalOpts, foundCmd); err != nil {
+		if childConsole, err := newChildCommandConsole(globalOpts, foundCmd); err != nil {
 			result.Err = errors.Join(commandErr, err)
+			return result
 		} else {
 			console = childConsole
 		}
@@ -954,10 +955,10 @@ func executeWithAutoInstallCommand(
 	return result
 }
 
-// getChildConsole gets the console the child command used, so we can stay consistent with any console
+// newChildCommandConsole creates a console using the child's std streams, so we can stay consistent with any console
 // output format changes. Without this, our default root input.Console would write out inconsistent output (ie, plain text
 // when the user requested JSON, for instance).
-func getChildConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
+func newChildCommandConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
 	formatter, err := output.GetCommandFormatter(foundCmd)
 	if err != nil {
 		return nil, fmt.Errorf("resolving output format for %s: %w", foundCmd.CommandPath(), err)

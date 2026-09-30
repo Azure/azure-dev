@@ -124,6 +124,43 @@ func TestExecuteWithAutoInstall_FormatsHostFollowUpToChildStderr(t *testing.T) {
 	require.True(t, followUpFound, "service-host auto-install must use the child command's JSON console")
 }
 
+func TestExecuteWithAutoInstall_InvalidChildOutputReturnsFormatterError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("NO_COLOR", "1")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
+
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	os.Args = []string{"azd", "probe-host", "--output", "yaml"}
+
+	rootContainer := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(rootContainer, t.Context())
+	globalOpts := &internal.GlobalCommandOptions{NoPrompt: true}
+	ioc.RegisterInstance(rootContainer, globalOpts)
+	root := NewRootCmd(false, nil, rootContainer)
+	probe := &cobra.Command{
+		Use: "probe-host",
+		RunE: func(*cobra.Command, []string) error {
+			return &project.UnsupportedServiceHostError{Host: "unsupported-host", ServiceName: "api"}
+		},
+	}
+	output.AddOutputParam(probe, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
+	root.AddCommand(probe)
+	root.SetArgs(os.Args[1:])
+	root.SilenceErrors = true
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+
+	result := executeWithAutoInstallCommand(t.Context(), rootContainer, root, globalOpts, &ExecuteResult{})
+	require.ErrorContains(t, result.Err, "unsupported format 'yaml' for --output")
+	require.ErrorContains(t, result.Err, "unsupported-host")
+}
+
 func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T) {
 	originalArgs := os.Args
 	t.Cleanup(func() {

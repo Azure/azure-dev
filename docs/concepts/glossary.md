@@ -22,7 +22,7 @@ On Windows, names ending in a period are also rejected because they resolve to t
 
 Local environment paths are resolved against the canonical project directory before accessing state. The `.azure` directory, environment directories, and environment state and lock files cannot be symbolic links or Windows reparse points (including junctions), even when a link targets another location within `.azure`. Missing directories can still be created normally, and a project reached through a linked parent directory remains supported. These checks reject existing filesystem links; they do not provide isolation from a process concurrently replacing filesystem entries.
 
-The same checks protect the resource cache (`.azure/<environment-name>/.state.json`), state-change notification (`.azure/.state-change`), and all reads and writes of project configuration (`.azure/config.json`), including saved session state. Environment listing skips invalid names and entries with linked directories, state files, or lock files, logging the reason, so unrelated entries do not prevent selecting a valid environment. Errors accessing the base directory or project configuration still fail the listing.
+The same checks protect the resource cache (`.azure/<environment-name>/.state.json`), state-change notification (`.azure/.state-change`), and all reads and writes of project configuration (`.azure/config.json`), including saved session state. Environment listing skips invalid names from both local and remote stores, as well as local entries with linked directories, state files, or lock files, logging the reason, so unrelated entries do not prevent selecting a valid environment. Errors accessing the base directory or project configuration still fail the listing.
 
 ### Service
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -261,6 +262,60 @@ func Test_EnvManager_List(t *testing.T) {
 		require.Equal(t, true, envList[0].HasRemote)
 		require.Equal(t, ".azure/env1/.env", envList[0].DotEnvPath)
 	})
+}
+
+func Test_EnvManager_ListSkipsInvalidRemoteNames(t *testing.T) {
+	invalidNames := []string{"", ".", "..", "...", "invalid name", "a/b", `a\b`, strings.Repeat("a", 65)}
+	if runtime.GOOS == "windows" {
+		invalidNames = append(invalidNames, "prod.", "NUL")
+	}
+	invalidEnvs := make([]*contracts.EnvListEnvironment, 0, len(invalidNames))
+	for _, name := range invalidNames {
+		invalidEnvs = append(invalidEnvs, &contracts.EnvListEnvironment{Name: name})
+	}
+
+	for _, tt := range []struct {
+		name     string
+		local    []*contracts.EnvListEnvironment
+		remote   []*contracts.EnvListEnvironment
+		expected []*Description
+	}{
+		{
+			name:     "AllInvalid",
+			local:    emptyEnvList,
+			remote:   invalidEnvs,
+			expected: []*Description{},
+		},
+		{
+			name:  "MixedLocalAndRemote",
+			local: localEnvList,
+			remote: append([]*contracts.EnvListEnvironment{
+				{Name: "env3"},
+				{Name: "env1"},
+			}, invalidEnvs...),
+			expected: []*Description{
+				{Name: "env1", HasLocal: true, HasRemote: true, DotEnvPath: ".azure/env1/.env"},
+				{Name: "env2", HasLocal: true, DotEnvPath: ".azure/env1/.env"},
+				{Name: "env3", HasRemote: true},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			local := &MockDataStore{}
+			remote := &MockDataStore{}
+			local.On("List", t.Context()).Return(tt.local, nil).Once()
+			remote.On("List", t.Context()).Return(tt.remote, nil).Once()
+			manager := newManagerForTest(azdContext, nil, local, remote)
+
+			envs, err := manager.List(t.Context())
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, envs)
+			local.AssertExpectations(t)
+			remote.AssertExpectations(t)
+		})
+	}
 }
 
 func Test_EnvManager_Get(t *testing.T) {

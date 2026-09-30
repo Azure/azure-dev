@@ -82,7 +82,9 @@ func (s *generateCancellationPrompts) Prompt(
 }
 
 func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
-	for _, scenario := range []string{"file correction", "type then cancel", "load then cancel", "confirmed control"} {
+	for _, scenario := range []string{
+		"file correction", "type then cancel", "load then cancel", "absolute load then cancel", "confirmed control",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Setenv("AZD_NO_PROMPT", "false")
 			const instruction = "Synthetic private instruction contents must not appear in the plan."
@@ -96,8 +98,11 @@ func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
 			case "file correction":
 				prompts.source = 1
 				prompts.cancelCorrection = true
-			case "load then cancel":
+			case "load then cancel", "absolute load then cancel":
 				prompts.source = 1
+				if scenario == "absolute load then cancel" {
+					prompts.file = filepath.Join(h.dir, file)
+				}
 			case "confirmed control":
 				prompts.decision = generateProceed
 			}
@@ -178,8 +183,12 @@ func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
 			} else {
 				assert.Equal(t, 1, prompts.confirmations)
 				assert.Contains(t, out.String(), "Generation plan")
-				if scenario == "load then cancel" {
-					assert.Contains(t, out.String(), filepath.ToSlash(file))
+				if scenario == "load then cancel" || scenario == "absolute load then cancel" {
+					assert.Contains(t, out.String(), filepath.Base(file))
+					assert.NotContains(t, out.String(), prompts.file)
+					assert.NotContains(t, out.String(), filepath.ToSlash(prompts.file))
+					assert.NotContains(t, out.String(), "instruction files")
+					assert.NotContains(t, out.String(), filepath.ToSlash(h.dir))
 				} else {
 					assert.Contains(t, out.String(), messages.InstructionSourceTyped())
 				}

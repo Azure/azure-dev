@@ -138,7 +138,7 @@ func TestGenerationInteractiveInstructionSources(t *testing.T) {
 				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 				require.NoError(t, os.WriteFile(path, []byte("\xef\xbb\xbfOnly use the provided facts.\r\n"), 0o600))
 				prompts.answer = path
-				wantSource = filepath.ToSlash(path)
+				wantSource = filepath.Base(path)
 			}
 			before := initFileSnapshot(t, h.dir)
 			var out bytes.Buffer
@@ -231,7 +231,7 @@ func TestGenerationExplicitInstructionsSkipSelection(t *testing.T) {
 					value = filepath.Join(h.dir, "instructions with spaces.txt")
 					want = "Read this file, not detected context."
 					require.NoError(t, os.WriteFile(value, []byte(want+"\r\n"), 0o600))
-					source = filepath.ToSlash(value)
+					source = filepath.Base(value)
 				}
 				require.NoError(t, cmd.Flags().Set(flag, value))
 				require.NoError(t, validateInstructionFlags(cmd, flags))
@@ -244,6 +244,15 @@ func TestGenerationExplicitInstructionsSkipSelection(t *testing.T) {
 				assert.Equal(t, want, got)
 				assert.Equal(t, source, gotSource)
 				assert.Empty(t, out.String())
+				writeGenerationPlan(&out, generationSummary{instructed: gotSource,
+					plans: []generationPlan{{Name: "quality", Kind: generateKindEvaluator, Instruction: got}}})
+				assert.Contains(t, out.String(), source)
+				assert.NotContains(t, out.String(), want)
+				if file {
+					assert.NotContains(t, out.String(), value)
+					assert.NotContains(t, out.String(), filepath.ToSlash(value))
+					assert.NotContains(t, out.String(), filepath.ToSlash(filepath.Dir(value)))
+				}
 				prompts.mu.Lock()
 				defer prompts.mu.Unlock()
 				assert.Empty(t, prompts.choices)
@@ -320,7 +329,12 @@ func TestGenerationInstructionFileCorrectionAndNondisclosure(t *testing.T) {
 			assert.Equal(t, instructions, got)
 			writeGenerationPlan(&out, generationSummary{instructed: source,
 				plans: []generationPlan{{Name: "quality", Kind: generateKindEvaluator, Instruction: got}}})
-			assert.Contains(t, out.String(), filepath.ToSlash(path))
+			assert.Equal(t, filepath.Base(path), source)
+			assert.Contains(t, out.String(), filepath.Base(path))
+			assert.NotContains(t, out.String(), path)
+			assert.NotContains(t, out.String(), filepath.ToSlash(path))
+			assert.NotContains(t, out.String(), "instruction files")
+			assert.NotContains(t, out.String(), filepath.ToSlash(h.dir))
 			assert.Contains(t, out.String(), "Enter a corrected file path")
 			assert.NotContains(t, out.String(), instructions)
 			assert.Equal(t, before, initFileSnapshot(t, h.dir))

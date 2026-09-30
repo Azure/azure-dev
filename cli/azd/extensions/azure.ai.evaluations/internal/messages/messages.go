@@ -1179,19 +1179,22 @@ func ReadingInstructions(named string, err error) error {
 	return fmt.Errorf("reading instructions %q: %w", named, err)
 }
 
-// InstructionSourceFile names the local file generation was seeded from.
+// InstructionSourceFile displays only the basename of the local instruction file.
 //
 // A fragment, not a sentence: it is read twice, once in the detection line and
 // once in the confirmation, and a sentence would only fit the first.
 func InstructionSourceFile(path string) string {
-	return filepath.ToSlash(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
 
 // InstructionSourceFlag names instructions the caller supplied themselves,
-// preferring the file they named over the flag that named it.
+// displaying only the basename when they supplied a file.
 func InstructionSourceFlag(path string) string {
 	if path != "" {
-		return filepath.ToSlash(path)
+		return InstructionSourceFile(path)
 	}
 	return "--agent-instruction"
 }

@@ -19,8 +19,10 @@ generation model should fill either role.
 When no instructions are supplied or detected locally or from the deployed agent,
 interactive `generate` offers **Type instructions** or **Load from file**.
 File selection reads a non-empty local text file, including paths containing spaces;
-enter the path without shell quotes at the prompt. Both routes report the source,
-not the instruction contents, and reach the same generation confirmation.
+enter the path without shell quotes at the prompt. Both routes report the source
+and reach the same generation confirmation. The generation context and plan show
+only the instruction file's basename, not its parent directories or contents;
+the full supplied path is still used to read the file.
 An unreadable, missing, directory, or empty file is reported before any job;
 the interactive file prompt accepts a corrected path without restarting the
 other selections. Ctrl+C cancels without submitting jobs or writing artifacts.

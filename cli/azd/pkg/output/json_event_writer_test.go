@@ -15,6 +15,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewJsonEventWriterFromEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	t.Setenv(JsonOutputEnvVar, path)
+
+	writer := NewJsonEventWriterFromEnv()
+
+	require.True(t, writer.Enabled())
+	require.Equal(t, path, writer.path)
+}
+
 func TestJsonEventWriter_AppendsCompactJsonLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
 	require.NoError(t, os.WriteFile(path, []byte("{\"existing\":true}\n"), 0o600))

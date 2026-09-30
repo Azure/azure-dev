@@ -978,13 +978,6 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 	globalFlags.String("trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
 	_ = globalFlags.MarkHidden("trace-log-url")
 
-	globalFlags.String(
-		"output-json-file",
-		"",
-		"Append structured command output to a newline-delimited JSON file.",
-	)
-	_ = globalFlags.MarkHidden("output-json-file")
-
 	return globalFlags
 }
 
@@ -1040,10 +1033,6 @@ func parseGlobalFlags(
 
 	if boolVal, err := globalFlagSet.GetBool("debug"); err == nil {
 		opts.EnableDebugLogging = boolVal
-	}
-
-	if strVal, err := globalFlagSet.GetString("output-json-file"); err == nil {
-		opts.OutputJsonFile = strVal
 	}
 
 	// --non-interactive is an alias for --no-prompt; either flag sets NoPrompt.

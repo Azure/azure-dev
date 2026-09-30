@@ -13,6 +13,9 @@ import (
 	"sync"
 )
 
+// JsonOutputEnvVar is the environment variable that configures the append-only NDJSON output path.
+const JsonOutputEnvVar = "AZD_OUTPUT_NDJSON"
+
 // JsonEventWriter writes compact JSON events to an append-only file.
 type JsonEventWriter struct {
 	path string
@@ -29,6 +32,11 @@ type JsonEventWriter struct {
 // An empty path disables the writer.
 func NewJsonEventWriter(path string) *JsonEventWriter {
 	return &JsonEventWriter{path: path}
+}
+
+// NewJsonEventWriterFromEnv creates a JSON event writer configured from JsonOutputEnvVar.
+func NewJsonEventWriterFromEnv() *JsonEventWriter {
+	return NewJsonEventWriter(os.Getenv(JsonOutputEnvVar))
 }
 
 // Enabled reports whether an output path was configured.

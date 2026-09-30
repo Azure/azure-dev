@@ -123,9 +123,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)
-	container.MustRegisterSingleton(func(rootOptions *internal.GlobalCommandOptions) *output.JsonEventWriter {
-		return output.NewJsonEventWriter(rootOptions.OutputJsonFile)
-	})
+	container.MustRegisterSingleton(output.NewJsonEventWriterFromEnv)
 
 	container.MustRegisterScoped(func(
 		rootOptions *internal.GlobalCommandOptions,

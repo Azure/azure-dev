@@ -371,6 +371,13 @@ func buildEvalRequest(
 		}
 	}
 	targetBindings := sampleBindingsFor(targetType)
+	traced := group.Source != nil && group.Source.Type == project.SourceTypeTraces
+	if isResponsesEval(group) {
+		// Retrieval supplies sample output without invoking a target.
+		targetBindings = sampleBindings
+	} else if traced {
+		targetBindings = nil
+	}
 
 	// A simulation is graded on the conversations the run creates, not on the
 	// seed rows it creates them from. The seeds carry test_case_description and
@@ -412,7 +419,17 @@ func buildEvalRequest(
 			schema = &eval_api.EvaluatorSummary{Name: ref.Evaluator}
 		}
 
-		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, level)
+		bindings := targetBindings
+		if isResponsesEval(group) {
+			if dataSchema := schema.DataSchema(); dataSchema != nil {
+				if property, ok := dataSchema.Properties["response"].(map[string]any); ok &&
+					property["type"] == "string" {
+					bindings = maps.Clone(bindings)
+					bindings["response"] = "{{sample.output_text}}"
+				}
+			}
+		}
+		plan, err := planCriterion(ref, schema, bindings, datasetColumns, level)
 		if err != nil {
 			return nil, err
 		}
@@ -447,7 +464,7 @@ func buildEvalRequest(
 
 	req.DataSourceConfig = &eval_api.DataSourceConfig{
 		Type:                "custom",
-		IncludeSampleSchema: hasTarget && !simulated,
+		IncludeSampleSchema: hasTarget && !simulated && !traced,
 		ItemSchema:          itemSchema(itemFields),
 	}
 	if simulated {

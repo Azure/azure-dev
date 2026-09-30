@@ -41,6 +41,7 @@ type catalogPinService struct {
 	reads          []string
 	created        []eval_api.CreateOpenAIEvalRequest
 	evals          map[string]*eval_api.OpenAIEval
+	runs           []eval_api.CreateOpenAIEvalRunRequest
 }
 
 func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
@@ -132,6 +133,15 @@ func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
 			}
 			s.evals[id] = eval
 			assert.NoError(t, json.NewEncoder(w).Encode(eval))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+			var request eval_api.CreateOpenAIEvalRunRequest
+			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			s.runs = append(s.runs, request)
+			_, err := w.Write([]byte(`{"id":"run_response","status":"queued"}`))
+			assert.NoError(t, err)
 		case strings.HasPrefix(r.URL.Path, "/openai/v1/evals/"):
 			id := strings.TrimPrefix(r.URL.Path, "/openai/v1/evals/")
 			eval, ok := s.evals[id]

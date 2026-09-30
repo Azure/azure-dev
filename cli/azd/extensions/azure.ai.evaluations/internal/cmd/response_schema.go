@@ -33,6 +33,10 @@ func responseSchemaMatches(group *project.Eval, remote *eval_api.OpenAIEval) boo
 		return true
 	}
 	typ, reported := remote.DataSourceConfig["type"]
+	if typ == "azure_ai_source" && group != nil && group.Source != nil &&
+		group.Source.Type == project.SourceTypeTraces {
+		return remote.DataSourceConfig["scenario"] == "traces" || remote.DataSourceConfig["scenario"] == "traces_preview"
+	}
 	return !reported || typ == "custom"
 }
 
@@ -50,47 +54,84 @@ func incompatibleResponsesSchema(id string, responses bool) error {
 func (ec *evalContext) validateResponsesRun(
 	ctx context.Context, evalID string, source *eval_api.EvalRunDataSource,
 ) error {
-	if source == nil || source.Type != eval_api.EvalRunDataSourceTypeResponses {
-		return nil
+	if source == nil {
+		return messages.NoEvalToRun()
 	}
 	remote, err := ec.evalClient.GetOpenAIEval(ctx, evalID)
 	if err != nil {
 		return messages.ReadingEval(evalID, err)
 	}
-	if !hasResponsesSchema(remote) {
-		return incompatibleResponsesSchema(evalID, true)
+	responses := source.Type == eval_api.EvalRunDataSourceTypeResponses
+	group := &project.Eval{}
+	switch source.Type {
+	case eval_api.EvalRunDataSourceTypeResponses:
+		group.Source = &project.SourceDecl{Type: project.SourceTypeResponses}
+	case eval_api.EvalRunDataSourceTypeTraces, eval_api.EvalRunDataSourceTypeTracePreview:
+		group.Source = &project.SourceDecl{Type: project.SourceTypeTraces}
+	}
+	if !responseSchemaMatches(group, remote) {
+		return incompatibleResponsesSchema(evalID, responses)
+	}
+	if !responses {
+		return nil
 	}
 	params := source.ItemGenerationParams
-	valid := params != nil && params.Type == "response_retrieval" &&
-		strings.TrimSpace(params.DataMapping["response_id"]) != "" && params.Source != nil
-	if valid {
-		switch params.Source.Type {
-		case eval_api.EvalRunDataContentTypeFileContent:
-			column, mapped := itemColumn(params.DataMapping["response_id"])
-			valid = mapped && len(params.Source.Content) > 0
-			for _, row := range params.Source.Content {
-				item, ok := row["item"].(map[string]any)
-				if !ok {
-					valid = false
-					continue
-				}
-				id, ok := item[column].(string)
-				if !ok || strings.TrimSpace(id) == "" {
-					valid = false
-				}
-			}
-		case eval_api.EvalRunDataContentTypeFileID:
-			valid = strings.TrimSpace(params.Source.ID) != ""
-		default:
-			valid = false
+	if params == nil {
+		return invalidResponsesSource("item_generation_params is required")
+	}
+	if params.Type != "response_retrieval" {
+		return invalidResponsesSource("item_generation_params.type must be response_retrieval")
+	}
+	if params.Source == nil {
+		return invalidResponsesSource("item_generation_params.source is required")
+	}
+	if params.Source.Type != eval_api.EvalRunDataContentTypeFileContent {
+		return invalidResponsesSource("item_generation_params.source.type must be file_content; file_id is not supported")
+	}
+	if strings.TrimSpace(params.DataMapping["response_id"]) == "" {
+		return invalidResponsesSource("item_generation_params.data_mapping.response_id is required")
+	}
+	column, mapped := itemColumn(params.DataMapping["response_id"])
+	if !mapped {
+		return invalidResponsesSource("item_generation_params.data_mapping.response_id must bind {{item.<field>}}")
+	}
+	if len(params.Source.Content) == 0 {
+		return invalidResponsesSource("item_generation_params.source.content must contain at least one item")
+	}
+	for i, row := range params.Source.Content {
+		item, ok := row["item"].(map[string]any)
+		if !ok || item == nil {
+			return invalidResponsesSource(fmt.Sprintf("item_generation_params.source.content[%d].item must be an object", i))
+		}
+		value, present := item[column]
+		if !present {
+			return invalidResponsesSource(fmt.Sprintf(
+				"item_generation_params.source.content[%d].item has no mapped response ID", i))
+		}
+		id, ok := value.(string)
+		if !ok {
+			return invalidResponsesSource(fmt.Sprintf(
+				"item_generation_params.source.content[%d].item mapped response ID must be a string", i))
+		}
+		if strings.TrimSpace(id) == "" {
+			return invalidResponsesSource(fmt.Sprintf(
+				"item_generation_params.source.content[%d].item mapped response ID must not be blank", i))
 		}
 	}
-	if !valid {
-		return exterrors.Validation(exterrors.CodeConflictingArguments,
-			"the stored-responses run source is incompatible with response retrieval",
-			"Run the declared eval by name with source.response_ids. "+
-				"Inline reruns require a nested response_id mapping to {{item.<field>}} "+
-				"and a non-empty string ID at that field in every item object.")
-	}
 	return nil
+}
+
+func incompatibleResponseMappings(id string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("eval %q has stored-response mappings incompatible with the declared source", id),
+		"Remove the explicit id and deploy the declaration to create a compatible eval, then run it by name. "+
+			"The existing eval and its run history are retained.")
+}
+
+func invalidResponsesSource(reason string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		"the stored-responses run source is incompatible with response retrieval: "+reason,
+		"Run the declared eval by name with source.response_ids. "+
+			"Response retrieval supports file_content only, with a nested response_id mapping to {{item.<field>}} "+
+			"and a non-blank string ID at that field in every item object.")
 }

@@ -277,9 +277,9 @@ When an unchanged rubric will be reused, preflight checks its published contract
 not local metadata overrides, before writing reconciliation state or publishing
 dependencies. Authored metadata still applies when a rubric edit creates a new version.
 
-Eval groups are immutable, so a change to a group's evaluators, target or
-evaluation level creates a new group and a new id. Per-run sampling and source
-settings retain the same ID while the stored schema remains compatible.
+Eval groups are immutable, so a change to a group's evaluators, target,
+evaluation level, or source type creates a new group and a new id. Per-run sampling,
+response IDs, and trace filters retain the same ID while the stored contract remains compatible.
 The id is cached in the extension's own private state (`eval.state`) so repeat
 runs stay comparable. That is not an azd environment value: it does not appear
 in `azd env get-values`, which shows only what you put there.
@@ -293,9 +293,24 @@ A deployment replaces an
 older custom-schema response eval with a compatible eval once, even when the
 declaration is unchanged. The old eval and its runs are retained; subsequent
 unchanged deployments reuse the new ID. Other evaluation modes retain compatible
-custom schemas without recreating their histories. Known incompatible schema
-types are rejected or replaced instead of reused. Switching a declaration from stored
+custom schemas without recreating their histories. Trace declarations also accept
+existing SDK-created `azure_ai_source` definitions with `scenario: traces` or
+`traces_preview`; unknown schema types are not assumed compatible. Switching a declaration from stored
 responses to another source also creates an eval with the required custom schema.
+
+Stored-response turn evaluations bind retrieved output through the sample
+namespace without invoking a target. A published evaluator contract that requires
+a string uses `{{sample.output_text}}`; structured or unspecified response types
+retain `{{sample.output_items}}`. Conversation mappings retain `{{item.messages}}`,
+and explicit `data_mapping` values take precedence.
+
+Managed response evals with positively identified stale item/sample bindings or
+incompatible text/items response bindings are replaced once, retaining the original
+eval and its run history. Missing mappings and unrelated service enrichment do not
+trigger blanket migration. An explicit `id:` with conflicting stored-response
+mappings is refused before dependency publication; remove the `id:` and deploy the
+declaration to migrate. Changing default mappings in other modes requires a deliberate
+criterion change rather than silently rewriting an existing evaluation policy.
 
 An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
 schema. An incompatible response eval fails before starting a run. Remove the
@@ -306,7 +321,15 @@ agent or changing the selected response IDs. Stored-response runs reject
 `--max-samples` (including explicit zero) and configured row caps; select
 `source.response_ids` to control which stored responses are evaluated.
 Inline reruns must map `response_id` to `{{item.<field>}}`, with a non-blank
-string ID at that field in every item. Response-source IDs must not be blank.
+string ID at that field in every item. Invalid reruns identify the zero-based item
+index and reason without printing stored response IDs. Response-source IDs must not be blank.
+The current [Foundry deployed-interaction evaluation guidance](https://github.com/MicrosoftDocs/azure-ai-docs/blob/9d5bbd1edaf03beacdf92af2b0dcaacbff82d895/articles/foundry/observability/how-to/cloud-evaluation-deployed-interactions.md#evaluate-interactions-by-response-id)
+supports only `file_content` response retrieval on the OpenAI v1 evaluation-run
+route. Although the SDK model union includes `file_id`, the service documents that
+it returns HTTP 400. Such reruns are rejected locally; the CLI never silently
+downloads or expands a selected file into response IDs.
+The run checks schema compatibility in both directions, including a trace source
+switch or `--dataset` override of a response eval, before submitting a run.
 Editor validation and create/deploy preflight reject positive `max_samples`
 for source-backed declarations, including sources loaded through `$ref`.
 

@@ -354,12 +354,36 @@ func TestNonResponseSchemaCompatibilityPreservesUnknownHistory(t *testing.T) {
 }
 
 func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T) {
-	for _, mode := range []string{
-		"valid", "custom eval", "bare rows", "missing params", "read failure", "explicit cap zero", "explicit cap one",
-		"alternate mapped key", "missing mapped key", "empty item", "empty ID", "whitespace ID", "non-string ID",
-		"invalid mapping", "invalid later item", "file ID", "file ID alternate mapped key",
-		"empty file ID", "blank file ID", "file ID missing mapping",
+	for _, tc := range []struct {
+		mode    string
+		wantErr string
+	}{
+		{"valid", ""},
+		{"custom eval", "does not use the stored-responses schema"},
+		{"bare rows", "content[0].item must be an object"},
+		{"missing params", "item_generation_params is required"},
+		{"read failure", `reading eval "eval_fixed"`},
+		{"explicit cap zero", "--max-samples cannot change a data source reused by eval id"},
+		{"explicit cap one", "--max-samples cannot change a data source reused by eval id"},
+		{"alternate mapped key", ""},
+		{"missing mapped key", "content[0].item has no mapped response ID"},
+		{"empty item", "content[0].item has no mapped response ID"},
+		{"empty ID", "content[0].item mapped response ID must not be blank"},
+		{"whitespace ID", "content[0].item mapped response ID must not be blank"},
+		{"non-string ID", "content[0].item mapped response ID must be a string"},
+		{"invalid mapping", "data_mapping.response_id must bind {{item.<field>}}"},
+		{"invalid later item", "content[1].item mapped response ID must not be blank"},
+		{"file ID", "source.type must be file_content; file_id is not supported"},
+		{"file ID alternate mapped key", "source.type must be file_content; file_id is not supported"},
+		{"empty file ID", "source.type must be file_content; file_id is not supported"},
+		{"blank file ID", "source.type must be file_content; file_id is not supported"},
+		{"file ID missing mapping", "source.type must be file_content; file_id is not supported"},
+		{"wrong retrieval type", "item_generation_params.type must be response_retrieval"},
+		{"missing source", "item_generation_params.source is required"},
+		{"empty content", "source.content must contain at least one item"},
+		{"missing mapping", "data_mapping.response_id is required"},
 	} {
+		mode := tc.mode
 		t.Run(mode, func(t *testing.T) {
 			source := eval_api.NewResponsesDataSource([]string{"resp_fixed"}, 1)
 			if mode == "bare rows" {
@@ -369,6 +393,14 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 				source.ItemGenerationParams = nil
 			}
 			switch mode {
+			case "wrong retrieval type":
+				source.ItemGenerationParams.Type = "target_completion"
+			case "missing source":
+				source.ItemGenerationParams.Source = nil
+			case "empty content":
+				source.ItemGenerationParams.Source.Content = nil
+			case "missing mapping":
+				source.ItemGenerationParams.DataMapping = nil
 			case "alternate mapped key":
 				source.ItemGenerationParams.DataMapping["response_id"] = "{{item.resp_id}}"
 				source.ItemGenerationParams.Source.Content = []map[string]any{
@@ -460,8 +492,7 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 				},
 			}
 			err = action.Run()
-			if mode == "valid" || mode == "alternate mapped key" ||
-				mode == "file ID" || mode == "file ID alternate mapped key" {
+			if tc.wantErr == "" {
 				require.NoError(t, err)
 				require.Equal(t, 1, posts)
 				var result map[string]any
@@ -470,9 +501,17 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 				assert.Equal(t, "eval_fixed", result["eval_id"])
 				assert.NotContains(t, result, "data_source")
 			} else {
-				require.Error(t, err)
+				require.ErrorContains(t, err, tc.wantErr)
 				require.Zero(t, posts)
 				require.Empty(t, out.String())
+				assert.NotContains(t, err.Error(), "resp_fixed")
+				assert.NotContains(t, err.Error(), "file_fixed")
+				if mode != "read failure" {
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					assert.NotEmpty(t, local.Suggestion)
+				}
 			}
 			after, err := json.Marshal(source)
 			require.NoError(t, err)

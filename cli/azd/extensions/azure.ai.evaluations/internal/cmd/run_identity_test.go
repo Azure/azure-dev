@@ -50,6 +50,8 @@ type identityService struct {
 	rows         string
 	blobStatus   int
 	responseEval bool
+	evalConfig   map[string]any
+	evalStatus   int
 }
 
 func identityRunContext(t *testing.T, service identityService) (*evalContext, <-chan identityRequest) {
@@ -65,10 +67,17 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 		case strings.HasSuffix(r.URL.Path, "/runs"):
 			assert.Equal(t, http.MethodPost, r.Method)
 			_, _ = io.WriteString(w, `{"id":"evalrun_new","status":"queued"}`)
-		case service.responseEval && strings.HasSuffix(r.URL.Path, "/eval_1"):
+		case strings.HasSuffix(r.URL.Path, "/eval_1"):
 			assert.Equal(t, http.MethodGet, r.Method)
-			_, _ = io.WriteString(w,
-				`{"id":"eval_1","data_source_config":{"type":"azure_ai_source","scenario":"responses"}}`)
+			if service.evalStatus != 0 {
+				w.WriteHeader(service.evalStatus)
+				return
+			}
+			config := service.evalConfig
+			if service.responseEval {
+				config = map[string]any{"type": "azure_ai_source", "scenario": "responses"}
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(eval_api.OpenAIEval{ID: "eval_1", DataSourceConfig: config}))
 		case strings.HasSuffix(r.URL.Path, "/versions"):
 			if service.listStatus != 0 {
 				w.WriteHeader(service.listStatus)
@@ -336,7 +345,7 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 	for _, sourceType := range []string{"azure_ai_traces", "azure_ai_trace_data_source_preview"} {
 		for _, cap := range []string{"", "0", "1"} {
 			t.Run(sourceType+"/"+cap, func(t *testing.T) {
-				reads, posts := 0, 0
+				reads, posts, schemaReads := 0, 0, 0
 				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
 				if sourceType == "azure_ai_trace_data_source_preview" {
 					source = map[string]any{
@@ -349,6 +358,10 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					switch {
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_trace"):
+						schemaReads++
+						_, err := io.WriteString(w, `{"id":"eval_trace","data_source_config":{"type":"custom"}}`)
+						assert.NoError(t, err)
 					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
 						reads++
 						assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": []any{
@@ -386,6 +399,7 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 				if cap == "" {
 					require.NoError(t, err)
 					assert.Equal(t, 1, reads)
+					assert.Equal(t, 1, schemaReads)
 					assert.Equal(t, 1, posts)
 				} else {
 					require.ErrorContains(t, err, "max-samples")
@@ -393,6 +407,7 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 					require.True(t, ok)
 					assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
 					assert.Zero(t, reads)
+					assert.Zero(t, schemaReads)
 					assert.Zero(t, posts)
 					assert.Empty(t, out.String())
 				}

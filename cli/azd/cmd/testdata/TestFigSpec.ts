@@ -5948,7 +5948,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -5957,7 +5957,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -5972,7 +5972,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -5981,7 +5981,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6132,7 +6132,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6177,7 +6177,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6216,7 +6216,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6225,7 +6225,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6250,7 +6250,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6259,7 +6259,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6297,7 +6297,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6306,7 +6306,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6331,7 +6331,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6340,7 +6340,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6365,7 +6365,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6374,7 +6374,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6412,7 +6412,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
+											description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -6421,7 +6421,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--timeout'],
-											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 											args: [
 												{
 													name: 'timeout',
@@ -6443,7 +6443,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6452,7 +6452,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6477,7 +6477,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6486,7 +6486,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6619,7 +6619,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6664,7 +6664,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6689,7 +6689,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6698,7 +6698,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',

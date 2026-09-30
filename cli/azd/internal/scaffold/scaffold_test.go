@@ -333,7 +333,8 @@ func TestExecInfra(t *testing.T) {
 					require.NoError(t, err)
 					assert.NotContains(t, string(bicep), "FUNCTIONS_WORKER_RUNTIME")
 					assert.Regexp(t,
-						`siteConfig:\s*\{\s*alwaysOn: false\s*cors:\s*\{\s*allowedOrigins:\s*\[\s*'https://portal.azure.com'`,
+						`siteConfig:\s*\{\s*alwaysOn: false\s*`+
+							`cors:\s*\{\s*allowedOrigins:\s*\[\s*'https://portal.azure.com'`,
 						string(bicep))
 					if tt.name == "Function App with implicit storage" {
 						assert.Regexp(t, `networkAcls:\s*\{\s*defaultAction: 'Allow'\s*\}`, string(bicep))

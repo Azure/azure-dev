@@ -795,6 +795,17 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
+
+## State Stores
+
+Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,
+replace, or delete their JSON object items. Select a store once, or supply `--store`
+for a one-off item operation. Store creation, updates, and deletion are not included.
+
+See [State Store commands and examples](docs/state-stores.md) for selection,
+conditional writes with ETags, and pagination. Editing state does not resume or
+stop agent work.
+
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and

@@ -1535,18 +1535,6 @@ func NoFreeArtifactName(name string) error {
 			"or --output-dir to write elsewhere", name)
 }
 
-// DatasetVersionNotVerified reports a pinned version the service would not
-// confirm, on a deploy that is going ahead with it anyway.
-//
-// Failing here would break a deploy on a transient read, and the pin is the
-// author's explicit choice. Saying nothing reported the version verified when
-// all the deploy did was fail to look at it.
-func DatasetVersionNotVerified(name, version string, err error) error {
-	return fmt.Errorf(
-		"could not confirm dataset %q version %s still exists (%w); continuing with it",
-		name, version, err)
-}
-
 // ArtifactLeftAlone reports a destination a previous collection already filled.
 //
 // A rubric is meant to be edited, and `job show` is documented as safe to

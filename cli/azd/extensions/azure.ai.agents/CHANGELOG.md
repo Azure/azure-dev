@@ -2,6 +2,43 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.18 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10137]](https://github.com/Azure/azure-dev/pull/10137) Require runtime agent definitions in `azure.yaml` or through an explicit root `$ref`, rejecting `AGENT_DEFINITION_PATH`, nested agent `config:` blocks, and implicit standalone-file discovery.
+- [[#10140]](https://github.com/Azure/azure-dev/pull/10140) Require unified `azure.yaml` project documents for agent initialization and remove standalone manifest adoption and the `sample list --type agent` filter.
+- [[#10164]](https://github.com/Azure/azure-dev/pull/10164) Remove legacy AgentManifest support from diagnostics and next-step guidance; move agent definitions to direct `azure.yaml` service properties or an explicit root `$ref`.
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2`.
+
+### Features Added
+
+- [[#10106]](https://github.com/Azure/azure-dev/pull/10106) Add `azd ai agent state-stores` commands to inspect existing stores and list, read, set, and delete their JSON items.
+- [[#10127]](https://github.com/Azure/azure-dev/pull/10127) Add project managed identity storage-permission diagnostics to `azd ai agent doctor` for Storage connections bound to the project capability host. Thanks @Yimin-Jin for the contribution!
+
+### Bugs Fixed
+
+- [[#10152]](https://github.com/Azure/azure-dev/pull/10152) Fix local Activity Playground routing to use `/activity/messages` for current protocols while preserving `/api/messages` for legacy v1 agents.
+
+## 1.0.0-beta.17 (2026-09-24)
+
+### Features Added
+
+- [[#10030]](https://github.com/Azure/azure-dev/pull/10030) Delegate Foundry project and model deployment authoring to the `azure.ai.projects` extension while preserving agent initialization and adoption flows.
+- [[#10155]](https://github.com/Azure/azure-dev/pull/10155) Add versioned skill references to prompt-agent manifests while preserving string shorthand for local skills.
+
+### Bugs Fixed
+
+- [[#10056]](https://github.com/Azure/azure-dev/pull/10056) Fix `--new-session` to also start a new conversation for local and remote Responses invocations.
+- [[#10134]](https://github.com/Azure/azure-dev/pull/10134) Fix prompt-agent invocation, including GitHub Copilot harness agents, to use Foundry conversations instead of previous response IDs.
+- [[#10159]](https://github.com/Azure/azure-dev/pull/10159) Fix `azd ai agent optimize deploy --candidate` for prompt agents, including GitHub Copilot harness agents. Thanks @YoYoJa for the contribution!
+
+### Other Changes
+
+- [[#10057]](https://github.com/Azure/azure-dev/pull/10057) Improve `azd ai agent` help formatting, examples, and environment guidance. Thanks @Siglud for the contribution!
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0
+
 ## 1.0.0-beta.16 (2026-09-17)
 
 ### Breaking Changes

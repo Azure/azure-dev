@@ -88,11 +88,16 @@ func (s *invokeUserConfigServer) getJSON(t *testing.T, path string, value any) {
 	}
 }
 
-func newInvokeTestAzdClient(t *testing.T, userConfigServer azdext.UserConfigServiceServer) *azdext.AzdClient {
+func newInvokeTestAzdClient(
+	t *testing.T, userConfigServer azdext.UserConfigServiceServer, environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -417,15 +422,21 @@ func TestInvokeFlagsForceNewConversation(t *testing.T) {
 	}
 }
 
-func TestInvokeNewSessionConversationConflict(t *testing.T) {
+func TestInvokeConversationResetConflict(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
 		wantConflict bool
+		wantInvalid  bool
 	}{
 		{
-			name:         "remote",
+			name:         "new session remote",
 			args:         []string{"--new-session", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name:         "new conversation remote",
+			args:         []string{"--new-conversation", "--conversation-id", "conv_existing"},
 			wantConflict: true,
 		},
 		{
@@ -448,10 +459,24 @@ func TestInvokeNewSessionConversationConflict(t *testing.T) {
 			wantConflict: true,
 		},
 		{name: "new session alone", args: []string{"--new-session"}},
+		{name: "new conversation alone", args: []string{"--new-conversation"}},
 		{name: "both reset flags", args: []string{"--new-session", "--new-conversation"}},
 		{name: "explicit conversation alone", args: []string{"--conversation-id", "conv_existing"}},
 		{name: "reset disabled", args: []string{"--new-session=false", "--conversation-id", "conv_existing"}},
-		{name: "empty conversation", args: []string{"--new-session", "--conversation-id="}},
+		{
+			name: "new conversation disabled",
+			args: []string{"--new-conversation=false", "--conversation-id", "conv_existing"},
+		},
+		{
+			name:        "empty conversation",
+			args:        []string{"--new-session", "--conversation-id="},
+			wantInvalid: true,
+		},
+		{
+			name:        "whitespace conversation",
+			args:        []string{"--conversation-id", "   "},
+			wantInvalid: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -463,7 +488,7 @@ func TestInvokeNewSessionConversationConflict(t *testing.T) {
 			cmd.SetOut(io.Discard)
 			cmd.SetErr(io.Discard)
 			err := cmd.ExecuteContext(t.Context())
-			if !tt.wantConflict {
+			if !tt.wantConflict && !tt.wantInvalid {
 				if !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("expected input file error after flag validation, got %v", err)
 				}
@@ -474,13 +499,23 @@ func TestInvokeNewSessionConversationConflict(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected structured validation error, got %v", err)
 			}
-			if localErr.Code != exterrors.CodeConflictingArguments {
-				t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeConflictingArguments)
+			wantCode := exterrors.CodeConflictingArguments
+			if tt.wantInvalid {
+				wantCode = exterrors.CodeInvalidParameter
+			}
+			if localErr.Code != wantCode {
+				t.Errorf("code = %q, want %q", localErr.Code, wantCode)
 			}
 			if localErr.Category != azdext.LocalErrorCategoryValidation {
 				t.Errorf("category = %q, want validation", localErr.Category)
 			}
-			if !strings.Contains(localErr.Message, "cannot use --new-session with --conversation-id") {
+			if tt.wantInvalid {
+				if !strings.Contains(localErr.Message, "--conversation-id cannot be empty") {
+					t.Errorf("unexpected invalid value message: %q", localErr.Message)
+				}
+				return
+			}
+			if !strings.Contains(localErr.Message, "cannot use conversation reset flags with --conversation-id") {
 				t.Errorf("unexpected conflict message: %q", localErr.Message)
 			}
 			if !strings.Contains(localErr.Suggestion, "remove --conversation-id") {

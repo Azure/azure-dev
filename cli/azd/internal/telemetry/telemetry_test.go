@@ -15,6 +15,8 @@ import (
 )
 
 func TestGetTelemetrySystem(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+
 	devEndpointConfig, err := appinsightsexporter.NewEndpointConfig(devConnectionString)
 	require.NoError(t, err)
 	prodEndpointConfig, err := appinsightsexporter.NewEndpointConfig(prodConnectionString)
@@ -100,7 +102,11 @@ func TestGetTelemetrySystem(t *testing.T) {
 }
 
 func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
-	t.Parallel()
+	resetTelemetryForTest()
+	t.Cleanup(resetTelemetryForTest)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv(collectTelemetryEnvVar, "yes")
+
 	type args struct {
 		ctx                context.Context
 		enableDebugLogging bool

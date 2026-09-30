@@ -66,7 +66,7 @@ func PromptAgentDefinitionToServiceProperties(
 }
 
 // PromptAgentFromResolvedService resolves a prompt agent definition from a
-// service entry's inline (preferred) or legacy config properties. It returns the
+// service entry's service-level properties. It returns the
 // parsed PromptAgent and whether a prompt definition was found. Definitions of
 // another kind — and services carrying none — return found=false with no error
 // so callers fall through to the file-based path unchanged.
@@ -77,47 +77,43 @@ func PromptAgentFromResolvedService(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.PromptAgent, bool, error) {
-	candidates := []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.PromptAgent{}, false, err
 	}
-	for _, props := range candidates {
-		if props == nil || len(props.GetFields()) == 0 {
-			continue
-		}
-		resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
-		if err != nil {
-			return agent_yaml.PromptAgent{}, false, err
-		}
-		if !structHasKind(resolved) {
-			continue
-		}
-		if !strings.EqualFold(structKind(resolved), string(agent_yaml.AgentKindPrompt)) {
-			// A definition is present but it is not a prompt agent.
-			return agent_yaml.PromptAgent{}, false, nil
-		}
-
-		// The authored blocks are checked before the decode so a typo is
-		// reported as a typo. UnmarshalYAML never runs on this route: core azd
-		// parsed azure.yaml and handed the properties over as protobuf.
-		if err := agent_yaml.ValidateInlinePromptAgent(resolved.AsMap()); err != nil {
-			return agent_yaml.PromptAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("agent %q is not a valid prompt agent: %s", svc.GetName(), err),
-				"correct the agent definition on the service entry in azure.yaml",
-			)
-		}
-
-		var inline PromptAgentInline
-		if err := UnmarshalStruct(resolved, &inline); err != nil {
-			return agent_yaml.PromptAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("prompt agent service config is not valid: %s", err),
-				"re-run `azd ai agent init` to regenerate the agent service entry",
-			)
-		}
-		return inline.toPromptAgent(), true, nil
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		return agent_yaml.PromptAgent{}, false, nil
+	}
+	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
+	if err != nil {
+		return agent_yaml.PromptAgent{}, false, err
+	}
+	if !structHasKind(resolved) {
+		return agent_yaml.PromptAgent{}, false, nil
+	}
+	if !strings.EqualFold(structKind(resolved), string(agent_yaml.AgentKindPrompt)) {
+		// A definition is present but it is not a prompt agent.
+		return agent_yaml.PromptAgent{}, false, nil
 	}
 
-	return agent_yaml.PromptAgent{}, false, nil
+	// The authored blocks are checked before the decode so a typo is
+	// reported as a typo. UnmarshalYAML never runs on this route: core azd
+	// parsed azure.yaml and handed the properties over as protobuf.
+	if err := agent_yaml.ValidateInlinePromptAgent(resolved.AsMap()); err != nil {
+		return agent_yaml.PromptAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent %q is not a valid prompt agent: %s", svc.GetName(), err),
+			"correct the agent definition on the service entry in azure.yaml",
+		)
+	}
+
+	var inline PromptAgentInline
+	if err := UnmarshalStruct(resolved, &inline); err != nil {
+		return agent_yaml.PromptAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("prompt agent service config is not valid: %s", err),
+			"re-run `azd ai agent init` to regenerate the agent service entry",
+		)
+	}
+	return inline.toPromptAgent(), true, nil
 }

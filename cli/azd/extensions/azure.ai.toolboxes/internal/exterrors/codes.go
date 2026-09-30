@@ -12,6 +12,7 @@ const (
 const (
 	CodeInvalidParameter     = "invalid_parameter"
 	CodeInvalidPositionalArg = "invalid_positional_arg"
+	CodeConflictingArguments = "conflicting_arguments"
 )
 
 // Error codes for dependency failures (missing resources, services, env values).

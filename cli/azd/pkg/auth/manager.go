@@ -1475,7 +1475,8 @@ type LogInDetails struct {
 // outbound HTTP call) and derive the account identifier from the token claims.
 // When running in Azure Cloud Shell and no azd-managed user is logged in,
 // it derives the account from the ambient Cloud Shell credential and reports
-// an authenticated user.
+// an authenticated user. System-assigned managed identities report a client ID-based
+// login with an empty account identifier because no client ID was configured.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	if m.UseExternalAuth() {
 		claims, err := m.ClaimsForCurrentUser(ctx, nil)
@@ -1566,6 +1567,10 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 		return &LogInDetails{
 			LoginType: ClientIdLoginType,
 			Account:   *currentUser.ClientID,
+		}, nil
+	} else if currentUser.ManagedIdentity {
+		return &LogInDetails{
+			LoginType: ClientIdLoginType,
 		}, nil
 	}
 

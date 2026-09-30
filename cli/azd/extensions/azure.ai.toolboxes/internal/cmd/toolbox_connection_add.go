@@ -36,7 +36,7 @@ func newToolboxConnectionAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 
 This command has two modes:
 
-Single-connection mode:
+Single-Connection Mode:
 
   azd ai toolbox connection add <toolbox> <connection> [--index <name>] [--instance-name <name>]
 
@@ -44,7 +44,7 @@ Pass the project connection's short name as the positional. --index is
 required when the connection's category is CognitiveSearch (Azure AI Search).
 --instance-name is required when the category is GroundingWithCustomSearch.
 
-File mode:
+File Mode:
 
   azd ai toolbox connection add <toolbox> --from-file <path>
 
@@ -57,11 +57,8 @@ run 'azd ai toolbox publish <toolbox> <version>' to promote it.
 
 ` + fileShapeBlurb(false) + `
 
-At least one connection must be provided.
-
-Examples:
-
-  # Attach a single RemoteTool (MCP) connection
+At least one connection must be provided.`,
+		Example: `  # Attach a single RemoteTool (MCP) connection
   azd ai toolbox connection add research my-mcp
 
   # Attach a CognitiveSearch connection with an explicit index

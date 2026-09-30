@@ -108,8 +108,8 @@ func (a *runOutputListAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -237,8 +237,8 @@ func (a *runOutputShowAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -373,8 +373,8 @@ func (a *runOutputExportAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -453,11 +453,51 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 	// The same prompt `run start` gets. Without it a project declaring two
 	// evals could start a run by answering a question, and then not list,
 	// show or cancel it without repeating the answer as a flag.
-	ref, err := ec.resolveEvalRef(cmd.Context(), evalDir, chooseEvalIn(cmd, evalDir, groupName))
+	//
+	// An explicit Cancel choice is returned so the command can report it as an
+	// answer; resolving an id is not where that gets decided.
+	chosen, err := chooseEvalIn(cmd, evalDir, groupName)
+	if err != nil {
+		return "", err
+	}
+	ref, err := ec.resolveEvalRef(cmd.Context(), evalDir, chosen)
 	if err != nil {
 		return "", err
 	}
 	return ref.ID, nil
+}
+
+// evalIDForRunCommand resolves the eval a run command acts on and reports a
+// explicit Cancel choice as the answer it is.
+//
+// Every run subcommand reaches the same picker `eval create` and `run start`
+// do, so choosing Cancel means the same thing at all of them: no eval was selected,
+// and there is nothing to list, show, cancel or export. Returning the sentinel
+// as a command error made those seven exit non-zero on a deliberate answer,
+// which reads as the choice itself having failed.
+//
+// The bool reports whether to carry on. A cancelled selection has already been
+// reported to the reader and leaves the command nothing to do.
+func evalIDForRunCommand(cmd *cobra.Command, ec *evalContext, groupName string) (string, bool, error) {
+	evalID, err := resolveEvalID(cmd, ec, groupName)
+	return answeredEvalID(cmd, evalID, err)
+}
+
+// answeredEvalID turns a resolution into what a run command needs, and is where
+// the explicit Cancel choice stops being an error.
+//
+// Separate from the resolution because reaching the picker for real needs
+// a project, a configuration and a terminal; this half needs none of them, so
+// it is the half a test can drive.
+func answeredEvalID(cmd *cobra.Command, evalID string, err error) (string, bool, error) {
+	if err != nil {
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(cmd)
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return evalID, true, nil
 }
 
 // addEvalFlag registers the flag that says which eval a command acts on. It

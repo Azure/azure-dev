@@ -34,6 +34,9 @@ func TestTheRunHandsThePinToTheDatasetRead(t *testing.T) {
 	body, err := os.ReadFile("run.go")
 	require.NoError(t, err)
 
-	assert.Contains(t, string(body), "declaredDatasetVersion(configPath, group), maxSamples)",
+	assert.Contains(t, string(body), "resolveRunDatasetVersion(ctx, group.Dataset, decl.Version, localPath != \"\")",
 		"reading the declaration and not using it leaves the run on the recorded version")
+	assert.Contains(t, string(body), "dataSource, datasetVersion, err = ec.buildRunDataSource(")
+	assert.Contains(t, string(body), "metadata[metaDatasetVersion] = datasetVersion",
+		"metadata must use the version resolved with the source, not a second lookup")
 }

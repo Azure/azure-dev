@@ -287,11 +287,19 @@ This option does not provide crash recovery or automatic reconnection.`,
 				return err
 			}
 
-			if flags.newSession && flags.conversation != "" {
+			if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--conversation-id cannot be empty",
+					"provide a valid conversation ID or omit --conversation-id",
+				)
+			}
+
+			if flags.forceNewConversation() && flags.conversation != "" {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
-					"cannot use --new-session with --conversation-id; a new session requires a new conversation",
-					"remove --conversation-id to start a new session, or remove --new-session to reuse the conversation",
+					"cannot use conversation reset flags with --conversation-id",
+					"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
 				)
 			}
 
@@ -562,6 +570,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
 				return pErr
 			}
+			if localErr, ok := errors.AsType[*azdext.LocalError](pErr); ok {
+				return localErr
+			}
 			if _, ok := errors.AsType[agentServiceLookupNotFoundError](pErr); !ok || a.flags.name == "" {
 				return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
 			}
@@ -580,7 +591,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	// Re-validate after protocol resolution: when --protocol was omitted the
-	// protocol may have been auto-detected as a2a (e.g. from agent.yaml). In
+	// protocol may have been auto-detected as a2a from the service definition. In
 	// that case the flag-parse guard above was skipped and clientHeaders was
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard

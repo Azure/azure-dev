@@ -395,6 +395,7 @@ const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
 // published. Skills are published before the agent version is created, so the
 // version is always known by then.
 type SkillReference struct {
+	Type    string `json:"type"`
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }

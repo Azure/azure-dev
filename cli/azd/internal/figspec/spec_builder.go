@@ -305,6 +305,8 @@ func (sb *SpecBuilder) generateCommandArgs(cmd *cobra.Command, ctx *CommandConte
 	for _, part := range useParts[1:] {
 		isOptional := strings.HasPrefix(part, "[") && strings.HasSuffix(part, "]")
 		argName := strings.Trim(part, "[]<>")
+		isVariadic := strings.HasSuffix(argName, "...")
+		argName = strings.TrimSuffix(argName, "...")
 
 		if strings.HasPrefix(argName, "-") {
 			continue // Skip flags
@@ -313,6 +315,7 @@ func (sb *SpecBuilder) generateCommandArgs(cmd *cobra.Command, ctx *CommandConte
 		arg := Arg{
 			Name:       argName,
 			IsOptional: isOptional,
+			IsVariadic: isVariadic,
 		}
 
 		if sb.generatorProvider != nil {

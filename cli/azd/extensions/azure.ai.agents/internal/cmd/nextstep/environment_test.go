@@ -87,7 +87,7 @@ environmentVariables:
 	}, got)
 }
 
-func TestLoadEffectiveAgentEnvironment_DeprecatedConfigFallback(t *testing.T) {
+func TestLoadEffectiveAgentEnvironment_IgnoresNestedConfig(t *testing.T) {
 	t.Parallel()
 
 	svc := &azdext.ServiceConfig{
@@ -104,9 +104,7 @@ func TestLoadEffectiveAgentEnvironment_DeprecatedConfigFallback(t *testing.T) {
 	got, err := loadEffectiveAgentEnvironment(svc, t.TempDir())
 
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{
-		"CONFIG_VALUE": "${CONFIG_VALUE}",
-	}, got)
+	assert.Empty(t, got)
 }
 
 func TestLoadEffectiveAgentEnvironment_IgnoresLegacyKeyInServiceProperties(t *testing.T) {
@@ -125,7 +123,7 @@ func TestLoadEffectiveAgentEnvironment_IgnoresLegacyKeyInServiceProperties(t *te
 	assert.Empty(t, got)
 }
 
-func TestLoadEffectiveAgentEnvironment_LegacyFilesFallback(t *testing.T) {
+func TestLoadEffectiveAgentEnvironment_IgnoresLegacyFiles(t *testing.T) {
 	t.Parallel()
 
 	for _, fileName := range []string{"agent.yaml", "agent.yml"} {
@@ -147,9 +145,7 @@ environment_variables:
 			got, err := loadEffectiveAgentEnvironment(svc, root)
 
 			require.NoError(t, err)
-			assert.Equal(t, map[string]string{
-				"LEGACY_VALUE": "${LEGACY_VALUE}",
-			}, got)
+			assert.Empty(t, got)
 		})
 	}
 }
@@ -189,38 +185,7 @@ func TestLoadEffectiveAgentEnvironment_InvalidConfiguration(t *testing.T) {
 		_, err := loadEffectiveAgentEnvironment(svc, t.TempDir())
 
 		require.Error(t, err)
-		assert.ErrorContains(t, err, "resolve service-level properties")
-	})
-
-	t.Run("malformed legacy yaml", func(t *testing.T) {
-		t.Parallel()
-		root := t.TempDir()
-		writeProjectFile(t, root, "agent.yaml", "kind: [broken")
-		svc := &azdext.ServiceConfig{
-			Name:         "echo",
-			Host:         agentHost,
-			RelativePath: ".",
-		}
-
-		_, err := loadEffectiveAgentEnvironment(svc, root)
-
-		require.Error(t, err)
-		assert.ErrorContains(t, err, "parse legacy agent file")
-	})
-
-	t.Run("invalid legacy service path", func(t *testing.T) {
-		t.Parallel()
-		svc := &azdext.ServiceConfig{
-			Name:         "echo",
-			Host:         agentHost,
-			RelativePath: "../outside",
-		}
-
-		_, err := loadEffectiveAgentEnvironment(svc, t.TempDir())
-
-		require.Error(t, err)
-		assert.ErrorContains(t, err, "resolve legacy agent file path")
-		assert.ErrorContains(t, err, "must not contain '..'")
+		assert.ErrorContains(t, err, "resolve $ref includes")
 	})
 
 	t.Run("non-scalar service env", func(t *testing.T) {
@@ -250,6 +215,21 @@ func newAgentService(t *testing.T, properties map[string]any) *azdext.ServiceCon
 		Host:                 agentHost,
 		AdditionalProperties: mustStruct(t, properties),
 	}
+}
+
+func agentServiceWithEnvironment(
+	t *testing.T,
+	variables ...map[string]any,
+) *azdext.ServiceConfig {
+	t.Helper()
+	environment := make([]any, len(variables))
+	for i, variable := range variables {
+		environment[i] = variable
+	}
+	return newAgentService(t, map[string]any{
+		"kind":                 "hostedAgent",
+		"environmentVariables": environment,
+	})
 }
 
 func mustStruct(t *testing.T, values map[string]any) *structpb.Struct {

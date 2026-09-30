@@ -31,24 +31,65 @@ The events currently emitted by this extension are documented under
 
 When azd telemetry is enabled, the extension reports `agent.context.resolved`
 for each distinct agent classification involved in an invocation. The event
-contains only bounded classifications:
+contains only bounded classifications (including a container mode for hosted agents):
 
 | Attribute | Values | Description |
 |---|---|---|
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
+| `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
-reports one row for each classification. The event never includes agent names,
-service keys, paths, URLs, prompts, or other customer content.
+reports one row for each distinct kind, harness, and container mode; it does
+not count individual agents or prove a deployment succeeded. `build` includes
+both azd-created and existing ACR destinations. Ambiguous legacy or invalid
+hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
+are reported as `unknown`. The event never includes agent names, service keys,
+registry connections, image references, paths, URLs, prompts, or other customer content.
 
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
+
+## Project storage diagnostics
+
+Run `azd ai agent doctor` to check project managed identity permissions for the
+Storage connections named in the project capability host's `storageConnections`.
+The `Project storage permissions` check resolves those names from project
+connections or account connections shared with the project, using Storage
+resource IDs rather than probing arbitrary endpoints. Unbound connections are
+ignored. Projects without a capability host or Storage bindings are skipped.
+Unreadable or incomplete capability host metadata produces a warning. See
+[capability hosts](https://learn.microsoft.com/azure/foundry/agents/concepts/capability-hosts)
+for the project storage binding model.
+
+The check recognizes direct assignments of Storage Blob Data Contributor,
+Storage Blob Data Owner, and equivalent built-in roles with Blob read, write,
+and delete data permissions, accounting for `NotDataActions`. Assignments can
+be inherited from an ancestor scope. Supported project-identity authentication
+includes AAD and ProjectManagedIdentity connections.
+
+Connections using account keys, SAS, or a separate service principal are skipped.
+Missing metadata, unsupported identity selection, unreadable assignments, and
+unresolved custom or conditional permissions produce a warning instead
+of a missing-permission claim. Container-scoped Blob grants also produce a warning
+when the project's exact container access cannot be verified; the check does not
+recommend expanding those grants to the entire account. Unrecognized role
+definitions are read as needed. Managed identity group memberships are not
+resolved by this check: when sufficient direct permissions are absent, it warns
+that group access remains unverified instead of claiming permissions are missing.
+Invalid bound connection or identity configuration still fails the check.
+
+The check never reads connection secrets, accesses
+blob data, or creates role assignments. A pass does not verify network access.
+
+Use `--debug` for per-connection findings and `--unredacted` to include identity
+and resource identifiers when sharing them is safe. `--local-only` skips this
+remote check along with the other remote diagnostics.
 
 ## Choosing a Foundry project name
 
@@ -106,10 +147,9 @@ to `azure.ai.connection` services and attach them through `uses`. Agent
 remain unsupported. To reuse an external toolbox, set `endpoint` on
 its split toolbox service instead of setting a legacy MCP environment marker.
 Run `azd deploy --all` to reconcile these dependencies before their agents;
-`azd provision` does not create Connections or Toolboxes. Agent manifest
-Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
-which generates split services. Agent runtime `toolConnections` and environment
-references remain agent-owned.
+`azd provision` does not create Connections or Toolboxes. Unified projects must
+declare Connection and Toolbox resources as sibling services. Agent runtime
+`toolConnections` and environment references remain agent-owned.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 sibling `azure.ai.connection` service names. These are references, not resource
@@ -129,15 +169,14 @@ still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration
 path in the Agent command tree.
 
-For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
-project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
-directory and deployment settings. The definition can be inline or referenced
-using `$ref`, following the service schema; declare core-owned fields such as
-`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
-not by a definition-file path. A sibling `toolbox.yaml` is not automatically
-deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
-first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
-dependencies automatically.
+For an existing agent source project, declare an `azure.ai.agent` service in
+`azure.yaml` with its source directory and deployment settings. The definition
+can be inline or referenced using `$ref`, following the service schema; declare
+core-owned fields such as `host`, `project`, `language`, and `uses` in
+`azure.yaml`. Deploy by **service name**, not by a definition-file path. A
+sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
+and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
+targeted Agent deployment does not deploy its dependencies automatically.
 
 ## Invoke latency diagnostics
 
@@ -291,28 +330,11 @@ launch.
 
 New Foundry agent projects keep the agent definition directly on the
 `azure.ai.agent` service entry in `azure.yaml`. Older projects may still have the
-definition in an `agent.yaml` file or under the service's `config:` block. Those
-legacy shapes continue to work during the migration window, but azd prints a
-deprecation warning when it loads them.
+definition in an `agent.yaml`/`agent.yml` file, an AgentManifest file, or under
+the service's `config:` block. Runtime commands reject those implicit and nested
+sources with migration guidance.
 
-To migrate, re-run `azd ai agent init` from the project root and keep the
-generated `azure.yaml` service entry. After confirming `azd deploy` still works,
-remove the old `agent.yaml` or nested `config:` definition.
-
-Before:
-
-```yaml
-services:
-  my-agent:
-    host: azure.ai.agent
-    project: .
-    config:
-      kind: hosted
-      name: my-agent
-      description: My hosted agent
-```
-
-After:
+Move a direct agent definition to service-level properties in `azure.yaml`:
 
 ```yaml
 services:
@@ -324,13 +346,20 @@ services:
     description: My hosted agent
 ```
 
+Alternatively, keep a direct definition in a separate file and reference it
+explicitly from the service with a root `$ref`. The basename can be anything,
+including a legacy-looking name such as `agent.yaml`, but prompt-agent references
+must use a `.yaml` or `.yml` extension. The file content must be a supported
+direct agent definition. An `agent.manifest.yaml` template wrapper must first be
+converted or extracted.
+
 ### Environment variables under `config:`
 
 Older projects could also set environment variables in an `env:` block nested
 under the service's `config:`. That position is no longer read: azd takes the
-service environment only from the service-level `env:`. A service that still
-carries `config: env:` gets a warning naming the affected variables on both
-`azd ai agent run` and `azd deploy`.
+service environment only from the service-level `env:`. Runtime commands fail
+when an agent service still carries a non-empty `config:` block. Move those
+environment values to the service-level `env:` before running the agent.
 
 Move them up one level to fix it:
 
@@ -366,6 +395,10 @@ services:
     instructions: Use web research when requested.
     harness:
       type: github_copilot_preview
+    skills:
+      - local-review
+      - name: published-review
+        version: "2"
     tools:
       - type: github_copilot_toolset_preview
         default_config:
@@ -379,6 +412,14 @@ Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
 and `subagents`. `default_config.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
+
+The string form (`local-review`) requires a matching locally deployed skill;
+deploy the local skill dependency with `azd deploy --all` to supply its version.
+The object form (`published-review`) pins an existing Foundry skill to the
+specified published version. Authored pins take precedence over locally resolved
+versions. azd does not automatically resolve remote default versions, and rejects
+conflicting authored versions for the same skill. You do not need to specify a
+`type` field: azd adds the API discriminator automatically.
 
 Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
 Foundry API's snake_case fields during deployment:
@@ -447,11 +488,6 @@ Details:
   policy, it only associates the agent with an existing one. For prompt and
   managed agents, `azd ai agent init` lists the policies on the selected account
   and can bind one for you; see `--rai-policy`.
-
-> **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
-> (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
-> the other inline agent properties such as `codeConfiguration` and
-> `environmentVariables`.
 
 ## Voice agents (public preview)
 
@@ -664,11 +700,6 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
-As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
-keys throughout this block (`invocations_moderation`, `response_mode`,
-`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
-(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
-
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
@@ -769,9 +800,16 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
-- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
-  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
-  camelCase, like the other inline agent properties.
+
+## State Stores
+
+Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,
+replace, or delete their JSON object items. Select a store once, or supply `--store`
+for a one-off item operation. Store creation, updates, and deletion are not included.
+
+See [State Store commands and examples](docs/state-stores.md) for selection,
+conditional writes with ETags, and pagination. Editing state does not resume or
+stop agent work.
 
 ## Session carry-over across deploys
 

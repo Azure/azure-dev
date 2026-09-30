@@ -70,6 +70,17 @@ stable must remain a wire-compatible subset of beta. Additive beta fields and
 methods and beta-only services are allowed, but shared field and method shapes
 must remain compatible with the generated adapters.
 
+Run this cross-channel check directly with:
+
+```console
+make proto-version-compatibility
+```
+
+The check names the first missing or incompatible message, field, enum,
+service, or method. CI runs it as a dedicated gate after regenerating the
+contracts, so a `v1beta` change cannot silently break the shape inherited from
+stable `v1`.
+
 The first versioned source-contract change is intentionally incompatible with
 the old unversioned package, while the temporary runtime bridge preserves its
 frozen service addresses during migration. Use the first versioned commit as

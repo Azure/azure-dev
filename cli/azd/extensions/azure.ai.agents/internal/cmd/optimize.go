@@ -19,11 +19,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -58,9 +60,17 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 		if svcErr == nil && svc != nil && project != nil {
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
-			kind, kindErr := agentkind.Kind(svc, project.Path, "")
+			if _, _, _, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path); loadErr != nil {
+				return nil, loadErr
+			}
+			kind, kindErr := agentkind.Kind(svc, project.Path)
 			if kindErr != nil {
-				return nil, fmt.Errorf("failed to resolve agent kind: %w", kindErr)
+				return nil, exterrors.ValidationFromError(
+					kindErr,
+					exterrors.CodeInvalidServiceConfig,
+					"failed to resolve agent kind",
+					"fix the agent service configuration in azure.yaml",
+				)
 			}
 			promptAgent := kind == string(agent_yaml.AgentKindPrompt)
 

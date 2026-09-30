@@ -410,8 +410,7 @@ func mapSessionConfiguration(sc *SessionConfiguration) (*agent_api.SessionConfig
 	if idle < MinSessionIdleTimeoutSeconds || idle > MaxSessionIdleTimeoutSeconds {
 		return nil, fmt.Errorf(
 			"session idle timeout must be between %d and %d seconds, got %d "+
-				"('sessionConfiguration.idleTimeoutSeconds' in azure.yaml, "+
-				"'session_configuration.idle_timeout_seconds' in agent.yaml)",
+				"('sessionConfiguration.idleTimeoutSeconds' in the agent definition)",
 			MinSessionIdleTimeoutSeconds, MaxSessionIdleTimeoutSeconds, idle)
 	}
 

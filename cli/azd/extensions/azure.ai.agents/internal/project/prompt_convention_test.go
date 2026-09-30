@@ -4,36 +4,70 @@
 package project
 
 import (
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// writeAgentYAML writes an agent.yaml into a temp dir and returns a provider
-// pointed at it.
-func writeAgentYAML(t *testing.T, agentYAML string) *AgentServiceTargetProvider {
+func promptService(t *testing.T, props map[string]any) *azdext.ServiceConfig {
+	t.Helper()
+	properties, err := structpb.NewStruct(props)
+	require.NoError(t, err)
+	return &azdext.ServiceConfig{
+		Name:                 "service-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: properties,
+	}
+}
+
+// writePromptDefinitionRef writes a direct prompt definition and returns a
+// provider whose azure.yaml service references it.
+func writePromptDefinitionRef(
+	t *testing.T,
+	agentYAML string,
+	overrides map[string]any,
+) *AgentServiceTargetProvider {
 	t.Helper()
 	dir := t.TempDir()
-	agentPath := filepath.Join(dir, "agent.yaml")
+	agentPath := filepath.Join(dir, "definitions", "prompt.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(agentPath), 0o750))
 	if err := os.WriteFile(agentPath, []byte(agentYAML), 0o600); err != nil {
-		t.Fatalf("write agent.yaml: %v", err)
+		t.Fatalf("write prompt definition: %v", err)
 	}
-	return &AgentServiceTargetProvider{agentDefinitionPath: agentPath}
+	props := map[string]any{"$ref": "./definitions/prompt.yaml"}
+	maps.Copy(props, overrides)
+	return &AgentServiceTargetProvider{
+		serviceConfig:       promptService(t, props),
+		projectPath:         dir,
+		servicePath:         filepath.Join(dir, "service"),
+		agentDefinitionPath: agentPath,
+	}
 }
 
 // TestLoadPromptDef_InlineInstructions verifies instructions are read from the
 // inline `instructions:` key, which is the only source the schema supports.
 func TestLoadPromptDef_InlineInstructions(t *testing.T) {
-	p := writeAgentYAML(t, `
-kind: prompt
-name: inline-instr
-model: gpt-4.1-mini
-instructions: FROM INLINE
-`)
+	p := &AgentServiceTargetProvider{
+		serviceConfig: promptService(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "inline-instr",
+			"model":        "gpt-4.1-mini",
+			"instructions": "FROM INLINE",
+		}),
+		projectPath: t.TempDir(),
+	}
 
 	managed, err := p.loadPromptAgentDefinition()
 	if err != nil {
@@ -44,14 +78,14 @@ instructions: FROM INLINE
 	}
 }
 
-// TestLoadPromptDef_NoInstructions confirms a manifest without instructions
+// TestLoadPromptDef_NoInstructions confirms a definition without instructions
 // loads with an empty field; graph validation is what reports the error.
 func TestLoadPromptDef_NoInstructions(t *testing.T) {
-	p := writeAgentYAML(t, `
+	p := writePromptDefinitionRef(t, `
 kind: prompt
 name: no-instr
 model: gpt-4.1-mini
-`)
+`, nil)
 
 	managed, err := p.loadPromptAgentDefinition()
 	if err != nil {
@@ -76,16 +110,16 @@ func TestApplyPromptAgentServiceName(t *testing.T) {
 // TestLoadPromptDef_RejectsContainerFields verifies container-only fields are
 // rejected for a prompt (kind: prompt) agent.
 func TestLoadPromptDef_RejectsContainerFields(t *testing.T) {
-	cases := []string{"image", "protocols", "code_configuration", "agent_endpoint"}
+	cases := []string{"image", "protocols", "codeConfiguration", "agentEndpoint"}
 	for _, field := range cases {
 		t.Run(field, func(t *testing.T) {
-			p := writeAgentYAML(t, `
+			p := writePromptDefinitionRef(t, `
 kind: prompt
 name: bad
 model: gpt-4.1-mini
 instructions: ok
 `+field+`: something
-`)
+`, nil)
 
 			_, err := p.loadPromptAgentDefinition()
 			if err == nil {
@@ -96,6 +130,79 @@ instructions: ok
 			}
 		})
 	}
+}
+
+func TestLoadPromptDef_RootRefUsesEffectiveServiceProperties(t *testing.T) {
+	p := writePromptDefinitionRef(t, `
+kind: prompt
+name: referenced-name
+model: referenced-model
+instructions: referenced instructions
+`, map[string]any{
+		"name":         "replacement-name",
+		"model":        "service-model",
+		"instructions": "service instructions",
+	})
+
+	managed, err := p.loadPromptAgentDefinition()
+	require.NoError(t, err)
+	require.Equal(t, "replacement-name", managed.Name)
+	require.Equal(t, "service-model", managed.Model)
+	require.Equal(t, "service instructions", managed.Instructions)
+
+	referenced, err := os.ReadFile(p.agentDefinitionPath)
+	require.NoError(t, err)
+	require.Contains(t, string(referenced), "name: referenced-name")
+	require.NotContains(t, string(referenced), "replacement-name")
+}
+
+func TestLoadPromptDef_MissingNameFallsBackToServiceName(t *testing.T) {
+	p := writePromptDefinitionRef(t, `
+kind: prompt
+model: gpt-4.1-mini
+instructions: Be helpful.
+`, nil)
+
+	managed, err := p.loadPromptAgentDefinition()
+	require.NoError(t, err)
+	require.Empty(t, managed.Name)
+	require.NoError(t, applyPromptAgentServiceName(&managed, p.serviceConfig.GetName()))
+	require.Equal(t, "service-agent", managed.Name)
+}
+
+func TestLoadPromptDef_RootRefRejectsWrongKind(t *testing.T) {
+	p := writePromptDefinitionRef(t, `
+kind: hosted
+name: hosted-agent
+protocols: []
+`, nil)
+
+	_, err := p.loadPromptAgentDefinition()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
+	require.Contains(t, localErr.Message, `kind "hosted"`)
+}
+
+func TestLoadPromptDef_RootRefRejectsMalformedDefinition(t *testing.T) {
+	p := writePromptDefinitionRef(t, "kind: [prompt\n", nil)
+
+	_, err := p.loadPromptAgentDefinition()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, foundry.CodeInvalidFileRef, localErr.Code)
+}
+
+func TestPromptAgentConventionDir(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{servicePath: filepath.Join("project", "service")}
+	require.Equal(t, p.servicePath, p.promptAgentConventionDir())
+
+	p.agentDefinitionPath = filepath.Join("project", "definitions", "prompt.yaml")
+	require.Equal(t, filepath.Dir(p.agentDefinitionPath), p.promptAgentConventionDir())
 }
 
 // TestResolvePromptAgentGraph_ValidatesModelAndInstructions verifies the graph

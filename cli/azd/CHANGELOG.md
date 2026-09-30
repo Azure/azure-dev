@@ -1,14 +1,16 @@
 # Release History
 
-## 1.35.0-beta.1 (Unreleased)
+## 1.35.0 (2026-09-30)
 
 ### Features Added
 
-### Breaking Changes
+- [[#10204]](https://github.com/Azure/azure-dev/pull/10204) Add `azd deploy --preview` support for built-in service hosts, including App Service, Container Apps, Functions, Static Web Apps, AKS, and AI endpoints.
+- [[#10223]](https://github.com/Azure/azure-dev/pull/10223) Add support for deploying to Container Apps Express environments.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#10157]](https://github.com/Azure/azure-dev/pull/10157) Fix deployment timeouts being shown as skipped steps or obscured by their underlying errors.
+- [[#10191]](https://github.com/Azure/azure-dev/pull/10191) Fix incomplete environment configuration updates and a race in task-list rendering.
 
 ## 1.34.2 (2026-09-23)
 

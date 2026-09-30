@@ -957,6 +957,59 @@ func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
 	}))
 }
 
+// TestDocSchemaInvocationsModerationSelectors pins the schema-side guard on stream selectors.
+// agent_yaml's validator rejects a "$."-prefixed textField too, but the JSON Schema is a
+// separate protection — editors apply it before azd ever runs — so it needs its own coverage.
+// Without this, the pattern could be dropped from the schema and only the Go check would fail.
+func TestDocSchemaInvocationsModerationSelectors(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	agent := func(selector map[string]any) map[string]any {
+		return map[string]any{
+			"kind": "hosted",
+			"policies": []any{
+				map[string]any{
+					"type":          "rai_policy",
+					"raiPolicyName": "/subscriptions/s/raiPolicies/p",
+					"invocationsModeration": map[string]any{
+						"responseMode":    "streaming",
+						"inputPaths":      []any{"$.input"},
+						"streamSelectors": []any{selector},
+					},
+				},
+			},
+		}
+	}
+
+	require.NoError(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+		"textField": "delta",
+	})))
+	// textField is optional; the service defaults it to "delta".
+	require.NoError(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+	})))
+
+	// The bug this guard exists for: a selector expression names no field on the payload, so
+	// the frame contributes no text and output screening is silently skipped.
+	require.Error(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+		"textField": "$.delta",
+	})))
+	require.Error(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+		"textField": "$",
+	})))
+
+	// eventType must be present and non-blank.
+	require.Error(t, schema.validate(agent(map[string]any{"textField": "delta"})))
+	require.Error(t, schema.validate(agent(map[string]any{
+		"eventType": "   ",
+		"textField": "delta",
+	})))
+}
+
 func TestActiveDocAgentConfig(t *testing.T) {
 	t.Parallel()
 

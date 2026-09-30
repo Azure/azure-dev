@@ -818,13 +818,13 @@
         },
         "inputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the request text: $ root, dotted members, array indexes, and [*] wildcards. Required when inputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
         "outputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the buffered response text: $ root, dotted members, array indexes, and [*] wildcards. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
@@ -880,8 +880,8 @@
       "type": "object",
       "description": "Locates the text to moderate inside a single server-sent event frame.",
       "properties": {
-        "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
-        "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
+        "eventType": { "type": "string", "pattern": "\\S", "description": "Value of the \"type\" field inside the event payload that this selector applies to." },
+        "textField": { "type": "string", "pattern": "^[^$]", "description": "Name of the field on the frame payload holding the text, for example \"delta\". This is a field name, not a selector expression: do not prefix it with \"$.\". Defaults to \"delta\" when omitted." }
       },
       "required": ["eventType"],
       "additionalProperties": false

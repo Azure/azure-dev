@@ -36,8 +36,10 @@ azd ai eval generate --agent-instruction-file "./instruction files/agent.txt" --
 Generation derives default artifact names from the agent's deployed name in local
 project metadata, not from its service key or instruction source. A bare invocation,
 `--target` with that key, and `--target` with the deployed name therefore use the same
-prefix. If the project lookup fails, provide explicit artifact names or retry;
-the CLI does not silently switch prefixes.
+prefix. A confirmed absence of an azd project preserves an explicitly named
+remote agent, so standalone generation still derives defaults. Other project
+lookup failures require explicit artifact names or a retry; the CLI does not
+silently switch prefixes on a transport or permission failure.
 The naming prefix stays separate from the original target selector, so deriving
 artifact names does not introduce an additional deployed-name lookup at submission.
 Dataset generation names are limited to 50 characters. Long default prefixes use
@@ -46,6 +48,9 @@ datasets, while retaining `-turn-tests` or `-conversation-tests` and room for a
 collision number. Explicit overlong `--dataset-name` values are rejected, never
 truncated. This generation-specific dataset limit is not imposed on evaluators
 or on existing asset lookups. Existing files and catalog entries are not renamed.
+If an explicit dataset name leaves no room for a collision number, the collision
+prompt offers only regeneration or cancellation rather than truncating the name
+or its evaluation-level suffix.
 
 ## What gets deployed
 
@@ -176,9 +181,12 @@ Authored evaluation configuration must contain one YAML document with unique,
 literal string top-level keys. Init and catalog edits reject multiple documents,
 duplicate keys, and merge, alias or complex top-level keys rather than silently dropping
 or ambiguously updating content. Aliases in values remain supported.
-If saving the root `azure.yaml` service fails and the host acknowledges that
-the save finished unsuccessfully, init rolls back its eval-config edit so the
+If adding the root project service fails and the host acknowledges that
+the operation finished unsuccessfully, init rolls back its eval-config edit so the
 same command can be retried after restoring root write access.
+The root snapshot uses the host's `azure.yaml`, then `azure.yml` filename
+preference. A missing or changed root filename is an uncertain snapshot and
+requires retaining the scaffold for inspection.
 Existing config bytes are restored; only a new config written by that attempt
 is removed. Dataset files, artifact directories, lock files, and existing
 `.gitignore` rules are retained. If either configuration changes during wiring,
@@ -190,6 +198,10 @@ retains the scaffold and reports manual recovery instead of promising an
 automatic retry. Inspect the retained eval and its root service reference;
 do not delete preexisting evaluations. This does not require a newer SDK or
 change the minimum supported host version.
+Host builds with completed-operation acknowledgment also cover rejection before
+a save, including unsupported layered projects. Older installed hosts do not
+gain that behavior from an extension update. Completion is not proof that the
+root file stayed unchanged; byte comparisons and ownership checks still apply.
 For every dataset mode, init checks locally available files for non-empty JSONL
 object rows before creating locks, ignore files, artifact directories, or
 configuration. Malformed JSON, empty datasets, arrays, scalars, and empty objects
@@ -206,6 +218,9 @@ Interactive init reports invalid rows and asks for a corrected or different
 dataset before confirmation; press Ctrl+C at that prompt to cancel without
 authored changes. Under `--no-prompt` or `--output json`, invalid local rows
 fail immediately without writing configuration.
+When the effective turn cap is too low, init names a valid `--max-turns` value
+to use on a new invocation, or asks you to lower the row's desired turns.
+Correcting the dataset never silently changes the selected cap.
 Local files derive their dataset name from the filename without its extension.
 That name must be non-empty, cannot be `.` or `..`, and must satisfy the existing
 dataset lookup-name rules: at most 255 bytes, with no path separators or
@@ -222,6 +237,10 @@ The configuration destination must not be the selected local dataset itself,
 including equivalent paths, hard links, or symbolic links to the same file.
 Init rejects that conflict before authoring and rechecks identity before writing;
 choose a separate `--path` destination rather than replacing the input rows.
+If a directory's selected canonical or legacy configuration filename changes
+while init is awaiting confirmation, init refuses the changed destination.
+Review the files and retry with an exact `--path` filename. Under the configuration
+lock, validation, scaffold writes, and root wiring all use that same filename.
 The successful human `eval create` next step retains that filename rather than
 selecting the default config in the artifact directory.
 If that path cannot be portably quoted, init displays escaped exact-name/path

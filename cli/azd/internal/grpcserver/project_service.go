@@ -39,6 +39,7 @@ type projectService struct {
 	ghCli               *github.Cli
 	configMutationMu    sync.Mutex
 	saveProject         func(context.Context, *project.ProjectConfig, string) error
+	mapService          func(*azdext.ServiceConfig) (*project.ServiceConfig, error)
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -68,6 +69,11 @@ func NewProjectService(
 		importManager:       importManager,
 		ghCli:               ghCli,
 		saveProject:         project.Save,
+		mapService: func(source *azdext.ServiceConfig) (*project.ServiceConfig, error) {
+			var service *project.ServiceConfig
+			err := mapper.Convert(source, &service)
+			return service, err
+		},
 	}
 }
 
@@ -230,13 +236,31 @@ func (s *projectService) envResolver() mapper.Resolver {
 //
 // The service name from req.Service.Name is used as the key in the services map.
 // If the services map doesn't exist, it will be initialized.
-func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceRequest) (*azdext.EmptyResponse, error) {
+func (s *projectService) AddService(
+	ctx context.Context, req *azdext.AddServiceRequest,
+) (_ *azdext.EmptyResponse, resultErr error) {
 	if req.Service == nil || req.Service.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
 	}
 
 	s.configMutationMu.Lock()
 	defer s.configMutationMu.Unlock()
+
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	tokens := incoming.Get("azd-project-add-service-operation")
+	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
+		token := tokens[0]
+		// Runs after synchronous work and cache restoration, but before releasing the mutation lock.
+		// The named error stays nil during a panic, which is not a confirmed completion.
+		defer func() {
+			if resultErr == nil {
+				return
+			}
+			if err := grpc.SetTrailer(ctx, metadata.Pairs("azd-project-add-service-save-failed", token)); err != nil {
+				resultErr = fmt.Errorf("%w; acknowledging completed operation failure: %w", resultErr, err)
+			}
+		}()
+	}
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
@@ -259,8 +283,8 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 		return nil, status.Error(codes.Unimplemented, "adding services to layered projects is not supported")
 	}
 
-	serviceConfig := &project.ServiceConfig{}
-	if err := mapper.Convert(req.Service, &serviceConfig); err != nil {
+	serviceConfig, err := s.mapService(req.Service)
+	if err != nil {
 		return nil, fmt.Errorf("failed converting service configuration, %w", err)
 	}
 
@@ -295,16 +319,6 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 			projectConfig.Services[req.Service.Name] = previous
 		} else {
 			delete(projectConfig.Services, req.Service.Name)
-		}
-		// Save, including atomic-file retries and cleanup, is synchronous.
-		// Restore the cache before acknowledging that this attempt cannot write later.
-		incoming, _ := metadata.FromIncomingContext(ctx)
-		if tokens := incoming.Get("azd-project-add-service-operation"); len(tokens) == 1 &&
-			len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
-			if trailerErr := grpc.SetTrailer(ctx,
-				metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); trailerErr != nil {
-				return nil, fmt.Errorf("%w; acknowledging completed save failure: %w", err, trailerErr)
-			}
 		}
 		return nil, err
 	}

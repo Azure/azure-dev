@@ -106,6 +106,9 @@ For `Project.AddService`, use the optional
 fresh per-call metadata, and local ownership checks before compensating local
 edits. Older hosts require retention and explicit recovery guidance rather than
 status-code-based rollback.
+The acknowledgment covers completed pre-save rejections only on host builds
+that implement that behavior. It proves that the operation cannot write later;
+it does not replace a root-file comparison or ownership checks.
 
 For comprehensive extension development documentation, see:
 

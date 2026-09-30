@@ -235,6 +235,7 @@ const (
 type scaffoldSummary struct {
 	answers    initAnswers
 	configPath string
+	rootConfig string
 	// wiring is what the azure.yaml edit will be, so the Files block states
 	// the change rather than implying it.
 	wiring    string
@@ -332,5 +333,5 @@ func writeScaffoldSummary(out io.Writer, s scaffoldSummary) {
 	fmt.Fprint(out, messages.ScaffoldSummaryLine(
 		"Config file", filepath.ToSlash(s.configPath)))
 	fmt.Fprint(out, messages.ScaffoldSummaryFiles(
-		filepath.ToSlash(s.configPath), rootConfigName, s.wiring == wiringAdded))
+		filepath.ToSlash(s.configPath), cmp.Or(s.rootConfig, rootConfigName), s.wiring == wiringAdded))
 }

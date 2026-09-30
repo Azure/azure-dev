@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/messages"
+
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,7 +121,7 @@ func TestNoProposalWhenEveryNumberedFormIsTaken(t *testing.T) {
 
 func TestDatasetCollisionProposalRespectsGenerationNameLimit(t *testing.T) {
 	dir := t.TempDir()
-	name := strings.Repeat("a", 50)
+	name := strings.Repeat("a", 48)
 	path := filepath.Join(dir, name+".jsonl")
 	proposed := nextFreeArtifactName(name, path, generatedDatasetNameMaxLength)
 	assert.Len(t, proposed, 50)
@@ -130,13 +132,14 @@ func TestDatasetCollisionProposalRespectsGenerationNameLimit(t *testing.T) {
 	assert.True(t, strings.HasSuffix(next, "-3"))
 	assert.Equal(t, name+"-2", nextFreeArtifactName(name, filepath.Join(dir, name+".json"), 0),
 		"evaluator proposals keep their existing behavior")
+	assert.Empty(t, nextFreeArtifactName(strings.Repeat("a", 50), path, generatedDatasetNameMaxLength))
 }
 
 func TestDatasetCollisionPickerOffersBoundedRename(t *testing.T) {
 	t.Setenv("AZD_NO_PROMPT", "false")
 	prompts := &conversationPromptServer{decision: collisionRename}
 	h := newInitHarness(t, nil, prompts)
-	name := strings.Repeat("a", 50)
+	name := strings.Repeat("a", 48)
 	path := filepath.Join(h.dir, name+".jsonl")
 	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
 	before := initFileSnapshot(t, h.dir)
@@ -148,4 +151,26 @@ func TestDatasetCollisionPickerOffersBoundedRename(t *testing.T) {
 	assert.True(t, strings.HasSuffix(chosen, "-2"))
 	assert.False(t, replace)
 	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+}
+
+func TestDatasetCollisionPickerDoesNotTruncateExplicitNames(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &instructionPromptServer{choice: new(int32(0))}
+	h := newInitHarness(t, nil, prompts)
+	name := strings.Repeat("a", 30) + "-conversation-tests"
+	require.Len(t, name, 49)
+	path := filepath.Join(h.dir, name+".jsonl")
+	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
+	before := initFileSnapshot(t, h.dir)
+	cmd := generateCmd(t, false)
+	cmd.SetContext(t.Context())
+	got, replace, err := resolveArtifactCollision(cmd, "Dataset", name, path, false)
+	require.NoError(t, err)
+	assert.Equal(t, name, got)
+	assert.True(t, replace)
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	assert.Equal(t, []string{messages.RegenerateArtifactChoice(), messages.CancelGenerationChoice()}, prompts.choices)
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	assert.Empty(t, nextFreeArtifactName(name, path, generatedDatasetNameMaxLength))
 }

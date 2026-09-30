@@ -5,7 +5,9 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +19,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type projectSaveTransport struct {
@@ -204,4 +208,95 @@ func TestProjectAddServiceFailedSaveRestorationDoesNotDropConcurrentAddition(t *
 	require.NoError(t, err)
 	assert.Contains(t, saved.Services, "kept")
 	assert.NotContains(t, saved.Services, "failed")
+}
+
+func TestProjectAddServiceAcknowledgesCompletedPreSaveRejection(t *testing.T) {
+	for _, failure := range []string{"layered", "reload", "project context", "mapper"} {
+		t.Run(failure, func(t *testing.T) {
+			dir := t.TempDir()
+			azdContext := azdcontext.NewAzdContextWithDirectory(dir)
+			body := []byte("name: test\n")
+			switch failure {
+			case "layered":
+				body = []byte("name: test\nlayers:\n  - name: app\n    services:\n      api:\n" +
+					"        host: appservice\n        language: python\n        project: ./src/api\n")
+			case "reload":
+				body = []byte("name: [malformed\n")
+			}
+			require.NoError(t, os.WriteFile(azdContext.ProjectPath(), body, 0o600))
+			contextProvider := lazy.From(azdContext)
+			if failure == "project context" {
+				contextProvider = lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return nil, os.ErrPermission })
+			}
+			server := NewProjectService(contextProvider, nil, nil, lazy.From(&project.ProjectConfig{Name: "test"}), nil, nil)
+			service, ok := server.(*projectService)
+			require.True(t, ok)
+			if failure == "mapper" {
+				service.mapService = func(*azdext.ServiceConfig) (*project.ServiceConfig, error) {
+					return nil, errors.New("synthetic mapper failure")
+				}
+			}
+			service.saveProject = func(context.Context, *project.ProjectConfig, string) error {
+				t.Error("a rejected request must not reach Save")
+				return errors.New("unexpected save")
+			}
+			stream := &projectSaveTransport{}
+			ctx := grpc.NewContextWithServerTransportStream(t.Context(), stream)
+			ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("azd-project-add-service-operation", "pre-save-attempt"))
+			_, err := service.AddService(ctx, &azdext.AddServiceRequest{
+				Service: &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval"},
+			})
+			require.Error(t, err)
+			if failure == "layered" {
+				assert.Equal(t, codes.Unimplemented, status.Code(err))
+			}
+			if failure == "mapper" {
+				assert.ErrorContains(t, err, "synthetic mapper failure")
+			}
+			assert.Equal(t, []string{"pre-save-attempt"}, stream.savedFailure())
+			after, err := os.ReadFile(azdContext.ProjectPath())
+			require.NoError(t, err)
+			assert.Equal(t, body, after)
+			require.True(t, service.configMutationMu.TryLock(), "all return paths must release the mutation lock")
+			service.configMutationMu.Unlock()
+		})
+	}
+}
+
+func TestProjectAddServicePreSaveRejectionRequiresOneValidToken(t *testing.T) {
+	for _, tokens := range [][]string{nil, {""}, {"one", "two"}, {strings.Repeat("a", 65)}} {
+		t.Run("", func(t *testing.T) {
+			service := &projectService{
+				lazyAzdContext: lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return nil, os.ErrPermission }),
+			}
+			stream := &projectSaveTransport{}
+			ctx := grpc.NewContextWithServerTransportStream(t.Context(), stream)
+			ctx = metadata.NewIncomingContext(ctx, metadata.MD{"azd-project-add-service-operation": tokens})
+			_, err := service.AddService(ctx, &azdext.AddServiceRequest{Service: &azdext.ServiceConfig{Name: "evals"}})
+			require.ErrorIs(t, err, os.ErrPermission)
+			assert.Empty(t, stream.savedFailure())
+		})
+	}
+}
+
+func TestProjectAddServicePanicDoesNotAcknowledgeCompletion(t *testing.T) {
+	dir := t.TempDir()
+	azdContext := azdcontext.NewAzdContextWithDirectory(dir)
+	cfg := &project.ProjectConfig{Name: "test"}
+	require.NoError(t, project.Save(t.Context(), cfg, azdContext.ProjectPath()))
+	server := NewProjectService(lazy.From(azdContext), nil, nil, lazy.From(cfg), nil, nil)
+	service, ok := server.(*projectService)
+	require.True(t, ok)
+	service.mapService = func(*azdext.ServiceConfig) (*project.ServiceConfig, error) {
+		panic("synthetic mapper panic")
+	}
+	stream := &projectSaveTransport{}
+	ctx := grpc.NewContextWithServerTransportStream(t.Context(), stream)
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("azd-project-add-service-operation", "panicked-attempt"))
+	assert.Panics(t, func() {
+		_, _ = service.AddService(ctx, &azdext.AddServiceRequest{Service: &azdext.ServiceConfig{Name: "evals"}})
+	})
+	assert.Empty(t, stream.savedFailure())
+	require.True(t, service.configMutationMu.TryLock())
+	service.configMutationMu.Unlock()
 }

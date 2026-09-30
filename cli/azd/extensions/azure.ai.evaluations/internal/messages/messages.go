@@ -665,8 +665,12 @@ func DatasetIsRequired() string {
 
 // InitDatasetRejected explains how to correct an unusable local dataset.
 func InitDatasetRejected(why error) string {
-	return fmt.Sprintf("\n  %v\n  Correct the dataset file and enter its path or dataset name again, "+
-		"or choose another dataset. Press Ctrl+C to cancel.\n", why)
+	detail := why.Error()
+	if local, ok := errors.AsType[*azdext.LocalError](why); ok && local.Suggestion != "" {
+		detail += "\n  " + local.Suggestion
+	}
+	return fmt.Sprintf("\n  %s\n  Correct the dataset file and enter its path or dataset name again, "+
+		"or choose another dataset. Press Ctrl+C to cancel.\n", detail)
 }
 
 // SelectingDataset reports a failed dataset prompt.

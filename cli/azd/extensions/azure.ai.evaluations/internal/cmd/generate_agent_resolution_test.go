@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // projectService answers the one call remoteAgentName makes. newTestAzdClient
@@ -370,6 +372,39 @@ func TestGenerationKeepsSelectorWhenServiceKeysOverlapDeployedNames(t *testing.T
 					assert.Contains(t, handoff, "--target support")
 				})
 			}
+		})
+	}
+}
+
+func TestGenerationDefaultNamesOutsideAProject(t *testing.T) {
+	const target = "remote-agent"
+	for _, tc := range []struct {
+		name        string
+		err         error
+		wantFailure bool
+	}{
+		{"no project", status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`"), false},
+		{"unreachable daemon", status.Error(codes.Unavailable, "connection refused"), true},
+		{"unreadable project", status.Error(codes.Unknown, "loading project: permission denied"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ec := &evalContext{azdClient: projectServingClient(t, nil, tc.err)}
+			name, err := ec.generationNameTarget(t.Context(), target)
+			if tc.wantFailure {
+				require.Error(t, err)
+				assert.Empty(t, name)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, target, name)
+			plans, err := buildGeneratePlans(generateRequest{
+				flags:  &generateFlags{path: t.TempDir(), target: target},
+				target: name, dataset: true, evaluator: true, evaluationLevel: "turn",
+			})
+			require.NoError(t, err)
+			require.Len(t, plans, 2)
+			assert.Equal(t, "remote-agent-turn-tests", plans[0].Name)
+			assert.Equal(t, "remote-agent-evaluator", plans[1].Name)
 		})
 	}
 }

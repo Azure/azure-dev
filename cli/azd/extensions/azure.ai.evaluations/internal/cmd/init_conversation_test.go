@@ -515,3 +515,30 @@ func TestInitRootOutputValidationAndHelp(t *testing.T) {
 	require.NoError(t, root.Execute())
 	assert.Contains(t, out.String(), "Output format: default (human-readable) or json")
 }
+
+func TestInitImpliedStaticModeConflictNamesActualChoice(t *testing.T) {
+	for _, unattended := range []bool{false, true} {
+		t.Run(boolText(unattended), func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &conversationPromptServer{mode: 0}
+			h := newInitHarness(t, nil, prompts)
+			before := initFileSnapshot(t, h.dir)
+			args := []string{"--evaluation-level", "conversation", "--source", "dataset", "--target", "agent"}
+			if unattended {
+				args = append(args, "--no-prompt")
+			}
+			_, err := executeConversationInit(t, args...)
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+			if unattended {
+				assert.Contains(t, local.Message, "defaulted to static")
+			} else {
+				assert.Contains(t, local.Message, "selected static")
+			}
+			assert.Contains(t, local.Suggestion, "--conversation-mode simulation")
+			assert.Contains(t, local.Suggestion, "--simulation-model")
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+		})
+	}
+}

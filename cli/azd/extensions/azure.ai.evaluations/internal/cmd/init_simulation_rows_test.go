@@ -188,9 +188,9 @@ func TestInitSimulationTurnLimitGuidance(t *testing.T) {
 	}{
 		{"lower row at maximum", 20, 21, 20, 20,
 			"Lower simulation_configuration.desired_num_turns to at most 20 on that row. " +
-				"simulation.max_turns accepts 1 to 20."},
+				"--max-turns accepts 1 to 20."},
 		{"raise cap within bounds", 5, 6, 6, 6,
-			"Raise simulation.max_turns to at least 6, or lower simulation_configuration.desired_num_turns on that row."},
+			"Rerun init with --max-turns 6 (1-20), or lower simulation_configuration.desired_num_turns on that row."},
 	} {
 		for _, output := range []string{"default", "json"} {
 			t.Run(tc.name+"/"+output, func(t *testing.T) {
@@ -543,10 +543,29 @@ func TestInitLocalSeedValidationLeavesOtherModesAndRegisteredNamesAlone(t *testi
 						[]byte("datasets:\n  - name: registered-seeds\n    version: '1.0'\n"), 0o600))
 				}
 			}
+
 			text, err := executeConversationInit(t, args...)
 			require.NoError(t, err)
 			assert.True(t, json.Valid([]byte(text)))
 			assertOneInitCompleted(t, h, "dataset")
 		})
 	}
+}
+
+func TestInitSimulationCorrectionDisplaysFlagRemedy(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &seedCorrectionPromptServer{datasets: []string{"./corrected.jsonl"}}
+	h := newInitHarness(t, nil, prompts)
+	require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":"help",`+
+		`"simulation_configuration":{"desired_num_turns":6}}`), 0o600))
+	require.NoError(t, os.WriteFile("corrected.jsonl", []byte(`{"test_case_description":"help",`+
+		`"simulation_configuration":{"desired_num_turns":5}}`), 0o600))
+	text, err := executeConversationInit(t, append(simulationInitArgs(h.seedRows), "--max-turns", "5")...)
+	require.NoError(t, err)
+	assert.Contains(t, text, "Rerun init with --max-turns 6 (1-20)")
+	assert.Contains(t, text, "or lower simulation_configuration.desired_num_turns")
+	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Evals, 1)
+	assert.Equal(t, 5, cfg.Evals[0].Simulation.MaxTurns, "re-entering corrected rows must not silently raise the flag")
 }

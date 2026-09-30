@@ -42,6 +42,9 @@ func (a *initAction) validateConversationFlags(source, level, mode string) error
 		}
 	}
 	if mode == conversationModeStatic && a.cmd.Flags().Changed("target") {
+		if !a.cmd.Flags().Changed("conversation-mode") {
+			return messages.InitImpliedStaticTargetConflict(noPrompt(a.cmd))
+		}
 		return messages.InitFlagConflict("target", "cannot be used with --conversation-mode static; no agent is invoked")
 	}
 	if a.cmd.Flags().Changed("simulation-model") && strings.TrimSpace(a.flags.simulationModel) == "" {

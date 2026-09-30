@@ -276,7 +276,7 @@ func TestSimulationTurnLimitGuidance(t *testing.T) {
 				config["max_num_turns"] = tc.perCaseMaximum
 			}
 
-			err := checkDesiredTurns(group, map[string]any{seedConfigField: config}, 0)
+			err := checkDesiredTurns(group, map[string]any{seedConfigField: config}, 0, false)
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok, "turn-limit errors must remain structured: %v", err)
 			assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)

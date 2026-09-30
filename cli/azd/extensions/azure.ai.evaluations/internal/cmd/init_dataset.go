@@ -58,7 +58,7 @@ func validateInitDataset(
 	}
 	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}
 	_, err = inspectJSONL(ctx, path, func(row map[string]any, index int) error {
-		return refuseUnusableSeedRow(group, row, index)
+		return refuseUnusableSeedRow(group, row, index, true)
 	})
 	return err
 }

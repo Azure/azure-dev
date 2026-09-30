@@ -157,7 +157,7 @@ func nextFreeArtifactName(name, path string, maxLength int) string {
 		suffix := "-" + strconv.Itoa(n)
 		stem := []rune(name)
 		if maxLength > 0 && len(stem)+len(suffix) > maxLength {
-			stem = stem[:maxLength-len(suffix)]
+			return ""
 		}
 		candidate := string(stem) + suffix
 		if _, err := os.Stat(filepath.Join(dir, candidate+ext)); os.IsNotExist(err) {

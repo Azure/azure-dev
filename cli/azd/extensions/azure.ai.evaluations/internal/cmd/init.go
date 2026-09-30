@@ -27,6 +27,7 @@ import (
 	"azureaieval/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -238,6 +239,14 @@ func (a *initAction) Run() error {
 	if err != nil {
 		return err
 	}
+	rootPath, err := initRootConfigPath(azdProject.GetPath())
+	if err != nil {
+		return err
+	}
+	rootFilename := rootConfigName
+	if rootPath != "" {
+		rootFilename = filepath.Base(rootPath)
+	}
 
 	configPath, err := project.ResolveEvalConfigPath(path)
 	if err != nil {
@@ -247,12 +256,12 @@ func (a *initAction) Run() error {
 	// reporting it as created would claim a file it only added to.
 	_, configExistedErr := os.Stat(configPath)
 	configExisted := configExistedErr == nil
-	authored, err := project.ReadAuthoredConfig(path)
+	authored, err := project.ReadAuthoredConfig(configPath)
 	if err != nil {
 		return err
 	}
 	cfg := declaredSoFar(authored)
-	evalDir := project.EvalDirOf(path)
+	evalDir := filepath.Dir(configPath)
 
 	// From here to the lock the questions run in the order the spec asks
 	// them, because each one changes what the next is about: the source
@@ -291,6 +300,7 @@ func (a *initAction) Run() error {
 		decision, err := confirmScaffold(a.cmd, out, scaffoldSummary{
 			answers:    answers,
 			configPath: configPath,
+			rootConfig: rootFilename,
 			wiring:     wiring,
 			maxTraces:  a.flags.maxTraces,
 		})
@@ -336,13 +346,19 @@ func (a *initAction) Run() error {
 	// a person. The configuration is read again because the copy above
 	// was taken before the prompt, and a `generate` may well have
 	// finished writing to it since.
-	unlockConfig, err := project.LockEvalConfig(a.cmd.Context(), path)
+	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
+	unlockConfig, err := project.LockEvalConfig(a.cmd.Context(), configPath)
 	if err != nil {
 		return err
 	}
 	defer unlockConfig()
 
-	authored, err = project.ReadAuthoredConfig(path)
+	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
+	authored, err = project.ReadAuthoredConfig(configPath)
 	if err != nil {
 		return err
 	}
@@ -403,24 +419,34 @@ func (a *initAction) Run() error {
 		return err
 	}
 
-	if err := refuseDuplicateEval(path, plan.eval); err != nil {
+	if err := refuseDuplicateEval(configPath, plan.eval); err != nil {
 		return err
 	}
 	plan.configLocation = path
 
-	rootPath := filepath.Join(azdProject.GetPath(), rootConfigName)
-	// #nosec G304 -- snapshot the current azd project's root before wiring it.
-	rootBefore, err := os.ReadFile(rootPath)
+	rootPath, err = initRootConfigPath(azdProject.GetPath())
 	if err != nil {
-		return messages.ReadingPath(rootPath, err)
+		return err
 	}
-	// Recheck file identity at the write boundary; a link can change after row validation.
+	var rootBefore []byte
+	if rootPath != "" {
+		rootFilename = filepath.Base(rootPath)
+		// #nosec G304 -- snapshot the current azd project's root before wiring it.
+		rootBefore, err = os.ReadFile(rootPath)
+		if err != nil {
+			return messages.ReadingPath(rootPath, err)
+		}
+	}
+	// Recheck resolution and identity, then write the same exact filename the user confirmed.
+	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
 	if source != initSourceTraces {
 		if _, err := resolveInitDatasetLocalPath(configPath, datasetRef, cfg); err != nil {
 			return err
 		}
 	}
-	rollback, err := project.ApplyScaffoldWithRollback(path, project.ScaffoldWrite{
+	rollback, err := project.ApplyScaffoldWithRollback(configPath, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],
 		Evaluators: cfg.Evaluators[declaredEvaluators:],
 		Evals:      cfg.Evals[declaredEvals:],
@@ -432,11 +458,20 @@ func (a *initAction) Run() error {
 	// Scaffolding a config azd cannot see is half a step: the eval
 	// service has to be referenced from the root config before any of
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
-	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
+	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath, rootFilename)
 	if err != nil {
 		if _, uncertain := errors.AsType[*initWiringUncertainError](err); uncertain {
 			return messages.InitWiringRollbackFailed(configPath, err,
-				errors.New("the host may still finish saving azure.yaml; the scaffold was retained"))
+				errors.New("the host may still finish saving the project configuration; the scaffold was retained"))
+		}
+		currentRoot, rootErr := initRootConfigPath(azdProject.GetPath())
+		if rootErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, rootErr)
+		}
+		if rootPath == "" || currentRoot != rootPath {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				errors.New("the project configuration path was unavailable or changed during wiring; "+
+					"the scaffold was retained"))
 		}
 		// A lost RPC response can follow a successful root save. Do not remove
 		// a scaffold the root may already reference, or overwrite another edit.
@@ -447,7 +482,7 @@ func (a *initAction) Run() error {
 		}
 		if !bytes.Equal(rootBefore, rootAfter) {
 			return messages.InitWiringRollbackFailed(configPath, err,
-				fmt.Errorf("%s changed during wiring; the scaffold was retained", rootConfigName))
+				fmt.Errorf("%s changed during wiring; the scaffold was retained", filepath.Base(rootPath)))
 		}
 		if rollbackErr := rollback(); rollbackErr != nil {
 			return messages.InitWiringRollbackFailed(configPath, err, rollbackErr)
@@ -499,9 +534,9 @@ func (a *initAction) Run() error {
 	fmt.Fprint(out, messages.ScaffoldConfigLine(filepath.ToSlash(configPath), configExisted))
 	switch rootWiring {
 	case wiringAdded:
-		fmt.Fprint(out, messages.AddedServiceLine(rootConfigName, serviceName))
+		fmt.Fprint(out, messages.AddedServiceLine(rootFilename, serviceName))
 	case wiringPresent:
-		fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootConfigName, serviceName))
+		fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootFilename, serviceName))
 	}
 
 	// The targeted create is the primary next action: it reconciles the one
@@ -528,6 +563,32 @@ type initWiringUncertainError struct{ error }
 
 func (e *initWiringUncertainError) Unwrap() error {
 	return e.error
+}
+
+func checkInitConfigDestination(location, expected string) error {
+	actual, err := project.ResolveEvalConfigPath(location)
+	if err != nil {
+		return err
+	}
+	if !sameFilePath(filepath.Clean(actual), filepath.Clean(expected)) {
+		return messages.InitConfigDestinationChanged(expected, actual)
+	}
+	return nil
+}
+
+func initRootConfigPath(projectDir string) (string, error) {
+	for _, name := range azdcontext.ProjectFileNames {
+		path := filepath.Join(projectDir, name)
+		info, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) || err == nil && info.IsDir() {
+			continue
+		}
+		if err != nil {
+			return "", messages.ReadingPath(path, err)
+		}
+		return path, nil
+	}
+	return "", nil
 }
 
 // initSourceInput is what settling the data source depends on.
@@ -1405,7 +1466,7 @@ func evalServicePointingAt(
 // whatever shape azd gives it.
 func ensureRootEvalService(
 	ctx context.Context,
-	serviceName, target, configPath string,
+	serviceName, target, configPath, rootFilename string,
 ) (string, string, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -1454,7 +1515,7 @@ func ensureRootEvalService(
 		if len(ack) != 1 || ack[0] != token {
 			err = &initWiringUncertainError{error: err}
 		}
-		return "", "", messages.AddingServiceTo(rootConfigName, err)
+		return "", "", messages.AddingServiceTo(rootFilename, err)
 	}
 	return wiringAdded, name, nil
 }

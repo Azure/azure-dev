@@ -29,6 +29,18 @@ func InitFlagConflict(flag, requirement string) error {
 		"Remove the conflicting flag, or select a compatible source and conversation mode.")
 }
 
+// InitImpliedStaticTargetConflict explains the default or interactive choice, not an unpassed flag.
+func InitImpliedStaticTargetConflict(defaulted bool) error {
+	choice := "you selected static conversation mode"
+	if defaulted {
+		choice = "conversation mode defaulted to static because --conversation-mode was omitted"
+	}
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		"--target cannot be used: "+choice+"; no agent is invoked",
+		"Omit --target to score completed messages, or select --conversation-mode simulation "+
+			"with --simulation-model connection-name/model-deployment for scenario seeds.")
+}
+
 // InitDatasetFileConflict refuses a file that would be ignored by add-only authoring.
 func InitDatasetFileConflict(name, path string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
@@ -43,6 +55,13 @@ func InitDatasetDestinationConflict(datasetPath, configPath string) error {
 		fmt.Sprintf("Dataset %q and configuration destination %q resolve to the same file",
 			datasetPath, configPath),
 		"Choose a separate configuration file or directory with --path; init must not overwrite the input dataset.")
+}
+
+// InitConfigDestinationChanged refuses a directory selection that moved to a different config file.
+func InitConfigDestinationChanged(expected, actual string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("The configuration destination changed from %q to %q during initialization", expected, actual),
+		"Review the files and retry with --path naming the exact configuration file you intend to update.")
 }
 
 // InitDatasetNameInvalid refuses a filename that cannot name a catalog entry.

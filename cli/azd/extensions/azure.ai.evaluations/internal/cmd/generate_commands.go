@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/exterrors"
+	"azureaieval/internal/foundry/projectctx"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -136,9 +137,10 @@ func prepareGeneration(
 	cmd *cobra.Command,
 	f *generateFlags,
 	plan generationPlan,
+	newContext func(context.Context, string) (*evalContext, error),
 ) (*evalContext, generationPlan, error) {
 	ctx := cmd.Context()
-	ec, err := newEvalContext(ctx, f.endpoint)
+	ec, err := newContext(ctx, f.endpoint)
 	if err != nil {
 		return nil, plan, err
 	}
@@ -207,6 +209,9 @@ func (ec *evalContext) detectAgentTarget(cmd *cobra.Command) (string, error) {
 func (ec *evalContext) generationNameTarget(ctx context.Context, target string) (string, error) {
 	proj, err := ec.azdProject(ctx)
 	if err != nil {
+		if projectctx.HostedSourceAbsent(err) && !projectctx.DaemonUnreachable(err) {
+			return target, nil
+		}
 		return "", messages.GenerationNameTargetUnresolved(err)
 	}
 	return project.RemoteAgentName(proj, target)

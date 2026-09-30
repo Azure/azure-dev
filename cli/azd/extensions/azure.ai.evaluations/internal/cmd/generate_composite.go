@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -50,14 +51,19 @@ type generateCommandFlags struct {
 
 // generateAction generates a dataset and a rubric evaluator together.
 type generateAction struct {
-	cmd   *cobra.Command
-	flags *generateCommandFlags
+	cmd        *cobra.Command
+	flags      *generateCommandFlags
+	newContext func(context.Context, string) (*evalContext, error)
 	// resolved holds what only the service can supply, kept so a second pass
 	// through the confirmation does not read the agent again.
 	resolved generationPlan
 }
 
 func newGenerateCommand() *cobra.Command {
+	return newGenerateCommandWithContext(newEvalContext)
+}
+
+func newGenerateCommandWithContext(newContext func(context.Context, string) (*evalContext, error)) *cobra.Command {
 	flags := &generateCommandFlags{}
 
 	cmd := &cobra.Command{
@@ -74,7 +80,7 @@ func newGenerateCommand() *cobra.Command {
 			"to supply them directly; --no-prompt and --output json never ask.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&generateAction{cmd: cmd, flags: flags}).Run()
+			return (&generateAction{cmd: cmd, flags: flags, newContext: newContext}).Run()
 		},
 	}
 
@@ -182,7 +188,7 @@ func (a *generateAction) Run() error {
 	if err != nil {
 		return err
 	}
-	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, contextPlan)
+	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, contextPlan, a.newContext)
 	if err != nil {
 		return err
 	}

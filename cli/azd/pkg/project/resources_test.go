@@ -400,7 +400,7 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 			if tt.wantExisting != "" {
 				assert.Contains(t, bicep, "scope: resourceGroup(existingStorageIdSegments[2]")
 				assert.NotContains(t, bicep, "module storageAccount ")
-				assert.NotContains(t, bicep, "module api_existingStorage_Contributor ")
+				assert.Contains(t, bicep, "module api_existingStorage_Contributor ")
 			} else {
 				assert.Contains(t, bicep, "dependsOn: [\n    storageAccount\n  ]")
 				assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))

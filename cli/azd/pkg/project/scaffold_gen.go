@@ -631,12 +631,6 @@ func mapHostUses(
 				svcSpec.Env[envKey] = value
 			}
 
-			// Function storage grants its own roles; copy the binding so other services keep their generic grants.
-			if svcSpec.Host == scaffold.FunctionAppKind && useRes.Type == ResourceTypeStorage {
-				functionStorage := *existingDecl
-				functionStorage.RoleAssignments = nil
-				existingDecl = &functionStorage
-			}
 			svcSpec.Existing = append(svcSpec.Existing, existingDecl)
 			continue
 		}

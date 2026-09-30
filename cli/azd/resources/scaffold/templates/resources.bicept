@@ -290,13 +290,11 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
       ] : [],
       [
         {{- range .Services}}
-        {{- if not (isFunctionApp .Host)}}
         {
           principalId: {{bicepName .Name}}Identity.outputs.principalId
           principalType: 'ServicePrincipal'
           roleDefinitionIdOrName: 'Storage Blob Data Contributor'
         }
-        {{- end}}
         {{- end}}
       ]
     )

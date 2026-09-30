@@ -156,12 +156,12 @@ func TestRoutineSummaryTable(t *testing.T) {
 		},
 		{
 			name:         "missing authorization",
-			wantIdentity: "unknown",
+			wantIdentity: routines.RoutineDispatchIdentityAgent,
 		},
 		{
 			name:          "empty identity",
 			authorization: &routines.RoutineAuthorization{},
-			wantIdentity:  "unknown",
+			wantIdentity:  routines.RoutineDispatchIdentityAgent,
 		},
 		{
 			name: "other non-empty identity",
@@ -249,6 +249,37 @@ func TestRoutineSummaryTableReturnsWriteError(t *testing.T) {
 		&routines.Routine{Name: "nightly"},
 	)
 	require.ErrorIs(t, err, writeErr)
+}
+
+type routineSummaryFailOnceWriter struct {
+	output     bytes.Buffer
+	err        error
+	writeCount int
+}
+
+func (writer *routineSummaryFailOnceWriter) Write(data []byte) (int, error) {
+	writer.writeCount++
+	if writer.writeCount == 1 {
+		return 0, writer.err
+	}
+	return writer.output.Write(data)
+}
+
+func TestRoutineSummaryTablePropagatesWriteErrorWithMultilineDescription(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	writer := &routineSummaryFailOnceWriter{err: writeErr}
+	err := routineSummaryTable(writer, &routines.Routine{
+		Name:        "nightly",
+		Description: "First line\nSecond line",
+	})
+
+	require.ErrorIs(t, err, writeErr)
+	assert.Equal(t, 1, writer.writeCount)
+	assert.Empty(t, writer.output.String())
 }
 
 // ─── sortedKeys ──────────────────────────────────────────────────────────────

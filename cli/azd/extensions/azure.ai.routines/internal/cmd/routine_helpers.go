@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -151,13 +152,14 @@ func boolStr(b *bool) string {
 
 // routineSummaryTable writes a short summary of a routine in table format.
 func routineSummaryTable(writer io.Writer, r *routines.Routine) error {
-	tw := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
+	var output bytes.Buffer
+	tw := tabwriter.NewWriter(&output, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "Name:\t%s\n", r.Name)
 	if r.Description != "" {
 		fmt.Fprintf(tw, "Description:\t%s\n", r.Description)
 	}
 	fmt.Fprintf(tw, "Enabled:\t%s\n", boolStr(r.Enabled))
-	identity := "unknown"
+	identity := routines.RoutineDispatchIdentityAgent
 	if r.Authorization != nil && r.Authorization.Identity != "" {
 		identity = r.Authorization.Identity
 	}
@@ -222,6 +224,9 @@ func routineSummaryTable(writer io.Writer, r *routines.Routine) error {
 		}
 	}
 	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("failed to format routine summary: %w", err)
+	}
+	if _, err := io.Copy(writer, &output); err != nil {
 		return fmt.Errorf("failed to write routine summary: %w", err)
 	}
 	return nil

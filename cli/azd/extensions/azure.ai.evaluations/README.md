@@ -40,6 +40,8 @@ prefix. A confirmed absence of an azd project preserves an explicitly named
 remote agent, so standalone generation still derives defaults. Other project
 lookup failures require explicit artifact names or a retry; the CLI does not
 silently switch prefixes on a transport or permission failure.
+Unsupported Project RPCs and environment-absence errors do not establish that
+the project itself is absent and therefore do not enable this fallback.
 The naming prefix stays separate from the original target selector, so deriving
 artifact names does not introduce an additional deployed-name lookup at submission.
 Dataset generation names are limited to 50 characters. Long default prefixes use
@@ -187,6 +189,10 @@ same command can be retried after restoring root write access.
 The root snapshot uses the host's `azure.yaml`, then `azure.yml` filename
 preference. A missing or changed root filename is an uncertain snapshot and
 requires retaining the scaffold for inspection.
+The initially selected root filename is retained across confirmation; if the
+selection changes before writing, init refuses instead of following a new file
+that the running host did not select. This includes a root appearing after
+initially being absent.
 Existing config bytes are restored; only a new config written by that attempt
 is removed. Dataset files, artifact directories, lock files, and existing
 `.gitignore` rules are retained. If either configuration changes during wiring,

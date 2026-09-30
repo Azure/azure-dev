@@ -384,6 +384,10 @@ func TestGenerationDefaultNamesOutsideAProject(t *testing.T) {
 		wantFailure bool
 	}{
 		{"no project", status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`"), false},
+		{"unsupported project service", status.Error(codes.Unimplemented, "unknown service Project"), true},
+		{"unrelated missing resource", status.Error(codes.NotFound, "resource not found"), true},
+		{"missing default environment", status.Error(codes.Unknown, "default environment not found"), true},
+		{"missing named environment", status.Error(codes.Unknown, "'dev': environment not found"), true},
 		{"unreachable daemon", status.Error(codes.Unavailable, "connection refused"), true},
 		{"unreadable project", status.Error(codes.Unknown, "loading project: permission denied"), true},
 	} {

@@ -473,3 +473,46 @@ func TestInitRetainsScaffoldWithoutStableRootSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestInitRejectsRootSelectionDriftAfterConfirmation(t *testing.T) {
+	for _, change := range []string{"preferred yaml appears", "root disappears", "missing root appears"} {
+		t.Run(change, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &conversationPromptServer{}
+			h := newInitHarness(t, nil, prompts)
+			yamlPath := filepath.Join(h.dir, "azure.yaml")
+			ymlPath := filepath.Join(h.dir, "azure.yml")
+			if change == "missing root appears" {
+				require.NoError(t, os.Remove(yamlPath))
+			} else {
+				require.NoError(t, os.Rename(yamlPath, ymlPath))
+			}
+			afterChange := make(chan map[string]string, 1)
+			prompts.onConfirm = func() error {
+				if change == "root disappears" {
+					if err := os.Remove(ymlPath); err != nil {
+						return err
+					}
+				} else {
+					if err := os.WriteFile(yamlPath, []byte("name: another-project\n"), 0o600); err != nil {
+						return err
+					}
+				}
+				select {
+				case afterChange <- initFileSnapshot(t, h.dir):
+				default:
+					return fmt.Errorf("unexpected repeated confirmation")
+				}
+				return nil
+			}
+			text, err := executeConversationInit(t, "--name", "root-drift", "--path", "quality",
+				"--source", "traces", "--target", "agent", "--judge-model", "judge",
+				"--evaluation-level", "turn", "--trace-days", "7")
+			require.ErrorContains(t, err, "root project configuration changed")
+			assert.Zero(t, h.project.wiringAttempts(), "do not wire a host whose cached root differs from selection")
+			assert.Empty(t, h.usage.reported())
+			assert.Equal(t, <-afterChange, initFileSnapshot(t, h.dir), "only the concurrent root change may survive")
+			assert.NotContains(t, text, "Next:")
+		})
+	}
+}

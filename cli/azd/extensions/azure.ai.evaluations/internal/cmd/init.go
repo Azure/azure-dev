@@ -349,6 +349,9 @@ func (a *initAction) Run() error {
 	if err := checkInitConfigDestination(path, configPath); err != nil {
 		return err
 	}
+	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
+		return err
+	}
 	unlockConfig, err := project.LockEvalConfig(a.cmd.Context(), configPath)
 	if err != nil {
 		return err
@@ -356,6 +359,9 @@ func (a *initAction) Run() error {
 	defer unlockConfig()
 
 	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
+	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
 		return err
 	}
 	authored, err = project.ReadAuthoredConfig(configPath)
@@ -424,13 +430,11 @@ func (a *initAction) Run() error {
 	}
 	plan.configLocation = path
 
-	rootPath, err = initRootConfigPath(azdProject.GetPath())
-	if err != nil {
+	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
 		return err
 	}
 	var rootBefore []byte
 	if rootPath != "" {
-		rootFilename = filepath.Base(rootPath)
 		// #nosec G304 -- snapshot the current azd project's root before wiring it.
 		rootBefore, err = os.ReadFile(rootPath)
 		if err != nil {
@@ -589,6 +593,17 @@ func initRootConfigPath(projectDir string) (string, error) {
 		return path, nil
 	}
 	return "", nil
+}
+
+func checkInitRootConfig(projectDir, expected string) error {
+	actual, err := initRootConfigPath(projectDir)
+	if err != nil {
+		return err
+	}
+	if actual != expected {
+		return messages.InitRootConfigChanged(expected, actual)
+	}
+	return nil
 }
 
 // initSourceInput is what settling the data source depends on.

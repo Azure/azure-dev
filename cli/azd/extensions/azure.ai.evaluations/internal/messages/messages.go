@@ -670,7 +670,7 @@ func InitDatasetRejected(why error) string {
 		detail += "\n  " + local.Suggestion
 	}
 	return fmt.Sprintf("\n  %s\n  Correct the dataset file and enter its path or dataset name again, "+
-		"or choose another dataset. Press Ctrl+C to cancel.\n", detail)
+		"or choose another dataset. Press Ctrl+C to cancel before rerunning init with different flags.\n", detail)
 }
 
 // SelectingDataset reports a failed dataset prompt.

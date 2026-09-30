@@ -64,6 +64,13 @@ func InitConfigDestinationChanged(expected, actual string) error {
 		"Review the files and retry with --path naming the exact configuration file you intend to update.")
 }
 
+// InitRootConfigChanged refuses a changed root filename instead of disagreeing with the host's cached path.
+func InitRootConfigChanged(expected, actual string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("The root project configuration changed from %q to %q during initialization", expected, actual),
+		"Review the root project files and rerun init so the host and extension select the same configuration.")
+}
+
 // InitDatasetNameInvalid refuses a filename that cannot name a catalog entry.
 func InitDatasetNameInvalid(path, name string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,

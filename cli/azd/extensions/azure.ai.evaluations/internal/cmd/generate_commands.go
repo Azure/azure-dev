@@ -209,7 +209,7 @@ func (ec *evalContext) detectAgentTarget(cmd *cobra.Command) (string, error) {
 func (ec *evalContext) generationNameTarget(ctx context.Context, target string) (string, error) {
 	proj, err := ec.azdProject(ctx)
 	if err != nil {
-		if projectctx.HostedSourceAbsent(err) && !projectctx.DaemonUnreachable(err) {
+		if projectctx.ProjectAbsent(err) {
 			return target, nil
 		}
 		return "", messages.GenerationNameTargetUnresolved(err)

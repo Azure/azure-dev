@@ -32,14 +32,14 @@ model: gpt-4.1-mini
 instructions: Be helpful.
 memory:
   store: support-memory
-  chat_model: gpt-4.1-mini
-  embedding_model: text-embedding-3-small
+  chatModel: gpt-4.1-mini
+  embeddingModel: text-embedding-3-small
   scope: user_123
-  update_delay: 300
-  max_memories: 5
+  updateDelay: 300
+  maxMemories: 5
   options:
-    user_profile_enabled: true
-    chat_summary_enabled: false
+    userProfileEnabled: true
+    chatSummaryEnabled: false
 `)
 
 	var agent PromptAgent

@@ -89,6 +89,16 @@ overrides:
           - azureai
           - entra
           - flexconsumption
+    - filename: .github/workflows/scripts-ci.yml
+      words:
+          - CODEOWNERS
+          - vitest
+    - filename:
+          - .github/workflows/codeowners-validation.yml
+          - .github/scripts/src/codeowners-validation.js
+          - .github/scripts/test/codeowners-validation.test.js
+      words:
+          - CODEOWNERS
     - filename: .github/instructions/**/*.md
       words:
           - azdext

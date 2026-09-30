@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestParseCommand(t *testing.T) {
@@ -526,15 +527,17 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 
 func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
 	projectDir := t.TempDir()
+	agentProps := testHostedAgentProps(t)
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{
 			Name: "test-project",
 			Path: projectDir,
 			Services: map[string]*azdext.ServiceConfig{
 				"agent": {
-					Name:         "agent",
-					Host:         AiAgentHost,
-					RelativePath: ".",
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					RelativePath:         ".",
+					AdditionalProperties: agentProps,
 				},
 			},
 		},
@@ -600,15 +603,17 @@ func runRunWithHelperProcess(t *testing.T, mode string, exitCode string) error {
 	t.Helper()
 
 	projectDir := t.TempDir()
+	agentProps := testHostedAgentProps(t)
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{
 			Name: "test-project",
 			Path: projectDir,
 			Services: map[string]*azdext.ServiceConfig{
 				"agent": {
-					Name:         "agent",
-					Host:         AiAgentHost,
-					RelativePath: ".",
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					RelativePath:         ".",
+					AdditionalProperties: agentProps,
 				},
 			},
 		},
@@ -647,6 +652,18 @@ func runRunWithHelperProcess(t *testing.T, mode string, exitCode string) error {
 		startCommand: startCommand,
 		noClient:     true,
 	}, true)
+}
+
+func testHostedAgentProps(t *testing.T) *structpb.Struct {
+	t.Helper()
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "agent",
+	})
+	if err != nil {
+		t.Fatalf("create hosted agent properties: %v", err)
+	}
+	return props
 }
 
 func TestRunRunHelperProcess(t *testing.T) {
@@ -1590,53 +1607,6 @@ func TestEmitNextAfterBind_ReturnsSilentlyOnContextCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatalf("emitNextAfterBind did not honor ctx cancel within 2s")
 	}
-}
-
-func TestFindAgentYaml(t *testing.T) {
-	t.Parallel()
-
-	t.Run("finds agent.yaml", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: test"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := findAgentYaml(dir)
-		if got != filepath.Join(dir, "agent.yaml") {
-			t.Errorf("expected agent.yaml path, got %q", got)
-		}
-	})
-
-	t.Run("finds agent.yml", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte("name: test"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := findAgentYaml(dir)
-		if got != filepath.Join(dir, "agent.yml") {
-			t.Errorf("expected agent.yml path, got %q", got)
-		}
-	})
-
-	t.Run("prefers agent.yaml over agent.yml", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: yaml"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte("name: yml"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := findAgentYaml(dir)
-		if got != filepath.Join(dir, "agent.yaml") {
-			t.Errorf("expected agent.yaml (preferred), got %q", got)
-		}
-	})
-
-	t.Run("returns empty for missing directory", func(t *testing.T) {
-		got := findAgentYaml(filepath.Join(t.TempDir(), "nonexistent"))
-		if got != "" {
-			t.Errorf("expected empty, got %q", got)
-		}
-	})
 }
 
 func TestResolveAgentDefinitionEnvVars(t *testing.T) {

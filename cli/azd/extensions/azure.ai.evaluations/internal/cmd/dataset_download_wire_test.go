@@ -41,7 +41,7 @@ func (r *downloadRecording) snapshot() []string {
 
 func downloadClient(
 	t *testing.T,
-	singleFile bool,
+	singleFile *bool,
 	files map[string]string,
 ) (*dataset_api.DatasetClient, *downloadRecording) {
 	t.Helper()
@@ -49,7 +49,7 @@ func downloadClient(
 	var base string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		dataURI := base + "/container"
-		if singleFile {
+		if singleFile != nil && *singleFile {
 			dataURI += "/data.jsonl"
 		}
 		request := r.Method + " " + r.URL.Path
@@ -84,12 +84,15 @@ func downloadClient(
 			}))
 		case r.URL.Path == "/datasets/sample/versions/1.0":
 			assert.Equal(t, http.MethodGet, r.Method)
-			datasetType := "uri_folder"
-			if singleFile {
-				datasetType = "uri_file"
+			metadata := map[string]any{"name": "sample", "version": "1.0", "dataUri": dataURI}
+			if singleFile != nil {
+				metadata["isSingleFile"] = *singleFile
+				metadata["type"] = "uri_folder"
+				if *singleFile {
+					metadata["type"] = "uri_file"
+				}
 			}
-			fmt.Fprintf(w, `{"name":"sample","version":"1.0","type":%q,"isSingleFile":%t,"dataUri":%q}`,
-				datasetType, singleFile, dataURI)
+			assert.NoError(t, json.NewEncoder(w).Encode(metadata))
 		case r.URL.Path == "/datasets/sample/versions":
 			fmt.Fprint(w, `{"value":[{"name":"sample","version":"1.0"}]}`)
 		case r.URL.Path == "/container" && r.URL.Query().Get("comp") == "list":
@@ -131,7 +134,7 @@ func downloadAction(t *testing.T, dir, outFile string) (*datasetDownloadAction, 
 
 func TestDownloadContainerBackedSingleFileWritesExactDestination(t *testing.T) {
 	const rows = "{\"query\":\"first row\"}\n{\"query\":\"second row\"}\n"
-	client, recording := downloadClient(t, true, map[string]string{"data.jsonl": rows})
+	client, recording := downloadClient(t, new(true), map[string]string{"data.jsonl": rows})
 	dest := filepath.Join(t.TempDir(), "new parent", "chosen.jsonl")
 	action, stdout, stderr := downloadAction(t, "", dest)
 
@@ -166,7 +169,7 @@ func TestDownloadContainerBackedFileDestinationsAndOverwrite(t *testing.T) {
 		{name: "force existing file", outFile: true, existing: true, force: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			client, _ := downloadClient(t, true, map[string]string{"data.jsonl": "new rows\n"})
+			client, _ := downloadClient(t, new(true), map[string]string{"data.jsonl": "new rows\n"})
 			dir := t.TempDir()
 			dest := filepath.Join(dir, "sample-1.0.jsonl")
 			action, stdout, _ := downloadAction(t, dir, "")
@@ -200,7 +203,7 @@ func TestDownloadContainerBackedFileDestinationsAndOverwrite(t *testing.T) {
 
 func TestDownloadContainerBackedFileDefaultsToCurrentDirectory(t *testing.T) {
 	t.Chdir(t.TempDir())
-	client, _ := downloadClient(t, true, map[string]string{"data.jsonl": "rows\n"})
+	client, _ := downloadClient(t, new(true), map[string]string{"data.jsonl": "rows\n"})
 	action, stdout, stderr := downloadAction(t, "", "")
 	require.NoError(t, action.downloadWith(t.Context(), &evalContext{datasetClient: client}))
 	got, err := os.ReadFile("sample-1.0.jsonl")
@@ -213,11 +216,12 @@ func TestDownloadContainerBackedFileDefaultsToCurrentDirectory(t *testing.T) {
 func TestDownloadFolderPreservesEveryFile(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
-		singleFile bool
+		singleFile *bool
 		files      map[string]string
 	}{
-		{name: "one file folder", files: map[string]string{"nested/data.jsonl": "rows\n"}},
-		{name: "multiple files despite metadata", singleFile: true, files: map[string]string{
+		{name: "one file folder", singleFile: new(false), files: map[string]string{"nested/data.jsonl": "rows\n"}},
+		{name: "metadata omits single file flag", files: map[string]string{"nested/data.jsonl": "rows\n"}},
+		{name: "multiple files despite metadata", singleFile: new(true), files: map[string]string{
 			"_meta.json": "{}\n", "nested/data.jsonl": "rows\n",
 		}},
 	} {
@@ -226,7 +230,15 @@ func TestDownloadFolderPreservesEveryFile(t *testing.T) {
 			dir := t.TempDir()
 			action, stdout, _ := downloadAction(t, "", filepath.Join(dir, "must-not-exist.jsonl"))
 			ec := &evalContext{datasetClient: client}
-			require.ErrorContains(t, action.downloadWith(t.Context(), ec), "--output-dir")
+			err := action.downloadWith(t.Context(), ec)
+			if len(tc.files) == 1 {
+				require.EqualError(t, err,
+					"dataset sample version 1.0 contains one file, but its metadata does not identify it "+
+						"as a single-file dataset; use --output-dir")
+			} else {
+				require.EqualError(t, err,
+					"dataset sample version 1.0 holds 2 files, so it has no single path to write; use --output-dir")
+			}
 			entries, err := os.ReadDir(dir)
 			require.NoError(t, err)
 			assert.Empty(t, entries)

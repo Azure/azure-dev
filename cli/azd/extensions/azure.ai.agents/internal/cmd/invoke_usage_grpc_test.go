@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -92,6 +93,24 @@ func TestAgentInvokeSelectedRequestOverGRPC(t *testing.T) {
 			}, requests[0].GetAttributes())
 		})
 	}
+}
+
+func TestAgentInvokeSelectedReusesResolvedAzdClient(t *testing.T) {
+	recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{})
+	client, err := azdext.NewAzdClient(azdext.WithAddress(os.Getenv("AZD_SERVER")))
+	require.NoError(t, err)
+	// A fresh host connection cannot work; the resolved client's telemetry RPC must be used.
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	action := &InvokeAction{
+		flags: &invokeFlags{protocol: "invocations", message: "private prompt"},
+		resolvedRemoteContext: &remoteContext{
+			name: "worker", serviceName: "worker", hosted: true, agentKey: "test-key", azdClient: client,
+		},
+		credential: invokeUsageFailingCredential{},
+	}
+	require.ErrorContains(t, action.Run(t.Context()), "failed to get auth token")
+	require.Len(t, recorder.snapshot(), 1)
+	require.Equal(t, "agent.invoke.selected", recorder.snapshot()[0].GetEventName())
 }
 
 func TestNonHostedAgentInvokeDoesNotReportAgentInvokeSelected(t *testing.T) {

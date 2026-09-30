@@ -650,17 +650,19 @@ func (a *InvokeAction) reportInvokeUsageForRemote(
 	if a.endpoint == nil && !rc.hosted {
 		return
 	}
-	a.reportInvokeUsage(ctx, protocol)
+	a.reportInvokeUsage(ctx, protocol, rc)
 }
 
-func (a *InvokeAction) reportInvokeUsage(ctx context.Context, protocol agent_api.AgentProtocol) {
+func (a *InvokeAction) reportInvokeUsage(
+	ctx context.Context, protocol agent_api.AgentProtocol, rc *remoteContext,
+) {
 	event := telemetry.AgentInvokeSelected(string(protocol), a.flags.longRunning, a.flags.noWait)
 	if a.invokeReporter != nil {
 		a.invokeReporter.Report(ctx, event)
 		return
 	}
-	if a.resolvedRemoteContext != nil && a.resolvedRemoteContext.azdClient != nil {
-		foundryTelemetry.NewReporter(a.resolvedRemoteContext.azdClient.Telemetry(), nil).Report(ctx, event)
+	if rc.azdClient != nil {
+		foundryTelemetry.NewReporter(rc.azdClient.Telemetry(), nil).Report(ctx, event)
 		return
 	}
 

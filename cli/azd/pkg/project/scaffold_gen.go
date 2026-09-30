@@ -523,10 +523,12 @@ func mapFunctionApp(
 	}
 
 	for _, env := range props.Env {
-		if strings.HasPrefix(env.Name, "AzureWebJobsStorage") ||
-			env.Name == "FUNCTIONS_WORKER_RUNTIME" ||
-			env.Name == "APPLICATIONINSIGHTS_CONNECTION_STRING" ||
-			env.Name == "AZURE_CLIENT_ID" {
+		name := strings.ToUpper(env.Name)
+		if strings.HasPrefix(name, "AZUREWEBJOBSSTORAGE") ||
+			name == "FUNCTIONS_WORKER_RUNTIME" ||
+			name == "APPLICATIONINSIGHTS_CONNECTION_STRING" ||
+			name == "APPLICATIONINSIGHTS_AUTHENTICATION_STRING" ||
+			name == "AZURE_CLIENT_ID" {
 			return fmt.Errorf("resources.%s.env cannot override required Function App setting %s", res.Name, env.Name)
 		}
 	}
@@ -660,6 +662,11 @@ func mapHostUses(
 			svcSpec.AISearch = &scaffold.AISearchReference{}
 		case ResourceTypeKeyVault:
 			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
+		default:
+			if svcSpec.Host == scaffold.FunctionAppKind {
+				return fmt.Errorf("Function App %s cannot use unsupported resource %s (%s)",
+					res.Name, use, string(useRes.Type))
+			}
 		}
 	}
 

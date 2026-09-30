@@ -445,22 +445,50 @@ func Test_infraSpec_FunctionAppRejectsUnsupportedConfiguration(t *testing.T) {
 }
 
 func Test_infraSpec_FunctionAppRejectsReservedSettings(t *testing.T) {
+	for _, setting := range []string{
+		"AzureWebJobsStorage__credential",
+		"azurewebjobsstorage__credential",
+		"FUNCTIONS_WORKER_RUNTIME",
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		"APPLICATIONINSIGHTS_AUTHENTICATION_STRING",
+		"AZURE_CLIENT_ID",
+	} {
+		t.Run(setting, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp,
+						Props: FunctionAppProps{
+							Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+							Env:     []ServiceEnvVar{{Name: setting, Value: "override"}},
+						},
+					},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+				},
+			}
+			_, err := infraSpec(cfg)
+			require.ErrorContains(t, err, "cannot override required Function App setting "+setting)
+		})
+	}
+}
+
+func Test_infraSpec_FunctionAppRejectsUnsupportedUse(t *testing.T) {
 	cfg := &ProjectConfig{
 		Resources: map[string]*ResourceConfig{
 			"api": {
-				Name: "api", Type: ResourceTypeHostFunctionApp,
-				Props: FunctionAppProps{
-					Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
-					Env:     []ServiceEnvVar{{Name: "AzureWebJobsStorage__credential", Value: "key"}},
-				},
+				Name: "api", Type: ResourceTypeHostFunctionApp, Uses: []string{"unsupported"},
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
 			},
+			"unsupported": {Name: "unsupported", Type: ResourceType("custom.unsupported")},
 		},
 		Services: map[string]*ServiceConfig{
 			"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
 		},
 	}
 	_, err := infraSpec(cfg)
-	require.ErrorContains(t, err, "cannot override required Function App setting AzureWebJobsStorage__credential")
+	require.ErrorContains(t, err, "Function App api cannot use unsupported resource unsupported (custom.unsupported)")
 }
 
 func Test_infraSpec_FunctionAppUsesResources(t *testing.T) {

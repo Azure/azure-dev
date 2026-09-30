@@ -190,7 +190,7 @@ resources:
     type: storage
 ```
 
-Without a storage resource in `uses`, azd provisions a dedicated backing account for each Function App. Referencing exactly one managed or existing `storage` resource reuses that account for host state and deployment; other resources can also be referenced for application settings and access. Existing storage can be in another resource group and must be configured with its resource ID in the environment. Required Function App settings, including `AzureWebJobsStorage*`, cannot be overridden through `resources.<name>.env`. Explicitly select a Flex Consumption-supported region and runtime version for your project.
+Without a storage resource in `uses`, azd uses the project's managed storage account, creating one implicitly if the project has none. Multiple Function Apps without a storage reference share this account, but each gets its own deployment container, user-assigned identity, and host ID. Referencing exactly one managed or existing `storage` resource selects that account for host state and deployment; other resources can also be referenced for application settings and access. Existing storage can be in another resource group and must be configured with its resource ID in the environment. Required Function App settings, including `AzureWebJobsStorage*` and `AzureFunctionsWebHost__hostid`, cannot be overridden through `resources.<name>.env`. Explicitly select a Flex Consumption-supported region and runtime version for your project.
 
 Generated Function Apps allow `https://portal.azure.com` as a CORS origin so functions can be invoked from the Azure portal. Function Apps provisioned with user-provided infrastructure must configure CORS separately.
 

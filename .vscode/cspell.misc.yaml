@@ -54,6 +54,9 @@ overrides:
     - filename: ./docs/concepts/glossary.md
       words:
           - functionapp
+    - filename: ./docs/reference/azure-yaml-schema.md
+      words:
+          - hostid
     - filename: ./docs/specs/perf-foundations/**
       words:
           - Alives

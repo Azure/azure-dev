@@ -89,13 +89,14 @@ func TestExecInfra(t *testing.T) {
 		{
 			"Function App with implicit storage",
 			InfraSpec{
+				StorageAccount: &StorageAccount{},
 				Services: []ServiceSpec{{
 					Name: "api",
 					Host: FunctionAppKind,
 					Runtime: &RuntimeInfo{
 						Type: "python", Version: "3.12",
 					},
-					FunctionStorage: &FunctionStorage{Implicit: true},
+					FunctionStorage: &FunctionStorage{},
 				}},
 			},
 		},
@@ -146,7 +147,7 @@ func TestExecInfra(t *testing.T) {
 					{
 						Name: "goapi", Host: FunctionAppKind,
 						Runtime:         &RuntimeInfo{Type: "go", Version: "1.0"},
-						FunctionStorage: &FunctionStorage{Implicit: true},
+						FunctionStorage: &FunctionStorage{},
 						DbCosmos:        &DatabaseReference{DatabaseName: "appdb"},
 						DbRedis:         &DatabaseReference{DatabaseName: "redis"},
 						ServiceBus:      &ServiceBus{},
@@ -336,8 +337,15 @@ func TestExecInfra(t *testing.T) {
 						`siteConfig:\s*\{\s*alwaysOn: false\s*`+
 							`cors:\s*\{\s*allowedOrigins:\s*\[\s*'https://portal.azure.com'`,
 						string(bicep))
+					assert.Contains(t, string(bicep), "type: 'UserAssignedIdentity'")
+					assert.Contains(t, string(bicep), "AzureWebJobsStorage__clientId:")
 					if tt.name == "Function App with implicit storage" {
 						assert.Regexp(t, `networkAcls:\s*\{\s*defaultAction: 'Allow'\s*\}`, string(bicep))
+					}
+					module, err := os.ReadFile(filepath.Join(dir, "modules", "function-storage.bicep"))
+					require.NoError(t, err)
+					for _, role := range []string{"blobOwner", "queueContributor", "tableContributor"} {
+						assert.Contains(t, string(module), "resource "+role+" ")
 					}
 					break
 				}
@@ -370,18 +378,9 @@ func TestExecInfra(t *testing.T) {
 					} `json:"resources"`
 				}
 				require.NoError(t, json.Unmarshal([]byte(resourceTemplate.Compiled), &compiled))
-				storageDependency := "apiFunctionStorage"
-				if tt.name == "Function App with managed storage" {
-					storageDependency = "storageAccount"
-				}
-				assert.Contains(t, compiled.Resources["apiBackingStorage"].DependsOn, storageDependency)
-				assert.Contains(t, compiled.Resources["apiDeploymentContainer"].DependsOn, storageDependency)
-				assert.Contains(t, compiled.Resources["api"].DependsOn, storageDependency)
-				for _, role := range []string{
-					"apiStorageBlobOwner", "apiStorageQueueContributor", "apiStorageTableContributor",
-				} {
-					assert.Contains(t, compiled.Resources[role].DependsOn, storageDependency)
-				}
+				assert.Contains(t, compiled.Resources["apiFunctionStorage"].DependsOn, "storageAccount")
+				assert.Contains(t, compiled.Resources["apiFunctionStorage"].DependsOn, "apiIdentity")
+				assert.Contains(t, compiled.Resources["api"].DependsOn, "apiFunctionStorage")
 				assert.Contains(t, compiled.Resources["apiInsightsMetricsPublisher"].DependsOn, "api")
 				assert.Contains(t, compiled.Resources["api"].DependsOn, "monitoring")
 			}

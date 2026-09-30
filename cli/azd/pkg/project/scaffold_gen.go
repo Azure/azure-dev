@@ -372,6 +372,13 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		return strings.Compare(a.Name, b.Name)
 	})
 
+	if infraSpec.StorageAccount == nil && slices.ContainsFunc(infraSpec.Services, func(svc scaffold.ServiceSpec) bool {
+		return svc.Host == scaffold.FunctionAppKind && svc.FunctionStorage != nil &&
+			svc.FunctionStorage.ExistingName == ""
+	}) {
+		infraSpec.StorageAccount = &scaffold.StorageAccount{}
+	}
+
 	return &infraSpec, nil
 }
 
@@ -496,7 +503,8 @@ func mapFunctionApp(
 		return fmt.Errorf("resources.%s.runtime.version must be a numeric runtime version", res.Name)
 	}
 	svcSpec.Runtime = &scaffold.RuntimeInfo{Type: props.Runtime.Stack, Version: props.Runtime.Version}
-	svcSpec.FunctionStorage = &scaffold.FunctionStorage{Implicit: true}
+	svcSpec.FunctionStorage = &scaffold.FunctionStorage{}
+	usesStorage := false
 
 	for _, use := range res.Uses {
 		dep, ok := prj.Resources[use]
@@ -509,10 +517,10 @@ func mapFunctionApp(
 			}
 			continue
 		}
-		if !svcSpec.FunctionStorage.Implicit {
+		if usesStorage {
 			return fmt.Errorf("Function App %s uses multiple storage resources", res.Name)
 		}
-		svcSpec.FunctionStorage.Implicit = false
+		usesStorage = true
 		if dep.Existing {
 			existing, ok := existingMap[use]
 			if !ok {
@@ -525,6 +533,7 @@ func mapFunctionApp(
 	for _, env := range props.Env {
 		name := strings.ToUpper(env.Name)
 		if strings.HasPrefix(name, "AZUREWEBJOBSSTORAGE") ||
+			name == "AZUREFUNCTIONSWEBHOST__HOSTID" ||
 			name == "FUNCTIONS_WORKER_RUNTIME" ||
 			name == "APPLICATIONINSIGHTS_CONNECTION_STRING" ||
 			name == "APPLICATIONINSIGHTS_AUTHENTICATION_STRING" ||
@@ -622,6 +631,12 @@ func mapHostUses(
 				svcSpec.Env[envKey] = value
 			}
 
+			// Function storage grants its own roles; copy the binding so other services keep their generic grants.
+			if svcSpec.Host == scaffold.FunctionAppKind && useRes.Type == ResourceTypeStorage {
+				functionStorage := *existingDecl
+				functionStorage.RoleAssignments = nil
+				existingDecl = &functionStorage
+			}
 			svcSpec.Existing = append(svcSpec.Existing, existingDecl)
 			continue
 		}

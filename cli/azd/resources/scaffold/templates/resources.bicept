@@ -262,11 +262,16 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
 
 {{- if .StorageAccount }}
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
-module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
+module storageAccount 'br/public:avm/res/storage/storage-account:0.25.0' = {
   name: 'storageAccount'
   params: {
     name: storageAccountName
     allowSharedKeyAccess: false
+    {{- if hasFunctionApp .Services}}
+    allowBlobPublicAccess: false
+    queueServices: {}
+    tableServices: {}
+    {{- end}}
     publicNetworkAccess: 'Enabled'
     blobServices: {
       {{- if .StorageAccount.Containers }}
@@ -290,11 +295,13 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
       ] : [],
       [
         {{- range .Services}}
+        {{- if not (isFunctionApp .Host)}}
         {
           principalId: {{bicepName .Name}}Identity.outputs.principalId
           principalType: 'ServicePrincipal'
           roleDefinitionIdOrName: 'Storage Blob Data Contributor'
         }
+        {{- end}}
         {{- end}}
       ]
     )
@@ -914,82 +921,23 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
 {{- end}}
 
 {{- if isFunctionApp .Host}}
-{{- if .FunctionStorage.Implicit}}
-module {{bicepName .Name}}FunctionStorage 'br/public:avm/res/storage/storage-account:0.25.0' = {
+module {{bicepName .Name}}FunctionStorage 'modules/function-storage.bicep' = {
   name: '{{bicepName .Name}}-function-storage'
-  params: {
-    name: {{bicepName .Name}}BackingStorageName
-    location: location
-    tags: tags
-    allowSharedKeyAccess: false
-    allowBlobPublicAccess: false
-    publicNetworkAccess: 'Enabled'
-    networkAcls: {
-      defaultAction: 'Allow'
-    }
-    blobServices: {}
-    queueServices: {}
-    tableServices: {}
-  }
-}
-{{- end}}
-
-{{- if .FunctionStorage.ExistingName}}
-var {{bicepName .Name}}BackingStorageName = {{.FunctionStorage.ExistingName}}.name
-{{- else if .FunctionStorage.Implicit}}
-var {{bicepName .Name}}BackingStorageName = '${abbrs.storageStorageAccounts}${resourceToken}${take(uniqueString('{{.Name}}'), 4)}'
-{{- else}}
-var {{bicepName .Name}}BackingStorageName = storageAccountName
-{{- end}}
-
-resource {{bicepName .Name}}BackingStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   {{- if .FunctionStorage.ExistingName}}
   scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
   {{- end}}
-  name: {{bicepName .Name}}BackingStorageName
+  params: {
+    storageAccountName: {{if .FunctionStorage.ExistingName}}{{.FunctionStorage.ExistingName}}.name{{else}}storageAccountName{{end}}
+    containerName: 'app-package-${take('{{.Name}}', 32)}-${take(uniqueString('{{.Name}}'), 6)}-${take(resourceToken, 7)}'
+    serviceName: '{{.Name}}'
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+  }
   {{- if not .FunctionStorage.ExistingName}}
   dependsOn: [
-    {{- if .FunctionStorage.Implicit}}
-    {{bicepName .Name}}FunctionStorage
-    {{- else}}
     storageAccount
-    {{- end}}
   ]
   {{- end}}
 }
-
-var {{bicepName .Name}}DeploymentContainerName = 'app-package-${take('{{.Name}}', 32)}-${take(uniqueString('{{.Name}}'), 6)}-${take(resourceToken, 7)}'
-
-{{- if .FunctionStorage.ExistingName}}
-module {{bicepName .Name}}DeploymentContainer 'modules/function-storage-container.bicep' = {
-  name: '{{bicepName .Name}}-function-container'
-  scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
-  params: {
-    storageAccountName: {{bicepName .Name}}BackingStorageName
-    containerName: {{bicepName .Name}}DeploymentContainerName
-  }
-}
-{{- else}}
-resource {{bicepName .Name}}BlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = {
-  parent: {{bicepName .Name}}BackingStorage
-  name: 'default'
-}
-
-resource {{bicepName .Name}}DeploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: {{bicepName .Name}}BlobService
-  name: {{bicepName .Name}}DeploymentContainerName
-  properties: {
-    publicAccess: 'None'
-  }
-  dependsOn: [
-    {{- if .FunctionStorage.Implicit}}
-    {{bicepName .Name}}FunctionStorage
-    {{- else}}
-    storageAccount
-    {{- end}}
-  ]
-}
-{{- end}}
 
 module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
   name: 'function-app-{{bicepName .Name}}'
@@ -1007,13 +955,10 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
       deployment: {
         storage: {
           type: 'blobContainer'
-          {{- if .FunctionStorage.ExistingName}}
-          value: {{bicepName .Name}}DeploymentContainer.outputs.containerUri
-          {{- else}}
-          value: '{{printf "${%sBackingStorage.properties.primaryEndpoints.blob}" (bicepName .Name)}}{{printf "${%sDeploymentContainer.name}" (bicepName .Name)}}'
-          {{- end}}
+          value: {{bicepName .Name}}FunctionStorage.outputs.containerUri
           authentication: {
-            type: 'SystemAssignedIdentity'
+            type: 'UserAssignedIdentity'
+            userAssignedIdentityResourceId: {{bicepName .Name}}Identity.outputs.resourceId
           }
         }
       }
@@ -1041,9 +986,11 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
       name: 'appsettings'
       properties: {
         AzureWebJobsStorage__credential: 'managedidentity'
-        AzureWebJobsStorage__blobServiceUri: 'https://{{printf "${%sBackingStorage.name}" (bicepName .Name)}}.blob.${environment().suffixes.storage}'
-        AzureWebJobsStorage__queueServiceUri: 'https://{{printf "${%sBackingStorage.name}" (bicepName .Name)}}.queue.${environment().suffixes.storage}'
-        AzureWebJobsStorage__tableServiceUri: 'https://{{printf "${%sBackingStorage.name}" (bicepName .Name)}}.table.${environment().suffixes.storage}'
+        AzureWebJobsStorage__clientId: {{bicepName .Name}}Identity.outputs.clientId
+        AzureWebJobsStorage__blobServiceUri: {{bicepName .Name}}FunctionStorage.outputs.blobEndpoint
+        AzureWebJobsStorage__queueServiceUri: {{bicepName .Name}}FunctionStorage.outputs.queueEndpoint
+        AzureWebJobsStorage__tableServiceUri: {{bicepName .Name}}FunctionStorage.outputs.tableEndpoint
+        AzureFunctionsWebHost__hostid: 'azd-${uniqueString(resourceGroup().id, '{{.Name}}')}'
         APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
         APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'Authorization=AAD'
         AZURE_CLIENT_ID: {{bicepName .Name}}Identity.outputs.clientId
@@ -1085,8 +1032,8 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
         AZURE_SERVICE_BUS_HOST: '${serviceBusNamespace.outputs.name}.servicebus.windows.net'
         {{- end}}
         {{- if .StorageAccount}}
-        AZURE_STORAGE_ACCOUNT_NAME: {{bicepName .Name}}BackingStorage.name
-        AZURE_STORAGE_BLOB_ENDPOINT: {{bicepName .Name}}BackingStorage.properties.primaryEndpoints.blob
+        AZURE_STORAGE_ACCOUNT_NAME: {{bicepName .Name}}FunctionStorage.outputs.storageAccountName
+        AZURE_STORAGE_BLOB_ENDPOINT: {{bicepName .Name}}FunctionStorage.outputs.blobEndpoint
         {{- end}}
         {{- if $infra.KeyVault}}
         AZURE_KEY_VAULT_NAME: keyVault.outputs.name
@@ -1108,69 +1055,6 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
     }]
   }
 }
-
-{{- if .FunctionStorage.ExistingName}}
-module {{bicepName .Name}}StorageRoles 'modules/function-storage-roles.bicep' = {
-  name: '{{bicepName .Name}}-function-storage-roles'
-  scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
-  params: {
-    storageAccountName: {{bicepName .Name}}BackingStorageName
-    serviceName: '{{.Name}}'
-    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
-  }
-}
-{{- else}}
-resource {{bicepName .Name}}StorageBlobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName .Name}}BackingStorage.id, '{{.Name}}', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
-  scope: {{bicepName .Name}}BackingStorage
-  dependsOn: [
-    {{- if .FunctionStorage.Implicit}}
-    {{bicepName .Name}}FunctionStorage
-    {{- else}}
-    storageAccount
-    {{- end}}
-  ]
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
-    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource {{bicepName .Name}}StorageQueueContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName .Name}}BackingStorage.id, '{{.Name}}', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
-  scope: {{bicepName .Name}}BackingStorage
-  dependsOn: [
-    {{- if .FunctionStorage.Implicit}}
-    {{bicepName .Name}}FunctionStorage
-    {{- else}}
-    storageAccount
-    {{- end}}
-  ]
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
-    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource {{bicepName .Name}}StorageTableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName .Name}}BackingStorage.id, '{{.Name}}', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
-  scope: {{bicepName .Name}}BackingStorage
-  dependsOn: [
-    {{- if .FunctionStorage.Implicit}}
-    {{bicepName .Name}}FunctionStorage
-    {{- else}}
-    storageAccount
-    {{- end}}
-  ]
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
-    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
-    principalType: 'ServicePrincipal'
-  }
-}
-{{- end}}
 
 resource {{bicepName .Name}}Insights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: '${abbrs.insightsComponents}${resourceToken}'

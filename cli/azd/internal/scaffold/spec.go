@@ -181,12 +181,10 @@ const (
 	FunctionAppKind  HostKind = "functionapp"
 )
 
-// FunctionStorage identifies the backing account for a Function App service.
+// FunctionStorage identifies an existing backing account, if one was selected.
 type FunctionStorage struct {
 	// ExistingName is the Bicep symbol for a referenced existing storage account.
 	ExistingName string
-	// Implicit means the Function App owns a dedicated backing storage account.
-	Implicit bool
 }
 
 type RuntimeInfo struct {

@@ -1,9 +1,23 @@
 param storageAccountName string
+param containerName string
 param serviceName string
 param principalId string
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
+}
+
+resource blobs 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = {
+  parent: storage
+  name: 'default'
+}
+
+resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobs
+  name: containerName
+  properties: {
+    publicAccess: 'None'
+  }
 }
 
 resource blobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -35,3 +49,9 @@ resource tableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' =
     principalType: 'ServicePrincipal'
   }
 }
+
+output containerUri string = '${storage.properties.primaryEndpoints.blob}${container.name}'
+output storageAccountName string = storage.name
+output blobEndpoint string = storage.properties.primaryEndpoints.blob
+output queueEndpoint string = storage.properties.primaryEndpoints.queue
+output tableEndpoint string = storage.properties.primaryEndpoints.table

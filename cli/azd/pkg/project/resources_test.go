@@ -337,14 +337,20 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 		name         string
 		storage      *ResourceConfig
 		uses         []string
-		wantImplicit bool
+		wantManaged  bool
 		wantExisting string
 	}{
-		{name: "implicit", wantImplicit: true},
+		{name: "implicit", wantManaged: true},
 		{
-			name:    "managed",
-			storage: &ResourceConfig{Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
-			uses:    []string{"storage"},
+			name:        "implicit reuses managed storage",
+			storage:     &ResourceConfig{Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
+			wantManaged: true,
+		},
+		{
+			name:        "managed",
+			storage:     &ResourceConfig{Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
+			uses:        []string{"storage"},
+			wantManaged: true,
 		},
 		{
 			name: "existing",
@@ -375,7 +381,7 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, spec.Services, 1)
 			require.NotNil(t, spec.Services[0].FunctionStorage)
-			assert.Equal(t, tt.wantImplicit, spec.Services[0].FunctionStorage.Implicit)
+			assert.Equal(t, tt.wantManaged, spec.StorageAccount != nil)
 			assert.Equal(t, tt.wantExisting, spec.Services[0].FunctionStorage.ExistingName)
 			assert.Equal(t, scaffold.FunctionAppKind, spec.Services[0].Host)
 			assert.Equal(t, "python", spec.Services[0].Runtime.Type)
@@ -387,16 +393,58 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 			bicep := strings.ReplaceAll(string(content), "\r\n", "\n")
 			assert.Contains(t, bicep, "'azd-service-name': 'api'")
 			assert.Contains(t, bicep, "AzureWebJobsStorage__credential: 'managedidentity'")
+			assert.Contains(t, bicep, "AzureWebJobsStorage__clientId: apiIdentity.outputs.clientId")
+			assert.Contains(t, bicep, "userAssignedIdentityResourceId: apiIdentity.outputs.resourceId")
+			assert.Contains(t, bicep, "AzureFunctionsWebHost__hostid: 'azd-${uniqueString(resourceGroup().id, 'api')}'")
 			assert.Contains(t, bicep, "output AZURE_RESOURCE_API_ID")
 			if tt.wantExisting != "" {
 				assert.Contains(t, bicep, "scope: resourceGroup(existingStorageIdSegments[2]")
-			} else if tt.wantImplicit {
-				assert.Contains(t, bicep, "dependsOn: [\n    apiFunctionStorage\n  ]")
+				assert.NotContains(t, bicep, "module storageAccount ")
+				assert.NotContains(t, bicep, "module api_existingStorage_Contributor ")
 			} else {
 				assert.Contains(t, bicep, "dependsOn: [\n    storageAccount\n  ]")
+				assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
 			}
 		})
 	}
+}
+
+func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
+	cfg := &ProjectConfig{
+		Resources: map[string]*ResourceConfig{
+			"api": {
+				Name: "api", Type: ResourceTypeHostFunctionApp,
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+			"worker": {
+				Name: "worker", Type: ResourceTypeHostFunctionApp,
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+		},
+		Services: map[string]*ServiceConfig{
+			"api":    {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+			"worker": {Name: "worker", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+		},
+	}
+	spec, err := infraSpec(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, spec.StorageAccount)
+	require.Len(t, spec.Services, 2)
+
+	files, err := infraFs(t.Context(), cfg)
+	require.NoError(t, err)
+	content, err := fs.ReadFile(files, "resources.bicep")
+	require.NoError(t, err)
+	bicep := string(content)
+	assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
+	assert.Contains(t, bicep, "module apiFunctionStorage 'modules/function-storage.bicep'")
+	assert.Contains(t, bicep, "module workerFunctionStorage 'modules/function-storage.bicep'")
+	assert.Contains(t, bicep, "principalId: apiIdentity.outputs.principalId")
+	assert.Contains(t, bicep, "principalId: workerIdentity.outputs.principalId")
+	assert.Contains(t, bicep, "take('api', 32)")
+	assert.Contains(t, bicep, "take('worker', 32)")
+	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'api')")
+	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'worker')")
 }
 
 func Test_infraSpec_FunctionAppRejectsUnsupportedConfiguration(t *testing.T) {
@@ -448,6 +496,7 @@ func Test_infraSpec_FunctionAppRejectsReservedSettings(t *testing.T) {
 	for _, setting := range []string{
 		"AzureWebJobsStorage__credential",
 		"azurewebjobsstorage__credential",
+		"AzureFunctionsWebHost__hostid",
 		"FUNCTIONS_WORKER_RUNTIME",
 		"APPLICATIONINSIGHTS_CONNECTION_STRING",
 		"APPLICATIONINSIGHTS_AUTHENTICATION_STRING",

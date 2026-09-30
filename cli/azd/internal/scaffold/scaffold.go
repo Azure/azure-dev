@@ -87,12 +87,8 @@ func supportingFiles(spec InfraSpec) []string {
 			"/modules/role-assignment.json")
 	}
 
-	if slices.ContainsFunc(spec.Services, func(svc ServiceSpec) bool {
-		return svc.FunctionStorage != nil && svc.FunctionStorage.ExistingName != ""
-	}) {
-		files = append(files,
-			"/modules/function-storage-container.bicep",
-			"/modules/function-storage-roles.bicep")
+	if HasFunctionApp(spec.Services) {
+		files = append(files, "/modules/function-storage.bicep")
 	}
 
 	if spec.AiFoundryProject != nil && spec.AISearch != nil {

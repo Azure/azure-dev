@@ -56,6 +56,9 @@ checksum list without querying Latest. They verify the bytes, claimed digests,
 release ID/publication time and complete source/archive tuple before constructing
 the installer. Syntactically valid but forged metadata digests cannot enter a
 successful receipt.
+Unavailable fixed-tag APIs, rate limits or incomplete HTTP bodies also block
+consumer verification. A `BLOCKED` receipt may therefore indicate unavailable
+evidence, not necessarily a mismatched approval.
 The original publisher's source declaration is retained as provenance, not
 inferred from a filename. Each job verifies archive bytes, computes extracted
 and installed executable digests, and checks actual version output. A changed
@@ -445,12 +448,19 @@ Both the service driver and the offline proof runner use the shared
 [`owned_process.py`](../../eng/scripts/eval-candidate-proof/owned_process.py)
 lifetime boundary. On POSIX, the launcher starts a new process group; on Windows,
 it is assigned to a non-breakaway job before its private launch request is sent.
-Timeout and normal parent exit terminate remaining members before the caller
-can begin resource/workspace cleanup, with bounded launcher reaping and Windows
-job-drain checks. Local regressions start a real child heartbeat and verify that
-activity stops before return, including when the CLI parent exits first.
-This is owned-process cleanup, not a general-purpose sandbox, remote
-cancellation confirmation or proof that billing stopped.
+Launcher exit is observed independently of stdout/stderr EOF, so a child holding
+inherited pipes cannot keep working until the command timeout after its parent
+exits. Remaining owned members are terminated before bounded output draining
+and resource/workspace cleanup; the original exit code and output are retained.
+POSIX signals the original process group and reaps the launcher; it does not
+assert that a deliberately detached group/session is contained or perform a
+Windows-style group-empty check. Windows additionally verifies its job drains.
+Local regressions start a real child heartbeat and verify that activity stops
+before return, including inherited-pipe parent exit. A missing executable
+returns a fixed launcher error rather than a Python traceback or private path.
+This is owned-process cleanup with platform-specific limits, not a
+general-purpose sandbox, remote cancellation confirmation or proof that billing
+stopped.
 
 Authenticated HTTP runs in a short-lived owned Python transport process.
 The parent enforces one remaining absolute deadline across pipe writes/reads,

@@ -11,6 +11,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 
@@ -95,25 +96,34 @@ def run(args, *, cwd, env, timeout, text=False, encoding="utf-8"):
     job = WindowsJob() if os.name == "nt" else None
     process = None
     assigned = False
+    terminated = False
+    terminate_lock = threading.Lock()
+    observer = None
+    observer_errors = []
 
     def terminate():
-        if process is None:
-            return
-        if job is not None and assigned:
-            job.terminate()
-        elif os.name != "nt":
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        if process.poll() is None:
-            process.kill()
+        nonlocal terminated
+        with terminate_lock:
+            if process is None or terminated:
+                return
+            if job is not None and assigned:
+                job.terminate()
+            elif os.name != "nt":
+                # This owns the original group, not deliberately detached groups.
+                # Prompt exit observation minimizes the post-reap PGID reuse window.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if process.poll() is None:
+                process.kill()
+            terminated = True
 
     try:
         # The launcher cannot create children until its private stdin is supplied,
         # so Windows job assignment happens before any azd or extension code runs.
         process = subprocess.Popen(
-            [sys.executable, "-I", str(Path(__file__).resolve())], cwd=cwd, env=env,
+            [sys.executable, "-I", "-S", str(Path(__file__).resolve())], cwd=cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             start_new_session=os.name != "nt",
         )
@@ -123,6 +133,18 @@ def run(args, *, cwd, env, timeout, text=False, encoding="utf-8"):
         remaining = timeout - (time.monotonic() - started)
         if remaining <= 0:
             raise subprocess.TimeoutExpired(args, timeout)
+
+        def observe_exit():
+            try:
+                process.wait(timeout=remaining)
+                terminate()
+            except subprocess.TimeoutExpired:
+                return  # communicate enforces the same command deadline.
+            except (OSError, RuntimeError) as error:
+                observer_errors.append(error)
+
+        observer = threading.Thread(target=observe_exit, name="owned-cli-exit", daemon=True)
+        observer.start()
         try:
             stdout, stderr = process.communicate(json.dumps({"argv": [str(arg) for arg in args]}).encode(),
                                                  timeout=remaining)
@@ -141,11 +163,17 @@ def run(args, *, cwd, env, timeout, text=False, encoding="utf-8"):
             try:
                 if process is not None:
                     process.wait(timeout=5)
+                    if observer is not None:
+                        observer.join(timeout=5)
+                        if observer.is_alive():
+                            raise RuntimeError("Owned CLI exit observer did not stop within the cleanup bound")
                     for stream in (process.stdin, process.stdout, process.stderr):
                         if stream is not None:
                             stream.close()
                 if job is not None and assigned:
                     job.wait_empty(5)
+                if observer_errors:
+                    raise observer_errors[0]
             finally:
                 if job is not None:
                     job.close()
@@ -157,7 +185,11 @@ def main():
             or not isinstance(request["argv"], list) or not request["argv"]
             or not all(isinstance(arg, str) for arg in request["argv"])):
         raise ValueError("Invalid owned CLI launch request")
-    return subprocess.run(request["argv"], stdin=subprocess.DEVNULL, check=False).returncode
+    try:
+        return subprocess.run(request["argv"], stdin=subprocess.DEVNULL, check=False).returncode
+    except OSError:
+        print("Owned CLI executable could not be started.", file=sys.stderr)
+        return 127
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 import scenario
+import service
 
 
 owned_process = scenario.proof_module.process_module
@@ -21,7 +22,7 @@ class OwnedProcessTests(unittest.TestCase):
         return {key: value for key, value in os.environ.items()
                 if key.upper() in ("PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "LANG")}
 
-    def command(self, root, *, parent_exits):
+    def command(self, root, *, parent_exits, inherited_streams=False, exit_code=0):
         heartbeat = root / "heartbeat"
         child = root / "child.py"
         child.write_text(
@@ -31,12 +32,15 @@ class OwnedProcessTests(unittest.TestCase):
             "    with path.open('a') as stream: stream.write('alive\\n')\n"
             "    time.sleep(0.02)\n", encoding="utf-8")
         parent = root / "parent.py"
+        streams = "" if inherited_streams else ", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL"
         parent.write_text(
             "import subprocess,sys,time\nfrom pathlib import Path\n"
-            f"subprocess.Popen([sys.executable, {str(child)!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+            f"subprocess.Popen([sys.executable, {str(child)!r}]{streams})\n"
             f"while not Path({str(heartbeat)!r}).exists(): time.sleep(0.01)\n"
             "print('parent ready', flush=True)\n"
-            + ("" if parent_exits else "time.sleep(30)\n"), encoding="utf-8")
+            + (f"Path({str(root / 'parent-exit')!r}).write_text(str(time.monotonic()))\n"
+               f"raise SystemExit({exit_code})\n"
+               if parent_exits else "time.sleep(30)\n"), encoding="utf-8")
         return [sys.executable, str(parent)], heartbeat
 
     def test_timeout_terminates_descendant_activity_before_returning(self):
@@ -63,6 +67,49 @@ class OwnedProcessTests(unittest.TestCase):
             before = heartbeat.read_bytes()
             time.sleep(0.15)
             self.assertEqual(heartbeat.read_bytes(), before)
+
+    def test_normal_exit_does_not_wait_for_inherited_descendant_pipe_eof(self):
+        for exit_code in (0, 7):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                args, heartbeat = self.command(root, parent_exits=True, inherited_streams=True, exit_code=exit_code)
+                result = owned_process.run(args, cwd=root, env=self.environment(), timeout=6, text=True)
+                self.assertLess(time.monotonic() - float((root / "parent-exit").read_text()), 2)
+                self.assertEqual(result.returncode, exit_code)
+                self.assertIn("parent ready", result.stdout)
+                before = heartbeat.read_bytes()
+                time.sleep(0.15)
+                self.assertEqual(heartbeat.read_bytes(), before)
+
+    def test_missing_executable_has_fixed_diagnostics_without_traceback_or_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            result = owned_process.run([str(root / "private-missing-executable")],
+                                       cwd=root, env=self.environment(), timeout=5, text=True)
+            self.assertEqual(result.returncode, 127)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr.strip(), "Owned CLI executable could not be started.")
+
+    def test_both_cli_callers_return_only_after_inherited_child_activity_stops(self):
+        for caller in ("offline", "service"):
+            with self.subTest(caller=caller), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                args, heartbeat = self.command(root, parent_exits=True, inherited_streams=True)
+                if caller == "offline":
+                    runner = scenario.proof_module.Proof(root, root, {})
+                    runner.azd = Path(sys.executable)
+                    runner.run("owned child fixture", args[1:], timeout=6)
+                    record = runner.commands[-1]
+                else:
+                    report = {}
+                    runner = service.Driver(Path(sys.executable), root / "auth", root, 6, 10, report)
+                    runner("owned child fixture", args[1:], output_format=None)
+                    record = report["commands"][-1]
+                self.assertEqual(record["exitCode"], 0)
+                self.assertLess(time.monotonic() - float((root / "parent-exit").read_text()), 2)
+                before = heartbeat.read_bytes()
+                time.sleep(0.15)
+                self.assertEqual(heartbeat.read_bytes(), before)
 
     @unittest.skipUnless(os.name == "nt", "Windows job assignment boundary")
     def test_failed_job_assignment_never_releases_the_cli_launch_request(self):

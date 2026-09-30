@@ -4,6 +4,7 @@
 package scaffold
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -322,11 +323,24 @@ func TestExecInfra(t *testing.T) {
 				bicep, err := os.ReadFile(filepath.Join(dir, "resources.bicep"))
 				require.NoError(t, err)
 				assert.Contains(t, string(bicep), "http20Enabled: false")
-				assert.Contains(t, string(bicep), "FUNCTIONS_WORKER_RUNTIME: 'native'")
+				assert.Contains(t, string(bicep), "name: 'go'")
 				assert.Contains(t, string(bicep), "AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name")
 				assert.Contains(t, string(bicep), "REDIS_HOST: redis.outputs.hostName")
 			}
-
+			for _, service := range tt.spec.Services {
+				if service.Host == FunctionAppKind {
+					bicep, err := os.ReadFile(filepath.Join(dir, "resources.bicep"))
+					require.NoError(t, err)
+					assert.NotContains(t, string(bicep), "FUNCTIONS_WORKER_RUNTIME")
+					assert.Regexp(t,
+						`siteConfig:\s*\{\s*alwaysOn: false\s*cors:\s*\{\s*allowedOrigins:\s*\[\s*'https://portal.azure.com'`,
+						string(bicep))
+					if tt.name == "Function App with implicit storage" {
+						assert.Regexp(t, `networkAcls:\s*\{\s*defaultAction: 'Allow'\s*\}`, string(bicep))
+					}
+					break
+				}
+			}
 			if v := os.Getenv("SCAFFOLD_SAVE"); v != "" {
 				dest := filepath.Join("testdata", strings.ReplaceAll(t.Name(), "/", "-"))
 				err := os.MkdirAll(dest, 0700)
@@ -345,6 +359,31 @@ func TestExecInfra(t *testing.T) {
 
 			res, err := cli.Build(ctx, filepath.Join(dir, "main.bicep"))
 			require.NoError(t, err)
+
+			if tt.name == "Function App with implicit storage" || tt.name == "Function App with managed storage" {
+				resourceTemplate, err := cli.Build(ctx, filepath.Join(dir, "resources.bicep"))
+				require.NoError(t, err)
+				var compiled struct {
+					Resources map[string]struct {
+						DependsOn []string `json:"dependsOn"`
+					} `json:"resources"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(resourceTemplate.Compiled), &compiled))
+				storageDependency := "apiFunctionStorage"
+				if tt.name == "Function App with managed storage" {
+					storageDependency = "storageAccount"
+				}
+				assert.Contains(t, compiled.Resources["apiBackingStorage"].DependsOn, storageDependency)
+				assert.Contains(t, compiled.Resources["apiDeploymentContainer"].DependsOn, storageDependency)
+				assert.Contains(t, compiled.Resources["api"].DependsOn, storageDependency)
+				for _, role := range []string{
+					"apiStorageBlobOwner", "apiStorageQueueContributor", "apiStorageTableContributor",
+				} {
+					assert.Contains(t, compiled.Resources[role].DependsOn, storageDependency)
+				}
+				assert.Contains(t, compiled.Resources["apiInsightsMetricsPublisher"].DependsOn, "api")
+				assert.Contains(t, compiled.Resources["api"].DependsOn, "monitoring")
+			}
 
 			lintErrs := strings.SplitSeq(res.LintErr, "\n")
 			for lintErr := range lintErrs {

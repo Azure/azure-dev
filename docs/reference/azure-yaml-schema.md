@@ -192,6 +192,8 @@ resources:
 
 Without a storage resource in `uses`, azd provisions a dedicated backing account for each Function App. Referencing exactly one managed or existing `storage` resource reuses that account for host state and deployment; other resources can also be referenced for application settings and access. Existing storage can be in another resource group and must be configured with its resource ID in the environment. Required Function App settings, including `AzureWebJobsStorage*`, cannot be overridden through `resources.<name>.env`. Explicitly select a Flex Consumption-supported region and runtime version for your project.
 
+Generated Function Apps allow `https://portal.azure.com` as a CORS origin so functions can be invoked from the Azure portal. Function Apps provisioned with user-provided infrastructure must configure CORS separately.
+
 Unlike App Service, Function Apps always deploy to the main site. Deployment slots are not part of the Function App workflow, so `AZD_DEPLOY_{SERVICE}_SLOT_NAME` has no effect and azd never prompts for a slot.
 
 Example TypeScript container deployment:

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,7 +53,7 @@ func TestFilteredResultPageDoesNotReportPageSizeAsRunFailures(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, page.Data, tc.shown)
 			var out bytes.Buffer
-			require.NoError(t, renderResults(&out, run.EvalID, run, page.Data, true))
+			require.NoError(t, renderResults(&out, run.EvalID, run, page.Data, resultListView{failedOnly: true}))
 			assert.Contains(t, out.String(), fmt.Sprintf("Showing %d failed test cases on this page.", tc.shown))
 			assert.Contains(t, out.String(), "Full run: 12 failed of 18 total test cases (service-reported).")
 			assert.NotContains(t, out.String(), fmt.Sprintf("%d of 18 test cases failed", tc.shown))
@@ -67,7 +68,8 @@ func TestFilteredResultPageDoesNotLabelMovingCountsAsFullRun(t *testing.T) {
 		ResultCounts: &eval_api.EvalRunResultCounts{Total: 18, Passed: 6, Failed: 12},
 	}
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, run.EvalID, run, []eval_api.OutputItem{failingItem("1")}, true))
+	require.NoError(t, renderResults(&out, run.EvalID, run,
+		[]eval_api.OutputItem{failingItem("1")}, resultListView{failedOnly: true}))
 	assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
 	assert.NotContains(t, out.String(), "Full run:")
 	assert.NotContains(t, out.String(), "Export complete results:")
@@ -76,7 +78,8 @@ func TestFilteredResultPageDoesNotLabelMovingCountsAsFullRun(t *testing.T) {
 
 	run.Status = "completed"
 	out.Reset()
-	require.NoError(t, renderResults(&out, run.EvalID, run, []eval_api.OutputItem{failingItem("1")}, true))
+	require.NoError(t, renderResults(&out, run.EvalID, run,
+		[]eval_api.OutputItem{failingItem("1")}, resultListView{failedOnly: true}))
 	assert.Contains(t, out.String(), "Full run: 12 failed of 18 total test cases")
 	assert.Contains(t, out.String(), "Export complete results:")
 }
@@ -85,7 +88,8 @@ func TestFilteredResultCountsDoNotInventMissingServiceTotals(t *testing.T) {
 	for _, counts := range []*eval_api.EvalRunResultCounts{nil, {}} {
 		run := &eval_api.OpenAIEvalRun{ID: "evalrun_counts", Status: "completed", ResultCounts: counts}
 		var out bytes.Buffer
-		require.NoError(t, renderResults(&out, "eval_counts", run, []eval_api.OutputItem{failingItem("row")}, true))
+		require.NoError(t, renderResults(&out, "eval_counts", run,
+			[]eval_api.OutputItem{failingItem("row")}, resultListView{failedOnly: true}))
 		assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
 		if counts == nil {
 			assert.NotContains(t, out.String(), "Full run:")
@@ -115,7 +119,8 @@ func TestFilteredResultFooterRequiresReportedCounters(t *testing.T) {
 					"id":"run_partial","status":"completed","metadata":{"azd_run_mode":"conversation_simulation"},
 					"result_counts":`+tc.counts+`}`), &run))
 			var out bytes.Buffer
-			require.NoError(t, renderResults(&out, "eval_partial", &run, []eval_api.OutputItem{failingItem("1")}, true))
+			require.NoError(t, renderResults(&out, "eval_partial", &run,
+				[]eval_api.OutputItem{failingItem("1")}, resultListView{failedOnly: true}))
 			assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
 			assert.Equal(t, tc.wantTotal, strings.Contains(out.String(), "Full run:"))
 			if tc.wantTotal {
@@ -201,12 +206,44 @@ func TestOutputFiltersAgreeAcrossPagedBulkAndFileViews(t *testing.T) {
 								strings.Contains(string(body), id), id)
 						}
 						if selection.name == "failed" || selection.name == "status failed" {
-							assert.Contains(t, string(body), "Showing 1 failed test case on this page.")
+							if view == "all" {
+								assert.Contains(t, string(body), "Showing 1 failed test case.")
+								assert.NotContains(t, string(body), "on this page")
+							} else {
+								assert.Contains(t, string(body), "Showing 1 failed test case on this page.")
+							}
 							assert.Contains(t, string(body), "Full run: 1 failed of 3 total test cases")
+						}
+						if selection.name == "no matches" {
+							assert.Contains(t, string(body), "No results match the selected status filter.")
+							assert.NotContains(t, string(body), "No rows have been scored yet.")
 						}
 					}
 				})
 			}
 		}
+
+	}
+}
+
+func TestUnfilteredEmptyOutputDoesNotClaimAFilterExcludedRows(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/output_items") {
+			_, _ = io.WriteString(w, `{"data":[]}`)
+		} else {
+			_, _ = io.WriteString(w, `{"id":"run_empty","status":"completed","result_counts":{"total":0}}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	for _, all := range []bool{false, true} {
+		command := jsonCmd(t, "table")
+		command.SetContext(t.Context())
+		var out bytes.Buffer
+		command.SetOut(&out)
+		action := &runOutputListAction{cmd: command, runID: "run_empty", flags: &runOutputListFlags{all: all}}
+		require.NoError(t, action.list(t.Context(), evalContextFor(srv), "eval_empty"))
+		assert.Contains(t, out.String(), "No rows have been scored yet.")
+		assert.NotContains(t, out.String(), "selected status filter")
 	}
 }

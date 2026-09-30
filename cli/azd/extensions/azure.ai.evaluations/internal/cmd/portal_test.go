@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -174,11 +176,11 @@ func TestHumanRunLinksRedactCredentialsOnInjectedWriter(t *testing.T) {
 				func(w io.Writer) error { writePortalLink(w, raw); return nil },
 				func(w io.Writer) error { return renderRun(w, run, nil) },
 				func(w io.Writer) error { return renderRunDetail(w, run) },
-				func(w io.Writer) error { return renderResults(w, run.EvalID, run, nil, false) },
+				func(w io.Writer) error { return renderResults(w, run.EvalID, run, nil, resultListView{}) },
 			} {
 				var out bytes.Buffer
 				require.NoError(t, render(&out))
-				assert.Contains(t, out.String(), "Portal:")
+				assert.Contains(t, out.String(), "Portal")
 				for _, secret := range []string{
 					"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
 				} {
@@ -187,5 +189,102 @@ func TestHumanRunLinksRedactCredentialsOnInjectedWriter(t *testing.T) {
 			}
 			assert.Equal(t, raw, runLink(run.ReportURL, run.PortalURL), "display must not change service data")
 		}
+	}
+}
+
+func TestRunLinkCallersRejectInvalidWholeURLsWithoutRewritingJSON(t *testing.T) {
+	for _, link := range []struct {
+		name, raw, display string
+	}{
+		{"safe", "https://example.test/report", "https://example.test/report"},
+		{"credentials", "https://fixture-secret@example.test/report?sig=fixture-secret#fixture-secret",
+			"https://example.test/report"},
+		{"query routing", "https://platform.openai.com/evaluations/eval_1?run_id=run_link",
+			"https://platform.openai.com/evaluations/eval_1"},
+		{"newline", "https://example.test/report?sig=\nfixture-secret", "<redacted-url>"},
+		{"space", "https://example.test/report?sig= fixture-secret", "<redacted-url>"},
+		{"tab", "https://example.test/report?sig=\tfixture-secret", "<redacted-url>"},
+		{"carriage return", "https://example.test/report?sig=\rfixture-secret", "<redacted-url>"},
+		{"escape", "https://example.test/report\n\x1b[31mfixture-secret", "<redacted-url>"},
+		{"unicode whitespace", "https://example.test/report?sig=\u2028fixture-secret", "<redacted-url>"},
+		{"control", "https://example.test/report?sig=\u0085fixture-secret", "<redacted-url>"},
+		{"malformed", "https:/fixture-secret@example.test/report", "<redacted-url>"},
+		{"not a URL", "fixture-secret", "<redacted-url>"},
+		{"adjacent", "https://example.test/report,https://fixture-secret@example.test/other", "<redacted-url>"},
+	} {
+		t.Run(link.name, func(t *testing.T) {
+			label := "Portal: "
+			if link.name == "credentials" || link.name == "query routing" {
+				label = "Portal (redacted link; may open a general page): "
+			}
+			var direct bytes.Buffer
+			writePortalLink(&direct, link.raw)
+			assert.Equal(t, label+link.display+"\n", direct.String())
+			encoded, err := json.Marshal(link.raw)
+			require.NoError(t, err)
+			response := `{"id":"run_link","status":"completed","report_url":` + string(encoded) +
+				`,"unknown":9007199254740993}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/runs/run_link"):
+					_, _ = io.WriteString(w, response)
+				case strings.HasSuffix(r.URL.Path, "/output_items"):
+					_, _ = io.WriteString(w, `{"data":[]}`)
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			for _, caller := range []string{"show human", "list human", "show JSON", "export JSON"} {
+				t.Run(caller, func(t *testing.T) {
+					format := "table"
+					if strings.HasSuffix(caller, "JSON") {
+						format = "json"
+					}
+					command := jsonCmd(t, format)
+					command.SetContext(t.Context())
+					var out, stderr bytes.Buffer
+					command.SetOut(&out)
+					command.SetErr(&stderr)
+					ec := evalContextFor(srv)
+					switch caller {
+					case "list human":
+						action := &runOutputListAction{cmd: command, runID: "run_link", flags: &runOutputListFlags{}}
+						require.NoError(t, action.list(t.Context(), ec, "eval_link"))
+					case "export JSON":
+						action := &runOutputExportAction{cmd: command, runID: "run_link", flags: &runOutputExportFlags{}}
+						require.NoError(t, action.export(t.Context(), ec, "eval_link", exportToStdout))
+					default:
+						action := &runShowAction{cmd: command, runID: "run_link", flags: &runShowFlags{}}
+						require.NoError(t, action.show(t.Context(), ec, "eval_link", gate{}))
+					}
+					assert.Empty(t, stderr.String())
+					if format == "table" {
+						assert.Contains(t, out.String(), label+link.display+"\n")
+						assert.NotContains(t, out.String(), "fixture-secret")
+						assert.NotContains(t, out.String(), "\x1b")
+						assert.NotContains(t, out.String(), "\r")
+						assert.NotContains(t, out.String(), "\u2028")
+						assert.NotContains(t, out.String(), "\u0085")
+						return
+					}
+					body := out.Bytes()
+					if caller == "export JSON" {
+						var doc exportDocument
+						require.NoError(t, json.Unmarshal(body, &doc))
+						body = doc.Run
+					}
+					var doc struct {
+						ReportURL string          `json:"report_url"`
+						Unknown   json.RawMessage `json:"unknown"`
+					}
+					require.NoError(t, json.Unmarshal(body, &doc))
+					assert.Equal(t, link.raw, doc.ReportURL, "human validation must not rewrite the raw-data contract")
+					assert.Equal(t, "9007199254740993", string(doc.Unknown))
+				})
+			}
+		})
 	}
 }

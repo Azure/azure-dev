@@ -300,6 +300,8 @@ separate from failed verdicts and can be selected with `--status errored`.
 The same outcome filters apply to paged output, `--all`, and `--output-file`,
 in both human and JSON modes. `--failed-only` adds failed cases to any outcomes
 selected by `--status`; `--status failed` alone has the same page-count footer.
+An empty selection is reported as no matching results, not as a run with no
+scored rows. `--all` summaries omit the page-only qualifier.
 
 After a terminal run, waited `run start` summaries and `run show` details
 include an unfiltered output-list command and a JSON export command, both with
@@ -322,6 +324,9 @@ from explicit zeros. Partial counters are marked `not reported` rather than
 inventing a failure/error split or a pass rate without known operands.
 Waited summaries also show a complete set of explicitly reported zero counters;
 their pass rate is `-` because no rows were scored.
+Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
+between the total and reported result counts does not replace an explicit zero
+with inferred errors; gate thresholds and exit behavior are unchanged.
 
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics
@@ -332,6 +337,12 @@ fragments from the human message. `--output json` keeps its existing document
 shape and exit behavior without appending human guidance.
 Human portal/report links also remove URL credentials, query strings, and
 fragments before display, without rewriting the underlying service fields.
+Each link is validated as a whole URL. Malformed, ambiguous, or raw
+whitespace/control-bearing values display as `<redacted-url>` rather than
+exposing any part of the rejected value.
+Sanitized links are labeled as redacted and may open a general portal page
+when query-based routing was removed. Use the resolved output-list/detail
+commands to inspect the exact run; routing parameters are not exempted from redaction.
 
 CLI-generated JSON error envelopes, accompanying stderr diagnostics, and the
 run's known `error.code`/`error.message` fields in JSON and exports also redact
@@ -352,6 +363,9 @@ Applicability is not a pass/fail verdict, and missing values are not treated
 as zero or false. Separate dimension metrics in `results` remain supported.
 The CLI does not derive dimension results from the rubric definition when
 they are absent from the response.
+Malformed dimension properties are identified by a warning without hiding valid
+aggregate results or other evaluators. The human command still returns an error;
+`--output json` retains the original data for inspection.
 
 Output-item JSON preserves unrecognized nested service fields, including
 evaluator `properties` and `sample` details; modeled scores keep their existing

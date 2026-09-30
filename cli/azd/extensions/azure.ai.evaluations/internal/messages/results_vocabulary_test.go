@@ -37,13 +37,15 @@ func TestTheReconciliationCountsSingularNouns(t *testing.T) {
 
 func TestAFilteredListingDistinguishesPageAndRunCounts(t *testing.T) {
 	assert.Equal(t, "\nShowing 1 failed test case on this page.\n",
-		messages.FilteredItemCount(1, "failed"))
+		messages.FilteredItemCount(1, "failed", false))
 	assert.Equal(t, "\nShowing 0 failed test cases on this page.\n",
-		messages.FilteredItemCount(0, "failed"))
+		messages.FilteredItemCount(0, "failed", false))
 	assert.Equal(t, "\nShowing 6 failed test cases on this page.\n",
-		messages.FilteredItemCount(6, "failed"))
+		messages.FilteredItemCount(6, "failed", false))
 	assert.Equal(t, "\nShowing 2 errored test cases on this page.\n",
-		messages.FilteredItemCount(2, "errored"))
+		messages.FilteredItemCount(2, "errored", false))
+	assert.Equal(t, "\nShowing 2 failed test cases.\n",
+		messages.FilteredItemCount(2, "failed", true))
 	assert.Equal(t, "Full run: 12 failed of 18 total test cases (service-reported).\n",
 		messages.FilteredRunTotal(12, 18, "failed"))
 	assert.Equal(t, "Full run: 1 failed of 1 total test case (service-reported).\n",

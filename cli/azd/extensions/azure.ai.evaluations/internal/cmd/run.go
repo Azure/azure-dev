@@ -1339,15 +1339,8 @@ func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	status := strings.ToLower(run.Status)
 	operationalFailure := status == "failed" || status == "error" || runFailureMessage(run) != ""
 	counts := run.ReportedResultCounts()
-	failed, errored := counts["failed"] > 0, counts["errored"] > 0
-	total, totalKnown := counts["total"]
-	passed, passedKnown := counts["passed"]
-	failedCount, failedKnown := counts["failed"]
-	skipped, skippedKnown := counts["skipped"]
-	_, erroredKnown := counts["errored"]
-	if !erroredKnown && totalKnown && passedKnown && failedKnown && skippedKnown {
-		errored = errored || total-passed-failedCount-skipped > 0
-	}
+	erroredCount, _ := unscoredRunCounts(counts)
+	failed, errored := counts["failed"] > 0, erroredCount > 0
 	if status == "" && !operationalFailure && len(counts) == 0 {
 		return
 	}

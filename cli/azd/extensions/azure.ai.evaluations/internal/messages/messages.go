@@ -562,9 +562,18 @@ func NoRowsScored() string {
 	return "\nNo rows have been scored yet.\n"
 }
 
+// NoMatchingRows describes an empty selection without claiming the run has no results.
+func NoMatchingRows() string {
+	return "\nNo results match the selected status filter.\n"
+}
+
 // FilteredItemCount names only the rows displayed, not the run's total failures.
-func FilteredItemCount(shown int, status string) string {
-	return fmt.Sprintf("\nShowing %s on this page.\n", countOf(shown, status+" test case"))
+func FilteredItemCount(shown int, status string, all bool) string {
+	scope := " on this page"
+	if all {
+		scope = ""
+	}
+	return fmt.Sprintf("\nShowing %s%s.\n", countOf(shown, status+" test case"), scope)
 }
 
 // FilteredRunTotal distinguishes the service's matching and full-run totals.
@@ -3845,6 +3854,11 @@ func RubricDimensionsNotReturned() string {
 	return "\nRubric dimensions: not returned by service\n"
 }
 
+// RubricDimensionsUnreadable preserves valid detail output while identifying malformed data.
+func RubricDimensionsUnreadable() string {
+	return "\nWARNING: Dimension scores could not be read; use --output json to inspect the service data.\n"
+}
+
 // LocalContextHeading opens what init settled without asking.
 func LocalContextHeading() string {
 	return "\nUsing local configuration:\n"
@@ -4067,7 +4081,10 @@ func explainGenerationWarning(code string) string {
 }
 
 // PortalLink closes a detail view with the asset's portal URL.
-func PortalLink(url string) string {
+func PortalLink(url string, redacted bool) string {
+	if redacted {
+		return fmt.Sprintf("Portal (redacted link; may open a general page): %s\n", url)
+	}
 	return fmt.Sprintf("Portal: %s\n", url)
 }
 

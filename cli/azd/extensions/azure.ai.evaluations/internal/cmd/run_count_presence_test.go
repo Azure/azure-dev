@@ -27,7 +27,7 @@ func TestHumanRunViewsPreservePartialCountPresence(t *testing.T) {
 		{"summary", func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) }},
 		{"detail", renderRunDetail},
 		{"output", func(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-			return renderResults(out, "eval_partial", run, nil, false)
+			return renderResults(out, "eval_partial", run, nil, resultListView{})
 		}},
 	} {
 		for _, counts := range []string{
@@ -70,7 +70,7 @@ func TestHumanRunViewsKeepExplicitZeroCounts(t *testing.T) {
 	require.NoError(t, renderRunDetail(&out, &run))
 	assert.Contains(t, out.String(), "0 passed, 0 failed, 0 errored")
 	out.Reset()
-	require.NoError(t, renderResults(&out, "eval_zero", &run, nil, false))
+	require.NoError(t, renderResults(&out, "eval_zero", &run, nil, resultListView{}))
 	assert.Contains(t, out.String(), "0 test cases: 0 passed, 0 failed, 0 errored, 0 skipped")
 }
 
@@ -245,5 +245,67 @@ func TestMovingGateUsesResolvedIDWithoutChangingJSON(t *testing.T) {
 		assert.Contains(t, err.Error(), "run_resolved")
 		assert.Contains(t, err.Error(), "in_progress")
 		assert.Empty(t, out.String())
+	}
+}
+
+func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
+	for _, counts := range []struct {
+		name, raw, warning string
+	}{
+		{"explicit zero", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":0}`, ""},
+		{"reported errors", `{"total":10,"passed":5,"failed":2,"errored":1,"skipped":0}`, "1 errored of 10"},
+		{"reported skips", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":1}`, "1 skipped of 10"},
+		{"legacy remainder", `{"total":10,"passed":5,"failed":2,"skipped":0}`, "3 errored of 10"},
+		{"partial", `{"total":10,"passed":5}`, ""},
+	} {
+		for _, caller := range []string{"start", "show"} {
+			for _, format := range []string{"table", "json"} {
+				t.Run(counts.name+"/"+caller+"/"+format, func(t *testing.T) {
+					response := `{"id":"run_counts","status":"completed","result_counts":` + counts.raw + `}`
+					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						w.Header().Set("Content-Type", "application/json")
+						switch {
+						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+							_, _ = io.WriteString(w, `{"id":"run_counts","status":"queued"}`)
+						case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):
+							_, _ = io.WriteString(w, response)
+						case strings.HasSuffix(r.URL.Path, "/output_items"):
+							_, _ = io.WriteString(w, `{"data":[]}`)
+						case strings.HasSuffix(r.URL.Path, "/runs"):
+							_, _ = io.WriteString(w, `{"data":[{"id":"previous","data_source":{"type":"jsonl"}}]}`)
+						default:
+							t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+							w.WriteHeader(http.StatusNotFound)
+						}
+					}))
+					t.Cleanup(srv.Close)
+					command := jsonCmd(t, format)
+					command.SetContext(t.Context())
+					var out, stderr bytes.Buffer
+					command.SetOut(&out)
+					command.SetErr(&stderr)
+					ec := evalContextFor(srv)
+					threshold, err := parseGate("pass-rate=0.5")
+					require.NoError(t, err)
+					if caller == "start" {
+						action := &runStartAction{cmd: command, flags: &runStartFlags{
+							groupName: "eval_counts", evalPath: t.TempDir(), wait: true,
+						}}
+						require.NoError(t, action.start(t.Context(), ec, threshold))
+					} else {
+						action := &runShowAction{cmd: command, runID: "run_counts", flags: &runShowFlags{}}
+						require.NoError(t, action.show(t.Context(), ec, "eval_counts", threshold))
+					}
+					if counts.warning == "" {
+						assert.Empty(t, stderr.String(), "do not infer errors over explicit zero or missing operands")
+					} else {
+						assert.Contains(t, stderr.String(), counts.warning)
+					}
+					if format == "json" {
+						assert.JSONEq(t, response, out.String())
+					}
+				})
+			}
+		}
 	}
 }

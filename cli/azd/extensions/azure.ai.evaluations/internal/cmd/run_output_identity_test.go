@@ -163,7 +163,8 @@ func TestLegacyOutputCountsDoNotClaimKnownCompletion(t *testing.T) {
 	var run eval_api.OpenAIEvalRun
 	require.NoError(t, json.Unmarshal([]byte(`{"id":"run_legacy","result_counts":{"total":1,"failed":1}}`), &run))
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "eval_legacy", &run, []eval_api.OutputItem{failingItem("1")}, true))
+	require.NoError(t, renderResults(&out, "eval_legacy", &run,
+		[]eval_api.OutputItem{failingItem("1")}, resultListView{failedOnly: true}))
 	assert.Contains(t, out.String(), "Showing 1 failed test case")
 	assert.Contains(t, out.String(), "Export available results:")
 	assert.NotContains(t, out.String(), "Export complete results:")

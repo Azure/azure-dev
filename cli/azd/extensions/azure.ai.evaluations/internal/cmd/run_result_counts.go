@@ -11,6 +11,23 @@ import (
 	"azureaieval/internal/pkg/eval_api"
 )
 
+// unscoredRunCounts preserves explicit counts and only infers a missing error
+// count when every operand of the remainder was reported.
+func unscoredRunCounts(counts map[string]int) (errored, skipped int) {
+	skipped = counts["skipped"]
+	if errored, known := counts["errored"]; known {
+		return errored, skipped
+	}
+	total, totalKnown := counts["total"]
+	passed, passedKnown := counts["passed"]
+	failed, failedKnown := counts["failed"]
+	_, skippedKnown := counts["skipped"]
+	if totalKnown && passedKnown && failedKnown && skippedKnown {
+		errored = max(0, total-passed-failed-skipped)
+	}
+	return errored, skipped
+}
+
 func resultCountText(counts map[string]int, name string) string {
 	if count, ok := counts[name]; ok {
 		return strconv.Itoa(count)

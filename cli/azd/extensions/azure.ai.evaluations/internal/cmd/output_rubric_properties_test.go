@@ -131,11 +131,21 @@ func TestMalformedRubricDimensionPropertiesRemainAvailableInJSON(t *testing.T) {
 	} {
 		t.Run(properties, func(t *testing.T) {
 			item := eval_api.OutputItem{ID: "1", Results: []eval_api.OutputResult{
-				{Name: "quality", Properties: json.RawMessage(properties)},
+				{Name: "quality", Score: 0.75, Passed: new(true), Reason: "Valid aggregate explanation.",
+					Properties: json.RawMessage(properties)},
+				{Name: "other", Score: 0.5, Passed: new(false), Reason: "Unrelated evaluator explanation."},
 			}}
 			var out bytes.Buffer
 			err := renderOutputItem(&out, &item)
 			require.ErrorContains(t, err, "reading rubric dimension scores")
+			assert.Contains(t, out.String(), "EVALUATOR: quality")
+			assert.Contains(t, out.String(), "0.75")
+			assert.Contains(t, out.String(), "Valid aggregate explanation.")
+			assert.Contains(t, out.String(), "EVALUATOR: other")
+			assert.Contains(t, out.String(), "Unrelated evaluator explanation.")
+			assert.Contains(t, out.String(), "Dimension scores could not be read")
+			assert.Contains(t, out.String(), "--output json")
+			assert.NotContains(t, out.String(), "not returned by service")
 			out.Reset()
 			require.NoError(t, emitJSON(&out, item), "JSON still carries the service value for diagnosis")
 			var decoded struct {
@@ -144,9 +154,42 @@ func TestMalformedRubricDimensionPropertiesRemainAvailableInJSON(t *testing.T) {
 				} `json:"results"`
 			}
 			require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
-			require.Len(t, decoded.Results, 1)
+			require.Len(t, decoded.Results, 2)
 			assert.JSONEq(t, properties, string(decoded.Results[0].Properties))
 		})
+	}
+}
+
+func TestMalformedRubricPropertiesKeepValidCallerOutputAndError(t *testing.T) {
+	const response = `{"id":"1","run_id":"run_rubric","status":"completed","results":[
+		{"name":"quality","score":0.75,"passed":true,"properties":{"dimension_scores":"unexpected"}},
+		{"name":"other","score":0.5,"passed":false,"reason":"Valid result from another evaluator."}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.True(t, strings.HasSuffix(r.URL.Path, "/runs/run_rubric/output_items/1"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(srv.Close)
+	for _, format := range []string{"table", "json"} {
+		command := jsonCmd(t, format)
+		var out, stderr bytes.Buffer
+		command.SetOut(&out)
+		command.SetErr(&stderr)
+		action := &runOutputShowAction{cmd: command, itemID: "1"}
+		err := action.show(t.Context(), evalContextFor(srv), "eval_rubric", "run_rubric")
+		if format == "json" {
+			require.NoError(t, err)
+			assert.JSONEq(t, response, out.String())
+		} else {
+			require.ErrorContains(t, err, "reading rubric dimension scores")
+			assert.Contains(t, out.String(), "EVALUATOR: quality")
+			assert.Contains(t, out.String(), "0.75")
+			assert.Contains(t, out.String(), "EVALUATOR: other")
+			assert.Contains(t, out.String(), "Valid result from another evaluator.")
+			assert.Contains(t, out.String(), "WARNING: Dimension scores could not be read")
+			assert.Contains(t, out.String(), "--output json")
+		}
+		assert.Empty(t, stderr.String(), "the helper uses the injected output writer")
 	}
 }
 

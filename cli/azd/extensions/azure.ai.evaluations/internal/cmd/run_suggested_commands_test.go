@@ -26,7 +26,7 @@ func TestSuggestedCommandsNameTheEvalEvenWhenTheRunDoesNot(t *testing.T) {
 	items := []eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "the-eval", run, items, false))
+	require.NoError(t, renderResults(&out, "the-eval", run, items, resultListView{}))
 
 	text := out.String()
 	assert.NotContains(t, text, "--eval  ",
@@ -48,7 +48,7 @@ func TestSuggestedCommandsPreferResolvedIDOverMutableName(t *testing.T) {
 
 	var out bytes.Buffer
 	require.NoError(t, renderResults(&out, "eval_abc123", run,
-		[]eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}, false))
+		[]eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}, resultListView{}))
 
 	assert.Contains(t, out.String(), "--eval eval_abc123")
 	assert.NotContains(t, out.String(), "--eval declared-name")
@@ -66,7 +66,7 @@ func TestExportIsOfferedEvenWhenTheFilterKeptNothing(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "the-eval", run, nil, true))
+	require.NoError(t, renderResults(&out, "the-eval", run, nil, resultListView{failedOnly: true}))
 
 	text := out.String()
 	assert.Contains(t, text, "Export complete results:")

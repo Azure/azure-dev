@@ -44,7 +44,8 @@ func TestSimulationReportingAtSummaryDetailAndOutputCallSites(t *testing.T) {
 		{"summary", func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) }},
 		{"detail", renderRunDetail},
 		{"output", func(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-			return renderResults(out, run.EvalID, run, []eval_api.OutputItem{failingItem("row1")}, true)
+			return renderResults(out, run.EvalID, run, []eval_api.OutputItem{failingItem("row1")},
+				resultListView{failedOnly: true})
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

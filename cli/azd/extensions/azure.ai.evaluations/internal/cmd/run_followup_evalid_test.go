@@ -101,7 +101,7 @@ func TestRunFollowUpCommandsKeepImmutableIdentityAndFriendlyLabelsSeparate(t *te
 			return renderRunDetail(out, runForDisplay(run, "eval_immutable", run.ID))
 		}},
 		{"output", func(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-			return renderResults(out, "eval_immutable", run, []eval_api.OutputItem{failingItem("1")}, false)
+			return renderResults(out, "eval_immutable", run, []eval_api.OutputItem{failingItem("1")}, resultListView{})
 		}},
 	} {
 		for _, idSource := range []string{"service", "resolved lookup"} {

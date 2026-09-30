@@ -40,7 +40,7 @@ func scoredRows() []eval_api.OutputItem {
 func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), false))
+	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), resultListView{}))
 
 	text := out.String()
 	assert.Equal(t, 1, strings.Count(text, "oi_2"),
@@ -76,7 +76,7 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), true))
+	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), resultListView{failedOnly: true}))
 
 	text := out.String()
 	assert.Contains(t, text, "2 failed",
@@ -105,7 +105,8 @@ func TestFailedOnlyExcludesRowsNothingScored(t *testing.T) {
 
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, filterItems(items, map[string]bool{itemFailed: true}), true))
+	require.NoError(t, renderResults(&out, "an-eval", run,
+		filterItems(items, map[string]bool{itemFailed: true}), resultListView{failedOnly: true}))
 
 	text := out.String()
 	assert.Contains(t, text, "oi_fail")
@@ -124,7 +125,7 @@ func TestErroredRowIsReportedAsErrored(t *testing.T) {
 
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, items, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, items, resultListView{}))
 
 	text := out.String()
 	assert.Contains(t, text, itemErrored, "the status column states the outcome directly")
@@ -151,7 +152,7 @@ func TestListingPrintsItsFollowUpCommandsResolved(t *testing.T) {
 	}}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "an-eval", run, items, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, items, resultListView{}))
 	text := out.String()
 
 	assert.Contains(t, text,
@@ -355,7 +356,7 @@ func TestCriterionTableAccountsForEverySample(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "an-eval", run, nil, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, nil, resultListView{}))
 	text := out.String()
 
 	for _, header := range []string{"EVALUATOR", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"} {

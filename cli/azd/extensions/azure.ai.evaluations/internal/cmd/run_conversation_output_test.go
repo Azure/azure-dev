@@ -147,7 +147,7 @@ func TestObservedConversationOutputIsNotDerivedFromPagedOrFilteredListings(t *te
 	items := []eval_api.OutputItem{conversationItem("1", "conv_1", "completed")}
 	for _, failedOnly := range []bool{false, true} {
 		var out bytes.Buffer
-		require.NoError(t, renderResults(&out, run.EvalID, run, items, failedOnly))
+		require.NoError(t, renderResults(&out, run.EvalID, run, items, resultListView{failedOnly: failedOnly}))
 		assert.NotContains(t, out.String(), "OBSERVED CONVERSATION OUTPUT")
 	}
 	var out bytes.Buffer

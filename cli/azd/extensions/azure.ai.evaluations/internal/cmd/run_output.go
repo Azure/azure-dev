@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -180,9 +181,13 @@ func (a *runOutputListAction) list(ctx context.Context, ec *evalContext, evalID 
 		}
 		return emitJSONPage(a.cmd.OutOrStdout(), rows, nil, cursor)
 	}
-	failedOnly := len(keep) == 1 && keep[itemFailed]
+	view := resultListView{
+		failedOnly: len(keep) == 1 && keep[itemFailed],
+		filtered:   len(keep) > 0,
+		all:        a.flags.walksEveryPage(a.cmd),
+	}
 	if err := renderResults(a.cmd.OutOrStdout(), evalID, runForDisplay(run, evalID, runID), rows,
-		failedOnly); err != nil {
+		view); err != nil {
 		return err
 	}
 	if items.HasMore && items.LastID != "" {
@@ -720,13 +725,19 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 		byName[r.Name] = append(byName[r.Name], r)
 	}
 
+	var dimensionErrors []error
 	for _, name := range order {
 		if err := renderEvaluatorResult(w, name, byName[name]); err != nil {
-			return err
+			if !errors.Is(err, errInvalidRubricDimensions) {
+				return errors.Join(append(dimensionErrors, err)...)
+			}
+			dimensionErrors = append(dimensionErrors, err)
 		}
 	}
-	return nil
+	return errors.Join(dimensionErrors...)
 }
+
+var errInvalidRubricDimensions = errors.New("invalid rubric dimension scores")
 
 // renderEvaluatorResult prints one evaluator's section of the detail view.
 //
@@ -741,12 +752,14 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 	// evaluator, so a result only names a dimension when it says something else.
 	dimensions := make([]eval_api.OutputResult, 0, len(results))
 	var rubricScores []eval_api.RubricDimensionScore
+	var dimensionErr error
 	for _, r := range results {
 		scores, err := r.RubricDimensions()
 		if err != nil {
-			return err
+			dimensionErr = errors.Join(dimensionErr, err)
+		} else {
+			rubricScores = append(rubricScores, scores...)
 		}
-		rubricScores = append(rubricScores, scores...)
 		if r.Metric != "" && r.Metric != name {
 			dimensions = append(dimensions, r)
 		}
@@ -773,14 +786,20 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 			return err
 		}
 	}
+	if dimensionErr != nil {
+		if _, err := fmt.Fprint(w, messages.RubricDimensionsUnreadable()); err != nil {
+			return err
+		}
+		dimensionErr = fmt.Errorf("%w: %w", errInvalidRubricDimensions, dimensionErr)
+	}
 	if len(dimensions) == 0 {
 		// Said rather than left blank, and never invented: a reader who cannot
 		// see dimensions needs to know whether this rubric has none or the
 		// service did not return them.
-		if len(rubricScores) == 0 && isRubricName(name) {
+		if dimensionErr == nil && len(rubricScores) == 0 && isRubricName(name) {
 			fmt.Fprint(w, messages.RubricDimensionsNotReturned())
 		}
-		return nil
+		return dimensionErr
 	}
 
 	rows := make([][]string, 0, len(dimensions))
@@ -793,7 +812,10 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 		})
 	}
 	fmt.Fprint(w, messages.RubricDimensionsHeading())
-	return emitTable(w, []string{"DIMENSION", "SCORE", "RESULT", "REASON"}, rows)
+	if err := emitTable(w, []string{"DIMENSION", "SCORE", "RESULT", "REASON"}, rows); err != nil {
+		return err
+	}
+	return dimensionErr
 }
 
 func renderRubricScores(w io.Writer, dimensions []eval_api.RubricDimensionScore) error {
@@ -910,13 +932,20 @@ func meanScoreOf(results []eval_api.OutputResult) string {
 	return strconv.FormatFloat(total/float64(scored), 'f', 2, 64)
 }
 
+type resultListView struct {
+	failedOnly bool
+	filtered   bool
+	all        bool
+}
+
 func renderResults(
 	w io.Writer,
 	resolvedEval string,
 	run *eval_api.OpenAIEvalRun,
 	items []eval_api.OutputItem,
-	failedOnly bool,
+	view resultListView,
 ) error {
+	failedOnly := view.failedOnly
 	evalRef := followUpEvalRef(runForDisplay(run, resolvedEval, ""))
 	completionKnown := run.Status != "" && runIsTerminal(run)
 	exportHint := messages.ExportCompleteResults(evalRef, run.ID)
@@ -981,6 +1010,8 @@ func renderResults(
 	if len(items) == 0 {
 		if failedOnly {
 			fmt.Fprint(w, messages.NoFailingRows())
+		} else if view.filtered {
+			fmt.Fprint(w, messages.NoMatchingRows())
 		} else {
 			fmt.Fprint(w, messages.NoRowsScored())
 		}
@@ -1030,7 +1061,7 @@ func renderResults(
 			return err
 		}
 		if failedOnly {
-			fmt.Fprint(w, messages.FilteredItemCount(shown, itemFailed))
+			fmt.Fprint(w, messages.FilteredItemCount(shown, itemFailed, view.all))
 			counts := run.ReportedResultCounts()
 			failed, failedKnown := counts["failed"]
 			total, totalKnown := counts["total"]

@@ -37,6 +37,31 @@ func TestURLHandlesNil(t *testing.T) {
 	assert.Equal(t, "", URL(nil))
 }
 
+func TestLinkValidatesTheWholeField(t *testing.T) {
+	for _, test := range []struct{ raw, want string }{
+		{"https://example.test/report", "https://example.test/report"},
+		{"https://example.test/report%20name", "https://example.test/report%20name"},
+		{"https://example.test/report?", "https://example.test/report"},
+		{"https://token@example.test/report?sig=secret#fragment", "https://example.test/report"},
+		{"//example.test/report?sig=secret", "//example.test/report"},
+		{"not a URL", "<redacted-url>"},
+		{"https:/token@example.test/report", "<redacted-url>"},
+		{"https://example.test/%invalid", "<redacted-url>"},
+		{"https://example.test/report,https://token@example.test/other", "<redacted-url>"},
+	} {
+		assert.Equal(t, test.want, Link(test.raw))
+	}
+	for _, separator := range []rune{'\x00', '\t', '\n', '\r', '\x1b', '\x7f', ' ', '\u0085', '\u00a0', '\u2028'} {
+		for _, raw := range []string{
+			"https://example.test/report?sig=" + string(separator) + sasSecret,
+			"https://example.test/report" + string(separator) + sasSecret,
+			string(separator) + "https://example.test/report?sig=" + sasSecret,
+		} {
+			assert.Equal(t, "<redacted-url>", Link(raw), "raw whitespace/control must reject the entire link")
+		}
+	}
+}
+
 // Redacted() masks a userinfo password and prints the username verbatim, so a
 // credential passed either way has to be dropped here rather than rendered.
 func TestURLDropsUserinfoCredentials(t *testing.T) {

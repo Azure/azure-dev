@@ -48,16 +48,16 @@ func writePortalLink(w io.Writer, url string) {
 	if url == "" {
 		return
 	}
-	fmt.Fprint(w, messages.PortalLink(color.CyanString(urlsafe.Text(url))))
+	safe := urlsafe.Link(url)
+	redacted := safe != url && safe != "<redacted-url>"
+	fmt.Fprint(w, messages.PortalLink(color.CyanString(safe), redacted))
 }
 
 // runLink is the one link a run has.
 //
-// The service sends report_url and the extension builds its own portal URL, and
-// the two resolve to the same page. Printing both put two labels on one
-// destination with no rule a reader could infer, so the service's value wins and
-// ours is the fallback that keeps the link from going missing. Callers format
-// it themselves, because the three views that show it are laid out differently.
+// Prefer the service's report_url and fall back to the extension's portal URL.
+// The display writer marks sanitized links because removing routing query
+// parameters can turn a report link into a general portal link.
 func runLink(reportURL, portalURL string) string {
 	if reportURL != "" {
 		return reportURL

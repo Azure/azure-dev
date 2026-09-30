@@ -296,20 +296,29 @@ agents:
 
 func TestResolveFileRefs_ExactlyOneObject(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
-		want    map[string]any
+		name      string
+		content   string
+		want      map[string]any
+		wantError string
 	}{
 		{name: "adjacent JSON objects", content: `{"name":"first"} {"name":"second"}`},
 		{name: "newline JSON objects", content: "{\"name\":\"first\"}\n{\"name\":\"second\"}"},
 		{name: "trailing invalid JSON", content: `{"name":"first"} garbage`},
 		{name: "multiple YAML documents", content: "name: first\n---\nname: second\n"},
 		{name: "empty second document", content: "name: first\n---\n"},
-		{name: "malformed second document", content: "name: first\n---\n["},
+		{
+			name: "malformed second document", content: "name: first\n---\n[",
+			wantError: "trailing YAML or JSON is invalid at line",
+		},
+		{
+			name: "unknown anchor in second document", content: "name: first\n---\n*private_fixture_marker",
+			wantError: "trailing YAML or JSON is invalid",
+		},
 		{name: "array", content: `[{"name":"first"}]`},
 		{name: "scalar", content: "first"},
 		{name: "null", content: "null"},
-		{name: "empty", content: ""},
+		{name: "empty", content: "", wantError: "is empty or not a mapping"},
+		{name: "comment only", content: "# no object\n", wantError: "is empty or not a mapping"},
 		{name: "JSON object", content: "{\"name\":\"first\"}\n  ", want: map[string]any{"name": "first"}},
 		{name: "empty object", content: "{}", want: map[string]any{}},
 		{
@@ -331,6 +340,10 @@ func TestResolveFileRefs_ExactlyOneObject(t *testing.T) {
 			got, err := ResolveFileRefs(map[string]any{refKey: "./selected.yaml"}, root)
 			if tt.want == nil {
 				requireFileRefError(t, err, "selected.yaml")
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+				}
+				require.NotContains(t, err.Error(), "private_fixture_marker")
 				assert.Nil(t, got)
 			} else {
 				require.NoError(t, err)

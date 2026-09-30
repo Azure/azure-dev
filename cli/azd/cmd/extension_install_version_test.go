@@ -151,8 +151,9 @@ func TestExtensionInstall_ExplicitVersion(t *testing.T) {
 				require.Nil(t, result)
 				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](runErr)
 				require.True(t, ok)
-				require.Contains(t, suggestion.Suggestion, "--force")
+				require.Contains(t, runErr.Error(), "--force")
 				require.Contains(t, suggestion.Suggestion, "AZD_NON_INTERACTIVE=false")
+				require.Contains(t, suggestion.Suggestion, "if automatic non-interactive mode is enabled")
 				require.Contains(t, runErr.Error(), "--version")
 				require.Contains(t, runErr.Error(), tt.installed)
 				if tt.installedSource != "test" {

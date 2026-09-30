@@ -30,6 +30,8 @@ const maxRefDepth = 32
 // are rejected for now; only local YAML/JSON files are supported.
 var remoteRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
 
+var refYAMLLinePattern = regexp.MustCompile(`^yaml: line ([0-9]+):`)
+
 // ResolveOption configures a call to ResolveFileRefs.
 type ResolveOption func(*resolveOptions)
 
@@ -270,7 +272,7 @@ func loadRefFile(path string) (map[string]any, error) {
 
 	var out map[string]any
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(&out); err != nil {
+	if err := decoder.Decode(&out); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fileRefValidation(
 			fmt.Sprintf("%s file %q is not a valid YAML or JSON object: %v", refKey, path, err),
 			"Fix the file so it parses as a YAML or JSON object.",
@@ -284,8 +286,16 @@ func loadRefFile(path string) (map[string]any, error) {
 	}
 	var trailing yaml.Node
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		message := fmt.Sprintf("%s file %q must contain exactly one YAML or JSON object", refKey, path)
+		if err != nil {
+			message += "; trailing YAML or JSON is invalid"
+			// Parser errors can quote input values. Retain only the numeric source location.
+			if line := refYAMLLinePattern.FindStringSubmatch(err.Error()); len(line) == 2 {
+				message += " at line " + line[1]
+			}
+		}
 		return nil, fileRefValidation(
-			fmt.Sprintf("%s file %q must contain exactly one YAML or JSON object", refKey, path),
+			message,
 			"Remove additional documents or trailing content from the referenced file.",
 		)
 	}

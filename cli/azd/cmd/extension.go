@@ -1537,8 +1537,8 @@ func (a *extensionInstallAction) confirmReplace(
 					"cannot install --version %q in non-interactive mode%s",
 					a.flags.version, noPromptSkipSuffix,
 				),
-				Suggestion: "Repeat the command with --force to allow replacement, " +
-					"or use an interactive terminal without --no-prompt and set AZD_NON_INTERACTIVE=false.",
+				Suggestion: "Alternatively, run in an interactive terminal without --no-prompt " +
+					"(set AZD_NON_INTERACTIVE=false if automatic non-interactive mode is enabled).",
 			}
 		}
 		a.console.StopSpinner(ctx, stepMessage+output.WithGrayFormat(noPromptSkipSuffix), input.StepSkipped)

@@ -45,7 +45,8 @@ the OpenTelemetry operation ID. A project with multiple agent classifications
 reports one row for each distinct kind, harness, and container mode; it does
 not count individual agents or prove a deployment succeeded. `build` includes
 both azd-created and existing ACR destinations. Ambiguous legacy or invalid
-hosted configurations are reported as `unknown`. The event never includes agent names, service keys,
+hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
+are reported as `unknown`. The event never includes agent names, service keys,
 registry connections, image references, paths, URLs, prompts, or other customer content.
 
 ## Non-interactive automation

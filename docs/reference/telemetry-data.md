@@ -501,7 +501,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
 | `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, or `other` (`agent.context.resolved`) |
 | `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
-| `ext.agent.container.mode` | string | Optional hosted-agent deployment configuration: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown` (`agent.context.resolved`); omitted for non-hosted agents |
+| `ext.agent.container.mode` | string | Optional hosted-agent deployment configuration: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown` (`agent.context.resolved`); explicit `AGENT_DEFINITION_PATH` overrides report `unknown`, and non-hosted agents omit the field |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `ext.source` | string | Rows a scaffolded eval will grade, reported by `azure.ai.evaluations`: `traces`, `dataset`, or `unknown` (`init.completed`). Extension-chosen, and unrelated to the host-owned `extension.source` below |

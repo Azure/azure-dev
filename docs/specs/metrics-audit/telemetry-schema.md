@@ -299,7 +299,7 @@ declarations are:
 | `azure.ai.agents` | `ext.agent.kind` | SystemMetadata | FeatureInsight | `N/A` | No | No | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` on `agent.context.resolved` |
 | `azure.ai.agents` | `ext.agent.harness` | SystemMetadata | FeatureInsight | `N/A` | No | No | `none`, `github_copilot_preview`, or `other` on `agent.context.resolved` |
 | `azure.ai.agents` | `ext.agent.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | Fixed extension command path on `agent.context.resolved` |
-| `azure.ai.agents` | `ext.agent.container.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | Optional for hosted agents on `agent.context.resolved`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`; omitted for non-hosted agents |
+| `azure.ai.agents` | `ext.agent.container.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | Optional for hosted agents on `agent.context.resolved`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown` (including deployment-definition overrides that cannot be resolved in this project context); omitted for non-hosted agents |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |

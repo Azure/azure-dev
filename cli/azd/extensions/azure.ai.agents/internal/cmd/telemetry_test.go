@@ -102,6 +102,7 @@ func TestAgentContextReporterOmitsContainerModeForNonHosted(t *testing.T) {
 }
 
 func TestTelemetryContainerModeClassifiesHostedConfiguration(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
 	const privateImage = "private.example.com/team/agent:secret-tag"
 	const connectionID = "/subscriptions/customer/registry-secret"
 	tests := []struct {
@@ -139,6 +140,8 @@ func TestTelemetryContainerModeClassifiesHostedConfiguration(t *testing.T) {
 		{name: "registry connection with unqualified image", properties: map[string]any{
 			"kind": "hosted", "registryConnectionId": connectionID},
 			image: "agent:v1", passthrough: true, want: containerModeUnknown},
+		{name: "passthrough without connection and unqualified image", properties: map[string]any{"kind": "hosted"},
+			image: "agent:v1", passthrough: true, want: containerModeUnknown},
 		{name: "invalid missing image", properties: map[string]any{"kind": "hosted"},
 			passthrough: true, want: containerModeUnknown},
 		{name: "invalid whitespace connection", properties: map[string]any{
@@ -167,7 +170,26 @@ func TestTelemetryContainerModeClassifiesHostedConfiguration(t *testing.T) {
 	}
 }
 
+func TestTelemetryContainerModeOverrideIsUnknown(t *testing.T) {
+	dir := t.TempDir()
+	overridePath := filepath.Join(dir, "override.yaml")
+	require.NoError(t, os.WriteFile(overridePath, []byte(
+		"kind: hosted\nname: worker\ncodeConfiguration:\n  runtime: python_3_13\n  entryPoint: app.py\n"+
+			"protocols:\n  - protocol: responses\n    version: '1.0.0'\n",
+	), 0o600))
+	t.Setenv("AGENT_DEFINITION_PATH", overridePath)
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "worker",
+		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "worker", Host: AiAgentHost, AdditionalProperties: props}
+	// Project config selects a build, but deployment will select the override's code path.
+	require.Equal(t, containerModeUnknown, telemetryContainerMode(svc, dir))
+}
+
 func TestTelemetryContainerModeResolvesFileRef(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(
 		"kind: hosted\nname: worker\nregistryConnectionId: private-connection\n"+

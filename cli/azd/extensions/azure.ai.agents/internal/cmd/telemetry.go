@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"log"
+	"os"
 	"strings"
 	"sync"
 
@@ -179,10 +180,13 @@ func agentTelemetryContexts(project *azdext.ProjectConfig, operation string) []a
 	return contexts
 }
 
-// telemetryContainerMode classifies the effective hosted definition without emitting
-// image references or connection identifiers. A legacy image without explicit
-// passthrough can take either the build or pre-built path, so it stays unknown.
+// telemetryContainerMode classifies the project-authored hosted definition without
+// emitting image references or connection identifiers. An explicit deploy-time
+// definition override or an ambiguous legacy image cannot be classified here.
 func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) string {
+	if os.Getenv("AGENT_DEFINITION_PATH") != "" {
+		return containerModeUnknown
+	}
 	agentDef, isHosted, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
 	if err != nil || !isHosted {
 		return containerModeUnknown
@@ -201,13 +205,10 @@ func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) strin
 	connection := strings.TrimSpace(agentDef.RegistryConnectionID)
 	if svc.GetDocker().GetImagePassthrough() {
 		if image == "" || (agentDef.RegistryConnectionID != "" && connection == "") ||
-			svc.GetDocker().GetRemoteBuild() {
+			svc.GetDocker().GetRemoteBuild() || !containerref.IsFullyQualified(image) {
 			return containerModeUnknown
 		}
 		if connection != "" {
-			if !containerref.IsFullyQualified(image) {
-				return containerModeUnknown
-			}
 			return containerModePassthroughAuth
 		}
 		return containerModePassthrough

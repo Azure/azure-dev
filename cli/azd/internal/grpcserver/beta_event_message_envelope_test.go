@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,6 +56,55 @@ func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
 		require.Equal(t, "failed", message.GetToolError().GetFailureKind())
 		require.Equal(t, int64(42), message.GetToolError().GetExitCode())
 	})
+}
+
+func TestWrapBetaEventError_PreservesErrorChainPrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		cause error
+	}{
+		{
+			name: "local error inside tool error",
+			cause: &azdext.LocalError{
+				Message:    "invalid configuration",
+				Code:       "invalid_config",
+				Category:   azdext.LocalErrorCategoryValidation,
+				CauseTypes: []string{"*demo.ConfigError"},
+				Suggestion: "Check the configuration",
+				Links:      []errorhandler.ErrorLink{{URL: "https://example.com/config", Title: "Configuration"}},
+			},
+		},
+		{
+			name: "service error inside tool error",
+			cause: &azdext.ServiceError{
+				Message:     "service unavailable",
+				ErrorCode:   "Unavailable",
+				StatusCode:  503,
+				ServiceName: "example.com",
+				Suggestion:  "Try again later",
+				Links:       []errorhandler.ErrorLink{{URL: "https://example.com/status", Title: "Service status"}},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &azdext.ToolError{
+				Message:    "tool failed",
+				Err:        tt.cause,
+				ToolName:   "docker",
+				Kind:       azdext.ToolErrorKindFailed,
+				ExitCode:   new(42),
+				Suggestion: "Check the tool output",
+			}
+			message := wrapBetaEventError(err)
+			expected := wrapBetaEventError(tt.cause)
+			require.Equal(t, expected.GetOrigin(), message.GetOrigin())
+			require.Equal(t, expected.GetSource(), message.GetSource())
+			require.Equal(t, expected.GetMessage(), message.GetMessage())
+			require.Equal(t, expected.GetSuggestion(), message.GetSuggestion())
+			require.Equal(t, expected.GetLinks(), message.GetLinks())
+			require.Nil(t, message.GetToolError())
+		})
+	}
 }
 
 func TestValidateBetaEventMessageModes(t *testing.T) {

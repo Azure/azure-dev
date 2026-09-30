@@ -183,7 +183,7 @@ func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
 	require.Contains(t, output, "disconnected hook warning")
 }
 
-func TestServer_BetaEventStreamAcceptsLegacySubscriptionWithoutAck(t *testing.T) {
+func TestServer_BetaEventStreamCompletesLegacyHookWithoutAck(t *testing.T) {
 	extension := &extensions.Extension{
 		Id:           "test.beta.legacy",
 		Version:      "1.0.0",
@@ -220,8 +220,64 @@ func TestServer_BetaEventStreamAcceptsLegacySubscriptionWithoutAck(t *testing.T)
 			},
 		},
 	}))
-	require.NoError(t, stream.CloseSend())
+
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+	invoked := make(chan struct{})
+	projectDone := make(chan error, 1)
+	// Retry until the legacy subscription actually invokes the hook.
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			err := projectConfig.RaiseEvent(
+				ctx,
+				ext.Event("predeploy"),
+				project.ProjectLifecycleEventArgs{Project: projectConfig},
+			)
+			if err != nil {
+				projectDone <- err
+				return
+			}
+			select {
+			case <-invoked:
+				projectDone <- nil
+				return
+			default:
+			}
+			select {
+			case <-ctx.Done():
+				projectDone <- ctx.Err()
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
 	message, err := stream.Recv()
+	require.NoError(t, err)
+	invocation := message.GetInvokeProjectHandler()
+	require.NotNil(t, invocation, "the first response must be an invocation, not an acknowledgement")
+	require.Equal(t, "predeploy", invocation.GetEventName())
+	require.Empty(t, message.GetRequestId())
+	close(invoked)
+	require.NoError(t, stream.Send(&v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+				EventName: "predeploy",
+				Status:    "completed",
+			},
+		},
+	}))
+	select {
+	case err := <-projectDone:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("legacy hook did not complete after returning status without request_id")
+	}
+
+	require.NoError(t, stream.CloseSend())
+	message, err = stream.Recv()
 	require.Nil(t, message)
 	require.ErrorIs(t, err, io.EOF)
 }

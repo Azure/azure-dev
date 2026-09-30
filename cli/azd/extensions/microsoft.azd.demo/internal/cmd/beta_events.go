@@ -449,7 +449,8 @@ func wrapDemoBetaError(err error) *v1beta.ExtensionError {
 		}
 	}
 
-	if toolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
+	if toolErr, ok := errors.AsType[*azdext.ToolError](err); ok &&
+		stableError.GetOrigin() == azdext.ErrorOrigin_ERROR_ORIGIN_TOOL {
 		betaError.Origin = v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL
 		detail := &v1beta.ToolErrorDetail{
 			ToolName:    toolErr.ToolName,

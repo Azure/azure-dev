@@ -277,6 +277,7 @@ overrides:
       - templating
   - filename: pkg/project/scaffold_gen.go
     words:
+      - AZUREWEBJOBSSTORAGE
       - GUNICORN
       - MULTIWORKERS
   - filename: pkg/extensions/command_resolver.go

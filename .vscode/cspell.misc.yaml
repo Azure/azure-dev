@@ -51,6 +51,9 @@ overrides:
     - filename: ./README.md
       words:
           - VSIX
+    - filename: ./docs/concepts/glossary.md
+      words:
+          - functionapp
     - filename: ./docs/specs/perf-foundations/**
       words:
           - Alives
@@ -81,6 +84,7 @@ overrides:
           - prodapi
           - appservice
           - containerapp
+          - functionapp
           - springapp
           - staticwebapp
           - myapp
@@ -139,6 +143,7 @@ overrides:
           - apphost
           - appinit
           - appservice
+          - functionapp
           - buildpack
           - Buildpacks
           - centralus

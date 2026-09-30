@@ -224,7 +224,8 @@ func TestValidateFunctionCodeProject(t *testing.T) {
 	}{
 		{"Python", appdetect.Python, "", ""},
 		{"isolated .NET", appdetect.DotNet,
-			`<Project Sdk="Microsoft.NET.Sdk"><PackageReference Include="Microsoft.Azure.Functions.Worker" /></Project>`, ""},
+			`<Project Sdk="Microsoft.NET.Sdk"><PackageReference Include="Microsoft.Azure.Functions.Worker" /></Project>`,
+			""},
 		{"in-process .NET", appdetect.DotNet,
 			`<Project Sdk="Microsoft.NET.Sdk.Functions"></Project>`, "requires a .NET isolated Function App"},
 		{"unsupported", appdetect.Language("unknown"), "", "unsupported Function App language"},

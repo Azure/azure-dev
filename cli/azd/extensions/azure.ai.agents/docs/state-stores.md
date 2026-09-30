@@ -16,7 +16,7 @@ azd ai agent state-stores items set <key> [--store <name>] (--value <json-object
 azd ai agent state-stores items delete <key> [--store <name>] [--if-match <etag>] [--yes]
 ```
 
-Every command supports `--agent-name <service-name>` or `--agent-endpoint <https-protocol-endpoint-url>`, but not both. The agent is otherwise resolved from the azd project/environment. `--environment <name>` reads deployment metadata from that environment without changing the project's default environment; missing project metadata never falls back to a global endpoint, a process-level endpoint, or another environment. Do not combine an explicitly supplied `--environment` with `--agent-endpoint`: the URL determines the target and does not use environment metadata. Explicit HTTPS endpoint targeting also works outside a project. WebSocket (`wss://.../invocations_ws`) invocation URLs are not accepted as State Store targets; State Store traffic uses HTTPS, not WebSockets. For a WebSocket agent, target it from an azd project by service name. State Stores are independent of invocation protocol and agent version; no protocol or version flag is needed.
+Every command supports `--agent-name <service-name>` or `--agent-endpoint <https-protocol-endpoint-url>`, but not both. The agent is otherwise resolved from the azd project/environment. `--environment <name>` reads deployment metadata from that environment without changing the project's default environment; an explicitly empty `--environment=` is rejected. Missing project metadata never falls back to a global endpoint, a process-level endpoint, or another environment. Do not combine an explicitly supplied `--environment` with `--agent-endpoint`: the URL determines the target and does not use environment metadata. Explicit HTTPS endpoint targeting also works outside a project. WebSocket (`wss://.../invocations_ws`) invocation URLs are not accepted as State Store targets; State Store traffic uses HTTPS, not WebSockets. For a WebSocket agent, target it from an azd project by service name. State Stores are independent of invocation protocol and agent version; no protocol or version flag is needed.
 
 Pass logical store names and item keys of **1–128 characters**, including embedded `/`, without encoding them. azd handles the API's base64url encoding. Commands use normal azd authentication and the external agent-scoped State Store API.
 
@@ -70,7 +70,7 @@ Prefer `--value-file <path>` or `--value-file -` for sensitive values, and avoid
 
 ## Output and pagination
 
-JSON is the default; use `--output table` for readable output. Item lists return metadata, not values. Item `show` includes the value, tags, and ETag. Write responses contain service metadata and may omit the value or tags; azd preserves those omissions and does not fetch the item again.
+JSON is the default; use `--output table` for readable output. Store tables show a human-readable `TTL` (for example, `30 days` or `2 hours 5 minutes`); `Never` means items do not expire. JSON keeps the raw numeric `item_ttl_seconds` value, including `-1` for no expiration. Item lists return metadata, not values. Item `show` includes the value, tags, and ETag. Write responses contain service metadata and may omit the value or tags; azd preserves those omissions and does not fetch the item again.
 
 List commands return at most `--limit` results per page. The default is **20**, with the service-supported range **1–100**. `--order` defaults to **desc**, following service ordering rather than alphabetical names.
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -21,7 +22,7 @@ type stateStoreTableRow struct {
 	ETag     string
 	Updated  string
 	Isolated bool
-	TTL      int64
+	TTL      string
 	Deleted  bool
 }
 
@@ -34,7 +35,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 	storeColumns := []output.PrettyColumn{
 		{Column: output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, CardTitle: true, Wrappable: true},
 		{Column: output.Column{Heading: "USER ISOLATION", ValueTemplate: "{{.Isolated}}"}, Priority: 2},
-		{Column: output.Column{Heading: "TTL (SECONDS)", ValueTemplate: "{{.TTL}}"}, Priority: 3},
+		{Column: output.Column{Heading: "TTL", ValueTemplate: "{{.TTL}}"}, Priority: 3},
 		{Column: output.Column{Heading: "UPDATED", ValueTemplate: "{{.Updated}}"}, Priority: 2},
 	}
 	itemColumns := []output.PrettyColumn{
@@ -127,9 +128,37 @@ func stateStoreDisplayText(value string) string {
 
 func stateStoreRow(store agent_api.StateStore) stateStoreTableRow {
 	return stateStoreTableRow{
-		Name: stateStoreDisplayText(store.Name), Isolated: store.UserIsolation, TTL: store.ItemTTLSeconds,
-		Updated: stateStoreTimestamp(store.UpdatedAt),
+		Name: stateStoreDisplayText(store.Name), Isolated: store.UserIsolation,
+		TTL: formatStateStoreTTL(store.ItemTTLSeconds), Updated: stateStoreTimestamp(store.UpdatedAt),
 	}
+}
+
+func formatStateStoreTTL(seconds int64) string {
+	if seconds == -1 {
+		return "Never"
+	}
+	if seconds <= 0 {
+		return fmt.Sprintf("%d seconds", seconds)
+	}
+
+	var parts []string
+	for _, unit := range []struct {
+		seconds int64
+		name    string
+	}{
+		{86400, "day"}, {3600, "hour"}, {60, "minute"}, {1, "second"},
+	} {
+		count := seconds / unit.seconds
+		if count > 0 {
+			name := unit.name
+			if count != 1 {
+				name += "s"
+			}
+			parts = append(parts, fmt.Sprintf("%d %s", count, name))
+			seconds %= unit.seconds
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func stateStoreItemRow(item agent_api.StateStoreItem) stateStoreTableRow {

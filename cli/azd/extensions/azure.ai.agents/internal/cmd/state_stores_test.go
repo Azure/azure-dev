@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,6 +269,36 @@ func TestStateStoreExplicitEnvironmentConflictsWithEndpoint(t *testing.T) {
 			root.SetErr(io.Discard)
 			err := root.ExecuteContext(t.Context())
 			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestStateStoreExplicitEmptyEnvironmentRejected(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		args        []string
+		wantEnv     string
+		wantMessage string
+	}{
+		{"empty after command", []string{"state-stores", "list", "--environment="}, "", "--environment requires a non-empty value"},
+		{"empty before command", []string{"--environment=", "state-stores", "list"}, "", "--environment requires a non-empty value"},
+		{"implicit environment", []string{"state-stores", "list"}, "prod", "reached target resolution"},
+		{"explicit environment", []string{"state-stores", "list", "--environment", "stage"}, "stage", "reached target resolution"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", "prod")
+			root, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{Name: "ai"})
+			group := &cobra.Command{Use: "state-stores"}
+			group.AddCommand(newStateStoreCommandWithFactory(extCtx, "list",
+				func(_ context.Context, flags *stateStoreFlags) (*stateStoreAction, func(), error) {
+					require.Equal(t, tt.wantEnv, flags.environment)
+					return nil, nil, errors.New("reached target resolution")
+				}))
+			root.AddCommand(group)
+			root.SetArgs(tt.args)
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			require.ErrorContains(t, root.ExecuteContext(t.Context()), tt.wantMessage)
 		})
 	}
 }
@@ -597,6 +628,54 @@ func TestStateStoreTableOutput(t *testing.T) {
 	}
 	// Output failures are surfaced, not swallowed after a successful API request.
 	require.Error(t, writeStateStoreTable(failingStateStoreWriter{}, &agent_api.StateStore{Name: "store"}))
+}
+
+func TestStateStoreTTLTableFormatting(t *testing.T) {
+	for _, tt := range []struct {
+		seconds int64
+		want    string
+	}{
+		{-2, "-2 seconds"},
+		{-1, "Never"},
+		{0, "0 seconds"},
+		{1, "1 second"},
+		{59, "59 seconds"},
+		{60, "1 minute"},
+		{61, "1 minute 1 second"},
+		{3600, "1 hour"},
+		{90061, "1 day 1 hour 1 minute 1 second"},
+		{2592000, "30 days"},
+		{math.MaxInt64, "106751991167300 days 15 hours 30 minutes 7 seconds"},
+	} {
+		t.Run(fmt.Sprintf("%d", tt.seconds), func(t *testing.T) {
+			require.Equal(t, tt.want, formatStateStoreTTL(tt.seconds))
+			var writer bytes.Buffer
+			require.NoError(t, writeStateStoreTable(&writer,
+				&agent_api.StateStore{Name: "store", ItemTTLSeconds: tt.seconds}))
+			require.Contains(t, writer.String(), tt.want)
+			require.Contains(t, writer.String(), "TTL")
+			require.NotContains(t, writer.String(), "TTL (SECONDS)")
+		})
+	}
+}
+
+func TestStateStoreJSONKeepsTTLSeconds(t *testing.T) {
+	a, api, _, writer := newStateStoreTestAction(t)
+	api.On("ListStateStores", mock.Anything, "worker", a.flags.page).
+		Return(&agent_api.StateStorePage[agent_api.StateStore]{Data: []agent_api.StateStore{
+			{Name: "never", ItemTTLSeconds: -1},
+			{Name: "month", ItemTTLSeconds: 2592000},
+			{Name: "large", ItemTTLSeconds: math.MaxInt64},
+		}}, nil).Once()
+
+	require.NoError(t, a.run(t.Context(), "list", nil))
+	var page agent_api.StateStorePage[agent_api.StateStore]
+	require.NoError(t, json.Unmarshal(writer.Bytes(), &page))
+	require.Equal(t, int64(-1), page.Data[0].ItemTTLSeconds)
+	require.Equal(t, int64(2592000), page.Data[1].ItemTTLSeconds)
+	require.Equal(t, int64(math.MaxInt64), page.Data[2].ItemTTLSeconds)
+	require.NotContains(t, writer.String(), "30 days")
+	require.NotContains(t, writer.String(), "Never")
 }
 
 func TestStateStoreHumanOutputEscapesIdentifiers(t *testing.T) {

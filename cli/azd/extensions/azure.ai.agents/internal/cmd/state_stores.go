@@ -241,6 +241,9 @@ func validateStateStoreFlags(cmd *cobra.Command, flags *stateStoreFlags, operati
 	if cmd.Flags().Changed("agent-endpoint") && cmd.Flags().Changed("environment") {
 		return invalid("--agent-endpoint and --environment cannot be combined")
 	}
+	if cmd.Flags().Changed("environment") && flags.environment == "" {
+		return invalid("--environment requires a non-empty value")
+	}
 	if slices.Contains(args, "") {
 		return invalid("store names and item keys must not be empty")
 	}

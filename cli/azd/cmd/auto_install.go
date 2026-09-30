@@ -650,6 +650,16 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		return result
 	}
 
+	return executeWithAutoInstallCommand(ctx, rootContainer, rootCmd, globalOpts, result)
+}
+
+func executeWithAutoInstallCommand(
+	ctx context.Context,
+	rootContainer *ioc.NestedContainer,
+	rootCmd *cobra.Command,
+	globalOpts *internal.GlobalCommandOptions,
+	result *ExecuteResult,
+) *ExecuteResult {
 	var extensionManager *extensions.Manager
 	var console input.Console
 
@@ -735,17 +745,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return result
 		}
 
-		// Follow-up output belongs to the parsed command, not the root console used during preflight
-		// so we'll just swap out our current console instance for the child command's...
-		{
-			formatter, formatErr := output.GetCommandFormatter(foundCmd)
-			if formatErr != nil {
-				result.Err = errors.Join(commandErr, fmt.Errorf("resolving output format for %s: %w",
-					foundCmd.CommandPath(), formatErr))
-				return result
-			}
-
-			console = newCommandConsole(globalOpts, formatter, foundCmd)
+		if childConsole, err := getChildConsole(globalOpts, foundCmd); err != nil {
+			result.Err = errors.Join(commandErr, err)
+		} else {
+			console = childConsole
 		}
 
 		if projectExtensions.handled {
@@ -949,6 +952,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// Normal execution path - either no args, no matching extension, or user declined install
 	result.Err = rootCmd.ExecuteContext(ctx)
 	return result
+}
+
+// getChildConsole gets the console the child command used, so we can stay consistent with any console
+// output format changes. Without this, our default root input.Console would write out inconsistent output (ie, plain text
+// when the user requested JSON, for instance).
+func getChildConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
+	formatter, err := output.GetCommandFormatter(foundCmd)
+	if err != nil {
+		return nil, fmt.Errorf("resolving output format for %s: %w", foundCmd.CommandPath(), err)
+	}
+
+	return newCommandConsole(globalOpts, formatter, foundCmd), nil
 }
 
 // CreateGlobalFlagSet creates a new flag set with all global flags defined.

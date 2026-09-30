@@ -6,7 +6,6 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,97 +14,114 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestExecuteWithAutoInstall_UsesSameConsoleAsChild(t *testing.T) {
-	projectDir := t.TempDir()
-	t.Chdir(projectDir)
-	configDir := t.TempDir()
+func TestNewCommandConsole_FormatsFollowUpToChildStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := &cobra.Command{Use: "azd"}
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
 
+	child := &cobra.Command{Use: "package"}
+	root.AddCommand(child)
+
+	// the child command uses JSON output, but the root does not...
+	output.AddOutputParam(child, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
+	require.NoError(t, child.Flags().Set("output", "json"))
+
+	formatter, err := output.GetCommandFormatter(child)
+	require.NoError(t, err)
+	console := newCommandConsole(&internal.GlobalCommandOptions{NoPrompt: true}, formatter, child)
+	const followUp = "Install the required extension to continue."
+	console.Message(t.Context(), followUp)
+
+	require.Empty(t, stdout)
+	var event struct {
+		Type string `json:"type"`
+		Data struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(stderr.Bytes(), &event))
+	require.Equal(t, "consoleMessage", event.Type)
+	require.Equal(t, followUp+"\n", event.Data.Message)
+}
+
+func TestExecuteWithAutoInstall_FormatsHostFollowUpToChildStderr(t *testing.T) {
+	t.Chdir(t.TempDir())
+	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 	t.Setenv("AZD_FORCE_TTY", "false")
 	t.Setenv("NO_COLOR", "1")
+	t.Setenv("CI", "1")
 
-	azureYAML := `name: repro
-services:
-  api:
-    project: src
-    language: js
-    # we're purposefully going to trigger an error so we can ensure
-    # that it goes through the correct input.Console
-    host: unsupported-host
-`
-
-	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "src"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(azureYAML), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
-		[]byte(`{"extension":{"sources":{}}}`), 0o600))
-
-	originalArgs, originalStdout, originalStderr := os.Args, os.Stdout, os.Stderr
-	t.Cleanup(func() {
-		os.Args, os.Stdout, os.Stderr = originalArgs, originalStdout, originalStderr
+	registryPath := filepath.Join(configDir, "registry.json")
+	registry := `{"extensions":[{"id":"test.host","displayName":"Test Host","versions":[{"version":"1.0.0",
+"capabilities":["service-target-provider"],"providers":[{"name":"unsupported-host","type":"service-target"}]}]}]}`
+	require.NoError(t, os.WriteFile(registryPath, []byte(registry), 0o600))
+	config, err := json.Marshal(map[string]any{
+		"extension": map[string]any{
+			"sources": map[string]any{
+				"test": map[string]string{"name": "test", "type": "file", "location": registryPath},
+			},
+		},
 	})
-	os.Args = []string{"azd", "package", "--output", "json", "--no-prompt"}
-
-	// setup our streams so we can tell if we're using the correct ones
-	// when we print out our error message
-	stdoutReader, stdoutWriter, err := os.Pipe()
 	require.NoError(t, err)
-	defer stdoutReader.Close()
-	os.Stdout = stdoutWriter
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"), config, 0o600))
 
-	stderrReader, stderrWriter, err := os.Pipe()
-	require.NoError(t, err)
-	defer stderrReader.Close()
-	os.Stderr = stderrWriter
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	os.Args = []string{"azd", "probe-host", "--output", "json", "--no-prompt"}
 
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, t.Context())
-	result := ExecuteWithAutoInstall(t.Context(), rootContainer)
+	globalOpts := &internal.GlobalCommandOptions{NoPrompt: true}
+	ioc.RegisterInstance(rootContainer, globalOpts)
+	root := NewRootCmd(false, nil, rootContainer)
+	probe := &cobra.Command{
+		Use: "probe-host",
+		RunE: func(*cobra.Command, []string) error {
+			return &project.UnsupportedServiceHostError{Host: "unsupported-host", ServiceName: "api"}
+		},
+	}
+	output.AddOutputParam(probe, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
+	root.AddCommand(probe)
+	root.SetArgs(os.Args[1:])
+	root.SilenceErrors = true
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
 
-	os.Stdout, os.Stderr = originalStdout, originalStderr
-	require.NoError(t, stdoutWriter.Close())
-	require.NoError(t, stderrWriter.Close())
+	result := executeWithAutoInstallCommand(t.Context(), rootContainer, root, globalOpts, &ExecuteResult{})
+	require.ErrorContains(t, result.Err, "required extension installation needs manual action")
+	require.Empty(t, stdout)
 
-	stdout, err := io.ReadAll(stdoutReader)
-	require.NoError(t, err)
-	stderr, err := io.ReadAll(stderrReader)
-	require.NoError(t, err)
-
-	_, unsupported := errors.AsType[*project.UnsupportedServiceHostError](result.Err)
-	require.True(t, unsupported)
-	require.Empty(t, stdout, "JSON command errors must not write text to stdout")
-
-	lines := bytes.Split(stderr, []byte("\n"))
-
-	errMessageFound := false
-
-	// the output is JSONL, so we'll just make sure each line parses to proper JSON, which is the point of our fix.
-	for _, line := range lines {
+	const followUp = "Your project requires support for host 'unsupported-host'. " +
+		"Install the required extension to continue.\n"
+	followUpFound := false
+	for _, line := range bytes.Split(stderr.Bytes(), []byte("\n")) {
 		if len(line) == 0 {
 			continue
 		}
-
-		var v *struct {
-			Error string `json:"error"`
+		var event struct {
+			Type string `json:"type"`
+			Data struct {
+				Message string `json:"message"`
+			} `json:"data"`
 		}
-
-		err = json.Unmarshal(line, &v)
-		require.NoError(t, err, "Error output should use the same output format as the main stream, which would make it valid JSON")
-
-		if v.Error == "service host 'unsupported-host' for service 'api' is unsupported" {
-			errMessageFound = true
+		require.NoError(t, json.Unmarshal(line, &event), "follow-up output must be JSONL")
+		if event.Type == "consoleMessage" && event.Data.Message == followUp {
+			followUpFound = true
 		}
 	}
-
-	require.True(t, errMessageFound)
-	require.Contains(t, string(stderr), `"suggestion":"Suggestion: install an extension`)
+	require.True(t, followUpFound, "service-host auto-install must use the child command's JSON console")
 }
 
 func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T) {

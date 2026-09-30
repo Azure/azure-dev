@@ -244,7 +244,7 @@ func fillUses(
 	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
 		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
-		// Function Apps do not support host-to-host dependencies in compose.
+		// Linking between different host types is unsupported; Function Apps cannot link to other Function Apps either.
 		if isHost && otherIsHost && (r.Type != other.Type || r.Type == project.ResourceTypeHostFunctionApp) {
 			continue
 		}
@@ -308,6 +308,7 @@ func promptUsedBy(
 	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
 		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is unsupported; Function Apps cannot link to other Function Apps either.
 		if isHost && otherIsHost && (r.Type != other.Type || r.Type == project.ResourceTypeHostFunctionApp) {
 			continue
 		}

@@ -40,7 +40,7 @@ var HostMap = map[project.ResourceType]project.ServiceTargetKind{
 	project.ResourceTypeHostFunctionApp:  project.AzureFunctionTarget,
 }
 
-// TODO: Dynamic support for versions using /providers/Microsoft.Web/webAppStacks API
+// TODO: Resolve runtime versions using /providers/Microsoft.Web/webAppStacks instead of static defaults.
 var ServiceLanguageMap = map[project.ServiceLanguageKind]project.AppServiceRuntime{
 	project.ServiceLanguagePython: {
 		Stack:   project.AppServiceRuntimeStackPython,
@@ -56,6 +56,7 @@ var ServiceLanguageMap = map[project.ServiceLanguageKind]project.AppServiceRunti
 	},
 }
 
+// App Service and Functions support different runtime versions and formats, so their defaults cannot share one map.
 var functionRuntimeByLanguage = map[project.ServiceLanguageKind]project.FunctionAppRuntime{
 	project.ServiceLanguagePython:     {Stack: "python", Version: "3.12"},
 	project.ServiceLanguageJavaScript: {Stack: "node", Version: "22"},

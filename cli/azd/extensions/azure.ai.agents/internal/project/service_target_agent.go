@@ -3483,7 +3483,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Validate that AZURE_LOCATION is set (region validation is handled server-side;
 	// code deploy is supported in all hosted-agent regions).
-	if strings.TrimSpace(azdEnv["AZURE_LOCATION"]) == "" {
+	if strings.TrimSpace(p.dependencyEnvValue("AZURE_LOCATION")) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentCreateFailed,
 			"AZURE_LOCATION is not set; the Foundry project region is required for code deploy",

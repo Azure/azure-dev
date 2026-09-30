@@ -85,11 +85,9 @@ func Test_toCiProviderType(t *testing.T) {
 
 func Test_toInfraProviderType(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		want     infraProviderType
-		wantErr  bool
-		errMatch string
+		name  string
+		input string
+		want  infraProviderType
 	}{
 		{
 			name:  "bicep",
@@ -107,24 +105,31 @@ func Test_toInfraProviderType(t *testing.T) {
 			want:  infraProviderUndefined,
 		},
 		{
-			name:     "invalid provider",
-			input:    "pulumi",
-			wantErr:  true,
-			errMatch: "invalid infra provider type pulumi",
+			name:  "custom provider",
+			input: "pulumi",
+			want:  infraProviderCustom,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := toInfraProviderType(tt.input)
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMatch)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.want, got)
-			}
+			assert.Equal(t, tt.want, toInfraProviderType(tt.input))
 		})
 	}
+}
+
+func TestUsesTerraform(t *testing.T) {
+	assert.True(t, usesTerraform(provisioning.Options{
+		Layers: []provisioning.Options{
+			{Provider: provisioning.ProviderKind("microsoft.foundry")},
+			{Provider: provisioning.Terraform},
+		},
+	}))
+	assert.False(t, usesTerraform(provisioning.Options{
+		Layers: []provisioning.Options{
+			{Provider: provisioning.ProviderKind("microsoft.foundry")},
+			{Provider: provisioning.Bicep},
+		},
+	}))
 }
 
 // ------------------------------------------------------------------
@@ -950,12 +955,11 @@ func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
 // ------------------------------------------------------------------
 
 func Test_PipelineManager_SetParameters(t *testing.T) {
-	t.Run("initializes configOptions if nil", func(t *testing.T) {
-		pm := &PipelineManager{}
+	t.Run("sets parameters", func(t *testing.T) {
+		pm := &PipelineManager{configOptions: &configurePipelineOptions{}}
 		pm.SetParameters([]provisioning.Parameter{
 			{Name: "param1"},
 		})
-		require.NotNil(t, pm.configOptions)
 		require.Len(t, pm.configOptions.providerParameters, 1)
 		assert.Equal(t, "param1",
 			pm.configOptions.providerParameters[0].Name)
@@ -985,6 +989,32 @@ func Test_PipelineManager_SetParameters(t *testing.T) {
 		}
 		pm.SetParameters(nil)
 		assert.Nil(t, pm.configOptions.providerParameters)
+	})
+}
+
+func Test_PipelineManager_SetRequiredExtensions(t *testing.T) {
+	t.Run("normalizes required extensions", func(t *testing.T) {
+		pm := &PipelineManager{configOptions: &configurePipelineOptions{}}
+
+		err := pm.SetRequiredExtensions([]RequiredExtension{
+			{Id: "z.extension", Version: "2.0.0"},
+			{Id: " a.extension ", Version: " 1.0.0 "},
+			{Id: "z.extension", Version: "2.0.0"},
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, []RequiredExtension{
+			{Id: "a.extension", Version: "1.0.0"},
+			{Id: "z.extension", Version: "2.0.0"},
+		}, pm.configOptions.requiredExtensions)
+	})
+
+	t.Run("rejects empty extension ID", func(t *testing.T) {
+		pm := &PipelineManager{configOptions: &configurePipelineOptions{}}
+
+		err := pm.SetRequiredExtensions([]RequiredExtension{{Id: " "}})
+
+		require.EqualError(t, err, "required extension ID cannot be empty")
 	})
 }
 

@@ -102,7 +102,10 @@ func Test_EnsureProvisioningProviders_NoMatchingExtension(t *testing.T) {
 		"other.ext": {
 			Id:           "other.ext",
 			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-			Providers:    []extensions.Provider{{Name: "other.provider"}},
+			Providers: []extensions.Provider{{
+				Name: "other.provider",
+				Type: extensions.ProvisioningProviderType,
+			}},
 		},
 	}
 	activator := newTestExtensionActivator(t, mockCtx, installed)
@@ -154,7 +157,10 @@ func Test_EnsureProvisioningProviders_MissingGrpcServer(t *testing.T) {
 		"azure.ai.agents": {
 			Id:           "azure.ai.agents",
 			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-			Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+			Providers: []extensions.Provider{{
+				Name: "microsoft.foundry",
+				Type: extensions.ProvisioningProviderType,
+			}},
 		},
 	}
 	activator := newTestExtensionActivator(t, mockCtx, installed)
@@ -183,7 +189,10 @@ func Test_EnsureProvisioningProviders_AlreadyResolvable(t *testing.T) {
 		"azure.ai.agents": {
 			Id:           "azure.ai.agents",
 			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-			Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+			Providers: []extensions.Provider{{
+				Name: "microsoft.foundry",
+				Type: extensions.ProvisioningProviderType,
+			}},
 		},
 	}
 	activator := newTestExtensionActivator(t, mockCtx, installed)
@@ -192,6 +201,112 @@ func Test_EnsureProvisioningProviders_AlreadyResolvable(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	cleanup()
+}
+
+func Test_ExtensionsForProvisioningProviders(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"z.extension": {
+			Id:           "z.extension",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers: []extensions.Provider{{
+				Name: "provider.z",
+				Type: extensions.ProvisioningProviderType,
+			}},
+		},
+		"a.extension": {
+			Id:           "a.extension",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers: []extensions.Provider{
+				{Name: "provider.a", Type: extensions.ProvisioningProviderType},
+				{Name: "provider.shared", Type: extensions.ProvisioningProviderType},
+			},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	extensionIds, err := activator.ExtensionsForProvisioningProviders([]string{
+		"provider.z",
+		"provider.shared",
+		"provider.a",
+		"bicep",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.extension", "z.extension"}, extensionIds)
+}
+
+func Test_ExtensionsForProject(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"azure.ai.agents": {
+			Id:           "azure.ai.agents",
+			Version:      "1.0.0-beta.15",
+			Source:       extensions.MainRegistryName,
+			Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+			Providers: []extensions.Provider{{
+				Name: "azure.ai.agent",
+				Type: extensions.ServiceTargetProviderType,
+			}},
+		},
+		"azure.ai.projects": {
+			Id:      "azure.ai.projects",
+			Version: "1.0.0-beta.10",
+			Source:  extensions.MainRegistryName,
+			Capabilities: []extensions.CapabilityType{
+				extensions.ProvisioningProviderCapability,
+				extensions.ServiceTargetProviderCapability,
+			},
+			Providers: []extensions.Provider{
+				{Name: "microsoft.foundry", Type: extensions.ProvisioningProviderType},
+				{Name: "azure.ai.project", Type: extensions.ServiceTargetProviderType},
+			},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	extensionIds, err := activator.ExtensionsForProject(
+		[]string{"microsoft.foundry"},
+		[]string{"azure.ai.project", "azure.ai.agent"},
+		[]string{"azure.ai.agents"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []ProjectExtension{
+		{Id: "azure.ai.agents", Version: "1.0.0-beta.15"},
+		{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
+	}, extensionIds)
+}
+
+func Test_ExtensionsForProjectAllowsAnyInstalledSource(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"azure.ai.agents": {
+			Id:             "azure.ai.agents",
+			Version:        "1.0.0-beta.15",
+			Source:         "dev",
+			SourceCategory: extensions.SourceCategoryDev,
+			Capabilities:   []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+			Providers: []extensions.Provider{{
+				Name: "azure.ai.agent",
+				Type: extensions.ServiceTargetProviderType,
+			}},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	got, err := activator.ExtensionsForProject(nil, []string{"azure.ai.agent"}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, []ProjectExtension{
+		{Id: "azure.ai.agents", Version: "1.0.0-beta.15"},
+	}, got)
 }
 
 func Test_SuggestExtensionForProvider(t *testing.T) {
@@ -211,7 +326,10 @@ func Test_SuggestExtensionForProvider(t *testing.T) {
 			"azure.ai.agents": {
 				Id:           "azure.ai.agents",
 				Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-				Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+				Providers: []extensions.Provider{{
+					Name: "microsoft.foundry",
+					Type: extensions.ProvisioningProviderType,
+				}},
 			},
 		}
 		activator := newTestExtensionActivator(t, mockCtx, installed)
@@ -315,18 +433,23 @@ func Test_providerFromExtension(t *testing.T) {
 	t.Parallel()
 
 	ext := &extensions.Extension{
-		Id: "azure.ai.agents",
+		Id:           "azure.ai.agents",
+		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
 		Providers: []extensions.Provider{
-			{Name: "microsoft.foundry", Type: "provisioning-provider"},
+			{Name: "microsoft.foundry", Type: extensions.ProvisioningProviderType},
 			{Name: "azure.ai.agent", Type: extensions.ServiceTargetProviderType},
 		},
 	}
 
-	require.True(t, providerFromExtension(ext, "microsoft.foundry"))
+	require.True(t, providerFromExtension(ext, "microsoft.foundry", extensions.ProvisioningProviderCapability))
 	// Matching is case-insensitive.
-	require.True(t, providerFromExtension(ext, "Microsoft.Foundry"))
-	require.False(t, providerFromExtension(ext, "some.other.provider"))
-	require.False(t, providerFromExtension(&extensions.Extension{}, "microsoft.foundry"))
+	require.True(t, providerFromExtension(ext, "Microsoft.Foundry", extensions.ProvisioningProviderCapability))
+	require.False(t, providerFromExtension(ext, "some.other.provider", extensions.ProvisioningProviderCapability))
+	require.False(t, providerFromExtension(
+		&extensions.Extension{},
+		"microsoft.foundry",
+		extensions.ProvisioningProviderCapability,
+	))
 }
 
 func Test_distinctProviderNames(t *testing.T) {
@@ -347,7 +470,10 @@ func Test_extensionsForProviders(t *testing.T) {
 	withCapability := &extensions.Extension{
 		Id:           "azure.ai.agents",
 		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-		Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+		Providers: []extensions.Provider{{
+			Name: "microsoft.foundry",
+			Type: extensions.ProvisioningProviderType,
+		}},
 	}
 
 	// Declares the provider but does NOT advertise the provisioning-provider capability.
@@ -373,6 +499,36 @@ func Test_extensionsForProviders(t *testing.T) {
 		require.Empty(t, extensionsForProviders(installed, []string{"microsoft.foundry"}))
 	})
 
+	t.Run("IgnoresSameNameWithWrongProviderType", func(t *testing.T) {
+		wrongType := &extensions.Extension{
+			Id: "a.service.ext",
+			Capabilities: []extensions.CapabilityType{
+				extensions.ProvisioningProviderCapability,
+				extensions.ServiceTargetProviderCapability,
+			},
+			Providers: []extensions.Provider{{
+				Name: "shared.provider",
+				Type: extensions.ServiceTargetProviderType,
+			}},
+		}
+		rightType := &extensions.Extension{
+			Id:           "z.provisioning.ext",
+			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+			Providers: []extensions.Provider{{
+				Name: "shared.provider",
+				Type: extensions.ProvisioningProviderType,
+			}},
+		}
+		installed := map[string]*extensions.Extension{
+			wrongType.Id: wrongType,
+			rightType.Id: rightType,
+		}
+
+		got := extensionsForProviders(installed, []string{"shared.provider"})
+		require.Len(t, got, 1)
+		require.Equal(t, rightType.Id, got[0].Id)
+	})
+
 	// Native or unknown provider names are not declared by any installed extension and must be
 	// left alone - they resolve (or fail) natively, exactly as in every other command.
 	t.Run("IgnoresUndeclaredProviders", func(t *testing.T) {
@@ -384,7 +540,10 @@ func Test_extensionsForProviders(t *testing.T) {
 		multi := &extensions.Extension{
 			Id:           "multi.ext",
 			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-			Providers:    []extensions.Provider{{Name: "provider.one"}, {Name: "provider.two"}},
+			Providers: []extensions.Provider{
+				{Name: "provider.one", Type: extensions.ProvisioningProviderType},
+				{Name: "provider.two", Type: extensions.ProvisioningProviderType},
+			},
 		}
 		installed := map[string]*extensions.Extension{"multi.ext": multi}
 		got := extensionsForProviders(installed, []string{"provider.one", "provider.two"})
@@ -397,12 +556,18 @@ func Test_extensionsForProviders(t *testing.T) {
 		first := &extensions.Extension{
 			Id:           "a.ext",
 			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-			Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+			Providers: []extensions.Provider{{
+				Name: "microsoft.foundry",
+				Type: extensions.ProvisioningProviderType,
+			}},
 		}
 		second := &extensions.Extension{
 			Id:           "b.ext",
 			Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
-			Providers:    []extensions.Provider{{Name: "microsoft.foundry"}},
+			Providers: []extensions.Provider{{
+				Name: "microsoft.foundry",
+				Type: extensions.ProvisioningProviderType,
+			}},
 		}
 		installed := map[string]*extensions.Extension{"b.ext": second, "a.ext": first}
 
@@ -418,8 +583,12 @@ func Test_declaredProviders(t *testing.T) {
 	t.Parallel()
 
 	ext := &extensions.Extension{
-		Id:        "multi.ext",
-		Providers: []extensions.Provider{{Name: "provider.one"}, {Name: "provider.two"}},
+		Id:           "multi.ext",
+		Capabilities: []extensions.CapabilityType{extensions.ProvisioningProviderCapability},
+		Providers: []extensions.Provider{
+			{Name: "provider.one", Type: extensions.ProvisioningProviderType},
+			{Name: "provider.two", Type: extensions.ProvisioningProviderType},
+		},
 	}
 
 	require.Equal(t,

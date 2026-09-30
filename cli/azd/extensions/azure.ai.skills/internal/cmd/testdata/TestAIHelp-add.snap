@@ -1,0 +1,41 @@
+Add or update a host: azure.ai.skill service in the current azd
+project's azure.yaml.
+
+This command is declarative: it only updates azure.yaml and does not create or
+modify the remote Foundry skill. Run azd deploy <name> or azd up to reconcile
+the service after adding it.
+
+Accepted content shapes:
+
+  1. Inline:    --description "..." --instructions "..."
+  2. SKILL.md:  --file ./SKILL.md
+  3. Package:   --file ./skill.zip
+  4. Directory: --file ./skill-src
+
+Inline and SKILL.md inputs require both a non-empty description and instructions.
+They are stored as service properties, preserving instructions as literal text.
+ZIP and directory inputs are stored as portable archive references. Updating an
+existing skill service preserves uses:, project:, and fields owned by other extensions.
+
+Usage
+  azd ai skill add <name> [flags]
+
+Flags
+      --description string  : Inline mode: required human-readable summary of the skill
+      --file string         : Path to SKILL.md, a .zip package, or a directory containing SKILL.md at its root
+      --instructions string : Inline mode: required Markdown body defining skill behavior (literal text, not a file path)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for add
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "json")
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
+
+Examples
+    azd ai skill add triage-rules --description "Triage issues" --instructions "Classify each issue."
+    azd ai skill add triage-rules --file ./SKILL.md
+    azd ai skill add triage-rules --file ./skills/triage-rules
+    azd deploy triage-rules

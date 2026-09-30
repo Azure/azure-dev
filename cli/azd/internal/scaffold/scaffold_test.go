@@ -373,16 +373,29 @@ func TestExecInfra(t *testing.T) {
 				resourceTemplate, err := cli.Build(ctx, filepath.Join(dir, "resources.bicep"))
 				require.NoError(t, err)
 				var compiled struct {
-					Resources map[string]struct {
+					Resources []struct {
+						Name      string   `json:"name"`
 						DependsOn []string `json:"dependsOn"`
 					} `json:"resources"`
 				}
 				require.NoError(t, json.Unmarshal([]byte(resourceTemplate.Compiled), &compiled))
-				assert.Contains(t, compiled.Resources["apiFunctionStorage"].DependsOn, "storageAccount")
-				assert.Contains(t, compiled.Resources["apiFunctionStorage"].DependsOn, "apiIdentity")
-				assert.Contains(t, compiled.Resources["api"].DependsOn, "apiFunctionStorage")
-				assert.Contains(t, compiled.Resources["apiInsightsMetricsPublisher"].DependsOn, "api")
-				assert.Contains(t, compiled.Resources["api"].DependsOn, "monitoring")
+				dependencies := make(map[string][]string, len(compiled.Resources))
+				metricsRole := ""
+				for _, resource := range compiled.Resources {
+					dependencies[resource.Name] = resource.DependsOn
+					if strings.Contains(resource.Name, "'3913510d-42f4-4e42-8a64-420c390055eb'") {
+						metricsRole = resource.Name
+					}
+				}
+				deployment := func(name string) string {
+					return "[resourceId('Microsoft.Resources/deployments', '" + name + "')]"
+				}
+				assert.Contains(t, dependencies["api-function-storage"], deployment("storageAccount"))
+				assert.Contains(t, dependencies["api-function-storage"], deployment("apiidentity"))
+				assert.Contains(t, dependencies["function-app-api"], deployment("api-function-storage"))
+				assert.Contains(t, dependencies["function-app-api"], deployment("monitoring"))
+				require.NotEmpty(t, metricsRole)
+				assert.Contains(t, dependencies[metricsRole], deployment("function-app-api"))
 			}
 
 			lintErrs := strings.SplitSeq(res.LintErr, "\n")

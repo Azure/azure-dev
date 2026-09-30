@@ -262,16 +262,11 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
 
 {{- if .StorageAccount }}
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
-module storageAccount 'br/public:avm/res/storage/storage-account:0.25.0' = {
+module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
   name: 'storageAccount'
   params: {
     name: storageAccountName
     allowSharedKeyAccess: false
-    {{- if hasFunctionApp .Services}}
-    allowBlobPublicAccess: false
-    queueServices: {}
-    tableServices: {}
-    {{- end}}
     publicNetworkAccess: 'Enabled'
     blobServices: {
       {{- if .StorageAccount.Containers }}

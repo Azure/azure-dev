@@ -25,6 +25,10 @@ import (
 func TestTelemetryEventConstants(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "ext.update", events.ExtensionUpdateEvent)
+	// Agent operation classifications use values of the existing extension.event
+	// field on ext.usage; they must not require another host span or attribute.
+	require.Equal(t, "ext.usage", events.ExtensionUsageEvent)
+	require.Equal(t, "extension.event", string(fields.ExtensionEvent.Key))
 	require.Equal(t, "ext.uninstall", events.ExtensionUninstallEvent)
 }
 

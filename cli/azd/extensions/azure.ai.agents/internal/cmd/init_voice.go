@@ -25,6 +25,7 @@ func runInitVoice(
 	projectTargetDir string,
 	createdFolderDisplay string,
 ) error {
+	recordInitProperties(ctx, map[string]any{"kind": "voice", "modelType": "managed"})
 	projectConfig, err := ensureProject(ctx, flags, azdClient, projectTargetDir)
 	if err != nil {
 		return err

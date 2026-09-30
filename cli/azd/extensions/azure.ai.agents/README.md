@@ -24,7 +24,8 @@ connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
-[Agent context telemetry](#agent-context-telemetry) and
+[Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers), and
 [Local client route telemetry](#local-client-route-telemetry).
 
 ### Agent context telemetry
@@ -43,6 +44,15 @@ The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
 reports one row for each classification. The event never includes agent names,
 service keys, paths, URLs, prompts, or other customer content.
+
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
 
 ## Non-interactive automation
 

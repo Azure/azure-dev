@@ -43,6 +43,7 @@ func runInitManaged(
 	azdClient *azdext.AzdClient,
 	harness string,
 ) error {
+	recordInitProperties(ctx, map[string]any{"kind": "prompt"})
 	// Every prompt-agent init converges here — interactive picker, --kind prompt,
 	// and manifest adoption alike — so this is the one place the preview notice
 	// reaches all of them. Emitted before validation so it is seen even when the

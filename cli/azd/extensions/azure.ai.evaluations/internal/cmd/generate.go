@@ -358,6 +358,9 @@ func (ec *evalContext) collectRubric(
 	// `job show` is documented as safe to re-run while polling. Collecting again
 	// over an edited file made those two claims contradict each other.
 	if !replaceExisting && artifactAlreadyCollected(path) {
+		if _, err := evaluatorDocument(completed.Result); err != nil {
+			return nil, err
+		}
 		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
 		ref.PreserveCatalogMetadata = true
 		return ref, nil
@@ -701,28 +704,41 @@ func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return messages.Creating(filepath.Dir(path), err)
-	}
-
+	body := result
 	var envelope struct {
 		Definition json.RawMessage `json:"definition"`
 	}
 	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
-		if editable, ok := editableRubric(envelope.Definition); ok {
-			return writeFileAtomic(path, editable)
+		editable, err := editableRubric(envelope.Definition)
+		if err != nil {
+			return err
+		}
+		if editable != nil {
+			body = editable
 		}
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return messages.Creating(filepath.Dir(path), err)
+	}
 
-	// Fall back to the raw payload rather than losing the result.
-	return writeFileAtomic(path, result)
+	return writeFileAtomic(path, body)
 }
 
 // editableRubric projects the authored rubric contract, not arbitrary service
 // fields. Catalog metadata and runtime schemas stay on the registered resource.
 //
-// Other evaluator kinds retain their separate authoring contracts.
-func editableRubric(definition json.RawMessage) ([]byte, bool) {
+// A nil result identifies another evaluator kind. A recognized malformed rubric
+// is an error, never permission to export the service envelope.
+func editableRubric(definition json.RawMessage) ([]byte, error) {
+	var kind struct {
+		Type       string          `json:"type"`
+		Dimensions json.RawMessage `json:"dimensions"`
+	}
+	if json.Unmarshal(definition, &kind) != nil ||
+		(kind.Type != "" && kind.Type != rubricDefinitionType) ||
+		(kind.Type == "" && len(kind.Dimensions) == 0) {
+		return nil, nil
+	}
 	var rubric struct {
 		Type       string `json:"type"`
 		Dimensions []*struct {
@@ -733,22 +749,27 @@ func editableRubric(definition json.RawMessage) ([]byte, bool) {
 		} `json:"dimensions"`
 		PassThreshold json.RawMessage `json:"pass_threshold,omitempty"`
 	}
-	if json.Unmarshal(definition, &rubric) != nil || rubric.Dimensions == nil ||
-		(rubric.Type != "" && rubric.Type != rubricDefinitionType) {
-		return nil, false
+	if err := json.Unmarshal(definition, &rubric); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
-	for _, dimension := range rubric.Dimensions {
+	if rubric.Dimensions == nil {
+		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
+	}
+	for i, dimension := range rubric.Dimensions {
 		if dimension == nil {
-			return nil, false
+			return nil, fmt.Errorf("invalid rubric definition: dimensions[%d] must be an object", i)
 		}
 	}
 	rubric.Type = rubricDefinitionType
 
 	pretty, err := json.MarshalIndent(rubric, "", "  ")
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
-	return append(pretty, '\n'), true
+	if _, err := validateRubricDefinition(pretty); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
+	}
+	return append(pretty, '\n'), nil
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

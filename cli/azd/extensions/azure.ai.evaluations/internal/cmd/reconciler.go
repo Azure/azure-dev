@@ -40,6 +40,7 @@ type evalReconciler struct {
 
 	// Registered dataset versions whose content was inspected by preflight.
 	datasetVersions map[string]string
+	localDatasets   map[string]preparedLocalDataset
 
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
@@ -214,9 +215,9 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 			return evalDecision{}, err
 		}
 		if digest != legacyDigest && !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest) {
-			// Earlier builds fingerprinted the reference before inheriting its
-			// catalog pin. Re-baseline an unchanged stored pin without forking
-			// history, but do not mistake a real catalog edit for migration.
+			// Some earlier lifecycle builds sent catalog pins but omitted them
+			// from fingerprints. Older builds ignored catalog pins entirely;
+			// those unpinned criteria must be recreated to honor the pin.
 			id := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
 			if id != "" {
 				remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
@@ -361,65 +362,36 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	key := project.FingerprintKey("dataset", decl.Name)
-	if prior := r.ec.privateValue(ctx, key); prior == digest {
-		// Unchanged since the last deploy; reuse the recorded version, but only
-		// after confirming nobody published a newer one outside the repo. An
-		// explicit `version:` is the author saying which version they want, so
-		// it settles the question and the check does not apply.
-		if version := r.ec.privateValue(ctx, versionKey("dataset", decl.Name)); version != "" {
-			if decl.Version == "" {
-				if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
-					return "", false, err
-				}
-				if err := r.applyDatasetTags(ctx, decl, version); err != nil {
-					return "", false, err
-				}
-				return version, false, nil
-			}
-
-			// A pin settles which version to use, not whether it is still
-			// there. Skipping the service entirely let a deleted version
-			// report as unchanged while the eval pointed at nothing.
-			_, getErr := r.ec.datasetClient.GetDataset(
-				ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
-			)
-			switch {
-			case getErr == nil || !dataset_api.IsNotFound(getErr):
-				// Deliberately not recorded. The key means "the version this file's
-				// content published", which is what the drift check compares
-				// against: writing the pin here made removing it later read as
-				// somebody having published behind the configuration's back, and
-				// failed the deploy. The run reads the pin from the declaration.
-				//
-				// Anything short of a confirmed absence leaves the pin alone
-				// rather than failing a deploy on a transient read -- but says so,
-				// because otherwise the deploy reports the version verified when
-				// all it did was fail to look.
-				if getErr != nil {
-					fmt.Fprint(warnWriter(ctx), messages.Warning(
-						messages.DatasetVersionNotVerified(decl.Name, decl.Version, getErr)))
-				}
-				// Not "changed", even when the pin moved. The flag chooses
-				// between "Published <kind> <name> version N" and "unchanged at
-				// version N", and re-pinning publishes nothing -- so reporting a
-				// move as a change would announce a publish that did not happen.
-				// The line still carries the pin, so it reads as unchanged at the
-				// version now in force, which is what took effect.
-				return decl.Version, false, nil
-
-			case decl.Version == version:
-				// The pin names the version this file already published, and it
-				// is gone -- someone deleted it out from under the deployment,
-				// which is what `create` hit straight after `dataset delete`.
-				// Republishing here would quietly undo that.
-				return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
-			}
-			// The pin names some other version, and it is not there: that is the
-			// author asking for it to be published, since `version` beside
-			// `file` is the version to publish rather than one to count from.
-			// Falls through to the upload instead of refusing over the version
-			// it was asked to create.
+	selected, validated := r.localDatasets[decl.Name]
+	if validated {
+		if selected.digest != digest || selected.pin != decl.Version {
+			return "", false, fmt.Errorf("dataset %q changed after validation; retry the command", decl.Name)
 		}
+	} else {
+		selected.version, err = r.localDatasetReuse(ctx, decl, digest)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if selected.version != "" {
+		if decl.Version == "" {
+			if validated {
+				if err := r.checkDatasetDrift(ctx, decl.Name, selected.version); err != nil {
+					return "", false, err
+				}
+			}
+			if err := r.applyDatasetTags(ctx, decl, selected.version); err != nil {
+				return "", false, err
+			}
+		} else if validated {
+			// A version selected by preflight must not become an upload if it
+			// disappears. The inspected rows, not the local file, were validated.
+			if _, err := r.datasetReference(ctx, decl); err != nil {
+				return "", false, err
+			}
+		}
+		// Preserve the file-to-published-version baseline when a pin is reused.
+		return selected.version, false, nil
 	}
 
 	// Uploaded by the path the author declared. Collapsing a file to its

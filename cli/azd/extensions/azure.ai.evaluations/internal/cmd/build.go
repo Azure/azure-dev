@@ -383,7 +383,7 @@ func buildEvalRequest(
 	// itself, so there is no per-row target invocation to produce `sample`.
 	simulated := group.Simulation != nil
 	if simulated {
-		datasetColumns = map[string]bool{conversationField: true}
+		datasetColumns = map[string]bool{conversationField: true, "tool_definitions": true}
 		targetBindings = nil
 	}
 

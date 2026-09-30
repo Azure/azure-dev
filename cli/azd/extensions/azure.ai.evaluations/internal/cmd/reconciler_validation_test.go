@@ -29,19 +29,22 @@ import (
 )
 
 type validationService struct {
-	mu               sync.Mutex
-	requests         []string
-	status           int
-	dataset          bool
-	eval             bool
-	failCreate       bool
-	definition       string
-	createCount      int
-	registeredRows   string
-	credentialStatus int
-	contentStatus    int
-	listedVersion    string
-	afterContentRead func()
+	mu                sync.Mutex
+	requests          []string
+	status            int
+	dataset           bool
+	eval              bool
+	failCreate        bool
+	definition        string
+	evaluatorVersion  string
+	createCount       int
+	createdRequests   []eval_api.CreateOpenAIEvalRequest
+	registeredRows    string
+	credentialStatus  int
+	contentStatus     int
+	datasetReadStatus int
+	listedVersion     string
+	afterContentRead  func()
 }
 
 func (s *validationService) serve(t *testing.T, base func() string) http.HandlerFunc {
@@ -79,7 +82,13 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/versions") {
-				_, _ = w.Write([]byte(`{"value":[{"name":"builtin.valid","version":"1"}]}`))
+				version := s.evaluatorVersion
+				if version == "" {
+					version = "1"
+				}
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"value": []map[string]string{{"name": "builtin.valid", "version": version}},
+				}))
 			} else {
 				_, _ = w.Write([]byte(s.definition))
 			}
@@ -108,6 +117,8 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 				} else {
 					_, _ = w.Write([]byte(`{"value":[]}`))
 				}
+			} else if r.Method == http.MethodGet && s.datasetReadStatus != 0 {
+				w.WriteHeader(s.datasetReadStatus)
 			} else if s.dataset {
 				version := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"name": "turn-tests", "version": version}))
@@ -115,6 +126,9 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 				w.WriteHeader(http.StatusNotFound)
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/evals"):
+			var request eval_api.CreateOpenAIEvalRequest
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			s.createdRequests = append(s.createdRequests, request)
 			s.createCount++
 			if s.failCreate {
 				w.WriteHeader(http.StatusServiceUnavailable)

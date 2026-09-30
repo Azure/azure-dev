@@ -209,7 +209,8 @@ func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 		`{"future_shape":{"value":9007199254740993}}`,
 	} {
 		t.Run(raw, func(t *testing.T) {
-			downloaded := evaluatorDocument(json.RawMessage(raw))
+			downloaded, err := evaluatorDocument(json.RawMessage(raw))
+			require.NoError(t, err)
 			require.JSONEq(t, raw, string(downloaded))
 			if strings.Contains(raw, "9007199254740993") {
 				require.Contains(t, string(downloaded), "9007199254740993")
@@ -225,7 +226,8 @@ func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
 			raw := `{"name":"renamed-evaluator","definition":{"type":"rubric","dimensions":` + dimensions +
 				`,"pass_threshold":` + threshold + `,"future_option":{"count":9007199254740993},` +
 				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
-			downloaded := evaluatorDocument(json.RawMessage(raw))
+			downloaded, err := evaluatorDocument(json.RawMessage(raw))
+			require.NoError(t, err)
 			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+`}`,
 				string(downloaded))
 			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")

@@ -27,6 +27,12 @@ type preparedEval struct {
 	localEvaluators []string
 }
 
+type preparedLocalDataset struct {
+	digest  string
+	pin     string
+	version string
+}
+
 // Validate prepares every eval before the first dependency is published.
 // Unlike the best-effort catalog used for discovery, a failed reference read
 // must stop reconciliation: it is not evidence that a reference is valid.
@@ -45,6 +51,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 
 	columns := map[string]map[string]bool{}
 	datasetVersions := map[string]string{}
+	localDatasets := map[string]preparedLocalDataset{}
 	for _, decl := range cfg.Datasets {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -76,7 +83,20 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				datasetVersions[decl.Name] = version
 			}
 		} else {
-			fields, err = inspectJSONL(ctx, path, validateRow)
+			var digest, version string
+			digest, err = project.Fingerprint(path)
+			if err == nil {
+				version, err = r.localDatasetReuse(ctx, decl, digest)
+			}
+			if err == nil {
+				localDatasets[decl.Name] = preparedLocalDataset{digest: digest, pin: decl.Version, version: version}
+				recorded := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+				if version != "" && version != recorded {
+					fields, err = r.inspectRegisteredDataset(ctx, decl.Name, version, validateRow)
+				} else {
+					fields, err = inspectJSONL(ctx, path, validateRow)
+				}
+			}
 		}
 		if err != nil {
 			return messages.DatasetProblem(decl.Name, err)
@@ -133,6 +153,10 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			if canReuseEvaluator(prior, digest, remote, body) {
 				schema = published
 			} else {
+				recorded := r.ec.privateValue(ctx, versionKey("evaluator", decl.Name))
+				if err := checkEvaluatorDrift(decl.Name, recorded, versionFromRaw(remote, "")); err != nil {
+					return messages.EvaluatorProblem(decl.Name, err)
+				}
 				if schema.Definition.DataSchema == nil {
 					schema.Definition.DataSchema = published.DataSchema()
 				}
@@ -197,7 +221,37 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	}
 	r.prepared = prepared
 	r.datasetVersions = datasetVersions
+	r.localDatasets = localDatasets
 	return nil
+}
+
+// localDatasetReuse selects an unchanged local file's registered version.
+// An absent new pin requests publication; failed reads never establish absence.
+func (r *evalReconciler) localDatasetReuse(ctx context.Context, decl project.DatasetDecl, digest string) (string, error) {
+	if r.ec.privateValue(ctx, project.FingerprintKey("dataset", decl.Name)) != digest {
+		return "", nil
+	}
+	recorded := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+	if recorded == "" {
+		return "", nil
+	}
+	if decl.Version == "" {
+		if err := r.checkDatasetDrift(ctx, decl.Name, recorded); err != nil {
+			return "", err
+		}
+		return recorded, nil
+	}
+	_, err := r.ec.datasetClient.GetDataset(ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion)
+	if err == nil {
+		return decl.Version, nil
+	}
+	if dataset_api.IsNotFound(err) {
+		if decl.Version != recorded {
+			return "", nil
+		}
+		return "", messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
+	}
+	return "", messages.ReadingDatasetVersion(decl.Name, decl.Version, err)
 }
 
 // validateDatasetInteractions checks primary inputs in the final mappings, not

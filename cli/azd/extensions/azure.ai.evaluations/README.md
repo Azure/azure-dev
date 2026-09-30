@@ -260,6 +260,11 @@ validates only its selected declaration and reserves the other evals' IDs.
 Renaming before older pin fingerprints have been migrated can reuse the prior
 eval only when its stored criteria confirm the same effective pins and no other
 declared eval owns it.
+When upgrading from a version that ignored catalog pins, the first reconciliation
+creates a new eval if its stored criteria were unpinned or used a different pin.
+Earlier runs remain on the old eval; they are not deleted or moved. Builds that
+already sent the correct pin but omitted it from their fingerprint can retain
+the existing eval only when its stored criterion identities and pins match.
 
 After a local rubric is reconciled, its evaluator contract is read from that
 exact service version rather than a potentially stale discovery listing.
@@ -269,6 +274,9 @@ Preflight uses the same digest-aware reuse decision: when the rubric will not
 be republished, its existing service contract wins over authored metadata
 overrides. A genuine edit that will publish a new version keeps authored
 metadata precedence.
+If that prospective publication would overwrite an externally advanced evaluator,
+preflight reports the drift before publishing any dataset. Reconciliation checks
+again before evaluator publication to catch changes that occur after preflight.
 
 Registered dataset references are checked against the JSONL rows of the settled
 version before publication. This uses the existing read-credential/content
@@ -281,6 +289,13 @@ mapped `messages`, or mapped `query` and `response`, must resolve to columns
 present in every dataset row. Optional tool columns are not made required by
 this check, and generated sample bindings and simulation outputs are not
 mistaken for input dataset columns.
+An explicitly authored `data_mapping` is stricter than an optional default:
+each item column it names must exist in the known source rows, including explicit
+tool, context, and ground-truth bindings. Simulation mappings are checked against
+the generated graded-item shape (`messages` and `tool_definitions`), not seed rows.
+When an unchanged local dataset file is repinned to another registered version,
+preflight reads that selected version's content. The original file-to-published-
+version baseline is retained; denied metadata or content reads stop reconciliation.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's
@@ -408,6 +423,9 @@ metadata, and generated wiring such as `data_schema`, `init_parameters`,
 `metrics`, and `prompt_text` are omitted. Prompt-based evaluators retain their
 separate full document, including their authored prompt. To inspect or export the full service response,
 use `azd ai eval evaluator show support-quality --version 3 -o json`.
+Malformed recognized rubrics fail download and collection before replacing an
+artifact or updating its catalog entry, rather than falling back to a full
+service-envelope export.
 
 Standalone `evaluator update` preserves the existing display name, description,
 categories, and supported evaluation levels. A full input document can explicitly

@@ -264,7 +264,7 @@ with exactly one file and dataset metadata reporting `isSingleFile: true`.
 Folders (including one-file folders) and multi-file datasets require
 `--output-dir` and retain their relative layout.
 
-Single-file container downloads without `--output-file` land as
+Single-file downloads without `--output-file` land as
 `<name>-<version><extension>` under `--output-dir` (the current directory by
 default), while folders land under `<name>-<version>/`. Omitting `--version`
 selects the latest version. Existing destinations require `--force` to replace,

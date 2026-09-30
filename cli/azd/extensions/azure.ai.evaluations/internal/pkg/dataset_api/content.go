@@ -6,6 +6,7 @@ package dataset_api
 import (
 	"context"
 	"io"
+	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -59,7 +60,7 @@ func (c *DatasetClient) ListDatasetContent(
 			_ = body.Close()
 			return &DatasetContent{
 				Container:  sasURI,
-				Files:      []string{""},
+				Files:      []string{blobNameFromURI(sasURI)},
 				SingleFile: true,
 				blobURI:    true,
 			}, nil
@@ -78,7 +79,7 @@ func (c *DatasetClient) ListDatasetContent(
 				_ = body.Close()
 				return &DatasetContent{
 					Container:  sasURI,
-					Files:      []string{""},
+					Files:      []string{blobNameFromURI(sasURI)},
 					SingleFile: true,
 					blobURI:    true,
 				}, nil
@@ -139,4 +140,13 @@ func (d *DatasetContent) Extension() string {
 		return ""
 	}
 	return path.Ext(d.Files[0])
+}
+
+// blobNameFromURI is the file name a blob SAS points at, without its query.
+func blobNameFromURI(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return path.Base(u.Path)
 }

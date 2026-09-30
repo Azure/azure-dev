@@ -2251,7 +2251,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2373,7 +2373,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2430,7 +2430,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2464,7 +2464,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2489,7 +2489,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2537,7 +2537,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2571,7 +2571,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',

@@ -372,9 +372,8 @@ type tokenRequestBody struct {
 	TenantId string   `json:"tenantId,omitempty"`
 }
 
-// startTestCredentialServer creates a mock HTTP server that implements the remote credential protocol.
-// This is used in Playback mode to provide OAuth tokens for functional tests
-// StartTestCredentialServer serves synthetic tokens for local CLI tests. The caller must close the server.
+// StartTestCredentialServer serves synthetic tokens using the remote credential protocol for local CLI
+// and playback tests. The caller must close the server.
 func StartTestCredentialServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check method and path

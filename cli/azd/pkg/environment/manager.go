@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -393,6 +394,10 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 		}
 
 		for _, env := range remoteEnvs {
+			if !IsValidEnvironmentName(env.Name) {
+				log.Printf("skipping remote environment entry %q: %v", env.Name, InvalidEnvironmentNameError(env.Name))
+				continue
+			}
 			existing, has := envMap[env.Name]
 			if !has {
 				existing = &Description{

@@ -363,23 +363,21 @@ func TestCheckAgentDefinitionValid_OneServiceValid_Passes(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
-	writeYAML(t, projectPath, "src/agent/agent.yaml", `
-kind: hosted
-name: echo-agent
-language: python
-entrypoint: main.py
-protocols:
-  - protocol: invocations
-    version: "1"
-`)
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "echo-agent", "language": "python", "entrypoint": "main.py",
+		"protocols": []any{map[string]any{"protocol": "invocations", "version": "1"}},
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -516,16 +514,21 @@ func TestCheckAgentDefinitionValid_NonAgentServicesIgnored(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: hosted\nname: echo\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "echo", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"api":        {Name: "api", Host: "containerapp", RelativePath: "src/api"},
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"api": {Name: "api", Host: "containerapp", RelativePath: "src/api"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -568,7 +571,7 @@ func TestCheckAgentDefinitionValid_MissingDefinition_Fails(t *testing.T) {
 	require.Len(t, failures, 1)
 }
 
-func TestCheckAgentDefinitionValid_MalformedLegacyYAML_Fails(t *testing.T) {
+func TestCheckAgentDefinitionValid_MalformedLegacyYAMLProvidesMigrationGuidance(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
@@ -591,6 +594,8 @@ func TestCheckAgentDefinitionValid_MalformedLegacyYAML_Fails(t *testing.T) {
 
 	require.Equal(t, StatusFail, got.Status)
 	require.Contains(t, got.Message, "echo-agent")
+	require.Contains(t, got.Message, "found legacy file agent.yaml")
+	require.Contains(t, got.Suggestion, "azure.yaml")
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
@@ -600,9 +605,10 @@ func TestCheckAgentDefinitionValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "ok"), 0o750))
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "bad"), 0o750))
-	writeYAML(t, projectPath, "src/ok/agent.yaml", "kind: hosted\nname: ok-agent\nlanguage: python\n")
+	okProps, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "ok-agent", "language": "python",
+	})
+	require.NoError(t, err)
 	// bad: malformed yaml (mapping key with no value, broken indent).
 	writeYAML(t, projectPath, "src/bad/agent.yaml", "name: bad\n  : nope\n\t- tabs-here\n")
 
@@ -611,7 +617,10 @@ func TestCheckAgentDefinitionValid_MixedValidAndInvalid_Fails(t *testing.T) {
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"ok-agent":  {Name: "ok-agent", Host: agentHost, RelativePath: "src/ok"},
+					"ok-agent": {
+						Name: "ok-agent", Host: agentHost, RelativePath: "src/ok",
+						AdditionalProperties: okProps,
+					},
 					"bad-agent": {Name: "bad-agent", Host: agentHost, RelativePath: "src/bad"},
 				},
 			},
@@ -735,14 +744,20 @@ func TestCheckAgentDefinitionValid_MissingKind_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "name: echo-agent\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"name": "echo-agent", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -756,7 +771,7 @@ func TestCheckAgentDefinitionValid_MissingKind_Fails(t *testing.T) {
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
-	require.Contains(t, failures[0], "kind")
+	require.Contains(t, failures[0], "agent definition not found")
 }
 
 func TestCheckAgentDefinitionValid_InvalidKind_Fails(t *testing.T) {
@@ -766,14 +781,20 @@ func TestCheckAgentDefinitionValid_InvalidKind_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: nonsense\nname: echo-agent\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "nonsense", "name": "echo-agent", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -796,14 +817,20 @@ func TestCheckAgentDefinitionValid_InvalidName_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: hosted\nname: My_Agent\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "My_Agent", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"my-agent": {Name: "my-agent", Host: agentHost, RelativePath: "src/agent"},
+					"my-agent": {
+						Name: "my-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},

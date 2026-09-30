@@ -371,3 +371,71 @@ func TestApplyDeployModeToAdoptedProject_ResolvesServicePath(t *testing.T) {
 	assert.Equal(t, "python", server.sets["agent"]["language"])
 	assert.Contains(t, server.sets["agent"], "codeConfiguration")
 }
+
+func TestApplyDeployModeToAdoptedProject_LegacyDefinitions(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, projectDir string) *azdext.ServiceConfig
+	}{
+		{
+			name: "config nested",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				config, err := structpb.NewStruct(map[string]any{
+					"kind": "hosted",
+					"name": "legacy-agent",
+					"codeConfiguration": map[string]any{
+						"runtime":    "python_3_13",
+						"entryPoint": "app.py",
+					},
+				})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:   "agent",
+					Host:   AiAgentHost,
+					Config: config,
+				}
+			},
+		},
+		{
+			name: "implicit disk",
+			setup: func(t *testing.T, projectDir string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectDir, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy-agent\n"+
+						"code_configuration:\n  runtime: python_3_13\n  entry_point: app.py\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			server := &deployModeProjectServer{
+				path: projectDir,
+				services: map[string]*azdext.ServiceConfig{
+					"agent": tt.setup(t, projectDir),
+				},
+			}
+			client := newProjectRecorderClient(t, server)
+
+			usesContainer, err := applyDeployModeToAdoptedProject(
+				t.Context(),
+				&initFlags{},
+				client,
+			)
+			require.NoError(t, err)
+			assert.False(t, usesContainer)
+			assert.Empty(t, server.sets["agent"],
+				"init must preserve the deploy mode from the legacy definition")
+		})
+	}
+}

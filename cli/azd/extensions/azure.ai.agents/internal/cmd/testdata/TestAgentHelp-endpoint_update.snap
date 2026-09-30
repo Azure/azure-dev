@@ -1,8 +1,8 @@
 Update an agent's endpoint and card configuration without deploying a new version.
 
 This command reads the agentEndpoint and agentCard fields from the azure.ai.agent
-service in azure.yaml, or agent_endpoint and agent_card from a legacy agent.yaml,
-and patches the existing agent with those values. No new agent version is created.
+service in azure.yaml, directly or through its explicit root $ref, and patches
+the existing agent with those values. No new agent version is created.
 
 The agent must already exist (i.e., it must have been previously deployed).
 

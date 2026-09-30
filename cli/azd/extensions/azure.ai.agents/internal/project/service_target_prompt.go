@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ServiceIsPromptAgent reports whether the service config describes a prompt
@@ -40,13 +39,8 @@ func ServiceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
 	if serviceConfig == nil {
 		return false
 	}
-	for _, props := range []*structpb.Struct{
-		serviceConfig.GetAdditionalProperties(),
-		serviceConfig.GetConfig(),
-	} {
-		if kind := structKind(props); kind != "" {
-			return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
-		}
+	if kind := structKind(serviceConfig.GetAdditionalProperties()); kind != "" {
+		return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
 	}
 	return false
 }
@@ -290,10 +284,8 @@ func (p *AgentServiceTargetProvider) resolvedPromptAgentSettings(
 //
 // The definition is normally inline on the azure.yaml service entry, which is
 // what `azd ai agent init` scaffolds. agentDefinitionPath is set only when the
-// definition lives in its own file — a `$ref:` include, the AGENT_DEFINITION_PATH
-// override, or the legacy agent.yaml convention — and that file is then the
-// authority, because it is also what anchors the skills/ and vector-assets/
-// convention folders.
+// definition lives in its own file through a service-level `$ref:` include. The
+// file is also what anchors the skills/ and vector-assets/ convention folders.
 func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.PromptAgent, error) {
 	if p.agentDefinitionPath == "" {
 		promptDef, found, err := PromptAgentFromResolvedService(p.serviceConfig, p.projectPath)

@@ -10,13 +10,13 @@ import (
 	"azureaiagent/internal/pkg/azure"
 )
 
-// A memory store can be declared from two different surfaces: `memoryStores:`
-// on an agent service in azure.yaml (hosted agents) and `memory:` in agent.yaml
-// (prompt agents). The two authoring shapes differ, but everything downstream of
-// them -- the request the service accepts, the rule for when options may be
-// omitted, and what counts as drift against an existing store -- is identical.
-// That shared half lives here, keyed off the wire types, so the two surfaces
-// cannot disagree about how a store is created or compared.
+// A memory store can be declared with `memoryStores:` on a hosted agent service
+// or `memory:` on a prompt agent service. The two direct/root-$ref authoring
+// shapes differ, but everything downstream of them -- the request the service
+// accepts, the rule for when options may be omitted, and what counts as drift
+// against an existing store -- is identical. That shared half lives here, keyed
+// off the wire types, so the two shapes cannot disagree about how a store is
+// created or compared.
 
 // memoryStoreOptionsOrNil returns options, or nil when every field is unset.
 //
@@ -41,14 +41,14 @@ func memoryStoreOptionsOrNil(options *azure.MemoryStoreOptions) *azure.MemorySto
 // memoryStoreDrift is one field whose declared value diverges from the live
 // store. It is reported rather than applied: azd creates memory stores but never
 // updates them, so an edit to a store that already exists has no effect, and
-// silently ignoring it would leave the manifest and the resource disagreeing
+// silently ignoring it would leave the definition and the resource disagreeing
 // indefinitely.
 type memoryStoreDrift struct {
 	// Field is the wire field path, e.g. "chat_model" or
 	// "options.chat_summary_enabled". Callers map it to the key name used by
 	// the surface the author actually wrote.
 	Field string
-	// Declared is the value in the manifest, formatted for display.
+	// Declared is the value in the definition, formatted for display.
 	Declared string
 	// Live is the store's current value, formatted for display. It is empty
 	// when the store leaves the field at its service default, which is not
@@ -145,7 +145,7 @@ func formatBoolPtr(value *bool) string {
 // describeMemoryStoreDrift renders drift entries as human-readable phrases,
 // mapping each wire field path through labels so the message names the key the
 // author actually wrote. A field absent from labels is printed as-is, which is
-// what the agent.yaml surface wants since it uses the wire names verbatim.
+// what the referenced YAML definition surface wants since it uses wire names verbatim.
 func describeMemoryStoreDrift(drift []memoryStoreDrift, labels map[string]string) []string {
 	described := make([]string, 0, len(drift))
 	for _, d := range drift {

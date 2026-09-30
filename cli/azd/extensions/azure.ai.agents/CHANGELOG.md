@@ -2,6 +2,24 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.18 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10137]](https://github.com/Azure/azure-dev/pull/10137) Require runtime agent definitions in `azure.yaml` or through an explicit root `$ref`, rejecting `AGENT_DEFINITION_PATH`, nested agent `config:` blocks, and implicit standalone-file discovery.
+- [[#10140]](https://github.com/Azure/azure-dev/pull/10140) Require unified `azure.yaml` project documents for agent initialization and remove standalone manifest adoption and the `sample list --type agent` filter.
+- [[#10164]](https://github.com/Azure/azure-dev/pull/10164) Remove legacy AgentManifest support from diagnostics and next-step guidance; move agent definitions to direct `azure.yaml` service properties or an explicit root `$ref`.
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2`.
+
+### Features Added
+
+- [[#10106]](https://github.com/Azure/azure-dev/pull/10106) Add `azd ai agent state-stores` commands to inspect existing stores and list, read, set, and delete their JSON items.
+- [[#10127]](https://github.com/Azure/azure-dev/pull/10127) Add project managed identity storage-permission diagnostics to `azd ai agent doctor` for Storage connections bound to the project capability host. Thanks @Yimin-Jin for the contribution!
+
+### Bugs Fixed
+
+- [[#10152]](https://github.com/Azure/azure-dev/pull/10152) Fix local Activity Playground routing to use `/activity/messages` for current protocols while preserving `/api/messages` for legacy v1 agents.
+
 ## 1.0.0-beta.17 (2026-09-24)
 
 ### Features Added

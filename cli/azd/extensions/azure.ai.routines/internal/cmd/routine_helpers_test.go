@@ -216,12 +216,9 @@ func TestRoutineSummaryTable(t *testing.T) {
 
 			var identity string
 			foundIdentity := false
-			for _, line := range strings.Split(outputText, "\n") {
-				if strings.HasPrefix(line, "Dispatch identity:") {
-					identity = strings.TrimSpace(strings.TrimPrefix(
-						line,
-						"Dispatch identity:",
-					))
+			for line := range strings.SplitSeq(outputText, "\n") {
+				if after, ok := strings.CutPrefix(line, "Dispatch identity:"); ok {
+					identity = strings.TrimSpace(after)
 					foundIdentity = true
 					break
 				}

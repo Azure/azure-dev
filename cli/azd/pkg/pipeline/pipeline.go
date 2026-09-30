@@ -359,12 +359,12 @@ const (
 	infraProviderUndefined infraProviderType = ""
 )
 
-func toInfraProviderType(provider string) (infraProviderType, error) {
+func toInfraProviderType(provider string) infraProviderType {
 	result := infraProviderType(provider)
 	if result == infraProviderBicep || result == infraProviderTerraform || result == infraProviderUndefined {
-		return result, nil
+		return result
 	}
-	return infraProviderCustom, nil
+	return infraProviderCustom
 }
 
 func usesTerraform(options provisioning.Options) bool {

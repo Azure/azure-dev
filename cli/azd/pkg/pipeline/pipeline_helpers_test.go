@@ -85,11 +85,9 @@ func Test_toCiProviderType(t *testing.T) {
 
 func Test_toInfraProviderType(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		want     infraProviderType
-		wantErr  bool
-		errMatch string
+		name  string
+		input string
+		want  infraProviderType
 	}{
 		{
 			name:  "bicep",
@@ -114,14 +112,7 @@ func Test_toInfraProviderType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := toInfraProviderType(tt.input)
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMatch)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.want, got)
-			}
+			assert.Equal(t, tt.want, toInfraProviderType(tt.input))
 		})
 	}
 }

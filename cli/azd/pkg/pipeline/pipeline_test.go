@@ -4463,17 +4463,9 @@ func Test_toCiProviderType_values_cov3(t *testing.T) {
 func Test_toInfraProviderType_values_cov3(t *testing.T) {
 	t.Parallel()
 
-	bicepProvider, err := toInfraProviderType("bicep")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderBicep, bicepProvider)
-
-	tfProvider, err := toInfraProviderType("terraform")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderTerraform, tfProvider)
-
-	customProvider, err := toInfraProviderType("other")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderCustom, customProvider)
+	assert.Equal(t, infraProviderBicep, toInfraProviderType("bicep"))
+	assert.Equal(t, infraProviderTerraform, toInfraProviderType("terraform"))
+	assert.Equal(t, infraProviderCustom, toInfraProviderType("other"))
 }
 
 // =====================================================================
@@ -6268,28 +6260,21 @@ func Test_toInfraProviderType_additionalCases(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		input   string
-		want    infraProviderType
-		wantErr bool
+		input string
+		want  infraProviderType
 	}{
-		{"bicep", infraProviderBicep, false},
-		{"terraform", infraProviderTerraform, false},
-		{"", infraProviderUndefined, false},
-		{"Bicep", infraProviderCustom, false},
-		{"TERRAFORM", infraProviderCustom, false},
-		{"pulumi", infraProviderCustom, false},
+		{"bicep", infraProviderBicep},
+		{"terraform", infraProviderTerraform},
+		{"", infraProviderUndefined},
+		{"Bicep", infraProviderCustom},
+		{"TERRAFORM", infraProviderCustom},
+		{"pulumi", infraProviderCustom},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
-			got, err := toInfraProviderType(tt.input)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.want, got)
-			}
+			assert.Equal(t, tt.want, toInfraProviderType(tt.input))
 		})
 	}
 }

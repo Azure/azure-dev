@@ -1474,10 +1474,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
 
-	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
-	if err != nil {
-		return err
-	}
+	infraProvider := toInfraProviderType(string(pm.infra.Options.Provider))
 
 	var requiredAlphaFeatures []string
 	if pm.infra.IsCompose {

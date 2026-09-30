@@ -7,6 +7,7 @@
 import argparse
 import copy
 from datetime import datetime, timezone
+import http.client
 import importlib.util
 import json
 import os
@@ -14,7 +15,6 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -122,6 +122,29 @@ def reviewed_candidate(env=None):
     return approved, {"repository": repository, "commit": revision, "path": path, "sha256": sha256(raw)}
 
 
+def approve_candidate(manifest, output):
+    """Admit fixed candidate binary/source work only against independent approval."""
+    require(not output.exists(), "Approval evidence directory must be new")
+    try:
+        try:
+            raw = manifest.read_bytes()
+        except OSError as error:
+            raise ApprovalBlocked("Checked-in candidate manifest is unavailable") from error
+        pin = parse_approval_json(raw, "Checked-in candidate manifest")
+        validate_approval_manifest(pin)
+        approved, authority = reviewed_candidate()
+        require_approval(pin == approved, "Checked-in candidate differs from independently approved immutable pins")
+    except ApprovalBlocked as error:
+        record_approval_block(output, error)
+        raise
+    output.mkdir(parents=True)
+    write_json(output / "approval-status.json", {
+        "status": "PASS", "execution": "NOT RUN", "approval": authority,
+        "manifestSha256": sha256(raw), "sourceCommit": pin["sourceVerificationCommit"],
+    })
+    return pin
+
+
 def require_reviewed_candidate(pin, approved, authority):
     # Publisher hashes prove consistency, not authorization to execute new bytes.
     require_approval(isinstance(pin, dict) and isinstance(approved, dict)
@@ -205,8 +228,8 @@ def fetch(url):
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
             return response.read()
-    except (urllib.error.URLError, TimeoutError) as error:
-        raise RuntimeError(f"Release download failed: {safe_text(error)}") from None
+    except (OSError, http.client.HTTPException) as error:
+        raise RuntimeError(f"Release download failed ({type(error).__name__}); response could not be verified") from None
 
 
 def asset_map(release, tag):
@@ -303,6 +326,37 @@ def build_manifest(release, assets, registry, provenance, sums, baseline, author
     }
     require_reviewed_candidate(pin, baseline, authority)
     return pin
+
+
+def verify_frozen_metadata(pin, approved, authority):
+    """Verify producer evidence against fixed-tag bytes without resolving Latest again."""
+    try:
+        release = parse_approval_json(
+            fetch(f"https://api.github.com/repos/{FEED}/releases/tags/{pin['releaseTag']}"),
+            "Fixed release metadata")
+        require_approval(release["tag_name"] == pin["releaseTag"], "Fixed release tag differs from the approved pin")
+        assets = asset_map(release, pin["releaseTag"])
+        documents = {}
+        for name in ("registry.json", "source-provenance.json", "SHA256SUMS"):
+            require_approval(assets[name] == pin["scenarioResolution"]["metadata"][name],
+                             "Producer metadata claim differs from the fixed release")
+            data = fetch(assets[name]["url"])
+            require_approval(sha256(data) == assets[name]["sha256"],
+                             "Fixed release metadata bytes differ from the declared digest")
+            documents[name] = data
+        verified = build_manifest(
+            release, assets, parse_approval_json(documents["registry.json"], "Fixed registry"),
+            parse_approval_json(documents["source-provenance.json"], "Fixed source provenance"),
+            parse_sums(documents["SHA256SUMS"]), approved, authority)
+        for field in ("releaseId", "publishedAt", "metadata", "artifacts"):
+            require_approval(verified["scenarioResolution"][field] == pin["scenarioResolution"][field],
+                             f"Producer {field} differs from independently fetched fixed release evidence")
+    except (AssertionError, KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+        if isinstance(error, ApprovalBlocked):
+            raise
+        raise ApprovalBlocked(
+            f"Fixed release metadata is unavailable or invalid ({type(error).__name__}); no binary may execute"
+        ) from error
 
 
 def resolve(output):
@@ -505,6 +559,7 @@ def execute(manifest, output):
         require_approval(pin["scenarioResolution"].get("fixtureContract") == "build41-offline-160",
                          "Unsupported offline fixture contract")
         require_approval(pin["sourceCommit"] == pin["sourceVerificationCommit"], "Source pins disagree")
+        verify_frozen_metadata(pin, approved, authority)
     except ApprovalBlocked as error:
         record_approval_block(output, error)
         raise
@@ -574,6 +629,9 @@ def main():
     runner = commands.add_parser("offline")
     runner.add_argument("--manifest", required=True, type=Path)
     runner.add_argument("--output", required=True, type=Path)
+    candidate_approval = commands.add_parser("candidate-approval")
+    candidate_approval.add_argument("--manifest", required=True, type=Path)
+    candidate_approval.add_argument("--output", required=True, type=Path)
     live = commands.add_parser("live")
     live.add_argument("--output", required=True, type=Path)
     environment_gate = commands.add_parser("github-live-gate")
@@ -584,6 +642,8 @@ def main():
             resolve(args.output)
         elif args.operation == "offline":
             execute(args.manifest, args.output)
+        elif args.operation == "candidate-approval":
+            approve_candidate(args.manifest, args.output)
         elif args.operation == "github-live-gate":
             return github_live_gate(args.output)
         else:

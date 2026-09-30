@@ -480,7 +480,7 @@ class ServiceTests(unittest.TestCase):
             report = {}
             driver = service.Driver(Path("azd"), workspace / "auth", workspace, 17, 60, report)
             output = subprocess.CompletedProcess([], 0, b'{"id":"eval_owned","private":"do-not-publish"}', b"")
-            with mock.patch.object(service.subprocess, "run", return_value=output) as execute:
+            with mock.patch.object(service, "run_owned_process", return_value=output) as execute:
                 result = driver("fixture read", ["ai", "eval", "show", "eval_owned"])
             self.assertEqual(result["id"], "eval_owned")
             self.assertNotIn("do-not-publish", json.dumps(report))
@@ -494,7 +494,7 @@ class ServiceTests(unittest.TestCase):
             report = {}
             driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 17, 60, report)
             completed = subprocess.CompletedProcess([], 0, b"{}", b"")
-            with mock.patch.object(service.subprocess, "run", return_value=completed) as run:
+            with mock.patch.object(service, "run_owned_process", return_value=completed) as run:
                 driver("download approved registered version", [
                     "ai", "dataset", "download", "private-existing-dataset",
                     "--version", "private-version-42", "--output-file", str(Path(root) / "row.jsonl"),
@@ -514,7 +514,7 @@ class ServiceTests(unittest.TestCase):
             driver.deadline = 0
             result = subprocess.CompletedProcess([], 0, b'{"token":"mock-credential-do-not-log"}', b"")
             response = subprocess.CompletedProcess([], 0, b'{"status":204,"body":""}', b"")
-            with mock.patch.object(service.subprocess, "run", return_value=result) as run, \
+            with mock.patch.object(service, "run_owned_process", return_value=result) as run, \
                  mock.patch.object(service, "transport_exchange", return_value=response):
                 with self.assertRaisesRegex(RuntimeError, "deadline"):
                     driver("wait for owned run", [])
@@ -534,7 +534,7 @@ class ServiceTests(unittest.TestCase):
             endpoint = self.plan()["projectEndpoint"]
             url = endpoint + "/openai/v1/evals/eval_owned"
             response = subprocess.CompletedProcess([], 0, b'{"status":404,"body":""}', b"")
-            with mock.patch.object(service.subprocess, "run", return_value=token) as run, \
+            with mock.patch.object(service, "run_owned_process", return_value=token) as run, \
                  mock.patch.object(service, "transport_exchange", return_value=response) as transport:
                 self.assertEqual(driver.delete_owned_eval("eval_owned", endpoint, self.plan()["tenantId"]),
                                  {"id": "eval_owned", "status": "deleted"})

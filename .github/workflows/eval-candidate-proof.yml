@@ -7,10 +7,16 @@ on:
     paths:
       - .github/workflows/eval-candidate-proof.yml
       - eng/scripts/eval-candidate-proof/**
+      - eng/scripts/eval-scenario-ci/scenario.py
+      - eng/scripts/eval-scenario-ci/test_candidate_approval.py
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  AZD_SCENARIO_APPROVAL_REPOSITORY: ${{ github.repository }}
+  AZD_SCENARIO_APPROVED_COMMIT: ${{ vars.AZD_SCENARIO_APPROVED_COMMIT }}
 
 jobs:
   offline-cli:
@@ -28,6 +34,26 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify independent candidate approval before binary execution
+        id: approval
+        shell: pwsh
+        run: |
+          python eng/scripts/eval-scenario-ci/scenario.py candidate-approval --manifest eng/scripts/eval-candidate-proof/candidate.json --output "$env:RUNNER_TEMP/candidate-approval"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish binary admission receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-approval-cli-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-approval/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Install pinned artifacts and exercise actual azd commands
         shell: pwsh
         run: |
@@ -35,7 +61,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish sanitized offline evidence
-        if: always()
+        if: always() && steps.approval.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: offline-cli-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -63,22 +89,34 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require immutable candidate source
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify independent candidate approval before source checkout
         id: source
         shell: python
         run: |
-          import json
           import os
-          import re
+          import sys
           from pathlib import Path
-          pin = json.loads(Path("eng/scripts/eval-candidate-proof/candidate.json").read_text())
+          sys.path.insert(0, str(Path("eng/scripts/eval-scenario-ci").resolve()))
+          import scenario
+          pin = scenario.approve_candidate(
+              Path("eng/scripts/eval-candidate-proof/candidate.json"),
+              Path(os.environ["RUNNER_TEMP"]) / "candidate-approval")
           commit = pin["sourceVerificationCommit"]
-          if not isinstance(commit, str) or not re.fullmatch("[0-9a-f]{40}", commit):
-              raise SystemExit("Race proof requires an explicitly approved immutable source SHA")
-          if pin["sourceCommit"] is not None and pin["sourceCommit"] != commit:
-              raise SystemExit("Source race pin must match the published candidate source")
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"commit={commit}\n")
+
+      - name: Publish source admission receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-approval-source-${{ matrix.extension }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-approval/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Checkout exact approved source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -28,6 +28,7 @@ import uuid
 import scenario
 
 HTTP_TRANSPORT = Path(__file__).with_name("http_transport.py")
+run_owned_process = scenario.proof_module.run_owned_process
 AGENT_CLI_MODE = "existing-agent-cli-evaluation"
 AGENT_EXTENSION = "azure.ai.agents"
 
@@ -344,8 +345,7 @@ class Driver:
         self.report.setdefault("commands", []).append(record)
         started = time.monotonic()
         try:
-            result = subprocess.run(argv, cwd=self.workspace, env=self.env, stdin=subprocess.DEVNULL,
-                                    capture_output=True, timeout=timeout, check=False)
+            result = run_owned_process(argv, cwd=self.workspace, env=self.env, timeout=timeout)
             record["exitCode"] = result.returncode
             if private_output:
                 record["outputOmitted"] = "credential response"

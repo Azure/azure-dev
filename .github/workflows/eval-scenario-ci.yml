@@ -7,6 +7,7 @@ on:
       - .github/workflows/eval-scenario-ci.yml
       - eng/scripts/eval-scenario-ci/**
       - eng/scripts/eval-candidate-proof/verify.py
+      - eng/scripts/eval-candidate-proof/owned_process.py
       - eng/scripts/eval-candidate-proof/checks.json
       - eng/scripts/eval-candidate-proof/candidate.json
       - eng/pipelines/eval-scenario-ci.yml
@@ -35,7 +36,7 @@ env:
 
 jobs:
   resolve:
-    if: inputs.mode != 'live'
+    if: inputs.mode != 'live' && (github.event_name != 'push' || vars.AZD_SCENARIO_APPROVED_COMMIT != '')
     name: Freeze Latest once
     runs-on: ubuntu-24.04
     timeout-minutes: 5

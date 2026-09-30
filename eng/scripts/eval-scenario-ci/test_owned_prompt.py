@@ -276,7 +276,7 @@ class OwnedPromptTests(unittest.TestCase):
                 "status": 200, "body": base64.b64encode(
                     b'{"name":"ci-owned","version":"8","id":"ci-owned:8"}').decode(),
             }).encode(), b"")
-            with mock.patch.object(service.subprocess, "run", return_value=token) as run, \
+            with mock.patch.object(service, "run_owned_process", return_value=token) as run, \
                  mock.patch.object(service, "transport_exchange", return_value=response) as transport:
                 status, result = driver.request(
                     "create owned prompt-agent version", "POST",
@@ -301,7 +301,7 @@ class OwnedPromptTests(unittest.TestCase):
             driver = service.Driver(Path("azd"), workspace / "auth", workspace, 30, 120, {})
             token = subprocess.CompletedProcess([], 0, b'{"token":"mock-private-credential"}', b"")
             response = subprocess.CompletedProcess([], 0, b'{"status":503,"body":""}', b"")
-            with mock.patch.object(service.subprocess, "run", return_value=token) as run, \
+            with mock.patch.object(service, "run_owned_process", return_value=token) as run, \
                  mock.patch.object(service, "transport_exchange", return_value=response) as transport:
                 with self.assertRaisesRegex(RuntimeError, "HTTP 503"):
                     driver.request("create owned prompt-agent version", "POST",

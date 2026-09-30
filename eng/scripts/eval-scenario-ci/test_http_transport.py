@@ -57,7 +57,7 @@ class HttpTransportTests(unittest.TestCase):
                 response = subprocess.CompletedProcess([], 0, json.dumps({
                     "status": 200, "body": base64.b64encode(raw).decode(),
                 }).encode(), b"")
-                with mock.patch.object(service.subprocess, "run", return_value=token), \
+                with mock.patch.object(service, "run_owned_process", return_value=token), \
                      mock.patch.object(service, "transport_exchange", return_value=response):
                     with self.assertRaisesRegex(RuntimeError, "non-object service metadata"):
                         driver.request("delete only owned prompt-agent version", "DELETE",
@@ -111,7 +111,7 @@ class HttpTransportTests(unittest.TestCase):
 
                 start = time.monotonic()
                 with mock.patch.object(service, "HTTP_TRANSPORT", helper), \
-                     mock.patch.object(service.subprocess, "run", return_value=token), \
+                     mock.patch.object(service, "run_owned_process", return_value=token), \
                      mock.patch.object(subprocess, "Popen", side_effect=spawn):
                     with self.assertRaisesRegex(RuntimeError, "absolute HTTP deadline"):
                         driver.request("create owned prompt-agent version", "POST",
@@ -143,7 +143,7 @@ class HttpTransportTests(unittest.TestCase):
                 return process
 
             with mock.patch.object(service, "HTTP_TRANSPORT", helper), \
-                 mock.patch.object(service.subprocess, "run", return_value=token), \
+                 mock.patch.object(service, "run_owned_process", return_value=token), \
                  mock.patch.object(subprocess, "Popen", side_effect=spawn):
                 with self.assertRaisesRegex(RuntimeError, "transport failed") as raised:
                     driver.request("create owned prompt-agent version", "POST",

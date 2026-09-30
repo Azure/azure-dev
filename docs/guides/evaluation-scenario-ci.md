@@ -2,8 +2,10 @@
 
 This shared scenario workflow exercises the published evaluation and dataset
 extensions through the actual `azd` host. It is separate from the immutable
-[fork-only candidate gate](../../.github/workflows/eval-candidate-proof.yml): it does not
-modify that gate's 160 checks, fixture contract, source pins, or four jobs.
+[fork-only candidate gate](../../.github/workflows/eval-candidate-proof.yml).
+Both preserve the canonical160 check identities and assertions. The candidate
+gate retains its source pins and four jobs, with independent approval required
+before either binary execution or source checkout.
 
 ## Coverage and limits
 
@@ -42,13 +44,18 @@ source commit, versions and metadata digests. It cross-checks GitHub asset
 digests, `SHA256SUMS`, registry entries and publisher provenance, then requires
 the whole execution tuple to match that independent approval before writing
 `candidate.json`. Publisher-controlled hashes prove consistency, not trust.
-Core 1.33.0 and its approved archive hashes remain pinned.
+The core version and its archive hashes remain pinned by the independent approval.
 A changed core requirement fails explicitly rather than silently upgrading.
 
 Both OS jobs consume the same frozen manifest artifact. They never query Latest,
 but independently refetch the configured immutable approval and check the tuple
 before constructing the installer or executing any downloaded binary. A producer
 artifact's approval claim is not an authority and cannot replace this lookup.
+Consumers also fetch the fixed-tag release metadata, registry, provenance and
+checksum list without querying Latest. They verify the bytes, claimed digests,
+release ID/publication time and complete source/archive tuple before constructing
+the installer. Syntactically valid but forged metadata digests cannot enter a
+successful receipt.
 The original publisher's source declaration is retained as provenance, not
 inferred from a filename. Each job verifies archive bytes, computes extracted
 and installed executable digests, and checks actual version output. A changed
@@ -85,6 +92,17 @@ manifest SHA256 was
 This enrolls only the accepted43 tuple. It does not configure Azure/azure-dev,
 Azure DevOps, future releases, service execution or a monetary/security grant.
 
+The fixed-candidate workflow uses the same native approval variables. Each
+binary job runs `candidate-approval` before invoking the low-level proof runner;
+each source-race job obtains its checkout SHA only from `approve_candidate`
+after the checked-in manifest matches the independently fetched approval.
+Missing approval or changed source/core/archive pins produce an always-uploaded
+`approval-status.json` with `BLOCKED / NOT RUN`. A passed admission receipt
+means authorization matched, not that a binary or source test has run.
+Direct use of the low-level `verify.py` runner requires the same explicit
+admission step; the workflow supplies that step rather than treating checkout
+content as an authority.
+
 Missing/invalid approval configuration, a different Latest tag, changed hashes,
 or a conflicting producer approval claim fails closed with nonzero status and
 `approval-status.json` showing `BLOCKED / NOT RUN`. A future publisher release
@@ -103,7 +121,16 @@ executable before discovering the missing evidence.
 The native publication handoff and repository dispatch event do not constitute
 that approval. A non-Latest candidate-pin commit can therefore leave the separate
 Latest scenario blocked until approved configuration and the promoted release
-match; the fixed-candidate release gate is independent and unchanged.
+match; fixed-candidate execution remains separate from Latest selection.
+
+Hash consistency is not source-to-binary attestation. Running race tests on a
+declared source SHA does not prove an archive was built from that source.
+Before approving a new tuple, the independent authorizer must assess available
+build attestation or reproducibility evidence. If automatic VCS metadata is
+absent, record the provenance limitation and any explicit risk acceptance;
+never label publisher build-input records as an independently verified stamp.
+The harness authorizes exact reviewed bytes and does not invent missing build
+provenance.
 
 The subprocess environment is allowlisted, with fresh home, Azure and azd
 configuration directories. User tokens, caches, GitHub tokens and pipeline
@@ -122,7 +149,13 @@ gh workflow run eval-scenario-ci.yml --repo m7md7sien/azure-dev `
 ```
 
 The main and dedicated validation branches' scenario files and shared harness/manifest dependency
-changes also run it. A candidate-pin change is a configuration-validation round,
+changes also run it once the repository has configured its approval revision.
+Automatic pushes in an unenrolled repository do not schedule the resolver and
+are **NOT RUN**, not passing test evidence. Explicit manual/repository dispatch
+still fails closed when approval is missing. The fixed personal feed/source
+scope is intentional test infrastructure, not automatic trust in its publisher;
+upstream maintainers must approve the complete immutable tuple before opting in.
+A candidate-pin change is a configuration-validation round,
 not proof of a newly promoted Latest release; the receipt must still identify
 the release actually selected. A release publisher
 can invoke the same dispatch after publishing/promoting a new package.
@@ -157,6 +190,12 @@ Register/queue it only in a user-authorized target with existing approved
 repository access and capacity. The documented `azure-sdk/internal` pipeline
 location is not an execution grant, and this standalone YAML is not a request
 to use its shared pools or bypass its production pipeline policies.
+The symbolic variables in this YAML do not enforce who can edit or override
+them, and its plain live job does not establish a native environment approval.
+Before activation, the owner must supply permission-restricted, non-queue-time
+approval configuration and a protected deployment/approval boundary appropriate
+to the actual pipeline. No variable group, environment or protection policy is
+created or claimed as configured by these files.
 
 No Azure DevOps run URL can be reported until such a target is supplied and
 an actual run finishes. Local YAML checks are not an Azure DevOps execution.
@@ -391,7 +430,7 @@ contribution. Unit/mock coverage is not native approval or live acceptance.
 | Export | Yes: published `run output export --format json --output-file -` | Exact item/run/approved-row binding; wrong/null shapes and numeric types | Both use the same executor |
 | Owned cleanup | Yes, scoped identities: eval ID DELETE, dataset version CLI DELETE, agent-version API DELETE | No guessed identity, empty response, one shared budget, all cleanup attempts and retained primary failures | Both use the same executor; no broad project/agent/infrastructure deletion |
 
-The real subprocess driver uses fixed argument lists, `--no-prompt`, JSON,
+The real subprocess driver uses fixed argument lists, `--no-prompt`, the command's supported output format,
 per-command timeouts and a total observation deadline. Cleanup receives its own
 bounded command budget even after that deadline; the token request and ID-only
 HTTP operations and dataset-version deletion share it. Provider job limits are 30 minutes, covering the maximum
@@ -401,6 +440,17 @@ in memory but not uploaded: receipts contain command timing, output digests,
 owned IDs and known assertions. The project endpoint and pre-existing dataset
 name/version are redacted from public command receipts without changing the
 actual command arguments.
+
+Both the service driver and the offline proof runner use the shared
+[`owned_process.py`](../../eng/scripts/eval-candidate-proof/owned_process.py)
+lifetime boundary. On POSIX, the launcher starts a new process group; on Windows,
+it is assigned to a non-breakaway job before its private launch request is sent.
+Timeout and normal parent exit terminate remaining members before the caller
+can begin resource/workspace cleanup, with bounded launcher reaping and Windows
+job-drain checks. Local regressions start a real child heartbeat and verify that
+activity stops before return, including when the CLI parent exits first.
+This is owned-process cleanup, not a general-purpose sandbox, remote
+cancellation confirmation or proof that billing stopped.
 
 Authenticated HTTP runs in a short-lived owned Python transport process.
 The parent enforces one remaining absolute deadline across pipe writes/reads,
@@ -434,6 +484,12 @@ The provider must securely stage the per-run approved plan and existing auth
 configuration before selecting this path; that bootstrap is not implemented
 by these jobs. Supplying a service plan with offline mode is an error, not an
 ignored input.
+The shipped jobs cannot become a live executor merely by committing a plan and
+setting `service_plan`: that file cannot contain its own workflow commit and
+future run ID, and the jobs do not stage authenticated profiles or approved
+executables. A protected, run-bound delivery/bootstrap step must be added and
+authorized first. Until then, the service entry points are deliberately
+unreachable as a successful hosted lifecycle, not an activated feature.
 Missing or malformed plans and unavailable pre-execution inputs produce
 `BLOCKED / NOT RUN` with exit3. Once command execution starts, command, assertion
 and cleanup failures are `FAIL`, not a new prerequisite block.

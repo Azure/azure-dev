@@ -374,6 +374,9 @@ class SafetyTests(unittest.TestCase):
         approval = mock.patch.object(scenario, "reviewed_candidate", return_value=(approved, authority))
         approval.start()
         self.addCleanup(approval.stop)
+        metadata = mock.patch.object(scenario, "verify_frozen_metadata")
+        metadata.start()
+        self.addCleanup(metadata.stop)
 
     def test_consumer_rejects_tampered_pins_and_producer_approval_before_install(self):
         for kind in ("pins", "approval", "missing-approval"):
@@ -476,11 +479,13 @@ class SafetyTests(unittest.TestCase):
         push_paths = workflow.read_text(encoding="utf-8").split("    paths:\n", 1)[1].split(
             "  workflow_dispatch:", 1)[0]
         self.assertIn("      - eng/scripts/eval-candidate-proof/candidate.json\n", push_paths)
+        self.assertIn("      - eng/scripts/eval-candidate-proof/owned_process.py\n", push_paths)
 
     def test_upstream_offline_entry_does_not_depend_on_fork_or_live_configuration(self):
         workflow = (scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml").read_text()
         resolve = workflow.split("  resolve:\n", 1)[1].split("  offline:\n", 1)[0]
         self.assertIn("if: inputs.mode != 'live'", resolve)
+        self.assertIn("github.event_name != 'push' || vars.AZD_SCENARIO_APPROVED_COMMIT != ''", resolve)
         self.assertNotIn("github.repository ==", resolve)
         self.assertNotIn("AZD_SCENARIO_LIVE_ENVIRONMENT", resolve)
         self.assertIn("branches: [main, m7md7sien-evaluation-github-actions-proof]", workflow)
@@ -520,7 +525,7 @@ class SafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             proof = legacy.Proof(Path(root), Path(root), {})
             completed = legacy.subprocess.CompletedProcess([], 0, '{"ok":true}\n', "")
-            with mock.patch.object(legacy.subprocess, "run", return_value=completed) as run, \
+            with mock.patch.object(legacy, "run_owned_process", return_value=completed) as run, \
                  mock.patch.object(legacy.time, "monotonic", side_effect=[100.0, 100.125]):
                 self.assertEqual(proof.run("fixture", ["version"], timeout=23, json_output=True), {"ok": True})
             record = proof.commands[0]
@@ -538,7 +543,7 @@ class SafetyTests(unittest.TestCase):
             proof = legacy.Proof(Path(root), Path(root), {})
             expired = legacy.subprocess.TimeoutExpired(
                 "azd", 7, output=b"https://user:password@host.invalid/a?sig=secret#fragment", stderr=b"timed out")
-            with mock.patch.object(legacy.subprocess, "run", side_effect=expired):
+            with mock.patch.object(legacy, "run_owned_process", side_effect=expired):
                 with self.assertRaises(legacy.subprocess.TimeoutExpired):
                     proof.run("timeout fixture", ["version"], timeout=7)
             record = proof.commands[0]

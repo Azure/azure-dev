@@ -17,6 +17,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,10 @@ import zipfile
 
 
 DATASET_ARITY_ERROR = r"^accepts 1 arg\(s\), received 0$"
+process_spec = importlib.util.spec_from_file_location("owned_cli_process", Path(__file__).with_name("owned_process.py"))
+process_module = importlib.util.module_from_spec(process_spec)
+process_spec.loader.exec_module(process_module)
+run_owned_process = process_module.run
 
 
 def require(condition, message):
@@ -190,10 +195,8 @@ class Proof:
         }
         self.commands.append(record)
         try:
-            result = subprocess.run(
-                argv, cwd=cwd or self.root, env=self.env, stdin=subprocess.DEVNULL,
-                capture_output=True, text=True, encoding="utf-8", timeout=timeout,
-            )
+            result = run_owned_process(argv, cwd=cwd or self.root, env=self.env,
+                                       text=True, encoding="utf-8", timeout=timeout)
             record.update(exitCode=result.returncode, stdout=sanitize(result.stdout, self.root),
                           stderr=sanitize(result.stderr, self.root))
         except subprocess.TimeoutExpired as error:
@@ -228,7 +231,7 @@ class Proof:
         info = self.run(label, args, project, failure=error, json_output=True)
         require(set(info) == {"error"}, f"{label} must emit only one error document")
         after = snapshot_tree(project)
-        # azd 1.33's first environment read retains this empty flock file.
+        # A first core environment read can retain this empty flock file.
         # Prove that precise cold-entry effect, rather than ignoring any paths.
         core_lock = str(Path(".azure") / ".env.lock")
         lock_created = core_lock not in before and core_lock in after

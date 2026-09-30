@@ -201,7 +201,7 @@ class AgentCliTests(unittest.TestCase):
             report = {}
             driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 15, 30, report)
             response = b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"answer":"private-value"}'
-            with mock.patch.object(service.subprocess, "run",
+            with mock.patch.object(service, "run_owned_process",
                                    return_value=subprocess.CompletedProcess([], 0, response, b"")) as run:
                 result = driver("invoke", ["ai", "agent", "invoke", "--agent-endpoint",
                                            "https://private.services.ai.azure.com/private"], output_format="raw")
@@ -233,7 +233,7 @@ class AgentCliTests(unittest.TestCase):
                         service.verify_identity(plan, driver)
         with tempfile.TemporaryDirectory() as root:
             driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 15, 30, {})
-            with mock.patch.object(service.subprocess, "run",
+            with mock.patch.object(service, "run_owned_process",
                                    return_value=subprocess.CompletedProcess([], 0, b"version text", b"")) as run:
                 self.assertEqual(driver("version", ["ai", "agent", "version"], output_format=None), b"version text")
             self.assertEqual(run.call_args.args[0], ["azd", "ai", "agent", "version", "--no-prompt"])
@@ -318,7 +318,7 @@ class AgentCliTests(unittest.TestCase):
                 config.write_text(json.dumps(settings))
                 return subprocess.CompletedProcess([], 0, b"", b"")
 
-            with mock.patch.object(service.subprocess, "run", side_effect=unset):
+            with mock.patch.object(service, "run_owned_process", side_effect=unset):
                 driver.clear_agent_state(cleanup_deadline=service.time.monotonic() + 30)
             self.assertEqual(json.loads(config.read_bytes()), {**untouched, "extensions": {"other": "keep"}})
 

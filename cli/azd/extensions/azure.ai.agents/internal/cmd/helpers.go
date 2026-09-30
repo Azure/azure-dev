@@ -1223,9 +1223,11 @@ func resolveAgentServiceFromProject(
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
-	if resolutionOptions.includeHostedKind {
+	if resolutionOptions.includeHostedKind && os.Getenv("AGENT_DEFINITION_PATH") == "" {
 		// Telemetry classification must never change whether invocation proceeds.
-		if hosted, err := agentkind.IsHosted(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH")); err == nil {
+		// Use the deploy path's definition loader so an invalid or non-hosted
+		// project service cannot be counted as a hosted invoke.
+		if _, hosted, _, err := projectpkg.LoadAgentDefinition(svc, projectConfig.Path); err == nil {
 			info.IsHosted = hosted
 		}
 	}

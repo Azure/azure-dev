@@ -27,6 +27,7 @@ func (invokeUsageFailingCredential) GetToken(
 }
 
 func TestInvokeResolverClassifiesHostedKindForTelemetry(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
 	for _, tt := range []struct {
 		kind       string
 		wantHosted bool
@@ -34,7 +35,10 @@ func TestInvokeResolverClassifiesHostedKindForTelemetry(t *testing.T) {
 		{"hosted", true}, {"prompt", false}, {"voice", false}, {"workflow", false},
 	} {
 		t.Run(tt.kind, func(t *testing.T) {
-			props, err := structpb.NewStruct(map[string]any{"kind": tt.kind, "name": "worker"})
+			props, err := structpb.NewStruct(map[string]any{
+				"kind": tt.kind, "name": "worker",
+				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+			})
 			require.NoError(t, err)
 			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
 				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{

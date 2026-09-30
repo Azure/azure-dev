@@ -6,6 +6,7 @@ package environment
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -87,6 +88,21 @@ func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
 	actual := dataStore.ConfigPath(env)
 
 	require.Equal(t, expected, actual)
+}
+
+func TestLocalReloadInvalidConfigPreservesDotenv(t *testing.T) {
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	store := NewLocalFileDataStore(azdContext, config.NewFileConfigManager(config.NewManager()))
+	env := New("test")
+	require.NoError(t, os.MkdirAll(azdContext.EnvironmentRoot("test"), 0700))
+	require.NoError(t, os.WriteFile(store.EnvPath(env), []byte("VALUE=on-disk\n"), 0600))
+	require.NoError(t, os.WriteFile(store.ConfigPath(env), []byte("{invalid"), 0600))
+	env.DotenvSet("VALUE", "in-memory")
+	env.DotenvDelete("PENDING")
+
+	require.ErrorContains(t, store.Reload(t.Context(), env), "loading config")
+	require.Equal(t, "in-memory", env.Getenv("VALUE"))
+	require.Contains(t, env.deletedKeys, "PENDING")
 }
 
 // Test_LocalFileDataStore_ConcurrentSave_NoLostUpdate is a regression test

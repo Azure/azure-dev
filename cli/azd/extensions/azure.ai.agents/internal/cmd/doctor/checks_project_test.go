@@ -5,12 +5,17 @@ package doctor
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -363,23 +368,21 @@ func TestCheckAgentDefinitionValid_OneServiceValid_Passes(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
-	writeYAML(t, projectPath, "src/agent/agent.yaml", `
-kind: hosted
-name: echo-agent
-language: python
-entrypoint: main.py
-protocols:
-  - protocol: invocations
-    version: "1"
-`)
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "echo-agent", "language": "python", "entrypoint": "main.py",
+		"protocols": []any{map[string]any{"protocol": "invocations", "version": "1"}},
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -393,6 +396,39 @@ protocols:
 	validated, ok := got.Details["validatedServices"].([]string)
 	require.True(t, ok)
 	require.Equal(t, []string{"echo-agent"}, validated)
+}
+
+func TestCheckAgentDefinitionValid_EnvironmentFailureDoesNotBlock(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "echo-agent",
+	})
+	require.NoError(t, err)
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"echo-agent": {
+						Name:                 "echo-agent",
+						Host:                 agentHost,
+						AdditionalProperties: props,
+					},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
+
+	got := check.Fn(t.Context(), Options{}, []Result{{
+		ID:     "local.environment-selected",
+		Status: StatusFail,
+	}})
+
+	require.Equal(t, StatusPass, got.Status)
+	require.Contains(t, got.Message, "agent definition valid")
 }
 
 func TestCheckAgentDefinitionValid_InlineWithoutFile_Passes(
@@ -467,7 +503,54 @@ func TestCheckAgentDefinitionValid_InlineInvalidKind_Fails(
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
-	require.Contains(t, failures[0], "template.kind must be one of")
+	require.Contains(t, failures[0], "kind must be one of")
+	require.NotContains(t, failures[0], "template.")
+}
+
+func TestCheckAgentDefinitionValid_ReportsCanonicalPathsForDirectAndRootRef(t *testing.T) {
+	for _, source := range []string{"direct", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			projectPath := t.TempDir()
+			values := map[string]any{
+				"kind":             "voice",
+				"name":             "voice-agent",
+				"model":            map[string]any{"id": "gpt-realtime"},
+				"outputModalities": []any{""},
+			}
+			if source == "root-ref" {
+				writeYAML(t, projectPath, "definition.yaml",
+					"kind: voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\noutputModalities: [\"\"]\n")
+				values = map[string]any{"$ref": "./definition.yaml"}
+			}
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+
+			client := newTestAzdClient(t,
+				&fakeProjectServer{resp: &azdext.GetProjectResponse{
+					Project: &azdext.ProjectConfig{
+						Path: projectPath,
+						Services: map[string]*azdext.ServiceConfig{
+							"voice-agent": {
+								Name:                 "voice-agent",
+								Host:                 agentHost,
+								AdditionalProperties: props,
+							},
+						},
+					},
+				}},
+				&fakeEnvironmentServer{})
+			check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
+
+			got := check.Fn(t.Context(), Options{}, nil)
+
+			require.Equal(t, StatusFail, got.Status)
+			failures, ok := got.Details["failures"].([]string)
+			require.True(t, ok)
+			require.Len(t, failures, 1)
+			require.Contains(t, failures[0], "outputModalities[0] must not be blank")
+			require.NotContains(t, failures[0], "template.")
+		})
+	}
 }
 
 func TestCheckAgentDefinitionValid_InlineWinsOverStaleFile(
@@ -516,16 +599,21 @@ func TestCheckAgentDefinitionValid_NonAgentServicesIgnored(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: hosted\nname: echo\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "echo", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"api":        {Name: "api", Host: "containerapp", RelativePath: "src/api"},
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"api": {Name: "api", Host: "containerapp", RelativePath: "src/api"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -568,41 +656,217 @@ func TestCheckAgentDefinitionValid_MissingDefinition_Fails(t *testing.T) {
 	require.Len(t, failures, 1)
 }
 
-func TestCheckAgentDefinitionValid_MalformedLegacyYAML_Fails(t *testing.T) {
-	t.Parallel()
+func TestCheckAgentDefinitionValid_LegacyFilesPreserveMigrationGuidance(t *testing.T) {
+	tests := []struct {
+		filename   string
+		suggestion string
+	}{
+		{
+			filename: "agent.yaml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"an explicit root $ref on the service entry to the remaining direct definition",
+		},
+		{
+			filename: "agent.yml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"an explicit root $ref on the service entry to the remaining direct definition",
+		},
+		{
+			filename: "agent.manifest.yaml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
+		},
+		{
+			filename: "agent.manifest.yml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
+		},
+	}
 
-	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "name: echo\n  bad-indent: oops\n: missing-key\n")
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			projectPath := t.TempDir()
+			writeYAML(t, projectPath, "src/agent/"+tt.filename, "invalid content is never parsed\n")
 
-	client := newTestAzdClient(t,
-		&fakeProjectServer{resp: &azdext.GetProjectResponse{
-			Project: &azdext.ProjectConfig{
-				Path: projectPath,
-				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
-				},
+			got := runAgentDefinitionCheck(t, projectPath, map[string]*azdext.ServiceConfig{
+				"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+			})
+
+			require.Equal(t, StatusFail, got.Status)
+			require.Contains(t, got.Message, "found legacy file "+tt.filename)
+			require.Equal(t, tt.suggestion, got.Suggestion)
+			require.Equal(t, map[string]string{
+				"echo-agent": exterrors.CodeAgentDefinitionNotFound,
+			}, got.Details["failureCodes"])
+			require.NotContains(t, got.Suggestion, genericAgentDefinitionSuggestion)
+		})
+	}
+}
+
+func TestCheckAgentDefinitionValid_PreservesStructuredSourceGuidance(t *testing.T) {
+	tests := []struct {
+		name           string
+		configure      func(t *testing.T, svc *azdext.ServiceConfig)
+		wantCode       string
+		wantMessage    string
+		wantSuggestion string
+	}{
+		{
+			name: "nested config",
+			configure: func(t *testing.T, svc *azdext.ServiceConfig) {
+				config, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
+				require.NoError(t, err)
+				svc.Config = config
 			},
-		}},
-		&fakeEnvironmentServer{})
-	check := newCheckAgentDefinitionValid(Dependencies{AzdClient: client})
+			wantCode:    exterrors.CodeDeprecatedAgentServiceConfig,
+			wantMessage: "unsupported nested config block",
+			wantSuggestion: "move the agent definition to service-level properties in azure.yaml, " +
+				"or add an explicit root $ref on the service entry to a direct agent definition",
+		},
+		{
+			name:        "missing definition",
+			configure:   func(*testing.T, *azdext.ServiceConfig) {},
+			wantCode:    exterrors.CodeAgentDefinitionNotFound,
+			wantMessage: "agent definition not found",
+			wantSuggestion: "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
+				"or add an explicit root $ref on the service entry to a direct agent definition",
+		},
+	}
 
-	got := check.Fn(t.Context(), Options{}, nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectPath := t.TempDir()
+			svc := &azdext.ServiceConfig{Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"}
+			tt.configure(t, svc)
+
+			got := runAgentDefinitionCheck(t, projectPath, map[string]*azdext.ServiceConfig{
+				svc.Name: svc,
+			})
+
+			require.Equal(t, StatusFail, got.Status)
+			require.Contains(t, got.Message, tt.wantMessage)
+			require.Equal(t, tt.wantSuggestion, got.Suggestion)
+			require.Equal(t, map[string]string{
+				"echo-agent": tt.wantCode,
+			}, got.Details["failureCodes"])
+		})
+	}
+}
+
+func TestCheckAgentDefinitionValid_DefinitionPathPreservesMigrationGuidance(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "legacy-agent.yaml")
+	projectPath := t.TempDir()
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "echo-agent"})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, projectPath, map[string]*azdext.ServiceConfig{
+		"echo-agent": {
+			Name:                 "echo-agent",
+			Host:                 agentHost,
+			AdditionalProperties: props,
+		},
+	})
 
 	require.Equal(t, StatusFail, got.Status)
-	require.Contains(t, got.Message, "echo-agent")
-	failures, ok := got.Details["failures"].([]string)
-	require.True(t, ok)
-	require.Len(t, failures, 1)
+	require.Contains(t, got.Message, "AGENT_DEFINITION_PATH is no longer supported")
+	require.Equal(t,
+		"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
+			"or add an explicit root $ref on the service entry to a direct agent definition",
+		got.Suggestion)
+	require.Equal(t, map[string]string{
+		"echo-agent": exterrors.CodeUnsupportedAgentDefinitionPath,
+	}, got.Details["failureCodes"])
+}
+
+func TestCheckAgentDefinitionValid_MalformedRootRefPreservesStructuredGuidance(t *testing.T) {
+	projectPath := t.TempDir()
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./missing-definition.yaml"})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, projectPath, map[string]*azdext.ServiceConfig{
+		"echo-agent": {
+			Name:                 "echo-agent",
+			Host:                 agentHost,
+			AdditionalProperties: props,
+		},
+	})
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Contains(t, got.Message, "missing-definition.yaml")
+	require.Equal(t, "Check that the path is correct and the file exists and is readable.", got.Suggestion)
+	require.Equal(t, map[string]string{
+		"echo-agent": foundry.CodeInvalidFileRef,
+	}, got.Details["failureCodes"])
+}
+
+func TestCheckAgentDefinitionValid_DirectAndRootRefIgnoreStaleLegacyFiles(t *testing.T) {
+	for _, source := range []string{"direct", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			projectPath := t.TempDir()
+			writeYAML(t, projectPath, "src/agent/agent.yaml", "unsupported stale file\n")
+			values := map[string]any{"kind": "hosted", "name": "echo-agent"}
+			if source == "root-ref" {
+				writeYAML(t, projectPath, "definition.yaml", "kind: hosted\nname: echo-agent\n")
+				values = map[string]any{"$ref": "./definition.yaml"}
+			}
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+
+			got := runAgentDefinitionCheck(t, projectPath, map[string]*azdext.ServiceConfig{
+				"echo-agent": {
+					Name:                 "echo-agent",
+					Host:                 agentHost,
+					RelativePath:         "src/agent",
+					AdditionalProperties: props,
+				},
+			})
+
+			require.Equal(t, StatusPass, got.Status)
+		})
+	}
+}
+
+func TestDescribeAgentDefinitionError_PreservesStructuredFieldsAndFallsBackForPlainErrors(t *testing.T) {
+	t.Run("structured", func(t *testing.T) {
+		source := &azdext.LocalError{
+			Message:    "specific message",
+			Code:       "specific_code",
+			Suggestion: "specific suggestion",
+			Links: []errorhandler.ErrorLink{{
+				URL: "https://example.test/guidance",
+			}},
+		}
+
+		message, suggestion, code, links := describeAgentDefinitionError(
+			fmt.Errorf("outer context: %w", source),
+		)
+
+		require.Equal(t, source.Message, message)
+		require.Equal(t, source.Suggestion, suggestion)
+		require.Equal(t, source.Code, code)
+		require.Equal(t, []string{"https://example.test/guidance"}, links)
+	})
+
+	t.Run("plain", func(t *testing.T) {
+		message, suggestion, code, links := describeAgentDefinitionError(errors.New("plain failure"))
+
+		require.Equal(t, "plain failure", message)
+		require.Equal(t, genericAgentDefinitionSuggestion, suggestion)
+		require.Empty(t, code)
+		require.Empty(t, links)
+	})
 }
 
 func TestCheckAgentDefinitionValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "ok"), 0o750))
-	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "bad"), 0o750))
-	writeYAML(t, projectPath, "src/ok/agent.yaml", "kind: hosted\nname: ok-agent\nlanguage: python\n")
+	okProps, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "ok-agent", "language": "python",
+	})
+	require.NoError(t, err)
 	// bad: malformed yaml (mapping key with no value, broken indent).
 	writeYAML(t, projectPath, "src/bad/agent.yaml", "name: bad\n  : nope\n\t- tabs-here\n")
 
@@ -611,7 +875,10 @@ func TestCheckAgentDefinitionValid_MixedValidAndInvalid_Fails(t *testing.T) {
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"ok-agent":  {Name: "ok-agent", Host: agentHost, RelativePath: "src/ok"},
+					"ok-agent": {
+						Name: "ok-agent", Host: agentHost, RelativePath: "src/ok",
+						AdditionalProperties: okProps,
+					},
 					"bad-agent": {Name: "bad-agent", Host: agentHost, RelativePath: "src/bad"},
 				},
 			},
@@ -735,14 +1002,20 @@ func TestCheckAgentDefinitionValid_MissingKind_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "name: echo-agent\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"name": "echo-agent", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -756,7 +1029,7 @@ func TestCheckAgentDefinitionValid_MissingKind_Fails(t *testing.T) {
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
-	require.Contains(t, failures[0], "kind")
+	require.Contains(t, failures[0], "agent definition not found")
 }
 
 func TestCheckAgentDefinitionValid_InvalidKind_Fails(t *testing.T) {
@@ -766,14 +1039,20 @@ func TestCheckAgentDefinitionValid_InvalidKind_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: nonsense\nname: echo-agent\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "nonsense", "name": "echo-agent", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+					"echo-agent": {
+						Name: "echo-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -796,14 +1075,20 @@ func TestCheckAgentDefinitionValid_InvalidName_Fails(t *testing.T) {
 	t.Parallel()
 
 	projectPath := t.TempDir()
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: hosted\nname: My_Agent\nlanguage: python\n")
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "My_Agent", "language": "python",
+	})
+	require.NoError(t, err)
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
 			Project: &azdext.ProjectConfig{
 				Path: projectPath,
 				Services: map[string]*azdext.ServiceConfig{
-					"my-agent": {Name: "my-agent", Host: agentHost, RelativePath: "src/agent"},
+					"my-agent": {
+						Name: "my-agent", Host: agentHost, RelativePath: "src/agent",
+						AdditionalProperties: props,
+					},
 				},
 			},
 		}},
@@ -826,4 +1111,21 @@ func writeYAML(t *testing.T, root, rel, content string) {
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o750))
 	require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
+}
+
+func runAgentDefinitionCheck(
+	t *testing.T,
+	projectPath string,
+	services map[string]*azdext.ServiceConfig,
+) Result {
+	t.Helper()
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path:     projectPath,
+				Services: services,
+			},
+		}},
+		&fakeEnvironmentServer{})
+	return newCheckAgentDefinitionValid(Dependencies{AzdClient: client}).Fn(t.Context(), Options{}, nil)
 }

@@ -13,6 +13,7 @@ pre:
 goals:
   - "Run doctor with --local-only. Wait for the report to render."
   - "Confirm only local checks are attempted and remote/network-dependent checks are skipped (the report should indicate skipped remote checks)."
+  - "Confirm the Remote section contains 'Project storage permissions' marked as skipped because of --local-only, not as passed or failed."
   - "Confirm the run completes without attempting any network calls and without crashing."
   - "Take a screenshot of the report."
   - "Report a finding if remote checks still run, or if the output is confusing about what was skipped."

@@ -13,7 +13,7 @@ PROTOC_GEN_GO_VERSION := protoc-gen-go v1.36.11
 PROTOC_GEN_GO_GRPC_VERSION := protoc-gen-go-grpc 1.5.1
 BUF ?= buf
 
-.PHONY: all proto proto-check-tools proto-lint proto-breaking clean
+.PHONY: all proto proto-check-tools proto-lint proto-version-compatibility proto-breaking clean
 
 all: proto
 
@@ -42,6 +42,9 @@ proto-check-tools:
 
 proto-lint:
 	$(BUF) lint grpc
+
+proto-version-compatibility:
+	go test ./pkg/azdext/contracts -run '^TestStableContractIsSubsetOfBeta$$' -count=1 -v
 
 proto-breaking:
 	@test -n "$(BUF_BREAKING_AGAINST)" || \

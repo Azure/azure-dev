@@ -5,10 +5,8 @@ package provisioning
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,37 +16,17 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
-
-type stubTokenCredential struct {
-	token   azcore.AccessToken
-	err     error
-	options []policy.TokenRequestOptions
-}
-
-func (c *stubTokenCredential) GetToken(
-	_ context.Context,
-	options policy.TokenRequestOptions,
-) (azcore.AccessToken, error) {
-	c.options = append(c.options, options)
-	return c.token, c.err
-}
-
-func accessTokenWithClaims(oid, idType, scopes string) string {
-	claims := base64.RawURLEncoding.EncodeToString(
-		fmt.Appendf(nil, `{"oid":%q,"idtyp":%q,"scp":%q}`, oid, idType, scopes),
-	)
-	return "header." + claims + ".signature"
-}
 
 func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
@@ -233,128 +211,145 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	assert.NotNil(t, p)
 }
 
-func TestParametersResolvePrincipalFromTenantScopedCredential(t *testing.T) {
+func TestParametersResolvePrincipalFromHost(t *testing.T) {
 	t.Parallel()
 
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("guest-object-id", "user", "user_impersonation"),
-		},
-	}
-	provider := &FoundryProvisioningProvider{
-		credential:  credential,
-		location:    "eastus",
-		foundryName: "project",
-	}
-
-	parameters, err := provider.Parameters(t.Context())
-
-	require.NoError(t, err)
-	assert.Equal(t, "guest-object-id", provider.principalID)
-	assert.Equal(t, "User", provider.principalType)
-	require.Len(t, credential.options, 1)
-	assert.Equal(
-		t,
-		[]string{"https://management.azure.com/.default"},
-		credential.options[0].Scopes,
-	)
-	require.Len(t, parameters, 4)
-	assert.Equal(t, "principalId", parameters[2].Name)
-	assert.Equal(t, "guest-object-id", parameters[2].Value)
-	assert.Equal(t, "principalType", parameters[3].Name)
-	assert.Equal(t, "User", parameters[3].Value)
-}
-
-func TestParametersResolveServicePrincipalType(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("service-principal-object-id", "app", ""),
-		},
-	}
-	provider := &FoundryProvisioningProvider{credential: credential}
-
-	parameters, err := provider.Parameters(t.Context())
-
-	require.NoError(t, err)
-	assert.Equal(t, "service-principal-object-id", provider.principalID)
-	assert.Equal(t, "ServicePrincipal", provider.principalType)
-	require.Len(t, parameters, 4)
-	assert.Equal(t, "ServicePrincipal", parameters[3].Value)
-}
-
-func TestEnsurePrincipalIDPreservesEnvironmentValue(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("different-object-id", "user", "user_impersonation"),
-		},
-	}
-	provider := &FoundryProvisioningProvider{
-		principalID:           "configured-object-id",
-		principalIDConfigured: true,
-		credential:            credential,
-	}
-
-	require.NoError(t, provider.ensurePrincipalID(t.Context()))
-	assert.Equal(t, "configured-object-id", provider.principalID)
-	assert.Empty(t, credential.options)
-}
-
-func TestEnsurePrincipalIDPreservesExplicitEmptyValue(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("different-object-id", "user", "user_impersonation"),
-		},
-	}
-	provider := &FoundryProvisioningProvider{
-		principalIDConfigured: true,
-		credential:            credential,
-	}
-
-	require.NoError(t, provider.ensurePrincipalID(t.Context()))
-	assert.Empty(t, provider.principalID)
-	assert.Empty(t, provider.principalType)
-	assert.Empty(t, credential.options)
-}
-
-func TestEnsurePrincipalIDReportsCredentialFailures(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		credential azcore.TokenCredential
+	for _, tt := range []struct {
+		name          string
+		objectID      string
+		principalType v1beta.PrincipalType
+		wantType      string
 	}{
 		{
-			name: "token acquisition",
-			credential: &stubTokenCredential{
-				err: errors.New("token unavailable"),
-			},
+			name: "guest user", objectID: "resource-tenant-guest-object-id",
+			principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER, wantType: "User",
 		},
 		{
-			name: "missing oid claim",
-			credential: &stubTokenCredential{
-				token: azcore.AccessToken{
-					Token: accessTokenWithClaims("", "user", "user_impersonation"),
-				},
-			},
+			name: "service principal", objectID: "service-principal-object-id",
+			principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL, wantType: "ServicePrincipal",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &principalStubAccountServer{response: &v1beta.GetCurrentPrincipalResponse{
+				ObjectId: tt.objectID, PrincipalType: tt.principalType,
+			}}
+			client := newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}, account)
+			provider := &FoundryProvisioningProvider{
+				azdClient: client, subID: "selected-subscription", location: "eastus", foundryName: "project",
+			}
+
+			parameters, err := provider.Parameters(t.Context())
+
+			require.NoError(t, err)
+			require.Len(t, parameters, 4)
+			assert.Equal(t, "principalId", parameters[2].Name)
+			assert.Equal(t, tt.objectID, parameters[2].Value)
+			assert.Equal(t, "principalType", parameters[3].Name)
+			assert.Equal(t, tt.wantType, parameters[3].Value)
+			assert.Equal(t, "selected-subscription", account.subscriptionID.Load())
+			assert.EqualValues(t, 1, account.calls.Load())
+			assert.Nil(t, provider.credential)
+		})
+	}
+}
+
+func TestPrincipalLookupFailures(t *testing.T) {
+	t.Parallel()
+
+	hostStatus, err := status.New(codes.Unauthenticated, "login required").WithDetails(
+		&azdext.ActionableErrorDetail{Suggestion: "run 'azd auth login'"},
+	)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		response     *v1beta.GetCurrentPrincipalResponse
+		err          error
+		omitService  bool
+		wantCategory azdext.LocalErrorCategory
+		wantMessage  string
+	}{
+		{
+			name: "authentication failure", err: hostStatus.Err(),
+		},
+		{
+			name: "access denied", err: status.Error(codes.PermissionDenied, "subscription unavailable"),
+		},
+		{
+			name: "transport failure", err: status.Error(codes.Unavailable, "host unavailable"),
+		},
+		{
+			name: "cancellation", err: status.Error(codes.Canceled, "lookup cancelled"),
+		},
+		{
+			name: "unsupported method", err: status.Error(codes.Unimplemented, "method unavailable"),
+			wantCategory: azdext.LocalErrorCategoryCompatibility, wantMessage: "does not support",
+		},
+		{
+			name: "unsupported service", omitService: true,
+			wantCategory: azdext.LocalErrorCategoryCompatibility, wantMessage: "does not support",
+		},
+		{
+			name:         "empty object ID",
+			response:     &v1beta.GetCurrentPrincipalResponse{PrincipalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER},
+			wantCategory: azdext.LocalErrorCategoryInternal, wantMessage: "empty current principal object ID",
+		},
+		{
+			name: "unspecified type", response: &v1beta.GetCurrentPrincipalResponse{ObjectId: "object-id"},
+			wantCategory: azdext.LocalErrorCategoryInternal, wantMessage: "unsupported current principal type",
+		},
+		{
+			name:         "unknown type",
+			response:     &v1beta.GetCurrentPrincipalResponse{ObjectId: "object-id", PrincipalType: v1beta.PrincipalType(99)},
+			wantCategory: azdext.LocalErrorCategoryInternal, wantMessage: "unsupported current principal type",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			provider := &FoundryProvisioningProvider{credential: test.credential}
+			account := &principalStubAccountServer{response: test.response, err: test.err}
+			var accounts []v1beta.AccountServiceServer
+			if !test.omitService {
+				accounts = append(accounts, account)
+			}
+			client := newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}, accounts...)
+			provider := &FoundryProvisioningProvider{
+				azdClient: client, subID: "selected-subscription",
+				armTemplate: map[string]any{"resources": []any{}},
+			}
 
-			err := provider.ensurePrincipalID(t.Context())
+			source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
 
 			require.Error(t, err)
-			local, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok)
-			assert.Equal(t, exterrors.CodePrincipalLookupFailed, local.Code)
+			assert.Nil(t, source)
+			assert.Empty(t, provider.principalID)
+			assert.Empty(t, provider.principalType)
+			assert.Nil(t, provider.credential)
+			if test.wantCategory != "" {
+				local, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodePrincipalLookupFailed, local.Code)
+				assert.Equal(t, test.wantCategory, local.Category)
+				assert.Contains(t, local.Message, test.wantMessage)
+				if test.wantCategory == azdext.LocalErrorCategoryCompatibility {
+					assert.Contains(t, local.Suggestion, "upgrade azd to version 1.34.2 or later")
+				}
+			} else {
+				assert.Equal(t, status.Code(test.err), status.Code(err))
+				assert.ErrorContains(t, err, status.Convert(test.err).Message())
+				assert.Equal(t, status.Convert(test.err).Details(), status.Convert(err).Details())
+				if status.Code(test.err) == codes.Unauthenticated {
+					assert.Equal(t, "run 'azd auth login'", azdext.WrapError(err).GetSuggestion())
+				}
+			}
+
+			parameters, err := provider.Parameters(t.Context())
+			require.Error(t, err)
+			assert.Nil(t, parameters)
+			if !test.omitService {
+				assert.Equal(t, "selected-subscription", account.subscriptionID.Load())
+				assert.EqualValues(t, 2, account.calls.Load())
+			}
 		})
 	}
 }
@@ -364,8 +359,7 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		tokenType         string
-		tokenScopes       string
+		principalType     v1beta.PrincipalType
 		disableAssignment bool
 		literalOverride   bool
 		omitType          bool
@@ -374,41 +368,46 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 		wantType          string
 	}{
 		{
-			name: "guest user", tokenType: "user", tokenScopes: "user_impersonation",
+			name: "guest user", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER,
 			wantPrincipal: "guest-object-id", wantType: "User",
 		},
 		{
-			name: "service principal", tokenType: "app",
+			name: "service principal", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
 			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
 		},
 		{
-			name: "literal override", tokenType: "user", tokenScopes: "user_impersonation", literalOverride: true,
+			name: "literal override", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER, literalOverride: true,
 			wantPrincipal: "configured-object-id", wantType: "ServicePrincipal",
 		},
 		{
-			name: "literal empty principal", tokenType: "user", tokenScopes: "user_impersonation", literalOverride: true,
+			name: "literal empty principal", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER, literalOverride: true,
 			wantType: "User",
 		},
 		{
 			name: "explicit empty environment", disableAssignment: true,
 		},
 		{
-			name: "ID-only user override by service principal", tokenType: "app",
+			name:            "ID-only user override by service principal",
+			principalType:   v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
 			literalOverride: true, omitType: true, templateDefault: true,
 			wantPrincipal: "configured-user-id", wantType: "User",
 		},
 		{
-			name: "ID-only override matching deployer", tokenType: "app",
+			name: "ID-only override matching deployer", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
 			literalOverride: true, omitType: true,
 			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
 		},
 		{
-			name: "environment ID without type", tokenType: "app", omitType: true,
+			name: "environment ID without type", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
+			omitType:      true,
 			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
 		},
 	}
-	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
+	for _, mode := range []templateMode{templateModeEmbedded, templateModeBicep, templateModeBicepParam} {
 		for _, tt := range tests {
+			if mode == templateModeEmbedded && (tt.literalOverride || tt.omitType) {
+				continue
+			}
 			t.Run(mode.String()+"/"+tt.name, func(t *testing.T) {
 				root := t.TempDir()
 				infraDir := filepath.Join(root, "infra", "foundry")
@@ -430,16 +429,18 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 				if tt.omitType {
 					delete(inputParameters, "principalType")
 				}
-				require.NoError(t, os.WriteFile(
-					filepath.Join(infraDir, "project.bicep"), []byte("// compiled by stub"), 0o600,
-				))
+				if mode != templateModeEmbedded {
+					require.NoError(t, os.WriteFile(
+						filepath.Join(infraDir, "project.bicep"), []byte("// compiled by stub"), 0o600,
+					))
+				}
 				compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: template}}
 				if mode == templateModeBicep {
 					require.NoError(t, os.WriteFile(
 						filepath.Join(infraDir, "project.parameters.json"),
 						[]byte(minimalARMParametersFile(t, inputParameters)), 0o600,
 					))
-				} else {
+				} else if mode == templateModeBicepParam {
 					require.NoError(t, os.WriteFile(
 						filepath.Join(infraDir, "project.bicepparam"),
 						[]byte("using './project.bicep'\n"+
@@ -474,12 +475,19 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 						return bicep.BuildResult{Compiled: string(envelope)}, nil
 					}
 				}
-				credential := &stubTokenCredential{token: azcore.AccessToken{
-					Token: accessTokenWithClaims("guest-object-id", tt.tokenType, tt.tokenScopes),
+				account := &principalStubAccountServer{response: &v1beta.GetCurrentPrincipalResponse{
+					ObjectId: "guest-object-id", PrincipalType: tt.principalType,
 				}}
+				client := newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}, account)
 				provider := &FoundryProvisioningProvider{
 					projectPath: root, infraPath: infraDir, infraModule: "project", isLayer: true,
-					credential: credential, bicepCliInstance: compiler, principalIDConfigured: tt.disableAssignment,
+					azdClient: client, subID: "selected-subscription",
+					bicepCliInstance: compiler, principalIDConfigured: tt.disableAssignment,
+				}
+				if mode == templateModeEmbedded {
+					templateBytes, err := synthesis.ARMTemplate()
+					require.NoError(t, err)
+					require.NoError(t, json.Unmarshal(templateBytes, &provider.armTemplate))
 				}
 
 				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
@@ -495,22 +503,29 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 				} else {
 					assert.Equal(t, map[string]any{"value": tt.wantType}, source.parameters["principalType"])
 				}
-				assert.Equal(t, map[string]any{"value": map[string]any{
-					"value": provider.principalID + "/" + provider.principalType,
-				}}, source.parameters["identityLabel"])
+				if mode != templateModeEmbedded {
+					assert.Equal(t, map[string]any{"value": map[string]any{
+						"value": provider.principalID + "/" + provider.principalType,
+					}}, source.parameters["identityLabel"])
+				}
 				assert.Equal(t, mode, source.mode)
 
 				repeated, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
 				require.NoError(t, err)
 				assert.Equal(t, source.parameters, repeated.parameters)
 				if tt.disableAssignment {
-					assert.Empty(t, credential.options)
+					assert.Zero(t, account.calls.Load())
 				} else {
-					assert.Len(t, credential.options, 1)
+					assert.EqualValues(t, 1, account.calls.Load())
+					assert.Equal(t, "selected-subscription", account.subscriptionID.Load())
 				}
+				assert.Nil(t, provider.credential)
 				wantLoads := 2
 				if tt.disableAssignment {
 					wantLoads = 1
+				}
+				if mode == templateModeEmbedded {
+					wantLoads = 0
 				}
 				assert.Equal(t, wantLoads, len(compiler.buildCalls)+len(compiler.buildParamCalls))
 			})

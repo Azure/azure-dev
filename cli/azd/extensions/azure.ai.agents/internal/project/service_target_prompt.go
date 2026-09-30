@@ -25,8 +25,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ServiceIsPromptAgent reports whether the service config describes a prompt
@@ -40,13 +38,8 @@ func ServiceIsPromptAgent(serviceConfig *azdext.ServiceConfig) bool {
 	if serviceConfig == nil {
 		return false
 	}
-	for _, props := range []*structpb.Struct{
-		serviceConfig.GetAdditionalProperties(),
-		serviceConfig.GetConfig(),
-	} {
-		if kind := structKind(props); kind != "" {
-			return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
-		}
+	if kind := structKind(serviceConfig.GetAdditionalProperties()); kind != "" {
+		return strings.EqualFold(kind, string(agent_yaml.AgentKindPrompt))
 	}
 	return false
 }
@@ -131,7 +124,7 @@ func expandPromptAgentPolicies(managed *agent_yaml.PromptAgent, env map[string]s
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf("failed to expand policies[%d].raiPolicyName: %s", i, err),
-				"check the ${VAR} references in the policies block in agent.yaml",
+				"check the ${VAR} references in the agent definition's policies block",
 			)
 		}
 		expanded = strings.TrimSpace(expanded)
@@ -228,7 +221,7 @@ func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
 
 	suggestion := "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
 		"reachable from this account, then re-run. If the policy is valid, the harness may not accept " +
-		"policies yet — remove the policies block from agent.yaml to confirm, and deploy without " +
+		"policies yet — remove the policies block from the agent definition to confirm, and deploy without " +
 		"'harness:' to apply the policy as a plain prompt agent."
 	if managed.HarnessType() == "" {
 		suggestion = "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
@@ -288,104 +281,37 @@ func (p *AgentServiceTargetProvider) resolvedPromptAgentSettings(
 
 // loadPromptAgentDefinition returns the service's prompt-agent definition.
 //
-// The definition is normally inline on the azure.yaml service entry, which is
-// what `azd ai agent init` scaffolds. agentDefinitionPath is set only when the
-// definition lives in its own file — a `$ref:` include, the AGENT_DEFINITION_PATH
-// override, or the legacy agent.yaml convention — and that file is then the
-// authority, because it is also what anchors the skills/ and vector-assets/
-// convention folders.
+// The effective definition comes from the resolved azure.yaml service entry.
+// agentDefinitionPath is set only when a service-level `$ref:` supplies the
+// definition; it anchors the skills/ and vector-assets/ convention folders but
+// is never decoded separately from the effective service properties.
 func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.PromptAgent, error) {
-	if p.agentDefinitionPath == "" {
-		promptDef, found, err := PromptAgentFromResolvedService(p.serviceConfig, p.projectPath)
-		if err != nil {
-			return agent_yaml.PromptAgent{}, err
-		}
-		if !found {
-			return agent_yaml.PromptAgent{}, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("service %q carries no prompt agent definition", p.serviceConfig.GetName()),
-				"add the agent definition to the service entry in azure.yaml, "+
-					"or re-run `azd ai agent init`",
-			)
-		}
+	promptDef, found, err := PromptAgentFromResolvedService(p.serviceConfig, p.projectPath)
+	if err != nil {
+		return agent_yaml.PromptAgent{}, err
+	}
+	if found {
 		return promptDef, nil
 	}
 
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return agent_yaml.PromptAgent{}, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent definition file exists and is readable",
-		)
+	effective, resolveErr := ResolveServiceConfigProps(p.serviceConfig, p.projectPath)
+	if resolveErr != nil {
+		return agent_yaml.PromptAgent{}, resolveErr
 	}
-	if err := validatePromptAgentRawFields(data); err != nil {
-		return agent_yaml.PromptAgent{}, err
-	}
-	var promptDef agent_yaml.PromptAgent
-	if err := yaml.Unmarshal(data, &promptDef); err != nil {
-		return agent_yaml.PromptAgent{}, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not a valid prompt agent: %s", err),
-			"fix the agent.yaml to match the prompt agent schema",
-		)
-	}
-	if !strings.EqualFold(string(promptDef.Kind), string(agent_yaml.AgentKindPrompt)) {
+	if kind := structKind(effective); kind != "" {
 		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("agent.yaml declares kind %q, expected prompt", promptDef.Kind),
+			fmt.Sprintf("service %q declares kind %q, expected prompt", p.serviceConfig.GetName(), kind),
 			"use kind: prompt for prompt agents",
 		)
 	}
 
-	return promptDef, nil
-}
-
-// containerOnlyPromptFields lists agent.yaml keys that are only meaningful for
-// hosted (container) agents and are therefore rejected for kind: prompt.
-var containerOnlyPromptFields = []string{
-	"image",
-	"protocols",
-	"agent_endpoint",
-	"agent_card",
-	"code_configuration",
-	"docker",
-	"runtime",
-	"startupCommand",
-	"startup_command",
-}
-
-// validatePromptAgentRawFields rejects container-only fields on a prompt agent.
-//
-// The YAML decoder silently drops unknown fields, so a probe decode into a
-// generic map is used to detect container-only keys that the typed PromptAgent
-// would otherwise ignore, surfacing a clear error instead of silently ignoring
-// misplaced configuration.
-func validatePromptAgentRawFields(data []byte) error {
-	var probe map[string]any
-	if err := yaml.Unmarshal(data, &probe); err != nil {
-		// A malformed document is reported by the typed decode with a better
-		// message; don't duplicate the error here.
-		return nil
-	}
-	for _, field := range containerOnlyPromptFields {
-		if _, ok := probe[field]; ok {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("field %q is not valid for a prompt (kind: prompt) agent", field),
-				"remove container-only fields (image, protocols, code_configuration, ...) "+
-					"or use kind: hosted for container agents",
-			)
-		}
-	}
-	if _, ok := probe["harness"].(string); ok {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"agent.yaml harness must be a block with a type key",
-			"use:\n  harness:\n    type: github_copilot_preview",
-		)
-	}
-	return nil
+	return agent_yaml.PromptAgent{}, exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("service %q carries no prompt agent definition", p.serviceConfig.GetName()),
+		"add the agent definition to the service entry in azure.yaml, "+
+			"or re-run `azd ai agent init`",
+	)
 }
 
 // deployPromptAgent creates (or updates) the prompt agent on the managed
@@ -471,8 +397,8 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not a valid prompt agent: %s", err),
-			"ensure agent.yaml declares a non-empty model and instructions",
+			fmt.Sprintf("the agent definition is not a valid prompt agent: %s", err),
+			"ensure the agent definition declares a non-empty model and instructions",
 		)
 	}
 
@@ -547,10 +473,10 @@ func promptAgentRequestHeaders(
 	headers := map[string]string{"x-model-endpoint": settings.EffectiveModelEndpoint()}
 	var features []string
 	if managed != nil && managed.HarnessType() == agent_api.ManagedAgentHarnessGitHubCopilot {
-		features = append(features, "GitHubCopilot=V1Preview")
+		features = append(features, agent_api.GitHubCopilotPreviewFeature)
 	}
 	if managed != nil && len(agent_yaml.PromptAgentSkillReferences(*managed)) > 0 {
-		features = append(features, "Skills=V1Preview")
+		features = append(features, agent_api.SkillsPreviewFeature)
 	}
 	if len(features) > 0 {
 		headers["Foundry-Features"] = strings.Join(features, ",")

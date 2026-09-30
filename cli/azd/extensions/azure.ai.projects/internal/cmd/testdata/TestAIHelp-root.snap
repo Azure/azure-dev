@@ -1,0 +1,61 @@
+Manage Microsoft Foundry Project resources from your terminal. (Preview)
+
+Usage
+  azd ai project [command]
+
+Available Commands
+  add        : Add or update a Microsoft Foundry project.
+  context    : Get the context of the azd project & environment.
+  deployment : Manage managed model deployments for a Foundry project.
+  set        : Persist a default Foundry project endpoint.
+  show       : Display the currently resolved Foundry project endpoint.
+  unset      : Clear the persisted Foundry project endpoint.
+  version    : Display the extension version
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for project
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Configure a Foundry project in the current azd project
+    azd ai project add
+
+  Inspect the resolved project endpoint
+    azd ai project show
+
+Use azd ai project [command] --help to view examples and more information about a specific command.
+
+Environments & Environment Variables
+  An azd environment is a named deployment configuration, such as dev or prod.
+  Its values are stored locally in .azure/<environment>/.env.
+  Use 'azd env new <name>' to create one and 'azd env select <name>' to select it.
+  --environment <name> (-e) selects the environment for project add and
+  deployment add. Project show instead reads the persisted selection from
+  'azd env select <name>'; --environment does not override its endpoint lookup.
+
+  With an available azd environment, 'azd ai project show' looks up
+  FOUNDRY_PROJECT_ENDPOINT: its persisted value wins, or the azd host's shell
+  value is used if the key is absent from .env. An explicitly empty persisted
+  value prevents this shell fallback at this stage.
+  If this lookup yields no endpoint (including when no environment is
+  available), show tries the default saved by 'azd ai project set <endpoint>'
+  in azd global config, then the FOUNDRY_PROJECT_ENDPOINT shell variable.
+  Thus, with an active environment, a shell value can win before global
+  config when the persisted key is absent. The global default is separate
+  from environment values; 'azd ai project unset' only clears that default.
+
+  'azd ai project add' configures azure.yaml and environment values for
+  provisioning. An existing project records FOUNDRY_PROJECT_ENDPOINT.
+  With --project-id, it also records AZURE_AI_PROJECT_ID, the project's
+  ARM resource ID. An endpoint-only reference does not record an ARM ID.
+  Use 'azd env set <key> <value>' to save a value and 'azd env get-values'
+  to inspect values. They may contain secrets; do not share the output or
+  commit .azure to source control.
+
+Learn More
+  Environment commands: 'azd env --help'
+  Managed model deployments: 'azd ai project deployment --help'

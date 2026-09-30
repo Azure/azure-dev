@@ -149,15 +149,19 @@ func boolStr(b *bool) string {
 	return "false"
 }
 
-// routineSummaryTable prints a short summary of a routine in table format.
-func routineSummaryTable(r *routines.Routine) {
-	tw := newTabWriter()
-	defer tw.Flush()
+// routineSummaryTable writes a short summary of a routine in table format.
+func routineSummaryTable(writer io.Writer, r *routines.Routine) error {
+	tw := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "Name:\t%s\n", r.Name)
 	if r.Description != "" {
 		fmt.Fprintf(tw, "Description:\t%s\n", r.Description)
 	}
 	fmt.Fprintf(tw, "Enabled:\t%s\n", boolStr(r.Enabled))
+	identity := "unknown"
+	if r.Authorization != nil && r.Authorization.Identity != "" {
+		identity = r.Authorization.Identity
+	}
+	fmt.Fprintf(tw, "Dispatch identity:\t%s\n", identity)
 	// Routine.triggers is a map keyed by user-defined identifiers; iterate
 	// in deterministic key order so multiple triggers render consistently.
 	for _, key := range sortedKeys(r.Triggers) {
@@ -217,6 +221,10 @@ func routineSummaryTable(r *routines.Routine) {
 			}
 		}
 	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("failed to write routine summary: %w", err)
+	}
+	return nil
 }
 
 // sortedKeys returns the keys of a string-keyed map in lexicographic order.

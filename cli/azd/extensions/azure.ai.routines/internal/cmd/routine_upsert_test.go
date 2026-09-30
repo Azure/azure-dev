@@ -201,6 +201,46 @@ func TestRoutineCreateNewRoutineDispatchIdentity(t *testing.T) {
 	assert.Equal(t, routines.RoutineDispatchIdentityCreator, result.Authorization.Identity)
 }
 
+func TestRoutineCreateTableOutputIncludesDispatchIdentity(t *testing.T) {
+	t.Parallel()
+
+	client := &routineUpsertClientStub{
+		getErr: exterrors.ServiceFromStatus(
+			404,
+			exterrors.OpGetRoutine,
+			"routine not found",
+		),
+	}
+	var output bytes.Buffer
+	cmd := newRoutineCreateCommand(&azdext.ExtensionContext{})
+	cmd.SetOut(&output)
+	flags := &routineCreateFlags{
+		name: "nightly",
+		file: writeRoutineManifest(t, "description: new routine\n"+
+			"authorization:\n"+
+			"  identity: creator\n"+
+			"triggers:\n"+
+			"  default:\n"+
+			"    type: schedule\n"+
+			"    cron_expression: \"0 8 * * *\"\n"+
+			"action:\n"+
+			"  type: invoke_agent_responses_api\n"+
+			"  agent_name: summarizer\n"),
+		output: "table",
+	}
+
+	err := runRoutineCreateWithClientFactory(
+		t.Context(),
+		cmd,
+		flags,
+		fixedRoutineUpsertClientFactory(client),
+	)
+	require.NoError(t, err)
+	assert.Contains(t, output.String(), "Routine 'nightly' created.")
+	assert.Contains(t, output.String(), "Dispatch identity:")
+	assert.Contains(t, output.String(), routines.RoutineDispatchIdentityCreator)
+}
+
 func TestRoutineUpdateManifestDispatchIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -270,6 +310,65 @@ func TestRoutineUpdateManifestDispatchIdentity(t *testing.T) {
 			require.NotEmpty(t, output.String())
 		})
 	}
+}
+
+func TestRoutineUpdateTableOutputIncludesDispatchIdentity(t *testing.T) {
+	t.Parallel()
+
+	client := &routineUpsertClientStub{
+		existing: &routines.Routine{
+			Name:        "nightly",
+			Description: "old description",
+			Enabled:     new(true),
+			Authorization: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityCreator,
+			},
+		},
+	}
+	var output bytes.Buffer
+	cmd := newRoutineUpdateCommand(&azdext.ExtensionContext{})
+	cmd.SetOut(&output)
+	flags := &routineUpdateFlags{
+		name:   "nightly",
+		file:   writeRoutineManifest(t, "description: updated description\n"),
+		output: "table",
+	}
+
+	err := runRoutineUpdateWithClientFactory(
+		t.Context(),
+		cmd,
+		flags,
+		fixedRoutineUpsertClientFactory(client),
+	)
+	require.NoError(t, err)
+	assert.Contains(t, output.String(), "Routine 'nightly' updated")
+	assert.Contains(t, output.String(), "Dispatch identity:")
+	assert.Contains(t, output.String(), routines.RoutineDispatchIdentityCreator)
+}
+
+func TestRoutineShowTableOutputIncludesDispatchIdentity(t *testing.T) {
+	t.Parallel()
+
+	client := &routineUpsertClientStub{
+		existing: routineWithDispatchIdentity(
+			routines.RoutineDispatchIdentityCreator,
+		),
+	}
+	var output bytes.Buffer
+	cmd := newRoutineShowCommand(&azdext.ExtensionContext{})
+	cmd.SetOut(&output)
+
+	err := runRoutineShowWithClientFactory(
+		t.Context(),
+		cmd,
+		"nightly",
+		"table",
+		fixedRoutineUpsertClientFactory(client),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 1, client.getCalls)
+	assert.Contains(t, output.String(), "Dispatch identity:")
+	assert.Contains(t, output.String(), routines.RoutineDispatchIdentityCreator)
 }
 
 func TestRoutineServiceDeployDispatchIdentity(t *testing.T) {

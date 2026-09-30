@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,6 +130,125 @@ func TestBoolStr(t *testing.T) {
 			assert.Equal(t, tt.want, boolStr(tt.val))
 		})
 	}
+}
+
+func TestRoutineSummaryTable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		authorization *routines.RoutineAuthorization
+		wantIdentity  string
+	}{
+		{
+			name: "creator identity",
+			authorization: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityCreator,
+			},
+			wantIdentity: routines.RoutineDispatchIdentityCreator,
+		},
+		{
+			name: "agent identity",
+			authorization: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityAgent,
+			},
+			wantIdentity: routines.RoutineDispatchIdentityAgent,
+		},
+		{
+			name:         "missing authorization",
+			wantIdentity: "unknown",
+		},
+		{
+			name:          "empty identity",
+			authorization: &routines.RoutineAuthorization{},
+			wantIdentity:  "unknown",
+		},
+		{
+			name: "other non-empty identity",
+			authorization: &routines.RoutineAuthorization{
+				Identity: "other",
+			},
+			wantIdentity: "other",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output bytes.Buffer
+			routine := &routines.Routine{
+				Name:          "nightly",
+				Description:   "Daily summary",
+				Enabled:       new(true),
+				Authorization: test.authorization,
+				Triggers: map[string]routines.RoutineTrigger{
+					"default": {
+						Type:           "schedule",
+						CronExpression: "0 8 * * *",
+					},
+				},
+				Action: &routines.RoutineAction{
+					Type:      "invoke_agent_responses_api",
+					AgentName: "summarizer",
+				},
+			}
+
+			require.NoError(t, routineSummaryTable(&output, routine))
+			outputText := output.String()
+			for _, expected := range []string{
+				"Name:",
+				"nightly",
+				"Description:",
+				"Daily summary",
+				"Enabled:",
+				"Trigger (default):",
+				"schedule",
+				"Cron:",
+				"0 8 * * *",
+				"Action:",
+				"invoke_agent_responses_api",
+				"AgentName:",
+				"summarizer",
+			} {
+				assert.Contains(t, outputText, expected)
+			}
+
+			var identity string
+			foundIdentity := false
+			for _, line := range strings.Split(outputText, "\n") {
+				if strings.HasPrefix(line, "Dispatch identity:") {
+					identity = strings.TrimSpace(strings.TrimPrefix(
+						line,
+						"Dispatch identity:",
+					))
+					foundIdentity = true
+					break
+				}
+			}
+			require.True(t, foundIdentity)
+			assert.Equal(t, test.wantIdentity, identity)
+		})
+	}
+}
+
+type routineSummaryFailingWriter struct {
+	err error
+}
+
+func (writer routineSummaryFailingWriter) Write([]byte) (int, error) {
+	return 0, writer.err
+}
+
+func TestRoutineSummaryTableReturnsWriteError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	err := routineSummaryTable(
+		routineSummaryFailingWriter{err: writeErr},
+		&routines.Routine{Name: "nightly"},
+	)
+	require.ErrorIs(t, err, writeErr)
 }
 
 // ─── sortedKeys ──────────────────────────────────────────────────────────────

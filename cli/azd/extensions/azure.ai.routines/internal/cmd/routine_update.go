@@ -201,7 +201,13 @@ func runRoutineUpdateWithClientFactory(
 	changed += flagChanged
 
 	if changed == 0 && flags.file == "" {
-		fmt.Printf("No changes specified for routine '%s'.\n", flags.name)
+		if _, err := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"No changes specified for routine '%s'.\n",
+			flags.name,
+		); err != nil {
+			return fmt.Errorf("failed to write routine update output: %w", err)
+		}
 		return nil
 	}
 
@@ -219,7 +225,13 @@ func runRoutineUpdateWithClientFactory(
 		return printJSONTo(cmd.OutOrStdout(), result)
 	}
 
-	fmt.Printf("Routine '%s' updated (%d field(s) changed).\n\n", result.Name, changed)
-	routineSummaryTable(result)
-	return nil
+	if _, err := fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"Routine '%s' updated (%d field(s) changed).\n\n",
+		result.Name,
+		changed,
+	); err != nil {
+		return fmt.Errorf("failed to write routine update output: %w", err)
+	}
+	return routineSummaryTable(cmd.OutOrStdout(), result)
 }

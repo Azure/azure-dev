@@ -255,9 +255,10 @@ func runRoutineCreateWithClientFactory(
 		return printJSONTo(cmd.OutOrStdout(), result)
 	}
 
-	fmt.Printf("Routine '%s' created.\n\n", result.Name)
-	routineSummaryTable(result)
-	return nil
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Routine '%s' created.\n\n", result.Name); err != nil {
+		return fmt.Errorf("failed to write routine creation output: %w", err)
+	}
+	return routineSummaryTable(cmd.OutOrStdout(), result)
 }
 
 func routineAuthorizationOverride(

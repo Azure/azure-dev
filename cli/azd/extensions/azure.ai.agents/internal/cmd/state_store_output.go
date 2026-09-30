@@ -30,7 +30,6 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 	var rows []stateStoreTableRow
 	var columns []output.PrettyColumn
 	var hasMore bool
-	var last *string
 	var itemDetail *agent_api.StateStoreItem
 	storeColumns := []output.PrettyColumn{
 		{Column: output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, CardTitle: true, Wrappable: true},
@@ -49,7 +48,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		for _, store := range v.Data {
 			rows = append(rows, stateStoreRow(store))
 		}
-		hasMore, last = v.HasMore, v.LastID
+		hasMore = v.HasMore
 	case *agent_api.StateStore:
 		columns, rows = storeColumns, []stateStoreTableRow{stateStoreRow(*v)}
 	case *agent_api.StateStorePage[agent_api.StateStoreItem]:
@@ -57,7 +56,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		for _, item := range v.Data {
 			rows = append(rows, stateStoreItemRow(item))
 		}
-		hasMore, last = v.HasMore, v.LastID
+		hasMore = v.HasMore
 	case *agent_api.StateStoreItem:
 		columns = []output.PrettyColumn{itemColumns[0], itemColumns[2]}
 		rows = []stateStoreTableRow{stateStoreItemRow(*v)}
@@ -109,12 +108,9 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		}
 	}
 	if hasMore {
-		message := "\nMore results are available. Keep the same --order and --limit when paging."
+		message := "\nMore results are available. Keep the same --order and --limit when paging.\n" +
+			"Use --output json to read last_id, then pass it to --after."
 		if _, err := fmt.Fprintln(writer, message); err != nil {
-			return err
-		}
-		if last != nil {
-			_, err := fmt.Fprintf(writer, "Next page: pass --after %q\n", *last)
 			return err
 		}
 	}

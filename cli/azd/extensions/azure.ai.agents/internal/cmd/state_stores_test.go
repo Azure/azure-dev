@@ -616,7 +616,8 @@ func TestStateStoreTableOutput(t *testing.T) {
 		require.NoError(t, writeStateStoreTable(&writer, result))
 		require.NotEmpty(t, writer.String())
 		if page, ok := result.(*agent_api.StateStorePage[agent_api.StateStoreItem]); ok && page.HasMore {
-			require.Contains(t, writer.String(), `Next page: pass --after "next"`)
+			require.Contains(t, writer.String(), "Use --output json to read last_id")
+			require.NotContains(t, writer.String(), `--after "next"`)
 			require.NotContains(t, writer.String(), "--before")
 			require.NotContains(t, writer.String(), "first")
 		}
@@ -628,6 +629,27 @@ func TestStateStoreTableOutput(t *testing.T) {
 	}
 	// Output failures are surfaced, not swallowed after a successful API request.
 	require.Error(t, writeStateStoreTable(failingStateStoreWriter{}, &agent_api.StateStore{Name: "store"}))
+}
+
+func TestStateStoreTablePaginationDoesNotOfferShellSyntax(t *testing.T) {
+	for _, cursor := range []string{"$(printf unsafe)", "`printf unsafe`"} {
+		t.Run(cursor, func(t *testing.T) {
+			for _, page := range []any{
+				&agent_api.StateStorePage[agent_api.StateStore]{
+					Data: []agent_api.StateStore{{Name: "store"}}, HasMore: true, LastID: new(cursor),
+				},
+				&agent_api.StateStorePage[agent_api.StateStoreItem]{
+					Data: []agent_api.StateStoreItem{{Key: "key"}}, HasMore: true, LastID: new(cursor),
+				},
+			} {
+				var writer bytes.Buffer
+				require.NoError(t, writeStateStoreTable(&writer, page))
+				require.Contains(t, writer.String(), "Use --output json to read last_id")
+				require.NotContains(t, writer.String(), cursor)
+				require.NotContains(t, writer.String(), "Next page: pass --after")
+			}
+		})
+	}
 }
 
 func TestStateStoreTTLTableFormatting(t *testing.T) {

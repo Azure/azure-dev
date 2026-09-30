@@ -76,7 +76,7 @@ List commands return at most `--limit` results per page. The default is **20**, 
 
 Omit `--after` for the first page. When `has_more` is true, pass the response's `last_id` to `--after` to continue, keeping the same order and limit. The cursor entry itself is excluded. `--after` advances through either ascending or descending order; it is not a numeric offset.
 
-Pass `last_id` unchanged. The service currently returns a store name or item key as the cursor, **not** an entry's `id` (`ss_...` or `it_...`). Do not base64url-encode the cursor. JSON preserves `data`, `first_id`, `last_id`, and `has_more`; table output provides the next cursor. The CLI supports forward pagination only, with no automatic traversal or `--all`.
+Pass `last_id` unchanged. The service currently returns a store name or item key as the cursor, **not** an entry's `id` (`ss_...` or `it_...`). Do not base64url-encode the cursor. JSON preserves `data`, `first_id`, `last_id`, and `has_more`; table output indicates when more results are available but does not print a copyable cursor command. Use JSON to retrieve `last_id` and pass it through a shell variable as shown below. The CLI supports forward pagination only, with no automatic traversal or `--all`.
 
 These Bash examples use `jq` to read the cursor. Fetch the first store page and, if available, the next one:
 

@@ -291,8 +291,10 @@ this check, and generated sample bindings and simulation outputs are not
 mistaken for input dataset columns.
 An explicitly authored `data_mapping` is stricter than an optional default:
 each item column it names must exist in the known source rows, including explicit
-tool, context, and ground-truth bindings. Simulation mappings are checked against
-the generated graded-item shape (`messages` and `tool_definitions`), not seed rows.
+tool, context, and ground-truth bindings. Simulation default inference remains
+`messages`-only. An explicit `tool_definitions` binding opts into a generated field
+rather than a seed column; it does not expand inferred defaults or guarantee that
+a service response supplies that optional field.
 When an unchanged local dataset file is repinned to another registered version,
 preflight reads that selected version's content. The original file-to-published-
 version baseline is retained; denied metadata or content reads stop reconciliation.

@@ -141,6 +141,32 @@ func TestSimulationExplicitGeneratedToolDefinitionsAreNotSeedColumns(t *testing.
 			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
 		})
 	}
+
+}
+
+func TestSimulationDefaultInferenceRemainsMessagesOnly(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, _, service, cfg, dir := validationFixture(t)
+			group := runnableSimulation()
+			group.Name, group.Dataset = cfg.Evals[0].Name, cfg.Datasets[0].Name
+			group.Evaluators = evalcore.EvaluatorList{{Evaluator: "builtin.valid"}}
+			cfg.Evals[0] = *group
+			service.definition = `{"definition":{"data_schema":{"properties":{"messages":{},"tool_definitions":{}}}}}`
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"),
+				[]byte(`{"test_case_description":"A support question."}`), 0o600))
+			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+			require.Len(t, service.createdRequests, 1)
+			request := service.createdRequests[0]
+			require.Len(t, request.TestingCriteria, 1)
+			assert.Equal(t, map[string]string{"messages": "{{item.messages}}"}, request.TestingCriteria[0].DataMapping)
+			properties, ok := request.DataSourceConfig.ItemSchema["properties"].(map[string]any)
+			require.True(t, ok)
+			assert.NotContains(t, properties, "tool_definitions",
+				"explicit-binding validation must not expand default schema")
+			assert.False(t, request.DataSourceConfig.IncludeSampleSchema)
+		})
+	}
 }
 
 func TestOptionalDatasetToolColumnsAreRequiredOnlyWhenExplicit(t *testing.T) {

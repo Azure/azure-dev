@@ -153,12 +153,14 @@ func selectLevelFields(accepted, required []string, level string) []string {
 // instruction_id_list. Sending one fixed mapping to all of them earns a
 // service-side MissingRequiredDataMapping rejection, so the mapping is derived
 // per evaluator and anything unsatisfiable is reported before the request is
-// sent.
+// sent. Explicit generated columns permit authored bindings without expanding
+// the inferred defaults.
 func planCriterion(
 	ref evalcore.EvaluatorRef,
 	schema *eval_api.EvaluatorSummary,
 	targetBindings map[string]string,
 	datasetColumns map[string]bool,
+	explicitGeneratedColumns map[string]bool,
 	level string,
 ) (*criterionPlan, error) {
 	accepted := legacyInputs
@@ -198,7 +200,7 @@ func planCriterion(
 	for field, binding := range ref.DataMapping {
 		plan.dataMapping[field] = binding
 		if column, ok := itemColumn(binding); ok {
-			if datasetColumns != nil && !datasetColumns[column] {
+			if datasetColumns != nil && !datasetColumns[column] && !explicitGeneratedColumns[column] {
 				return nil, messages.EvaluatorNeedsFields(ref.Evaluator, []string{column})
 			}
 			if !contains(plan.itemFields, column) {
@@ -382,8 +384,10 @@ func buildEvalRequest(
 	// The sample namespace goes with it: the service holds the conversation
 	// itself, so there is no per-row target invocation to produce `sample`.
 	simulated := group.Simulation != nil
+	var explicitGeneratedColumns map[string]bool
 	if simulated {
-		datasetColumns = map[string]bool{conversationField: true, "tool_definitions": true}
+		datasetColumns = map[string]bool{conversationField: true}
+		explicitGeneratedColumns = map[string]bool{"tool_definitions": true}
 		targetBindings = nil
 	}
 
@@ -412,7 +416,7 @@ func buildEvalRequest(
 			schema = &eval_api.EvaluatorSummary{Name: ref.Evaluator}
 		}
 
-		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, level)
+		plan, err := planCriterion(ref, schema, targetBindings, datasetColumns, explicitGeneratedColumns, level)
 		if err != nil {
 			return nil, err
 		}

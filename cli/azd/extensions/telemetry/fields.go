@@ -84,6 +84,14 @@ var (
 		Endpoint:       "N/A",
 	}
 
+	// AgentContainerMode records the effective hosted-agent container or code mode.
+	AgentContainerMode = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.container.mode"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
 	// LocalClientRoute records the bounded local-client route selected by azure.ai.agents.
 	LocalClientRoute = fields.AttributeKey{
 		Key:            attribute.Key("ext.route"),

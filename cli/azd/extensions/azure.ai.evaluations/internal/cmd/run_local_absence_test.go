@@ -4,9 +4,11 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,11 +16,76 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRunStartDatasetOverridePreservesAttributionAndExplicitZero(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "azure.eval.yaml")
+	config, err := json.Marshal(project.EvalConfig{
+		Datasets: []project.DatasetDecl{
+			{Name: "original", File: "original.jsonl"},
+			{Name: "golden", File: "golden.jsonl"},
+		},
+		Evals: []project.Eval{{Name: "quality", Dataset: "original", MaxSamples: 1}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, config, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "original.jsonl"),
+		[]byte("{\"query\":\"original row\"}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "golden.jsonl"),
+		[]byte("{\"query\":\"override first\"}\n{\"query\":\"override second\"}\n"), 0o600))
+	ec, requests := identityRunContext(t, identityService{getStatus: http.StatusNotFound})
+	ec.state = map[string]string{idKey("eval", "quality"): "eval_1"}
+	cmd := buildRunCommand("start", "")
+	cmd.Flags().String("output", "json", "")
+	require.NoError(t, cmd.Flags().Set("dataset", "golden"))
+	require.NoError(t, cmd.Flags().Set("max-samples", "0"))
+	dataset, err := cmd.Flags().GetString("dataset")
+	require.NoError(t, err)
+	cap, err := cmd.Flags().GetInt("max-samples")
+	require.NoError(t, err)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+		groupName: "quality", evalPath: dir, datasetName: dataset, maxSamples: cap, wait: false,
+	}}
+	require.NoError(t, action.start(t.Context(), ec, gate{}))
+
+	recorded := recordedIdentityRequests(requests)
+	require.Len(t, recorded, 4, "only absence lookup and one run submission; no publication or original dataset lookup")
+	for index, path := range []string{
+		"/datasets/golden/versions", "/datasets/golden/versions/1.0", "/datasets/golden/versions/1",
+	} {
+		assert.Equal(t, http.MethodGet, recorded[index].method)
+		assert.Equal(t, path, recorded[index].path)
+	}
+	assert.Equal(t, http.MethodPost, recorded[3].method)
+	assert.Equal(t, "/openai/v1/evals/eval_1/runs", recorded[3].path)
+	var submitted eval_api.CreateOpenAIEvalRunRequest
+	require.NoError(t, json.Unmarshal(recorded[3].body, &submitted))
+	assert.Equal(t, map[string]string{metaEvalName: "quality", metaDataset: "golden"}, submitted.Metadata)
+	require.NotNil(t, submitted.DataSource)
+	require.NotNil(t, submitted.DataSource.Source)
+	assert.Equal(t, eval_api.EvalRunDataContentTypeFileContent, submitted.DataSource.Source.Type)
+	assert.Empty(t, submitted.DataSource.Source.ID)
+	assert.Equal(t, []map[string]any{
+		{"query": "override first"}, {"query": "override second"},
+	}, submitted.DataSource.Source.Content)
+	var handoff map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &handoff))
+	assert.Equal(t, map[string]any{
+		"run_id": "evalrun_new", "eval_id": "eval_1", "eval_name": "quality", "dataset": "golden", "status": "queued",
+	}, handoff)
+	after, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, config, after, "a run override must not edit the declaration")
+}
 
 func TestLocalDatasetAbsenceSubmitsDeclaredAndOverriddenRows(t *testing.T) {
 	for _, listStatus := range []int{http.StatusOK, http.StatusNotFound} {

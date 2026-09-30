@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/pkg/dataset_api"
@@ -21,6 +24,8 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -585,6 +590,9 @@ func TestRunStartHandoffKeepsSubmittedDatasetAttribution(t *testing.T) {
 			assert.Equal(t, want, got, "the create response omits metadata; use the submitted attribution")
 			submissions := 0
 			for _, request := range recordedIdentityRequests(requests) {
+				if mode == "registered rerun" {
+					assert.NotContains(t, request.path, "/datasets/", "a pinned rerun must not resolve the dataset again")
+				}
 				if request.method != http.MethodPost || !strings.HasSuffix(request.path, "/runs") {
 					continue
 				}
@@ -599,6 +607,110 @@ func TestRunStartHandoffKeepsSubmittedDatasetAttribution(t *testing.T) {
 				}
 			}
 			assert.Equal(t, 1, submissions)
+		})
+	}
+}
+
+type runHandoffTransport func(*http.Request) (*http.Response, error)
+
+func (f runHandoffTransport) Do(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T) {
+	for _, mode := range []string{"registered", "local"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const endpoint = "https://example.test"
+				const runsPath = "/openai/v1/evals/eval_1/runs"
+				source := eval_api.NewDatasetOnlyDataSource()
+				source.SetFileContent([]map[string]any{{"query": "local row"}})
+				metadata := map[string]string{metaDataset: "golden"}
+				want := map[string]any{
+					"run_id": "evalrun_new", "eval_id": "eval_1", "status": "queued", "dataset": "golden",
+				}
+				if mode == "registered" {
+					source.SetFileID("previous-service-issued-id")
+					metadata[metaDatasetVersion] = "2"
+					want["dataset_version"] = "2"
+				}
+				var recorded []identityRequest
+				polls := 0
+				transport := runHandoffTransport(func(req *http.Request) (*http.Response, error) {
+					var body []byte
+					if req.Body != nil {
+						var err error
+						body, err = io.ReadAll(req.Body)
+						require.NoError(t, err)
+					}
+					recorded = append(recorded, identityRequest{req.Method, req.URL.Path, body})
+					response := httptest.NewRecorder()
+					response.Header().Set("Content-Type", "application/json")
+					switch {
+					case req.Method == http.MethodGet && req.URL.Path == runsPath:
+						require.NoError(t, json.NewEncoder(response).Encode(map[string]any{
+							"data": []eval_api.OpenAIEvalRun{{ID: "previous", DataSource: source, Metadata: metadata}},
+						}))
+					case req.Method == http.MethodPost && req.URL.Path == runsPath:
+						_, err := io.WriteString(response, `{"id":"evalrun_new","status":"queued"}`)
+						require.NoError(t, err)
+					case req.Method == http.MethodGet && req.URL.Path == runsPath+"/evalrun_new":
+						polls++
+						// Block only on the poll's own deadline, with no real network or elapsed-time sleep.
+						<-req.Context().Done()
+						require.ErrorIs(t, req.Context().Err(), context.DeadlineExceeded)
+						return nil, req.Context().Err()
+					case req.Method == http.MethodGet && req.URL.Path == "/datasets/golden/versions":
+						_, err := io.WriteString(response, `{"value":[]}`)
+						require.NoError(t, err)
+					case req.Method == http.MethodGet &&
+						(req.URL.Path == "/datasets/golden/versions/1.0" || req.URL.Path == "/datasets/golden/versions/1"):
+						response.WriteHeader(http.StatusNotFound)
+					default:
+						t.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+						response.WriteHeader(http.StatusBadRequest)
+					}
+					return response.Result(), nil
+				})
+				pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+					Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
+				})
+				ec := &evalContext{
+					evalClient:    eval_api.NewEvalClientFromPipeline(endpoint, pipeline),
+					datasetClient: dataset_api.NewDatasetClientFromPipeline(endpoint, pipeline),
+					state:         map[string]string{},
+				}
+				cmd := buildRunCommand("start", "")
+				cmd.Flags().String("output", "json", "")
+				var out bytes.Buffer
+				cmd.SetOut(&out)
+				cmd.SetErr(io.Discard)
+				action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+					groupName: "eval_1", evalPath: t.TempDir(), wait: true,
+				}}
+				started := time.Now()
+				require.NoError(t, action.start(t.Context(), ec, gate{}))
+				assert.Equal(t, waitBudget, time.Since(started), "the real poll budget expires under the fake clock")
+				require.NoError(t, t.Context().Err(), "the parent was not cancelled")
+				assert.Equal(t, 1, polls)
+				var handoff map[string]any
+				require.NoError(t, json.Unmarshal(out.Bytes(), &handoff))
+				assert.Equal(t, want, handoff)
+				submissions := 0
+				for _, request := range recorded {
+					if mode == "registered" {
+						assert.NotContains(t, request.path, "/datasets/")
+					}
+					if request.method != http.MethodPost {
+						continue
+					}
+					submissions++
+					assert.Equal(t, runsPath, request.path, "no dataset publication")
+					var submitted eval_api.CreateOpenAIEvalRunRequest
+					require.NoError(t, json.Unmarshal(request.body, &submitted))
+					assert.Equal(t, metadata, submitted.Metadata)
+					assert.Equal(t, source, submitted.DataSource)
+				}
+				assert.Equal(t, 1, submissions)
+			})
 		})
 	}
 }
@@ -618,6 +730,9 @@ func TestRunRerunRefusesLegacyRegisteredInlineRows(t *testing.T) {
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	assert.Contains(t, local.Suggestion, "--max-samples 0")
+	assert.Contains(t, local.Suggestion, "If that eval declares max_samples")
+	assert.Contains(t, local.Suggestion, "ordinary dataset eval")
+	assert.Contains(t, local.Suggestion, "starting it by name")
 	for _, request := range recordedIdentityRequests(requests) {
 		assert.True(t, request.method == http.MethodGet || strings.HasSuffix(request.path, "/credentials"))
 	}
@@ -716,6 +831,30 @@ func TestRunRejectsIgnoredCapFlags(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
 		}
+	}
+}
+
+func TestRunStartRejectsExplicitIDRerunCapsBeforeRequests(t *testing.T) {
+	for _, cap := range []string{"0", "1"} {
+		t.Run(cap, func(t *testing.T) {
+			ec, requests := identityRunContext(t, identityService{})
+			cmd := buildRunCommand("start", "")
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			require.NoError(t, cmd.Flags().Set("max-samples", cap))
+			value, err := cmd.Flags().GetInt("max-samples")
+			require.NoError(t, err)
+			action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+				groupName: "eval_1", evalPath: t.TempDir(), maxSamples: value,
+			}}
+			err = action.start(t.Context(), ec, gate{})
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "explicit rerun cap must be a structured conflict: %v", err)
+			assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+			assert.Contains(t, local.Message, "--max-samples")
+			assert.Empty(t, recordedIdentityRequests(requests),
+				"reject before listing runs, looking up datasets, or submitting")
+		})
 	}
 }
 

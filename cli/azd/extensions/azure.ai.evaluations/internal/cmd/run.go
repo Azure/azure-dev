@@ -456,7 +456,8 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 				fmt.Sprintf("eval %q: the previous run used inline data attributed to a registered dataset %q",
 					evalID, newest.Metadata[metaDataset]),
 				"Start the declared eval by name to bind its registered dataset version. "+
-					"Remove the cap, or pass --max-samples 0 for an ordinary dataset eval. "+
+					"If that eval declares max_samples, remove it or, for an ordinary dataset eval, "+
+					"pass --max-samples 0 when starting it by name. "+
 					"The previous inline rows may be a subset and cannot safely be replaced by the whole version.",
 			)
 		}

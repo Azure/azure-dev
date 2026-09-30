@@ -1982,6 +1982,30 @@
                 "deployment"
             ]
         },
+        "serviceEnv": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name of the environment variable"
+                    },
+                    "value": {
+                        "type": "string",
+                        "title": "Value of the environment variable. Supports environment variable substitution."
+                    },
+                    "secret": {
+                        "type": "string",
+                        "title": "Secret value of the environment variable. Supports environment variable substitution."
+                    }
+                }
+            }
+        },
         "appServiceResource": {
             "type": "object",
             "description": "An Azure App Service web app.",
@@ -2009,29 +2033,9 @@
                     "description": "Optional. The port that the web app listens on. (Default: 80)"
                 },
                 "env": {
-                    "type": "array",
+                    "$ref": "#/definitions/serviceEnv",
                     "title": "Environment variables to set for the web app",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "name"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Name of the environment variable"
-                            },
-                            "value": {
-                                "type": "string",
-                                "title": "Value of the environment variable. Supports environment variable substitution."
-                            },
-                            "secret": {
-                                "type": "string",
-                                "title": "Secret value of the environment variable. Supports environment variable substitution."
-                            }
-                        }
-                    }
+                    "description": "Optional. Environment variables to set for the App Service web app."
                 },
                 "runtime": {
                     "type": "object",
@@ -2111,26 +2115,9 @@
                     }
                 },
                 "env": {
-                    "type": "array",
+                    "$ref": "#/definitions/serviceEnv",
                     "title": "Additional Function App settings",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "name"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string"
-                            },
-                            "value": {
-                                "type": "string"
-                            },
-                            "secret": {
-                                "type": "string"
-                            }
-                        }
-                    }
+                    "description": "Optional. Additional application settings for the Function App."
                 }
             }
         },
@@ -2160,29 +2147,9 @@
                     "description": "Optional. The port that the container app listens on. (Default: 80)"
                 },
                 "env": {
-                    "type": "array",
+                    "$ref": "#/definitions/serviceEnv",
                     "title": "Environment variables to set for the container app",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "name"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Name of the environment variable"
-                            },
-                            "value": {
-                                "type": "string",
-                                "title": "Value of the environment variable. Supports environment variable substitution."
-                            },
-                            "secret": {
-                                "type": "string",
-                                "title": "Secret value of the environment variable. Supports environment variable substitution."
-                            }
-                        }
-                    }
+                    "description": "Optional. Environment variables to set for the container app."
                 }
             }
         },

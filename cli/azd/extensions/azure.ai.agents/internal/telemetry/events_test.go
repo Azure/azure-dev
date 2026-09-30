@@ -20,22 +20,34 @@ func TestAgentInvokeSelectedWireContract(t *testing.T) {
 	}{
 		{"responses foreground", "responses", false, false,
 			map[string]string{
-				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"responses attached", "responses", true, false,
 			map[string]string{
-				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"responses detached", "responses", true, true,
 			map[string]string{
-				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "true"}},
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true",
+				"agent.invoke.no_wait": "true",
+			}},
 		{"invocations", "invocations", false, false,
 			map[string]string{
-				"agent.invoke.protocol": "invocations", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "invocations", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"a2a", "a2a", false, false,
 			map[string]string{
-				"agent.invoke.protocol": "a2a", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "a2a", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"future invocable protocol", "future_protocol", false, false,
 			map[string]string{
-				"agent.invoke.protocol": "future_protocol", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "future_protocol", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

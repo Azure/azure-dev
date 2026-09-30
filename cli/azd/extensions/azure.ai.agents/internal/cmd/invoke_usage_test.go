@@ -59,19 +59,29 @@ func TestInvokeUsageReportsSelectedRemoteModeBeforeAuthentication(t *testing.T) 
 	}{
 		{"responses foreground", agent_api.AgentProtocolResponses, false, false,
 			map[string]string{
-				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"responses attached", agent_api.AgentProtocolResponses, true, false,
 			map[string]string{
-				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"responses detached", agent_api.AgentProtocolResponses, true, true,
 			map[string]string{
-				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true", "agent.invoke.no_wait": "true"}},
+				"agent.invoke.protocol": "responses", "agent.invoke.long_running": "true",
+				"agent.invoke.no_wait": "true",
+			}},
 		{"invocations", agent_api.AgentProtocolInvocations, false, false,
 			map[string]string{
-				"agent.invoke.protocol": "invocations", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "invocations", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 		{"a2a", agent_api.AgentProtocolA2A, false, false,
 			map[string]string{
-				"agent.invoke.protocol": "a2a", "agent.invoke.long_running": "false", "agent.invoke.no_wait": "false"}},
+				"agent.invoke.protocol": "a2a", "agent.invoke.long_running": "false",
+				"agent.invoke.no_wait": "false",
+			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &telemetryRecordingClient{}

@@ -151,8 +151,9 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer    io.Writer
-	formatter output.Formatter
+	writer      io.Writer
+	formatter   output.Formatter
+	eventWriter *output.JsonEventWriter
 
 	// isTerminal controls whether terminal-style input/output will be used.
 	//
@@ -231,6 +232,10 @@ func (c *AskerConsole) IsUnformatted() bool {
 
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
+	if message != "" && c.eventWriter != nil {
+		_ = c.eventWriter.Write(output.EventForMessage(message))
+	}
+
 	// In JSON mode, emit structured event output instead of plain text.
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Empty messages are visual separators (blank lines) in text mode.
@@ -299,6 +304,10 @@ func shouldWarn() bool {
 }
 
 func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
+	if c.eventWriter != nil {
+		_ = c.eventWriter.Write(item)
+	}
+
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
@@ -1174,6 +1183,26 @@ func NewConsole(
 	handles ConsoleHandles,
 	formatter output.Formatter,
 	externalPromptCfg *ExternalPromptConfiguration) Console {
+	return NewConsoleWithJsonEventWriter(
+		noPrompt,
+		isTerminal,
+		writers,
+		handles,
+		formatter,
+		externalPromptCfg,
+		nil,
+	)
+}
+
+// NewConsoleWithJsonEventWriter creates a console that also mirrors structured events to eventWriter.
+func NewConsoleWithJsonEventWriter(
+	noPrompt bool,
+	isTerminal bool,
+	writers Writers,
+	handles ConsoleHandles,
+	formatter output.Formatter,
+	externalPromptCfg *ExternalPromptConfiguration,
+	eventWriter *output.JsonEventWriter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
@@ -1182,6 +1211,7 @@ func NewConsole(
 		defaultWriter: writers.Output,
 		writer:        writers.Output,
 		formatter:     formatter,
+		eventWriter:   eventWriter,
 		isTerminal:    isTerminal,
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,

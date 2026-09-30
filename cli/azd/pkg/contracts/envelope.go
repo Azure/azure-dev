@@ -8,7 +8,11 @@ import "time"
 type EventDataType string
 
 const (
-	ConsoleMessageEventDataType EventDataType = "consoleMessage"
+	ConsoleMessageEventDataType    EventDataType = "consoleMessage"
+	CommandStartEventDataType      EventDataType = "commandStart"
+	CommandEndEventDataType        EventDataType = "commandEnd"
+	DeploymentResultEventDataType  EventDataType = "deploymentResult"
+	DeploymentPreviewEventDataType EventDataType = "deploymentPreviewResult"
 )
 
 type EventEnvelope struct {

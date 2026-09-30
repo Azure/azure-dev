@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -149,6 +150,7 @@ type DeployAction struct {
 	azCli               *azapi.AzureClient
 	portalUrlBase       string
 	formatter           output.Formatter
+	eventWriter         *output.JsonEventWriter
 	writer              io.Writer
 	console             input.Console
 	commandRunner       exec.CommandRunner
@@ -173,6 +175,7 @@ func NewDeployAction(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	formatter output.Formatter,
+	eventWriter *output.JsonEventWriter,
 	writer io.Writer,
 	alphaFeatureManager *alpha.FeatureManager,
 	importManager *project.ImportManager,
@@ -191,6 +194,7 @@ func NewDeployAction(
 		portalUrlBase:       cloud.PortalUrlBase,
 		azCli:               azCli,
 		formatter:           formatter,
+		eventWriter:         eventWriter,
 		writer:              writer,
 		console:             console,
 		commandRunner:       commandRunner,
@@ -329,15 +333,22 @@ func (da *DeployAction) deployPreview(
 		}
 	}
 
-	if da.formatter.Kind() == output.JsonFormat {
-		previewResult := DeploymentPreviewResult{
-			Timestamp: time.Now(),
-			Services:  results,
-		}
+	previewResult := DeploymentPreviewResult{
+		Timestamp: time.Now(),
+		Services:  results,
+	}
 
+	if da.formatter.Kind() == output.JsonFormat {
 		if err := da.formatter.Format(previewResult, da.writer, nil); err != nil {
 			return nil, fmt.Errorf("deploy preview result could not be displayed: %w", err)
 		}
+	}
+	if da.eventWriter != nil && da.eventWriter.Enabled() {
+		_ = da.eventWriter.Write(contracts.EventEnvelope{
+			Type:      contracts.DeploymentPreviewEventDataType,
+			Timestamp: previewResult.Timestamp,
+			Data:      previewResult,
+		})
 	}
 
 	return &actions.ActionResult{
@@ -564,15 +575,22 @@ func (da *DeployAction) deployServicesGraph(
 		da.console.MessageUxItem(ctx, aspireDashboardUrl)
 	}
 
-	if da.formatter.Kind() == output.JsonFormat {
-		deployResult := DeploymentResult{
-			Timestamp: time.Now(),
-			Services:  state.ResultsSnapshot(),
-		}
+	deployResult := DeploymentResult{
+		Timestamp: time.Now(),
+		Services:  state.ResultsSnapshot(),
+	}
 
+	if da.formatter.Kind() == output.JsonFormat {
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
+	}
+	if da.eventWriter != nil && da.eventWriter.Enabled() {
+		_ = da.eventWriter.Write(contracts.EventEnvelope{
+			Type:      contracts.DeploymentResultEventDataType,
+			Timestamp: deployResult.Timestamp,
+			Data:      deployResult,
+		})
 	}
 
 	// Invalidate cache after successful deploy so azd show will refresh

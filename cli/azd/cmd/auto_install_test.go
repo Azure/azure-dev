@@ -1845,6 +1845,18 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 	}
 }
 
+func TestParseGlobalFlags_OutputJsonFile(t *testing.T) {
+	opts := &internal.GlobalCommandOptions{}
+
+	err := ParseGlobalFlags(
+		[]string{"deploy", "--output-json-file", "/tmp/azd-output.jsonl"},
+		opts,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "/tmp/azd-output.jsonl", opts.OutputJsonFile)
+}
+
 func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
 	// Invalid environment names are silently ignored (not errors) so that
 	// third-party extensions reusing -e for their own flags (e.g., URLs)

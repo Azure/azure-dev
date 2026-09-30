@@ -5,4 +5,5 @@ package contracts
 
 type ConsoleMessage struct {
 	Message string `json:"message"`
+	Stream  string `json:"stream,omitempty"`
 }

@@ -49,6 +49,9 @@ type GlobalCommandOptions struct {
 	// Defaults to true.
 	EnableTelemetry bool
 
+	// OutputJsonFile is an optional append-only NDJSON file that receives structured command events.
+	OutputJsonFile string
+
 	// Generates platform-agnostic help for use on static documentation sites
 	// like learn.microsoft.com. This is set directly when calling NewRootCmd
 	// and not bound to any command flags.

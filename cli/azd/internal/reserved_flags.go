@@ -42,6 +42,11 @@ var reservedFlags = []ReservedFlag{
 	{Long: "docs", Short: "", Description: "Opens the documentation for the current command."},
 	{Long: "trace-log-file", Short: "", Description: "Write a diagnostics trace to a file."},
 	{Long: "trace-log-url", Short: "", Description: "Send traces to an OpenTelemetry-compatible endpoint."},
+	{
+		Long:        "output-json-file",
+		Short:       "",
+		Description: "Append structured command output to a newline-delimited JSON file.",
+	},
 }
 
 // ReservedFlags returns a copy of the reserved flags list.

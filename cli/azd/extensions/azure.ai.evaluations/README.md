@@ -248,8 +248,8 @@ dimension weights, when supplied, must be whole numbers
 from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
 Bounds and whole-number checks use the exact authored JSON value, including
 decimal and scientific notation, without floating-point rounding. A missing
-definition `type` is accepted for a hand-authored rubric; an explicitly null or
-empty type is invalid. These checks apply before publication and before replacing
+definition `type` is accepted for a hand-authored rubric; an explicitly null,
+empty, or whitespace-only type is invalid. These checks apply before publication and before replacing
 downloaded or collected rubric files.
 
 This is not a transaction across Foundry resources. If a later service operation

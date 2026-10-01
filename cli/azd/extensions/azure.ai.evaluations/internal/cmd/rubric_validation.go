@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 )
 
 // validateRubricDefinition checks authored shape and numeric parameters without changing
@@ -64,8 +65,8 @@ func evaluatorDefinitionKind(raw json.RawMessage) (string, error) {
 		return "", nil
 	}
 	var kind string
-	if err := json.Unmarshal(raw, &kind); err != nil || kind == "" {
-		return "", fmt.Errorf("definition.type must be a non-empty string when supplied")
+	if err := json.Unmarshal(raw, &kind); err != nil || strings.TrimSpace(kind) == "" {
+		return "", fmt.Errorf("definition.type must be a non-blank string when supplied")
 	}
 	return kind, nil
 }

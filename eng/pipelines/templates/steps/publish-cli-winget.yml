@@ -112,10 +112,87 @@ steps:
         domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346
 
     - pwsh: |
+        $ErrorActionPreference = 'Stop'
+        if ([string]::IsNullOrWhiteSpace($env:ESRP_RELEASE_DETAILS)) {
+          throw 'ESRP_RELEASE_DETAILS is not set or empty.'
+        }
+
+        $releaseDetails = $env:ESRP_RELEASE_DETAILS | ConvertFrom-Json
+        if ($releaseDetails.status -ne 'pass') {
+          throw "ESRP CDN link generation did not pass. Status: '$($releaseDetails.status)'."
+        }
+
+        $downloadUrls = @(
+          foreach ($file in $releaseDetails.files) {
+            foreach ($downloadDetail in $file.fileDownloadDetails) {
+              if (![string]::IsNullOrWhiteSpace($downloadDetail.downloadUrl)) {
+                $downloadDetail.downloadUrl
+              }
+            }
+          }
+        )
+        $installerUrls = @(
+          foreach ($downloadUrl in $downloadUrls) {
+            $uri = [Uri]$downloadUrl
+            if ([IO.Path]::GetFileName($uri.AbsolutePath) -eq 'azd-windows-amd64.msi') {
+              $uri
+            }
+          }
+        )
+        if ($installerUrls.Count -ne 1) {
+          throw "Expected one azd MSI download URL from ESRP, but found $($installerUrls.Count)."
+        }
+
+        $installerUri = $installerUrls[0]
+        if ($installerUri.Scheme -ne 'https' -or $installerUri.Host -ne 'download.microsoft.com') {
+          throw "ESRP returned an azd MSI URL on an unexpected host: $($installerUri.Host)"
+        }
+        if ($installerUri.UserInfo -or $installerUri.Query -or $installerUri.Fragment) {
+          throw 'ESRP returned an azd MSI URL containing unexpected credentials, query parameters, or a fragment.'
+        }
+
+        $installerManifestPath = "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)/Microsoft.Azd.installer.yaml"
+        $installerManifestContent = Get-Content -Path $installerManifestPath -Raw
+        $installerUrlPattern = '(?m)^(\s*InstallerUrl:\s*).+$'
+        if ([regex]::Matches($installerManifestContent, $installerUrlPattern).Count -ne 1) {
+          throw "Expected one InstallerUrl in the WinGet installer manifest: $installerManifestPath"
+        }
+
+        $installerManifestContent = [regex]::Replace(
+          $installerManifestContent,
+          $installerUrlPattern,
+          { param($match) "$($match.Groups[1].Value)$($installerUri.AbsoluteUri)" }
+        )
+        $installerManifestContent = $installerManifestContent `
+          -replace "`r`n", "`n" `
+          -replace "`r", "`n" `
+          -replace "`n", "`r`n"
+        [IO.File]::WriteAllText(
+          $installerManifestPath,
+          $installerManifestContent,
+          [Text.UTF8Encoding]::new($false)
+        )
+
+        $updatedManifestContent = Get-Content -Path $installerManifestPath -Raw
+        if ($updatedManifestContent -notmatch '(?m)^\s*InstallerUrl:\s*https://download\.microsoft\.com/') {
+          throw 'Failed to update the WinGet manifest with the ESRP download URL.'
+        }
+      displayName: Apply ESRP CDN link to WinGet manifest
+      env:
+        ESRP_RELEASE_DETAILS: $(ESRP_RELEASE_DETAILS)
+
+    - pwsh: |
         $manifestPath = "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
         $manifestFiles = Get-ChildItem -Path $manifestPath -Filter '*.yaml' -File
         if ($manifestFiles.Count -lt 3) {
           throw "Expected at least three WinGet manifest files in: $manifestPath"
+        }
+
+        foreach ($manifestFile in $manifestFiles) {
+          $manifestContent = [IO.File]::ReadAllText($manifestFile.FullName)
+          if ($manifestContent -match '(?<!\r)\n' -or $manifestContent -match '\r(?!\n)') {
+            throw "WinGet manifest contains unsupported line endings: $($manifestFile.FullName)"
+          }
         }
 
         $manifestFiles

@@ -15,6 +15,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestInitRefusesSymlinkConfigBeforeWriting(t *testing.T) {
+	h := newInitHarness(t, nil)
+	dir := filepath.Join(h.dir, project.DefaultEvalDir)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	target := filepath.Join(h.dir, "shared.yml")
+	original := "# shared config\nevals: []\n"
+	require.NoError(t, os.WriteFile(target, []byte(original), 0o600))
+	configPath := filepath.Join(dir, project.EvalConfigBase)
+	linkTarget := filepath.Join("..", "shared.yml")
+	if err := os.Symlink(linkTarget, configPath); err != nil {
+		t.Skipf("creating test symlinks is unavailable: %v", err)
+	}
+	before := initFileSnapshot(t, h.dir)
+	text, err := executeConversationInit(t, "--path", configPath, "--name", "new-eval",
+		"--conversation-mode", "static", "--dataset", h.seedRows, "--judge-model", "judge",
+		"--no-prompt", "-o", "json")
+	require.ErrorContains(t, err, "symbolic link")
+	assert.Empty(t, text)
+	assert.Zero(t, h.project.wiringAttempts())
+	assert.Empty(t, h.usage.reported())
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	got, err := os.Readlink(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, linkTarget, got)
+	body, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(body))
+
+	_, err = executeConversationInit(t, "--path", target, "--name", "new-eval",
+		"--conversation-mode", "static", "--dataset", h.seedRows, "--judge-model", "judge",
+		"--no-prompt", "-o", "json")
+	require.NoError(t, err, "selecting the target directly must allow the otherwise valid init")
+	assert.Equal(t, 1, h.project.wiringAttempts())
+	got, err = os.Readlink(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, linkTarget, got)
+	cfg, err := project.ReadAuthoredConfig(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"new-eval"}, cfg.Names(project.SectionEvals))
+}
+
 func TestInitRefusesAmbiguousAuthoredDocumentsBeforeWriting(t *testing.T) {
 	for _, shape := range []string{
 		"single document", "second document", "explicit end then second", "duplicate datasets", "merged catalogs",

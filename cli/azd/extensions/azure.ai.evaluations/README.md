@@ -183,6 +183,9 @@ Authored evaluation configuration must contain one YAML document with unique,
 literal string top-level keys. Init and catalog edits reject multiple documents,
 duplicate keys, and merge, alias or complex top-level keys rather than silently dropping
 or ambiguously updating content. Aliases in values remain supported.
+Authoring rejects a symbolic link selected as the config file before creating
+locks or editing configuration, leaving both the link and its target unchanged.
+Select the target config file directly to edit it.
 If adding the root project service fails and the host acknowledges that
 the operation finished unsuccessfully, init rolls back its eval-config edit so the
 same command can be retried after restoring root write access.
@@ -215,7 +218,9 @@ are rejected without those writes. This structural check does not invent require
 columns for an evaluator; evaluator-specific contracts are checked separately.
 For simulation, init also checks every locally available seed row before writing
 configuration, including files in declared datasets and local nested `$ref`
-entries. Each row needs a non-whitespace text `test_case_description` of at most
+entries. Dataset lookup skips broken unnamed includes when a later unnamed
+include matches the requested name; if none matches, the first include error is
+reported. Each row needs a non-whitespace text `test_case_description` of at most
 2,500 Unicode characters and cannot carry `messages`, `query`, or `response`
 fields (even empty or null). Per-row turn settings use the nested
 `simulation_configuration` contract described below, including its effective

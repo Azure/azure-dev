@@ -260,8 +260,8 @@ For an evaluation name beginning with `-`, the next step places `--path` before
 `--` and the literal name, so the name cannot be interpreted as a flag.
 If the name or path cannot be portably quoted, init displays escaped exact-name/path
 values and manual create guidance instead of a runnable placeholder command.
-The same fallback applies to names such as `-Cquality` that some azd hosts consume
-as a joined working-directory flag even after `--`; the authored name is not changed.
+The same fallback applies to names that look like a joined `-C` working-directory
+flag, which some azd hosts consume even after `--`; the authored name is not changed.
 New paths ending in `.yaml` or `.yml` are treated as configuration files,
 including absolute paths and paths containing spaces. Existing directories
 remain directories, even if their names end in `.yaml`.

@@ -107,7 +107,8 @@ steps:
         owners: chononiw@microsoft.com
         approvers: chononiw@microsoft.com
         serviceendpointurl: https://api.esrp.microsoft.com
-        mainpublisher: ESRPRELPACMAN
+        # cspell:ignore ESRPRELPACMANTEST
+        mainpublisher: ESRPRELPACMANTEST
         domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346
 
     - task: EsrpRelease@12
@@ -131,5 +132,6 @@ steps:
         owners: chononiw@microsoft.com
         approvers: chononiw@microsoft.com
         serviceendpointurl: https://api.esrp.microsoft.com
-        mainpublisher: ESRPRELPACMAN
+        # cspell:ignore ESRPRELPACMANTEST
+        mainpublisher: ESRPRELPACMANTEST
         domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346

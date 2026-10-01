@@ -286,14 +286,20 @@ func fillUses(
 
 		// MultiSelect returns string[] not int[], and we had lost the translation mapping with TabAlign.
 		// Currently, we use whitespace to splice the item from the formatting text.
+		selectedUses := slices.Clone(r.Uses)
 		for _, use := range uses {
 			for i := len(use) - 1; i >= 0; i-- {
 				if unicode.IsSpace(rune(use[i])) {
-					r.Uses = append(r.Uses, use[i+1:])
+					selectedUses = append(selectedUses, use[i+1:])
 					break
 				}
 			}
 		}
+		if r.Type == project.ResourceTypeHostFunctionApp && countStorageUses(selectedUses, p.PrjConfig) > 1 {
+			return nil, fmt.Errorf("Function App %s can use only one storage resource; select at most one storage account",
+				r.Name)
+		}
+		r.Uses = selectedUses
 	}
 
 	return r, nil
@@ -310,6 +316,10 @@ func promptUsedBy(
 		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
 		// Linking between different host types is unsupported; Function Apps cannot link to other Function Apps either.
 		if isHost && otherIsHost && (r.Type != other.Type || r.Type == project.ResourceTypeHostFunctionApp) {
+			continue
+		}
+		if r.Type == project.ResourceTypeStorage && other.Type == project.ResourceTypeHostFunctionApp &&
+			countStorageUses(other.Uses, p.PrjConfig) > 0 {
 			continue
 		}
 		if otherIsHost && !slices.Contains(other.Uses, r.Name) {
@@ -335,4 +345,14 @@ func promptUsedBy(
 	}
 
 	return nil, nil
+}
+
+func countStorageUses(uses []string, prj *project.ProjectConfig) int {
+	count := 0
+	for _, use := range uses {
+		if res, ok := prj.Resources[use]; ok && res.Type == project.ResourceTypeStorage {
+			count++
+		}
+	}
+	return count
 }

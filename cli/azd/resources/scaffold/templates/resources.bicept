@@ -937,6 +937,7 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.24.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
     kind: 'functionapp,linux'
     serverFarmResourceId: functionAppPlan.outputs.resourceId
+    keyVaultAccessIdentityResourceId: {{bicepName .Name}}Identity.outputs.resourceId
     managedIdentities: {
       systemAssigned: true
       userAssignedResourceIds: [{{bicepName .Name}}Identity.outputs.resourceId]

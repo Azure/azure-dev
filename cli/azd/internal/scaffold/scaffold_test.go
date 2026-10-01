@@ -339,6 +339,8 @@ func TestExecInfra(t *testing.T) {
 						string(bicep))
 					assert.Contains(t, string(bicep), "type: 'UserAssignedIdentity'")
 					assert.Contains(t, string(bicep), "AzureWebJobsStorage__clientId:")
+					assert.Contains(t, string(bicep),
+						"keyVaultAccessIdentityResourceId: "+BicepName(service.Name)+"Identity.outputs.resourceId")
 					if tt.name == "Function App with implicit storage" {
 						assert.Regexp(t, `networkAcls:\s*\{\s*defaultAction: 'Allow'\s*\}`, string(bicep))
 					}

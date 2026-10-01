@@ -410,7 +410,7 @@ func (c *EvalClient) publishEvaluatorVersion(
 //
 // The service has no route for an unversioned evaluator: GET
 // /evaluators/{name} returns 404 with no body, so the version cannot simply be
-// left off the path.
+// left off the path. A version point-read 404 does not establish evaluator absence.
 func (c *EvalClient) GetEvaluatorRaw(
 	ctx context.Context,
 	name string,
@@ -426,7 +426,11 @@ func (c *EvalClient) GetEvaluatorRaw(
 	}
 	path := pathEvaluators + "/" + url.PathEscape(name) +
 		"/versions/" + url.PathEscape(version)
-	return c.doRequest(ctx, http.MethodGet, path, nil, nil, apiVersion)
+	raw, err := c.doRequest(ctx, http.MethodGet, path, nil, nil, apiVersion)
+	if IsNotFound(err) {
+		return nil, evaluatorVersionReadError{cause: err}
+	}
+	return raw, err
 }
 
 // LatestEvaluatorVersion returns the newest registered version of an evaluator.

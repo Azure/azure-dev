@@ -211,6 +211,8 @@ func TestReconciliationRejectsInvalidRubricBeforePublishingDataset(t *testing.T)
 	for _, caller := range []string{"create", "up"} {
 		for _, source := range []string{"bare file", "full document", "inline"} {
 			for _, parameters := range []string{
+				`{"type":"rubric"}`,
+				`{"dimensions":null}`,
 				`{"dimensions":[{"id":"clarity","weight":0}]}`,
 				`{"dimensions":[{"id":"clarity","weight":11}]}`,
 				`{"dimensions":[{"id":"clarity","weight":1.5}]}`,
@@ -238,7 +240,11 @@ func TestReconciliationRejectsInvalidRubricBeforePublishingDataset(t *testing.T)
 					cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "local"}}
 					err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
 					require.Error(t, err)
-					assert.Contains(t, err.Error(), "definition.")
+					if parameters == `{"type":"rubric"}` {
+						assert.Contains(t, err.Error(), "dimensions")
+					} else {
+						assert.Contains(t, err.Error(), "definition.")
+					}
 					assert.Empty(t, service.requests)
 					assert.Empty(t, env.config)
 					assert.Empty(t, env.values)

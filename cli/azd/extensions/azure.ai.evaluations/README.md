@@ -232,13 +232,19 @@ eval, its local JSONL/rubric files, and its registered dataset/evaluator referen
 including version pins. An unavailable reference lookup is an error, not a reason
 to publish optimistically. A valid, complete empty evaluator-version listing
 allows the first publication of a local rubric; it does not create an evaluator
-for an existing-only reference. Missing or malformed list data and failed
+for an existing-only reference. An initial evaluator-version listing 404 also
+permits first publication; a 404 when reading a specific version does not establish
+that the evaluator is absent. Missing or malformed list data and failed
 continuation pages remain errors. Unrelated invalid evals do not block this targeted
 command; `azd up` validates the entire evaluation service before publishing any
 of its dependencies. Validation does not write private reconciliation state.
-Local rows used to invoke an agent or model must carry the `query` field the
-target reads. Static dataset-only evaluations do not impose this target
-requirement. Rubric dimension weights, when supplied, must be whole numbers
+The target-input check for a local dataset invoking an agent or model requires
+`query` in at least one row, using the union of row fields. This is separate from
+required evaluator inputs and explicit item bindings, whose columns must occur
+in every row. Static dataset-only evaluations do not impose the target-input
+requirement. A rubric must supply a `dimensions` array; omission and `null` are
+invalid, while an explicit empty array retains its existing meaning. Rubric
+dimension weights, when supplied, must be whole numbers
 from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
 Bounds and whole-number checks use the exact authored JSON value, including
 decimal and scientific notation, without floating-point rounding. A missing

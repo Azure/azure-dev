@@ -23,6 +23,7 @@ import (
 
 func invalidExactRubrics() []struct{ name, definition, field string } {
 	return []struct{ name, definition, field string }{
+		{"omitted dimensions", `{"type":"rubric"}`, "dimensions"},
 		{"null type", `{"type":null,"dimensions":[]}`, "definition.type"},
 		{"null type null dimensions", `{"type":null,"dimensions":null}`, "definition.type"},
 		{"empty type", `{"type":"","dimensions":[]}`, "definition.type"},

@@ -3628,7 +3628,8 @@ func SourceSampleFlagConflict(evalName string) error {
 func SourceSampleConflict(evalName string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
 		fmt.Sprintf("max_samples cannot cap source-backed eval %q", evalName),
-		"Remove the positive max_samples value. For traces, use source.max_traces; for responses, select source.response_ids.")
+		"Remove the positive max_samples value. "+
+			"For traces, use source.max_traces; for responses, select source.response_ids.")
 }
 
 // NegativeMaxSamplesFlag reports a row cap below zero given on the command line.

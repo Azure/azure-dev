@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -33,6 +34,41 @@ import (
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+type capturingProvider struct {
+	provisioning.Provider
+}
+
+func (p *capturingProvider) Initialize(context.Context, string, provisioning.Options) error {
+	return nil
+}
+
+func TestManagerCreatesProviderScopedEnvironment(t *testing.T) {
+	container := ioc.NewNestedContainer(nil)
+	var views []environment.ProviderEnv
+	container.MustRegisterNamedScoped(string(provisioning.Test),
+		func(env environment.ProviderEnv) provisioning.Provider {
+			views = append(views, env)
+			return &capturingProvider{}
+		})
+
+	first := environment.NewWithValues("first", map[string]string{"KEY": "first-value"})
+	second := environment.NewWithValues("second", map[string]string{"KEY": "second-value"})
+	for _, env := range []*environment.Environment{first, second} {
+		mgr := provisioning.NewManager(container, defaultProvider, nil, env, nil, nil, nil, nil)
+		require.NoError(t, mgr.Initialize(t.Context(), "", provisioning.Options{Provider: provisioning.Test}))
+	}
+
+	require.Len(t, views, 2)
+	require.NotSame(t, views[0], views[1])
+	require.Same(t, first, views[0].PersistableEnv())
+	require.Same(t, second, views[1].PersistableEnv())
+	require.Equal(t, "first-value", views[0].Getenv("KEY"))
+	require.Equal(t, "second-value", views[1].Getenv("KEY"))
+
+	var rootView environment.ProviderEnv
+	require.Error(t, container.Resolve(&rootView))
+}
 
 func TestProvisionInitializesEnvironment(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
@@ -275,6 +311,29 @@ func TestEnsureSubscriptionAndLocation_NoPromptMissingLocationReturnsPromptRequi
 	})
 
 	require.Contains(t, promptErr.ToString(""), environment.LocationEnvVarName)
+	envManager.AssertExpectations(t)
+}
+
+func TestEnsureSubscriptionAndLocationSavesUnderlyingEnvironment(t *testing.T) {
+	raw := environment.NewWithValues("test-env", map[string]string{
+		"PROVIDER_SUBSCRIPTION": "mapped-subscription",
+		"PROVIDER_LOCATION":     "mapped-location",
+	})
+	view := environment.NewProviderScopedEnv(raw, map[string]string{
+		environment.SubscriptionIdEnvVarName: "PROVIDER_SUBSCRIPTION",
+		environment.LocationEnvVarName:       "PROVIDER_LOCATION",
+	}, nil)
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, raw).Return(nil).Twice()
+
+	err := provisioning.EnsureSubscriptionAndLocation(
+		t.Context(), envManager, view, noPromptPrompter{},
+		provisioning.EnsureSubscriptionAndLocationOptions{},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "mapped-subscription", raw.Getenv(environment.SubscriptionIdEnvVarName))
+	require.Equal(t, "mapped-location", raw.Getenv(environment.LocationEnvVarName))
 	envManager.AssertExpectations(t)
 }
 

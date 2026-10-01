@@ -131,7 +131,7 @@ type ProvisionAction struct {
 	writer              io.Writer
 	console             input.Console
 	commandRunner       exec.CommandRunner
-	serviceLocator      ioc.ServiceLocator
+	serviceLocator      *ioc.NestedContainer
 	subManager          *account.SubscriptionsManager
 	importManager       *project.ImportManager
 	alphaFeatureManager *alpha.FeatureManager
@@ -161,7 +161,7 @@ func NewProvisionAction(
 	envManager environment.Manager,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-	serviceLocator ioc.ServiceLocator,
+	serviceLocator *ioc.NestedContainer,
 	formatter output.Formatter,
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,

@@ -783,7 +783,7 @@ func (p *ProvisionAction) displayEnvironmentDetails(ctx context.Context) {
 type provisionLayerDeps struct {
 	env                 *environment.Environment
 	envManager          environment.Manager
-	serviceLocator      ioc.ServiceLocator
+	serviceLocator      *ioc.NestedContainer
 	defaultProvider     provisioning.DefaultProviderResolver
 	alphaFeatureManager *alpha.FeatureManager
 	fileShareService    storage.FileShareService

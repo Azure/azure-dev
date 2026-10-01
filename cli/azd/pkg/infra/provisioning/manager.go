@@ -34,7 +34,7 @@ type DefaultProviderResolver func() (ProviderKind, error)
 
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
-	serviceLocator      ioc.ServiceLocator
+	serviceLocator      *ioc.NestedContainer
 	defaultProvider     DefaultProviderResolver
 	envManager          environment.Manager
 	env                 *environment.Environment
@@ -365,13 +365,14 @@ type EnsureSubscriptionAndLocationOptions struct {
 	SelectDefaultLocation *string
 }
 
-// EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
+// EnsureSubscriptionAndLocation ensures that the subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
 // locationFilter, when non-nil, filters the locations being displayed.
+// Changes made through a provider view are persisted in the underlying environment.
 func EnsureSubscriptionAndLocation(
 	ctx context.Context,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.ProviderEnv,
 	prompter prompt.Prompter,
 	options EnsureSubscriptionAndLocationOptions,
 ) error {
@@ -404,7 +405,7 @@ func EnsureSubscriptionAndLocation(
 	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
 	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
 	env.SetSubscriptionId(subId)
-	if err := envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env.PersistableEnv()); err != nil {
 		return err
 	}
 
@@ -440,13 +441,15 @@ func EnsureSubscriptionAndLocation(
 
 	// Same as before, this make sure the location is persisted in the .env file.
 	env.SetLocation(location)
-	return envManager.Save(ctx, env)
+	return envManager.Save(ctx, env.PersistableEnv())
 }
 
+// EnsureSubscription ensures that the subscription is set in the provider view
+// and persists it in the underlying environment.
 func EnsureSubscription(
 	ctx context.Context,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.ProviderEnv,
 	prompter prompt.Prompter,
 ) error {
 	subId := env.GetSubscriptionId()
@@ -478,15 +481,12 @@ func EnsureSubscription(
 	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
 	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
 	env.SetSubscriptionId(subId)
-	if err := envManager.Save(ctx, env); err != nil {
-		return err
-	}
-	return envManager.Save(ctx, env)
+	return envManager.Save(ctx, env.PersistableEnv())
 }
 
 // Creates a new instance of the Provisioning Manager
 func NewManager(
-	serviceLocator ioc.ServiceLocator,
+	serviceLocator *ioc.NestedContainer,
 	defaultProvider DefaultProviderResolver,
 	envManager environment.Manager,
 	env *environment.Environment,
@@ -536,7 +536,13 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	}
 
 	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
+	providerScope, err := m.serviceLocator.NewScope()
+	if err != nil {
+		return nil, fmt.Errorf("creating scope for IaC provider '%s': %w", providerKey, err)
+	}
+	ioc.RegisterInstance[environment.ProviderEnv](
+		providerScope, environment.NewProviderScopedEnv(m.env, nil, nil))
+	err = providerScope.ResolveNamed(string(providerKey), &provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
 	}

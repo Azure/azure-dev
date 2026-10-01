@@ -64,9 +64,9 @@ func TestPrincipalIDProvider_CurrentPrincipalIdUsesSubscriptionTenant(t *testing
 	}
 
 	provider := NewPrincipalIdProvider(
-		environment.NewWithValues("test", map[string]string{
+		environment.NewProviderScopedEnv(environment.NewWithValues("test", map[string]string{
 			environment.SubscriptionIdEnvVarName: "sub-123",
-		}),
+		}), nil, nil),
 		userProfileService,
 		resolver,
 		nil,

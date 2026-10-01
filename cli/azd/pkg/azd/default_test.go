@@ -6,6 +6,7 @@ package azd
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/stretchr/testify/require"
@@ -35,4 +36,15 @@ func Test_DefaultPlatform_ConfigureContainer(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected, actual)
 	})
+}
+
+func Test_DefaultPlatform_RegistersDefaultProviderEnv(t *testing.T) {
+	container := ioc.NewNestedContainer(nil)
+	env := environment.New("test")
+	ioc.RegisterInstance(container, env)
+	require.NoError(t, NewDefaultPlatform().ConfigureContainer(container))
+
+	var providerEnv environment.ProviderEnv
+	require.NoError(t, container.Resolve(&providerEnv))
+	require.Same(t, env, providerEnv)
 }

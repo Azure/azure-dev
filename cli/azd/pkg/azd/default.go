@@ -52,6 +52,13 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(terraform.NewCli)
 	container.MustRegisterSingleton(bicep.NewCli)
 
+	// This is a fallback, for cases where you want to use a bicep provider but aren't scoping
+	// the environment. Look at [provisioning.newProvider] if you're interested in the non-fallback
+	// case.
+	container.MustRegisterScoped(func(env *environment.Environment) environment.ProviderEnv {
+		return env
+	})
+
 	container.MustRegisterTransient(func() *lazy.Lazy[*infraBicep.BicepProvider] {
 		return lazy.NewLazy(func() (*infraBicep.BicepProvider, error) {
 			var provider provisioning.Provider

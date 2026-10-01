@@ -492,7 +492,7 @@ func newProvisionProviderForTest(
 
 	return NewProvisionProvider(
 		mockContext.Console,
-		env,
+		environment.NewProviderScopedEnv(env, nil, nil),
 		envManager,
 		config,
 		devCenterClient,

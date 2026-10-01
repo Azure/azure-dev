@@ -4,9 +4,12 @@
 package vsrpc
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,4 +93,27 @@ func TestValidateSession_ValidId(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ss)
 	require.Equal(t, id, ss.id, "session id should be set on the serverSession")
+}
+
+func TestNewContainer_ChildScopesUseSessionAzdContext(t *testing.T) {
+	root := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(root, root)
+	root.MustRegisterScoped(func() (*azdcontext.AzdContext, error) {
+		return nil, azdcontext.ErrNoProject
+	})
+
+	hostDir := t.TempDir()
+	session := &serverSession{id: "test", rootContainer: root}
+	c, err := session.newContainer(RequestContext{HostProjectPath: filepath.Join(hostDir, "AppHost.csproj")})
+	require.NoError(t, err)
+
+	var resolved *ioc.NestedContainer
+	require.NoError(t, c.Resolve(&resolved))
+
+	scope, err := resolved.NewScope()
+	require.NoError(t, err)
+
+	var azdCtx *azdcontext.AzdContext
+	require.NoError(t, scope.Resolve(&azdCtx))
+	require.Equal(t, hostDir, azdCtx.ProjectDirectory())
 }

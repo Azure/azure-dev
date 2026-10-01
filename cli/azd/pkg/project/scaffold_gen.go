@@ -467,6 +467,16 @@ func mapHostEnv(
 
 var functionRuntimeVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
 
+var unsupportedFunctionAppSettings = []string{
+	"FUNCTIONS_EXTENSION_VERSION",
+	"FUNCTIONS_WORKER_RUNTIME_VERSION",
+	"WEBSITE_RUN_FROM_PACKAGE",
+	"WEBSITE_CONTENTSHARE",
+	"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+	"SCM_DO_BUILD_DURING_DEPLOYMENT",
+	"ENABLE_ORYX_BUILD",
+}
+
 func mapFunctionApp(
 	res *ResourceConfig,
 	svcSpec *scaffold.ServiceSpec,
@@ -532,6 +542,10 @@ func mapFunctionApp(
 
 	for _, env := range props.Env {
 		name := strings.ToUpper(env.Name)
+		if slices.Contains(unsupportedFunctionAppSettings, name) {
+			return fmt.Errorf("resources.%s.env cannot set %s: this setting is not supported by Flex Consumption",
+				res.Name, env.Name)
+		}
 		if strings.HasPrefix(name, "AZUREWEBJOBSSTORAGE") ||
 			name == "AZUREFUNCTIONSWEBHOST__HOSTID" ||
 			name == "FUNCTIONS_WORKER_RUNTIME" ||

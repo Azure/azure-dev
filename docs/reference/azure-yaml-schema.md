@@ -194,6 +194,8 @@ Without a storage resource in `uses`, azd uses the project's managed storage acc
 
 Runtime versions use numeric strings, not App Service suffixes such as `22-lts`. Examples include `"3.12"` for `python`, `"22"` for `node`, `"8.0"` for `dotnet-isolated`, `"21"` for `java`, and `"1.0"` for `go`. The runtime stack must match the service language; these examples are not a complete list of supported versions.
 
+The compose resource also rejects these [deprecated Flex Consumption settings](https://learn.microsoft.com/azure/azure-functions/functions-app-settings#flex-consumption-plan-deprecations) in `env`: `FUNCTIONS_EXTENSION_VERSION`, `FUNCTIONS_WORKER_RUNTIME_VERSION`, `WEBSITE_RUN_FROM_PACKAGE`, `WEBSITE_CONTENTSHARE`, `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`, `SCM_DO_BUILD_DURING_DEPLOYMENT`, and `ENABLE_ORYX_BUILD`. Configure the runtime through `resources.<name>.runtime` and remote builds through the service's `remoteBuild` property instead.
+
 Generated Function Apps allow `https://portal.azure.com` as a CORS origin so functions can be invoked from the Azure portal. Function Apps provisioned with user-provided infrastructure must configure CORS separately.
 
 Unlike App Service, Function Apps always deploy to the main site. Deployment slots are not part of the Function App workflow, so `AZD_DEPLOY_{SERVICE}_SLOT_NAME` has no effect and azd never prompts for a slot.

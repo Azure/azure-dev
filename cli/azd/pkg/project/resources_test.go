@@ -409,6 +409,60 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 	}
 }
 
+func Test_infraSpec_FunctionAppRuntimeByLanguage(t *testing.T) {
+	for _, tt := range []struct {
+		language ServiceLanguageKind
+		stack    string
+		version  string
+	}{
+		{ServiceLanguagePython, "python", "3.12"},
+		{ServiceLanguageJavaScript, "node", "22"},
+		{ServiceLanguageTypeScript, "node", "22"},
+		{ServiceLanguageDotNet, "dotnet-isolated", "8.0"},
+		{ServiceLanguageCsharp, "dotnet-isolated", "8.0"},
+		{ServiceLanguageFsharp, "dotnet-isolated", "8.0"},
+		{ServiceLanguageJava, "java", "21"},
+		{ServiceLanguageGo, "go", "1.0"},
+	} {
+		t.Run(string(tt.language), func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp,
+						Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: tt.stack, Version: tt.version}},
+					},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: AzureFunctionTarget, Language: tt.language},
+				},
+			}
+			spec, err := infraSpec(cfg)
+			require.NoError(t, err)
+			require.Len(t, spec.Services, 1)
+			require.NotNil(t, spec.Services[0].Runtime)
+			assert.Equal(t, tt.stack, spec.Services[0].Runtime.Type)
+			assert.Equal(t, tt.version, spec.Services[0].Runtime.Version)
+
+			files, err := infraFs(t.Context(), cfg)
+			require.NoError(t, err)
+			content, err := fs.ReadFile(files, "resources.bicep")
+			require.NoError(t, err)
+			assert.Contains(t, string(content), "name: '"+tt.stack+"'")
+			assert.Contains(t, string(content), "version: '"+tt.version+"'")
+
+			wrongStack := "python"
+			if tt.stack == wrongStack {
+				wrongStack = "node"
+			}
+			cfg.Resources["api"].Props = FunctionAppProps{
+				Runtime: FunctionAppRuntime{Stack: wrongStack, Version: tt.version},
+			}
+			_, err = infraSpec(cfg)
+			require.ErrorContains(t, err, "runtime.stack must match the service language ("+tt.stack+")")
+		})
+	}
+}
+
 func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
 	cfg := &ProjectConfig{
 		Resources: map[string]*ResourceConfig{
@@ -520,6 +574,41 @@ func Test_infraSpec_FunctionAppRejectsReservedSettings(t *testing.T) {
 			_, err := infraSpec(cfg)
 			require.ErrorContains(t, err, "cannot override required Function App setting "+setting)
 		})
+	}
+}
+
+func Test_infraSpec_FunctionAppRejectsUnsupportedSettings(t *testing.T) {
+	for _, setting := range []string{
+		"FUNCTIONS_EXTENSION_VERSION",
+		"FUNCTIONS_WORKER_RUNTIME_VERSION",
+		"WEBSITE_RUN_FROM_PACKAGE",
+		"WEBSITE_CONTENTSHARE",
+		"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+		"SCM_DO_BUILD_DURING_DEPLOYMENT",
+		"ENABLE_ORYX_BUILD",
+	} {
+		for _, name := range []string{setting, strings.ToLower(setting)} {
+			t.Run(name, func(t *testing.T) {
+				cfg := &ProjectConfig{
+					Resources: map[string]*ResourceConfig{
+						"api": {
+							Name: "api", Type: ResourceTypeHostFunctionApp,
+							Props: FunctionAppProps{
+								Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+								Env:     []ServiceEnvVar{{Name: name, Value: "unsupported-value"}},
+							},
+						},
+					},
+					Services: map[string]*ServiceConfig{
+						"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+					},
+				}
+				_, err := infraSpec(cfg)
+				require.ErrorContains(t, err, "cannot set "+name)
+				require.ErrorContains(t, err, "not supported by Flex Consumption")
+				assert.NotContains(t, err.Error(), "unsupported-value")
+			})
+		}
 	}
 }
 

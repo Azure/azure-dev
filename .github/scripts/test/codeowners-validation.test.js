@@ -1,13 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runInNewContext } from 'node:vm';
 import { describe, it, expect, vi } from 'vitest';
+import validate from '../src/codeowners-validation.js';
 
 const workflow = readFileSync(join(__dirname, '..', '..', 'workflows', 'codeowners-validation.yml'), 'utf8');
-const script = /          script: \|\n((?:            .*(?:\n|$)|\n)+)/.exec(workflow)?.[1];
-if (!script) {
-  throw new Error('Could not find the CODEOWNERS validation script in the workflow.');
-}
 
 function fixture() {
   const github = {
@@ -38,7 +34,11 @@ function fixture() {
     github,
     context,
     core,
-    run: () => runInNewContext(`(async () => {\n${script}\n})()`, { github, context, core }),
+    run: () => validate({
+      github: /** @type {Parameters<typeof validate>[0]['github']} */ (/** @type {unknown} */ (github)),
+      context,
+      core,
+    }),
   };
 }
 
@@ -46,6 +46,11 @@ describe('CODEOWNERS validation workflow', () => {
   it('uses the trusted target trigger instead of a PR-controlled workflow', () => {
     expect(workflow).toMatch(/^on:\n  pull_request_target:\n/m);
     expect(workflow).not.toMatch(/^  pull_request:/m);
+    expect(workflow).toContain('ref: ${{ github.sha }}');
+    expect(workflow).toContain('persist-credentials: false');
+    expect(workflow).toContain('sparse-checkout: /.github/scripts/src/codeowners-validation.js');
+    expect(workflow).toContain("require('./.github/scripts/src/codeowners-validation.js')");
+    expect(workflow).toContain('await validate({ github, context, core });');
   });
 
   it('succeeds without validating unrelated changes', async () => {

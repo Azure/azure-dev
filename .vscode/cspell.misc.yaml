@@ -95,6 +95,7 @@ overrides:
           - vitest
     - filename:
           - .github/workflows/codeowners-validation.yml
+          - .github/scripts/src/codeowners-validation.js
           - .github/scripts/test/codeowners-validation.test.js
       words:
           - CODEOWNERS

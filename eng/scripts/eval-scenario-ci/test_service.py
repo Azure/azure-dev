@@ -14,6 +14,8 @@ import service
 
 
 ROW = b'{"query":"two plus two","response":"4","ground_truth":"4"}\n'
+PASSING_COUNTS = {"total": 1, "passed": 1, "failed": 0, "errored": 0, "skipped": 0}
+MISSING_COUNTS = object()
 
 
 class ServiceTests(unittest.TestCase):
@@ -337,8 +339,8 @@ class ServiceTests(unittest.TestCase):
                     service.verify_install(plan, profile)
                 resolve_path.assert_any_call(configured)
 
-    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None, exported_item=None,
-              export_response=None):
+    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=PASSING_COUNTS, exported_item=None,
+              export_response=None, run_status="completed"):
         plan = self.plan()
         calls, report = [], {}
         with tempfile.TemporaryDirectory() as root:
@@ -371,8 +373,10 @@ class ServiceTests(unittest.TestCase):
                     self.assertNotIn("--max-samples", args)
                     return {"eval_id": "eval_owned", "run_id": "evalrun_owned"}
                 if label.startswith("wait"):
-                    return {"id": "evalrun_owned", "status": "completed",
-                            "result_counts": {"total": 1, "passed": 1} if counts is None else counts}
+                    result = {"id": "evalrun_owned", "status": run_status}
+                    if counts is not MISSING_COUNTS:
+                        result["result_counts"] = dict(counts) if isinstance(counts, dict) else counts
+                    return result
                 if label.startswith("export"):
                     if export_response is not None:
                         return export_response
@@ -435,14 +439,52 @@ class ServiceTests(unittest.TestCase):
         self.assertNotIn("quality", report)
 
     def test_boolean_or_coerced_quality_counts_never_pass(self):
-        for counts in ({"total": True, "passed": True, "failed": False},
-                       {"total": 1, "passed": 1, "errored": False},
-                       {"total": "1", "passed": 1},
-                       {"total": 1, "passed": service.Decimal("1.0")}):
+        for field, value in PASSING_COUNTS.items():
+            for invalid in (bool(value), str(value), float(value), service.Decimal(value)):
+                with self.subTest(field=field, invalid=invalid):
+                    _, report = self.drive(counts={**PASSING_COUNTS, field: invalid})
+                    self.assertNotIn("quality", report)
+                    self.assertIn("JSON integers", report["failure"]["message"])
+                    self.assertEqual(report["remoteCleanup"]["status"], "PASS")
+
+    def test_missing_null_or_partial_result_counts_never_pass_quality(self):
+        cases = [MISSING_COUNTS, None, {}, [], {"total": 1, "passed": 1}]
+        for field in PASSING_COUNTS:
+            cases.append({key: value for key, value in PASSING_COUNTS.items() if key != field})
+            cases.append({**PASSING_COUNTS, field: None})
+        for counts in cases:
+            for cleanup_fails in (False, True):
+                with self.subTest(counts=counts, cleanup_fails=cleanup_fails):
+                    calls, report = self.drive(counts=counts, cleanup_fails=cleanup_fails)
+                    self.assertNotIn("quality", report)
+                    self.assertIn("must include all five counters as JSON integers", report["failure"]["message"])
+                    self.assertEqual(report["remoteCleanup"]["status"], "FAIL" if cleanup_fails else "PASS")
+                    self.assertEqual(calls[-1][0], "delete only owned evaluation and runs")
+
+    def test_explicit_zero_outcome_counts_are_required_for_one_row_quality_pass(self):
+        _, report = self.drive(counts=dict(PASSING_COUNTS))
+        self.assertEqual(report["quality"], "PASS")
+        self.assertNotIn("failure", report)
+
+    def test_completed_quality_breach_is_distinct_from_incomplete_execution(self):
+        for counts in (
+            {"total": 0, "passed": 0, "failed": 0, "errored": 0, "skipped": 0},
+            {"total": 1, "passed": 0, "failed": 1, "errored": 0, "skipped": 0},
+            {"total": 1, "passed": 0, "failed": 0, "errored": 1, "skipped": 0},
+            {"total": 1, "passed": 0, "failed": 0, "errored": 0, "skipped": 1},
+        ):
             with self.subTest(counts=counts):
                 _, report = self.drive(counts=counts)
                 self.assertNotIn("quality", report)
-                self.assertIn("JSON integers", report["failure"]["message"])
+                self.assertIn("completed run did not pass", report["failure"]["message"])
+                self.assertNotIn("JSON integers", report["failure"]["message"])
+                self.assertEqual(report["remoteCleanup"]["status"], "PASS")
+        for status in ("queued", "in_progress", "failed", "canceled", None):
+            with self.subTest(status=status):
+                calls, report = self.drive(run_status=status, counts=dict(PASSING_COUNTS))
+                self.assertNotIn("quality", report)
+                self.assertIn("not a completed execution", report["failure"]["message"])
+                self.assertNotIn("export owned run", [label for label, _ in calls])
                 self.assertEqual(report["remoteCleanup"]["status"], "PASS")
 
     def test_export_must_bind_the_item_to_the_owned_run_and_approved_row(self):

@@ -22,7 +22,9 @@ class ServiceErrorPrivacyTests(unittest.TestCase):
                              "/sentinel-private-root/secret-input.json"):
                 with self.subTest(boundary=boundary, filename=filename), tempfile.TemporaryDirectory() as root:
                     root = Path(root)
-                    profile = root / "profile"
+                    alias_parent = root / "alias-parent"
+                    alias_parent.mkdir()
+                    profile = alias_parent / ".." / "profile"
                     profile.mkdir()
                     plan, _ = test_service.ServiceTests().installed_fixture(profile)
                     path = root / "plan.json"
@@ -34,15 +36,20 @@ class ServiceErrorPrivacyTests(unittest.TestCase):
                            "AZD_SCENARIO_LIVE_AUTH_CONFIG": str(profile)}
                     failure = PermissionError(13, "synthetic read failure", filename)
                     read_bytes, read_text = Path.read_bytes, Path.read_text
+                    executable_path = Path(plan["azdExecutable"]).resolve()
+                    config_path = (profile / "config.json").resolve()
+                    injected = []
 
                     def read_file_bytes(file):
-                        target = path if boundary == "plan" else Path(plan["azdExecutable"])
+                        target = path if boundary == "plan" else executable_path
                         if boundary in ("plan", "executable") and file == target:
+                            injected.append(boundary)
                             raise failure
                         return read_bytes(file)
 
                     def read_file_text(file, *args, **kwargs):
-                        if boundary == "config" and file == profile / "config.json":
+                        if boundary == "config" and file == config_path:
+                            injected.append(boundary)
                             raise failure
                         return read_text(file, *args, **kwargs)
 
@@ -58,6 +65,7 @@ class ServiceErrorPrivacyTests(unittest.TestCase):
                         run.assert_not_called()
                         if boundary != "runtime":
                             lifecycle.assert_not_called()
+                            self.assertEqual(injected, [boundary], "The intended preflight read must hit the error seam")
                     receipt = json.loads((output / "service-status.json").read_bytes())
                     combined = json.dumps(receipt) + stderr.getvalue()
                     self.assertNotIn("sentinel-private-root", combined)

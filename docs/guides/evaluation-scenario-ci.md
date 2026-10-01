@@ -281,6 +281,13 @@ The existing `static-evaluation` mode retains this sequence:
    `datasource_item` to match the owned run and the approved downloaded row,
    without boolean/numeric coercion, plus a successful one-row result-count
    assertion.
+   All five `result_counts` fields (`total`, `passed`, `failed`, `errored`,
+   `skipped`) must be present as JSON integers. The one-row proof requires
+   `total: 1`, `passed: 1`, and explicit zeroes for the other three; missing,
+   null or coerced values are not evidence of zero. A non-completed run is an
+   execution failure, incomplete counters are insufficient evidence, and valid
+   counts that miss the assertion are a completed quality breach. None records
+   `quality: PASS`, and owned cleanup remains required in every case.
 5. Delete only the returned owned evaluation and its runs. Cleanup uses the
    existing client's exact `DELETE /openai/v1/evals/{id}` contract rather than
    the CLI's ID-to-name fallback. It obtains an AI-scoped token from the already

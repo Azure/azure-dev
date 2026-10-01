@@ -82,7 +82,7 @@ class FakeOwnedDriver:
             self.case.assertIn("--no-wait", args)
             return {"eval_id": self.eval_id, "run_id": self.run_id}
         if label == "wait for owned run":
-            return {"id": self.run_id, "status": "completed", "result_counts": {"total": 1, "passed": 1}}
+            return {"id": self.run_id, "status": "completed", "result_counts": dict(test_service.PASSING_COUNTS)}
         if label == "export owned run":
             return {"run": {"id": self.run_id},
                     "items": [{"run_id": self.run_id, "datasource_item": json.loads(ROW)}]}

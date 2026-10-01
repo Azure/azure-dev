@@ -78,7 +78,7 @@ class FakeCliDriver:
         if label == "start one authorized run":
             return {"eval_id": "eval-owned", "run_id": "run-owned"}
         if label == "wait for owned run":
-            return {"id": "run-owned", "status": "completed", "result_counts": {"total": 1, "passed": 1}}
+            return {"id": "run-owned", "status": "completed", "result_counts": dict(test_service.PASSING_COUNTS)}
         if label == "export owned run":
             return {"run": {"id": "run-owned"},
                     "items": [{"run_id": "run-owned", "datasource_item": json.loads(self.row)}]}

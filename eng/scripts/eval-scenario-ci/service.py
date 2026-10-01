@@ -693,13 +693,14 @@ def lifecycle(plan, driver, workspace, report, name=None, *, target=None, identi
         expect(isinstance(item, dict) and item.get("run_id") == run_id
                and same_json_value(item.get("datasource_item"), document),
                "Exported item does not match the owned run and approved dataset row")
-        counts = final.get("result_counts", {})
+        counts = final.get("result_counts")
         expect(isinstance(counts, dict)
-               and all(type(counts.get(key, 0)) is int for key in ("total", "passed", "failed", "errored", "skipped")),
-               "Service result counts must be JSON integers, not booleans or coerced values")
-        expect(counts.get("total") == 1 and counts.get("passed") == 1
-                and counts.get("failed", 0) == 0 and counts.get("errored", 0) == 0
-                and counts.get("skipped", 0) == 0, "The completed run did not pass the one-row quality assertion")
+               and all(key in counts and type(counts[key]) is int
+                       for key in ("total", "passed", "failed", "errored", "skipped")),
+               "Service result counts must include all five counters as JSON integers, not missing, null or coerced values")
+        expect(counts["total"] == 1 and counts["passed"] == 1
+                and counts["failed"] == 0 and counts["errored"] == 0
+                and counts["skipped"] == 0, "The completed run did not pass the one-row quality assertion")
         report["quality"] = "PASS"
         body_completed = True
     finally:

@@ -108,7 +108,7 @@ were deleted. The run fails instead of selecting local data; retry after the
 registry catches up or declare a known dataset version. Permissions, transient
 failures, and malformed listings also fail the run without a local fallback.
 
-Source-backed runs reject positive configured `max_samples:` and explicitly supplied
+Trace- and response-backed runs reject positive configured `max_samples:` and explicitly supplied
 `--max-samples` flags; use `source.max_traces` for trace limits or select
 `source.response_ids` explicitly. Reruns selected by eval ID also reject an
 explicit `--max-samples`, including zero, because they repeat the previous source.
@@ -134,6 +134,65 @@ Within registered metadata, an explicit `evaluation_level` wins over a recognize
 This recovers older service/portal seed datasets without guessing from unknown tags.
 Echoed generation inputs remain internal to level recovery and are omitted from
 job JSON output, including source prompts and instructions.
+
+### Explicit local files without dataset publication
+
+To deliberately evaluate local bytes, author a separate eval with `source.type: local`.
+This is not a fallback for an absent or unreadable registry name:
+
+```yaml
+evals:
+  - name: quality-local
+    source:
+      type: local
+      file: ./datasets/local-rows.jsonl
+    max_samples: 10
+    evaluation_level: turn
+    evaluators:
+      - evaluator: builtin.relevance
+        initialization_parameters:
+          model: gpt-4.1-nano
+```
+
+Use rows containing the fields the evaluator needs, for example:
+
+```jsonl
+{"query":"What is the return period?","response":"Returns are accepted within 30 days."}
+```
+
+Create the eval explicitly with `azd ai eval create quality-local`, then invoke
+`azd ai eval run start --eval quality-local`. Creation validates local input and
+creates or reuses the eval without registering a dataset. A run sends the selected
+rows as `file_content`; it does not publish a dataset or look up a dataset name.
+**This is not offline evaluation:** an explicitly invoked run uses the normal
+Foundry service and evaluation billing.
+
+`source.file` is a filesystem path, not a URL. It resolves relative to the
+configuration that contains it, including a nested `$ref` declaration. The local
+source is exclusive with `dataset`, `simulation`, trace/response fields, and any
+explicit `--dataset` flag. `init --dataset <file>` still scaffolds a publishable
+catalog entry; it does not opt into local-only behavior. No new init flag is needed:
+edit the configuration to declare the separate local eval.
+
+All rows must be non-empty JSON objects and satisfy the target and evaluator
+mappings, even rows beyond a cap. A failed evaluator-contract lookup stops local
+preflight rather than using an incomplete catalog. Before run submission, the CLI also checks the
+registered eval's stored mappings and `item_schema`; an unreadable definition or
+unsupported external schema reference fails rather than submitting unchecked
+rows. Invalid input causes no run submission or dataset/state mutation.
+On local-source evals, positive `max_samples` limits submitted rows and
+`--max-samples 0` overrides a configured cap. Trace/response caps, registered
+dataset pins and fail-closed empty-list behavior are unchanged.
+
+An opaque source `$ref` may resolve to any source type, so its cap is validated
+after resolution by the CLI; the editor constrains caps when the source type is
+present in the same document.
+
+Local runs carry no registered dataset name/version, fabricated `file_id`, or
+source path in request metadata or the JSON handoff. Only normal run-ID bookkeeping
+is performed after submission; dataset publication versions/fingerprints are not
+changed. A rerun selected by eval ID repeats the stored inline snapshot, not a
+fresh read of the file. Run the declared eval by name to use edited bytes.
 
 ### Simulating multi-turn conversations
 

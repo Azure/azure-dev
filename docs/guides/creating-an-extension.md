@@ -91,6 +91,12 @@ For extensions that are still in development or preview, consider publishing to 
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow pattern-based classification (e.g., `ext.service.<errorCode>`)
 
+Keep local inputs distinct from published resource identity, and validate them
+before reconciliation can mutate remote resources. The evaluations extension's
+[explicit local source](../../cli/azd/extensions/azure.ai.evaluations/README.md#explicit-local-files-without-dataset-publication)
+shows this pattern: local files are checked without dataset publication, while an
+explicit evaluation run still uses the normally billed service.
+
 ## Detailed Reference
 
 For comprehensive extension development documentation, see:

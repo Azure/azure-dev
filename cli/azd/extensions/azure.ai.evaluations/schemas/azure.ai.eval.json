@@ -156,7 +156,7 @@
         "max_samples": {
           "type": "integer",
           "minimum": 0,
-          "description": "Cap on local, unregistered dataset rows. Positive caps are rejected for registered datasets and source-backed runs. Use 0 for no cap. On ordinary dataset evals, --max-samples 0 overrides a configured cap."
+          "description": "Cap on explicit local-source or unregistered dataset rows. Positive caps are rejected for registered datasets and trace/response sources. Use 0 for no cap. On ordinary dataset and local-source evals, --max-samples 0 overrides a configured cap."
         },
         "evaluators": {
           "type": "array",
@@ -181,7 +181,15 @@
           "then": { "properties": { "source": false } }
         },
         {
-          "if": { "required": ["source"] },
+          "if": {
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "required": ["type"],
+                "properties": { "type": { "enum": ["traces", "responses"] } }
+              }
+            }
+          },
           "then": { "properties": { "max_samples": { "const": 0 } } }
         },
         {
@@ -234,8 +242,14 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["traces", "responses"],
-          "description": "traces reads recorded spans from the project's Application Insights; responses reads named response ids."
+          "enum": ["traces", "responses", "local"],
+          "description": "traces reads recorded spans; responses reads named response ids; local reads the explicit file without resolving or publishing a dataset."
+        },
+        "file": {
+          "type": "string",
+          "pattern": "\\S",
+          "not": { "pattern": "://" },
+          "description": "Local JSONL file for type: local, resolved relative to the declaration containing it, including nested $ref files. Never a registry name or URL; never uploaded as a dataset."
         },
         "lookback_hours": {
           "type": "integer",
@@ -274,7 +288,21 @@
           "type": "string",
           "description": "End of the window, RFC 3339."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "local" } } },
+          "then": {
+            "required": ["file"],
+            "properties": {
+              "lookback_hours": false, "max_traces": false, "agent_name": false,
+              "agent_version": false, "response_ids": false, "max_turns": false,
+              "start_time": false, "end_time": false
+            }
+          },
+          "else": { "properties": { "file": false } }
+        }
+      ]
     },
     "EvaluatorRef": {
       "type": "object",

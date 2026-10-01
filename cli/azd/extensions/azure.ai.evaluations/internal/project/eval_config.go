@@ -6,6 +6,7 @@
 package project
 
 import (
+	"slices"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -98,9 +99,30 @@ type Eval struct {
 	Simulation *Simulation `yaml:"simulation,omitempty" json:"simulation,omitempty"`
 }
 
+// UnmarshalYAML preserves the exclusivity of an explicitly local source even for an empty dataset key.
+func (e *Eval) UnmarshalYAML(unmarshal func(any) error) error {
+	type evalYAML Eval
+	var decoded evalYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	if decoded.Source != nil && decoded.Source.Type == SourceTypeLocal {
+		var declared map[string]any
+		if err := unmarshal(&declared); err != nil {
+			return err
+		}
+		if _, present := declared["dataset"]; present {
+			return messages.DatasetAndSourceDeclareTheSameThing()
+		}
+	}
+	*e = Eval(decoded)
+	return nil
+}
+
 // SourceDecl says where an eval's rows come from when they are not a dataset.
 type SourceDecl struct {
 	Type          string   `yaml:"type,omitempty"            json:"type,omitempty"`
+	File          string   `yaml:"file,omitempty"            json:"file,omitempty"`
 	LookbackHours int      `yaml:"lookback_hours,omitempty"  json:"lookback_hours,omitempty"`
 	MaxTraces     int      `yaml:"max_traces,omitempty"      json:"max_traces,omitempty"`
 	AgentName     string   `yaml:"agent_name,omitempty"      json:"agent_name,omitempty"`
@@ -121,7 +143,47 @@ type SourceDecl struct {
 const (
 	SourceTypeTraces    = "traces"
 	SourceTypeResponses = "responses"
+	SourceTypeLocal     = "local"
 )
+
+// IsLocalSource reports an explicit local-byte source, never inferred registry absence.
+func (e *Eval) IsLocalSource() bool {
+	return e != nil && e.Source != nil && e.Source.Type == SourceTypeLocal
+}
+
+// LocalSourcePath resolves an explicit local source against its configuration base.
+func (e *Eval) LocalSourcePath(baseDir string) string {
+	if !e.IsLocalSource() {
+		return ""
+	}
+	return ResolveSource(baseDir, e.Source.File)
+}
+
+// UnmarshalYAML rejects fields that a local source cannot honor, including explicit zero values.
+func (s *SourceDecl) UnmarshalYAML(unmarshal func(any) error) error {
+	type sourceYAML SourceDecl
+	var decoded sourceYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	var declared map[string]any
+	if err := unmarshal(&declared); err != nil {
+		return err
+	}
+	var inert []string
+	for key := range declared {
+		if (decoded.Type == SourceTypeLocal && key != "type" && key != "file") ||
+			(decoded.Type != SourceTypeLocal && key == "file") {
+			inert = append(inert, key)
+		}
+	}
+	if len(inert) > 0 {
+		slices.Sort(inert)
+		return messages.SourceFieldsNotRead(decoded.Type, inert)
+	}
+	*s = SourceDecl(decoded)
+	return nil
+}
 
 // DefaultScaffoldMaxTraces is the cap init writes on a trace-backed eval, so a
 // first run is bounded rather than taking the service's own default of 1000.

@@ -30,6 +30,8 @@ const (
 // Reconciler applies the eval configuration to the service. It is satisfied by
 // the command layer, which owns the data-plane clients.
 type Reconciler interface {
+	// PreflightLocalEval validates explicit local rows and mappings before any publication.
+	PreflightLocalEval(ctx context.Context, group Eval, path string) error
 	// EnsureDataset registers a new dataset version when the local content
 	// changed, returning the resolved version and whether anything was written.
 	EnsureDataset(ctx context.Context, decl DatasetDecl, localPath string) (version string, changed bool, err error)
@@ -38,7 +40,7 @@ type Reconciler interface {
 	EnsureEvaluator(ctx context.Context, decl EvaluatorDecl, localPath string) (version string, changed bool, err error)
 	// EnsureEval creates the group when it is absent or its resolved
 	// evaluators or options changed, returning its id. datasetPath is the local
-	// dataset backing the group, or empty when it is already registered; it lets
+	// dataset or explicit local source backing the group, or empty when registered; it lets
 	// the reconciler bind criteria to the columns that actually exist.
 	EnsureEval(ctx context.Context, group Eval, datasetPath string) (id string, created bool, err error)
 	// ReserveDeclared marks the evals these declarations already resolve to as
@@ -173,6 +175,16 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// dataset read as missing.
 	baseDir := projectRoot
 
+	// Local files are inputs, not catalog assets. Refuse unusable rows before
+	// reconciling even unrelated datasets or evaluators in the same configuration.
+	for _, eval := range cfg.Evals {
+		if eval.IsLocalSource() {
+			if err := reconciler.PreflightLocalEval(ctx, eval, eval.LocalSourcePath(baseDir)); err != nil {
+				return nil, messages.EvalProblem(eval.Name, err)
+			}
+		}
+	}
+
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
 	//
@@ -218,7 +230,11 @@ func (p *EvalServiceTargetProvider) Deploy(
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
 		report(progress, messages.ReconcilingEval(eval.Name))
-		id, created, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset])
+		inputPath := datasetPaths[eval.Dataset]
+		if eval.IsLocalSource() {
+			inputPath = eval.LocalSourcePath(baseDir)
+		}
+		id, created, err := reconciler.EnsureEval(ctx, eval, inputPath)
 		if err != nil {
 			return nil, messages.EvalProblem(eval.Name, err)
 		}

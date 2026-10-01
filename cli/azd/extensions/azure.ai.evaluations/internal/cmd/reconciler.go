@@ -480,10 +480,18 @@ func tagsAlreadyApplied(have, want map[string]string) bool {
 // registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
+	_, err := inspectJSONL(context.Background(), path, nil)
+	return err
+}
+
+// inspectJSONL validates every row and returns the columns every row supplies.
+func inspectJSONL(
+	ctx context.Context, path string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
 	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	defer f.Close()
 
@@ -492,7 +500,11 @@ func validateJSONL(path string) error {
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
 	rows := 0
+	var columns map[string]bool
 	for line := 1; scanner.Scan(); line++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		text := scanner.Text()
 		if line == 1 {
 			// PowerShell's `>` and Set-Content write a byte order mark, so a
@@ -507,21 +519,43 @@ func validateJSONL(path string) error {
 			continue
 		}
 		var row map[string]any
-		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return messages.JSONLRowInvalid(path, line, err)
+		decoder := json.NewDecoder(strings.NewReader(text))
+		decoder.UseNumber()
+		if err := decoder.Decode(&row); err != nil {
+			return nil, messages.JSONLRowInvalid(path, line, err)
+		}
+		if strings.TrimSpace(text[decoder.InputOffset():]) != "" {
+			return nil, messages.JSONLRowInvalid(path, line, errors.New("expected one JSON object per line"))
 		}
 		if len(row) == 0 {
-			return messages.JSONLRowEmpty(path, line)
+			return nil, messages.JSONLRowEmpty(path, line)
+		}
+		if validateRow != nil {
+			if err := validateRow(row, rows); err != nil {
+				return nil, err
+			}
+		}
+		if columns == nil {
+			columns = make(map[string]bool, len(row))
+			for field := range row {
+				columns[field] = true
+			}
+		} else {
+			for field := range columns {
+				if _, ok := row[field]; !ok {
+					delete(columns, field)
+				}
+			}
 		}
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	if rows == 0 {
-		return messages.JSONLNoRows(path)
+		return nil, messages.JSONLNoRows(path)
 	}
-	return nil
+	return columns, ctx.Err()
 }
 
 func (r *evalReconciler) checkDatasetDrift(
@@ -817,6 +851,14 @@ func (r *evalReconciler) EnsureEval(
 	group project.Eval,
 	datasetPath string,
 ) (string, bool, error) {
+	var localRequest *eval_api.CreateOpenAIEvalRequest
+	if group.IsLocalSource() {
+		_, req, err := r.ec.localEvalInput(ctx, &group, datasetPath)
+		if err != nil {
+			return "", false, err
+		}
+		localRequest = req
+	}
 	if group.ID != "" {
 		// An explicit id skips every read below, so nothing here noticed when it
 		// named an eval that had been deleted or was simply mistyped: the deploy
@@ -847,13 +889,16 @@ func (r *evalReconciler) EnsureEval(
 	// dataset's columns, so it happens before the reuse decision: a dataset can
 	// lose a column an evaluator needs without the eval's own declaration
 	// changing, and reusing the eval would let that reach a run unreported.
-	req, err := buildEvalRequest(
-		&group,
-		r.ec.evaluatorSchemas(ctx),
-		datasetColumnsFromPath(datasetPath),
-	)
-	if err != nil {
-		return "", false, err
+	req := localRequest
+	if req == nil {
+		req, err = buildEvalRequest(
+			&group,
+			r.ec.evaluatorSchemas(ctx),
+			datasetColumnsFromPath(datasetPath),
+		)
+		if err != nil {
+			return "", false, err
+		}
 	}
 
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)

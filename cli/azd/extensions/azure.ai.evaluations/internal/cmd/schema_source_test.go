@@ -67,7 +67,13 @@ func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 				runtimeErr := cfg.Validate()
 
 				if tc.cap != nil && *tc.cap != 0 {
-					assert.Error(t, schemaErr)
+					if name == "referenced" && *tc.cap > 0 {
+						// An unresolved source ref may be local; the resolved runtime
+						// declaration remains authoritative for trace/response caps.
+						assert.NoError(t, schemaErr)
+					} else {
+						assert.Error(t, schemaErr)
+					}
 					require.ErrorContains(t, runtimeErr, "max_samples")
 					assert.Contains(t, runtimeErr.Error(), "quality")
 					if *tc.cap > 0 {

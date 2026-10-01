@@ -110,8 +110,14 @@ func (a *evalCreateAction) Run() error {
 	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 		datasetPath = project.ResolveSource(baseDir, decl.File)
 	}
+	if eval.IsLocalSource() {
+		datasetPath = eval.LocalSourcePath(baseDir)
+	}
 
 	reconciler := &evalReconciler{ec: ec}
+	if err := reconciler.PreflightLocalEval(ctx, *eval, datasetPath); err != nil {
+		return err
+	}
 	// Every eval the file declares, not only the one being created: an
 	// eval another declaration already owns must not be adopted here.
 	reconciler.ReserveDeclared(ctx, cfg.Evals)

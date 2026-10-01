@@ -3201,8 +3201,20 @@ func SourceTypeMissing() error {
 }
 
 // SourceTypeNotSupported reports the same, where there is no index to name.
-func SourceTypeNotSupported(got, traces, responses string) error {
-	return fmt.Errorf("source.type %q is not supported; use %q or %q", got, traces, responses)
+func SourceTypeNotSupported(got string, supported ...string) error {
+	return fmt.Errorf("source.type %q is not supported; use %s", got, quoteList(supported))
+}
+
+// LocalSourceNeedsFile reports an explicit local source without a filesystem path.
+func LocalSourceNeedsFile() error {
+	return errors.New("source.file must name a local JSONL file for source.type: local; URLs are not supported")
+}
+
+// LocalSourceDatasetConflict refuses a catalog override of explicitly local bytes.
+func LocalSourceDatasetConflict(name string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--dataset conflicts with source.type: local on eval %q", name),
+		"Omit --dataset to run the declared local file, or select a separate catalog-backed eval.")
 }
 
 // TraceSourceNeedsAnAgent reports it where there is no index.

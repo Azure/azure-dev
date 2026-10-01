@@ -88,6 +88,13 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
 
+The evaluations extension distinguishes explicitly local input from published
+dataset identity. Its `source.type: local` mode validates files before deployment
+mutations and submits inline rows only when a run is explicitly requested; it
+does not infer registry absence or publish datasets. See
+[explicit local evaluation sources](../../cli/azd/extensions/azure.ai.evaluations/README.md#explicit-local-files-without-dataset-publication)
+for the configuration and service-billing boundary.
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

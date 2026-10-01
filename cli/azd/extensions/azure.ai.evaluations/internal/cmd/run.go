@@ -131,11 +131,12 @@ func buildRunCommand(use, short string) *cobra.Command {
 		"Name of the eval to run, or its id. Defaults to the only one declared.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset", "",
 		"Catalog dataset to read instead of the one the eval declares. "+
-			"Must satisfy the eval's column schema.")
+			"Must satisfy the eval's column schema. Not supported with source.type: local.")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
-		"Cap local, unregistered dataset rows. On ordinary dataset evals, 0 disables a configured cap; "+
-			"positive caps are rejected for registered datasets. Any explicit value is rejected for source-backed runs "+
+		"Cap explicit local-source or unregistered dataset rows. On ordinary dataset and local-source evals, "+
+			"0 disables a configured cap; positive caps are rejected for registered datasets. "+
+			"Any explicit value is rejected for trace/response sources "+
 			"and reruns by eval ID.")
 	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
 	addFailOnFlag(cmd, &flags.failOn)
@@ -209,6 +210,9 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	evalID := ref.ID
 	configPath := ref.ConfigPath
 
+	if ref.Eval.IsLocalSource() && a.cmd.Flags().Changed("dataset") {
+		return messages.LocalSourceDatasetConflict(ref.Eval.Name)
+	}
 	group, err := withRunDatasetOverride(ref, a.flags.datasetName)
 	if err != nil {
 		return err
@@ -231,6 +235,16 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	switch {
 	case group == nil:
 		dataSource, metadata, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+	case group.IsLocalSource():
+		// Validate the whole file, including rows beyond the cap, against the
+		// registered eval before selecting the bytes submitted by this invocation.
+		dataSource, _, err = ec.buildRunDataSource(ctx, group, configPath, 0)
+		if err == nil {
+			err = ec.validateLocalRunDefinition(ctx, evalID, group, dataSource.Source.Content)
+		}
+		if err == nil && maxSamples > 0 && len(dataSource.Source.Content) > maxSamples {
+			dataSource.Source.Content = dataSource.Source.Content[:maxSamples]
+		}
 	default:
 		dataSource, datasetVersion, err = ec.buildRunDataSource(ctx, group, configPath, maxSamples)
 	}
@@ -347,6 +361,9 @@ func withRunDatasetOverride(ref evalRef, override string) (*project.Eval, error)
 	if override == "" {
 		return ref.Eval, nil
 	}
+	if ref.Eval.IsLocalSource() {
+		return nil, messages.LocalSourceDatasetConflict(ref.Eval.Name)
+	}
 	if !ref.Declared() {
 		return nil, messages.DatasetOverrideNeedsDeclaredEval()
 	}
@@ -371,6 +388,9 @@ func (ec *evalContext) checkDatasetRegistered(
 	group *project.Eval,
 	configPath string,
 ) error {
+	if group.IsLocalSource() {
+		return nil
+	}
 	if declaredDatasetVersion(configPath, group) != "" {
 		return nil
 	}
@@ -663,6 +683,22 @@ func (ec *evalContext) buildRunDataSource(
 		return ec.simulationDataSource(ctx, group, decl.Version, maxSamples)
 	}
 
+	if group.IsLocalSource() {
+		rows, _, err := ec.localEvalInput(ctx, group, group.LocalSourcePath(filepath.Dir(configPath)))
+		if err != nil {
+			return nil, "", err
+		}
+		ds, err := ec.datasetRunTarget(ctx, group)
+		if err != nil {
+			return nil, "", err
+		}
+		if maxSamples > 0 && len(rows) > maxSamples {
+			rows = rows[:maxSamples]
+		}
+		ds.SetFileContent(rows)
+		return ds, "", nil
+	}
+
 	if group.Source != nil {
 		if maxSamples > 0 {
 			return nil, "", messages.SourceSampleConflict(group.Name)
@@ -678,22 +714,9 @@ func (ec *evalContext) buildRunDataSource(
 		return ds, "", err
 	}
 
-	var ds *eval_api.EvalRunDataSource
-	switch {
-	case group.Target == nil || group.Target.Name == "":
-		// Nothing to invoke: the dataset is scored as it stands.
-		ds = eval_api.NewDatasetOnlyDataSource()
-	case group.Target.Type == project.TargetTypeModel:
-		ds = eval_api.NewModelTargetDataSource(group.Target.Name)
-	default:
-		// `init` writes the azure.yaml service key here, which is a local label.
-		// The agent is published under whatever the service declares, so the key
-		// has to be resolved before it is sent or the run grades another agent.
-		agent, err := ec.remoteAgentName(ctx, group.Target.Name)
-		if err != nil {
-			return nil, "", messages.InEval(group.Name, err)
-		}
-		ds = eval_api.NewAgentTargetDataSource(agent, nil)
+	ds, err := ec.datasetRunTarget(ctx, group)
+	if err != nil {
+		return nil, "", err
 	}
 
 	if group.Dataset == "" {
@@ -746,6 +769,21 @@ func (ec *evalContext) buildRunDataSource(
 	}
 	ds.SetFileContent(items)
 	return ds, "", nil
+}
+
+func (ec *evalContext) datasetRunTarget(ctx context.Context, group *project.Eval) (*eval_api.EvalRunDataSource, error) {
+	switch {
+	case group.Target == nil || group.Target.Name == "":
+		return eval_api.NewDatasetOnlyDataSource(), nil
+	case group.Target.Type == project.TargetTypeModel:
+		return eval_api.NewModelTargetDataSource(group.Target.Name), nil
+	default:
+		agent, err := ec.remoteAgentName(ctx, group.Target.Name)
+		if err != nil {
+			return nil, messages.InEval(group.Name, err)
+		}
+		return eval_api.NewAgentTargetDataSource(agent, nil), nil
+	}
 }
 
 // refuseUnboundTemplate refuses a run whose target invocation reads a column no
@@ -1104,7 +1142,7 @@ func runMaxSamples(cmd *cobra.Command, flag int, group *project.Eval) (int, erro
 				"Run a declared eval by name to select its dataset and cap, "+
 					"or omit --max-samples to repeat the previous source.")
 		}
-		if group.Source != nil {
+		if group.Source != nil && !group.IsLocalSource() {
 			return 0, messages.SourceSampleFlagConflict(group.Name)
 		}
 		return flag, nil

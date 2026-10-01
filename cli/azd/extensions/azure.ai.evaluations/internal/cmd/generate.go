@@ -740,14 +740,9 @@ func editableRubric(definition json.RawMessage) ([]byte, error) {
 		return nil, nil
 	}
 	var rubric struct {
-		Type       string `json:"type"`
-		Dimensions []*struct {
-			ID               *string         `json:"id,omitempty"`
-			Description      *string         `json:"description,omitempty"`
-			Weight           json.RawMessage `json:"weight,omitempty"`
-			AlwaysApplicable *bool           `json:"always_applicable,omitempty"`
-		} `json:"dimensions"`
-		PassThreshold json.RawMessage `json:"pass_threshold,omitempty"`
+		Type          string             `json:"type"`
+		Dimensions    []*rubricDimension `json:"dimensions"`
+		PassThreshold json.RawMessage    `json:"pass_threshold,omitempty"`
 	}
 	if err := json.Unmarshal(definition, &rubric); err != nil {
 		return nil, fmt.Errorf("invalid rubric definition: %w", err)

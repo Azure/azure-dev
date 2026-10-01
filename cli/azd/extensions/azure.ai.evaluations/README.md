@@ -428,6 +428,10 @@ use `azd ai eval evaluator show support-quality --version 3 -o json`.
 Malformed recognized rubrics fail download and collection before replacing an
 artifact or updating its catalog entry, rather than falling back to a full
 service-envelope export.
+`create` and `azd up` also reject null or non-array `dimensions`, non-object
+dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
+values during preflight, before uploading or tagging datasets or publishing
+evaluators. Validation preserves authored bytes for digest and drift decisions.
 
 Standalone `evaluator update` preserves the existing display name, description,
 categories, and supported evaluation levels. A full input document can explicitly

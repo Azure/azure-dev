@@ -13,11 +13,17 @@ import (
 
 func TestRubricValidationPreservesValidAuthoredBytes(t *testing.T) {
 	for _, body := range []string{
+		`{"type":"rubric"}`,
+		`{"type":"rubric","dimensions":[]}`,
+		`{"type":"rubric","dimensions":[{}]}`,
+		`{"type":"rubric","dimensions":[{"id":null,"description":null,"always_applicable":null}]}`,
+		`{ "type": "rubric", "dimensions": [{ "id": "clarity", "always_applicable": false, "custom": 42 }] }`,
 		`{"type":"rubric","dimensions":[{"id":"clarity","description":"Clear answer"}]}`,
 		`{"type":"rubric","dimensions":[{"id":"clarity","weight":1}],"pass_threshold":0}`,
 		`{"type":"rubric","dimensions":[{"id":"clarity","weight":10}],"pass_threshold":1}`,
 		`{"type":"rubric","dimensions":[{"id":"clarity","weight":5}],"pass_threshold":0.5}`,
 		`{"type":"custom_kind","dimensions":[{"weight":0}]}`,
+		`{"type":"custom_kind","dimensions":null}`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			got, err := validateRubricDefinition(json.RawMessage(body))

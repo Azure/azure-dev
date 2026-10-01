@@ -58,6 +58,7 @@ type identityService struct {
 	rows        string
 	blobStatus  int
 	previous    []*eval_api.OpenAIEvalRun
+	runMetadata json.RawMessage
 }
 
 func identityRunContext(t *testing.T, service identityService) (*evalContext, <-chan identityRequest) {
@@ -75,7 +76,11 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": service.previous}))
 			} else {
 				assert.Equal(t, http.MethodPost, r.Method)
-				_, _ = io.WriteString(w, `{"id":"evalrun_new","status":"queued"}`)
+				result := map[string]any{"id": "evalrun_new", "status": "queued"}
+				if service.runMetadata != nil {
+					result["metadata"] = service.runMetadata
+				}
+				assert.NoError(t, json.NewEncoder(w).Encode(result))
 			}
 		case strings.HasSuffix(r.URL.Path, "/versions"):
 			if service.listStatus != 0 {
@@ -616,12 +621,148 @@ func TestRunStartHandoffKeepsSubmittedDatasetAttribution(t *testing.T) {
 	}
 }
 
+func TestRunStartHandoffDatasetPairProvenance(t *testing.T) {
+	for _, mode := range []string{"declared registered", "registered rerun", "anonymous rerun", "orphan rerun"} {
+		for _, tc := range []struct {
+			name             string
+			echo             string
+			pairedDataset    string
+			pairedVersion    string
+			anonymousDataset string
+			anonymousVersion string
+			malformed        bool
+		}{
+			{name: "orphan version", echo: `{"azd_dataset_version":"3"}`, pairedDataset: "golden", pairedVersion: "2"},
+			{name: "complete pair", echo: `{"azd_dataset":"other","azd_dataset_version":"3"}`,
+				pairedDataset: "other", pairedVersion: "3", anonymousDataset: "other", anonymousVersion: "3"},
+			{name: "same name only", echo: `{"azd_dataset":"golden"}`,
+				pairedDataset: "golden", pairedVersion: "2", anonymousDataset: "golden"},
+			{name: "other name only", echo: `{"azd_dataset":"other"}`,
+				pairedDataset: "other", anonymousDataset: "other"},
+			{name: "empty metadata", echo: `{}`, pairedDataset: "golden", pairedVersion: "2"},
+			{name: "null metadata", echo: `null`, pairedDataset: "golden", pairedVersion: "2"},
+			{name: "empty name", echo: `{"azd_dataset":"","azd_dataset_version":"3"}`,
+				pairedDataset: "golden", pairedVersion: "2"},
+			{name: "null name", echo: `{"azd_dataset":null,"azd_dataset_version":"3"}`,
+				pairedDataset: "golden", pairedVersion: "2"},
+			{name: "null version", echo: `{"azd_dataset":"golden","azd_dataset_version":null}`,
+				pairedDataset: "golden", pairedVersion: "2", anonymousDataset: "golden"},
+			{name: "malformed version", echo: `{"azd_dataset_version":3}`, malformed: true},
+			{name: "malformed name", echo: `{"azd_dataset":{},"azd_dataset_version":"3"}`, malformed: true},
+			{name: "malformed metadata", echo: `[]`, malformed: true},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				registered := strings.Contains(mode, "registered")
+				declared := mode == "declared registered"
+				submitted := map[string]string{}
+				if registered {
+					submitted[metaDataset], submitted[metaDatasetVersion] = "golden", "2"
+				} else if mode == "orphan rerun" {
+					submitted[metaDatasetVersion] = "4"
+				}
+				service := identityService{runMetadata: json.RawMessage(tc.echo)}
+				chosen := "eval_1"
+				if declared {
+					chosen = "quality"
+					submitted[metaEvalName] = chosen
+					cfg := &project.EvalConfig{
+						Datasets: []project.DatasetDecl{{Name: "golden", Version: "2"}},
+						Evals:    []project.Eval{{Name: chosen, Dataset: "golden"}},
+					}
+					writeLocalContractConfig(t, dir, cfg)
+					service.id, service.wantVersion, service.rows = "issued", "2", oneRow
+				} else {
+					source := eval_api.NewDatasetOnlyDataSource()
+					if registered {
+						source.SetFileID("issued")
+					} else {
+						source.SetFileContent([]map[string]any{{"query": "inline snapshot"}})
+					}
+					service.previous = []*eval_api.OpenAIEvalRun{{
+						ID: "previous", DataSource: source, Metadata: submitted,
+					}}
+				}
+				ec, requests := identityRunContext(t, service)
+				ec.state = map[string]string{idKey("eval", "quality"): "eval_1"}
+				env := &testEnvServer{state: ec.state}
+				ec.azdClient = newTestAzdClient(t, env)
+				ec.envName, ec.rootKnown = "test", true
+				cmd := buildRunCommand("start", "")
+				cmd.Flags().String("output", "json", "")
+				var out bytes.Buffer
+				cmd.SetOut(&out)
+				cmd.SetErr(io.Discard)
+				action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+					groupName: chosen, evalPath: dir, wait: false,
+				}}
+				err := action.start(t.Context(), ec, gate{})
+				if tc.malformed {
+					require.Error(t, err)
+					assert.Empty(t, out.String(), "invalid service metadata must not produce a successful handoff")
+					assert.Empty(t, env.stored(t, idKey("evalrun", "eval_1")))
+				} else {
+					require.NoError(t, err)
+					dataset, version := tc.anonymousDataset, tc.anonymousVersion
+					if registered {
+						dataset, version = tc.pairedDataset, tc.pairedVersion
+					}
+					want := map[string]any{"run_id": "evalrun_new", "eval_id": "eval_1", "status": "queued"}
+					if declared {
+						want["eval_name"] = chosen
+					}
+					if dataset != "" {
+						want["dataset"] = dataset
+					}
+					if version != "" {
+						want["dataset_version"] = version
+					}
+					var handoff map[string]any
+					require.NoError(t, json.Unmarshal(out.Bytes(), &handoff))
+					assert.Equal(t, want, handoff)
+					assert.Equal(t, "evalrun_new", env.stored(t, idKey("evalrun", "eval_1")))
+				}
+				posts := 0
+				for _, request := range recordedIdentityRequests(requests) {
+					if !declared {
+						assert.NotContains(t, request.path, "/datasets/", "rerun attribution is not a registry lookup")
+					}
+					if request.method != http.MethodPost {
+						continue
+					}
+					if declared && request.path == "/datasets/golden/versions/2/credentials" {
+						continue
+					}
+					posts++
+					assert.Equal(t, "/openai/v1/evals/eval_1/runs", request.path)
+					var body eval_api.CreateOpenAIEvalRunRequest
+					require.NoError(t, json.Unmarshal(request.body, &body))
+					if len(submitted) == 0 {
+						assert.Empty(t, body.Metadata)
+					} else {
+						assert.Equal(t, submitted, body.Metadata, "rendered fallback must not change the submitted metadata")
+					}
+					require.NotNil(t, body.DataSource.Source)
+					if registered {
+						assert.Equal(t, "issued", body.DataSource.Source.ID)
+						assert.Empty(t, body.DataSource.Source.Content)
+					} else {
+						assert.Empty(t, body.DataSource.Source.ID)
+						assert.Equal(t, []map[string]any{{"query": "inline snapshot"}}, body.DataSource.Source.Content)
+					}
+				}
+				assert.Equal(t, 1, posts, "only the requested run is submitted")
+			})
+		}
+	}
+}
+
 type runHandoffTransport func(*http.Request) (*http.Response, error)
 
 func (f runHandoffTransport) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T) {
-	for _, mode := range []string{"registered", "local"} {
+	for _, mode := range []string{"registered", "local", "registered orphan echo", "anonymous orphan echo"} {
 		t.Run(mode, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				const endpoint = "https://example.test"
@@ -632,10 +773,13 @@ func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T)
 				want := map[string]any{
 					"run_id": "evalrun_new", "eval_id": "eval_1", "status": "queued", "dataset": "golden",
 				}
-				if mode == "registered" {
+				if strings.HasPrefix(mode, "registered") {
 					source.SetFileID("previous-service-issued-id")
 					metadata[metaDatasetVersion] = "2"
 					want["dataset_version"] = "2"
+				} else if mode == "anonymous orphan echo" {
+					metadata = nil
+					delete(want, "dataset")
 				}
 				var recorded []identityRequest
 				polls := 0
@@ -655,7 +799,11 @@ func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T)
 							"data": []eval_api.OpenAIEvalRun{{ID: "previous", DataSource: source, Metadata: metadata}},
 						}))
 					case req.Method == http.MethodPost && req.URL.Path == runsPath:
-						_, err := io.WriteString(response, `{"id":"evalrun_new","status":"queued"}`)
+						body := `{"id":"evalrun_new","status":"queued"}`
+						if strings.HasSuffix(mode, "orphan echo") {
+							body = `{"id":"evalrun_new","status":"queued","metadata":{"azd_dataset_version":"3"}}`
+						}
+						_, err := io.WriteString(response, body)
 						require.NoError(t, err)
 					case req.Method == http.MethodGet && req.URL.Path == runsPath+"/evalrun_new":
 						polls++
@@ -700,7 +848,7 @@ func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T)
 				assert.Equal(t, want, handoff)
 				submissions := 0
 				for _, request := range recorded {
-					if mode == "registered" {
+					if strings.HasPrefix(mode, "registered") || mode == "anonymous orphan echo" {
 						assert.NotContains(t, request.path, "/datasets/")
 					}
 					if request.method != http.MethodPost {

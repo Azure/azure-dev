@@ -1287,8 +1287,13 @@ func startedRun(
 	handoff.DatasetVersion = run.Metadata[metaDatasetVersion]
 	if handoff.Dataset == "" {
 		handoff.Dataset = submitted[metaDataset]
+		handoff.DatasetVersion = submitted[metaDatasetVersion]
 	}
-	if handoff.DatasetVersion == "" && handoff.Dataset == submitted[metaDataset] {
+	if handoff.Dataset == "" {
+		// A version without its dataset cannot identify the rows from either source.
+		handoff.DatasetVersion = ""
+	}
+	if handoff.Dataset != "" && handoff.DatasetVersion == "" && handoff.Dataset == submitted[metaDataset] {
 		handoff.DatasetVersion = submitted[metaDatasetVersion]
 	}
 	return handoff

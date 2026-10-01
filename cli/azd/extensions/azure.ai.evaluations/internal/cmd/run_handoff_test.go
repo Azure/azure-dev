@@ -86,29 +86,60 @@ func TestStartedRunOmitsTheNameItDoesNotHave(t *testing.T) {
 }
 
 func TestStartedRunDatasetAttributionPrecedence(t *testing.T) {
+	submitted := map[string]string{metaDataset: "golden", metaDatasetVersion: "2"}
 	for _, tc := range []struct {
-		name    string
-		echoed  map[string]string
-		dataset string
-		version string
+		name      string
+		echoed    map[string]string
+		submitted map[string]string
+		dataset   string
+		version   string
 	}{
-		{name: "no echo", dataset: "golden", version: "2"},
-		{name: "partial echo", echoed: map[string]string{metaDataset: "golden"}, dataset: "golden", version: "2"},
+		{name: "no echo", submitted: submitted, dataset: "golden", version: "2"},
+		{name: "partial echo", submitted: submitted,
+			echoed: map[string]string{metaDataset: "golden"}, dataset: "golden", version: "2"},
+		{name: "orphan echoed version", submitted: submitted,
+			echoed: map[string]string{metaDatasetVersion: "3"}, dataset: "golden", version: "2"},
+		{name: "orphan echoed version with no submission", echoed: map[string]string{metaDatasetVersion: "3"}},
+		{name: "orphan submitted version", submitted: map[string]string{metaDatasetVersion: "2"}},
+		{name: "orphan versions from both", submitted: map[string]string{metaDatasetVersion: "2"},
+			echoed: map[string]string{metaDatasetVersion: "3"}},
+		{name: "named unversioned submission", submitted: map[string]string{metaDataset: "golden"},
+			echoed: map[string]string{metaDatasetVersion: "3"}, dataset: "golden"},
 		{
-			name: "service version", dataset: "golden", version: "3",
+			name: "service version", submitted: submitted, dataset: "golden", version: "3",
 			echoed: map[string]string{metaDataset: "golden", metaDatasetVersion: "3"},
 		},
 		{
-			name: "different dataset has no inferred version", dataset: "other",
+			name: "different complete service pair", submitted: submitted, dataset: "other", version: "3",
+			echoed: map[string]string{metaDataset: "other", metaDatasetVersion: "3"},
+		},
+		{
+			name: "complete service pair without submission", dataset: "other", version: "3",
+			echoed: map[string]string{metaDataset: "other", metaDatasetVersion: "3"},
+		},
+		{
+			name: "different dataset has no inferred version", submitted: submitted, dataset: "other",
 			echoed: map[string]string{metaDataset: "other"},
 		},
+		{name: "name-only echo without submission", echoed: map[string]string{metaDataset: "other"}, dataset: "other"},
+		{name: "empty echo", submitted: submitted,
+			echoed: map[string]string{metaDataset: "", metaDatasetVersion: ""}, dataset: "golden", version: "2"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			handoff := startedRun(
-				&eval_api.OpenAIEvalRun{ID: "evalrun_1", Metadata: tc.echoed}, "eval_1",
-				map[string]string{metaDataset: "golden", metaDatasetVersion: "2"})
+			run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Metadata: tc.echoed}
+			before, err := json.Marshal(run)
+			require.NoError(t, err)
+			submittedBefore, err := json.Marshal(tc.submitted)
+			require.NoError(t, err)
+			handoff := startedRun(run, "eval_1", tc.submitted)
 			assert.Equal(t, tc.dataset, handoff.Dataset)
 			assert.Equal(t, tc.version, handoff.DatasetVersion)
+			after, err := json.Marshal(run)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(before), string(after), "rendering must not alter the raw service response")
+			submittedAfter, err := json.Marshal(tc.submitted)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(submittedBefore), string(submittedAfter))
 		})
 	}
 }

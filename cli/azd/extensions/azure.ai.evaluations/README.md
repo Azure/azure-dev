@@ -234,6 +234,12 @@ is performed after submission; dataset publication versions/fingerprints are not
 changed. A rerun selected by eval ID repeats the stored inline snapshot, not a
 fresh read of the file. Run the declared eval by name to use edited bytes.
 
+The JSON start handoff treats dataset attribution as a name/version pair. A
+service version without a dataset name cannot replace the submitted pair. A
+complete returned pair takes precedence; a returned name alone inherits the
+submitted version only when the names match. Without a dataset name from either
+source, the handoff omits the version. Raw service metadata is not rewritten.
+
 An explicitly empty `--dataset` value is rejected for every run source and ID
 rerun. A configuration cannot declare both `dataset` and `source`, even when
 the dataset value is empty.

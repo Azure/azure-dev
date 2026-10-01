@@ -251,7 +251,8 @@ fails, successfully published shared versions are retained, not deleted. Fix the
 reported error and repeat the same command to reuse unchanged artifacts.
 For a partial `create -o json` failure, the single output document includes
 `status: "failed"`, the resolved `artifacts` with their versions and `published`
-flags, the error, and a `recovery_command`. The command still exits nonzero.
+flags, the error, and a `recovery_command`. When the error supplies remediation,
+`error.suggestion` preserves it alongside `error.message`. The command still exits nonzero.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -374,7 +375,8 @@ artifact's original input flags. Do not regenerate the successful artifact.
 
 With `-o json`, generation emits one document keyed by `dataset` and `evaluator`,
 including each outcome's `status`, `job_id`, and, on failure, `error`,
-`recovery_command`, and `retry_guidance`. Status is `submitted`, `succeeded`,
+`recovery_command`, and `retry_guidance`. An optional `suggestion` preserves
+structured remediation without changing the existing `error` string. Status is `submitted`, `succeeded`,
 `failed`, or `catalog_failed`. Any failed outcome makes the command exit nonzero.
 
 Generation changes catalog declarations, not an existing eval's references.

@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,20 +26,22 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type validationService struct {
-	mu          sync.Mutex
-	requests    []string
-	status      int
-	dataset     bool
-	eval        bool
-	failCreate  bool
-	definition  string
-	createCount int
+	mu           sync.Mutex
+	requests     []string
+	status       int
+	dataset      bool
+	eval         bool
+	failCreate   bool
+	createStatus int
+	definition   string
+	createCount  int
 }
 
 func (s *validationService) serve(t *testing.T, base func() string) http.HandlerFunc {
@@ -84,6 +89,11 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/evals"):
 			s.createCount++
+			if s.createStatus != 0 {
+				w.WriteHeader(s.createStatus)
+				_, _ = w.Write([]byte(`{"error":{"code":"CreateRefused"}}`))
+				return
+			}
 			if s.failCreate {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
@@ -350,6 +360,115 @@ func TestCreateReportsRetainedDependenciesOnServiceFailure(t *testing.T) {
 	assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
 	assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
 	assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
+}
+
+func TestCreatePartialJSONPreservesRemediation(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			service.createStatus = status
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return (&evalCreateAction{cmd: cmd}).create(ec, cfg, &cfg.Evals[0], filepath.Join(dir, "azure.yaml"))
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+
+			err := cmd.RunE(cmd, nil)
+			require.Error(t, err)
+			require.Equal(t, 1, exitCode)
+			wantSuggestion := azdext.ErrorSuggestion(err)
+			if status == http.StatusForbidden {
+				require.NotEmpty(t, wantSuggestion)
+			} else {
+				require.Empty(t, wantSuggestion)
+			}
+			var result struct {
+				Status    string               `json:"status"`
+				Name      string               `json:"name"`
+				Artifacts []reconciledArtifact `json:"artifacts"`
+				Error     jsonErrorBody        `json:"error"`
+				Recovery  string               `json:"recovery_command"`
+			}
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			require.NoError(t, decoder.Decode(&result))
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "the partial result must remain the only JSON document")
+			assert.Equal(t, "failed", result.Status)
+			assert.Equal(t, cfg.Evals[0].Name, result.Name)
+			assert.Equal(t, []reconciledArtifact{{"dataset", "turn-tests", "1.0", true}}, result.Artifacts)
+			assert.Equal(t, err.Error(), result.Error.Message)
+			assert.Equal(t, wantSuggestion, result.Error.Suggestion)
+			assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
+			assert.Contains(t, stderr.String(), err.Error())
+			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
+			assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(out.Bytes(), &fields))
+			var errorFields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(fields["error"], &errorFields))
+			if wantSuggestion == "" {
+				assert.NotContains(t, errorFields, "suggestion")
+			}
+
+			service.createStatus = 0
+			require.NoError(t, cmd.RunE(cmd, nil))
+			require.NoError(t, cmd.RunE(cmd, nil))
+			uploads := 0
+			for _, request := range service.requests {
+				if strings.Contains(request, "startPendingUpload") {
+					uploads++
+				}
+				assert.NotContains(t, request, "DELETE ")
+			}
+			assert.Equal(t, 1, uploads, "a retained dependency must not be republished")
+			assert.Equal(t, 2, service.createCount, "one failed create and one successful create")
+		})
+	}
+}
+
+func TestPartialJSONMatchesOrdinaryRemediation(t *testing.T) {
+	for _, cause := range []error{
+		errors.New("plain failure"),
+		&azdext.LocalError{Message: "invalid input", Suggestion: "Correct the named input."},
+		fmt.Errorf("wrapped: %w", &azdext.LocalError{Message: "invalid input", Suggestion: "Correct the named input."}),
+		errors.Join(errors.New("other failure"),
+			&azdext.ServiceError{Message: "service refused", Suggestion: "Check project permissions."}),
+	} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			cmd := jsonCmd(t, "json")
+			var ordinary, partial bytes.Buffer
+			cmd.SetOut(&ordinary)
+			require.ErrorIs(t, failAs(cmd, cause), cause)
+			cmd.SetOut(&partial)
+			require.NoError(t, reportCreatePartial(cmd, &evalContext{}, "quality", "azure.eval.yaml",
+				[]reconciledArtifact{{"evaluator", "judge", "2", false}}, cause))
+			var ordinaryDoc, partialDoc jsonError
+			require.NoError(t, json.Unmarshal(ordinary.Bytes(), &ordinaryDoc))
+			require.NoError(t, json.Unmarshal(partial.Bytes(), &partialDoc))
+			assert.Equal(t, ordinaryDoc.Error, partialDoc.Error)
+
+			raw, err := json.Marshal(generationDocument([]generationOutcome{{
+				plan: generationPlan{Kind: generateKindEvaluator}, err: cause,
+				ref: &project.ArtifactRef{Name: "judge", Source: "judge.json", Version: "2"},
+			}}))
+			require.NoError(t, err)
+			var generated map[string]generationResult
+			require.NoError(t, json.Unmarshal(raw, &generated))
+			require.Contains(t, generated, "evaluator")
+			assert.Equal(t, "catalog_failed", generated["evaluator"].Status)
+			assert.Equal(t, ordinaryDoc.Error.Message, generated["evaluator"].Error)
+			assert.Equal(t, ordinaryDoc.Error.Suggestion, generated["evaluator"].Suggestion)
+			require.NotNil(t, generated["evaluator"].ArtifactRef)
+			assert.Equal(t, "2", generated["evaluator"].Version)
+		})
+	}
 }
 
 func TestReconciliationValidationHonorsCancellation(t *testing.T) {

@@ -30,6 +30,9 @@ import (
 type evalReconciler struct {
 	ec *evalContext
 
+	preparedLocal     map[string]preparedLocalEval
+	evaluatorVersions map[string]string
+
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
 	// Substance keys are never removed from the environment, so one left behind
@@ -106,7 +109,11 @@ func (r *evalReconciler) ownedByAnother(id, name string) bool {
 func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
 	r.reserveExplicitIDs(groups)
 	for i := range groups {
-		decision, err := r.decide(ctx, groups[i])
+		group := groups[i]
+		if prepared, ok := r.preparedLocal[group.Name]; ok {
+			group = prepared.group
+		}
+		decision, err := r.decide(ctx, group)
 		if err != nil {
 			// Nothing decided, so nothing skipped. The error surfaces from
 			// EnsureEval, where it can fail the deploy.
@@ -621,49 +628,21 @@ func (r *evalReconciler) EnsureEvaluator(
 ) (string, bool, error) {
 	var body json.RawMessage
 	var digest string
-
-	switch {
-	case decl.Definition != nil:
-		// Also how a `$ref` to a rubric file arrives: resolution has already
-		// spliced the file's keys in, so there is nothing left to read.
-		raw, err := json.Marshal(decl.Definition)
-		if err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		digest = project.FingerprintBytes(body)
-
-	case localPath == "":
+	if decl.Definition == nil && localPath == "" {
 		raw, err := r.ec.evalClient.GetEvaluatorRaw(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
 		)
 		if err != nil {
 			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
-		return versionFromRaw(raw, decl.Version), false, nil
-
-	default:
-		if _, err := os.Stat(localPath); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
-			}
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		raw, err := project.ReadFileNoBOM(localPath)
-		if err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-
-		if digest, err = project.Fingerprint(localPath); err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
+		version := versionFromRaw(raw, decl.Version)
+		r.recordEvaluatorVersion(decl.Name, version)
+		return version, false, nil
+	}
+	var err error
+	body, digest, err = localEvaluator(decl, localPath)
+	if err != nil {
+		return "", false, messages.EvaluatorProblem(decl.Name, err)
 	}
 
 	// The author's own definition decides whether there is anything to publish.
@@ -696,6 +675,7 @@ func (r *evalReconciler) EnsureEvaluator(
 				r.ec.remember(ctx, versionKey("evaluator", decl.Name), remote)
 			}
 			r.ec.remember(ctx, digestKey, digest)
+			r.recordEvaluatorVersion(decl.Name, versionFromRaw(existing, decl.Version))
 			return versionFromRaw(existing, decl.Version), false, nil
 		}
 
@@ -735,7 +715,15 @@ func (r *evalReconciler) EnsureEvaluator(
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
 	r.ec.remember(ctx, digestKey, digest)
+	r.recordEvaluatorVersion(decl.Name, created.Version)
 	return created.Version, true, nil
+}
+
+func (r *evalReconciler) recordEvaluatorVersion(name, version string) {
+	if r.evaluatorVersions == nil {
+		r.evaluatorVersions = map[string]string{}
+	}
+	r.evaluatorVersions[name] = version
 }
 
 // checkEvaluatorDrift fails when the service holds a newer version than the
@@ -855,7 +843,14 @@ func (r *evalReconciler) EnsureEval(
 ) (string, bool, error) {
 	var localRequest *eval_api.CreateOpenAIEvalRequest
 	if group.IsLocalSource() {
-		_, req, err := r.ec.localEvalInput(ctx, &group, datasetPath)
+		var req *eval_api.CreateOpenAIEvalRequest
+		var err error
+		if prepared, ok := r.preparedLocal[group.Name]; ok {
+			group = prepared.group
+			req, err = r.preparedLocalRequest(ctx, &group, datasetPath, prepared)
+		} else {
+			_, req, err = r.ec.localEvalInput(ctx, &group, datasetPath)
+		}
 		if err != nil {
 			return "", false, err
 		}

@@ -27,6 +27,21 @@ type EvalConfig struct {
 	Evals      []Eval          `yaml:"evals,omitempty"      json:"evals,omitempty"`
 }
 
+// WithCatalogEvaluatorPins copies an eval and resolves only authored catalog pins.
+// Explicit reference pins win; service-resolved latest versions are not edits.
+func (c *EvalConfig) WithCatalogEvaluatorPins(group Eval) Eval {
+	group.Evaluators = slices.Clone(group.Evaluators)
+	for i := range group.Evaluators {
+		ref := &group.Evaluators[i]
+		if ref.Version == "" {
+			if decl, ok := c.EvaluatorDeclaration(ref.Evaluator); ok {
+				ref.Version = decl.Version
+			}
+		}
+	}
+	return group
+}
+
 // DatasetDecl is a catalog entry. A local File is uploaded on deploy; without
 // one the name must already resolve to a registered dataset.
 //

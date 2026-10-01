@@ -414,6 +414,9 @@ func buildEvalRequest(
 
 	for _, ref := range group.Evaluators {
 		schema := schemas[ref.Evaluator]
+		if group.IsLocalSource() && ref.Version != "" {
+			schema = schemas[evaluatorSchemaKey(ref.Evaluator, ref.Version)]
+		}
 		if schema == nil {
 			schema = &eval_api.EvaluatorSummary{Name: ref.Evaluator}
 		}

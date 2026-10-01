@@ -684,6 +684,12 @@ func (ec *evalContext) buildRunDataSource(
 	}
 
 	if group.IsLocalSource() {
+		cfg, err := project.LoadEvalConfig(configPath)
+		if err != nil {
+			return nil, "", err
+		}
+		selected := cfg.WithCatalogEvaluatorPins(*group)
+		group = &selected
 		rows, _, err := ec.localEvalInput(ctx, group, group.LocalSourcePath(filepath.Dir(configPath)))
 		if err != nil {
 			return nil, "", err

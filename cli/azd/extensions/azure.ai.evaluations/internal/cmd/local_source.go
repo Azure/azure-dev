@@ -33,6 +33,21 @@ func (r *evalReconciler) PreflightLocalEval(ctx context.Context, group project.E
 func (ec *evalContext) localEvalInput(
 	ctx context.Context, group *project.Eval, path string,
 ) ([]map[string]any, *eval_api.CreateOpenAIEvalRequest, error) {
+	rows, columns, err := readLocalRows(ctx, group, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	schemas, err := ec.localEvaluatorSchemas(ctx, group)
+	if err != nil {
+		return nil, nil, err
+	}
+	req, err := buildLocalEvalRequest(group, rows, columns, schemas)
+	return rows, req, err
+}
+
+func readLocalRows(
+	ctx context.Context, group *project.Eval, path string,
+) ([]map[string]any, map[string]bool, error) {
 	if err := runnableEval(group); err != nil {
 		return nil, nil, err
 	}
@@ -54,19 +69,22 @@ func (ec *evalContext) localEvalInput(
 	if group.Target != nil && !columns["query"] {
 		return nil, nil, fmt.Errorf("eval %q: every local row must provide query for the target", group.Name)
 	}
-	schemas, err := ec.readEvaluatorSchemas(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading evaluator contracts for local eval %q: %w", group.Name, err)
-	}
+	return rows, columns, nil
+}
+
+func buildLocalEvalRequest(
+	group *project.Eval, rows []map[string]any, columns map[string]bool,
+	schemas map[string]*eval_api.EvaluatorSummary,
+) (*eval_api.CreateOpenAIEvalRequest, error) {
 	req, err := buildEvalRequest(group, schemas, columns)
 	if err != nil {
-		return nil, nil, messages.InEval(group.Name, err)
+		return nil, messages.InEval(group.Name, err)
 	}
 	req.DataSourceConfig.ItemSchema = localItemSchema(group, req.TestingCriteria, schemas)
 	if err := validateLocalRows(group, rows, req.TestingCriteria, req.DataSourceConfig.ItemSchema); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return rows, req, nil
+	return req, nil
 }
 
 func localItemSchema(
@@ -82,8 +100,9 @@ func localItemSchema(
 		}
 	}
 	for _, criterion := range criteria {
-		published := schemas[criterion.EvaluatorName].DataSchema()
-		for field, binding := range criterion.DataMapping {
+		published := schemas[evaluatorSchemaKey(criterion.EvaluatorName, criterion.EvaluatorVersion)].DataSchema()
+		for _, field := range slices.Sorted(maps.Keys(criterion.DataMapping)) {
+			binding := criterion.DataMapping[field]
 			column, mapped := itemColumn(binding)
 			if !mapped {
 				continue

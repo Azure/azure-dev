@@ -122,8 +122,14 @@ func (a *evalCreateAction) Run() error {
 	}
 
 	reconciler := &evalReconciler{ec: ec}
-	if err := reconciler.PreflightLocalEval(ctx, *eval, datasetPath); err != nil {
+	selected := *cfg
+	selected.Evals = []project.Eval{*eval}
+	if err := reconciler.ValidateLocalSources(ctx, &selected, baseDir); err != nil {
 		return err
+	}
+	if eval.IsLocalSource() {
+		pinned := cfg.WithCatalogEvaluatorPins(*eval)
+		eval = &pinned
 	}
 	// Every eval the file declares, not only the one being created: an
 	// eval another declaration already owns must not be adopted here.
@@ -133,8 +139,10 @@ func (a *evalCreateAction) Run() error {
 	// Before anything is pushed. Publishing is not free -- a dataset
 	// version is immutable and the number climbs on every attempt -- so
 	// a declaration the evaluators cannot satisfy is refused first.
-	if err := checkEvaluatorRequirements(eval, ec.evaluatorSchemas(ctx)); err != nil {
-		return err
+	if !eval.IsLocalSource() {
+		if err := checkEvaluatorRequirements(eval, ec.evaluatorSchemas(ctx)); err != nil {
+			return err
+		}
 	}
 	// Reported per artifact, because "publishes nothing when nothing
 	// changed" is the contract a reader is checking here and a single

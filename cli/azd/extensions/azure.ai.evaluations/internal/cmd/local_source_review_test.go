@@ -173,7 +173,7 @@ func localPublicationConfig(t *testing.T, badTail, mixed bool) (string, map[stri
 }
 
 func localPublicationContext(
-	t *testing.T, existing bool,
+	t *testing.T, existing bool, publishedSchemas ...*eval_api.JSONSchema,
 ) (*evalContext, <-chan identityRequest, *localSourceEnv) {
 	t.Helper()
 	requests := make(chan identityRequest, 40)
@@ -184,6 +184,11 @@ func localPublicationContext(
 		requests <- identityRequest{r.Method, r.URL.Path, body}
 		w.Header().Set("Content-Type", "application/json")
 		contract := func() eval_api.EvaluatorSummary {
+			if published && len(publishedSchemas) > 0 {
+				return eval_api.EvaluatorSummary{Name: "quality-custom", Definition: &eval_api.EvaluatorContract{
+					DataSchema: publishedSchemas[0],
+				}}
+			}
 			field := "query"
 			if published {
 				field = "context"
@@ -219,7 +224,10 @@ func localPublicationContext(
 			} else {
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 					"name": "quality-custom", "version": version,
-					"definition": map[string]any{"type": "rubric", "dimensions": []any{map[string]any{"id": "old"}}},
+					"definition": map[string]any{
+						"type": "rubric", "dimensions": []any{map[string]any{"id": "old"}},
+						"data_schema": contract().Definition.DataSchema,
+					},
 				}))
 			}
 		case r.Method == http.MethodPost && r.URL.Path == "/openai/v1/evals":

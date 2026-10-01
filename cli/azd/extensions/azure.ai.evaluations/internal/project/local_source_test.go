@@ -85,3 +85,17 @@ func TestExplicitLocalSourceNestedRefsShareCLIAndDeployBase(t *testing.T) {
 	assert.Equal(t, want, deployed.Evals[0].LocalSourcePath(root))
 	assert.Empty(t, deployed.Datasets)
 }
+
+func TestLocalCatalogEvaluatorPinsDoNotMutateDeclarations(t *testing.T) {
+	cfg, err := DecodeEvalConfig([]byte(`{
+		"evaluators":[{"name":"custom","version":"7"}],
+		"evals":[{"name":"quality","source":{"type":"local","file":"rows.jsonl"},
+			"evaluators":[{"evaluator":"custom"},{"evaluator":"custom","name":"override","version":"8"}]}]
+	}`), "pins")
+	require.NoError(t, err)
+	selected := cfg.WithCatalogEvaluatorPins(cfg.Evals[0])
+	assert.Equal(t, "7", selected.Evaluators[0].Version)
+	assert.Equal(t, "8", selected.Evaluators[1].Version)
+	assert.Empty(t, cfg.Evals[0].Evaluators[0].Version)
+	assert.Equal(t, "8", cfg.Evals[0].Evaluators[1].Version)
+}

@@ -175,11 +175,26 @@ catalog entry; it does not opt into local-only behavior. No new init flag is nee
 edit the configuration to declare the separate local eval.
 
 All rows must be non-empty JSON objects and satisfy the target and evaluator
-mappings, even rows beyond a cap. A failed evaluator-contract lookup stops local
-preflight rather than using an incomplete catalog. Before run submission, the CLI also checks the
+mappings, even rows beyond a cap. An evaluator reference's explicit version wins
+over its catalog entry's version; both select that exact version's contract rather
+than latest. A failed pinned lookup never falls back to another version.
+A failed evaluator-contract lookup stops local preflight rather than using an
+incomplete catalog. Before run submission, the CLI also checks the
 registered eval's stored mappings and `item_schema`; an unreadable definition or
 unsupported external schema reference fails rather than submitting unchecked
-rows. Invalid input causes no run submission or dataset/state mutation.
+rows. Invalid run input causes no submission or dataset/state mutation.
+
+For `create` and `azd up`, preflight checks every local row against the prospective
+authored contracts of custom evaluators this operation will publish, as well as
+the selected contracts of already-published evaluators, before dependency writes.
+Available authored schemas take precedence over an older service catalog.
+**Service-added constraints that are absent from both the authored and existing
+published contract cannot be known before publication.** The CLI reads the exact
+new evaluator version and checks local rows again before creating the eval. If a
+new service-added constraint rejects them then, the evaluator version may already
+have been published, but no eval or run is submitted. Preflight does not promise
+zero publication for constraints the service has not yet disclosed.
+
 Mapped local columns retain the evaluator's published property constraints,
 including numeric, array, object, and nullable types. Constraints from multiple
 evaluators consuming the same column all apply; an absent type contract is not

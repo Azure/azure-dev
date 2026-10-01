@@ -256,8 +256,12 @@ Review the files and retry with an exact `--path` filename. Under the configurat
 lock, validation, scaffold writes, and root wiring all use that same filename.
 The successful human `eval create` next step retains that filename rather than
 selecting the default config in the artifact directory.
-If that path cannot be portably quoted, init displays escaped exact-name/path
+For an evaluation name beginning with `-`, the next step places `--path` before
+`--` and the literal name, so the name cannot be interpreted as a flag.
+If the name or path cannot be portably quoted, init displays escaped exact-name/path
 values and manual create guidance instead of a runnable placeholder command.
+The same fallback applies to names such as `-Cquality` that some azd hosts consume
+as a joined working-directory flag even after `--`; the authored name is not changed.
 New paths ending in `.yaml` or `.yml` are treated as configuration files,
 including absolute paths and paths containing spaces. Existing directories
 remain directories, even if their names end in `.yaml`.

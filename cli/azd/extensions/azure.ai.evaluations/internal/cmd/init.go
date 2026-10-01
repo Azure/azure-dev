@@ -1151,7 +1151,23 @@ func (s scaffold) nextSteps() []string {
 // that it touches one eval: without the name it reconciles whatever the file
 // happens to declare, which is what the reader was choosing to avoid.
 func (s scaffold) targetedCreate() string {
-	return s.withPath("azd ai eval create " + s.evalName())
+	name := s.evalName()
+	if !messages.CanInlineShellArg(name) {
+		return ""
+	}
+	// Some hosts strip joined cwd flags even after "--"; do not suggest a lossy handoff.
+	if strings.HasPrefix(name, "--cwd=") ||
+		len(name) > 2 && strings.HasPrefix(name, "-C") && name[2] != '-' {
+		return ""
+	}
+	if strings.HasPrefix(name, "-") {
+		step := s.withPath("azd ai eval create")
+		if step == "" {
+			return ""
+		}
+		return step + " -- " + messages.ShellArg(name)
+	}
+	return s.withPath("azd ai eval create " + messages.ShellArg(name))
 }
 
 // evalName is the name of the eval this scaffold adds.

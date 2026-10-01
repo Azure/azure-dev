@@ -158,7 +158,8 @@ func InitCreateManualInputs(evalName, configPath string) string {
 	return fmt.Sprintf("  Next step: create the authored evaluation with azd ai eval create.\n"+
 		"  Evaluation name: %q\n  --path value: %q\n"+
 		"  These are escaped values, not shell arguments. Quote them for your shell; "+
-		"no copyable command is shown because portable quoting cannot preserve the path.\n", evalName, configPath)
+		"no copyable command is shown because shell or host argument handling cannot preserve every value.\n",
+		evalName, configPath)
 }
 
 // InitHandoffManualInputs preserves values that cannot be safely quoted for every shell.

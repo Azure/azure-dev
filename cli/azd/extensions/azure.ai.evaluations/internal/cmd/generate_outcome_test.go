@@ -39,5 +39,9 @@ func TestTheOutcomeDocumentSurvivesAPartialFailure(t *testing.T) {
 
 	assert.Contains(t, got, string(generateKindEvaluator),
 		"the failed artifact is named too, so the caller can tell which is which")
-	assert.Nil(t, got[string(generateKindEvaluator)])
+	evaluator, ok := got[string(generateKindEvaluator)].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "failed", evaluator["status"])
+	assert.Equal(t, assert.AnError.Error(), evaluator["error"])
+	assert.Contains(t, evaluator["retry_guidance"], "--evaluator only")
 }

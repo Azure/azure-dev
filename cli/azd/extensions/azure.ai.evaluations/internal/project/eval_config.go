@@ -71,9 +71,9 @@ type EvaluatorDecl struct {
 	// The complete returned list, not the level of the first eval that happens
 	// to reference it -- narrowing to that makes an evaluator usable at one
 	// level and silently unusable at the other.
-	Categories []string `yaml:"categories,omitempty" json:"categories,omitempty"`
+	Categories []string `yaml:"categories,omitempty" json:"categories,omitzero"`
 	//nolint:lll // the key is the service's, and wrapping the tag hides it
-	SupportedEvaluationLevels []string       `yaml:"supported_evaluation_levels,omitempty" json:"supported_evaluation_levels,omitempty"`
+	SupportedEvaluationLevels []string       `yaml:"supported_evaluation_levels,omitempty" json:"supported_evaluation_levels,omitzero"`
 	Version                   string         `yaml:"version,omitempty"    json:"version,omitempty"`
 	Definition                map[string]any `yaml:"definition,omitempty" json:"definition,omitempty"`
 }

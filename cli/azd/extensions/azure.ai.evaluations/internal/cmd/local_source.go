@@ -75,6 +75,26 @@ type localInput struct {
 	digest  []byte
 }
 
+func validateLocalFile(
+	ctx context.Context, group *project.Eval, path string, schemas map[string]*eval_api.EvaluatorSummary,
+) (*eval_api.CreateOpenAIEvalRequest, map[string]bool, error) {
+	input, err := openLocalInput(ctx, group, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer input.file.Close()
+	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	if err != nil {
+		return nil, nil, err
+	}
+	validate, err := localRowValidator(group, req.TestingCriteria, req.DataSourceConfig.ItemSchema)
+	if err != nil {
+		return nil, nil, err
+	}
+	_, err = input.collect(ctx, -1, validate)
+	return req, input.columns, err
+}
+
 func openLocalInput(
 	ctx context.Context, group *project.Eval, path string,
 ) (*localInput, error) {

@@ -30,10 +30,9 @@ const (
 // Reconciler applies the eval configuration to the service. It is satisfied by
 // the command layer, which owns the data-plane clients.
 type Reconciler interface {
-	// PreflightLocalEval validates explicit local rows and mappings before any publication.
-	PreflightLocalEval(ctx context.Context, group Eval, path string) error
-	// ValidateLocalSources prepares selected and authored evaluator contracts for local inputs before publication.
-	ValidateLocalSources(ctx context.Context, cfg *EvalConfig, baseDir string) error
+	// Validate checks local artifacts and service references without publishing
+	// dependencies or changing reconciliation state.
+	Validate(ctx context.Context, cfg *EvalConfig, baseDir string) error
 	// EnsureDataset registers a new dataset version when the local content
 	// changed, returning the resolved version and whether anything was written.
 	EnsureDataset(ctx context.Context, decl DatasetDecl, localPath string) (version string, changed bool, err error)
@@ -177,9 +176,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// dataset read as missing.
 	baseDir := projectRoot
 
-	// Validate local rows against selected published versions and prospective
-	// authored contracts before any datasets or evaluators are reconciled.
-	if err := reconciler.ValidateLocalSources(ctx, cfg, baseDir); err != nil {
+	if err := reconciler.Validate(ctx, cfg, baseDir); err != nil {
 		return nil, messages.EvalConfigInvalid(err)
 	}
 

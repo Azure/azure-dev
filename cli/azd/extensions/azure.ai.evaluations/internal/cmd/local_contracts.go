@@ -5,72 +5,13 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
-	"os"
-	"slices"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 )
-
-// The name/version key and authored-pin precedence match the prepared-eval
-// reconciliation contract; a selected version must never overwrite latest.
-func evaluatorSchemaKey(name, version string) string {
-	if version == "" {
-		return name
-	}
-	return name + "\x00" + version
-}
-
-func evaluatorContract(body json.RawMessage) (*eval_api.EvaluatorSummary, error) {
-	var schema *eval_api.EvaluatorSummary
-	if err := json.Unmarshal(body, &schema); err != nil {
-		return nil, fmt.Errorf("reading evaluator contract: %w", err)
-	}
-	if schema == nil || schema.Definition == nil {
-		return nil, fmt.Errorf("evaluator response has no definition")
-	}
-	return schema, nil
-}
-
-// localEvaluator reads the same authored bytes used for publication and preflight.
-func localEvaluator(decl project.EvaluatorDecl, path string) (json.RawMessage, string, error) {
-	if decl.Definition != nil {
-		raw, err := json.Marshal(decl.Definition)
-		if err != nil {
-			return nil, "", err
-		}
-		body, err := normalizeRubricBody(decl.Name, raw)
-		if err != nil {
-			return nil, "", err
-		}
-		return body, project.FingerprintBytes(body), nil
-	}
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, "", messages.EvaluatorNotGeneratedYet(decl.Name, path)
-		}
-		return nil, "", messages.EvaluatorSource(path, err)
-	}
-	raw, err := project.ReadFileNoBOM(path)
-	if err != nil {
-		return nil, "", messages.EvaluatorSource(path, err)
-	}
-	body, err := normalizeRubricBody(decl.Name, raw)
-	if err != nil {
-		return nil, "", err
-	}
-	digest, err := project.Fingerprint(path)
-	if err != nil {
-		return nil, "", err
-	}
-	return body, digest, nil
-}
 
 func (ec *evalContext) selectedEvaluatorContract(
 	ctx context.Context, name, version string,
@@ -115,101 +56,8 @@ func (ec *evalContext) localEvaluatorSchemas(
 	return index, nil
 }
 
-type preparedLocalEval struct {
-	group           project.Eval
-	schemas         map[string]*eval_api.EvaluatorSummary
-	localEvaluators []string
-}
-
-// ValidateLocalSources validates prospective authored contracts before publication.
-// Service-added constraints that no authored or published contract describes are
-// checked again after publication; preflight does not invent them.
-func (r *evalReconciler) ValidateLocalSources(ctx context.Context, cfg *project.EvalConfig, baseDir string) error {
-	prepared := map[string]preparedLocalEval{}
-	for _, declared := range cfg.Evals {
-		if !declared.IsLocalSource() {
-			continue
-		}
-		group := cfg.WithCatalogEvaluatorPins(declared)
-		ready, err := r.prepareLocalEval(ctx, &group, cfg, baseDir)
-		if err != nil {
-			return err
-		}
-		prepared[group.Name] = ready
-	}
-	r.preparedLocal = prepared
-	return nil
-}
-
-func (r *evalReconciler) prepareLocalEval(
-	ctx context.Context, group *project.Eval, cfg *project.EvalConfig, baseDir string,
-) (preparedLocalEval, error) {
-	input, err := openLocalInput(ctx, group, group.LocalSourcePath(baseDir))
-	if err != nil {
-		return preparedLocalEval{}, err
-	}
-	defer input.file.Close()
-	pending := map[string]bool{}
-	for _, ref := range group.Evaluators {
-		if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok && decl.CarriesItsRubric() && ref.Version == "" {
-			pending[ref.Evaluator] = true
-		}
-	}
-	schemas, err := r.ec.localEvaluatorSchemas(ctx, group, pending)
-	if err != nil {
-		return preparedLocalEval{}, err
-	}
-	var localEvaluators []string
-	for _, ref := range group.Evaluators {
-		decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
-		if !ok || !decl.CarriesItsRubric() || ref.Version != "" {
-			continue
-		}
-		body, _, err := localEvaluator(*decl, project.ResolveSource(baseDir, decl.Source))
-		if err != nil {
-			return preparedLocalEval{}, messages.EvaluatorProblem(decl.Name, err)
-		}
-		body, err = withCatalogMetadata(body, *decl)
-		if err != nil {
-			return preparedLocalEval{}, messages.EvaluatorProblem(decl.Name, err)
-		}
-		prospective, err := evaluatorContract(body)
-		if err != nil {
-			return preparedLocalEval{}, messages.EvaluatorProblem(decl.Name, err)
-		}
-		// Authored constraints take precedence over service-enriched fields.
-		// Absent fields can use the currently published contract, as in the
-		// prepared-eval preflight, but never the reverse.
-		if published := schemas[decl.Name]; published != nil {
-			if prospective.DataSchema() == nil {
-				prospective.Definition.DataSchema = published.DataSchema()
-			}
-			if prospective.InitSchema() == nil {
-				prospective.Definition.InitParameters = published.InitSchema()
-			}
-			if prospective.SupportedEvaluationLevels == nil {
-				prospective.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
-			}
-		}
-		schemas[decl.Name] = prospective
-		localEvaluators = append(localEvaluators, decl.Name)
-	}
-	req, err := buildLocalEvalRequest(group, input.columns, schemas)
-	if err != nil {
-		return preparedLocalEval{}, err
-	}
-	validate, err := localRowValidator(group, req.TestingCriteria, req.DataSourceConfig.ItemSchema)
-	if err != nil {
-		return preparedLocalEval{}, err
-	}
-	if _, err := input.collect(ctx, -1, validate); err != nil {
-		return preparedLocalEval{}, err
-	}
-	return preparedLocalEval{group: *group, schemas: schemas, localEvaluators: localEvaluators}, nil
-}
-
 func (r *evalReconciler) preparedLocalRequest(
-	ctx context.Context, group *project.Eval, path string, prepared preparedLocalEval,
+	ctx context.Context, group *project.Eval, path string, prepared preparedEval,
 ) (*eval_api.CreateOpenAIEvalRequest, error) {
 	schemas := maps.Clone(prepared.schemas)
 	for _, name := range prepared.localEvaluators {

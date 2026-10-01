@@ -48,6 +48,7 @@ func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (
 	t.Helper()
 	requests := make(chan identityRequest, 20)
 	var last eval_api.CreateOpenAIEvalRunRequest
+	var ec *evalContext
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		assert.NoError(t, err)
@@ -56,6 +57,20 @@ func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/evaluators":
 			w.WriteHeader(http.StatusForbidden)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/evaluators/"):
+			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/evaluators/"), "/")
+			contract := ec.schemas[parts[0]]
+			if contract == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/versions") {
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"value": []any{map[string]string{"name": parts[0], "version": "1"}},
+				}))
+			} else {
+				assert.NoError(t, json.NewEncoder(w).Encode(contract))
+			}
 		case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_local":
 			var definition map[string]any
 			err := json.Unmarshal([]byte(`{"id":"eval_local","data_source_config":{"type":"custom","item_schema":`+
@@ -82,7 +97,7 @@ func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (
 		}
 	}))
 	t.Cleanup(server.Close)
-	ec := evalContextFor(server)
+	ec = evalContextFor(server)
 	ec.schemas = map[string]*eval_api.EvaluatorSummary{
 		"builtin.relevance": {
 			Name: "builtin.relevance", Definition: &eval_api.EvaluatorContract{DataSchema: &eval_api.JSONSchema{
@@ -441,9 +456,9 @@ func TestExplicitLocalDeployPreflightPrecedesPublication(t *testing.T) {
 				assert.Empty(t, ec.state)
 			} else {
 				require.NoError(t, err)
-				require.Len(t, recorded, 1)
-				assert.Equal(t, "/openai/v1/evals", recorded[0].path)
-				assert.NotContains(t, string(recorded[0].body), "local rows.jsonl")
+				require.Len(t, recorded, 3)
+				assert.Equal(t, "/openai/v1/evals", recorded[2].path)
+				assert.NotContains(t, string(recorded[2].body), "local rows.jsonl")
 			}
 		})
 	}

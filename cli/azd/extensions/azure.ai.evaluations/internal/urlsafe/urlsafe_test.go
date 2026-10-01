@@ -46,6 +46,11 @@ func TestURLDropsUserinfoCredentials(t *testing.T) {
 	}{
 		{"password", "https://user:" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl"},
 		{"token as username", "https://" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl"},
+		{
+			"userinfo query and fragment",
+			"https://" + sasSecret + ":" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl?sig=" +
+				sasSecret + "#" + sasSecret,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u, err := url.Parse(tc.raw)
@@ -69,8 +74,9 @@ func TestURLDropsUserinfoCredentials(t *testing.T) {
 // that path too and not only on the query.
 func TestErrorStripsUserinfoFromTransportFailures(t *testing.T) {
 	original := &url.Error{
-		Op:  "Get",
-		URL: "https://" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl",
+		Op: "Get",
+		URL: "https://" + sasSecret + ":" + sasSecret + "@acct.blob.core.windows.net/c/rows.jsonl?sig=" +
+			sasSecret + "#" + sasSecret,
 		Err: errors.New("dial tcp: lookup failed"),
 	}
 

@@ -24,6 +24,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLocalRequestBaselineDeleteKeepsOtherOwners(t *testing.T) {
+	ec, env, _ := evalDeleteFixture(t, map[string]string{
+		idKey("eval", "deleted"):    deletedEvalID,
+		localRequestKey("deleted"):  "removed-contract",
+		idKey("eval", "survivor"):   "eval_survivor",
+		localRequestKey("survivor"): "preserved-contract",
+	})
+	require.NoError(t, ec.deleteEvalState(t.Context(), deletedEvalID))
+	assert.Empty(t, env.stored(t, localRequestKey("deleted")))
+	assert.Equal(t, "preserved-contract", env.stored(t, localRequestKey("survivor")))
+}
+
 func TestRunRejectsEmptyDatasetOverrideAcrossSources(t *testing.T) {
 	for _, mode := range []string{"dataset", "traces", "responses", "local", "id"} {
 		for _, value := range []string{"", "  "} {

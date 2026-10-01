@@ -111,14 +111,16 @@ func TestExplicitLocalPublishedTypesReachCreateAndRun(t *testing.T) {
 				recorded := recordedIdentityRequests(requests)
 				if tc.name != "valid" {
 					require.ErrorContains(t, err, "local row 2")
-					assert.Empty(t, recorded, "wrong types beyond the cap must fail before submission or stored-schema GET")
+					for _, request := range recorded {
+						assert.Equal(t, http.MethodGet, request.method, "wrong types beyond the cap must prevent submission")
+					}
 					return
 				}
 				require.NoError(t, err)
 				posted := recorded[len(recorded)-1]
 				assert.Equal(t, http.MethodPost, posted.method)
 				if operation == "create" {
-					require.Len(t, recorded, 1)
+					require.Len(t, recorded, 3)
 					var request eval_api.CreateOpenAIEvalRequest
 					require.NoError(t, json.Unmarshal(posted.body, &request))
 					expected, err := json.Marshal(typedLocalItemSchema())
@@ -311,13 +313,15 @@ func TestExplicitLocalSharedColumnKeepsEveryConstraint(t *testing.T) {
 			recorded := recordedIdentityRequests(requests)
 			if value != 5 {
 				require.ErrorContains(t, err, "local row 1")
-				assert.Empty(t, recorded)
+				for _, request := range recorded {
+					assert.Equal(t, http.MethodGet, request.method)
+				}
 				return
 			}
 			require.NoError(t, err)
-			require.Len(t, recorded, 1)
+			require.Len(t, recorded, 5)
 			var created eval_api.CreateOpenAIEvalRequest
-			require.NoError(t, json.Unmarshal(recorded[0].body, &created))
+			require.NoError(t, json.Unmarshal(recorded[4].body, &created))
 			schema, err := json.Marshal(created.DataSourceConfig.ItemSchema)
 			require.NoError(t, err)
 			assert.JSONEq(t, `{"type":"object","required":["count"],"properties":{"count":{"allOf":[`+

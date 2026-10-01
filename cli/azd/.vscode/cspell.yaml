@@ -302,6 +302,12 @@ overrides:
   - filename: test/recording/proxy.go
     words:
       - WSAECONNRESET
+  - filename: test/azurecleanup/**
+    words:
+      - azurecleanup
+  - filename: test/cmd/cleanup-subscription-deployments/**
+    words:
+      - azurecleanup
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
@@ -543,6 +549,11 @@ overrides:
   - filename: pkg/azdext/contracts_v1_aliases.go
     words:
       - generatefacade
+  - filename: extensions/telemetry/*.go
+    words:
+      - elts
+      - fset
+      - unkeyed
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

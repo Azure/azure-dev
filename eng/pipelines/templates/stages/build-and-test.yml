@@ -13,6 +13,7 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
+        JobTimeoutInMinutes: 40
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)
@@ -93,6 +94,7 @@ stages:
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
+            JobTimeoutInMinutes: ${{ coalesce(build.value.JobTimeoutInMinutes, 20) }}
             Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages

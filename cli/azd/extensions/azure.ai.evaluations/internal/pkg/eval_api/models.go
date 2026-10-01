@@ -300,7 +300,7 @@ func (j *GenerationJob) ResultStringList(key string) []string {
 	}
 	if raw, ok := m[key]; ok {
 		var list []string
-		if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+		if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 			return list
 		}
 	}
@@ -309,7 +309,7 @@ func (j *GenerationJob) ResultStringList(key string) []string {
 		if err := json.Unmarshal(rawOutputs, &outputs); err == nil && len(outputs) > 0 {
 			if raw, ok := outputs[0][key]; ok {
 				var list []string
-				if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+				if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 					return list
 				}
 			}

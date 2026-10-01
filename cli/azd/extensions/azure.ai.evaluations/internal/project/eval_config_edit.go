@@ -238,18 +238,19 @@ func parseConfigDocument(path string, body []byte) (*yaml.Node, error) {
 // a blank catalog name and narrower compatibility than the one before it.
 //
 // Key may name a nested key with a dot, which is how `tags.evaluation_level`
-// reaches the map it belongs in. List replaces Value for a sequence. A field
-// with neither writes nothing, so one the service did not return is omitted
-// rather than written blank.
+// reaches the map it belongs in. A non-nil List replaces Value for a sequence,
+// including an explicitly empty sequence. A field with neither writes nothing.
 type CatalogField struct {
 	Key   string
 	Value string
 	List  []string
+	// OnlyIfMissing preserves authored values, including explicit empty values.
+	OnlyIfMissing bool
 }
 
 // empty reports a field with nothing to write.
 func (f CatalogField) empty() bool {
-	return f.Value == "" && len(f.List) == 0
+	return f.Value == "" && f.List == nil
 }
 
 // UpsertCatalogEntry adds or updates one field of a catalog entry.
@@ -257,7 +258,7 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 	return UpsertCatalogFields(evalDir, kind, name, []CatalogField{{Key: field, Value: value}})
 }
 
-// UpsertCatalogFields adds or updates a catalog entry, setting every field.
+// UpsertCatalogFields adds or updates a catalog entry using each field's replacement policy.
 //
 // kind is the top-level sequence (`datasets` or `evaluators`). Reports whether
 // anything changed, and whether the file had to be created.
@@ -441,7 +442,10 @@ func setCatalogField(entry *yaml.Node, f CatalogField) (bool, error) {
 		}
 		key = leaf
 	}
-	if len(f.List) > 0 {
+	if f.OnlyIfMissing && nodeUnder(mapping, key) != nil {
+		return false, nil
+	}
+	if f.List != nil {
 		return setMappingSequence(mapping, key, f.List)
 	}
 	return setMappingScalar(mapping, key, f.Value)

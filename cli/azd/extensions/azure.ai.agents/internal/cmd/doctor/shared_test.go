@@ -13,7 +13,7 @@ import (
 
 // fixedAssembler returns an assembleState stub that yields the given
 // State on every call. Used by check tests to inject manifest-walker
-// outputs (HasModels / HasToolboxes / HasConnections, ModelRefs, etc.)
+// outputs (HasToolboxes / HasConnections, resource refs, etc.)
 // without touching disk or invoking the production walker.
 func fixedAssembler(
 	state *nextstep.State,

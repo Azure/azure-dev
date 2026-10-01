@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,28 +18,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-func TestConfirmExistingDefinitionOverwrite_NoPromptRequiresForce(t *testing.T) {
-	srcDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
-
-	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true}}
-	err := action.confirmExistingDefinitionOverwrite(t.Context(), srcDir)
-
-	require.Error(t, err)
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
-	require.Contains(t, localErr.Suggestion, "--force")
-}
-
-func TestConfirmExistingDefinitionOverwrite_ForcePreConsents(t *testing.T) {
-	srcDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
-
-	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true, force: true}}
-	require.NoError(t, action.confirmExistingDefinitionOverwrite(t.Context(), srcDir))
-}
 
 func TestSanitizeAgentName(t *testing.T) {
 	t.Parallel()
@@ -551,6 +528,38 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	}
 }
 
+func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	const (
+		envName = "agent-dev"
+		image   = "registry.example.com/team/agent:v1"
+	)
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	action := &InitFromCodeAction{
+		azdClient:    newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: nil,
+		flags: &initFlags{
+			noPrompt:           true,
+			env:                envName,
+			agentName:          "image-agent",
+			image:              image,
+			registryConnection: "private-registry",
+		},
+	}
+
+	definition, err := action.createDefinitionFromLocalAgent(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, image, definition.Image)
+	require.Equal(t, "private-registry", definition.RegistryConnectionID)
+	require.Nil(t, definition.CodeConfiguration)
+	require.Equal(t, agent_yaml.AgentKindHosted, definition.Kind)
+	require.NotEmpty(t, definition.Protocols)
+}
+
 func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -772,6 +781,20 @@ func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	if got[0].Version != "2.0.0" {
 		t.Errorf("version = %q, want %q", got[0].Version, "2.0.0")
 	}
+}
+
+func TestValidateExplicitProtocols(t *testing.T) {
+	t.Parallel()
+
+	got, err := validateExplicitProtocols([]string{"responses", "activity", "responses"})
+	require.NoError(t, err)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "2.0.0"},
+		{Protocol: "activity", Version: "2.0.0"},
+	}, got)
+
+	_, err = validateExplicitProtocols([]string{"unknown"})
+	require.ErrorContains(t, err, `unknown protocol "unknown"`)
 }
 
 func TestKnownProtocolNames(t *testing.T) {

@@ -9,21 +9,28 @@ import (
 	"fmt"
 )
 
-// A prompt agent's definition reaches azd by one of two routes, and only one of
-// them runs the YAML decoder:
+// A prompt agent's definition reaches azd through the effective azure.yaml
+// service property map:
 //
-//   - Inline on the azure.yaml service entry. Core azd parses azure.yaml, hands
-//     the service properties to the extension as protobuf, and the extension
-//     decodes them as JSON. The UnmarshalYAML methods in yaml.go never run.
-//   - From a file named by `$ref:` (or the legacy agent.yaml convention), which
-//     the deploy path reads and decodes as YAML.
+//   - Inline properties are decoded by core and handed to the extension as
+//     protobuf.
+//   - An explicit root `$ref:` is expanded into that same property map, with
+//     service-level properties overlaid on the referenced values.
 //
-// Inline is the shape `azd ai agent init` scaffolds, so without the checks below
-// the common case would be the unchecked one: a `harness:` typo would silently
-// bind nothing and deploy an agent with capabilities the author believed they
-// had turned off. These functions apply the same rules to a decoded value that
-// [PromptHarness.UnmarshalYAML] and [PromptMemory.UnmarshalYAML] apply to a
-// yaml.Node, so both routes reject the same manifests with the same messages.
+// The effective map is decoded as JSON, so the UnmarshalYAML methods in yaml.go
+// never run. These functions apply the same strict authored-block rules before
+// decoding so both source forms reject the same definitions.
+
+var containerOnlyPromptFields = []string{
+	"image",
+	"protocols",
+	"agentEndpoint",
+	"agentCard",
+	"codeConfiguration",
+	"docker",
+	"runtime",
+	"startupCommand",
+}
 
 // ValidateInlinePromptAgent applies the authored-block rules to prompt-agent
 // properties that were decoded outside this package, such as the inline
@@ -33,6 +40,16 @@ import (
 // (tools, text, reasoning, structuredInputs) are deliberately not inspected so
 // a tool type newer than this build still passes through.
 func ValidateInlinePromptAgent(props map[string]any) error {
+	for _, field := range containerOnlyPromptFields {
+		if _, ok := props[field]; ok {
+			return fmt.Errorf(
+				"field %q is not valid for a prompt (kind: prompt) agent; "+
+					"remove container-only fields (image, protocols, codeConfiguration, ...) "+
+					"or use kind: hosted for container agents",
+				field,
+			)
+		}
+	}
 	if raw, ok := props["harness"]; ok {
 		if err := validateInlineHarness(raw); err != nil {
 			return err

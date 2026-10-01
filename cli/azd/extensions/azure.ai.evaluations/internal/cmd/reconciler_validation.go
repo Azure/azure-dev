@@ -1,0 +1,400 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"slices"
+
+	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
+)
+
+type preparedEval struct {
+	declared        project.Eval
+	group           project.Eval
+	request         *eval_api.CreateOpenAIEvalRequest
+	schemas         map[string]*eval_api.EvaluatorSummary
+	columns         map[string]bool
+	localEvaluators []string
+}
+
+type preparedLocalDataset struct {
+	digest  string
+	pin     string
+	version string
+}
+
+// Validate prepares every eval before the first dependency is published.
+// Unlike the best-effort catalog used for discovery, a failed reference read
+// must stop reconciliation: it is not evidence that a reference is valid.
+func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, baseDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	effective := *cfg
+	effective.Evals = make([]project.Eval, len(cfg.Evals))
+	for i, group := range cfg.Evals {
+		effective.Evals[i] = withCatalogEvaluatorPins(group, cfg)
+	}
+	if err := effective.Validate(); err != nil {
+		return err
+	}
+
+	columns := map[string]map[string]bool{}
+	datasetVersions := map[string]string{}
+	localDatasets := map[string]preparedLocalDataset{}
+	for _, decl := range cfg.Datasets {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path := project.ResolveSource(baseDir, decl.File)
+		available := map[string]any{}
+		validateRow := func(row map[string]any, index int) error {
+			for field := range row {
+				available[field] = nil
+			}
+			for i := range cfg.Evals {
+				group := &cfg.Evals[i]
+				if group.Dataset != decl.Name || group.Simulation == nil {
+					continue
+				}
+				if err := refuseUnusableSeedRow(group, row, index, false); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		var fields map[string]bool
+		var err error
+		if path == "" {
+			var version string
+			version, err = r.datasetReference(ctx, decl)
+			if err == nil {
+				fields, err = r.inspectRegisteredDataset(ctx, decl.Name, version, validateRow)
+				datasetVersions[decl.Name] = version
+			}
+		} else {
+			var digest, version string
+			digest, err = project.Fingerprint(path)
+			if err == nil {
+				version, err = r.localDatasetReuse(ctx, decl, digest)
+			}
+			if err == nil {
+				localDatasets[decl.Name] = preparedLocalDataset{digest: digest, pin: decl.Version, version: version}
+				recorded := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+				if version != "" && version != recorded {
+					fields, err = r.inspectRegisteredDataset(ctx, decl.Name, version, validateRow)
+				} else {
+					fields, err = inspectJSONL(ctx, path, validateRow)
+				}
+			}
+		}
+		if err != nil {
+			return messages.DatasetProblem(decl.Name, err)
+		}
+		for i := range cfg.Evals {
+			group := &cfg.Evals[i]
+			if group.Dataset == decl.Name {
+				if err := validateDatasetTarget(group, available); err != nil {
+					return messages.DatasetProblem(decl.Name, err)
+				}
+			}
+		}
+		columns[decl.Name] = fields
+	}
+
+	schemas := map[string]*eval_api.EvaluatorSummary{}
+	for _, decl := range cfg.Evaluators {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Registered-only entries are resolved below using each reference's
+		// effective pin, which may override an unused catalog default.
+		if !decl.CarriesItsRubric() {
+			continue
+		}
+		body, digest, err := localEvaluator(decl, project.ResolveSource(baseDir, decl.Source))
+		if err != nil {
+			return messages.EvaluatorProblem(decl.Name, err)
+		}
+		// Authored rubrics omit the schemas Foundry adds on publication.
+		// Reuse that contract when present, without replacing authored
+		// fields or treating a failed read as a missing evaluator.
+		remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
+		if err != nil && !eval_api.IsEvaluatorAbsent(err) {
+			return messages.CheckingEvaluatorExists(decl.Name, err)
+		}
+		var published *eval_api.EvaluatorSummary
+		if err == nil {
+			published, err = evaluatorContract(remote)
+			if err != nil {
+				return messages.EvaluatorProblem(decl.Name, err)
+			}
+		}
+		prospective, err := evaluatorPublishBody(body, decl, remote)
+		if err != nil {
+			return messages.EvaluatorProblem(decl.Name, err)
+		}
+		schema, err := evaluatorContract(prospective)
+		if err != nil {
+			return messages.EvaluatorProblem(decl.Name, err)
+		}
+		if published != nil {
+			prior := r.ec.privateValue(ctx, project.FingerprintKey("evaluator", decl.Name))
+			if canReuseEvaluator(prior, digest, remote, body) {
+				schema = published
+			} else {
+				recorded := r.ec.privateValue(ctx, versionKey("evaluator", decl.Name))
+				if err := checkEvaluatorDrift(decl.Name, recorded, versionFromRaw(remote, "")); err != nil {
+					return messages.EvaluatorProblem(decl.Name, err)
+				}
+				if schema.Definition.DataSchema == nil {
+					schema.Definition.DataSchema = published.DataSchema()
+				}
+				if schema.Definition.InitParameters == nil {
+					schema.Definition.InitParameters = published.InitSchema()
+				}
+			}
+		}
+		schemas[evaluatorSchemaKey(decl.Name, decl.Version)] = schema
+	}
+
+	prepared := map[string]preparedEval{}
+	for _, group := range cfg.Evals {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if group.ID != "" {
+			if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+				return messages.ReadingEval(group.ID, err)
+			}
+		}
+		declared := group
+		group = withCatalogEvaluatorPins(group, cfg)
+		var localEvaluators []string
+		for i := range group.Evaluators {
+			ref := &group.Evaluators[i]
+			if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok {
+				if ref.Version == "" {
+					if decl.CarriesItsRubric() {
+						localEvaluators = append(localEvaluators, decl.Name)
+					}
+				}
+			}
+			key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
+			if schemas[key] != nil {
+				continue
+			}
+			body, err := r.ec.evalClient.GetEvaluatorRaw(ctx, ref.Evaluator, ref.Version, ProjectEndpointAPIVersion)
+			if err != nil {
+				return messages.EvaluatorNotLocalNorFound(ref.Evaluator, err)
+			}
+			schema, err := evaluatorContract(body)
+			if err != nil {
+				return messages.EvaluatorProblem(ref.Evaluator, err)
+			}
+			schemas[key] = schema
+		}
+		request, err := buildEvalRequest(&group, schemas, columns[group.Dataset])
+		if err != nil {
+			return messages.EvalProblem(group.Name, err)
+		}
+		if err := validateDatasetInteractions(&group, request, columns[group.Dataset]); err != nil {
+			return messages.EvalProblem(group.Name, err)
+		}
+		prepared[group.Name] = preparedEval{
+			declared: declared, group: group, request: request, schemas: schemas,
+			columns: columns[group.Dataset], localEvaluators: localEvaluators,
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.prepared = prepared
+	r.datasetVersions = datasetVersions
+	r.localDatasets = localDatasets
+	return nil
+}
+
+// localDatasetReuse selects an unchanged local file's registered version.
+// An absent new pin requests publication; failed reads never establish absence.
+func (r *evalReconciler) localDatasetReuse(ctx context.Context, decl project.DatasetDecl, digest string) (string, error) {
+	if r.ec.privateValue(ctx, project.FingerprintKey("dataset", decl.Name)) != digest {
+		return "", nil
+	}
+	recorded := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+	if recorded == "" {
+		return "", nil
+	}
+	if decl.Version == "" {
+		if err := r.checkDatasetDrift(ctx, decl.Name, recorded); err != nil {
+			return "", err
+		}
+		return recorded, nil
+	}
+	_, err := r.ec.datasetClient.GetDataset(ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion)
+	if err == nil {
+		return decl.Version, nil
+	}
+	if dataset_api.IsNotFound(err) {
+		if decl.Version != recorded {
+			return "", nil
+		}
+		return "", messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
+	}
+	return "", messages.ReadingDatasetVersion(decl.Name, decl.Version, err)
+}
+
+// validateDatasetInteractions checks primary inputs in the final mappings, not
+// optional tool columns. Simulation outputs are generated from seed rows, while
+// trace and response sources have no dataset columns to inspect here.
+func validateDatasetInteractions(
+	group *project.Eval, request *eval_api.CreateOpenAIEvalRequest, columns map[string]bool,
+) error {
+	if columns == nil || group.Simulation != nil {
+		return nil
+	}
+	for _, criterion := range request.TestingCriteria {
+		fields := []string{"query", "response"}
+		if _, messages := criterion.DataMapping[conversationField]; messages {
+			fields = []string{conversationField}
+		}
+		var missing []string
+		for _, field := range fields {
+			if column, item := itemColumn(criterion.DataMapping[field]); item && !columns[column] &&
+				!slices.Contains(missing, column) {
+				missing = append(missing, column)
+			}
+		}
+		if len(missing) > 0 {
+			return messages.EvaluatorNeedsFields(criterion.EvaluatorName, missing)
+		}
+	}
+	return nil
+}
+
+func (r *evalReconciler) inspectRegisteredDataset(
+	ctx context.Context, name, version string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	content, err := r.ec.datasetClient.OpenDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil, messages.ReadingDatasetVersion(name, version, err)
+	}
+	defer content.Close()
+	return inspectJSONLContent(ctx, fmt.Sprintf("dataset %q version %q", name, version), content, validateRow)
+}
+
+// withCatalogEvaluatorPins resolves only authored pins. A service-resolved
+// latest version is not an edit and must never change an eval's identity.
+func withCatalogEvaluatorPins(group project.Eval, cfg *project.EvalConfig) project.Eval {
+	group.Evaluators = slices.Clone(group.Evaluators)
+	for i := range group.Evaluators {
+		ref := &group.Evaluators[i]
+		if ref.Version == "" {
+			if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok {
+				ref.Version = decl.Version
+			}
+		}
+	}
+	return group
+}
+
+func validateDatasetTarget(group *project.Eval, available map[string]any) error {
+	if group.Simulation != nil || group.Target == nil {
+		return nil
+	}
+	// These constructors describe the same template used by the run path.
+	// Resolving the remote agent name is unnecessary for checking its inputs.
+	var source *eval_api.EvalRunDataSource
+	if group.Target.Type == project.TargetTypeModel {
+		source = eval_api.NewModelTargetDataSource(group.Target.Name)
+	} else {
+		source = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	}
+	// The run allows sparse target inputs. Keep the union of available columns,
+	// separately from the intersection used for required evaluator bindings.
+	return refuseUnboundTemplate(group, source, []map[string]any{available})
+}
+
+func evaluatorSchemaKey(name, version string) string {
+	if version == "" {
+		return name
+	}
+	return name + "\x00" + version
+}
+
+func evaluatorContract(body json.RawMessage) (*eval_api.EvaluatorSummary, error) {
+	var schema *eval_api.EvaluatorSummary
+	if err := json.Unmarshal(body, &schema); err != nil {
+		return nil, fmt.Errorf("reading evaluator contract: %w", err)
+	}
+	if schema == nil || schema.Definition == nil {
+		return nil, fmt.Errorf("evaluator response has no definition")
+	}
+	return schema, nil
+}
+
+func (r *evalReconciler) datasetReference(ctx context.Context, decl project.DatasetDecl) (string, error) {
+	version := decl.Version
+	if version == "" {
+		list, err := r.ec.datasetClient.ListDatasetVersions(ctx, decl.Name, ProjectEndpointAPIVersion)
+		if err != nil {
+			return "", messages.DatasetNotLocalNorFound(decl.Name, err)
+		}
+		if list == nil || len(list.Value) == 0 {
+			return "", messages.DatasetNotLocalNorRegistered(decl.Name)
+		}
+		version = dataset_api.LatestVersion(list.Value)
+	}
+	if _, err := r.ec.datasetClient.GetDataset(ctx, decl.Name, version, ProjectEndpointAPIVersion); err != nil {
+		if !dataset_api.IsNotFound(err) {
+			return "", messages.DatasetNotLocalNorFound(decl.Name, err)
+		}
+		return "", messages.DatasetVersionNotFoundWithHint(decl.Name, version)
+	}
+	return version, nil
+}
+
+// localEvaluator reads the authored bytes only. Catalog metadata still joins
+// the publish body after digest and drift decisions in EnsureEvaluator.
+func localEvaluator(decl project.EvaluatorDecl, path string) (json.RawMessage, string, error) {
+	if decl.Definition != nil {
+		raw, err := json.Marshal(decl.Definition)
+		if err != nil {
+			return nil, "", err
+		}
+		body, err := normalizeRubricBody(decl.Name, raw)
+		if err != nil {
+			return nil, "", err
+		}
+		return body, project.FingerprintBytes(body), nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, "", messages.EvaluatorNotGeneratedYet(decl.Name, path)
+		}
+		return nil, "", messages.EvaluatorSource(path, err)
+	}
+	raw, err := project.ReadFileNoBOM(path)
+	if err != nil {
+		return nil, "", messages.EvaluatorSource(path, err)
+	}
+	body, err := normalizeRubricBody(decl.Name, raw)
+	if err != nil {
+		return nil, "", err
+	}
+	digest, err := project.Fingerprint(path)
+	if err != nil {
+		return nil, "", messages.EvaluatorSource(path, err)
+	}
+	return body, digest, nil
+}

@@ -114,7 +114,7 @@ func TestEndpointUpdateResolvesActivitySettingsFromServiceRef(t *testing.T) {
 	}
 
 	require.NoError(t, project.ResolveServiceConfigInPlace(svc, projectRoot))
-	agentDef, _, _, err := project.LoadAgentDefinition(svc, projectRoot)
+	agentDef, _, _, err := project.LoadHostedAgentDefinition(svc, projectRoot)
 	require.NoError(t, err)
 	serviceConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	require.NoError(t, err)

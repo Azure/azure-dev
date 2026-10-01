@@ -113,7 +113,7 @@ func TestActivityCoexistenceRegression(t *testing.T) {
 			AdditionalProperties: properties,
 		}
 
-		ca, isHosted, _, err := LoadAgentDefinition(service, t.TempDir())
+		ca, isHosted, _, err := LoadHostedAgentDefinition(service, t.TempDir())
 		require.NoError(t, err)
 		require.True(t, isHosted)
 

@@ -51,6 +51,7 @@ type identityService struct {
 	listStatus  int
 	listBody    *string
 	getStatus   int
+	getStatuses map[string]int
 	id          string
 	version     string
 	wantVersion string
@@ -105,8 +106,12 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 			if service.wantVersion != "" {
 				assert.True(t, strings.HasSuffix(r.URL.Path, "/versions/"+service.wantVersion))
 			}
-			if service.getStatus != 0 {
-				w.WriteHeader(service.getStatus)
+			getStatus := service.getStatus
+			if status, ok := service.getStatuses[filepath.Base(r.URL.Path)]; ok {
+				getStatus = status
+			}
+			if getStatus != 0 && getStatus != http.StatusOK {
+				w.WriteHeader(getStatus)
 				return
 			}
 			version := service.version
@@ -356,7 +361,7 @@ func TestRunRegistryLookupMustEstablishAbsence(t *testing.T) {
 		wantVersion string
 	}{
 		{name: "confirmed absent", listStatus: 404, getStatus: 404},
-		{name: "successful empty listing with absent probes", getStatus: 404},
+		{name: "successful empty listing with absent probes", getStatus: 404, wantErr: true},
 		{name: "listing forbidden", listStatus: 403, getStatus: 404, wantErr: true},
 		{name: "probe forbidden", listStatus: 404, getStatus: 403, wantErr: true},
 		{name: "publication ahead of listing", listStatus: 404, wantVersion: "1.0"},
@@ -659,8 +664,7 @@ func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T)
 						require.ErrorIs(t, req.Context().Err(), context.DeadlineExceeded)
 						return nil, req.Context().Err()
 					case req.Method == http.MethodGet && req.URL.Path == "/datasets/golden/versions":
-						_, err := io.WriteString(response, `{"value":[]}`)
-						require.NoError(t, err)
+						response.WriteHeader(http.StatusNotFound)
 					case req.Method == http.MethodGet &&
 						(req.URL.Path == "/datasets/golden/versions/1.0" || req.URL.Path == "/datasets/golden/versions/1"):
 						response.WriteHeader(http.StatusNotFound)

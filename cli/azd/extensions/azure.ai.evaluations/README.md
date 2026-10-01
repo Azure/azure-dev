@@ -101,9 +101,12 @@ publish temporary subset datasets automatically. A simulation declaration must
 not contain a positive `max_samples:` cap, even when the flag is zero.
 
 Genuinely unregistered local files still run inline and support a cap, but only
-after a complete empty version listing (or a not-found response) and not-found
-first-version probes confirm absence. Permissions, transient failures, and
-malformed listings fail the run instead of silently selecting local data.
+after a typed not-found version-list response and not-found first-version probes
+confirm absence. A successful empty listing remains indeterminate when those
+probes find nothing: later registered versions may exist even if early versions
+were deleted. The run fails instead of selecting local data; retry after the
+registry catches up or declare a known dataset version. Permissions, transient
+failures, and malformed listings also fail the run without a local fallback.
 
 Source-backed runs reject positive configured `max_samples:` and explicitly supplied
 `--max-samples` flags; use `source.max_traces` for trace limits or select

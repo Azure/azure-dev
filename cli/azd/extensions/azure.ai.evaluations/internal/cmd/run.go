@@ -852,8 +852,8 @@ func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, erro
 }
 
 // resolveRunDatasetVersion prefers the declaration, then the recorded publication,
-// then the service. Only a complete empty listing (or a typed 404) followed by
-// typed not-found version probes permits local rows.
+// then the service. Only a typed not-found listing followed by typed not-found
+// version probes permits local rows.
 func (ec *evalContext) resolveRunDatasetVersion(
 	ctx context.Context, name, pinned string, allowLocal bool,
 ) (string, error) {
@@ -875,7 +875,7 @@ func (ec *evalContext) resolveRunDatasetVersion(
 }
 
 // unregisteredDatasetError distinguishes verified absence from an unreadable
-// registry. It does not manufacture an HTTP error for a successful empty listing.
+// or indeterminate registry.
 type unregisteredDatasetError struct{ name string }
 
 func (e *unregisteredDatasetError) Error() string {
@@ -893,8 +893,8 @@ func (ec *evalContext) lookupRunDatasetVersion(ctx context.Context, name string)
 	if versions != nil && len(versions.Value) > 0 {
 		return dataset_api.LatestVersion(versions.Value), nil
 	}
-	// Foundry returns a successful empty list for unknown datasets. Probe the
-	// first publish versions as well, because the listing can lag publication.
+	// As in datasetPresence, probes can establish existence while the listing
+	// lags, but cannot establish absence when early versions have been deleted.
 	for _, first := range firstDatasetVersions {
 		_, getErr := ec.datasetClient.GetDataset(ctx, name, first, ProjectEndpointAPIVersion)
 		if getErr == nil {
@@ -904,7 +904,13 @@ func (ec *evalContext) lookupRunDatasetVersion(ctx context.Context, name string)
 			return "", messages.ReadingDatasetVersion(name, first, getErr)
 		}
 	}
-	return "", &unregisteredDatasetError{name: name}
+	if dataset_api.IsNotFound(err) {
+		return "", &unregisteredDatasetError{name: name}
+	}
+	return "", messages.ReadingDataset(name, errors.New(
+		"registration is indeterminate: the version listing is empty and first-version probes returned not found; "+
+			"retry after the registry catches up, or declare a known dataset version; "+
+			"cannot safely fall back to inline rows"))
 }
 
 func (ec *evalContext) readDatasetVersion(

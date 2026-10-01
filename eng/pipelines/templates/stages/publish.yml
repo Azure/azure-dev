@@ -36,7 +36,7 @@ stages:
           outputs:
             - output: pipelineArtifact
               artifact: winget-manifest
-              targetPath: winget
+              path: $(Build.SourcesDirectory)/winget
 
         steps:
           - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
@@ -63,7 +63,7 @@ stages:
           inputs:
             - input: pipelineArtifact
               artifactName: winget-manifest
-              targetPath: winget
+              targetPath: $(Pipeline.Workspace)/winget
 
         strategy:
           runOnce:

@@ -731,12 +731,18 @@ func writeRubric(path string, result json.RawMessage) error {
 // is an error, never permission to export the service envelope.
 func editableRubric(definition json.RawMessage) ([]byte, error) {
 	var kind struct {
-		Type       string          `json:"type"`
+		Type       json.RawMessage `json:"type"`
 		Dimensions json.RawMessage `json:"dimensions"`
 	}
-	if json.Unmarshal(definition, &kind) != nil ||
-		(kind.Type != "" && kind.Type != rubricDefinitionType) ||
-		(kind.Type == "" && len(kind.Dimensions) == 0) {
+	if json.Unmarshal(definition, &kind) != nil {
+		return nil, nil
+	}
+	definitionKind, err := evaluatorDefinitionKind(kind.Type)
+	if err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
+	}
+	if (definitionKind != "" && definitionKind != rubricDefinitionType) ||
+		(definitionKind == "" && len(kind.Dimensions) == 0) {
 		return nil, nil
 	}
 	var rubric map[string]json.RawMessage

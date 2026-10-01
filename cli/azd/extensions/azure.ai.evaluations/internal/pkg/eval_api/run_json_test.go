@@ -48,6 +48,47 @@ func TestRunJSONPreservesUnknownServiceFields(t *testing.T) {
 	assert.JSONEq(t, "9007199254740993", string(got["future_counter"]))
 }
 
+func TestRunJSONPreservesNestedCriteriaPresence(t *testing.T) {
+	for _, criterion := range []string{
+		`{"passed":1,"failed":null}`,
+		`{"testing_criteria":"quality"}`,
+		`{"testing_criteria":"quality","passed":null,"failed":null,"errored":null,"skipped":null}`,
+		`{"testing_criteria":"quality","passed":0,"failed":0,"errored":0,"skipped":0}`,
+		`{"testing_criteria":"quality","passed":1,"unknown":{"number":9007199254740993,"decimal":0.1234567890123456789}}`,
+	} {
+		t.Run(criterion, func(t *testing.T) {
+			response := `{"id":"run_presence","per_testing_criteria_results":[` + criterion + `]}`
+			var run OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(response), &run))
+			body, err := json.Marshal(run)
+			require.NoError(t, err)
+			var doc struct {
+				Criteria []map[string]json.RawMessage `json:"per_testing_criteria_results"`
+			}
+			require.NoError(t, json.Unmarshal(body, &doc))
+			var want map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(criterion), &want))
+			require.Len(t, doc.Criteria, 1)
+			assert.Equal(t, want, doc.Criteria[0], "no added zero counters, and exact raw values survive")
+		})
+	}
+}
+
+func TestRunJSONNestedCounterChangesPreserveOtherPresence(t *testing.T) {
+	var run OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"run_presence","per_testing_criteria_results":[
+		{"testing_criteria":"quality","passed":1,"failed":null,"future":9007199254740993}
+	]}`), &run))
+	run.PerTestingCriteria[0].Passed = 0
+	run.PerTestingCriteria[0].Errored = 2
+	body, err := json.Marshal(run)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":"run_presence","per_testing_criteria_results":[
+		{"testing_criteria":"quality","passed":0,"failed":null,"errored":2,"future":9007199254740993}
+	]}`, string(body))
+	assert.Contains(t, string(body), "9007199254740993")
+}
+
 func TestRunJSONLegacyAndConstructedShapes(t *testing.T) {
 	for _, response := range []string{
 		`{"status":"completed"}`,

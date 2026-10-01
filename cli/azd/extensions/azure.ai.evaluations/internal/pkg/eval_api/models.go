@@ -769,6 +769,7 @@ type OpenAIEvalRun struct {
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
 	Error              *JobError               `json:"error,omitempty"`
 	raw                json.RawMessage
+	initial            json.RawMessage
 	reportedCounts     map[string]bool
 }
 
@@ -828,6 +829,7 @@ type OutputItem struct {
 	DataSourceItem map[string]any `json:"datasource_item,omitempty"`
 	Results        []OutputResult `json:"results,omitempty"`
 	raw            json.RawMessage
+	initial        json.RawMessage
 }
 
 // OutputResult is one evaluator's verdict on one row.

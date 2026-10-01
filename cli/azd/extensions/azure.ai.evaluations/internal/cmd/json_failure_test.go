@@ -48,6 +48,9 @@ func TestCLIJSONErrorRedactsCredentialURLs(t *testing.T) {
 		`url_https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
 		"url=https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
 		"(url:https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment).",
+		"https://host/file?sig= fixture-signature",
+		"https://host/file?sig=\tfixture-signature",
+		"https://host/file?sig=\nfixture-signature",
 	} {
 		for _, answered := range []bool{false, true} {
 			t.Run(raw, func(t *testing.T) {

@@ -126,6 +126,11 @@ func TestRubricPropertyDimensionsDoNotInventMissingValues(t *testing.T) {
 func TestMalformedRubricDimensionPropertiesRemainAvailableInJSON(t *testing.T) {
 	for _, properties := range []string{
 		`{"dimension_scores":"unexpected"}`,
+		`{"dimension_scores":[null]}`,
+		`{"dimension_scores":[{"id":"valid","score":1},null]}`,
+		`{"dimension_scores":[false]}`,
+		`{"dimension_scores":[42]}`,
+		`{"dimension_scores":[[]]}`,
 		`{"dimension_scores":[{"id":"one","applicable":"not a boolean"}]}`,
 		`{"dimension_scores":[{"id":"one","score":"not a number"}]}`,
 	} {
@@ -162,7 +167,7 @@ func TestMalformedRubricDimensionPropertiesRemainAvailableInJSON(t *testing.T) {
 
 func TestMalformedRubricPropertiesKeepValidCallerOutputAndError(t *testing.T) {
 	const response = `{"id":"1","run_id":"run_rubric","status":"completed","results":[
-		{"name":"quality","score":0.75,"passed":true,"properties":{"dimension_scores":"unexpected"}},
+		{"name":"quality","score":0.75,"passed":true,"properties":{"dimension_scores":[null]}},
 		{"name":"other","score":0.5,"passed":false,"reason":"Valid result from another evaluator."}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.True(t, strings.HasSuffix(r.URL.Path, "/runs/run_rubric/output_items/1"))

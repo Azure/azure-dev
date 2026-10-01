@@ -4,6 +4,7 @@
 package eval_api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -25,10 +26,23 @@ func (r OutputResult) RubricDimensions() ([]RubricDimensionScore, error) {
 		return nil, nil
 	}
 	var properties struct {
-		Dimensions []RubricDimensionScore `json:"dimension_scores"`
+		Dimensions []json.RawMessage `json:"dimension_scores"`
 	}
 	if err := json.Unmarshal(r.Properties, &properties); err != nil {
 		return nil, fmt.Errorf("reading rubric dimension scores for evaluator %q: %w", r.Name, err)
 	}
-	return properties.Dimensions, nil
+	var dimensions []RubricDimensionScore
+	for i, entry := range properties.Dimensions {
+		entry = bytes.TrimSpace(entry)
+		if len(entry) == 0 || entry[0] != '{' {
+			return nil, fmt.Errorf("reading rubric dimension scores for evaluator %q: "+
+				"dimension %d must be a JSON object", r.Name, i+1)
+		}
+		var dimension RubricDimensionScore
+		if err := json.Unmarshal(entry, &dimension); err != nil {
+			return nil, fmt.Errorf("reading rubric dimension scores for evaluator %q: %w", r.Name, err)
+		}
+		dimensions = append(dimensions, dimension)
+	}
+	return dimensions, nil
 }

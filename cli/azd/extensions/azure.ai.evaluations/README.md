@@ -245,6 +245,10 @@ fetch or transcript-based turn inference is used.
 
 JSON retains the service's run fields, including unrecognized nested fields;
 missing or null result-count members remain missing or null. It does not add
+zero counters to partial `per_testing_criteria_results` entries or a score/verdict
+to an output result that omitted those fields. Explicit zero, false, and null
+values remain distinct; changed typed values and reported score normalization
+are still reflected in JSON. It does not add
 estimated conversation or turn counts. Numbers in echoed inline datasets,
 including nested source content, retain their exact precision in run JSON.
 Newly submitted
@@ -360,7 +364,9 @@ commands to inspect the exact run; routing parameters are not exempted from reda
 CLI-generated JSON error envelopes, accompanying stderr diagnostics, and the
 run's known `error.code`/`error.message` fields in JSON and exports also redact
 embedded URL credentials, including malformed HTTP(S) URLs concatenated to
-identifiers without a separator. This projection does not mutate the service response
+identifiers without a separator. A value separated from an unfinished URL query
+assignment by whitespace is redacted with that malformed URL candidate, rather
+than copied into the remaining diagnostic prose. This projection does not mutate the service response
 or rewrite dataset/output content and unknown fields. Those other fields can
 still contain sensitive source data; keep exported files private.
 
@@ -379,6 +385,8 @@ they are absent from the response.
 Malformed dimension properties are identified by a warning without hiding valid
 aggregate results or other evaluators. The human command still returns an error;
 `--output json` retains the original data for inspection.
+Each `dimension_scores` entry must be an object; null or scalar entries are
+malformed data, not unnamed dimensions with unreported values.
 
 Output-item JSON preserves unrecognized nested service fields, including
 evaluator `properties` and `sample` details; modeled scores keep their existing

@@ -54,6 +54,52 @@ func TestOutputItemJSONRetainsUnknownResultAndSampleFields(t *testing.T) {
 	}
 }
 
+func TestOutputItemJSONPreservesResultPresence(t *testing.T) {
+	for _, result := range []string{
+		`{"name":"quality"}`,
+		`{"name":"quality","score":null}`,
+		`{"name":"quality","passed":null}`,
+		`{"name":"quality","score":0,"passed":false}`,
+		`{"name":"quality","score":0.5,"passed":true}`,
+		`{"name":"quality","sample":{"error":null,"unknown":9007199254740993}}`,
+		`{"name":null,"score":null,"passed":null}`,
+	} {
+		t.Run(result, func(t *testing.T) {
+			var item OutputItem
+			require.NoError(t, json.Unmarshal([]byte(`{"id":"1","run_id":"run","status":"completed",
+				"results":[`+result+`]}`), &item))
+			body, err := json.Marshal(item)
+			require.NoError(t, err)
+			var doc struct {
+				Results []map[string]json.RawMessage `json:"results"`
+			}
+			require.NoError(t, json.Unmarshal(body, &doc))
+			var want map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(result), &want))
+			require.Len(t, doc.Results, 1)
+			assert.Equal(t, want, doc.Results[0], "an absent field must not become zero or null")
+		})
+	}
+}
+
+func TestOutputItemJSONResultChangesPreserveOtherPresence(t *testing.T) {
+	var item OutputItem
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"1","run_id":"run","status":"completed","results":[
+		{"name":"quality","score":null,"unknown":9007199254740993},
+		{"name":"second","score":"0.5","passed":true}
+	]}`), &item))
+	item.Results[0].Score = 0
+	item.Results[0].Passed = new(false)
+	item.Results[1].Score = 0
+	body, err := json.Marshal(item)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":"1","run_id":"run","status":"completed","results":[
+		{"name":"quality","score":0,"passed":false,"unknown":9007199254740993},
+		{"name":"second","score":0,"passed":true}
+	]}`, string(body))
+	assert.Contains(t, string(body), "9007199254740993")
+}
+
 func TestOutputItemJSONKeepsLegacyModeledShapes(t *testing.T) {
 	for _, response := range []string{
 		`{"id":"1","run_id":"run","status":"completed"}`,

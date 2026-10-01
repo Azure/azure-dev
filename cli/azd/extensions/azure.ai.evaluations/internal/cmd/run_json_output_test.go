@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,6 +31,9 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 		`url_https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
 		"url=https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
 		"(url:https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment).",
+		"https://host/file?sig= fixture-signature",
+		"https://host/file?sig=\tfixture-signature",
+		"https://host/file?sig=\nfixture-signature",
 	} {
 		t.Run(diagnosticURL, func(t *testing.T) {
 			errorText, err := json.Marshal("Failed " + diagnosticURL)
@@ -77,6 +82,138 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 			assert.Equal(t, "Failed "+diagnosticURL, original.Error.Message)
 			assert.NotSame(t, original.Error, projected.Error)
 		})
+	}
+}
+
+func TestReportingJSONCallersPreserveNestedResultPresence(t *testing.T) {
+	const runResponse = `{"id":"run_presence","status":"completed","per_testing_criteria_results":[
+		{"testing_criteria":"quality","passed":1,"failed":null,"unknown":9007199254740993},
+		{"testing_criteria":"second","passed":0,"failed":0,"errored":0,"skipped":0}]}`
+	const itemResponse = `{"id":"1","run_id":"run_presence","status":"completed","results":[
+		{"name":"quality","properties":{"unknown":9007199254740993}},
+		{"name":"second","score":null,"passed":null},
+		{"name":"third","score":0,"passed":false}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/runs/run_presence"):
+			_, _ = w.Write([]byte(runResponse))
+		case strings.HasSuffix(r.URL.Path, "/output_items/1"):
+			_, _ = w.Write([]byte(itemResponse))
+		case strings.HasSuffix(r.URL.Path, "/output_items"):
+			_, _ = w.Write([]byte(`{"data":[` + itemResponse + `]}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	for _, caller := range []string{"run show", "item show", "item list", "item file", "export"} {
+		t.Run(caller, func(t *testing.T) {
+			command := jsonCmd(t, "json")
+			command.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			command.SetOut(&out)
+			command.SetErr(&stderr)
+			ec := evalContextFor(srv)
+			var gotRun, gotItem json.RawMessage
+			switch caller {
+			case "run show":
+				action := &runShowAction{cmd: command, runID: "run_presence", flags: &runShowFlags{}}
+				require.NoError(t, action.show(t.Context(), ec, "eval_presence", gate{}))
+				gotRun = out.Bytes()
+			case "item show":
+				action := &runOutputShowAction{cmd: command, itemID: "1",
+					flags: &runOutputShowFlags{run: "run_presence"}}
+				require.NoError(t, action.showRun(t.Context(), ec, "eval_presence"))
+				gotItem = out.Bytes()
+			case "item list", "item file":
+				flags := &runOutputListFlags{}
+				if caller == "item file" {
+					flags.outFile = filepath.Join(t.TempDir(), "items.json")
+				}
+				action := &runOutputListAction{cmd: command, runID: "run_presence", flags: flags}
+				require.NoError(t, action.list(t.Context(), ec, "eval_presence"))
+				var items []json.RawMessage
+				if caller == "item file" {
+					body, err := os.ReadFile(flags.outFile)
+					require.NoError(t, err)
+					require.NoError(t, json.Unmarshal(body, &items))
+				} else {
+					var page struct {
+						Items []json.RawMessage `json:"items"`
+					}
+					require.NoError(t, json.Unmarshal(out.Bytes(), &page))
+					items = page.Items
+				}
+				require.Len(t, items, 1)
+				gotItem = items[0]
+			case "export":
+				action := &runOutputExportAction{cmd: command, runID: "run_presence", flags: &runOutputExportFlags{}}
+				require.NoError(t, action.export(t.Context(), ec, "eval_presence", exportToStdout))
+				var doc exportDocument
+				require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+				require.Len(t, doc.Items, 1)
+				gotRun, gotItem = doc.Run, doc.Items[0]
+			}
+			assert.Empty(t, stderr.String())
+			if gotRun != nil {
+				assert.JSONEq(t, runResponse, string(gotRun))
+				assert.Contains(t, string(gotRun), "9007199254740993")
+			}
+			if gotItem != nil {
+				assert.JSONEq(t, itemResponse, string(gotItem))
+				assert.Contains(t, string(gotItem), "9007199254740993")
+			}
+		})
+	}
+}
+
+func TestWhitespaceSplitRunDiagnosticsAreSafeAtHumanAndExportCallers(t *testing.T) {
+	for _, separator := range []string{" ", "\t", "\n", "\r\n"} {
+		text := "Failed https://host/path?sig=" + separator + "fixture-secret; retry safely."
+		encoded, err := json.Marshal(text)
+		require.NoError(t, err)
+		response := `{"id":"run_split","status":"failed","error":{"message":` + string(encoded) +
+			`},"unknown":{"url":"https://host/?sig=retained-user-data","number":9007199254740993}}`
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if strings.HasSuffix(r.URL.Path, "/output_items") {
+				_, _ = w.Write([]byte(`{"data":[]}`))
+			} else {
+				assert.True(t, strings.HasSuffix(r.URL.Path, "/runs/run_split"))
+				_, _ = w.Write([]byte(response))
+			}
+		}))
+		t.Cleanup(srv.Close)
+		for _, caller := range []string{"human", "export"} {
+			command := jsonCmd(t, "table")
+			command.SetContext(t.Context())
+			var out bytes.Buffer
+			command.SetOut(&out)
+			ec := evalContextFor(srv)
+			if caller == "human" {
+				action := &runShowAction{cmd: command, runID: "run_split", flags: &runShowFlags{}}
+				require.NoError(t, action.show(t.Context(), ec, "eval_split", gate{}))
+				assert.Contains(t, out.String(), "Failed <redacted-url>; retry safely.")
+			} else {
+				action := &runOutputExportAction{cmd: command, runID: "run_split", flags: &runOutputExportFlags{}}
+				require.NoError(t, action.export(t.Context(), ec, "eval_split", exportToStdout))
+				var doc struct {
+					Run struct {
+						Error struct {
+							Message string `json:"message"`
+						} `json:"error"`
+						Unknown json.RawMessage `json:"unknown"`
+					} `json:"run"`
+				}
+				require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+				assert.Equal(t, "Failed <redacted-url>; retry safely.", doc.Run.Error.Message)
+				assert.Contains(t, string(doc.Run.Unknown), "retained-user-data")
+				assert.Contains(t, string(doc.Run.Unknown), "9007199254740993")
+			}
+			assert.NotContains(t, out.String(), "fixture-secret")
+		}
 	}
 }
 

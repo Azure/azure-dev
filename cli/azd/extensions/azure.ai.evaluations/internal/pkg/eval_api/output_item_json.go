@@ -27,8 +27,13 @@ func (o *OutputItem) UnmarshalJSON(data []byte) error {
 		}
 		return errors.New("unexpected JSON after output item")
 	}
+	initial, err := json.Marshal(decoded)
+	if err != nil {
+		return err
+	}
 	*o = OutputItem(decoded)
 	o.raw = append(json.RawMessage(nil), data...)
+	o.initial = initial
 	return nil
 }
 
@@ -40,5 +45,5 @@ func (o OutputItem) MarshalJSON() ([]byte, error) {
 	if err != nil || len(o.raw) == 0 {
 		return typed, err
 	}
-	return mergeServiceJSON(o.raw, typed)
+	return mergeServiceJSON(o.raw, typed, o.initial)
 }

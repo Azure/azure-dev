@@ -24,8 +24,13 @@ func (r *OpenAIEvalRun) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+	initial, err := json.Marshal(decoded)
+	if err != nil {
+		return err
+	}
 	*r = OpenAIEvalRun(decoded)
 	r.raw = append(json.RawMessage(nil), data...)
+	r.initial = initial
 	r.reportedCounts = make(map[string]bool, len(fields.Counts))
 	for key, value := range fields.Counts {
 		r.reportedCounts[key] = string(value) != "null"
@@ -86,21 +91,33 @@ func (r OpenAIEvalRun) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mergeServiceJSON(r.raw, typed)
+	return mergeServiceJSON(r.raw, typed, r.initial)
 }
 
-// Merge at every object and array level without decoding numbers into float64.
-func mergeServiceJSON(original, updated json.RawMessage) (json.RawMessage, error) {
+// Merge without float64 conversion or replacing absent/null service fields with
+// unchanged decoded defaults. The initial typed snapshot distinguishes edits.
+func mergeServiceJSON(original, updated, initial json.RawMessage) (json.RawMessage, error) {
+	if bytes.Equal(bytes.TrimSpace(original), []byte("null")) && bytes.Equal(updated, initial) {
+		return original, nil
+	}
 	var oldObject, newObject map[string]json.RawMessage
 	if json.Unmarshal(original, &oldObject) == nil && oldObject != nil &&
 		json.Unmarshal(updated, &newObject) == nil && newObject != nil {
+		var initialObject map[string]json.RawMessage
+		if len(initial) > 0 {
+			if err := json.Unmarshal(initial, &initialObject); err != nil {
+				return nil, err
+			}
+		}
 		for key, value := range newObject {
 			if previous, ok := oldObject[key]; ok {
-				merged, err := mergeServiceJSON(previous, value)
+				merged, err := mergeServiceJSON(previous, value, initialObject[key])
 				if err != nil {
 					return nil, err
 				}
 				value = merged
+			} else if bytes.Equal(value, initialObject[key]) {
+				continue
 			}
 			oldObject[key] = value
 		}
@@ -109,8 +126,18 @@ func mergeServiceJSON(original, updated json.RawMessage) (json.RawMessage, error
 	var oldArray, newArray []json.RawMessage
 	if json.Unmarshal(original, &oldArray) == nil && oldArray != nil &&
 		json.Unmarshal(updated, &newArray) == nil && newArray != nil {
+		var initialArray []json.RawMessage
+		if len(initial) > 0 {
+			if err := json.Unmarshal(initial, &initialArray); err != nil {
+				return nil, err
+			}
+		}
 		for i := range min(len(oldArray), len(newArray)) {
-			merged, err := mergeServiceJSON(oldArray[i], newArray[i])
+			var previous json.RawMessage
+			if i < len(initialArray) {
+				previous = initialArray[i]
+			}
+			merged, err := mergeServiceJSON(oldArray[i], newArray[i], previous)
 			if err != nil {
 				return nil, err
 			}

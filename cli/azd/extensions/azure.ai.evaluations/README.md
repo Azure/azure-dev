@@ -357,6 +357,7 @@ declaration to migrate. Each explicitly authored `data_mapping` field must match
 stored criterion exactly, including the column name, not just the item/sample namespace.
 Missing authored bindings or a missing/renamed stored criterion for those bindings
 are also conflicts; inferred defaults retain the narrower source-compatibility checks.
+These checks apply to both built-in and custom evaluator references.
 
 A trace target names an agent filter, not a new invocation. Managed trace evals
 with positively identified legacy sample bindings or conflicting custom sample-schema

@@ -1097,7 +1097,7 @@ func conflictingSourceContract(
 			}
 			matched = true
 			for _, ref := range group.Evaluators {
-				if ref.CriterionName() != desired.Name || ref.APIName() != desired.EvaluatorName {
+				if ref.CriterionName() != desired.Name || ref.Evaluator != desired.EvaluatorName {
 					continue
 				}
 				for field, binding := range ref.DataMapping {
@@ -1122,7 +1122,7 @@ func conflictingSourceContract(
 		}
 		if !matched {
 			for _, ref := range group.Evaluators {
-				if ref.CriterionName() == desired.Name && ref.APIName() == desired.EvaluatorName &&
+				if ref.CriterionName() == desired.Name && ref.Evaluator == desired.EvaluatorName &&
 					len(ref.DataMapping) > 0 {
 					return true
 				}

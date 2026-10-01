@@ -130,6 +130,7 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 			name, source, field, stored, authored string
 			sampled                               bool
 			criterion                             string
+			builtin                               bool
 		}{
 			{name: "trace sample schema", source: project.SourceTypeTraces, sampled: true},
 			{
@@ -184,6 +185,22 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 				name: "different response evaluator", source: project.SourceTypeResponses,
 				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "different evaluator",
 			},
+			{
+				name: "builtin trace mapping", source: project.SourceTypeTraces, builtin: true,
+				field: "query", stored: "{{item.old}}", authored: "{{item.new}}",
+			},
+			{
+				name: "builtin response mapping", source: project.SourceTypeResponses, builtin: true,
+				field: "query", stored: "{{item.old}}", authored: "{{item.new}}",
+			},
+			{
+				name: "missing builtin trace criterion", source: project.SourceTypeTraces, builtin: true,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "missing",
+			},
+			{
+				name: "renamed builtin response criterion", source: project.SourceTypeResponses, builtin: true,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "renamed",
+			},
 		} {
 			t.Run(caller+"/"+tc.name, func(t *testing.T) {
 				ec, env, service, cfg, dir := newCatalogPinFixture(t)
@@ -195,13 +212,17 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 				group := sourceContractGroup(tc.source)
 				group.ID = "eval_pinned"
 				group.Evaluators = evalcore.EvaluatorList{{Evaluator: "custom", Name: "named_criterion"}}
+				if tc.builtin {
+					group.Evaluators[0].Evaluator = "builtin.coherence"
+				}
 				if tc.authored != "" {
 					group.Evaluators[0].DataMapping = map[string]string{tc.field: tc.authored}
 				}
 				cfg.Evals = []project.Eval{group}
 				contract, err := evaluatorContract(service.versions["1"])
 				require.NoError(t, err)
-				request, err := buildEvalRequest(&group, map[string]*eval_api.EvaluatorSummary{"custom": contract}, nil)
+				request, err := buildEvalRequest(&group,
+					map[string]*eval_api.EvaluatorSummary{group.Evaluators[0].Evaluator: contract}, nil)
 				require.NoError(t, err)
 				configJSON, err := json.Marshal(request.DataSourceConfig)
 				require.NoError(t, err)
@@ -277,7 +298,7 @@ func TestSourceContractPreservesInferredDefaultsAndMatchingAuthoredMappings(t *t
 				request, err := buildEvalRequest(&group, nil, nil)
 				require.NoError(t, err)
 				remote := &eval_api.OpenAIEval{TestingCriteria: []eval_api.TestingCriterion{{
-					Name: "named_criterion", EvaluatorName: "coherence",
+					Name: "named_criterion", EvaluatorName: group.Evaluators[0].Evaluator,
 					DataMapping: map[string]string{"service_added": "{{item.enrichment}}"},
 				}}}
 				if tc.stored != "" {
@@ -323,6 +344,66 @@ func TestManagedSourceContractReplacesMissingAuthoredCriterion(t *testing.T) {
 					assert.Zero(t, service.publishes)
 				})
 			}
+		}
+	}
+}
+
+func TestManagedBuiltinSourceContractHonorsAuthoredMappings(t *testing.T) {
+	for _, mode := range []string{project.SourceTypeTraces, project.SourceTypeResponses} {
+		for _, rename := range []bool{false, true} {
+			for _, storedMapping := range []string{"{{item.old}}", "{{item.new}}"} {
+				t.Run(mode+"/"+storedMapping, func(t *testing.T) {
+					group := sourceContractGroup(mode)
+					group.Evaluators[0].DataMapping = map[string]string{"query": "{{item.new}}"}
+					desired := group
+					if rename {
+						desired.Name = "renamed"
+					}
+					r, _, posts, updates := sourceContractReconciler(t, group, false, rename, &desired,
+						func(stored *eval_api.CreateOpenAIEvalRequest) {
+							stored.TestingCriteria[0].DataMapping["query"] = storedMapping
+						})
+					id, created, err := r.EnsureEval(t.Context(), desired, "")
+					require.NoError(t, err)
+					if storedMapping == "{{item.new}}" {
+						assert.Equal(t, "eval_old", id)
+						assert.False(t, created)
+						assert.Empty(t, *posts)
+					} else {
+						assert.Equal(t, "eval_new", id)
+						assert.True(t, created)
+						require.Len(t, *posts, 1)
+						assert.Equal(t, "builtin.coherence", (*posts)[0].TestingCriteria[0].EvaluatorName)
+						assert.Equal(t, "{{item.new}}", (*posts)[0].TestingCriteria[0].DataMapping["query"])
+						assert.Zero(t, *updates, "do not rename the incompatible immutable eval")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestExplicitSourceContractKeepsMatchingAuthoredMappings(t *testing.T) {
+	for _, mode := range []string{project.SourceTypeTraces, project.SourceTypeResponses} {
+		for _, evaluator := range []string{"custom", "builtin.coherence"} {
+			t.Run(mode+"/"+evaluator, func(t *testing.T) {
+				group := sourceContractGroup(mode)
+				group.ID = "eval_old"
+				group.Evaluators[0].Evaluator = evaluator
+				group.Evaluators[0].DataMapping = map[string]string{"query": "{{item.custom_query}}"}
+				r, env, posts, updates := sourceContractReconciler(t, group, false, false, &group)
+				request, err := buildEvalRequest(&group, r.ec.schemas, nil)
+				require.NoError(t, err)
+				r.prepared = map[string]preparedEval{group.Name: {group: group, request: request}}
+				id, created, err := r.EnsureEval(t.Context(), group, "")
+				require.NoError(t, err)
+				assert.Equal(t, group.ID, id)
+				assert.False(t, created)
+				assert.Empty(t, *posts)
+				assert.Zero(t, *updates)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.values)
+			})
 		}
 	}
 }

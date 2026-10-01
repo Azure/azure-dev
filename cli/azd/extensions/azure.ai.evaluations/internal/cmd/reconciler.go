@@ -1090,10 +1090,12 @@ func conflictingSourceContract(
 		return ""
 	}
 	for _, desired := range want.TestingCriteria {
+		matched := false
 		for _, stored := range have.TestingCriteria {
 			if stored.Name != desired.Name || stored.EvaluatorName != desired.EvaluatorName {
 				continue
 			}
+			matched = true
 			for _, ref := range group.Evaluators {
 				if ref.CriterionName() != desired.Name || ref.APIName() != desired.EvaluatorName {
 					continue
@@ -1114,6 +1116,14 @@ func conflictingSourceContract(
 				outputs := []string{"{{sample.output_items}}", "{{sample.output_text}}"}
 				from, to := stored.DataMapping["response"], desired.DataMapping["response"]
 				if from != to && slices.Contains(outputs, from) && slices.Contains(outputs, to) {
+					return true
+				}
+			}
+		}
+		if !matched {
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() == desired.Name && ref.APIName() == desired.EvaluatorName &&
+					len(ref.DataMapping) > 0 {
 					return true
 				}
 			}

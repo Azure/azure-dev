@@ -129,6 +129,7 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 		for _, tc := range []struct {
 			name, source, field, stored, authored string
 			sampled                               bool
+			criterion                             string
 		}{
 			{name: "trace sample schema", source: project.SourceTypeTraces, sampled: true},
 			{
@@ -158,6 +159,30 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 			{
 				name: "authored literal", source: project.SourceTypeResponses,
 				field: "context", stored: "old", authored: "new",
+			},
+			{
+				name: "missing trace criterion", source: project.SourceTypeTraces,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "missing",
+			},
+			{
+				name: "renamed trace criterion", source: project.SourceTypeTraces,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "renamed",
+			},
+			{
+				name: "different trace evaluator", source: project.SourceTypeTraces,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "different evaluator",
+			},
+			{
+				name: "missing response criterion", source: project.SourceTypeResponses,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "missing",
+			},
+			{
+				name: "renamed response criterion", source: project.SourceTypeResponses,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "renamed",
+			},
+			{
+				name: "different response evaluator", source: project.SourceTypeResponses,
+				field: "query", stored: "{{item.new}}", authored: "{{item.new}}", criterion: "different evaluator",
 			},
 		} {
 			t.Run(caller+"/"+tc.name, func(t *testing.T) {
@@ -197,6 +222,14 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 						remote.TestingCriteria[0].DataMapping[tc.field] = tc.stored
 					}
 				}
+				switch tc.criterion {
+				case "missing":
+					remote.TestingCriteria = nil
+				case "renamed":
+					remote.TestingCriteria[0].Name = "another_criterion"
+				case "different evaluator":
+					remote.TestingCriteria[0].EvaluatorName = "another_evaluator"
+				}
 				before, err := json.Marshal(remote)
 				require.NoError(t, err)
 				if caller == "ensure" {
@@ -228,8 +261,10 @@ func TestSourceContractPreservesInferredDefaultsAndMatchingAuthoredMappings(t *t
 	for _, mode := range []string{project.SourceTypeTraces, project.SourceTypeResponses} {
 		for _, tc := range []struct {
 			name, stored, authored string
+			missingCriterion       bool
 		}{
 			{name: "missing inferred mapping"},
+			{name: "missing inferred criterion", missingCriterion: true},
 			{name: "changed inferred item field", stored: "{{item.old}}"},
 			{name: "matching authored mapping", stored: "{{item.new}}", authored: "{{item.new}}"},
 		} {
@@ -248,8 +283,46 @@ func TestSourceContractPreservesInferredDefaultsAndMatchingAuthoredMappings(t *t
 				if tc.stored != "" {
 					remote.TestingCriteria[0].DataMapping["query"] = tc.stored
 				}
+				if tc.missingCriterion {
+					remote.TestingCriteria = nil
+				}
 				assert.False(t, conflictingSourceContract(group, remote, request))
 			})
+		}
+	}
+}
+
+func TestManagedSourceContractReplacesMissingAuthoredCriterion(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, source := range []string{project.SourceTypeTraces, project.SourceTypeResponses} {
+			for _, lookup := range []string{"cached", "rename"} {
+				t.Run(caller+"/"+source+"/"+lookup, func(t *testing.T) {
+					ec, _, service, cfg, dir := newCatalogPinFixture(t)
+					service.versions = map[string]json.RawMessage{"1": responseReviewContract("string")}
+					cfg.Evals[0].Source = sourceContractGroup(source).Source
+					cfg.Evals[0].Evaluators[0].Name = "authored_criterion"
+					cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"query": "{{item.custom_query}}"}
+					first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+					service.evals[first].TestingCriteria = nil
+					before, err := json.Marshal(service.evals[first])
+					require.NoError(t, err)
+					if lookup == "rename" {
+						cfg.Evals[0].Name = "renamed"
+					}
+					next := reconcileCatalogPin(t, caller, ec, cfg, dir)
+					require.NotEqual(t, first, next)
+					require.Len(t, service.created, 2)
+					after, err := json.Marshal(service.evals[first])
+					require.NoError(t, err)
+					assert.JSONEq(t, string(before), string(after), "leave the old eval and its history untouched")
+					require.Len(t, service.evals[next].TestingCriteria, 1)
+					assert.Equal(t, "authored_criterion", service.evals[next].TestingCriteria[0].Name)
+					assert.Equal(t, "{{item.custom_query}}", service.evals[next].TestingCriteria[0].DataMapping["query"])
+					assert.Equal(t, next, reconcileCatalogPin(t, caller, ec, cfg, dir))
+					assert.Len(t, service.created, 2, "retry must not create another eval")
+					assert.Zero(t, service.publishes)
+				})
+			}
 		}
 	}
 }

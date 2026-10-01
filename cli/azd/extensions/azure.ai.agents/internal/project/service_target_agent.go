@@ -290,21 +290,13 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 	if !serviceConfigHasRef(p.serviceConfig) {
 		return nil
 	}
-	if p.projectPath == "" {
-		proj, err := p.azdClient.Project().Get(ctx, nil)
-		if err != nil {
-			return exterrors.Dependency(
-				exterrors.CodeProjectNotFound,
-				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
-				"run 'azd init' to initialize your project",
-			)
-		}
-		p.projectPath = proj.GetProject().GetPath()
+	if err := p.loadProjectPath(ctx); err != nil {
+		return err
 	}
 	return p.resolveServiceConfig()
 }
 
-func (p *AgentServiceTargetProvider) ensureProjectPath(ctx context.Context) error {
+func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
 	if p.projectPath != "" {
 		return nil
 	}
@@ -684,7 +676,7 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
-	if err := p.ensureProjectPath(ctx); err != nil {
+	if err := p.loadProjectPath(ctx); err != nil {
 		return nil, err
 	}
 

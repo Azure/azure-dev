@@ -59,6 +59,8 @@ func TestExtensionInstall_EmptyVersion(t *testing.T) {
 				require.NotEmpty(t, suggestion.Suggestion)
 				if len(tt.args) > 1 || tt.name == "bundle" {
 					require.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
+				} else {
+					require.ErrorIs(t, err, internal.ErrInvalidArgValue)
 				}
 			})
 		}

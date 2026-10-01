@@ -1205,7 +1205,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 	}
 	if versionSpecified && a.flags.version == "" {
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        errors.New("--version cannot be empty"),
+			Err:        fmt.Errorf("--version cannot be empty: %w", internal.ErrInvalidArgValue),
 			Suggestion: "Specify an exact extension version or latest, or omit --version to install the latest version.",
 		}
 	}

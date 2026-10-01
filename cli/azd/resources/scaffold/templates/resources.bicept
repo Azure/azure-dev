@@ -96,16 +96,14 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.4.1' = {
 {{- end}}
 
 {{- if hasFunctionApp .Services}}
-module functionAppPlan 'br/public:avm/res/web/serverfarm:0.1.1' = {
+module functionAppPlan 'br/public:avm/res/web/serverfarm:0.7.0' = {
   name: 'function-app-plan'
   params: {
     name: '${abbrs.webServerFarms}func-${resourceToken}'
     location: location
     tags: tags
-    sku: {
-      name: 'FC1'
-      tier: 'FlexConsumption'
-    }
+    kind: 'functionApp'
+    skuName: 'FC1'
     reserved: true
   }
 }
@@ -931,7 +929,7 @@ module {{bicepName .Name}}FunctionStorage 'modules/function-storage.bicep' = {
   {{- end}}
 }
 
-module {{bicepName .Name}} 'br/public:avm/res/web/site:0.16.0' = {
+module {{bicepName .Name}} 'br/public:avm/res/web/site:0.24.0' = {
   name: 'function-app-{{bicepName .Name}}'
   params: {
     name: '${abbrs.webSitesFunctions}{{.Name}}-${resourceToken}'

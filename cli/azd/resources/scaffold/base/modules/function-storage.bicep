@@ -2,16 +2,16 @@ param storageAccountName string
 param containerName string
 param principalId string
 
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+resource storage 'Microsoft.Storage/storageAccounts@2026-04-01' existing = {
   name: storageAccountName
 }
 
-resource blobs 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = {
+resource blobs 'Microsoft.Storage/storageAccounts/blobServices@2026-04-01' existing = {
   parent: storage
   name: 'default'
 }
 
-resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@2026-04-01' = {
   parent: blobs
   name: containerName
   properties: {

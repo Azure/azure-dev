@@ -27,6 +27,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Language     | JavaScript/TypeScript    | Stable    |
 | Language     | Java                     | Stable    |
 | Language     | .NET                     | Stable    |
+| Language     | Go (Azure Functions on Flex Consumption only) | Beta |
 | Client       | Visual Studio Code       | Beta      |
 | Client       | Visual Studio            | Alpha     |
 | Client       | Codespaces               | Beta      |
@@ -42,5 +43,8 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Host         | Azure Static Web Apps    | Stable    |
 | Host         | Azure Container Apps     | Stable    |
 | Host         | Azure Functions          | Stable    |
+| Host         | Azure Functions via `azd add` (Flex Consumption compose) | Beta |
 | Host         | Azure Kubernetes Service | Beta      |
 | Host         | Azure AI                 | Beta      |
+
+The Azure Functions Go runtime is in public preview; this is separate from azd's Beta feature stage.

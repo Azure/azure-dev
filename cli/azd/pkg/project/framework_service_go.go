@@ -193,7 +193,7 @@ func (gp *goProject) Package(
 
 	// Copy host.json from user project (required for Azure Functions deployment)
 	hostJSONSrc := filepath.Join(serviceConfig.Path(), "host.json")
-	if info, err := os.Stat(hostJSONSrc); err != nil {
+	if _, err := os.Stat(hostJSONSrc); err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf(
 				"host.json not found at %q: Azure Functions requires a host.json file in the project directory",
@@ -201,8 +201,6 @@ func (gp *goProject) Package(
 			)
 		}
 		return nil, fmt.Errorf("checking host.json at %q: %w", hostJSONSrc, err)
-	} else if info.IsDir() {
-		return nil, fmt.Errorf("host.json must be a file in Function App project %q", serviceConfig.Path())
 	}
 	if err := copy.Copy(
 		hostJSONSrc, filepath.Join(packageDir, "host.json"),

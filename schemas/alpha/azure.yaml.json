@@ -2391,6 +2391,8 @@
                     "properties": {
                         "stack": {
                             "type": "string",
+                            "title": "Function runtime stack",
+                            "description": "Required. Must match the service language: python for Python, node for JavaScript/TypeScript, dotnet-isolated for .NET isolated (C#/F#), java for Java, or go for Go.",
                             "enum": [
                                 "python",
                                 "node",
@@ -2401,6 +2403,8 @@
                         },
                         "version": {
                             "type": "string",
+                            "title": "Function runtime version",
+                            "description": "Required. Numeric runtime version supported by Flex Consumption. App Service suffixes such as '22-lts' are not supported. (Example: '3.12' for python, '22' for node, '8.0' for dotnet-isolated, '21' for java, '1.0' for go)",
                             "pattern": "^[0-9]+(\\.[0-9]+)?$"
                         }
                     }

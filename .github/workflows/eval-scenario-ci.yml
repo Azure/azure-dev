@@ -1,10 +1,21 @@
 name: Installed evaluation scenarios (offline)
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/eval-scenario-ci.yml
+      - .github/workflows/eval-candidate-proof.yml
+      - eng/scripts/eval-scenario-ci/**
+      - eng/scripts/eval-candidate-proof/verify.py
+      - eng/scripts/eval-candidate-proof/owned_process.py
+      - eng/scripts/eval-candidate-proof/checks.json
+      - eng/scripts/eval-candidate-proof/candidate.json
+      - eng/pipelines/eval-scenario-ci.yml
   push:
     branches: [main, m7md7sien-evaluation-github-actions-proof]
     paths:
       - .github/workflows/eval-scenario-ci.yml
+      - .github/workflows/eval-candidate-proof.yml
       - eng/scripts/eval-scenario-ci/**
       - eng/scripts/eval-candidate-proof/verify.py
       - eng/scripts/eval-candidate-proof/owned_process.py
@@ -35,8 +46,27 @@ env:
   AZD_SCENARIO_APPROVED_COMMIT: ${{ vars.AZD_SCENARIO_APPROVED_COMMIT }}
 
 jobs:
+  harness-tests:
+    name: Python harness tests / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Test harness without candidate downloads or Azure access
+        run: python -m unittest discover -s eng/scripts/eval-scenario-ci -p 'test_*.py' -v
+
   resolve:
-    if: inputs.mode != 'live' && (github.event_name != 'push' || vars.AZD_SCENARIO_APPROVED_COMMIT != '')
+    if: inputs.mode != 'live' && github.event_name != 'pull_request' && (github.event_name != 'push' || vars.AZD_SCENARIO_APPROVED_COMMIT != '')
+    needs: harness-tests
     name: Freeze Latest once
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -49,7 +79,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Test resolution, redaction and fail-closed live boundary
+      - name: Reject a service plan in offline mode
         env:
           SERVICE_PLAN: ${{ inputs.service_plan }}
         run: |
@@ -57,7 +87,6 @@ jobs:
             echo "::error::service_plan requires mode=live"
             exit 1
           fi
-          python -m unittest discover -s eng/scripts/eval-scenario-ci -p 'test_*.py' -v
       - name: Resolve the public Latest release into immutable pins
         id: freeze
         env:

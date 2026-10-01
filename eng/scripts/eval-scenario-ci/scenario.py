@@ -27,6 +27,16 @@ EXTENSIONS = {"azure.ai.evaluations": "eval", "azure.ai.dataset": "dataset"}
 HEX = re.compile(r"^[0-9a-f]{64}$")
 TAG = re.compile(r"^extensions-\d{4}-\d{2}-\d{2}-[1-9]\d*$")
 CANCEL_ARITY_ERROR = r"^accepts at most 1 arg\(s\), received 2$"
+SCENARIO_CHECKS = (
+    "isolated config write primary",
+    "isolated config read primary",
+    "fresh profile has no inherited configuration",
+    "isolated config write secondary",
+    "isolated config read secondary",
+    "primary config survives environment switch",
+    "cancel refuses multiple run IDs",
+    "cancel refuses unknown flag",
+)
 
 spec = importlib.util.spec_from_file_location("candidate_proof", BASELINE / "verify.py")
 proof_module = importlib.util.module_from_spec(spec)
@@ -494,7 +504,7 @@ def installed_evidence(proof, pin):
     for extension in EXTENSIONS:
         asset = pin["scenarioResolution"]["artifacts"][extension][platform]
         archive = proof.root / "downloads" / asset["url"].rsplit("/", 1)[-1]
-        installed = proof.root / "config" / "extensions" / extension / asset["entryPoint"]
+        installed = proof.installed_extension_path(extension)
         expected = sha256(proof_module.binary_from_archive(archive, asset["entryPoint"]))
         actual = sha256(installed.read_bytes())
         require(sha256(archive.read_bytes()) == asset["sha256"] and actual == expected,
@@ -586,8 +596,10 @@ def execute(manifest, output):
             proof_module.validate_baseline_checks(proof.checks)
             report["baselineCheckCount"] = len(proof.checks)
             extra_scenarios(proof)
-            report["scenarioCheckCount"] = len(proof.checks) - 160
-            require(report["scenarioCheckCount"] == 8, "Additional scenario count changed")
+            added_checks = proof.checks[report["baselineCheckCount"]:]
+            report["scenarioCheckCount"] = len(added_checks)
+            require(added_checks == list(SCENARIO_CHECKS),
+                    "Additional scenario IDs differ: missing, duplicated, reordered or changed checks")
         require(manifest.read_bytes() == pin_bytes, "Frozen manifest changed during execution")
         report["status"] = "PASS"
     finally:

@@ -20,7 +20,7 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import platform
 import re
 import shutil
@@ -256,6 +256,36 @@ class Proof:
             "projectDigestAfter": sha256(json.dumps(after, sort_keys=True).encode()),
         }
 
+    def installed_extension_path(self, extension_id):
+        config = (self.root / "config").resolve()
+        require(Path(self.env["AZD_CONFIG_DIR"]).resolve() == config,
+                "Extension verification requires the isolated primary profile")
+        settings = json.loads((config / "config.json").read_text(encoding="utf-8-sig"))
+        extension_settings = settings.get("extension", {}) if isinstance(settings, dict) else {}
+        installed = extension_settings.get("installed", {}) if isinstance(extension_settings, dict) else {}
+        require(isinstance(installed, dict) and extension_id in installed
+                and set(installed) <= set(self.pin["extensions"]),
+                "The isolated profile contains missing or unexpected installed extensions")
+        for identity, record in installed.items():
+            pin = self.pin["extensions"][identity]
+            require(isinstance(record, dict) and record.get("id") == identity
+                    and record.get("namespace") == "ai." + pin["command"]
+                    and record.get("version") == pin["version"],
+                    "Installed extension routing or version metadata differs from the pin")
+        raw_path = installed[extension_id].get("path")
+        require(isinstance(raw_path, str) and raw_path
+                and not Path(raw_path).is_absolute() and not PureWindowsPath(raw_path).drive
+                and not PureWindowsPath(raw_path).root,
+                "Installed extension path must be relative to the isolated profile")
+        require(".." not in Path(raw_path).parts and ".." not in PureWindowsPath(raw_path).parts
+                and ":" not in raw_path, "Installed extension path must be a contained executable path")
+        require(os.name != "nt" or Path(raw_path).suffix.lower() == ".exe",
+                "Windows installed extension paths must name an explicit executable")
+        binary = (config / raw_path).resolve()
+        require(binary.is_relative_to(config), "Installed extension path escapes the isolated profile")
+        require(binary.is_file(), "Installed extension path must name an existing executable")
+        return binary
+
     def install(self):
         downloads = self.root / "downloads"
         azd_pin = self.pin["azd"]
@@ -300,10 +330,7 @@ class Proof:
                     "Registry checksum differs from the independent candidate pin")
             require(artifact["url"].startswith(base), "Artifact is not from the pinned release")
             archive = download(artifact["url"], digest, downloads)
-            expected_binaries[extension["id"]] = (
-                artifact["entryPoint"],
-                sha256(binary_from_archive(archive, artifact["entryPoint"])),
-            )
+            expected_binaries[extension["id"]] = sha256(binary_from_archive(archive, artifact["entryPoint"]))
             # Only the URL changes. azd independently verifies the original archive digest.
             artifact["url"] = str(archive)
             version["artifacts"] = {self.platform: artifact}
@@ -319,8 +346,8 @@ class Proof:
                 "extension", "install", extension_id, "--source", "candidate-proof",
                 "--version", pin["version"],
             ], timeout=120)
-            entry, digest = expected_binaries[extension_id]
-            installed = self.root / "config" / "extensions" / extension_id / entry
+            digest = expected_binaries[extension_id]
+            installed = self.installed_extension_path(extension_id)
             require(sha256(installed.read_bytes()) == digest, "Installed binary differs from release")
             info = self.run(
                 f"{extension_id} version JSON",

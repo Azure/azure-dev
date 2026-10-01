@@ -495,6 +495,30 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("AZD_SCENARIO_APPROVED_COMMIT: ${{ vars.AZD_SCENARIO_APPROVED_COMMIT }}", workflow)
         self.assertIn("AZD_SCENARIO_APPROVAL_REPOSITORY: ${{ github.repository }}", workflow)
 
+    def test_pull_requests_run_only_independent_harness_tests(self):
+        workflow = (scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml").read_text()
+        pull_request = workflow.split("  pull_request:\n", 1)[1].split("  push:\n", 1)[0]
+        push_paths = workflow.split("  push:\n", 1)[1].split("    paths:\n", 1)[1].split(
+            "  workflow_dispatch:", 1)[0]
+        self.assertEqual(pull_request.split("    paths:\n", 1)[1], push_paths)
+        self.assertIn("      - .github/workflows/eval-candidate-proof.yml\n", pull_request)
+        tests = workflow.split("  harness-tests:\n", 1)[1].split("  resolve:\n", 1)[0]
+        self.assertIn("os: [ubuntu-24.04, windows-2025]", tests)
+        self.assertIn("persist-credentials: false", tests)
+        self.assertIn("python -m unittest discover -s eng/scripts/eval-scenario-ci -p 'test_*.py' -v", tests)
+        for forbidden in ("if:", "needs:", "secrets.", "environment:", "scenario.py", "service.py",
+                          "verify.py", "download-artifact", "AZD_SCENARIO_APPROVED_COMMIT"):
+            self.assertNotIn(forbidden, tests)
+        resolve = workflow.split("  resolve:\n", 1)[1].split("  offline:\n", 1)[0]
+        self.assertIn("github.event_name != 'pull_request'", resolve)
+        self.assertIn("needs: harness-tests", resolve)
+        offline = workflow.split("  offline:\n", 1)[1].split("  live-prerequisites:\n", 1)[0]
+        self.assertIn("needs: resolve", offline)
+        for job in ("live-prerequisites", "live-service"):
+            self.assertIn("if: inputs.mode == 'live'", workflow.split(f"  {job}:\n", 1)[1].split("steps:", 1)[0])
+        self.assertNotIn("pull_request_target:", workflow)
+        self.assertIn("permissions:\n  contents: read", workflow)
+
     def test_archive_errors_are_recorded_without_suppressing_them(self):
         legacy = scenario.proof_module
         for filename, expected in (("broken.zip", legacy.zipfile.BadZipFile),
@@ -612,7 +636,7 @@ class SafetyTests(unittest.TestCase):
             fake.checks = scenario.proof_module.expected_baseline_checks()
 
             def extras(proof):
-                proof.checks.extend(["extra"] * 8)
+                proof.checks.extend(scenario.SCENARIO_CHECKS)
 
             failure = PermissionError("cleanup failed")
             owned = Path(root) / "owned"
@@ -674,13 +698,55 @@ class SafetyTests(unittest.TestCase):
             with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \
                  mock.patch.object(scenario, "installed_evidence", return_value={}), \
                  mock.patch.object(scenario, "extra_scenarios",
-                                   side_effect=lambda proof: proof.checks.extend(["extra"] * 8)):
+                                   side_effect=lambda proof: proof.checks.extend(scenario.SCENARIO_CHECKS)):
                 scenario.execute(manifest, output)
             self.assertEqual((output / "candidate.json").read_bytes(), frozen)
             report = json.loads((output / "results.json").read_text())
             self.assertEqual(report["manifestSha256"], scenario.sha256(frozen))
             self.assertEqual(report["status"], "PASS")
             self.assertEqual(report["cleanup"]["status"], "PASS")
+
+    def test_additional_scenario_ids_reject_missing_duplicate_changed_and_reordered_checks(self):
+        expected = list(scenario.SCENARIO_CHECKS)
+        for added in (expected[:-1], expected[:-1] + [expected[0]],
+                      expected[:-1] + ["different check"], list(reversed(expected)), expected + ["extra"]):
+            with self.subTest(added=added), tempfile.TemporaryDirectory() as root:
+                pin, authority = scenario.reviewed_candidate()
+                manifest, output = Path(root) / "manifest.json", Path(root) / "evidence"
+                scenario.write_json(manifest, producer_manifest(pin, authority))
+                fake = mock.Mock()
+                fake.env, fake.platform, fake.commands = {}, "windows/amd64", []
+                fake.checks = scenario.proof_module.expected_baseline_checks()
+                with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \
+                     mock.patch.object(scenario, "installed_evidence", return_value={}), \
+                     mock.patch.object(scenario, "extra_scenarios",
+                                       side_effect=lambda proof: proof.checks.extend(added)):
+                    with self.assertRaisesRegex(AssertionError, "Additional scenario IDs differ"):
+                        scenario.execute(manifest, output)
+                report = json.loads((output / "results.json").read_text())
+                self.assertEqual(report["status"], "FAIL")
+                self.assertEqual(report["checks"][160:], added)
+                self.assertEqual(report["cleanup"]["status"], "PASS")
+                self.assertIn("Additional scenario IDs differ", report["failure"]["message"])
+
+    def test_extra_scenarios_emit_the_ordered_eight_check_contract(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            proof = scenario.proof_module.Proof(root, root, {})
+            scenario.write_json(root / "config" / "config.json", {})
+
+            def run(name, *args, **kwargs):
+                proof.checks.append(name)
+                if name == "fresh profile has no inherited configuration":
+                    return {}
+                return "secondary" if name == "isolated config read secondary" else "primary"
+
+            with mock.patch.object(proof, "run", side_effect=run), \
+                 mock.patch.object(proof, "refuse_without_writes", side_effect=run):
+                scenario.extra_scenarios(proof)
+            self.assertEqual(proof.checks, list(scenario.SCENARIO_CHECKS))
+            self.assertEqual(len(proof.checks), 8)
+            self.assertEqual(proof.env["AZD_CONFIG_DIR"], str(root / "config"))
 
     def test_manifest_integrity_failure_is_persisted_after_workspace_cleanup(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
@@ -694,7 +760,7 @@ class SafetyTests(unittest.TestCase):
             fake.checks = scenario.proof_module.expected_baseline_checks()
 
             def mutate(proof):
-                proof.checks.extend(["extra"] * 8)
+                proof.checks.extend(scenario.SCENARIO_CHECKS)
                 manifest.write_text('{"changed":true}')
 
             with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \

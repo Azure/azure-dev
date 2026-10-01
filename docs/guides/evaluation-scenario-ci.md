@@ -61,11 +61,19 @@ consumer verification. A `BLOCKED` receipt may therefore indicate unavailable
 evidence, not necessarily a mismatched approval.
 The original publisher's source declaration is retained as provenance, not
 inferred from a filename. Each job verifies archive bytes, computes extracted
-and installed executable digests, and checks actual version output. A changed
+and installed executable digests, and checks actual version output. Extension
+hashes come from the executable route persisted in the isolated
+`config.json` (`extension.installed.<id>.path`), after checking the ID,
+namespace, version and path containment, before invoking extension version
+commands. The receipt rechecks that same route rather than reconstructing a
+path from the archive entry point. A changed
 future CLI contract fails the retained baseline; it is not silently waived.
 The baseline command IDs are checked against the ordered, unique
 [`checks.json`](../../eng/scripts/eval-candidate-proof/checks.json) contract,
-not merely counted.
+not merely counted. The eight additional scenario IDs must also match their
+exact ordered contract: six profile-isolation checks followed by the two
+cancellation-argument refusals. Missing, duplicate, substituted or reordered
+checks cannot produce a passing receipt.
 
 ### Independent repository approval
 
@@ -144,6 +152,14 @@ This is not represented as a general-purpose network sandbox.
 ## GitHub Actions
 
 [Workflow](../../.github/workflows/eval-scenario-ci.yml):
+
+Pull requests changing the workflow or shared harness/manifest dependencies run
+the Python `unittest` suite on Linux and Windows, without approval configuration.
+This independent job downloads no candidate packages, invokes no candidate
+binaries and makes no live Azure calls; process-lifetime tests use synthetic
+Python children. Package resolution and installed-package execution are excluded
+from pull requests. On eligible pushes and dispatches, resolution additionally
+requires the harness tests to pass.
 
 ```powershell
 # Requires the maintainer-selected immutable approval revision in repository settings.

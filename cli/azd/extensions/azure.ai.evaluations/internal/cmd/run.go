@@ -156,6 +156,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 func (a *runStartAction) Run() error {
 	ctx := a.cmd.Context()
+	if err := a.validateDatasetFlag(); err != nil {
+		return err
+	}
 
 	// Parsed before any network work, so a malformed threshold costs
 	// nothing to find out about.
@@ -186,6 +189,9 @@ func (a *runStartAction) Run() error {
 }
 
 func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold gate) error {
+	if err := a.validateDatasetFlag(); err != nil {
+		return err
+	}
 	out := a.cmd.OutOrStdout()
 	// One flag takes a name or an id. A declared name also brings the
 	// declaration, which is what says where rows come from; a bare id
@@ -236,15 +242,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	case group == nil:
 		dataSource, metadata, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 	case group.IsLocalSource():
-		// Validate the whole file, including rows beyond the cap, against the
-		// registered eval before selecting the bytes submitted by this invocation.
-		dataSource, _, err = ec.buildRunDataSource(ctx, group, configPath, 0)
-		if err == nil {
-			err = ec.validateLocalRunDefinition(ctx, evalID, group, dataSource.Source.Content)
-		}
-		if err == nil && maxSamples > 0 && len(dataSource.Source.Content) > maxSamples {
-			dataSource.Source.Content = dataSource.Source.Content[:maxSamples]
-		}
+		dataSource, err = ec.localRunDataSource(ctx, group, configPath, maxSamples, evalID)
 	default:
 		dataSource, datasetVersion, err = ec.buildRunDataSource(ctx, group, configPath, maxSamples)
 	}
@@ -354,6 +352,15 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		return err
 	}
 	applyGate(a.cmd, threshold, final)
+	return nil
+}
+
+func (a *runStartAction) validateDatasetFlag() error {
+	if a.cmd.Flags().Changed("dataset") && strings.TrimSpace(a.flags.datasetName) == "" {
+		return exterrors.Validation(exterrors.CodeInvalidParameter,
+			"--dataset must not be empty when explicitly supplied",
+			"Provide a catalog dataset name, or omit --dataset to keep the declared or stored source.")
+	}
 	return nil
 }
 
@@ -684,24 +691,10 @@ func (ec *evalContext) buildRunDataSource(
 	}
 
 	if group.IsLocalSource() {
-		cfg, err := project.LoadEvalConfig(configPath)
+		ds, err := ec.localRunDataSource(ctx, group, configPath, maxSamples, "")
 		if err != nil {
 			return nil, "", err
 		}
-		selected := cfg.WithCatalogEvaluatorPins(*group)
-		group = &selected
-		rows, _, err := ec.localEvalInput(ctx, group, group.LocalSourcePath(filepath.Dir(configPath)))
-		if err != nil {
-			return nil, "", err
-		}
-		ds, err := ec.datasetRunTarget(ctx, group)
-		if err != nil {
-			return nil, "", err
-		}
-		if maxSamples > 0 && len(rows) > maxSamples {
-			rows = rows[:maxSamples]
-		}
-		ds.SetFileContent(rows)
 		return ds, "", nil
 	}
 
@@ -775,6 +768,26 @@ func (ec *evalContext) buildRunDataSource(
 	}
 	ds.SetFileContent(items)
 	return ds, "", nil
+}
+
+func (ec *evalContext) localRunDataSource(
+	ctx context.Context, group *project.Eval, configPath string, maxSamples int, evalID string,
+) (*eval_api.EvalRunDataSource, error) {
+	cfg, err := project.LoadEvalConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+	selected := cfg.WithCatalogEvaluatorPins(*group)
+	rows, _, err := ec.localEvalInput(ctx, &selected, selected.LocalSourcePath(filepath.Dir(configPath)), maxSamples, evalID)
+	if err != nil {
+		return nil, err
+	}
+	ds, err := ec.datasetRunTarget(ctx, &selected)
+	if err != nil {
+		return nil, err
+	}
+	ds.SetFileContent(rows)
+	return ds, nil
 }
 
 func (ec *evalContext) datasetRunTarget(ctx context.Context, group *project.Eval) (*eval_api.EvalRunDataSource, error) {

@@ -6,9 +6,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
@@ -26,54 +28,128 @@ func (r *evalReconciler) PreflightLocalEval(ctx context.Context, group project.E
 	if !group.IsLocalSource() {
 		return nil
 	}
-	_, _, err := r.ec.localEvalInput(ctx, &group, path)
+	_, _, err := r.ec.localEvalInput(ctx, &group, path, -1, "")
 	return err
 }
 
 func (ec *evalContext) localEvalInput(
-	ctx context.Context, group *project.Eval, path string,
+	ctx context.Context, group *project.Eval, path string, limit int, evalID string,
 ) ([]map[string]any, *eval_api.CreateOpenAIEvalRequest, error) {
-	rows, columns, err := readLocalRows(ctx, group, path)
+	input, err := openLocalInput(ctx, group, path)
 	if err != nil {
 		return nil, nil, err
 	}
-	schemas, err := ec.localEvaluatorSchemas(ctx, group)
+	defer input.file.Close()
+	schemas, err := ec.localEvaluatorSchemas(ctx, group, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := buildLocalEvalRequest(group, rows, columns, schemas)
-	return rows, req, err
+	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	if err != nil {
+		return nil, nil, err
+	}
+	validate, err := localRowValidator(group, req.TestingCriteria, req.DataSourceConfig.ItemSchema)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := input.collect(ctx, limit, validate)
+	if err != nil {
+		return nil, nil, err
+	}
+	if evalID != "" {
+		stored, err := ec.localRunValidator(ctx, evalID, group)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, err := input.collect(ctx, -1, stored); err != nil {
+			return nil, nil, err
+		}
+	}
+	return rows, req, nil
 }
 
-func readLocalRows(
+type localInput struct {
+	file    *os.File
+	path    string
+	columns map[string]bool
+	digest  []byte
+}
+
+func openLocalInput(
 	ctx context.Context, group *project.Eval, path string,
-) ([]map[string]any, map[string]bool, error) {
+) (*localInput, error) {
 	if err := runnableEval(group); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, nil, messages.InEval(group.Name, messages.ReadingPath(path, err))
+		return nil, messages.InEval(group.Name, messages.ReadingPath(path, err))
 	}
 	if !info.Mode().IsRegular() {
-		return nil, nil, messages.InEval(group.Name, errors.New("source.file must be a regular JSONL file"))
+		return nil, messages.InEval(group.Name, errors.New("source.file must be a regular JSONL file"))
 	}
+	// #nosec G304 -- source.file explicitly selects this local input.
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, messages.ReadingPath(path, err)
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			_ = file.Close()
+		}
+	}()
+	info, err = file.Stat()
+	if err != nil {
+		return nil, messages.ReadingPath(path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, messages.InEval(group.Name, errors.New("source.file must be a regular JSONL file"))
+	}
+	digest := sha256.New()
+	columns, err := inspectJSONLReader(ctx, path, io.TeeReader(file, digest), nil)
+	if err != nil {
+		return nil, messages.InEval(group.Name, err)
+	}
+	if group.Target != nil && !columns["query"] {
+		return nil, fmt.Errorf("eval %q: every local row must provide query for the target", group.Name)
+	}
+	keep = true
+	return &localInput{file: file, path: path, columns: columns, digest: digest.Sum(nil)}, nil
+}
+
+// collect validates every row while retaining only the requested prefix. A negative
+// limit is validation-only; zero retains all rows for an explicitly uncapped run.
+func (input *localInput) collect(
+	ctx context.Context, limit int, validators ...func(map[string]any, int) error,
+) ([]map[string]any, error) {
+	if _, err := input.file.Seek(0, io.SeekStart); err != nil {
+		return nil, messages.ReadingPath(input.path, err)
+	}
+	digest := sha256.New()
 	var rows []map[string]any
-	columns, err := inspectJSONL(ctx, path, func(row map[string]any, _ int) error {
-		rows = append(rows, row)
+	_, err := inspectJSONLReader(ctx, input.path, io.TeeReader(input.file, digest), func(row map[string]any, i int) error {
+		for _, validate := range validators {
+			if err := validate(row, i); err != nil {
+				return err
+			}
+		}
+		if limit == 0 || (limit > 0 && len(rows) < limit) {
+			rows = append(rows, row)
+		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, messages.InEval(group.Name, err)
+		return nil, err
 	}
-	if group.Target != nil && !columns["query"] {
-		return nil, nil, fmt.Errorf("eval %q: every local row must provide query for the target", group.Name)
+	if !bytes.Equal(input.digest, digest.Sum(nil)) {
+		return nil, fmt.Errorf("local source changed during validation; retry with an unchanged file")
 	}
-	return rows, columns, nil
+	return rows, nil
 }
 
 func buildLocalEvalRequest(
-	group *project.Eval, rows []map[string]any, columns map[string]bool,
+	group *project.Eval, columns map[string]bool,
 	schemas map[string]*eval_api.EvaluatorSummary,
 ) (*eval_api.CreateOpenAIEvalRequest, error) {
 	req, err := buildEvalRequest(group, schemas, columns)
@@ -81,9 +157,6 @@ func buildLocalEvalRequest(
 		return nil, messages.InEval(group.Name, err)
 	}
 	req.DataSourceConfig.ItemSchema = localItemSchema(group, req.TestingCriteria, schemas)
-	if err := validateLocalRows(group, rows, req.TestingCriteria, req.DataSourceConfig.ItemSchema); err != nil {
-		return nil, err
-	}
 	return req, nil
 }
 
@@ -127,21 +200,21 @@ func localItemSchema(
 	return schema
 }
 
-func (ec *evalContext) validateLocalRunDefinition(
-	ctx context.Context, evalID string, group *project.Eval, rows []map[string]any,
-) error {
+func (ec *evalContext) localRunValidator(
+	ctx context.Context, evalID string, group *project.Eval,
+) (func(map[string]any, int) error, error) {
 	definition, err := ec.evalClient.GetOpenAIEval(ctx, evalID)
 	if err != nil {
-		return messages.ReadingEval(evalID, err)
+		return nil, messages.ReadingEval(evalID, err)
 	}
 	if definition == nil {
-		return messages.EvalNotFound(evalID)
+		return nil, messages.EvalNotFound(evalID)
 	}
 	schema, ok := definition.DataSourceConfig["item_schema"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("eval %q: the registered eval has no readable item_schema to validate local rows", group.Name)
+		return nil, fmt.Errorf("eval %q: the registered eval has no readable item_schema to validate local rows", group.Name)
 	}
-	return validateLocalRows(group, rows, definition.TestingCriteria, schema)
+	return localRowValidator(group, definition.TestingCriteria, schema)
 }
 
 type localSchemaLoader struct{}
@@ -150,32 +223,32 @@ func (localSchemaLoader) Load(string) (any, error) {
 	return nil, errors.New("external schema references are not supported for local-source validation")
 }
 
-func validateLocalRows(
-	group *project.Eval, rows []map[string]any, criteria []eval_api.TestingCriterion, itemSchema map[string]any,
-) error {
+func localRowValidator(
+	group *project.Eval, criteria []eval_api.TestingCriterion, itemSchema map[string]any,
+) (func(map[string]any, int) error, error) {
 	const resource = "urn:azd:local-source-schema"
 	// Validate the JSON shape sent on the wire, including Go-built slices and numbers.
 	raw, err := json.Marshal(itemSchema)
 	if err != nil {
-		return messages.InEval(group.Name, err)
+		return nil, messages.InEval(group.Name, err)
 	}
 	var document any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	if err := decoder.Decode(&document); err != nil {
-		return messages.InEval(group.Name, err)
+		return nil, messages.InEval(group.Name, err)
 	}
 	compiler := jsonschema.NewCompiler()
 	compiler.UseLoader(localSchemaLoader{})
 	if err := compiler.AddResource(resource, document); err != nil {
-		return messages.InEval(group.Name, err)
+		return nil, messages.InEval(group.Name, err)
 	}
 	schema, err := compiler.Compile(resource)
 	if err != nil {
 		// Compiler errors can quote credential-bearing external references.
-		return fmt.Errorf("eval %q: item_schema is invalid or contains unsupported external references", group.Name)
+		return nil, fmt.Errorf("eval %q: item_schema is invalid or contains unsupported external references", group.Name)
 	}
-	for i, row := range rows {
+	return func(row map[string]any, i int) error {
 		if err := schema.Validate(row); err != nil {
 			return fmt.Errorf("eval %q: local row %d does not match item_schema; check its columns and value types",
 				group.Name, i+1)
@@ -200,6 +273,6 @@ func validateLocalRows(
 				}
 			}
 		}
-	}
-	return nil
+		return nil
+	}, nil
 }

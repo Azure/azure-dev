@@ -91,7 +91,7 @@ func (ec *evalContext) selectedEvaluatorContract(
 }
 
 func (ec *evalContext) localEvaluatorSchemas(
-	ctx context.Context, group *project.Eval,
+	ctx context.Context, group *project.Eval, pending map[string]bool,
 ) (map[string]*eval_api.EvaluatorSummary, error) {
 	index, err := ec.readEvaluatorSchemas(ctx)
 	if err != nil {
@@ -102,10 +102,10 @@ func (ec *evalContext) localEvaluatorSchemas(
 		index = map[string]*eval_api.EvaluatorSummary{}
 	}
 	for _, ref := range group.Evaluators {
-		if ref.Version == "" {
+		key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
+		if ref.Version == "" && (index[key] != nil || pending[ref.Evaluator]) {
 			continue
 		}
-		key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
 		schema, err := ec.selectedEvaluatorContract(ctx, ref.Evaluator, ref.Version)
 		if err != nil {
 			return nil, err
@@ -131,56 +131,81 @@ func (r *evalReconciler) ValidateLocalSources(ctx context.Context, cfg *project.
 			continue
 		}
 		group := cfg.WithCatalogEvaluatorPins(declared)
-		rows, columns, err := readLocalRows(ctx, &group, group.LocalSourcePath(baseDir))
+		ready, err := r.prepareLocalEval(ctx, &group, cfg, baseDir)
 		if err != nil {
 			return err
 		}
-		schemas, err := r.ec.localEvaluatorSchemas(ctx, &group)
-		if err != nil {
-			return err
-		}
-		var localEvaluators []string
-		for _, ref := range group.Evaluators {
-			decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
-			if !ok || !decl.CarriesItsRubric() || ref.Version != "" {
-				continue
-			}
-			body, _, err := localEvaluator(*decl, project.ResolveSource(baseDir, decl.Source))
-			if err != nil {
-				return messages.EvaluatorProblem(decl.Name, err)
-			}
-			body, err = withCatalogMetadata(body, *decl)
-			if err != nil {
-				return messages.EvaluatorProblem(decl.Name, err)
-			}
-			prospective, err := evaluatorContract(body)
-			if err != nil {
-				return messages.EvaluatorProblem(decl.Name, err)
-			}
-			// Authored constraints take precedence over service-enriched fields.
-			// Absent fields can use the currently published contract, as in the
-			// prepared-eval preflight, but never the reverse.
-			if published := schemas[decl.Name]; published != nil {
-				if prospective.DataSchema() == nil {
-					prospective.Definition.DataSchema = published.DataSchema()
-				}
-				if prospective.InitSchema() == nil {
-					prospective.Definition.InitParameters = published.InitSchema()
-				}
-				if prospective.SupportedEvaluationLevels == nil {
-					prospective.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
-				}
-			}
-			schemas[decl.Name] = prospective
-			localEvaluators = append(localEvaluators, decl.Name)
-		}
-		if _, err := buildLocalEvalRequest(&group, rows, columns, schemas); err != nil {
-			return err
-		}
-		prepared[group.Name] = preparedLocalEval{group: group, schemas: schemas, localEvaluators: localEvaluators}
+		prepared[group.Name] = ready
 	}
 	r.preparedLocal = prepared
 	return nil
+}
+
+func (r *evalReconciler) prepareLocalEval(
+	ctx context.Context, group *project.Eval, cfg *project.EvalConfig, baseDir string,
+) (preparedLocalEval, error) {
+	input, err := openLocalInput(ctx, group, group.LocalSourcePath(baseDir))
+	if err != nil {
+		return preparedLocalEval{}, err
+	}
+	defer input.file.Close()
+	pending := map[string]bool{}
+	for _, ref := range group.Evaluators {
+		if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok && decl.CarriesItsRubric() && ref.Version == "" {
+			pending[ref.Evaluator] = true
+		}
+	}
+	schemas, err := r.ec.localEvaluatorSchemas(ctx, group, pending)
+	if err != nil {
+		return preparedLocalEval{}, err
+	}
+	var localEvaluators []string
+	for _, ref := range group.Evaluators {
+		decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator)
+		if !ok || !decl.CarriesItsRubric() || ref.Version != "" {
+			continue
+		}
+		body, _, err := localEvaluator(*decl, project.ResolveSource(baseDir, decl.Source))
+		if err != nil {
+			return preparedLocalEval{}, messages.EvaluatorProblem(decl.Name, err)
+		}
+		body, err = withCatalogMetadata(body, *decl)
+		if err != nil {
+			return preparedLocalEval{}, messages.EvaluatorProblem(decl.Name, err)
+		}
+		prospective, err := evaluatorContract(body)
+		if err != nil {
+			return preparedLocalEval{}, messages.EvaluatorProblem(decl.Name, err)
+		}
+		// Authored constraints take precedence over service-enriched fields.
+		// Absent fields can use the currently published contract, as in the
+		// prepared-eval preflight, but never the reverse.
+		if published := schemas[decl.Name]; published != nil {
+			if prospective.DataSchema() == nil {
+				prospective.Definition.DataSchema = published.DataSchema()
+			}
+			if prospective.InitSchema() == nil {
+				prospective.Definition.InitParameters = published.InitSchema()
+			}
+			if prospective.SupportedEvaluationLevels == nil {
+				prospective.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
+			}
+		}
+		schemas[decl.Name] = prospective
+		localEvaluators = append(localEvaluators, decl.Name)
+	}
+	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	if err != nil {
+		return preparedLocalEval{}, err
+	}
+	validate, err := localRowValidator(group, req.TestingCriteria, req.DataSourceConfig.ItemSchema)
+	if err != nil {
+		return preparedLocalEval{}, err
+	}
+	if _, err := input.collect(ctx, -1, validate); err != nil {
+		return preparedLocalEval{}, err
+	}
+	return preparedLocalEval{group: *group, schemas: schemas, localEvaluators: localEvaluators}, nil
 }
 
 func (r *evalReconciler) preparedLocalRequest(
@@ -198,9 +223,19 @@ func (r *evalReconciler) preparedLocalRequest(
 		}
 		schemas[name] = schema
 	}
-	rows, columns, err := readLocalRows(ctx, group, path)
+	input, err := openLocalInput(ctx, group, path)
 	if err != nil {
 		return nil, err
 	}
-	return buildLocalEvalRequest(group, rows, columns, schemas)
+	defer input.file.Close()
+	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	if err != nil {
+		return nil, err
+	}
+	validate, err := localRowValidator(group, req.TestingCriteria, req.DataSourceConfig.ItemSchema)
+	if err != nil {
+		return nil, err
+	}
+	_, err = input.collect(ctx, -1, validate)
+	return req, err
 }

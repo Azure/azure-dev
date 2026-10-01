@@ -204,6 +204,20 @@ On local-source evals, positive `max_samples` limits submitted rows and
 `--max-samples 0` overrides a configured cap. Trace/response caps, registered
 dataset pins and fail-closed empty-list behavior are unchanged.
 
+Validation streams the entire file, including rows beyond a cap, while retaining
+only the rows a capped run can submit. Create/deploy preflight retains no row set.
+Uncapped runs still retain every submitted row. Repeated scans use the same file
+handle and reject content changes detected during validation.
+
+A referenced evaluator missing from a successful catalog listing is read directly;
+an unreadable or absent referenced contract is not replaced with permissive
+defaults. Authored evaluators awaiting publication are validated from their
+prospective definition instead.
+
+Changes to immutable local-source criteria or item schema create a new eval
+instead of reusing stale mappings, including when an optional column becomes
+available in every row. Changing only the row cap does not recreate the eval.
+
 An opaque source `$ref` may resolve to any source type, so its cap is validated
 after resolution by the CLI; the editor constrains caps when the source type is
 present in the same document.
@@ -213,6 +227,10 @@ source path in request metadata or the JSON handoff. Only normal run-ID bookkeep
 is performed after submission; dataset publication versions/fingerprints are not
 changed. A rerun selected by eval ID repeats the stored inline snapshot, not a
 fresh read of the file. Run the declared eval by name to use edited bytes.
+
+An explicitly empty `--dataset` value is rejected for every run source and ID
+rerun. A configuration cannot declare both `dataset` and `source`, even when
+the dataset value is empty.
 
 ### Simulating multi-turn conversations
 

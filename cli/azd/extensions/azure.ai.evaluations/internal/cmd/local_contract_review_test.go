@@ -32,6 +32,8 @@ func localSelectedContractContext(t *testing.T, pinStatus int) (*evalContext, <-
 		requests <- identityRequest{r.Method, r.URL.Path, body}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/evaluators/custom.valid/versions":
+			_, _ = io.WriteString(w, `{"value":[{"name":"custom.valid","version":"7"}]}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/evaluators/custom.valid/versions/9":
 			_, _ = io.WriteString(w, `{"name":"custom.valid","version":"9","definition":{"data_schema":`+
 				`{"type":"object","properties":{"n":{"type":"string"}},"required":["n"]}}}`)

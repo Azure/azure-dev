@@ -114,14 +114,14 @@ type Eval struct {
 	Simulation *Simulation `yaml:"simulation,omitempty" json:"simulation,omitempty"`
 }
 
-// UnmarshalYAML preserves the exclusivity of an explicitly local source even for an empty dataset key.
+// UnmarshalYAML preserves source/dataset exclusivity even for an explicitly empty dataset key.
 func (e *Eval) UnmarshalYAML(unmarshal func(any) error) error {
 	type evalYAML Eval
 	var decoded evalYAML
 	if err := unmarshal(&decoded); err != nil {
 		return err
 	}
-	if decoded.Source != nil && decoded.Source.Type == SourceTypeLocal {
+	if decoded.Source != nil {
 		var declared map[string]any
 		if err := unmarshal(&declared); err != nil {
 			return err

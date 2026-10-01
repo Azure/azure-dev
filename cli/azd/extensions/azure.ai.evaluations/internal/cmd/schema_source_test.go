@@ -19,6 +19,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSourceEmptyDatasetKeySchemaRuntimeParity(t *testing.T) {
+	const uri = "https://example.test/empty-dataset.schema.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(uri, evalSchemaDocument(t)))
+	schema, err := compiler.Compile(uri)
+	require.NoError(t, err)
+	for name, source := range map[string]map[string]any{
+		"traces":    {"type": "traces", "agent_name": "agent"},
+		"responses": {"type": "responses", "response_ids": []string{"response"}},
+		"local":     {"type": "local", "file": "rows.jsonl"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"evals": []any{map[string]any{
+				"name": "quality", "dataset": "", "source": source,
+				"evaluators": []any{map[string]any{"evaluator": "builtin.relevance"}},
+			}}})
+			require.NoError(t, err)
+			var instance any
+			require.NoError(t, json.Unmarshal(body, &instance))
+			require.Error(t, schema.Validate(instance))
+			_, err = project.DecodeEvalConfig(body, "empty-dataset")
+			require.ErrorContains(t, err, "`dataset` and `source`")
+		})
+	}
+}
+
 func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 	t.Parallel()
 
@@ -47,6 +73,7 @@ func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 					"name": "quality", "source": source,
 					"evaluators": []any{map[string]any{"evaluator": "builtin.relevance"}},
 				}
+
 				if tc.cap != nil {
 					eval["max_samples"] = *tc.cap
 				}

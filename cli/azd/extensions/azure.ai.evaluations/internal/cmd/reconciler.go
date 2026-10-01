@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"maps"
@@ -502,7 +503,13 @@ func inspectJSONL(
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	return inspectJSONLReader(ctx, path, f, validateRow)
+}
+
+func inspectJSONLReader(
+	ctx context.Context, path string, input io.Reader, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	scanner := bufio.NewScanner(input)
 	// A row carrying a whole conversation runs well past the 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
@@ -849,7 +856,7 @@ func (r *evalReconciler) EnsureEval(
 			group = prepared.group
 			req, err = r.preparedLocalRequest(ctx, &group, datasetPath, prepared)
 		} else {
-			_, req, err = r.ec.localEvalInput(ctx, &group, datasetPath)
+			_, req, err = r.ec.localEvalInput(ctx, &group, datasetPath, -1, "")
 		}
 		if err != nil {
 			return "", false, err
@@ -862,11 +869,22 @@ func (r *evalReconciler) EnsureEval(
 		// reported success and the first run against it answered 404. One point
 		// read settles it, and it is the same confirmation an external dataset
 		// or evaluator reference gets.
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
 			if eval_api.IsNotFound(err) {
 				return "", false, messages.EvalNotFound(group.ID)
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if localRequest != nil {
+			matches, err := localRequestMatchesRemote(localRequest, remote)
+			if err != nil {
+				return "", false, err
+			}
+			if !matches {
+				return "", false, fmt.Errorf(
+					"eval %q: selected id has a different immutable local source contract", group.Name)
+			}
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
@@ -898,6 +916,17 @@ func (r *evalReconciler) EnsureEval(
 		}
 	}
 
+	var localFingerprint string
+	if localRequest != nil {
+		localFingerprint, err = localRequestFingerprint(localRequest)
+		if err != nil {
+			return "", false, err
+		}
+		if prior := r.ec.privateValue(ctx, localRequestKey(group.Name)); prior != "" && prior != localFingerprint {
+			recreate = true
+		}
+	}
+
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
 	// A rename records the id under the new name and leaves the old name's entry
 	// pointing at it. Reintroducing that old name then found a live id here and
@@ -913,7 +942,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest)
+		adopted, err := r.adoptRenamed(ctx, group, digest, localRequest)
 		if err != nil {
 			return "", false, err
 		}
@@ -931,6 +960,19 @@ func (r *evalReconciler) EnsureEval(
 			return "", false, err
 		}
 		if err == nil {
+			if localRequest != nil {
+				matches, err := localRequestMatchesRemote(localRequest, remote)
+				if err != nil {
+					return "", false, err
+				}
+				if !matches {
+					// Even a pre-fingerprint installation must not keep an incompatible
+					// immutable schema merely because the declaration stayed the same.
+					cached = ""
+				}
+			}
+		}
+		if err == nil && cached != "" {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -944,6 +986,9 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.remember(ctx, key, definition)
 			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
 			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
+			if localFingerprint != "" {
+				r.ec.remember(ctx, localRequestKey(group.Name), localFingerprint)
+			}
 			r.claim(cached, group.Name)
 			return cached, false, nil
 		}
@@ -956,6 +1001,9 @@ func (r *evalReconciler) EnsureEval(
 	r.ec.remember(ctx, key, definition)
 	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
 	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
+	if localFingerprint != "" {
+		r.ec.remember(ctx, localRequestKey(group.Name), localFingerprint)
+	}
 	r.claim(created.ID, group.Name)
 	return created.ID, true, nil
 }
@@ -969,6 +1017,7 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
+	localRequest *eval_api.CreateOpenAIEvalRequest,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
 	if id == "" {
@@ -988,6 +1037,15 @@ func (r *evalReconciler) adoptRenamed(
 			return "", nil
 		}
 		return "", err
+	}
+	if localRequest != nil {
+		matches, err := localRequestMatchesRemote(localRequest, remote)
+		if err != nil {
+			return "", err
+		}
+		if !matches {
+			return "", nil
+		}
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil

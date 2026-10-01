@@ -537,6 +537,7 @@ func (a *evalDeleteAction) Run() error {
 	ec.forget(ctx,
 		idKey("eval", a.evalID),
 		project.FingerprintKey("eval", a.evalID),
+		localRequestKey(a.evalID),
 		idKey("evalrun", evalID))
 
 	if isJSON(a.cmd) {

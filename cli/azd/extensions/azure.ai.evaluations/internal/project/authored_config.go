@@ -63,6 +63,7 @@ func ReadAuthoredConfig(evalDir string) (*AuthoredConfig, error) {
 // authoring preflight. Local includes use the normal resolver, including
 // ref-only entries when the name is not written here. Unrelated named entries
 // are not resolved, and unknown fields are not strictly decoded or rewritten.
+// Broken unnamed includes are reported only if no matching entry is found.
 // File is resolved against the configuration directory; nil means no match.
 func ReadAuthoredDataset(location, name string) (*DatasetDecl, error) {
 	path, err := ResolveEvalConfigPath(location)
@@ -92,14 +93,21 @@ func ReadAuthoredDataset(location, name string) (*DatasetDecl, error) {
 			candidates = append(candidates, item)
 		}
 	}
+	var firstErr error
 	for _, item := range candidates {
 		var raw map[string]any
 		if err := item.Decode(&raw); err != nil {
-			return nil, messages.ParsingEvalConfig(path, err)
+			if firstErr == nil {
+				firstErr = messages.ParsingEvalConfig(path, err)
+			}
+			continue
 		}
 		resolved, err := resolveEvalRefs(raw, EvalDirOf(path))
 		if err != nil {
-			return nil, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		if resolved["name"] != name {
 			continue
@@ -110,7 +118,7 @@ func ReadAuthoredDataset(location, name string) (*DatasetDecl, error) {
 		}
 		return &DatasetDecl{Name: name, File: ResolveSource(EvalDirOf(path), file)}, nil
 	}
-	return nil, nil
+	return nil, firstErr
 }
 
 // authoredFromDocument reads the three catalogs in document order.

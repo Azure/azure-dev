@@ -72,25 +72,64 @@ func TestScaffoldRollbackRefusesMissingOrChangedExistingConfig(t *testing.T) {
 	}
 }
 
-func TestScaffoldRollbackRestoresSymlinkWithoutChangingTarget(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "shared.yml")
-	original := []byte("# shared config\nevals: []\n")
-	require.NoError(t, os.WriteFile(target, original, 0o600))
-	path := filepath.Join(dir, EvalConfigBase)
-	if err := os.Symlink("shared.yml", path); err != nil {
-		t.Skipf("creating test symlinks is unavailable: %v", err)
+func TestConfigEditsRejectSymlinksWithoutChangingTarget(t *testing.T) {
+	for _, operation := range []string{"scaffold", "scaffold with rollback", "catalog", "save", "lock"} {
+		for _, dangling := range []bool{false, true} {
+			name := operation
+			if dangling {
+				name += "/dangling"
+			}
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				target := filepath.Join(dir, "shared.yml")
+				original := []byte("# shared config\nevals: []\n")
+				if !dangling {
+					require.NoError(t, os.WriteFile(target, original, 0o600))
+				}
+				path := filepath.Join(dir, EvalConfigBase)
+				if err := os.Symlink("shared.yml", path); err != nil {
+					t.Skipf("creating test symlinks is unavailable: %v", err)
+				}
+				var err error
+				write := ScaffoldWrite{Evals: []Eval{{Name: "new"}}}
+				switch operation {
+				case "scaffold":
+					err = ApplyScaffold(path, write)
+				case "scaffold with rollback":
+					var undo func() error
+					undo, err = ApplyScaffoldWithRollback(path, write)
+					assert.Nil(t, undo, "rejection must not require rollback")
+				case "catalog":
+					_, _, err = UpsertCatalogEntry(path, "datasets", "new", "file", "./rows.jsonl")
+				case "save":
+					err = SaveEvalConfigTo(path, &EvalConfig{})
+				case "lock":
+					var unlock func()
+					unlock, err = LockEvalConfig(t.Context(), dir)
+					if unlock != nil {
+						defer unlock()
+					}
+				}
+				require.ErrorContains(t, err, "symbolic link")
+				assert.ErrorContains(t, err, "select the target file directly")
+				got, err := os.Readlink(path)
+				require.NoError(t, err)
+				assert.Equal(t, "shared.yml", got)
+				if dangling {
+					assert.NoFileExists(t, target)
+				} else {
+					body, err := os.ReadFile(target)
+					require.NoError(t, err)
+					assert.Equal(t, original, body)
+				}
+				entries, err := os.ReadDir(dir)
+				require.NoError(t, err)
+				wantEntries := 2
+				if dangling {
+					wantEntries = 1
+				}
+				assert.Len(t, entries, wantEntries, "no lock, ignore, or temporary files may be created")
+			})
+		}
 	}
-	unlock, err := LockEvalConfig(t.Context(), path)
-	require.NoError(t, err)
-	defer unlock()
-	undo, err := ApplyScaffoldWithRollback(path, ScaffoldWrite{Evals: []Eval{{Name: "new"}}})
-	require.NoError(t, err)
-	require.NoError(t, undo())
-	got, err := os.Readlink(path)
-	require.NoError(t, err)
-	assert.Equal(t, "shared.yml", got)
-	body, err := os.ReadFile(target)
-	require.NoError(t, err)
-	assert.Equal(t, original, body)
 }

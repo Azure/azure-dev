@@ -84,6 +84,42 @@ func TestReadAuthoredDatasetResolvesOnlyItsLocalDeclaration(t *testing.T) {
 	}
 }
 
+func TestReadAuthoredDatasetContinuesAfterBrokenUnnamedIncludes(t *testing.T) {
+	for _, broken := range []string{"missing", "malformed"} {
+		t.Run(broken, func(t *testing.T) {
+			dir := t.TempDir()
+			if broken == "malformed" {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "broken.yaml"), []byte("name: [\n"), 0o600))
+			}
+			path := filepath.Join(dir, EvalConfigBase)
+			body := "datasets:\n  - $ref: ./broken.yaml\n"
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			decl, firstErr := ReadAuthoredDataset(path, "seeds")
+			require.Error(t, firstErr)
+			require.Nil(t, decl)
+
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "valid.yaml"),
+				[]byte("name: seeds\nfile: ./rows.jsonl\n"), 0o600))
+			body += "  - $ref: ./also-missing.yaml\n  - $ref: ./parts/valid.yaml\n"
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+			decl, err := ReadAuthoredDataset(path, "seeds")
+			require.NoError(t, err, "a broken unnamed include must not hide a later matching dataset")
+			require.NotNil(t, decl)
+			assert.Equal(t, "seeds", decl.Name)
+			assert.Equal(t, filepath.Join(dir, "parts", "rows.jsonl"), decl.File)
+
+			decl, err = ReadAuthoredDataset(path, "absent")
+			require.EqualError(t, err, firstErr.Error(), "without a match, preserve the first include error")
+			assert.Nil(t, decl)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, body, string(after))
+		})
+	}
+}
+
 func TestReadAuthoredDatasetAbsentOrInvalid(t *testing.T) {
 	for _, tc := range []struct {
 		name string

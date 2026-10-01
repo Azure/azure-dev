@@ -383,7 +383,23 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	return writeConfigBytes(path, body)
 }
 
-// writeConfigBytes replaces the configuration at path with body.
+func checkConfigSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return messages.ReadingEvalConfig(path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return messages.WritingEvalConfig(path,
+			errors.New("configuration is a symbolic link; select the target file directly to edit it"))
+	}
+	return nil
+}
+
+// writeConfigBytes replaces the configuration at path with body, rejecting
+// symbolic links rather than replacing the link or bypassing the target's lock.
 //
 // The replacement is atomic because os.WriteFile truncates first, and this file
 // is read by other processes. A reader landing inside that window sees zero
@@ -392,6 +408,9 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 // missing. Renaming into place means a reader sees either the whole old file or
 // the whole new one.
 func writeConfigBytes(path string, body []byte) error {
+	if err := checkConfigSymlink(path); err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".azd-eval-config-*")
 	if err != nil {

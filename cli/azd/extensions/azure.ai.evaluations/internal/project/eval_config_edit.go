@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -46,7 +45,8 @@ func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
 
 // ApplyScaffoldWithRollback applies an add-only edit and returns its compensating
 // rollback. The caller must hold LockEvalConfig through both application and
-// rollback. Rollback refuses to replace a file changed after this edit.
+// rollback. Symlinked configurations are rejected without editing the link or
+// target. Rollback refuses to replace a file changed after this edit.
 func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() error, error) {
 	if write.Empty() {
 		return func() error { return nil }, nil
@@ -54,10 +54,13 @@ func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() erro
 	if err := checkOneConfig(evalDir); err != nil {
 		return nil, err
 	}
+	path := resolvedConfigPath(evalDir)
+	if err := checkConfigSymlink(path); err != nil {
+		return nil, err
+	}
 	if _, err := ensureEvalDir(evalDir); err != nil {
 		return nil, err
 	}
-	path := resolvedConfigPath(evalDir)
 
 	info, err := os.Lstat(path)
 	existed := err == nil
@@ -65,19 +68,12 @@ func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() erro
 		return nil, messages.ReadingEvalConfig(path, err)
 	}
 	var mode os.FileMode
-	var linkTarget string
 	if existed {
 		mode = info.Mode().Perm()
-		if info.Mode()&os.ModeSymlink != 0 {
-			linkTarget, err = os.Readlink(path)
-			if err != nil {
-				return nil, messages.ReadingEvalConfig(path, err)
-			}
-		}
 	}
 	// #nosec G304 -- preserve the exact configuration the caller selected.
 	before, err := os.ReadFile(path)
-	if err != nil && (!errors.Is(err, os.ErrNotExist) || (existed && linkTarget == "")) {
+	if err != nil && (!errors.Is(err, os.ErrNotExist) || existed) {
 		return nil, messages.ReadingEvalConfig(path, err)
 	}
 	doc, err := parseConfigDocument(path, before)
@@ -146,28 +142,11 @@ func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() erro
 		if !existed {
 			return os.Remove(path)
 		}
-		if linkTarget != "" {
-			return restoreScaffoldSymlink(path, linkTarget)
-		}
 		if err := writeConfigBytes(path, before); err != nil {
 			return err
 		}
 		return os.Chmod(path, mode)
 	}, nil
-}
-
-func restoreScaffoldSymlink(path, target string) error {
-	dir, err := os.MkdirTemp(filepath.Dir(path), ".azd-eval-rollback-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(dir)
-	link := filepath.Join(dir, "config")
-	if err := os.Symlink(target, link); err != nil {
-		return err
-	}
-	defer os.Remove(link)
-	return ReplaceFile(link, path)
 }
 
 // appendEncoded renders one entry and appends it to a sequence.

@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -67,21 +69,40 @@ func (c *installProgressConsole) ShowSpinner(ctx context.Context, title string, 
 func TestExtensionInstall_Progress(t *testing.T) {
 	const id = "test.progress"
 	tests := []struct {
-		name         string
-		installed    string
-		force        bool
-		confirm      bool
-		incompatible bool
-		dependency   bool
-		badChecksum  bool
-		wantStarts   int
-		wantStatus   string
+		name             string
+		installed        string
+		force            bool
+		confirm          bool
+		duplicateSources bool
+		selectSource     bool
+		noPrompt         bool
+		promptStatus     string
+		incompatible     bool
+		dependency       bool
+		badChecksum      bool
+		wantStarts       int
+		wantStatus       string
+		wantError        string
 	}{
 		{name: "fresh", wantStarts: 1, wantStatus: "Done:"},
 		{name: "forced reinstall", installed: "1.0.0", force: true, wantStarts: 1, wantStatus: "Done:"},
 		{name: "upgrade", installed: "0.9.0", wantStarts: 1, wantStatus: "Done:"},
 		{name: "already installed", installed: "1.0.0", wantStarts: 1, wantStatus: "Skipped:"},
 		{name: "confirmed downgrade", installed: "2.0.0", confirm: true, wantStarts: 2, wantStatus: "Done:"},
+		{name: "duplicate sources", selectSource: true, wantStarts: 2, wantStatus: "Done:"},
+		{name: "explicit source wins", duplicateSources: true, wantStarts: 1, wantStatus: "Done:"},
+		{
+			name: "duplicate sources without prompts", selectSource: true, noPrompt: true,
+			wantStarts: 1, wantStatus: "Failed:", wantError: "found in multiple sources",
+		},
+		{
+			name: "source selection cancelled", selectSource: true, promptStatus: "cancelled",
+			wantStarts: 1, wantError: "failed to select extension source",
+		},
+		{
+			name: "source selection error", selectSource: true, promptStatus: "error",
+			wantStarts: 1, wantError: "failed to select extension source: prompt error: selection unavailable",
+		},
 		{name: "compatibility warning", incompatible: true, wantStarts: 2, wantStatus: "Done:"},
 		{name: "dependency installed", dependency: true, wantStarts: 1, wantStatus: "Done:"},
 		{name: "artifact failure", badChecksum: true, wantStarts: 1, wantStatus: "Failed:"},
@@ -147,15 +168,45 @@ func TestExtensionInstall_Progress(t *testing.T) {
 					}
 				}
 				mockCtx := mocks.NewMockContext(t.Context())
-				manager, sources := createUpgradeTestManagerWithOptions(t, mockCtx, installed,
-					"https://test.example.com/progress-registry.json", registry,
+				sourceConfigs := map[string]upgradeTestSource{
+					"test": {url: "https://test.example.com/progress-registry.json", registry: registry},
+				}
+				if tt.selectSource || tt.duplicateSources {
+					sourceConfigs["other"] = upgradeTestSource{
+						url:      "https://test.example.com/other-registry.json",
+						registry: testRegistry(testExtMeta(id, "9.0.0", "other")),
+					}
+				}
+				manager, sources := createUpgradeTestManagerWithSources(t, mockCtx, installed, sourceConfigs,
 					extensions.ManagerOptions{AzdVersion: semver.MustParse("1.34.1")})
 
+				interactive := (tt.confirm || tt.selectSource) && !tt.noPrompt
+				promptRequests := make(chan json.RawMessage, 1)
 				var promptConfig *input.ExternalPromptConfiguration
-				if tt.confirm {
+				if interactive {
 					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						var request json.RawMessage
+						if err := json.NewDecoder(r.Body).Decode(&request); !assert.NoError(t, err) {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+						select {
+						case promptRequests <- request:
+						default:
+							assert.Fail(t, "unexpected extra prompt")
+							http.Error(w, "unexpected extra prompt", http.StatusBadRequest)
+							return
+						}
+						value := "true"
+						if tt.selectSource {
+							value = "test"
+						}
+						status := tt.promptStatus
+						if status == "" {
+							status = "success"
+						}
 						w.Header().Set("Content-Type", "application/json")
-						_, err := w.Write([]byte(`{"status":"success","value":"true"}`))
+						_, err := fmt.Fprintf(w, `{"status":%q,"value":%q,"message":"selection unavailable"}`, status, value)
 						assert.NoError(t, err)
 					}))
 					t.Cleanup(server.Close)
@@ -166,15 +217,18 @@ func TestExtensionInstall_Progress(t *testing.T) {
 				writer := &installProgressBuffer{}
 				handles := &installProgressBuffer{}
 				console := &installProgressConsole{
-					Console: input.NewConsole(!tt.confirm, tty, input.Writers{Output: writer},
+					Console: input.NewConsole(!interactive, tty, input.Writers{Output: writer},
 						input.ConsoleHandles{Stdin: os.Stdin, Stdout: handles, Stderr: os.Stderr},
 						&output.NoneFormatter{}, promptConfig),
 					t: t, writer: writer,
 				}
 				t.Cleanup(func() { console.StopSpinner(t.Context(), "", input.Step) })
 				cmd := &cobra.Command{}
-				flags := newExtensionInstallFlags(cmd, &internal.GlobalCommandOptions{NoPrompt: !tt.confirm})
-				args := []string{id, "--source=test"}
+				flags := newExtensionInstallFlags(cmd, &internal.GlobalCommandOptions{NoPrompt: !interactive})
+				args := []string{id}
+				if !tt.selectSource {
+					args = append(args, "--source=test")
+				}
 				if tt.force {
 					args = append(args, "--force")
 				}
@@ -185,8 +239,25 @@ func TestExtensionInstall_Progress(t *testing.T) {
 				require.Equal(t, tty, console.IsSpinnerInteractive())
 				text := writer.String()
 				t.Logf("installer output:\n%s", text)
+				if !interactive {
+					require.Empty(t, promptRequests)
+				} else if tt.selectSource {
+					require.Len(t, promptRequests, 1, "duplicate sources must prompt rather than silently use the default")
+					require.JSONEq(t, `{
+						"type": "select",
+						"options": {
+							"message":
+								"The test.progress extension was found in multiple sources.\nSelect the source to continue",
+							"help": "",
+							"choices": [{"value": "other"}, {"value": "test"}],
+							"defaultValue": "other"
+						}
+					}`, string(<-promptRequests))
+				}
 				require.Empty(t, handles.String(), "output must use the injected writer")
-				require.Equal(t, 1, strings.Count(text, tt.wantStatus+" Installing "+id), text)
+				if tt.wantStatus != "" {
+					require.Equal(t, 1, strings.Count(text, tt.wantStatus+" Installing "+id), text)
+				}
 				if !tty {
 					var starts int
 					for line := range strings.SplitSeq(text, "\n") {
@@ -204,6 +275,18 @@ func TestExtensionInstall_Progress(t *testing.T) {
 				} else {
 					require.Contains(t, text, "\r", "TTY progress should update in place")
 				}
+				if tt.wantError != "" {
+					require.ErrorContains(t, runErr, tt.wantError)
+					if tt.promptStatus == "cancelled" {
+						require.ErrorIs(t, runErr, surveyterm.InterruptErr)
+					}
+					require.Nil(t, result)
+					require.NotContains(t, text, "Done:")
+					records, err := manager.ListInstalled()
+					require.NoError(t, err)
+					require.Empty(t, records)
+					return
+				}
 				if tt.badChecksum {
 					require.ErrorContains(t, runErr, "checksum")
 					require.Nil(t, result)
@@ -218,6 +301,7 @@ func TestExtensionInstall_Progress(t *testing.T) {
 				record, err := manager.GetInstalled(extensions.FilterOptions{Id: id})
 				require.NoError(t, err)
 				require.Equal(t, "1.0.0", record.Version)
+				require.Equal(t, "test", record.Source)
 				content, err := os.ReadFile(filepath.Join(configDir, record.Path))
 				require.NoError(t, err)
 				if tt.wantStatus == "Skipped:" {

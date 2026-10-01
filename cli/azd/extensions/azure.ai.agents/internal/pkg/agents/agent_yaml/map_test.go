@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -1945,7 +1946,7 @@ func TestCreateAgentAPIRequest_CodeDeploySessionConfiguration(t *testing.T) {
 			Runtime:    "python_3_12",
 			EntryPoint: "main.py",
 		},
-		SessionConfiguration: &SessionConfiguration{IdleTimeoutSeconds: new(1200)},
+		SessionConfiguration: &SessionConfiguration{IdleTimeoutSeconds: new(14400)},
 	}
 
 	req, err := CreateHostedAgentAPIRequest(agent, nil)
@@ -1957,8 +1958,8 @@ func TestCreateAgentAPIRequest_CodeDeploySessionConfiguration(t *testing.T) {
 	if codeDef.CodeConfiguration == nil {
 		t.Fatal("expected code deploy path")
 	}
-	if codeDef.SessionConfiguration == nil || codeDef.SessionConfiguration.IdleTimeoutSeconds != 1200 {
-		t.Errorf("SessionConfiguration = %+v, want IdleTimeoutSeconds=1200", codeDef.SessionConfiguration)
+	if codeDef.SessionConfiguration == nil || codeDef.SessionConfiguration.IdleTimeoutSeconds != 14400 {
+		t.Errorf("SessionConfiguration = %+v, want IdleTimeoutSeconds=14400", codeDef.SessionConfiguration)
 	}
 }
 
@@ -2007,10 +2008,12 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 		wantErr bool
 	}{
 		{name: "min valid", seconds: MinSessionIdleTimeoutSeconds},
-		{name: "max valid", seconds: MaxSessionIdleTimeoutSeconds},
+		{name: "previous max valid", seconds: 3600},
+		{name: "above previous max valid", seconds: 3601},
+		{name: "max valid", seconds: 14400},
 		{name: "mid valid", seconds: 900},
 		{name: "below min", seconds: MinSessionIdleTimeoutSeconds - 1, wantErr: true},
-		{name: "above max", seconds: MaxSessionIdleTimeoutSeconds + 1, wantErr: true},
+		{name: "above max", seconds: 14401, wantErr: true},
 		{name: "zero", seconds: 0, wantErr: true},
 		{name: "negative", seconds: -1, wantErr: true},
 	}
@@ -2035,6 +2038,9 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 				if strings.Contains(err.Error(), "idle_timeout_seconds") {
 					t.Errorf("error = %q, must not mention the API wire field", err)
 				}
+				if !strings.Contains(err.Error(), "between 120 and 14400 seconds") {
+					t.Errorf("error = %q, want the supported range", err)
+				}
 				return
 			}
 			if err != nil {
@@ -2045,6 +2051,15 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 			if imgDef.SessionConfiguration == nil ||
 				imgDef.SessionConfiguration.IdleTimeoutSeconds != test.seconds {
 				t.Errorf("IdleTimeoutSeconds = %+v, want %d", imgDef.SessionConfiguration, test.seconds)
+			}
+
+			data, err := json.Marshal(imgDef)
+			if err != nil {
+				t.Fatalf("marshal error: %v", err)
+			}
+			want := fmt.Sprintf(`"session_configuration":{"idle_timeout_seconds":%d}`, test.seconds)
+			if !strings.Contains(string(data), want) {
+				t.Errorf("wire payload missing %s, got %s", want, data)
 			}
 		})
 	}

@@ -471,6 +471,87 @@ func TestPartialJSONMatchesOrdinaryRemediation(t *testing.T) {
 	}
 }
 
+func TestPartialJSONSuggestionsDoNotDiscloseURLCredentials(t *testing.T) {
+	const suggestion = "Inspect https://fixture-user:fixture-password@example.test/remediation" +
+		"?sig=fixture-signature#fixture-fragment and retry."
+	const safeSuggestion = "Inspect https://example.test/remediation and retry."
+	for _, surface := range []string{"create", "generation"} {
+		t.Run(surface, func(t *testing.T) {
+			original := &azdext.LocalError{Message: "safe validation failure", Suggestion: suggestion}
+			cause := fmt.Errorf("wrapped: %w", original)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+				if surface == "create" {
+					if err := reportCreatePartial(cmd, &evalContext{}, "quality", "azure.eval.yaml",
+						[]reconciledArtifact{{"dataset", "retained", "2", true}}, cause); err != nil {
+						return err
+					}
+				} else {
+					if err := emitJSON(cmd.OutOrStdout(), generationDocument([]generationOutcome{
+						{
+							plan: generationPlan{Kind: generateKindDataset},
+							ref:  &project.ArtifactRef{Name: "retained", Source: "rows.jsonl", Version: "2"},
+						},
+						{
+							plan: generationPlan{Kind: generateKindEvaluator},
+							err:  cause,
+						},
+					})); err != nil {
+						return err
+					}
+				}
+				return cause
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+			require.ErrorIs(t, cmd.RunE(cmd, nil), cause)
+			assert.Equal(t, 1, exitCode)
+			assert.Equal(t, suggestion, original.Suggestion, "redaction must not mutate the original error")
+
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			if surface == "create" {
+				var result struct {
+					Status    string               `json:"status"`
+					Artifacts []reconciledArtifact `json:"artifacts"`
+					Error     jsonErrorBody        `json:"error"`
+				}
+				require.NoError(t, decoder.Decode(&result))
+				assert.Equal(t, "failed", result.Status)
+				assert.Equal(t, []reconciledArtifact{{"dataset", "retained", "2", true}}, result.Artifacts)
+				assert.Equal(t, cause.Error(), result.Error.Message)
+				assert.Equal(t, safeSuggestion, result.Error.Suggestion)
+			} else {
+				var result map[string]generationResult
+				require.NoError(t, decoder.Decode(&result))
+				require.Contains(t, result, "dataset")
+				require.Contains(t, result, "evaluator")
+				assert.Equal(t, "succeeded", result["dataset"].Status)
+				require.NotNil(t, result["dataset"].ArtifactRef)
+				assert.Equal(t, "retained", result["dataset"].Name)
+				assert.Equal(t, "2", result["dataset"].Version)
+				assert.Equal(t, "failed", result["evaluator"].Status)
+				assert.Equal(t, cause.Error(), result["evaluator"].Error)
+				assert.Equal(t, safeSuggestion, result["evaluator"].Suggestion)
+			}
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "retain exactly one partial JSON document")
+			assert.Contains(t, stderr.String(), cause.Error())
+			for _, sensitive := range []string{
+				"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
+			} {
+				assert.NotContains(t, out.String(), sensitive)
+				assert.NotContains(t, stderr.String(), sensitive)
+			}
+		})
+	}
+}
+
 func TestReconciliationValidationHonorsCancellation(t *testing.T) {
 	ec, env, service, cfg, dir := validationFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())

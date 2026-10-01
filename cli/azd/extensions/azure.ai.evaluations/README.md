@@ -259,6 +259,7 @@ For a partial `create -o json` failure, the single output document includes
 `status: "failed"`, the resolved `artifacts` with their versions and `published`
 flags, the error, and a `recovery_command`. When the error supplies remediation,
 `error.suggestion` preserves it alongside `error.message`. The command still exits nonzero.
+URLs in the suggestion omit user information, query strings, and fragments.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -384,6 +385,7 @@ including each outcome's `status`, `job_id`, and, on failure, `error`,
 `recovery_command`, and `retry_guidance`. An optional `suggestion` preserves
 structured remediation without changing the existing `error` string. Status is `submitted`, `succeeded`,
 `failed`, or `catalog_failed`. Any failed outcome makes the command exit nonzero.
+URLs in `suggestion` omit user information, query strings, and fragments.
 
 Generation changes catalog declarations, not an existing eval's references.
 When an existing eval does not reference a generated artifact, the command

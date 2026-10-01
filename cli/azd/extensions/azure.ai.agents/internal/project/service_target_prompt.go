@@ -664,7 +664,7 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	endpoint := promptAgentResponsesEndpoint(settings)
+	endpoint := PromptAgentResponsesEndpoint(settings, agentName, false)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
@@ -695,9 +695,18 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	return nil
 }
 
-// promptAgentResponsesEndpoint builds the project-scoped Responses URL.
-func promptAgentResponsesEndpoint(settings *PromptAgentSettings) string {
+// PromptAgentResponsesEndpoint builds the callable Responses URL for a prompt
+// agent. Harnessed agents use an agent-specific route; other prompt agents use
+// the project-scoped Responses route.
+func PromptAgentResponsesEndpoint(
+	settings *PromptAgentSettings,
+	agentName string,
+	harnessed bool,
+) string {
 	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
+		if harnessed {
+			return buildResponsesProtocolURL(strings.TrimRight(pe, "/"), strings.TrimSpace(agentName))
+		}
 		return strings.TrimRight(pe, "/") + "/openai/v1/responses"
 	}
 	return ""

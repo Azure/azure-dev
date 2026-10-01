@@ -275,8 +275,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 				return err
 			}
 		}
-		applyGate(a.cmd, threshold, display)
-		return nil
+		return applyGate(a.cmd, threshold, display)
 	}
 
 	out := a.cmd.OutOrStdout()
@@ -288,8 +287,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 			return err
 		}
 	}
-	applyGate(a.cmd, threshold, display)
-	return nil
+	return applyGate(a.cmd, threshold, display)
 }
 
 func renderRunDetail(out io.Writer, run *eval_api.OpenAIEvalRun) error {

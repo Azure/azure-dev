@@ -239,7 +239,9 @@ conflicting or unknown statuses and rows without conversation IDs are reported
 separately. These observations describe all rows returned by that listing, not
 a guarantee that every requested conversation produced output. Paged or filtered
 listings, and detail views that have not fetched all rows, do not supply this
-block. No additional output fetch or transcript-based turn inference is used.
+block. Only an explicitly reported zero evaluation total skips this best-effort
+fetch; missing or null totals do not imply empty output. No additional output
+fetch or transcript-based turn inference is used.
 
 JSON retains the service's run fields, including unrecognized nested fields;
 missing or null result-count members remain missing or null. It does not add
@@ -326,11 +328,18 @@ Waited summaries also show a complete set of explicitly reported zero counters;
 their pass rate is `-` because no rows were scored.
 Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
 between the total and reported result counts does not replace an explicit zero
-with inferred errors; gate thresholds and exit behavior are unchanged.
+with inferred errors.
 When reported totals leave rows unaccounted for, a neutral warning names that
 gap and the scored denominator without assigning failed, errored, or skipped
-outcomes. If passed/failed counts are missing, the warning instead identifies
-the incomplete counts and the denominator the gate used.
+outcomes. A pass-rate gate requires reported `passed` and `failed` counts and
+does not require a total; `any-failure` requires reported `total` and `passed`
+counts because it counts every non-passing row against the run. Missing or null
+required counters make the gate indeterminate: the command returns an
+operational error (extension exit 1), never a quality verdict based on invented
+zeros. An explicitly reported zero total still breaches either gate, and a
+reported zero scored denominator still breaches a pass-rate gate. Determinate
+quality breaches retain extension exit 2; the azd host exposes extension
+failures as exit 1.
 
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics

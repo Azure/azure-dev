@@ -150,6 +150,7 @@ func TestObservedConversationOutputIsNotDerivedFromPagedOrFilteredListings(t *te
 		require.NoError(t, renderResults(&out, run.EvalID, run, items, resultListView{failedOnly: failedOnly}))
 		assert.NotContains(t, out.String(), "OBSERVED CONVERSATION OUTPUT")
 	}
+
 	var out bytes.Buffer
 	require.NoError(t, renderRunDetail(&out, run))
 	assert.NotContains(t, out.String(), "OBSERVED CONVERSATION OUTPUT",
@@ -159,4 +160,60 @@ func TestObservedConversationOutputIsNotDerivedFromPagedOrFilteredListings(t *te
 		conversations: summarizeConversationOutput(items),
 	}))
 	assert.NotContains(t, out.String(), "OBSERVED CONVERSATION OUTPUT", "other run modes keep their existing output")
+}
+
+func TestRunOutputSummaryFetchesUnlessTotalIsExplicitlyZero(t *testing.T) {
+	for _, tc := range []struct {
+		name, counts string
+		skip         bool
+	}{
+		{"absent counts", "", false},
+		{"null counts", `,"result_counts":null`, false},
+		{"empty counts", `,"result_counts":{}`, false},
+		{"absent total", `,"result_counts":{"passed":1}`, false},
+		{"null total", `,"result_counts":{"total":null,"passed":1}`, false},
+		{"explicit zero", `,"result_counts":{"total":0}`, true},
+		{"positive total", `,"result_counts":{"total":1}`, false},
+	} {
+		for _, mode := range []string{"static", "simulation"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				calls := 0
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls++
+					assert.Contains(t, r.URL.Path, "/runs/run_counts/output_items")
+					w.Header().Set("Content-Type", "application/json")
+					assert.NoError(t, json.NewEncoder(w).Encode(eval_api.OutputItemList{
+						Data: []eval_api.OutputItem{conversationItem("row_1", "conv_1", "completed")},
+					}))
+				}))
+				t.Cleanup(srv.Close)
+				var run eval_api.OpenAIEvalRun
+				require.NoError(t, json.Unmarshal([]byte(`{"id":"run_counts"`+tc.counts+`}`), &run))
+				if mode == "simulation" {
+					run.Metadata = simulationReportingRun().Metadata
+				}
+				before, err := json.Marshal(run)
+				require.NoError(t, err)
+				summary := evalContextFor(srv).runOutputSummary(t.Context(), "eval_counts", &run)
+				if tc.skip {
+					assert.Nil(t, summary)
+					assert.Zero(t, calls)
+				} else {
+					require.NotNil(t, summary)
+					assert.Equal(t, 1, calls)
+					assert.Equal(t, map[string]float64{"quality": 0}, summary.means)
+					if mode == "simulation" {
+						assert.Equal(t, &conversationOutputSummary{
+							complete: true, rows: 1, identified: 1, completed: 1,
+						}, summary.conversations)
+					} else {
+						assert.Nil(t, summary.conversations)
+					}
+				}
+				after, err := json.Marshal(run)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(before), string(after))
+			})
+		}
+	}
 }

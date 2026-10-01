@@ -352,8 +352,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	if err := runCompleted(display); err != nil {
 		return err
 	}
-	applyGate(a.cmd, threshold, display)
-	return nil
+	return applyGate(a.cmd, threshold, display)
 }
 
 // checkDatasetRegistered fails when the group's local dataset has edits that
@@ -1208,13 +1207,17 @@ type runOutputSummary struct {
 // conversation output. Neither is a projection of a single page.
 //
 // Best effort: the summary is worth printing without the column, and a run
-// that scored nothing has no rows to read.
+// that explicitly reported a zero total has no rows to read. An unreported
+// total does not establish that the output is empty.
 func (ec *evalContext) runOutputSummary(
 	ctx context.Context,
 	evalID string,
 	run *eval_api.OpenAIEvalRun,
 ) *runOutputSummary {
-	if run == nil || run.ResultCounts == nil || run.ResultCounts.Total == 0 {
+	if run == nil {
+		return nil
+	}
+	if total, reported := run.ReportedResultCounts()["total"]; reported && total == 0 {
 		return nil
 	}
 	items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)

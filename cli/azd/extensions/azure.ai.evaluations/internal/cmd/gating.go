@@ -92,7 +92,36 @@ func scoredPassRate(counts *eval_api.EvalRunResultCounts) (rate float64, scored 
 	return float64(counts.Passed) / float64(scored), scored, true
 }
 
-// breach reports why the run missed the threshold, or empty when it met it.
+// evaluate checks count presence before deciding whether the quality gate was
+// breached. Missing operands are an operational error, not a quality verdict.
+func (g gate) evaluate(run *eval_api.OpenAIEvalRun) (string, error) {
+	if !g.set {
+		return "", nil
+	}
+	var counts map[string]int
+	if run != nil {
+		counts = run.ReportedResultCounts()
+	}
+	if total, reported := counts["total"]; reported && total == 0 {
+		return messages.GateNoRowsScored(), nil
+	}
+	required := []string{"passed", "failed"}
+	if g.anyFailure {
+		required = []string{"total", "passed"}
+	}
+	var missing []string
+	for _, name := range required {
+		if _, reported := counts[name]; !reported {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return "", messages.GateCountsUnavailable(missing)
+	}
+	return g.breach(run.ResultCounts), nil
+}
+
+// breach compares counts whose required operands evaluate has checked.
 //
 // A run that scored nothing at all breaches every threshold rather than
 // dividing by zero — "no rows passed" is the honest reading of an empty result.
@@ -103,13 +132,10 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 	if counts == nil {
 		return messages.GateNoResultCounts()
 	}
-	// Checked before any-failure as well as before the rate: a run that graded
-	// nothing has not passed, and reading zero unpassed rows as success let an
-	// empty run clear the gate that exists to catch exactly that.
-	if counts.Total == 0 {
-		return messages.GateNoRowsScored()
-	}
 	if g.anyFailure {
+		if counts.Total == 0 {
+			return messages.GateNoRowsScored()
+		}
 		// Deliberately stricter than the rate: this counts a row nothing could
 		// grade against the run, because "everything passed" is not true of a
 		// run that failed to grade half of what it was given.
@@ -137,31 +163,31 @@ func gateBreachMessage(reason string) string {
 }
 
 // applyGate ends the process with exit code 2 when the run missed its
-// threshold.
+// threshold, or returns an operational error when its counts are insufficient.
 //
 // It exits here rather than returning an error because the extension SDK's
 // Run collapses every error to exit 1, and the whole point of the flag is a
 // code a pipeline can tell apart from an operational failure.
-func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
-	if run == nil {
-		return
+func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) error {
+	reason, err := g.evaluate(run)
+	if err != nil {
+		return err
+	}
+	if !g.set {
+		return nil
 	}
 	// Rows nothing could grade are outside the rate, so a run that errored on
 	// most of what it was given can clear a threshold on the few that survived.
 	// That is the cost of measuring quality over scored rows only, and the gate
 	// is where it has to be said: this is the line a pipeline log keeps.
-	if g.set && !g.anyFailure {
+	if !g.anyFailure {
 		if c := run.ResultCounts; c != nil {
 			counts := run.ReportedResultCounts()
 			_, totalKnown := counts["total"]
-			_, passedKnown := counts["passed"]
-			_, failedKnown := counts["failed"]
 			errored, skipped := unscoredRunCounts(counts)
 			if _, scored, _ := scoredPassRate(c); totalKnown && c.Total > scored {
 				var warning error
 				switch unaccounted := c.Total - scored - errored - skipped; {
-				case !passedKnown || !failedKnown:
-					warning = messages.GateIncompleteCounts(c.Total, scored)
 				case unaccounted > 0:
 					warning = messages.GateUnaccountedRows(unaccounted, c.Total, scored)
 				case errored > 0 || skipped > 0:
@@ -173,12 +199,12 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 			}
 		}
 	}
-	reason := g.breach(run.ResultCounts)
 	if reason == "" {
-		return
+		return nil
 	}
 	fmt.Fprint(cmd.ErrOrStderr(), gateBreachMessage(reason))
 	os.Exit(exitCodeGateBreached)
+	return nil
 }
 
 func addFailOnFlag(cmd *cobra.Command, target *string) {

@@ -149,7 +149,6 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 						switch {
 						case strings.HasSuffix(r.URL.Path, "/output_items"):
 							outputRequests++
-							t.Error("a failed run with no output counts must not fetch rows to print next steps")
 							w.WriteHeader(http.StatusNotFound)
 						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
 							_, _ = io.WriteString(w, `{"id":"run_resolved","status":"queued"}`)
@@ -201,7 +200,11 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 							"returned diagnostics retain the successful lookup ID")
 						assert.NotContains(t, err.Error(), "gate breached")
 					}
-					assert.Zero(t, outputRequests)
+					if caller == "start" && format == "table" && counts == "absent" {
+						assert.Equal(t, 1, outputRequests, "unknown totals retain the best-effort summary fetch")
+					} else {
+						assert.Zero(t, outputRequests)
+					}
 					assert.NotContains(t, stderr.String(), "fixture-password")
 					if format == "json" {
 						expected := strings.Replace(string(response), runFailureWithCredentials,

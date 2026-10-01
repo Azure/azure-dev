@@ -611,11 +611,12 @@ func GateUnaccountedRows(unaccounted, total, scored int) error {
 		unaccounted, total, scored)
 }
 
-// GateIncompleteCounts distinguishes the gate's denominator from unreported outcomes.
-func GateIncompleteCounts(total, denominator int) error {
+// GateCountsUnavailable reports an indeterminate gate without a quality verdict.
+func GateCountsUnavailable(missing []string) error {
 	return fmt.Errorf(
-		"not all passed/failed counts were reported; the pass-rate gate used a denominator of %d for %d total rows",
-		denominator, total)
+		"evaluation gate is indeterminate: result_counts did not report %s; "+
+			"inspect the run with `azd ai eval run show` and retry when the required counts are available",
+		strings.Join(missing, ", "))
 }
 
 // unscoredBreakdown counts what a pass rate left out, by what it was.

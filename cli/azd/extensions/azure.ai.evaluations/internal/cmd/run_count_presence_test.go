@@ -95,6 +95,8 @@ func TestWaitedRunStartDistinguishesZeroAndUnreportedCounts(t *testing.T) {
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
+						case strings.HasSuffix(r.URL.Path, "/output_items"):
+							_, _ = io.WriteString(w, `{"data":[]}`)
 						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
 							_, _ = io.WriteString(w, `{"id":"run_zero","status":"queued"}`)
 						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs/run_zero"):
@@ -347,10 +349,6 @@ func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
 		{"legacy remainder", `{"total":10,"passed":5,"failed":2,"skipped":0}`, "3 errored of 10"},
 		{"consistent errors", `{"total":10,"passed":5,"failed":2,"errored":3,"skipped":0}`, "3 errored of 10"},
 		{"consistent scored", `{"total":7,"passed":5,"failed":2,"errored":0,"skipped":0}`, ""},
-		{"partial", `{"total":10,"passed":5}`,
-			"not all passed/failed counts were reported; the pass-rate gate used a denominator of 5 for 10 total rows"},
-		{"null failed", `{"total":10,"passed":5,"failed":null}`,
-			"not all passed/failed counts were reported; the pass-rate gate used a denominator of 5 for 10 total rows"},
 	} {
 		for _, caller := range []string{"start", "show"} {
 			for _, format := range []string{"table", "json"} {

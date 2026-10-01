@@ -3617,11 +3617,18 @@ func MaxSamplesNegative(got int) error {
 			"Remove it to send every row, or set the number of rows to send", got)
 }
 
-// SourceSampleConflict reports a dataset cap applied to a trace or response source.
+// SourceSampleFlagConflict reports an explicit dataset-sampling flag on a source-backed eval.
+func SourceSampleFlagConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--max-samples is not supported for source-backed eval %q, including an explicit value of 0", evalName),
+		"Omit --max-samples. For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
+// SourceSampleConflict reports a positive dataset cap applied to a trace or response source.
 func SourceSampleConflict(evalName string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
-		fmt.Sprintf("--max-samples or max_samples cannot cap source-backed eval %q", evalName),
-		"Remove the dataset cap. For traces, use source.max_traces; for responses, select source.response_ids.")
+		fmt.Sprintf("max_samples cannot cap source-backed eval %q", evalName),
+		"Remove the positive max_samples value. For traces, use source.max_traces; for responses, select source.response_ids.")
 }
 
 // NegativeMaxSamplesFlag reports a row cap below zero given on the command line.

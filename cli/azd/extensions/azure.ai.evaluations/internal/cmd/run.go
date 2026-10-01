@@ -1105,7 +1105,7 @@ func runMaxSamples(cmd *cobra.Command, flag int, group *project.Eval) (int, erro
 					"or omit --max-samples to repeat the previous source.")
 		}
 		if group.Source != nil {
-			return 0, messages.SourceSampleConflict(group.Name)
+			return 0, messages.SourceSampleFlagConflict(group.Name)
 		}
 		return flag, nil
 	}

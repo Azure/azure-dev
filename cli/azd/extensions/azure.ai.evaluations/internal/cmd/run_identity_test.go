@@ -834,6 +834,14 @@ func TestRunRejectsIgnoredCapFlags(t *testing.T) {
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+			if group != nil {
+				assert.Contains(t, local.Message, "--max-samples is not supported")
+				assert.Contains(t, local.Message, "including an explicit value of 0")
+				assert.Contains(t, local.Suggestion, "Omit --max-samples.")
+				assert.NotContains(t, local.Suggestion, "Remove the dataset cap")
+				assert.Contains(t, local.Suggestion, "source.max_traces")
+				assert.Contains(t, local.Suggestion, "source.response_ids")
+			}
 		}
 	}
 }
@@ -905,6 +913,11 @@ func TestRunRejectsConfiguredSourceCaps(t *testing.T) {
 		ds, _, err := ec.buildRunDataSource(t.Context(), group, "", resolveMaxSamples(0, group))
 		require.ErrorContains(t, err, "max_samples")
 		assert.Nil(t, ds)
+		local, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		assert.Contains(t, local.Suggestion, "Remove the positive max_samples value.")
+		assert.NotContains(t, local.Message, "--max-samples")
+		assert.NotContains(t, local.Suggestion, "Omit --max-samples")
 	}
 }
 

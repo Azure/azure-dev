@@ -449,6 +449,10 @@ over catalog declarations, which take precedence over inherited service
 metadata. Explicit empty category and evaluation-level lists clear those
 fields. Metadata joins the publication body after digest and reuse decisions,
 so an unchanged rubric remains unpublished.
+Definition comparisons preserve exact JSON numeric values, including unknown
+dimension fields: adjacent large integers and precise decimal edits are changes,
+while equivalent spellings such as `1`, `1.0`, and `1e0` compare equal even before
+a local publication fingerprint has been recorded.
 
 Omitting `--version` downloads the latest version and reports which one was used.
 Existing files are not replaced unless `--force` is supplied.

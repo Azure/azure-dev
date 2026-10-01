@@ -4,10 +4,39 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestEqualJSONPreservesNumericPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name, left, right string
+		equal             bool
+	}{
+		{"adjacent integers", `9007199254740992`, `9007199254740993`, false},
+		{"precise decimals", `0.60000000000000001`, `0.60000000000000002`, false},
+		{"decimal integer", `1`, `1.0`, true},
+		{"exponent integer", `1.0`, `1e0`, true},
+		{"large exponent", `9007199254740993`, `9.007199254740993e15`, true},
+		{"decimal exponent", `0.60000000000000001`, `6.0000000000000001e-1`, true},
+		{"signed zero", `-0.0`, `0e2`, true},
+		{"nested numbers", `{"scale":[1,{"maximum":9007199254740992}]}`,
+			`{"scale":[1.0,{"maximum":9007199254740993}]}`, false},
+		{"structural", `{"a":[1,true,null],"b":"text"}`, ` { "b": "text", "a": [1e0,true,null] } `, true},
+		{"array order", `[1,2]`, `[2,1]`, false},
+		{"missing null key", `{"a":null}`, `{"b":null}`, false},
+		{"number string", `1`, `"1"`, false},
+		{"invalid", `not JSON`, `null`, false},
+		{"trailing value", `1 2`, `1`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.equal, equalJSON(json.RawMessage(tc.left), json.RawMessage(tc.right)))
+			require.Equal(t, tc.equal, equalJSON(json.RawMessage(tc.right), json.RawMessage(tc.left)))
+		})
+	}
+}
 
 // The service enriches a definition when it stores it: a rubric of nothing but
 // type and dimensions comes back carrying data_schema, init_parameters and

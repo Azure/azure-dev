@@ -147,6 +147,51 @@ func TestEvaluatorDownloadRoundTripWithDeclaration(t *testing.T) {
 	service.publishedBody(t, 1)
 }
 
+func TestEvaluatorWithoutPriorDigestComparesExactNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		name, existing, authored string
+		publish                  bool
+	}{
+		{"adjacent integers", "9007199254740992", "9007199254740993", true},
+		{"precise decimals", "0.60000000000000001", "0.60000000000000002", true},
+		{"equivalent decimal", "1", "1.0", false},
+		{"equivalent exponent", "1.0", "1e0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ec, service := evaluatorRoundTripContext(t)
+			definition := func(number string) string {
+				return `{"type":"rubric","dimensions":[{"id":"accuracy","weight":5,"scale":{"maximum":` + number + `}}]}`
+			}
+			service.document = json.RawMessage(`{"name":"quality","version":"3","definition":` +
+				definition(tc.existing) + `}`)
+			path := filepath.Join(t.TempDir(), "quality.json")
+			require.NoError(t, os.WriteFile(path, []byte(definition(tc.authored)), 0o600))
+			key := project.FingerprintKey("evaluator", "quality")
+			require.Empty(t, ec.privateValue(t.Context(), key))
+			reconciler := &evalReconciler{ec: ec}
+			decl := project.EvaluatorDecl{Name: "quality", Source: path}
+
+			version, published, err := reconciler.EnsureEvaluator(t.Context(), decl, path)
+			require.NoError(t, err)
+			require.Equal(t, tc.publish, published)
+			if tc.publish {
+				require.Equal(t, "4", version)
+				service.publishedBody(t, 1)
+				require.Contains(t, string(service.published[0]), tc.authored)
+			} else {
+				require.Equal(t, "3", version)
+				service.publishedBody(t, 0)
+			}
+			require.NotEmpty(t, ec.privateValue(t.Context(), key))
+			ec.state = nil
+			repeatedVersion, published, err := reconciler.EnsureEvaluator(t.Context(), decl, path)
+			require.NoError(t, err)
+			require.False(t, published, "a repeat must reuse the correctly reconciled version")
+			require.Equal(t, version, repeatedVersion)
+		})
+	}
+}
+
 func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		t.Run(strconv.FormatBool(explicit), func(t *testing.T) {

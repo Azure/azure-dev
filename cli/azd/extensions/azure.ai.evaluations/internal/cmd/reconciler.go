@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"io/fs"
 	"log"
 	"maps"
+	"math/big"
 	"os"
 	"reflect"
 	"slices"
@@ -1195,14 +1197,44 @@ func sameAuthoredDimensions(existing, candidate json.RawMessage) bool {
 }
 
 // equalJSON compares two JSON values structurally, so key order and
-// whitespace do not register as a change.
+// whitespace do not register as a change. Numbers retain exact values while
+// equivalent decimal and exponent spellings compare equal.
 func equalJSON(a, b json.RawMessage) bool {
-	var left, right any
-	if err := json.Unmarshal(a, &left); err != nil {
+	if !json.Valid(a) || !json.Valid(b) {
 		return false
 	}
-	if err := json.Unmarshal(b, &right); err != nil {
+	var left, right any
+	leftDecoder, rightDecoder := json.NewDecoder(bytes.NewReader(a)), json.NewDecoder(bytes.NewReader(b))
+	leftDecoder.UseNumber()
+	rightDecoder.UseNumber()
+	if err := leftDecoder.Decode(&left); err != nil {
 		return false
+	}
+	if err := rightDecoder.Decode(&right); err != nil {
+		return false
+	}
+	return equalJSONValue(left, right)
+}
+
+func equalJSONValue(left, right any) bool {
+	switch left := left.(type) {
+	case json.Number:
+		right, ok := right.(json.Number)
+		if !ok {
+			return false
+		}
+		if left == right {
+			return true
+		}
+		leftNumber, leftOK := new(big.Rat).SetString(string(left))
+		rightNumber, rightOK := new(big.Rat).SetString(string(right))
+		return leftOK && rightOK && leftNumber.Cmp(rightNumber) == 0
+	case []any:
+		right, ok := right.([]any)
+		return ok && slices.EqualFunc(left, right, equalJSONValue)
+	case map[string]any:
+		right, ok := right.(map[string]any)
+		return ok && maps.EqualFunc(left, right, equalJSONValue)
 	}
 	return reflect.DeepEqual(left, right)
 }

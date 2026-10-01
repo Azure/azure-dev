@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -318,6 +319,8 @@ type GitHubCiProvider struct {
 	ghCli              *github.Cli
 	gitCli             *git.Cli
 	console            input.Console
+	gitHubEnvironment  string
+	createEnvironment  bool
 }
 
 func NewGitHubCiProvider(
@@ -365,6 +368,108 @@ func (p *GitHubCiProvider) Name() string {
 	return gitHubDisplayName
 }
 
+func (p *GitHubCiProvider) resolveEnvironment(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+) (string, error) {
+	p.gitHubEnvironment = ""
+	p.createEnvironment = false
+
+	if environmentName, configured := p.env.LookupEnv(gitHubEnvironmentPersistedKey); configured {
+		p.gitHubEnvironment = environmentName
+		return environmentName, nil
+	}
+
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+	repositoryVariables, err := p.ghCli.ListVariables(ctx, repoSlug, nil)
+	if err != nil {
+		return "", fmt.Errorf("checking existing repository pipeline configuration: %w", err)
+	}
+	if repositoryVariables[environment.EnvNameEnvVarName] == p.env.Name() {
+		return "", nil
+	}
+
+	if p.console.IsNoPromptMode() {
+		return "", nil
+	}
+
+	environments, err := p.ghCli.ListEnvironments(ctx, repoSlug)
+	if err != nil {
+		p.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"GitHub environments could not be listed. You can continue with repository-scoped configuration "+
+					"or try to create an environment: %v",
+				err,
+			),
+		})
+	}
+	slices.Sort(environments)
+
+	const repositoryScope = "Use repository variables and secrets"
+	const createEnvironment = "Create a new GitHub environment"
+	options := append([]string{repositoryScope, createEnvironment}, environments...)
+	selection, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Select where GitHub Actions configuration for azd environment '%s' should be stored",
+			p.env.Name(),
+		),
+		Options:      options,
+		DefaultValue: repositoryScope,
+	})
+	if err != nil {
+		return "", fmt.Errorf("selecting GitHub environment: %w", err)
+	}
+
+	switch selection {
+	case 0:
+		return "", nil
+	case 1:
+		environmentName, err := p.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "Enter a name for the new GitHub environment",
+			DefaultValue: p.env.Name(),
+		})
+		if err != nil {
+			return "", fmt.Errorf("prompting for GitHub environment name: %w", err)
+		}
+		environmentName = strings.TrimSpace(environmentName)
+		if environmentName == "" {
+			return "", errors.New("GitHub environment name cannot be empty")
+		}
+		if len(environmentName) > 255 {
+			return "", errors.New("GitHub environment name cannot exceed 255 characters")
+		}
+		p.gitHubEnvironment = environmentName
+		p.createEnvironment = true
+		return environmentName, nil
+	default:
+		p.gitHubEnvironment = options[selection]
+		return p.gitHubEnvironment, nil
+	}
+}
+
+func (p *GitHubCiProvider) ensureEnvironment(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+) error {
+	if !p.createEnvironment {
+		return nil
+	}
+
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+	if err := p.ghCli.CreateEnvironmentIfNotExist(ctx, repoSlug, p.gitHubEnvironment); err != nil {
+		return err
+	}
+	p.createEnvironment = false
+	return nil
+}
+
+func (p *GitHubCiProvider) environmentOptions() *github.EnvironmentOptions {
+	if p.gitHubEnvironment == "" {
+		return nil
+	}
+	return &github.EnvironmentOptions{Environment: p.gitHubEnvironment}
+}
+
 func (p *GitHubCiProvider) credentialOptions(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
@@ -380,6 +485,33 @@ func (p *GitHubCiProvider) credentialOptions(
 
 	// If not specified default to federated credentials
 	if authType == "" || authType == AuthTypeFederated {
+		if p.gitHubEnvironment != "" {
+			subject, err := p.resolveOIDCEnvironmentSubject(
+				ctx,
+				repoDetails.owner+"/"+repoDetails.repoName,
+				p.gitHubEnvironment,
+			)
+			if err != nil {
+				return nil, err
+			}
+			credentialName := credentialNameSanitizer.ReplaceAllString(
+				fmt.Sprintf("%s-%s", repoDetails.owner+"-"+repoDetails.repoName, p.gitHubEnvironment),
+				"-",
+			)
+			return &CredentialOptions{
+				EnableFederatedCredentials: true,
+				FederatedCredentialOptions: []*graphsdk.FederatedIdentityCredential{
+					{
+						Name:        credentialName,
+						Issuer:      federatedIdentityIssuer,
+						Subject:     subject,
+						Description: new("Created by Azure Developer CLI"),
+						Audiences:   []string{federatedIdentityAudience},
+					},
+				},
+			}, nil
+		}
+
 		// Configure federated auth for both main branch and current branch
 		branches := []string{repoDetails.branch}
 		if !slices.Contains(branches, "main") {
@@ -453,6 +585,43 @@ func (p *GitHubCiProvider) credentialOptions(
 		EnableClientCredentials:    false,
 		EnableFederatedCredentials: false,
 	}, nil
+}
+
+func (p *GitHubCiProvider) resolveOIDCEnvironmentSubject(
+	ctx context.Context,
+	repoSlug string,
+	environmentName string,
+) (string, error) {
+	oidcConfig, repoInfo, err := p.detectOIDCConfig(ctx, repoSlug)
+	if err != nil {
+		return "", err
+	}
+	escapedName := strings.ReplaceAll(environmentName, ":", "%3A")
+	subject, err := github.BuildOIDCSubject(
+		repoSlug,
+		repoInfo,
+		oidcConfig,
+		"environment:"+escapedName,
+	)
+	if err != nil {
+		return "", fmt.Errorf("building OIDC subject for GitHub environment %q: %w", environmentName, err)
+	}
+	if p.console.IsNoPromptMode() {
+		return subject, nil
+	}
+
+	resolvedSubject, err := p.console.Prompt(ctx, input.ConsoleOptions{
+		Message:      fmt.Sprintf("Enter the OIDC subject for GitHub environment '%s'", environmentName),
+		DefaultValue: subject,
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for GitHub environment OIDC subject: %w", err)
+	}
+	resolvedSubject = strings.TrimSpace(resolvedSubject)
+	if resolvedSubject == "" {
+		return "", errors.New("GitHub environment OIDC subject cannot be empty")
+	}
+	return resolvedSubject, nil
 }
 
 // ***  ciProvider implementation ******
@@ -723,7 +892,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 		environment.TenantIdEnvVarName:       tenantId,
 		"AZURE_CLIENT_ID":                    clientId,
 	} {
-		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value, nil); err != nil {
+		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value, p.environmentOptions()); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", name, err)
 		}
 		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -754,7 +923,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 			}
 
 			// env var was found
-			if err := p.ghCli.SetVariable(ctx, repoSlug, key, value, nil); err != nil {
+			if err := p.ghCli.SetVariable(ctx, repoSlug, key, value, p.environmentOptions()); err != nil {
 				return fmt.Errorf("setting terraform remote state variables: %w", err)
 			}
 			p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -766,7 +935,13 @@ func (p *GitHubCiProvider) setPipelineVariables(
 
 	if infraOptions.Provider == provisioning.Bicep {
 		if rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
-			if err := p.ghCli.SetVariable(ctx, repoSlug, environment.ResourceGroupEnvVarName, rgName, nil); err != nil {
+			if err := p.ghCli.SetVariable(
+				ctx,
+				repoSlug,
+				environment.ResourceGroupEnvVarName,
+				rgName,
+				p.environmentOptions(),
+			); err != nil {
 				return fmt.Errorf("failed setting %s variable: %w", environment.ResourceGroupEnvVarName, err)
 			}
 		}
@@ -789,7 +964,13 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		return fmt.Errorf("failed marshalling azure credentials: %w", err)
 	}
 
-	if err := p.ghCli.SetSecret(ctx, repoSlug, secretName, string(credsJson)); err != nil {
+	if err := p.ghCli.SetSecret(
+		ctx,
+		repoSlug,
+		secretName,
+		string(credsJson),
+		p.environmentOptions(),
+	); err != nil {
 		return fmt.Errorf("failed setting %s secret: %w", secretName, err)
 	}
 	p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -807,7 +988,13 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			"ARM_CLIENT_SECRET": {credentials.ClientSecret, true},
 		} {
 			if !info.secret {
-				if err := p.ghCli.SetVariable(ctx, repoSlug, key, info.value, nil); err != nil {
+				if err := p.ghCli.SetVariable(
+					ctx,
+					repoSlug,
+					key,
+					info.value,
+					p.environmentOptions(),
+				); err != nil {
 					return fmt.Errorf("setting github variable %s:: %w", key, err)
 				}
 				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -815,7 +1002,13 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 					Kind: ux.GitHubVariable,
 				})
 			} else {
-				if err := p.ghCli.SetSecret(ctx, repoSlug, key, info.value); err != nil {
+				if err := p.ghCli.SetSecret(
+					ctx,
+					repoSlug,
+					key,
+					info.value,
+					p.environmentOptions(),
+				); err != nil {
 					return fmt.Errorf("setting github secret %s:: %w", key, err)
 				}
 				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -849,11 +1042,11 @@ func (p *GitHubCiProvider) configurePipeline(
 	ciSecrets := []string{}
 	if len(options.projectVariables) > 0 || len(options.providerParameters) > 0 {
 		msg = "Setting up project's variables to be used in the pipeline"
-		ciSecretsInstance, err := p.ghCli.ListSecrets(ctx, repoSlug)
+		ciSecretsInstance, err := p.ghCli.ListSecrets(ctx, repoSlug, p.environmentOptions())
 		if err != nil {
 			return nil, fmt.Errorf("unable to get list of repository secrets: %w", err)
 		}
-		ciVariablesInstance, err := p.ghCli.ListVariables(ctx, repoSlug, nil)
+		ciVariablesInstance, err := p.ghCli.ListVariables(ctx, repoSlug, p.environmentOptions())
 		if err != nil {
 			return nil, fmt.Errorf("unable to get list of repository variables: %w", err)
 		}
@@ -867,12 +1060,20 @@ func (p *GitHubCiProvider) configurePipeline(
 			p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(procErr))
 		}
 		if procErr == nil {
+			settingsUrl := fmt.Sprintf("https://github.com/%s/settings/secrets/actions", repoSlug)
+			if p.gitHubEnvironment != "" {
+				settingsUrl = fmt.Sprintf(
+					"https://github.com/%s/settings/environments/%s",
+					repoSlug,
+					url.PathEscape(p.gitHubEnvironment),
+				)
+			}
 			p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 				Lines: []string{
 					"",
 					"GitHub Action secrets are now configured. You can view GitHub action secrets that were " +
 						"created at this link:",
-					output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
+					output.WithLinkFormat(settingsUrl),
 					""},
 			})
 		}
@@ -988,7 +1189,7 @@ func (p *GitHubCiProvider) configurePipeline(
 				continue
 			}
 			if deleteAllUnused {
-				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret, p.environmentOptions())
 				if deleteErr != nil {
 					procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
 					return nil, procErr
@@ -1033,7 +1234,7 @@ func (p *GitHubCiProvider) configurePipeline(
 					Action: "Ignore un-used",
 				})
 			case selectionDelete:
-				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret, p.environmentOptions())
 				if deleteErr != nil {
 					procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
 					return nil, procErr
@@ -1045,7 +1246,7 @@ func (p *GitHubCiProvider) configurePipeline(
 				})
 			case selectionDeleteAll:
 				deleteAllUnused = true
-				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret, p.environmentOptions())
 				if deleteErr != nil {
 					procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
 					return nil, procErr
@@ -1165,7 +1366,7 @@ func (p *GitHubCiProvider) configurePipeline(
 				continue
 			}
 			if deleteAllUnusedVars {
-				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable, p.environmentOptions())
 				if deleteErr != nil {
 					procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
 					return nil, procErr
@@ -1210,7 +1411,7 @@ func (p *GitHubCiProvider) configurePipeline(
 					Action: "Ignore un-used",
 				})
 			case selectionDeleteVars:
-				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable, p.environmentOptions())
 				if deleteErr != nil {
 					procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
 					return nil, procErr
@@ -1222,7 +1423,7 @@ func (p *GitHubCiProvider) configurePipeline(
 				})
 			case selectionDeleteAllVars:
 				deleteAllUnusedVars = true
-				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable, p.environmentOptions())
 				if deleteErr != nil {
 					procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
 					return nil, procErr
@@ -1238,14 +1439,14 @@ func (p *GitHubCiProvider) configurePipeline(
 
 	// set the new variables and secrets
 	for key, value := range toBeSetSecrets {
-		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value, p.environmentOptions()); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr
 		}
 	}
 
 	for key, value := range toBeSetVariables {
-		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value, nil); err != nil {
+		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value, p.environmentOptions()); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr
 		}

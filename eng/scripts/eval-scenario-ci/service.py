@@ -11,6 +11,7 @@ service-side budget verification and provider approval remain external gates.
 
 import argparse
 import base64
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
@@ -88,6 +89,24 @@ def require(condition, message):
 def expect(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def service_error_text(error, workspace=None):
+    if isinstance(error, OSError):
+        code = f", errno {error.errno}" if type(error.errno) is int else ""
+        return f"Service filesystem/process operation failed ({type(error).__name__}{code})"
+    if workspace is not None:
+        return scenario.proof_module.sanitize(str(error), workspace)
+    return scenario.safe_text(error)
+
+
+@contextmanager
+def private_os_error_boundary():
+    try:
+        yield
+    except OSError as error:
+        # Normalize before the outer workspace context records the primary failure.
+        raise RuntimeError(service_error_text(error)) from None
 
 
 def unique_plan_object(pairs):
@@ -571,13 +590,13 @@ def existing_agent_cli_lifecycle(plan, driver, workspace, report, raw_row):
         primary = None if body_completed else sys.exception()
         if primary is not None and "failure" not in report:
             report["failure"] = {"type": type(primary).__name__,
-                                 "message": scenario.proof_module.sanitize(str(primary), workspace)}
+                                 "message": service_error_text(primary, workspace)}
         cleanup_errors = []
         if dataset is not None:
             try:
                 report["datasetCleanup"] = delete_owned_dataset(plan, driver, dataset, cleanup_state)
             except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
-                report["datasetCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+                report["datasetCleanup"] = {"status": "FAIL", "message": service_error_text(error, workspace)}
                 cleanup_errors.append(error)
         elif dataset_attempted:
             report["datasetCleanup"] = {"status": "BLOCKED", "manualReconciliationRequired": True,
@@ -591,7 +610,7 @@ def existing_agent_cli_lifecycle(plan, driver, workspace, report, raw_row):
                     cleanup_deadline=begin_cleanup(plan, cleanup_state))
                 report["sessionCleanup"] = {"status": "PASS", "id": session_id}
             except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
-                report["sessionCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+                report["sessionCleanup"] = {"status": "FAIL", "message": service_error_text(error, workspace)}
                 cleanup_errors.append(error)
         elif session_attempted:
             report["sessionCleanup"] = {"status": "BLOCKED", "manualReconciliationRequired": True,
@@ -600,7 +619,7 @@ def existing_agent_cli_lifecycle(plan, driver, workspace, report, raw_row):
             driver.clear_agent_state(cleanup_deadline=begin_cleanup(plan, cleanup_state))
             report["agentStateCleanup"] = {"status": "PASS"}
         except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
-            report["agentStateCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+            report["agentStateCleanup"] = {"status": "FAIL", "message": service_error_text(error, workspace)}
             cleanup_errors.append(error)
         if cleanup_errors:
             raise RuntimeError("Owned smoke resource cleanup failed; retained per-resource outcomes") from cleanup_errors[0]
@@ -687,7 +706,7 @@ def lifecycle(plan, driver, workspace, report, name=None, *, target=None, identi
         error = None if body_completed else sys.exception()
         if error is not None:
             report["failure"] = {"type": type(error).__name__,
-                                 "message": scenario.proof_module.sanitize(str(error), workspace)}
+                                 "message": service_error_text(error, workspace)}
         report["remoteBillingStopped"] = "NOT VERIFIED; timeouts and deletion are not monetary controls"
         if eval_id:
             try:
@@ -699,7 +718,7 @@ def lifecycle(plan, driver, workspace, report, name=None, *, target=None, identi
                 report["remoteCleanup"] = {"status": "PASS", "evalId": eval_id}
             except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
                 report["remoteCleanup"] = {
-                    "status": "FAIL", "message": scenario.proof_module.sanitize(str(error), workspace),
+                    "status": "FAIL", "message": service_error_text(error, workspace),
                 }
                 raise
         elif submitted:
@@ -771,13 +790,13 @@ def owned_prompt_lifecycle(plan, driver, workspace, report, raw_row):
         primary = None if body_completed else sys.exception()
         if primary is not None and "failure" not in report:
             report["failure"] = {"type": type(primary).__name__,
-                                 "message": scenario.proof_module.sanitize(str(primary), workspace)}
+                                 "message": service_error_text(primary, workspace)}
         cleanup_errors = []
         if dataset is not None:
             try:
                 report["datasetCleanup"] = delete_owned_dataset(plan, driver, dataset, cleanup_state)
             except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
-                report["datasetCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+                report["datasetCleanup"] = {"status": "FAIL", "message": service_error_text(error, workspace)}
                 cleanup_errors.append(error)
         elif dataset_attempted:
             report["datasetCleanup"] = {"status": "BLOCKED", "manualReconciliationRequired": True,
@@ -794,7 +813,7 @@ def owned_prompt_lifecycle(plan, driver, workspace, report, raw_row):
                        "Owned prompt-agent version deletion was not confirmed")
                 report["agentCleanup"] = {"status": "PASS", **agent}
             except (Blocked, RuntimeError, KeyError, ValueError, OSError) as error:
-                report["agentCleanup"] = {"status": "FAIL", "message": scenario.safe_text(error)}
+                report["agentCleanup"] = {"status": "FAIL", "message": service_error_text(error, workspace)}
                 cleanup_errors.append(error)
         elif agent_attempted:
             report["agentCleanup"] = {"status": "BLOCKED", "manualReconciliationRequired": True,
@@ -839,7 +858,7 @@ def execute(plan_path, output, env=None):
                 "An existing isolated CI service-auth configuration must be provided; never copy devbox caches")
         executable = verify_install(plan, config)
         report["status"], report["execution"] = "FAIL", "STARTED"
-        with scenario.owned_workspace(workspace_state) as workspace:
+        with scenario.owned_workspace(workspace_state) as workspace, private_os_error_boundary():
             expires = datetime.fromisoformat(plan["expiresAt"].replace("Z", "+00:00"))
             duration = min(plan["durationSeconds"],
                            (expires - datetime.now(timezone.utc)).total_seconds() - plan["timeoutSeconds"])
@@ -853,11 +872,13 @@ def execute(plan_path, output, env=None):
                 owned_prompt_lifecycle(plan, driver, workspace, report, raw_row)
         report["status"], report["execution"] = "PASS", "COMPLETED"
     except (Blocked, RuntimeError, KeyError, ValueError, OSError, InvalidOperation) as error:
+        if isinstance(error, OSError) and workspace_state.get("cleanup", {}).get("status") == "FAIL":
+            workspace_state["cleanup"]["error"] = service_error_text(error)
         before_execution = report["execution"] == "NOT RUN"
         reported = (Blocked(f"Service prerequisites are unavailable or malformed ({type(error).__name__})")
                     if before_execution and not isinstance(error, Blocked) else error)
         report["status"] = "BLOCKED" if before_execution else "FAIL"
-        report["error"] = {"type": type(reported).__name__, "message": scenario.safe_text(reported)}
+        report["error"] = {"type": type(reported).__name__, "message": service_error_text(reported)}
         if reported is not error:
             raise reported from error
         if isinstance(error, Blocked) and not before_execution:
@@ -879,10 +900,10 @@ def main():
     try:
         execute(args.plan, args.output)
     except Blocked as error:
-        print(f"BLOCKED: {scenario.safe_text(error)}", file=sys.stderr)
+        print(f"BLOCKED: {service_error_text(error)}", file=sys.stderr)
         return 3
     except (RuntimeError, KeyError, ValueError, OSError, InvalidOperation) as error:
-        print(f"FAIL: {scenario.safe_text(error)}", file=sys.stderr)
+        print(f"FAIL: {service_error_text(error)}", file=sys.stderr)
         return 1
     return 0
 

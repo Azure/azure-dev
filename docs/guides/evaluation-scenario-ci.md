@@ -590,6 +590,11 @@ are retained for 14 days; preserve approved immutable receipts in the release
 ledger rather than assuming artifacts last forever.
 
 URLs in captured CLI output lose user information, query and fragment credentials.
+Service filesystem/process exceptions use fixed diagnostics rather than raw
+exception text or absolute filenames; runtime diagnostics retain the exception
+class and numeric error code when present. This applies to
+preflight, primary runtime failures, resource cleanup and local cleanup receipts
+as well as terminal errors; URL sanitization alone is not filesystem redaction.
 Only explicitly selected synthetic evidence is uploaded, never home folders,
 auth caches, environment dumps, or downloaded credential material.
 Resolver consistency checks are not a cryptographic publisher signature.

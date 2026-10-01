@@ -13,9 +13,11 @@ parameters:
     default: '24042bd37915805615e6cf969ac57c6439124c3fe85823327f5f3fb24bd9ffea'
 
 steps:
-  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
-    parameters:
-      Use1ESArtifactTask: ${{ eq(parameters.Operation, 'Publish') }}
+  - pwsh: |
+      Write-Host "##vso[task.setvariable variable=CLI_VERSION]1.35.0"
+      Write-Host "##vso[task.setvariable variable=MSI_VERSION]1.35.100"
+      Write-Host "##vso[task.setvariable variable=SubmitWingetPackage]true"
+    displayName: Override WinGet release metadata for 1.35.0 recovery
 
   - ${{ if eq(parameters.Operation, 'Prepare') }}:
     - pwsh: |

@@ -179,6 +179,27 @@ class ResolutionTests(unittest.TestCase):
                 scenario.resolve(path)
             self.assertEqual(get.call_count, 4)
 
+    def test_failed_resolution_cannot_reuse_evidence_after_approval_recovers(self):
+        _, urls = self.resolution_urls()
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "evidence" / "candidate.json"
+            with mock.patch.object(scenario, "reviewed_candidate",
+                                   side_effect=scenario.ApprovalBlocked("Approval is unavailable")):
+                with self.assertRaises(scenario.ApprovalBlocked):
+                    scenario.resolve(output)
+            receipt_path = output.parent / "approval-status.json"
+            blocked_bytes = receipt_path.read_bytes()
+            self.assertFalse(output.exists())
+            with mock.patch.object(scenario, "reviewed_candidate",
+                                   return_value=(self.baseline, self.authority)) as approval, \
+                 mock.patch.object(scenario, "fetch", side_effect=urls.__getitem__) as fetch:
+                with self.assertRaisesRegex(AssertionError, "reuse.*approval evidence"):
+                    scenario.resolve(output)
+                approval.assert_not_called()
+                fetch.assert_not_called()
+            self.assertFalse(output.exists())
+            self.assertEqual(receipt_path.read_bytes(), blocked_bytes)
+
     def test_metadata_byte_mismatch_persists_approval_block(self):
         _, urls = self.resolution_urls()
         for name in ("registry.json", "source-provenance.json", "SHA256SUMS"):

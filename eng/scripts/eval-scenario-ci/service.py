@@ -809,6 +809,8 @@ def execute(plan_path, output, env=None):
     output.mkdir(parents=True)
     report = {"status": "BLOCKED", "execution": "NOT RUN", "remoteCleanup": {"status": "NOT RUN"},
               "datasetCleanup": {"status": "NOT RUN"}, "agentCleanup": {"status": "NOT RUN"},
+              "sessionCleanup": {"status": "NOT RUN"}, "agentStateCleanup": {"status": "NOT RUN"},
+              "agentCliInvocation": {"status": "NOT RUN"},
               "implemented": ["static evaluation lifecycle", "owned prompt version/manual dataset lifecycle",
                               "existing hosted agent CLI smoke with owned session and static evaluation"],
               "executorImplemented": {

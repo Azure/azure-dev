@@ -566,6 +566,10 @@ python eng\scripts\eval-scenario-ci\scenario.py offline `
 
 The runner never edits the checked-in candidate manifest. Existing output or
 manifest paths are refused to avoid overwriting evidence.
+A failed resolution also reserves its evidence directory through
+`approval-status.json`. Even after prerequisites recover, use a new output
+directory rather than placing a successful manifest beside the old blocked
+receipt.
 
 ## Evidence
 

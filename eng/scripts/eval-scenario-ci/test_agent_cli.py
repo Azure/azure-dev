@@ -278,6 +278,35 @@ class AgentCliTests(unittest.TestCase):
                     driver.assert_not_called()
                 receipt = json.loads((root / "evidence" / "service-status.json").read_bytes())
                 self.assertEqual((receipt["status"], receipt["execution"]), ("BLOCKED", "NOT RUN"))
+                for field in ("sessionCleanup", "agentStateCleanup", "agentCliInvocation"):
+                    self.assertEqual(receipt[field]["status"], "NOT RUN")
+
+    def test_pre_lifecycle_blocks_keep_all_agent_operation_states(self):
+        for kind in ("approval", "manual-row"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                row = root / "manual.jsonl"
+                row.write_bytes(test_owned_prompt.ROW if kind == "approval" else b'{"query":"invalid"}\n')
+                plan = plan_for()
+                plan["datasetFile"] = str(row)
+                raw = json.dumps(plan).encode()
+                path = root / "plan.json"
+                path.write_bytes(raw)
+                env = {**test_service.ServiceTests().github_env(),
+                       "AZD_SCENARIO_LIVE_APPROVAL_SHA256":
+                           "0" * 64 if kind == "approval" else service.scenario.sha256(raw)}
+                with mock.patch.object(service, "verify_install") as verify, \
+                     mock.patch.object(service, "Driver") as driver:
+                    with self.assertRaises(service.Blocked):
+                        service.execute(path, root / "evidence", env)
+                    verify.assert_not_called()
+                    driver.assert_not_called()
+                receipt = json.loads((root / "evidence" / "service-status.json").read_bytes())
+                self.assertEqual((receipt["status"], receipt["execution"]), ("BLOCKED", "NOT RUN"))
+                for field in ("remoteCleanup", "datasetCleanup", "agentCleanup",
+                              "sessionCleanup", "agentStateCleanup", "agentCliInvocation", "cleanup"):
+                    self.assertEqual(receipt[field]["status"], "NOT RUN")
+                self.assertNotIn("commands", receipt)
 
     def test_execute_wires_cli_mode_and_waits_for_all_cleanup(self):
         with tempfile.TemporaryDirectory() as root:

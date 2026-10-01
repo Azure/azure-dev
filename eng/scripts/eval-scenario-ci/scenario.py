@@ -371,6 +371,7 @@ def verify_frozen_metadata(pin, approved, authority):
 
 def resolve(output):
     require(not output.exists(), "Refusing to overwrite a frozen manifest")
+    require(not (output.parent / "approval-status.json").exists(), "Refusing to reuse existing approval evidence")
     try:
         approved, authority = reviewed_candidate()
         release = parse_approval_json(fetch(f"https://api.github.com/repos/{FEED}/releases/latest"),

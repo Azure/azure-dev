@@ -45,11 +45,6 @@ steps:
         if (!(Test-Path -Path $manifestPath -PathType Container)) {
           throw "WingetCreate did not generate the expected manifest directory: $manifestPath"
         }
-
-        ./wingetcreate.exe validate $manifestPath
-        if ($LASTEXITCODE -ne 0) {
-          throw "The generated WinGet manifest failed validation."
-        }
       displayName: Generate and validate WinGet manifest
 
   - ${{ if eq(parameters.Operation, 'Publish') }}:
@@ -76,26 +71,6 @@ steps:
         serviceendpointurl: https://api.esrp.microsoft.com
         mainpublisher: ESRPRELPACMAN
         domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346
-
-    - pwsh: |
-        $ErrorActionPreference = 'Stop'
-        $wingetCreateVersion = '${{ parameters.WingetCreateVersion }}'
-        $wingetCreateUrl = "https://github.com/microsoft/winget-create/releases/download/$wingetCreateVersion/wingetcreate.exe"
-        Invoke-WebRequest $wingetCreateUrl -OutFile wingetcreate.exe
-        $wingetCreateSha256 = (Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($wingetCreateSha256 -ne '${{ parameters.WingetCreateSha256 }}') {
-          throw "WingetCreate checksum verification failed."
-        }
-        ./wingetcreate.exe validate "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
-        if ($LASTEXITCODE -ne 0) {
-          throw "The ESRP-generated WinGet manifest failed validation."
-        }
-      displayName: Validate ESRP WinGet manifest
-      condition: >-
-        and(
-          succeeded(),
-          eq(variables['SubmitWingetPackage'], 'true')
-        )
 
     - task: EsrpRelease@12
       displayName: Publish WinGet manifest

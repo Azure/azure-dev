@@ -18,8 +18,8 @@ type rubricDimension struct {
 }
 
 // validateRubricDefinition checks authored shape and numeric parameters without changing
-// the bytes used for digest and drift decisions. Omitted parameters retain the
-// service defaults; other definition kinds keep their own service contract.
+// the bytes used for digest and drift decisions. Rubrics require a dimensions
+// array; optional parameters and other kinds retain their own service contract.
 func validateRubricDefinition(raw json.RawMessage) (json.RawMessage, error) {
 	var definition struct {
 		Type          json.RawMessage `json:"type"`
@@ -36,27 +36,28 @@ func validateRubricDefinition(raw json.RawMessage) (json.RawMessage, error) {
 	if kind != "" && kind != rubricDefinitionType {
 		return raw, nil
 	}
+	if len(definition.Dimensions) == 0 {
+		return nil, fmt.Errorf("definition.dimensions must be an array")
+	}
 	if len(definition.PassThreshold) > 0 {
 		if !rubricNumberInRange(definition.PassThreshold, 0, 1, false) {
 			return nil, fmt.Errorf("definition.pass_threshold must be a number between 0 and 1")
 		}
 	}
-	if len(definition.Dimensions) > 0 {
-		var dimensions []*rubricDimension
-		if err := json.Unmarshal(definition.Dimensions, &dimensions); err != nil {
-			return nil, fmt.Errorf("reading definition.dimensions: %w", err)
+	var dimensions []*rubricDimension
+	if err := json.Unmarshal(definition.Dimensions, &dimensions); err != nil {
+		return nil, fmt.Errorf("reading definition.dimensions: %w", err)
+	}
+	if dimensions == nil {
+		return nil, fmt.Errorf("definition.dimensions must be an array")
+	}
+	for i, dimension := range dimensions {
+		if dimension == nil {
+			return nil, fmt.Errorf("definition.dimensions[%d] must be an object", i)
 		}
-		if dimensions == nil {
-			return nil, fmt.Errorf("definition.dimensions must be an array")
-		}
-		for i, dimension := range dimensions {
-			if dimension == nil {
-				return nil, fmt.Errorf("definition.dimensions[%d] must be an object", i)
-			}
-			if len(dimension.Weight) > 0 {
-				if !rubricNumberInRange(dimension.Weight, 1, 10, true) {
-					return nil, fmt.Errorf("definition.dimensions[%d].weight must be a whole number between 1 and 10", i)
-				}
+		if len(dimension.Weight) > 0 {
+			if !rubricNumberInRange(dimension.Weight, 1, 10, true) {
+				return nil, fmt.Errorf("definition.dimensions[%d].weight must be a whole number between 1 and 10", i)
 			}
 		}
 	}

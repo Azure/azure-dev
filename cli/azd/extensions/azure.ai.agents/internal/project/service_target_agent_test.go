@@ -709,6 +709,8 @@ type stubProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 	project     *azdext.ProjectConfig
 	configValue *structpb.Value
+	getCalls    atomic.Int32
+	getErr      error
 }
 
 func (s *stubProjectServer) GetServiceConfigValue(
@@ -745,6 +747,10 @@ func TestDependencyConditionScalarValues(t *testing.T) {
 func (s *stubProjectServer) Get(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	s.getCalls.Add(1)
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	return &azdext.GetProjectResponse{Project: s.project}, nil
 }
 
@@ -880,6 +886,31 @@ func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 
 	// Same provider, called again with the same service config: still no-op.
 	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+}
+
+func TestEndpointsPreservesProjectNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	projectServer := &stubProjectServer{
+		getErr: status.Error(codes.NotFound, "project not found"),
+	}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newServiceTargetTestClient(t, nil, nil, projectServer),
+	}
+	service := inlineAgentService(t, map[string]any{
+		"kind":  "voice",
+		"name":  "voice-agent",
+		"model": map[string]any{"id": "gpt-realtime"},
+	})
+
+	_, err := provider.Endpoints(t.Context(), service, nil)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeProjectNotFound, localErr.Code)
+	require.Contains(t, localErr.Message, "failed to get project while resolving agent service")
+	require.Contains(t, localErr.Suggestion, "azd init")
+	require.EqualValues(t, 1, projectServer.getCalls.Load())
 }
 
 func TestInitializeValidatesRegistryConnectionLifecycle(t *testing.T) {
@@ -4181,11 +4212,20 @@ func newEndpointsTestClient(
 	t *testing.T, projectRoot string, envValues map[string]string,
 ) *azdext.AzdClient {
 	t.Helper()
+	client, _ := newEndpointsTestClientWithProjectServer(t, projectRoot, envValues)
+	return client
+}
+
+func newEndpointsTestClientWithProjectServer(
+	t *testing.T, projectRoot string, envValues map[string]string,
+) (*azdext.AzdClient, *stubProjectServer) {
+	t.Helper()
 
 	srv := grpc.NewServer()
-	azdext.RegisterProjectServiceServer(srv, &stubProjectServer{
+	projectServer := &stubProjectServer{
 		project: &azdext.ProjectConfig{Path: projectRoot},
-	})
+	}
+	azdext.RegisterProjectServiceServer(srv, projectServer)
 	azdext.RegisterEnvironmentServiceServer(srv, &endpointsTestEnvServer{values: envValues})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -4199,15 +4239,11 @@ func newEndpointsTestClient(
 	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
-	return client
+	return client, projectServer
 }
 
-// TestEndpoints_VoiceRootRef_ResolvesProjectRoot covers the fresh-process
-// case where Endpoints runs without ensureDeployContext having populated
-// p.projectPath. A root-ref prompt-voice service may retain NAME+ENDPOINT
-// without VERSION from an earlier deploy;
-// Endpoints must resolve the project root itself so agentkind classifies it as
-// voice and returns the base endpoint instead of the missing-VERSION error.
+// TestEndpoints_VoiceRootRef_ResolvesProjectRoot verifies Initialize resolves
+// the project root before Endpoints validates a root-ref voice definition.
 func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	t.Parallel()
 
@@ -4221,27 +4257,26 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	))
 
 	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
-	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+	client, projectServer := newEndpointsTestClientWithProjectServer(t, projectRoot, map[string]string{
 		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
 		"AGENT_VOICE_NAME":         "my-voice",
 		"AGENT_VOICE_ENDPOINT":     endpoint,
 		// Deliberately model a legacy persisted environment with no VERSION.
 	})
 
-	// Fresh process: projectPath/agentDefinitionPath are empty, exactly as they
-	// are before any ensureDeployContext call.
 	provider := &AgentServiceTargetProvider{azdClient: client}
+	service := &azdext.ServiceConfig{
+		Name: "voice", Host: foundryAgentHost, RelativePath: "src/voice",
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "src/voice/agent.yaml"}),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	require.Equal(t, projectRoot, provider.projectPath)
+	require.EqualValues(t, 1, projectServer.getCalls.Load())
 
-	got, err := provider.Endpoints(
-		t.Context(),
-		&azdext.ServiceConfig{
-			Name: "voice", Host: foundryAgentHost, RelativePath: "src/voice",
-			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "src/voice/agent.yaml"}),
-		},
-		nil,
-	)
+	got, err := provider.Endpoints(t.Context(), service, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{endpoint}, got)
+	require.EqualValues(t, 1, projectServer.getCalls.Load())
 }
 
 func TestEndpointsRejectsAgentDefinitionPath(t *testing.T) {
@@ -4262,7 +4297,6 @@ func TestEndpointsRejectsAgentDefinitionPath(t *testing.T) {
 		// Deliberately model a legacy persisted environment with no VERSION.
 	})
 
-	// Fresh process: the service entry carries no kind; only the override does.
 	provider := &AgentServiceTargetProvider{azdClient: client}
 
 	_, err := provider.Endpoints(
@@ -4313,7 +4347,7 @@ func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+	client, projectServer := newEndpointsTestClientWithProjectServer(t, projectRoot, map[string]string{
 		"AZURE_SUBSCRIPTION_ID":    "subscription",
 		"AZURE_RESOURCE_GROUP":     "resource-group",
 		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
@@ -4326,6 +4360,9 @@ func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
 		"harness":      map[string]any{"type": "github_copilot_preview"},
 	})
 	provider := &AgentServiceTargetProvider{azdClient: client}
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	require.Empty(t, provider.projectPath)
+	require.EqualValues(t, 0, projectServer.getCalls.Load())
 
 	got, err := provider.Endpoints(t.Context(), service, nil)
 	require.NoError(t, err)
@@ -4333,6 +4370,8 @@ func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
 		"https://acct.services.ai.azure.com/api/projects/project/agents/managed-agent/" +
 			"endpoint/protocols/openai/responses?api-version=v1",
 	}, got)
+	require.Equal(t, projectRoot, provider.projectPath)
+	require.EqualValues(t, 1, projectServer.getCalls.Load())
 }
 
 func TestEndpoints_VoiceDoesNotRequireHostedEnvironmentValues(t *testing.T) {

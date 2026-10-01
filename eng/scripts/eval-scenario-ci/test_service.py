@@ -324,17 +324,18 @@ class ServiceTests(unittest.TestCase):
             profile = root / "profile"
             profile.mkdir()
             plan, settings = self.installed_fixture(profile)
-            configured = profile / settings["extension"]["installed"]["azure.ai.evaluations"]["path"]
-            outside = root / "outside.exe"
+            configured = profile.resolve() / settings["extension"]["installed"]["azure.ai.evaluations"]["path"]
+            outside = (root / "outside.exe").resolve()
             outside.write_bytes(configured.read_bytes())
             resolve = Path.resolve
 
             def resolved(path, *args, **kwargs):
                 return outside if path == configured else resolve(path, *args, **kwargs)
 
-            with mock.patch.object(Path, "resolve", resolved):
+            with mock.patch.object(Path, "resolve", autospec=True, side_effect=resolved) as resolve_path:
                 with self.assertRaisesRegex(service.Blocked, "escapes"):
                     service.verify_install(plan, profile)
+                resolve_path.assert_any_call(configured)
 
     def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None, exported_item=None,
               export_response=None):

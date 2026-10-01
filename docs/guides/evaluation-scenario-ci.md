@@ -159,7 +159,9 @@ This independent job downloads no candidate packages, invokes no candidate
 binaries and makes no live Azure calls; process-lifetime tests use synthetic
 Python children. Package resolution and installed-package execution are excluded
 from pull requests. On eligible pushes and dispatches, resolution additionally
-requires the harness tests to pass.
+requires the harness tests to pass. The optional live service job also requires
+both OS test jobs and the existing-environment preflight to succeed before it
+can execute. All GitHub jobs that invoke Python explicitly select Python3.12.
 
 ```powershell
 # Requires the maintainer-selected immutable approval revision in repository settings.
@@ -203,6 +205,9 @@ does not establish an automatic webhook or schedule.
 runner, a single frozen manifest, and Linux/Windows Microsoft-hosted images.
 It has no PR/continuous trigger and creates no service connection or secret
 variables; the optional service path references values supplied by its operator.
+Both offline resolution and the optional live path select Python3.12 and run
+the shared harness unit suite before invoking their executor. A failing test
+step prevents the live service step from running.
 The producer and consumers also require the independent approval variables
 described above; missing values do not fall back to the checked-out manifest.
 Register/queue it only in a user-authorized target with existing approved

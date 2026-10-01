@@ -92,6 +92,13 @@ jobs:
         steps:
           - checkout: self
             persistCredentials: false
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+          - pwsh: |
+              python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            displayName: Validate the shared scenario runner before service execution
           - pwsh: |
               if ([string]::IsNullOrWhiteSpace($env:SERVICE_PLAN)) {
                 python eng/scripts/eval-scenario-ci/scenario.py live --output "$(Build.ArtifactStagingDirectory)/scenario-service-evidence"

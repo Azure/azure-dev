@@ -519,6 +519,31 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn("pull_request_target:", workflow)
         self.assertIn("permissions:\n  contents: read", workflow)
 
+    def test_github_live_service_requires_tests_and_environment_preflight(self):
+        workflow = (scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml").read_text()
+        live = workflow.split("  live-service:\n", 1)[1]
+        header = live.split("    steps:\n", 1)[0]
+        self.assertIn("needs: [harness-tests, live-prerequisites]", header)
+        self.assertIn("if: inputs.mode == 'live' && needs.live-prerequisites.outputs.environment_name != ''", header)
+        self.assertNotIn("always()", header)
+        self.assertNotIn("continue-on-error", live)
+        for job in ("live-prerequisites", "live-service"):
+            steps = workflow.split(f"  {job}:\n", 1)[1]
+            self.assertLess(steps.index('python-version: "3.12"'), steps.index("run:"))
+
+    def test_ado_live_service_pins_python_and_requires_harness_success(self):
+        pipeline = (scenario.HERE.parents[2] / "eng" / "pipelines" / "eval-scenario-ci.yml").read_text()
+        live = pipeline.split("  - ${{ if eq(parameters.mode, 'live') }}:\n", 1)[1]
+        setup, tests, execution = live.split("          - pwsh: |\n")
+        self.assertIn("task: UsePythonVersion@0", setup)
+        self.assertIn('versionSpec: "3.12"', setup)
+        self.assertIn('python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v', tests)
+        self.assertIn("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }", tests)
+        self.assertIn("service.py --plan", execution)
+        before_publish = execution.split("          - publish:", 1)[0]
+        self.assertNotIn("condition:", setup + tests + before_publish)
+        self.assertNotIn("continueOnError:", live)
+
     def test_archive_errors_are_recorded_without_suppressing_them(self):
         legacy = scenario.proof_module
         for filename, expected in (("broken.zip", legacy.zipfile.BadZipFile),

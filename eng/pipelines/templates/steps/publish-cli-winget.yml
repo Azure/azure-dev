@@ -111,6 +111,16 @@ steps:
         mainpublisher: ESRPRELPACMANTEST
         domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346
 
+    - pwsh: |
+        $manifestPath = "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
+        $manifestFiles = Get-ChildItem -Path $manifestPath -Filter '*.yaml' -File
+        if ($manifestFiles.Count -lt 3) {
+          throw "Expected at least three WinGet manifest files in: $manifestPath"
+        }
+
+        $manifestFiles
+      displayName: Validate manifests for WinGet submission
+
     - task: EsrpRelease@12
       displayName: Publish WinGet manifest
       condition: >-
@@ -127,7 +137,7 @@ steps:
         intent: Winget
         contenttype: manifest
         contentsource: Folder
-        folderlocation: $(Pipeline.Workspace)/winget
+        folderlocation: $(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)
         waitforreleasecompletion: true
         owners: chononiw@microsoft.com
         approvers: chononiw@microsoft.com

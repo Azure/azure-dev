@@ -768,7 +768,8 @@ func editableRubric(definition json.RawMessage) ([]byte, error) {
 		}
 	}
 	for _, key := range []string{
-		"id", "name", "version", "display_name", "description", "categories", "supported_evaluation_levels", "agent_metadata",
+		"id", "name", "version", "display_name", "description", "categories",
+		"supported_evaluation_levels", "agent_metadata",
 	} {
 		delete(rubric, key)
 	}

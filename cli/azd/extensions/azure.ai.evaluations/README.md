@@ -180,6 +180,11 @@ preflight rather than using an incomplete catalog. Before run submission, the CL
 registered eval's stored mappings and `item_schema`; an unreadable definition or
 unsupported external schema reference fails rather than submitting unchecked
 rows. Invalid input causes no run submission or dataset/state mutation.
+Mapped local columns retain the evaluator's published property constraints,
+including numeric, array, object, and nullable types. Constraints from multiple
+evaluators consuming the same column all apply; an absent type contract is not
+invented as a string type. Evaluator publication invalidates earlier catalog
+snapshots before subsequent eval creation.
 On local-source evals, positive `max_samples` limits submitted rows and
 `--max-samples 0` overrides a configured cap. Trace/response caps, registered
 dataset pins and fail-closed empty-list behavior are unchanged.

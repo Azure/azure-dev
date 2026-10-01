@@ -730,6 +730,8 @@ func (r *evalReconciler) EnsureEvaluator(
 	if err != nil {
 		return "", false, err
 	}
+	// A catalog read before publication cannot describe the newly written contract.
+	r.ec.schemas = nil
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
 	r.ec.remember(ctx, digestKey, digest)

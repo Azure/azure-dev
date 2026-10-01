@@ -83,7 +83,14 @@ func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (
 	}))
 	t.Cleanup(server.Close)
 	ec := evalContextFor(server)
-	ec.schemas = map[string]*eval_api.EvaluatorSummary{}
+	ec.schemas = map[string]*eval_api.EvaluatorSummary{
+		"builtin.relevance": {
+			Name: "builtin.relevance", Definition: &eval_api.EvaluatorContract{DataSchema: &eval_api.JSONSchema{
+				Type: "object", Required: []string{"query"},
+				Properties: map[string]any{"query": map[string]any{"type": "string"}},
+			}},
+		},
+	}
 	ec.state = map[string]string{idKey("eval", "local-quality"): "eval_local"}
 	return ec, requests
 }

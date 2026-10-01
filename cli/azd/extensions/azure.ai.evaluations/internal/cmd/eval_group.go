@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,8 @@ type evalCreateAction struct {
 	cmd   *cobra.Command
 	flags *evalCreateFlags
 	name  string
+	// Instance-scoped context construction keeps the action usable with injected clients.
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 // newEvalCreateCommand creates one declared eval without deploying the rest.
@@ -97,7 +100,11 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	contextFactory := a.newContext
+	if contextFactory == nil {
+		contextFactory = newEvalContext
+	}
+	ec, err := contextFactory(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}

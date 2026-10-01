@@ -202,15 +202,23 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 	for _, raw := range []string{
 		`{"definition":{"type":"prompt","prompt_text":"Authored prompt","dimensions":[{"id":"not_a_rubric"}]}}`,
-		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`,
 		`{"future_shape":{"value":9007199254740993}}`,
 	} {
 		t.Run(raw, func(t *testing.T) {
-			downloaded := evaluatorDocument(json.RawMessage(raw))
+			downloaded, err := evaluatorDocument(json.RawMessage(raw))
+			require.NoError(t, err)
 			require.JSONEq(t, raw, string(downloaded))
 			if strings.Contains(raw, "9007199254740993") {
 				require.Contains(t, string(downloaded), "9007199254740993")
 			}
 		})
 	}
+}
+
+func TestEvaluatorDownloadProjectsEmptyRubricWithoutLosingUnknownFields(t *testing.T) {
+	downloaded, err := evaluatorDocument(json.RawMessage(
+		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"rubric","dimensions":[],"future_option":9007199254740993}`, string(downloaded))
+	require.Contains(t, string(downloaded), "9007199254740993")
 }

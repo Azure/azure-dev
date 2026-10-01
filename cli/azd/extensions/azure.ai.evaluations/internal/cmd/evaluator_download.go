@@ -110,7 +110,11 @@ func (a *evaluatorDownloadAction) download(ctx context.Context, ec *evalContext)
 	if err := refuseExisting(path, a.force); err != nil {
 		return err
 	}
-	if err := writeFileAtomically(path, bytes.NewReader(evaluatorDocument(raw)), a.force); err != nil {
+	body, err := evaluatorDocument(raw)
+	if err != nil {
+		return messages.EvaluatorProblem(a.name, err)
+	}
+	if err := writeFileAtomically(path, bytes.NewReader(body), a.force); err != nil {
 		return err
 	}
 
@@ -146,25 +150,23 @@ func (a *evaluatorDownloadAction) destination(version string) (string, error) {
 }
 
 // evaluatorDocument uses the same editable rubric shape as generation.
-// Unrecognized definitions retain their complete document.
-func evaluatorDocument(raw json.RawMessage) []byte {
+// Other evaluator kinds retain their complete document; invalid rubrics fail.
+func evaluatorDocument(raw json.RawMessage) ([]byte, error) {
 	var envelope struct {
 		Definition json.RawMessage `json:"definition"`
 	}
 	if json.Unmarshal(raw, &envelope) == nil {
-		var definition struct {
-			Type string `json:"type"`
+		editable, err := editableRubric(envelope.Definition)
+		if err != nil {
+			return nil, err
 		}
-		if json.Unmarshal(envelope.Definition, &definition) == nil &&
-			(definition.Type == "" || definition.Type == rubricDefinitionType) {
-			if editable, ok := editableRubric(envelope.Definition); ok {
-				return editable
-			}
+		if editable != nil {
+			return editable, nil
 		}
 	}
 	var indented bytes.Buffer
 	if err := json.Indent(&indented, raw, "", "  "); err != nil {
-		return raw
+		return raw, nil
 	}
-	return append(indented.Bytes(), '\n')
+	return append(indented.Bytes(), '\n'), nil
 }

@@ -37,7 +37,9 @@ const recoveryEvalConfig = `evals:
       - evaluator: builtin.task_completion
 `
 
-func generationRecoveryFixture(t *testing.T) (*evalContext, []generationPlan, string, *[]string) {
+func generationRecoveryFixture(
+	t *testing.T, jobs ...*eval_api.GenerationJob,
+) (*evalContext, []generationPlan, string, *[]string) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), []byte(recoveryEvalConfig), 0o600))
@@ -46,6 +48,10 @@ func generationRecoveryFixture(t *testing.T) (*evalContext, []generationPlan, st
 	t.Cleanup(func() { generatePollBudget = priorBudget })
 	var mu sync.Mutex
 	var requests []string
+	completed := recoveryRubricJob()
+	if len(jobs) > 0 {
+		completed = jobs[0]
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -61,7 +67,7 @@ func generationRecoveryFixture(t *testing.T) (*evalContext, []generationPlan, st
 		} else if dataset {
 			_, _ = w.Write([]byte(`{"id":"dataset-job","status":"failed","error":{"message":"dataset service failure"}}`))
 		} else {
-			assert.NoError(t, json.NewEncoder(w).Encode(recoveryRubricJob()))
+			assert.NoError(t, json.NewEncoder(w).Encode(completed))
 		}
 	}))
 	t.Cleanup(server.Close)

@@ -361,6 +361,9 @@ func (ec *evalContext) collectRubric(
 	// `job show` is documented as safe to re-run while polling. Collecting again
 	// over an edited file made those two claims contradict each other.
 	if !replaceExisting && artifactAlreadyCollected(path) {
+		if _, err := evaluatorDocument(completed.Result); err != nil {
+			return nil, err
+		}
 		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
 		ref.PreserveCatalogMetadata = true
 		return ref, nil
@@ -707,21 +710,24 @@ func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return messages.Creating(filepath.Dir(path), err)
-	}
-
+	body := result
 	var envelope struct {
 		Definition json.RawMessage `json:"definition"`
 	}
 	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
-		if editable, ok := editableRubric(envelope.Definition); ok {
-			return writeFileAtomic(path, editable)
+		editable, err := editableRubric(envelope.Definition)
+		if err != nil {
+			return err
+		}
+		if editable != nil {
+			body = editable
 		}
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return messages.Creating(filepath.Dir(path), err)
+	}
 
-	// Fall back to the raw payload rather than losing the result.
-	return writeFileAtomic(path, result)
+	return writeFileAtomic(path, body)
 }
 
 // rubricOwnedByTheService names the keys a reader cannot usefully edit.
@@ -740,19 +746,42 @@ var rubricOwnedByTheService = []string{
 
 // editableRubric reduces a returned rubric to the part worth editing.
 //
-// It reports false for anything that is not a rubric, so a payload this does
-// not understand is written whole rather than filtered down to nothing: losing
-// a generated artifact is far worse than a wide one.
-func editableRubric(definition json.RawMessage) ([]byte, bool) {
+// A nil result identifies another evaluator kind. A recognized malformed rubric
+// is an error, never permission to export the service envelope.
+func editableRubric(definition json.RawMessage) ([]byte, error) {
+	var kind struct {
+		Type       json.RawMessage `json:"type"`
+		Dimensions json.RawMessage `json:"dimensions"`
+	}
+	if json.Unmarshal(definition, &kind) != nil {
+		return nil, nil
+	}
+	definitionKind, err := evaluatorDefinitionKind(kind.Type)
+	if err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
+	}
+	if (definitionKind != "" && definitionKind != rubricDefinitionType) ||
+		(definitionKind == "" && len(kind.Dimensions) == 0) {
+		return nil, nil
+	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(definition, &fields); err != nil {
-		return nil, false
+		return nil, fmt.Errorf("reading rubric definition: %w", err)
 	}
-	var probe struct {
-		Dimensions []json.RawMessage `json:"dimensions"`
+	fields["type"] = json.RawMessage(`"rubric"`)
+	typed, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
-	if json.Unmarshal(definition, &probe) != nil || len(probe.Dimensions) == 0 {
-		return nil, false
+	if _, err := validateRubricDefinition(typed); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
+	}
+	var dimensions []map[string]json.RawMessage
+	if err := json.Unmarshal(fields["dimensions"], &dimensions); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: reading dimensions: %w", err)
+	}
+	if dimensions == nil {
+		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
 	}
 	for _, key := range rubricOwnedByTheService {
 		delete(fields, key)
@@ -763,9 +792,9 @@ func editableRubric(definition json.RawMessage) ([]byte, bool) {
 	// every regeneration whether or not anything about it had changed.
 	pretty, err := json.MarshalIndent(orderedJSON(fields), "", "  ")
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
-	return append(pretty, '\n'), true
+	return append(pretty, '\n'), nil
 }
 
 // orderedJSON marshals a decoded object with its keys in a fixed order.

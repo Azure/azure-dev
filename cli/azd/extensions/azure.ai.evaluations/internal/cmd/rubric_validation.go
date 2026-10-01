@@ -4,9 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
+	"math/big"
 )
 
 // validateRubricDefinition checks authored numeric parameters without changing
@@ -14,20 +15,22 @@ import (
 // service defaults; other definition kinds keep their own service contract.
 func validateRubricDefinition(raw json.RawMessage) (json.RawMessage, error) {
 	var definition struct {
-		Type          string          `json:"type"`
+		Type          json.RawMessage `json:"type"`
 		Dimensions    json.RawMessage `json:"dimensions"`
 		PassThreshold json.RawMessage `json:"pass_threshold"`
 	}
 	if err := json.Unmarshal(raw, &definition); err != nil {
 		return nil, fmt.Errorf("reading evaluator definition: %w", err)
 	}
-	if definition.Type != rubricDefinitionType {
+	kind, err := evaluatorDefinitionKind(definition.Type)
+	if err != nil {
+		return nil, err
+	}
+	if kind != "" && kind != rubricDefinitionType {
 		return raw, nil
 	}
 	if len(definition.PassThreshold) > 0 {
-		var threshold *float64
-		if err := json.Unmarshal(definition.PassThreshold, &threshold); err != nil ||
-			threshold == nil || *threshold < 0 || *threshold > 1 {
+		if !rubricNumberInRange(definition.PassThreshold, 0, 1, false) {
 			return nil, fmt.Errorf("definition.pass_threshold must be a number between 0 and 1")
 		}
 	}
@@ -41,13 +44,43 @@ func validateRubricDefinition(raw json.RawMessage) (json.RawMessage, error) {
 				return nil, fmt.Errorf("definition.dimensions[%d] must be an object", i)
 			}
 			if rawWeight, present := dimension["weight"]; present {
-				var weight *float64
-				if err := json.Unmarshal(rawWeight, &weight); err != nil ||
-					weight == nil || *weight < 1 || *weight > 10 || math.Trunc(*weight) != *weight {
+				if !rubricNumberInRange(rawWeight, 1, 10, true) {
 					return nil, fmt.Errorf("definition.dimensions[%d].weight must be a whole number between 1 and 10", i)
 				}
 			}
 		}
 	}
 	return raw, nil
+}
+
+// evaluatorDefinitionKind distinguishes an omitted compatibility discriminator
+// from an explicitly invalid one before either normalization or projection.
+func evaluatorDefinitionKind(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var kind string
+	if err := json.Unmarshal(raw, &kind); err != nil || kind == "" {
+		return "", fmt.Errorf("definition.type must be a non-empty string when supplied")
+	}
+	return kind, nil
+}
+
+// rubricNumberInRange compares the authored JSON number without rounding it.
+// Equivalent decimal and exponent forms remain valid; strings and null do not.
+func rubricNumberInRange(raw json.RawMessage, minimum, maximum int64, whole bool) bool {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return false
+	}
+	number, ok := value.(json.Number)
+	if !ok {
+		return false
+	}
+	exact, ok := new(big.Rat).SetString(string(number))
+	return ok && (!whole || exact.IsInt()) &&
+		exact.Cmp(new(big.Rat).SetInt64(minimum)) >= 0 &&
+		exact.Cmp(new(big.Rat).SetInt64(maximum)) <= 0
 }

@@ -240,7 +240,11 @@ Local rows used to invoke an agent or model must carry the `query` field the
 target reads. Static dataset-only evaluations do not impose this target
 requirement. Rubric dimension weights, when supplied, must be whole numbers
 from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
-These authored parameters are validated before any dependency is published.
+Bounds and whole-number checks use the exact authored JSON value, including
+decimal and scientific notation, without floating-point rounding. A missing
+definition `type` is accepted for a hand-authored rubric; an explicitly null or
+empty type is invalid. These checks apply before publication and before replacing
+downloaded or collected rubric files.
 
 This is not a transaction across Foundry resources. If a later service operation
 fails, successfully published shared versions are retained, not deleted. Fix the

@@ -538,6 +538,9 @@ use `azd ai eval evaluator show support-quality --version 3 -o json`.
 Malformed recognized rubrics fail download and collection before replacing an
 artifact or updating its catalog entry, rather than falling back to a full
 service-envelope export.
+Download and generation results must be JSON objects: null, arrays, strings,
+numbers, and booleans are rejected before writing files or catalog entries.
+Unknown object-shaped evaluator documents remain supported without dropping fields.
 `create` and `azd up` also reject null or non-array `dimensions`, non-object
 dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
 values during preflight, before uploading or tagging datasets or publishing

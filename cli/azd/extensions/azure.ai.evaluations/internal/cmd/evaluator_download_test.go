@@ -155,6 +155,7 @@ const downloadedEvaluator = `{
 		"type":"rubric",
 		"dimensions":[{
 			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
+			"scale":{"maximum":9007199254740993},
 			"metadata":{"internal_count":9007199254740993}
 		}],
 		"pass_threshold":0.6,
@@ -177,8 +178,10 @@ const downloadedEvaluator = `{
 
 const editableDownloadedRubric = `{
 	"type":"rubric",
-	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false}],
-	"pass_threshold":0.6
+	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
+		"scale":{"maximum":9007199254740993}}],
+	"pass_threshold":0.6,
+	"future_option":{"count":9007199254740993}
 }`
 
 func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
@@ -194,8 +197,9 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.JSONEq(t, editableDownloadedRubric, string(raw), "the authored surface has exactly three root fields")
-	require.NotContains(t, string(raw), "9007199254740993", "unknown service metadata is not editable")
+	require.JSONEq(t, editableDownloadedRubric, string(raw), "unknown authored fields survive without service metadata")
+	require.Contains(t, string(raw), "9007199254740993", "unknown numeric values keep their precision")
+	require.NotContains(t, string(raw), "internal_count")
 	require.NotContains(t, string(raw), "service-only-agent-wiring")
 	require.NotContains(t, output.String(), "service-only-agent-wiring")
 	encodedPath, err := json.Marshal(path)
@@ -219,7 +223,7 @@ func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 	}
 }
 
-func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
+func TestEditableRubricPreservesUnknownFieldsAndNumericPrecision(t *testing.T) {
 	const threshold = "0.60000000000000001"
 	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {
 		t.Run(dimensions, func(t *testing.T) {
@@ -228,7 +232,8 @@ func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
 				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
 			downloaded, err := evaluatorDocument(json.RawMessage(raw))
 			require.NoError(t, err)
-			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+`}`,
+			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+
+				`,"future_option":{"count":9007199254740993}}`,
 				string(downloaded))
 			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")
 			require.NotContains(t, string(downloaded), "old-evaluator-name")

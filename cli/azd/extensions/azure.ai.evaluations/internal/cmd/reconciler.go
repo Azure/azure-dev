@@ -581,12 +581,14 @@ func (r *evalReconciler) checkDatasetDrift(
 		// An empty listing is not proof the recorded version is gone: it is
 		// equally what a listing that has not caught up reports, and what a
 		// project the state does not belong to reports. The point read settles
-		// it, and only a confirmed 404 refuses -- the same rule the pinned path
-		// uses, so a transient read still does not fail a deploy.
+		// it: only a successful read establishes that the version is usable.
 		if _, getErr := r.ec.datasetClient.GetDataset(
 			ctx, name, recorded, ProjectEndpointAPIVersion,
-		); getErr != nil && dataset_api.IsNotFound(getErr) {
-			return messages.DatasetVersionNotFoundWithHint(name, recorded)
+		); getErr != nil {
+			if dataset_api.IsNotFound(getErr) {
+				return messages.DatasetVersionNotFoundWithHint(name, recorded)
+			}
+			return messages.ReadingDatasetVersion(name, recorded, getErr)
 		}
 		return nil
 	}

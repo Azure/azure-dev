@@ -29,22 +29,23 @@ import (
 )
 
 type validationService struct {
-	mu                sync.Mutex
-	requests          []string
-	status            int
-	dataset           bool
-	eval              bool
-	failCreate        bool
-	definition        string
-	evaluatorVersion  string
-	createCount       int
-	createdRequests   []eval_api.CreateOpenAIEvalRequest
-	registeredRows    string
-	credentialStatus  int
-	contentStatus     int
-	datasetReadStatus int
-	listedVersion     string
-	afterContentRead  func()
+	mu                  sync.Mutex
+	requests            []string
+	status              int
+	dataset             bool
+	eval                bool
+	failCreate          bool
+	definition          string
+	evaluatorVersion    string
+	createCount         int
+	createdRequests     []eval_api.CreateOpenAIEvalRequest
+	registeredRows      string
+	credentialStatus    int
+	contentStatus       int
+	datasetReadStatus   int
+	emptyDatasetListing bool
+	listedVersion       string
+	afterContentRead    func()
 }
 
 func (s *validationService) serve(t *testing.T, base func() string) http.HandlerFunc {
@@ -106,7 +107,7 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 				s.dataset = true
 			}
 			if strings.HasSuffix(r.URL.Path, "/versions") {
-				if s.dataset {
+				if s.dataset && !s.emptyDatasetListing {
 					version := s.listedVersion
 					if version == "" {
 						version = "1.0"

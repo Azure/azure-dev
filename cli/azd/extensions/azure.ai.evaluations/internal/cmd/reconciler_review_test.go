@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -12,9 +14,12 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,6 +92,106 @@ func TestRepinnedLocalDatasetValidatesSelectedRegisteredRows(t *testing.T) {
 				assert.Equal(t, before, env.state)
 			})
 		}
+	}
+}
+
+func TestUnpinnedLocalDatasetRequiresSuccessfulFallbackRead(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, status := range []int{http.StatusForbidden, http.StatusGatewayTimeout, http.StatusNotFound} {
+			t.Run(caller+"/"+http.StatusText(status), func(t *testing.T) {
+				ec, env, service, cfg, dir := validationFixture(t)
+				digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
+				require.NoError(t, err)
+				env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
+				env.state[versionKey("dataset", "turn-tests")] = "1.0"
+				before := maps.Clone(env.state)
+				service.dataset = true
+				service.emptyDatasetListing = true
+				service.datasetReadStatus = status
+
+				err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
+				require.Error(t, err)
+				if status == http.StatusNotFound {
+					assert.Contains(t, err.Error(), `no dataset "turn-tests" at version "1.0"`)
+				} else {
+					assert.Contains(t, err.Error(), fmt.Sprint(status))
+				}
+				assert.Equal(t, []string{
+					"GET /datasets/turn-tests/versions",
+					"GET /datasets/turn-tests/versions/1.0",
+				}, service.requests, "fallback failures must stop before uploads, tags, or evaluator publication")
+				assert.Zero(t, service.createCount)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.values)
+				assert.Equal(t, before, env.state)
+			})
+		}
+	}
+}
+
+type datasetFallbackTimeoutTransport struct {
+	requests []string
+}
+
+func (s *datasetFallbackTimeoutTransport) Do(request *http.Request) (*http.Response, error) {
+	s.requests = append(s.requests, request.Method+" "+request.URL.Path)
+	if strings.HasSuffix(request.URL.Path, "/versions") {
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{"value":[]}`)), Request: request,
+		}, nil
+	}
+	return nil, context.DeadlineExceeded
+}
+
+func TestUnpinnedLocalDatasetFallbackTimeoutStopsBeforeMutation(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
+			require.NoError(t, err)
+			env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
+			env.state[versionKey("dataset", "turn-tests")] = "1.0"
+			before := maps.Clone(env.state)
+			transport := &datasetFallbackTimeoutTransport{}
+			pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+				Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
+			})
+			ec.datasetClient = dataset_api.NewDatasetClientFromPipeline("https://example.test", pipeline)
+
+			require.ErrorIs(t, reconcileArtifactConfig(t, caller, ec, cfg, dir), context.DeadlineExceeded)
+			assert.Equal(t, []string{
+				"GET /datasets/turn-tests/versions",
+				"GET /datasets/turn-tests/versions/1.0",
+			}, transport.requests)
+			assert.Empty(t, service.requests, "no evaluator or eval work follows a failed dataset fallback read")
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.values)
+			assert.Equal(t, before, env.state)
+		})
+	}
+}
+
+func TestUnpinnedLocalDatasetToleratesListingDelayAfterSuccessfulRead(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
+			require.NoError(t, err)
+			env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
+			env.state[versionKey("dataset", "turn-tests")] = "1.0"
+			service.dataset = true
+			service.emptyDatasetListing = true
+
+			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+			assert.Contains(t, service.requests, "GET /datasets/turn-tests/versions/1.0")
+			for _, request := range service.requests {
+				assert.NotContains(t, request, "startPendingUpload", "the unchanged dataset must not be uploaded again")
+			}
+			assert.Equal(t, 1, service.createCount)
+			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
+			assert.Equal(t, digest, env.stored(t, project.FingerprintKey("dataset", "turn-tests")))
+		})
 	}
 }
 

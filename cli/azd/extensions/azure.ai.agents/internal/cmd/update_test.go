@@ -82,6 +82,63 @@ func TestEndpointUpdatePreservesStructuredServiceConfigErrors(t *testing.T) {
 	}
 }
 
+func TestEndpointUpdateRejectsSupportedNonHostedKinds(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]any
+	}{
+		{
+			name: "prompt",
+			values: map[string]any{
+				"kind": "prompt", "name": "prompt-agent", "model": "gpt-5-mini", "instructions": "Help.",
+			},
+		},
+		{
+			name: "voice",
+			values: map[string]any{
+				"kind": "voice", "name": "voice-agent", "model": map[string]any{"id": "gpt-realtime"},
+			},
+		},
+		{
+			name: "workflow",
+			values: map[string]any{
+				"kind": "workflow", "name": "workflow-agent",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props, err := structpb.NewStruct(tt.values)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name:                 tt.name,
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					svc.Name: svc,
+				},
+			}}, &helpersPromptServer{})
+
+			err = runEndpointUpdate(
+				t.Context(),
+				client,
+				&endpointUpdateFlags{name: svc.Name},
+				&azdext.ExtensionContext{NoPrompt: true},
+			)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
+			require.Contains(t, localErr.Message, "endpoint update")
+			require.Contains(t, localErr.Suggestion, "only to hosted agents")
+		})
+	}
+}
+
 func TestEndpointUpdateResolvesActivitySettingsFromServiceRef(t *testing.T) {
 	t.Parallel()
 

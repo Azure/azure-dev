@@ -109,3 +109,19 @@ func TestErrorLeavesOtherErrorsAlone(t *testing.T) {
 	assert.Same(t, plain, Error(plain))
 	assert.Nil(t, Error(nil))
 }
+
+func TestTextRedactsWhitespaceSeparatedQueryValues(t *testing.T) {
+	for _, separator := range []string{" ", "\t", "\n", "\r\n", " \t\n"} {
+		for _, query := range []string{"?sig=", "?access_token=", "?code=", "?key=value&sig=", "?custom_key="} {
+			text := "Failed https://host/path" + query + separator + "fixture-secret; retry safely."
+			assert.Equal(t, "Failed <redacted-url>; retry safely.", Text(text))
+			assert.NotContains(t, Text(text), "fixture-secret")
+		}
+	}
+	for _, text := range []string{
+		"Failed https://host/path; retry safely.",
+		"An ordinary value= fixture-secret is not a URL.",
+	} {
+		assert.Equal(t, text, Text(text), "unrelated diagnostic prose remains readable")
+	}
+}

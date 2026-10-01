@@ -15,12 +15,13 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 const urlStartPattern = `(?i)(?:https?:[/\\]*|\b[a-z][a-z0-9+.-]*:[/\\]{1,2}|[/\\]{2})`
 
 var (
-	embeddedURL = regexp.MustCompile(urlStartPattern + `[^\s]+`)
+	embeddedURL = regexp.MustCompile(urlStartPattern + `(?:[^\s]*\?[^\s]*=\s+[^\s]+|[^\s]+)`)
 	urlStart    = regexp.MustCompile(urlStartPattern)
 )
 
@@ -41,6 +42,11 @@ func Text(text string) string {
 		// prose punctuation, never split a credential-bearing URL at a quote.
 		candidate := strings.TrimRight(raw, `"'.,;)}>`)
 		suffix := strings.TrimPrefix(raw, candidate)
+		// An unfinished query assignment can be followed by its secret after
+		// whitespace. Hide that whole candidate, not just the URL prefix.
+		if strings.IndexFunc(candidate, unicode.IsSpace) >= 0 {
+			return "<redacted-url>" + suffix
+		}
 		parsed, err := url.Parse(candidate)
 		if err != nil || parsed.Host == "" {
 			return "<redacted-url>" + suffix

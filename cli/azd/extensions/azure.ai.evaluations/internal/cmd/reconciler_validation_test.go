@@ -522,6 +522,21 @@ func TestPartialJSONSuggestionsDoNotDiscloseURLCredentials(t *testing.T) {
 	const suggestion = "Inspect https://fixture-user:fixture-password@example.test/remediation" +
 		"?sig=fixture-signature#fixture-fragment and retry."
 	const safeSuggestion = "Inspect https://example.test/remediation and retry."
+	checkPartialJSONSuggestionRedaction(t, suggestion, safeSuggestion)
+}
+
+func TestPartialJSONSuggestionsRedactWhitespaceSeparatedQueryValues(t *testing.T) {
+	for _, separator := range []string{" ", "\t", "\n", "\r\n"} {
+		t.Run(separator, func(t *testing.T) {
+			checkPartialJSONSuggestionRedaction(t,
+				"Inspect https://example.test/remediation?sig="+separator+"fixture-signature and retry.",
+				"Inspect <redacted-url> and retry.")
+		})
+	}
+}
+
+func checkPartialJSONSuggestionRedaction(t *testing.T, suggestion, safeSuggestion string) {
+	t.Helper()
 	for _, surface := range []string{"create", "generation"} {
 		t.Run(surface, func(t *testing.T) {
 			original := &azdext.LocalError{Message: "safe validation failure", Suggestion: suggestion}

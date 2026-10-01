@@ -922,7 +922,6 @@ module {{bicepName .Name}}FunctionStorage 'modules/function-storage.bicep' = {
   params: {
     storageAccountName: {{if .FunctionStorage.ExistingName}}{{.FunctionStorage.ExistingName}}.name{{else}}storageAccountName{{end}}
     containerName: 'app-package-${take('{{.Name}}', 32)}-${take(uniqueString('{{.Name}}'), 6)}-${take(resourceToken, 7)}'
-    serviceName: '{{.Name}}'
     principalId: {{bicepName .Name}}Identity.outputs.principalId
   }
   {{- if not .FunctionStorage.ExistingName}}

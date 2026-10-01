@@ -199,6 +199,9 @@ func promptEnvValues(ctx context.Context, azdClient *azdext.AzdClient) (map[stri
 	}
 	out := make(map[string]string, len(values.KeyValues))
 	for _, kv := range values.KeyValues {
+		if kv == nil {
+			continue
+		}
 		out[kv.Key] = kv.Value
 	}
 	return out, nil

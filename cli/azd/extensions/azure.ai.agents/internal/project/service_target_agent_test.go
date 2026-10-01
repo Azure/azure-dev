@@ -4216,7 +4216,7 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(serviceDir, "agent.yaml"),
-		[]byte("kind: prompt-voice\nname: my-voice\n"),
+		[]byte("kind: prompt-voice\nname: my-voice\nmodel:\n  id: gpt-realtime\n"),
 		0o600,
 	))
 
@@ -4294,7 +4294,13 @@ func TestEndpoints_HostedMissingVersion_StillErrors(t *testing.T) {
 
 	_, err := provider.Endpoints(
 		t.Context(),
-		&azdext.ServiceConfig{Name: "hosted", RelativePath: "src/hosted"},
+		&azdext.ServiceConfig{
+			Name: "hosted", RelativePath: "src/hosted",
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"kind": "hosted",
+				"name": "hosted",
+			}),
+		},
 		nil,
 	)
 	require.Error(t, err)
@@ -4327,4 +4333,48 @@ func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
 		"https://acct.services.ai.azure.com/api/projects/project/agents/managed-agent/" +
 			"endpoint/protocols/openai/responses?api-version=v1",
 	}, got)
+}
+
+func TestEndpoints_VoiceDoesNotRequireHostedEnvironmentValues(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{})
+	service := inlineAgentService(t, map[string]any{
+		"kind":  "voice",
+		"name":  "voice-agent",
+		"model": map[string]any{"id": "gpt-realtime"},
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	_, err := provider.Endpoints(t.Context(), service, nil)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+	require.Contains(t, localErr.Message, "AGENT_RAI_AGENT_ENDPOINT")
+	require.NotContains(t, localErr.Message, "FOUNDRY_PROJECT_ENDPOINT")
+	require.NotContains(t, localErr.Message, "VERSION")
+}
+
+func TestEndpoints_WorkflowDoesNotFallThroughToHostedEnvironmentValues(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{})
+	service := inlineAgentService(t, map[string]any{
+		"kind": "workflow",
+		"name": "workflow-agent",
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	_, err := provider.Endpoints(t.Context(), service, nil)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
+	require.Contains(t, localErr.Message, "endpoint report")
+	require.NotContains(t, localErr.Suggestion, "set kind")
+	require.NotContains(t, localErr.Message, "FOUNDRY_PROJECT_ENDPOINT")
+	require.NotContains(t, localErr.Message, "VERSION")
 }

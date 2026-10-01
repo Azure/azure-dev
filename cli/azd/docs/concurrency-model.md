@@ -19,6 +19,13 @@ it protects are co-located by convention.
 
 ---
 
+## IoC singleton construction
+
+The [IoC container's source comments](../pkg/ioc/container.go) define its concurrency
+contract, including registration restrictions and singleton construction guarantees.
+
+---
+
 ## Scheduler limits and phase groups
 
 The graph scheduler applies a hard global ceiling and optional limits for named

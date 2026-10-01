@@ -160,8 +160,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			Stderr: cmd.ErrOrStderr(),
 		}, formatter, externalPromptCfg)
 	})
+	container.MustRegisterScoped(func(console input.Console) io.Writer {
+		writer := console.Handles().Stdout
 
-	container.MustRegisterSingleton(
+		if os.Getenv("NO_COLOR") != "" {
+			writer = colorable.NewNonColorable(writer)
+		}
+
+		return writer
+	})
+
+	container.MustRegisterScoped(
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
 			return exec.NewCommandRunner(
 				&exec.RunnerOptions{
@@ -181,16 +190,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	container.MustRegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
-	})
-
-	container.MustRegisterSingleton(func(console input.Console) io.Writer {
-		writer := console.Handles().Stdout
-
-		if os.Getenv("NO_COLOR") != "" {
-			writer = colorable.NewNonColorable(writer)
-		}
-
-		return writer
 	})
 
 	container.MustRegisterScoped(func(
@@ -228,11 +227,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 
-	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
+	container.MustRegisterScoped(func(cmd *cobra.Command) CmdAnnotations {
 		return cmd.Annotations
 	})
 
-	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdCalledAs {
+	container.MustRegisterScoped(func(cmd *cobra.Command) CmdCalledAs {
 		return CmdCalledAs(cmd.CalledAs())
 	})
 
@@ -562,8 +561,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	})
 
-	container.MustRegisterSingleton(templates.NewTemplateManager)
-	container.MustRegisterSingleton(templates.NewSourceManager)
+	container.MustRegisterScoped(templates.NewTemplateManager)
+	container.MustRegisterScoped(templates.NewSourceManager)
 	container.MustRegisterScoped(project.NewResourceManager)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ResourceManager] {
 		return lazy.NewLazy(func() (project.ResourceManager, error) {
@@ -618,7 +617,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return security.NewManager(cwd)
 	})
 
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		console input.Console,
 		gitCli *git.Cli,
 		dotnetCli *dotnet.Cli,
@@ -668,7 +667,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterSingleton(ai.NewAiModelService)
-	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *errorhandler.ErrorHandlerPipeline {
+	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *errorhandler.ErrorHandlerPipeline {
 		resolver := func(name string) (errorhandler.ErrorHandler, error) {
 			var handler errorhandler.ErrorHandler
 			if err := serviceLocator.ResolveNamed(name, &handler); err != nil {
@@ -678,7 +677,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 		return errorhandler.NewErrorHandlerPipeline(resolver)
 	})
-	container.MustRegisterNamedSingleton("resourceNotAvailableHandler",
+	container.MustRegisterNamedScoped("resourceNotAvailableHandler",
 		func(
 			locationService *azapi.ResourceTypeLocationService,
 			lazyEnv *lazy.Lazy[*environment.Environment],
@@ -711,8 +710,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(azapi.NewResourceService)
 	container.MustRegisterSingleton(azapi.NewPermissionsService)
 	container.MustRegisterSingleton(docker.NewCli)
-	container.MustRegisterSingleton(dotnet.NewCli)
-	container.MustRegisterSingleton(git.NewCli)
+	container.MustRegisterScoped(dotnet.NewCli)
+	container.MustRegisterScoped(git.NewCli)
 	container.MustRegisterSingleton(github.NewGitHubCli)
 	container.MustRegisterSingleton(golangtools.NewCli)
 	container.MustRegisterSingleton(javac.NewCli)

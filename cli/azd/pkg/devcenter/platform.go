@@ -164,8 +164,8 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Template Sources
 	container.MustRegisterNamedTransient(string(SourceKindDevCenter), NewTemplateSource)
 
-	container.MustRegisterSingleton(NewManager)
-	container.MustRegisterSingleton(NewPrompter)
+	container.MustRegisterScoped(NewManager)
+	container.MustRegisterScoped(NewPrompter)
 
 	// Other devcenter components
 	container.MustRegisterSingleton(func(

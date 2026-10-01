@@ -49,7 +49,7 @@ func (p *DefaultPlatform) IsEnabled() bool {
 // ConfigureContainer configures the IoC container for the default platform components
 func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Tools
-	container.MustRegisterSingleton(terraform.NewCli)
+	container.MustRegisterScoped(terraform.NewCli)
 	container.MustRegisterSingleton(bicep.NewCli)
 
 	container.MustRegisterTransient(func() *lazy.Lazy[*infraBicep.BicepProvider] {

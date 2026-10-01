@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,9 +22,18 @@ func (m *mockCommandRunner) ExecuteContext(ctx context.Context, args []string) e
 	return m.execFn(ctx, args)
 }
 
-func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
+func TestRunner_ResolveWithoutConsole(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance[AzdCommandRunner](container, &mockCommandRunner{})
+	container.MustRegisterSingleton(NewRunner)
 
+	var runner *Runner
+	require.NoError(t, container.Resolve(&runner))
+	require.NotNil(t, runner)
+}
+
+func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
 	stepsCalled := []string{}
 
 	runner := NewRunner(&mockCommandRunner{
@@ -35,7 +44,7 @@ func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
 			}
 			return nil
 		},
-	}, mockContext.Console)
+	})
 
 	workflow := &Workflow{
 		Name: "up",
@@ -46,7 +55,7 @@ func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
 		},
 	}
 
-	err := runner.Run(*mockContext.Context, workflow)
+	err := runner.Run(t.Context(), workflow)
 
 	// ErrAbortedByUser should propagate without wrapping
 	require.ErrorIs(t, err, internal.ErrAbortedByUser)
@@ -55,13 +64,11 @@ func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
 }
 
 func TestRunner_Run_ErrAbortedByUser_NotWrapped(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-
 	runner := NewRunner(&mockCommandRunner{
 		execFn: func(ctx context.Context, args []string) error {
 			return internal.ErrAbortedByUser
 		},
-	}, mockContext.Console)
+	})
 
 	workflow := &Workflow{
 		Name: "test",
@@ -70,7 +77,7 @@ func TestRunner_Run_ErrAbortedByUser_NotWrapped(t *testing.T) {
 		},
 	}
 
-	err := runner.Run(*mockContext.Context, workflow)
+	err := runner.Run(t.Context(), workflow)
 
 	// The error should be exactly ErrAbortedByUser, not wrapped
 	require.ErrorIs(t, err, internal.ErrAbortedByUser)
@@ -78,14 +85,13 @@ func TestRunner_Run_ErrAbortedByUser_NotWrapped(t *testing.T) {
 }
 
 func TestRunner_Run_OtherErrors_AreWrapped(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
 	originalErr := errors.New("some deployment error")
 
 	runner := NewRunner(&mockCommandRunner{
 		execFn: func(ctx context.Context, args []string) error {
 			return originalErr
 		},
-	}, mockContext.Console)
+	})
 
 	workflow := &Workflow{
 		Name: "test",
@@ -94,7 +100,7 @@ func TestRunner_Run_OtherErrors_AreWrapped(t *testing.T) {
 		},
 	}
 
-	err := runner.Run(*mockContext.Context, workflow)
+	err := runner.Run(t.Context(), workflow)
 
 	// Other errors should be wrapped with step context
 	require.ErrorIs(t, err, originalErr)
@@ -102,7 +108,6 @@ func TestRunner_Run_OtherErrors_AreWrapped(t *testing.T) {
 }
 
 func TestRunner_Run_AllStepsSucceed(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
 	stepsCalled := []string{}
 
 	runner := NewRunner(&mockCommandRunner{
@@ -110,7 +115,7 @@ func TestRunner_Run_AllStepsSucceed(t *testing.T) {
 			stepsCalled = append(stepsCalled, args[0])
 			return nil
 		},
-	}, mockContext.Console)
+	})
 
 	workflow := &Workflow{
 		Name: "up",
@@ -121,20 +126,18 @@ func TestRunner_Run_AllStepsSucceed(t *testing.T) {
 		},
 	}
 
-	err := runner.Run(*mockContext.Context, workflow)
+	err := runner.Run(t.Context(), workflow)
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"package", "provision", "deploy"}, stepsCalled)
 }
 
 func TestRunner_Run_WrappedErrAbortedByUser(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-
 	runner := NewRunner(&mockCommandRunner{
 		execFn: func(ctx context.Context, args []string) error {
 			return fmt.Errorf("inner context: %w", internal.ErrAbortedByUser)
 		},
-	}, mockContext.Console)
+	})
 
 	workflow := &Workflow{
 		Name: "test",
@@ -143,7 +146,7 @@ func TestRunner_Run_WrappedErrAbortedByUser(t *testing.T) {
 		},
 	}
 
-	err := runner.Run(*mockContext.Context, workflow)
+	err := runner.Run(t.Context(), workflow)
 
 	// Even when wrapped, errors.Is should detect it and the runner should not add more wrapping
 	require.ErrorIs(t, err, internal.ErrAbortedByUser)

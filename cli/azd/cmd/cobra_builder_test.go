@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -73,6 +75,89 @@ func Test_BuildAndRunSimpleAction(t *testing.T) {
 	err = cmd.ExecuteContext(t.Context())
 
 	require.NoError(t, err)
+}
+
+func Test_BuildAndRunActions_CommandMetadataIsScoped(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	setup(container)
+
+	type commandMetadata struct {
+		owner    string
+		calledAs CmdCalledAs
+	}
+	var observed []commandMetadata
+	resolveAction := func(annotations CmdAnnotations, calledAs CmdCalledAs) actions.Action {
+		observed = append(observed, commandMetadata{owner: annotations["owner"], calledAs: calledAs})
+		return newTestAction(&testFlags{ran: true})
+	}
+
+	root := actions.NewActionDescriptor("root", nil)
+	for _, name := range []string{"first", "second"} {
+		root.Add(name, &actions.ActionDescriptorOptions{
+			Command: &cobra.Command{
+				Use:         name,
+				Aliases:     []string{name + "-alias"},
+				Annotations: map[string]string{"owner": name},
+			},
+			ActionResolver: resolveAction,
+			FlagsResolver:  newTestFlags,
+		})
+	}
+
+	command, err := NewCobraBuilder(container).BuildCommand(root)
+	require.NoError(t, err)
+	for _, invokedName := range []string{"first-alias", "second-alias", "first"} {
+		command.SetArgs([]string{invokedName})
+		require.NoError(t, command.ExecuteContext(t.Context()))
+	}
+
+	require.Equal(t, []commandMetadata{
+		{owner: "first", calledAs: "first-alias"},
+		{owner: "second", calledAs: "second-alias"},
+		{owner: "first", calledAs: "first"},
+	}, observed)
+}
+
+func Test_BuildAndRunActions_OutputIsScoped(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	setup(container)
+
+	commands := []struct {
+		name   string
+		output *bytes.Buffer
+	}{
+		{name: "first", output: &bytes.Buffer{}},
+		{name: "second", output: &bytes.Buffer{}},
+	}
+	root := actions.NewActionDescriptor("root", nil)
+	for _, command := range commands {
+		child := &cobra.Command{Use: command.name}
+		child.SetOut(command.output)
+		root.Add(command.name, &actions.ActionDescriptorOptions{
+			Command: child,
+			ActionResolver: func(writer io.Writer) actions.Action {
+				return actions.ActionFunc(func(context.Context) (*actions.ActionResult, error) {
+					_, err := io.WriteString(writer, command.name+"\n")
+					return nil, err
+				})
+			},
+			FlagsResolver: newTestFlags,
+		})
+	}
+
+	rootCommand, err := NewCobraBuilder(container).BuildCommand(root)
+	require.NoError(t, err)
+	rootCommand.SetOut(io.Discard)
+	rootCommand.SetErr(io.Discard)
+	for _, command := range commands {
+		rootCommand.SetArgs([]string{command.name})
+		require.NoError(t, rootCommand.ExecuteContext(t.Context()))
+	}
+	for _, command := range commands {
+		require.Equal(t, command.name+"\n", command.output.String())
+	}
 }
 
 func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {

@@ -4,22 +4,301 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
+
+type emptyTemplateSources struct{ templates.SourceManager }
+type namedTemplateSource struct{ templates.Source }
+
+func (*emptyTemplateSources) List(context.Context) ([]*templates.SourceConfig, error) {
+	return nil, nil
+}
+
+func Test_TemplateManager_UsesScopeConsole(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	ioc.RegisterInstance(root, &internal.GlobalCommandOptions{})
+	ioc.RegisterInstance(root, &cobra.Command{})
+	ioc.RegisterInstance[templates.SourceManager](root, &emptyTemplateSources{})
+
+	first, err := root.NewScope()
+	require.NoError(t, err)
+	second, err := root.NewScope()
+	require.NoError(t, err)
+	firstConsole := mockinput.NewMockConsole()
+	secondConsole := mockinput.NewMockConsole()
+	ioc.RegisterInstance[input.Console](first, firstConsole)
+	ioc.RegisterInstance[input.Console](second, secondConsole)
+
+	for _, scope := range []*ioc.NestedContainer{second, first} {
+		var manager *templates.TemplateManager
+		require.NoError(t, scope.Resolve(&manager))
+		_, err := manager.ListTemplates(t.Context(), nil)
+		require.NoError(t, err)
+	}
+	require.Len(t, firstConsole.SpinnerOps(), 2)
+	require.Len(t, secondConsole.SpinnerOps(), 2)
+}
+
+func Test_TemplateSourceManager_ResolvesNamedSourceInScope(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	ioc.RegisterInstance(root, templates.NewSourceOptions())
+	child, err := root.NewScope()
+	require.NoError(t, err)
+	source := &namedTemplateSource{}
+	child.MustRegisterNamedSingleton("custom", func() templates.Source { return source })
+
+	var manager templates.SourceManager
+	require.NoError(t, child.Resolve(&manager))
+	resolved, err := manager.CreateSource(t.Context(), &templates.SourceConfig{Type: "custom"})
+	require.NoError(t, err)
+	require.Same(t, source, resolved)
+}
+
+func Test_RepositoryInitializer_IsScoped(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	ioc.RegisterInstance(root, (*git.Cli)(nil))
+	ioc.RegisterInstance(root, (*dotnet.Cli)(nil))
+	ioc.RegisterInstance(root, (*alpha.FeatureManager)(nil))
+	ioc.RegisterInstance(root, (*lazy.Lazy[environment.Manager])(nil))
+
+	var initializers []*repository.Initializer
+	for range 2 {
+		child, err := root.NewScope()
+		require.NoError(t, err)
+		ioc.RegisterInstance[input.Console](child, mockinput.NewMockConsole())
+		var initializer *repository.Initializer
+		require.NoError(t, child.Resolve(&initializer))
+		require.NotNil(t, initializer)
+		initializers = append(initializers, initializer)
+	}
+	require.NotSame(t, initializers[0], initializers[1])
+}
+
+func Test_DevCenterCommandServices_AreScoped(t *testing.T) {
+	t.Parallel()
+	container := ioc.NewNestedContainer(nil)
+	provider := devcenter.NewPlatform(&platform.Config{Type: devcenter.PlatformKindDevCenter})
+	require.NoError(t, provider.ConfigureContainer(container))
+
+	for _, serviceType := range []reflect.Type{
+		reflect.TypeFor[devcenter.Manager](), reflect.TypeFor[*devcenter.Prompter](),
+	} {
+		found := false
+		for _, registration := range container.Registrations() {
+			if registration.ServiceType == serviceType {
+				require.Equal(t, ioc.ScopedLifetime, registration.Lifetime)
+				found = true
+			}
+		}
+		require.True(t, found, "missing registration for %s", serviceType)
+	}
+}
+
+func Test_CommandRunner_InteractiveOutputUsesCommandScope(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	ioc.RegisterInstance(root, &internal.GlobalCommandOptions{})
+	rootOut := &bytes.Buffer{}
+	rootCmd := &cobra.Command{}
+	rootCmd.SetOut(rootOut)
+	ioc.RegisterInstance(root, rootCmd)
+
+	for range 2 {
+		child, err := root.NewScope()
+		require.NoError(t, err)
+		childOut := &bytes.Buffer{}
+		childCmd := &cobra.Command{}
+		childCmd.SetOut(childOut)
+		ioc.RegisterInstance(child, childCmd)
+		var runner exec.CommandRunner
+		require.NoError(t, child.Resolve(&runner))
+		_, err = runner.Run(t.Context(), exec.NewRunArgs("go", "version").WithInteractive(true))
+		require.NoError(t, err)
+		require.NotEmpty(t, childOut.String())
+	}
+	require.Empty(t, rootOut.String())
+}
+
+func Test_GitCli_InteractiveErrorUsesCommandScope(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	ioc.RegisterInstance(root, &internal.GlobalCommandOptions{})
+	rootErr := &bytes.Buffer{}
+	rootCmd := &cobra.Command{}
+	rootCmd.SetErr(rootErr)
+	ioc.RegisterInstance(root, rootCmd)
+
+	child, err := root.NewScope()
+	require.NoError(t, err)
+	childErr := &bytes.Buffer{}
+	childCmd := &cobra.Command{}
+	childCmd.SetErr(childErr)
+	ioc.RegisterInstance(child, childCmd)
+	var cli *git.Cli
+	require.NoError(t, child.Resolve(&cli))
+	require.Error(t, cli.PushUpstream(t.Context(), t.TempDir(), "origin", "branch"))
+	require.NotEmpty(t, childErr.String())
+	require.Empty(t, rootErr.String())
+}
+
+func Test_TerraformCli_UsesCommandRunnerInScope(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	require.NoError(t, azd.NewDefaultPlatform().ConfigureContainer(root))
+	rootRunner := mockexec.NewMockCommandRunner()
+	rootRunner.When(func(exec.RunArgs, string) bool { return true }).Respond(exec.RunResult{Stdout: "root"})
+	ioc.RegisterInstance[exec.CommandRunner](root, rootRunner)
+	for _, expected := range []string{"first", "second"} {
+		child, err := root.NewScope()
+		require.NoError(t, err)
+		runner := mockexec.NewMockCommandRunner()
+		runner.When(func(exec.RunArgs, string) bool { return true }).Respond(exec.RunResult{Stdout: expected})
+		ioc.RegisterInstance[exec.CommandRunner](child, runner)
+		var cli *terraform.Cli
+		require.NoError(t, child.Resolve(&cli))
+		output, err := cli.Validate(t.Context(), ".")
+		require.NoError(t, err)
+		require.Equal(t, expected, output)
+	}
+}
+
+func Test_DotNetCli_UsesCommandRunnerInScope(t *testing.T) {
+	t.Parallel()
+	root := ioc.NewNestedContainer(nil)
+	registerCommonDependencies(root)
+	rootCalls := 0
+	rootRunner := mockexec.NewMockCommandRunner()
+	rootRunner.When(func(exec.RunArgs, string) bool { return true }).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
+		rootCalls++
+		return exec.RunResult{}, nil
+	})
+	ioc.RegisterInstance[exec.CommandRunner](root, rootRunner)
+
+	for range 2 {
+		child, err := root.NewScope()
+		require.NoError(t, err)
+		childCalls := 0
+		childRunner := mockexec.NewMockCommandRunner()
+		childRunner.When(func(exec.RunArgs, string) bool { return true }).RespondFn(func(
+			exec.RunArgs,
+		) (exec.RunResult, error) {
+			childCalls++
+			return exec.RunResult{}, nil
+		})
+		ioc.RegisterInstance[exec.CommandRunner](child, childRunner)
+		var cli *dotnet.Cli
+		require.NoError(t, child.Resolve(&cli))
+		require.NoError(t, cli.Restore(t.Context(), "project", nil))
+		require.Equal(t, 1, childCalls)
+	}
+	require.Zero(t, rootCalls)
+}
+
+func Test_ErrorHandlerPipeline_UsesScopeEnvironment(t *testing.T) {
+	t.Parallel()
+	for _, parentFirst := range []bool{true, false} {
+		t.Run(fmt.Sprintf("parentFirst=%t", parentFirst), func(t *testing.T) {
+			t.Parallel()
+			root := ioc.NewNestedContainer(nil)
+			registerCommonDependencies(root)
+			var requestedSubscription string
+			ioc.RegisterInstance[account.SubscriptionCredentialProvider](root,
+				mockaccount.SubscriptionCredentialProviderFunc(func(
+					_ context.Context, subscriptionID string,
+				) (azcore.TokenCredential, error) {
+					requestedSubscription = subscriptionID
+					return nil, assert.AnError
+				}))
+			ioc.RegisterInstance(root, &arm.ClientOptions{})
+
+			scopes := []*ioc.NestedContainer{root}
+			for range 2 {
+				child, err := root.NewScope()
+				require.NoError(t, err)
+				scopes = append(scopes, child)
+			}
+			locations := []string{"eastus", "westus", "centralus"}
+			for index, scope := range scopes {
+				env := environment.NewWithValues(fmt.Sprintf("scope-%d", index), map[string]string{
+					"AZURE_LOCATION":        locations[index],
+					"AZURE_SUBSCRIPTION_ID": fmt.Sprintf("subscription-%d", index),
+				})
+				ioc.RegisterInstance(scope, lazy.From(env))
+			}
+
+			failure := fmt.Errorf("resource type 'Microsoft.Web/staticSites': %w", &azcore.ResponseError{
+				ErrorCode: "LocationNotAvailableForResourceType", StatusCode: 400,
+			})
+			order := []int{1, 2, 1, 0}
+			if parentFirst {
+				order = append([]int{0}, order...)
+			}
+			pipelines := make(map[int]*errorhandler.ErrorHandlerPipeline)
+			for _, index := range order {
+				var pipeline *errorhandler.ErrorHandlerPipeline
+				require.NoError(t, scopes[index].Resolve(&pipeline))
+				require.NotNil(t, pipeline)
+				requestedSubscription = ""
+				suggestion := pipeline.Process(t.Context(), failure)
+				require.NotNil(t, suggestion)
+				require.Contains(t, suggestion.Suggestion, fmt.Sprintf("The current region is '%s'.", locations[index]))
+				require.Equal(t, fmt.Sprintf("subscription-%d", index), requestedSubscription)
+				require.ErrorIs(t, suggestion.Err, failure)
+				require.NotEmpty(t, suggestion.Links)
+				if previous, found := pipelines[index]; found {
+					require.Same(t, previous, pipeline)
+				}
+				pipelines[index] = pipeline
+			}
+			require.NotSame(t, pipelines[0], pipelines[1])
+			require.NotSame(t, pipelines[1], pipelines[2])
+		})
+	}
+}
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	t.Parallel()

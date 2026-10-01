@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // AzdCommandRunner abstracts the execution of an azd command given a set of arguments and context.
@@ -21,14 +20,12 @@ type AzdCommandRunner interface {
 // Runner is responsible for executing a workflow
 type Runner struct {
 	azdRunner AzdCommandRunner
-	console   input.Console
 }
 
 // NewRunner creates a new instance of the Runner.
-func NewRunner(azdRunner AzdCommandRunner, console input.Console) *Runner {
+func NewRunner(azdRunner AzdCommandRunner) *Runner {
 	return &Runner{
 		azdRunner: azdRunner,
-		console:   console,
 	}
 }
 

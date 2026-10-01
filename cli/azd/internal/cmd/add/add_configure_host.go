@@ -303,9 +303,10 @@ func validateFunctionCodeProject(prj *appdetect.Project) error {
 		return fmt.Errorf("unsupported Function App language: %s", prj.Language)
 	}
 	if info, err := os.Stat(filepath.Join(prj.Path, "host.json")); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("checking Function App project: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no host.json found in Function App project %q", prj.Path)
 		}
+		return fmt.Errorf("checking Function App project: %w", err)
 	} else if info.IsDir() {
 		return fmt.Errorf("host.json must be a file in Function App project %q", prj.Path)
 	}

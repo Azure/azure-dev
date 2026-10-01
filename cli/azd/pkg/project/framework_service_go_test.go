@@ -302,7 +302,7 @@ func Test_GoProject_Package_MissingHostJSON(t *testing.T) {
 		},
 	}
 
-	result, err := logProgress(
+	_, err = logProgress(
 		t,
 		func(p *async.Progress[ServiceProgress]) (
 			*ServicePackageResult, error,
@@ -316,11 +316,6 @@ func Test_GoProject_Package_MissingHostJSON(t *testing.T) {
 		},
 	)
 
-	require.NoError(t, err)
-	require.Len(t, result.Artifacts, 1)
-	packageDir := result.Artifacts[0].Location
-	_, err = os.Stat(filepath.Join(packageDir, goBinaryName))
-	require.NoError(t, err)
-	_, err = os.Stat(filepath.Join(packageDir, "host.json"))
-	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "host.json not found")
 }

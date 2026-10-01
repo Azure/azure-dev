@@ -247,7 +247,7 @@ func TestValidateFunctionCodeProject(t *testing.T) {
 	}
 	t.Run("missing host.json", func(t *testing.T) {
 		err := validateFunctionCodeProject(&appdetect.Project{Path: t.TempDir(), Language: appdetect.Go})
-		require.NoError(t, err)
+		require.ErrorContains(t, err, "no host.json")
 	})
 	t.Run("host.json is a directory", func(t *testing.T) {
 		dir := t.TempDir()
@@ -255,8 +255,9 @@ func TestValidateFunctionCodeProject(t *testing.T) {
 		err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: appdetect.Go})
 		require.ErrorContains(t, err, "host.json must be a file")
 	})
-	t.Run("in-process .NET without host.json", func(t *testing.T) {
+	t.Run("in-process .NET with host.json", func(t *testing.T) {
 		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte("{}"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "func.csproj"),
 			[]byte(`<Project Sdk="Microsoft.NET.Sdk.Functions"></Project>`), 0o600))
 		err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: appdetect.DotNet})

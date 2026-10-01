@@ -125,6 +125,9 @@ func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
 			eval := &eval_api.OpenAIEval{
 				ID: id, Name: request.Name, Metadata: request.Metadata, TestingCriteria: request.TestingCriteria,
 			}
+			source, err := json.Marshal(request.DataSourceConfig)
+			assert.NoError(t, err)
+			assert.NoError(t, json.Unmarshal(source, &eval.DataSourceConfig))
 			s.evals[id] = eval
 			assert.NoError(t, json.NewEncoder(w).Encode(eval))
 		case strings.HasPrefix(r.URL.Path, "/openai/v1/evals/"):

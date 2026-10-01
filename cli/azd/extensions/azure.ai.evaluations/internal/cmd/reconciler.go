@@ -233,6 +233,18 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 		}
 	}
 
+	if validated && group.IsLocalSource() {
+		// Reserve only after accounting for the immutable request prepared from
+		// local columns; an old name with a changed contract abandons its old ID.
+		current, err := localRequestFingerprint(prepared.request)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior := r.ec.privateValue(ctx, localRequestKey(group.Name)); prior != "" && prior != current {
+			recreate = true
+		}
+	}
+
 	decided := evalDecision{
 		digest:     digest,
 		definition: definition,
@@ -972,6 +984,8 @@ func (r *evalReconciler) EnsureEval(
 
 	var localFingerprint string
 	if localRequest != nil {
+		// The final contract can include constraints disclosed during publication,
+		// so recheck it even when reservation already compared the prepared request.
 		localFingerprint, err = localRequestFingerprint(localRequest)
 		if err != nil {
 			return "", false, err

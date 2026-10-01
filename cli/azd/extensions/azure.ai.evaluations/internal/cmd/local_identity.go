@@ -47,8 +47,20 @@ func localRequestMatchesRemote(req *eval_api.CreateOpenAIEvalRequest, remote *ev
 	if err != nil {
 		return false, err
 	}
+	criteria := slices.Clone(remote.TestingCriteria)
+	for i := range criteria {
+		stored := &criteria[i]
+		if stored.EvaluatorVersion == "latest" && slices.ContainsFunc(req.TestingCriteria,
+			func(desired eval_api.TestingCriterion) bool {
+				return desired.EvaluatorVersion == "" && desired.Type == stored.Type &&
+					desired.Name == stored.Name && desired.EvaluatorName == stored.EvaluatorName
+			}) {
+			// Only a service echo of this unpinned criterion is equivalent to omission.
+			stored.EvaluatorVersion = ""
+		}
+	}
 	actual, err := localRequestFingerprint(&eval_api.CreateOpenAIEvalRequest{
-		DataSourceConfig: &source, TestingCriteria: remote.TestingCriteria,
+		DataSourceConfig: &source, TestingCriteria: criteria,
 	})
 	return wanted == actual, err
 }

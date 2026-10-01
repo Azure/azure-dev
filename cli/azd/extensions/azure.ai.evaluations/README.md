@@ -217,6 +217,12 @@ prospective definition instead.
 Changes to immutable local-source criteria or item schema create a new eval
 instead of reusing stale mappings, including when an optional column becomes
 available in every row. Changing only the row cap does not recreate the eval.
+An unpinned criterion echoed by the service as `evaluator_version: latest`
+is equivalent to an omitted version; explicit versions and actual contract
+changes still require the corresponding immutable eval. When a local eval is
+renamed and its old name is reused for a different prepared contract, deployment
+preserves the original ID and run history for the rename and creates only the
+replacement. Targeted create continues reserving unselected siblings' IDs.
 
 An opaque source `$ref` may resolve to any source type, so its cap is validated
 after resolution by the CLI; the editor constrains caps when the source type is

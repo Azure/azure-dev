@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -262,4 +263,207 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 	assert.False(t, changed)
 	assert.Equal(t, third, fourth)
 	assert.Equal(t, 2, count)
+}
+
+func localIdentityFixture(t *testing.T) (*evalContext, *testEnvServer, *catalogPinService, *project.EvalConfig, string) {
+	t.Helper()
+	ec, env, service, cfg, dir := newCatalogPinFixture(t)
+	cfg.Evaluators[0].Version = ""
+	cfg.Evals[0].Source = &project.SourceDecl{Type: project.SourceTypeLocal, File: "rows.jsonl"}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"first\"}\n"), 0o600))
+	service.versions = map[string]json.RawMessage{}
+	for _, version := range []string{"1", "2", "3"} {
+		service.versions[version] = json.RawMessage(fmt.Sprintf(`{"name":"custom","version":%q,
+			"definition":{"data_schema":{"type":"object","required":["query"],
+			"properties":{"query":{"type":"string"},"extra":{"type":"string"}}}}}`, version))
+	}
+	return ec, env, service, cfg, dir
+}
+
+func reconcileLocalIdentity(
+	t *testing.T, caller string, ec *evalContext, env *testEnvServer, cfg *project.EvalConfig, dir string,
+) string {
+	t.Helper()
+	fresh := *ec
+	fresh.azdClient = newTestAzdClient(t, env)
+	fresh.state, fresh.schemas = nil, nil
+	if caller == "create" {
+		writeLocalContractConfig(t, dir, cfg)
+		require.NoError(t, runLocalCreate(t, &fresh, dir, cfg.Evals[0].Name))
+	} else {
+		require.NoError(t, deployLocalContractConfig(t, &fresh, dir, cfg))
+	}
+	if cfg.Evals[0].ID != "" {
+		return cfg.Evals[0].ID
+	}
+	return env.stored(t, idKey("eval", cfg.Evals[0].Name))
+}
+
+func TestLocalServiceLatestEchoPreservesHistory(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := localIdentityFixture(t)
+			first := reconcileLocalIdentity(t, caller, ec, env, cfg, dir)
+			stored := service.evals[first]
+			stored.TestingCriteria = slices.Clone(stored.TestingCriteria)
+			stored.TestingCriteria[0].EvaluatorVersion = "latest"
+			service.latest = "3"
+			assert.Equal(t, first, reconcileLocalIdentity(t, caller, ec, env, cfg, dir))
+			cfg.Evals[0].MaxSamples = 1
+			assert.Equal(t, first, reconcileLocalIdentity(t, caller, ec, env, cfg, dir))
+			cfg.Evals[0].Name = "renamed"
+			assert.Equal(t, first, reconcileLocalIdentity(t, caller, ec, env, cfg, dir))
+			assert.Equal(t, "renamed", stored.Name)
+			assert.Equal(t, first, reconcileLocalIdentity(t, caller, ec, env, cfg, dir))
+			cfg.Evals[0].ID = first
+			assert.Equal(t, first, reconcileLocalIdentity(t, caller, ec, env, cfg, dir))
+			require.Len(t, service.created, 1)
+			assert.Empty(t, service.created[0].TestingCriteria[0].EvaluatorVersion)
+			assert.Equal(t, "latest", stored.TestingCriteria[0].EvaluatorVersion,
+				"comparison must not mutate the service's immutable criteria")
+			assert.Zero(t, service.publishes)
+		})
+	}
+}
+
+func TestLocalServiceEchoDoesNotHideImmutableDifferences(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, change := range []string{
+			"authored pin", "pinned latest", "pinned version", "concrete unpinned echo", "schema", "mapping",
+		} {
+			t.Run(caller+"/"+change, func(t *testing.T) {
+				ec, env, service, cfg, dir := localIdentityFixture(t)
+				if strings.HasPrefix(change, "pinned") || change == "authored pin" {
+					cfg.Evals[0].Evaluators[0].Version = "1"
+				}
+				first := reconcileLocalIdentity(t, caller, ec, env, cfg, dir)
+				stored := service.evals[first]
+				stored.TestingCriteria = slices.Clone(stored.TestingCriteria)
+				switch change {
+				case "authored pin":
+					cfg.Evals[0].Evaluators[0].Version = "2"
+				case "pinned latest":
+					stored.TestingCriteria[0].EvaluatorVersion = "latest"
+				case "pinned version", "concrete unpinned echo":
+					stored.TestingCriteria[0].EvaluatorVersion = "2"
+				case "schema":
+					stored.DataSourceConfig["item_schema"] = map[string]any{"type": "object"}
+				case "mapping":
+					stored.TestingCriteria[0].DataMapping = map[string]string{"query": "{{item.other}}"}
+				}
+				second := reconcileLocalIdentity(t, caller, ec, env, cfg, dir)
+				assert.NotEqual(t, first, second)
+				assert.Same(t, stored, service.evals[first], "old eval and its run history must remain intact")
+				assert.Equal(t, second, reconcileLocalIdentity(t, caller, ec, env, cfg, dir))
+				require.Len(t, service.created, 2)
+				assert.Equal(t, cfg.Evals[0].Evaluators[0].Version, service.created[1].TestingCriteria[0].EvaluatorVersion)
+				assert.Zero(t, service.publishes)
+			})
+		}
+	}
+}
+
+func TestLocalRenameWithRecycledNamePreservesHistory(t *testing.T) {
+	for _, recycledFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint(recycledFirst), func(t *testing.T) {
+			ec, env, service, cfg, dir := localIdentityFixture(t)
+			first := reconcileLocalIdentity(t, "up", ec, env, cfg, dir)
+			stored := service.evals[first]
+			originalRequest, err := json.Marshal(service.created[0])
+			require.NoError(t, err)
+			renamed := cfg.Evals[0]
+			renamed.Name = "renamed"
+			recycled := cfg.Evals[0]
+			recycled.Source = &project.SourceDecl{Type: project.SourceTypeLocal, File: "different.jsonl"}
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "different.jsonl"),
+				[]byte("{\"query\":\"second\",\"extra\":\"new binding\"}\n"), 0o600))
+			cfg.Evals = []project.Eval{renamed, recycled}
+			if recycledFirst {
+				slices.Reverse(cfg.Evals)
+			}
+			reconcileLocalIdentity(t, "up", ec, env, cfg, dir)
+			assert.Equal(t, first, env.stored(t, idKey("eval", "renamed")))
+			replacement := env.stored(t, idKey("eval", "quality"))
+			assert.NotEqual(t, first, replacement)
+			assert.Same(t, stored, service.evals[first])
+			assert.Equal(t, "renamed", stored.Name)
+			assert.NotContains(t, stored.TestingCriteria[0].DataMapping, "extra")
+			assert.Contains(t, service.evals[replacement].TestingCriteria[0].DataMapping, "extra")
+			after, err := json.Marshal(service.created[0])
+			require.NoError(t, err)
+			assert.JSONEq(t, string(originalRequest), string(after), "rename only changes mutable service fields")
+			require.Len(t, service.created, 2, "only the recycled name creates an eval")
+			reconcileLocalIdentity(t, "up", ec, env, cfg, dir)
+			assert.Equal(t, first, env.stored(t, idKey("eval", "renamed")))
+			assert.Equal(t, replacement, env.stored(t, idKey("eval", "quality")))
+			assert.Len(t, service.created, 2, "unchanged deployment is idempotent")
+			assert.Zero(t, service.publishes)
+		})
+	}
+}
+
+func TestLocalTargetedCreateDoesNotReleaseUnselectedOwner(t *testing.T) {
+	ec, env, service, cfg, dir := localIdentityFixture(t)
+	first := reconcileLocalIdentity(t, "create", ec, env, cfg, dir)
+	owner := cfg.Evals[0]
+	newcomer := owner
+	newcomer.Name = "newcomer"
+	owner.Source = &project.SourceDecl{Type: project.SourceTypeLocal, File: "missing-unselected.jsonl"}
+	cfg.Evals = []project.Eval{newcomer, owner}
+	second := reconcileLocalIdentity(t, "create", ec, env, cfg, dir)
+	assert.NotEqual(t, first, second)
+	assert.Equal(t, "quality", service.evals[first].Name)
+	assert.Equal(t, first, env.stored(t, idKey("eval", "quality")))
+	assert.Equal(t, second, reconcileLocalIdentity(t, "create", ec, env, cfg, dir))
+	assert.Len(t, service.created, 2)
+}
+
+func TestLocalReservationRequiresKnownAbandonedContract(t *testing.T) {
+	for _, evidence := range []string{"changed", "unknown", "explicit id"} {
+		t.Run(evidence, func(t *testing.T) {
+			ec, env, _, cfg, dir := localIdentityFixture(t)
+			first := reconcileLocalIdentity(t, "create", ec, env, cfg, dir)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"),
+				[]byte("{\"query\":\"changed\",\"extra\":\"new column\"}\n"), 0o600))
+			if evidence == "unknown" {
+				var state map[string]string
+				require.NoError(t, json.Unmarshal(env.config[privateStatePath], &state))
+				delete(state, localRequestKey("quality"))
+				var err error
+				env.config[privateStatePath], err = json.Marshal(state)
+				require.NoError(t, err)
+			} else if evidence == "explicit id" {
+				cfg.Evals[0].ID = first
+			}
+			ec.state = nil
+			r := &evalReconciler{ec: ec}
+			require.NoError(t, r.Validate(t.Context(), cfg, dir))
+			r.ReserveDeclared(t.Context(), cfg.Evals)
+			if evidence == "changed" {
+				assert.Empty(t, r.claimedBy[first])
+			} else {
+				assert.Equal(t, "quality", r.claimedBy[first])
+			}
+		})
+	}
+}
+
+func TestLocalRequestEchoNormalizationKeepsExplicitLatest(t *testing.T) {
+	req := &eval_api.CreateOpenAIEvalRequest{
+		DataSourceConfig: &eval_api.DataSourceConfig{Type: "custom"},
+		TestingCriteria: []eval_api.TestingCriterion{{
+			Type: "azure_ai_evaluator", Name: "criterion", EvaluatorName: "custom", EvaluatorVersion: "latest",
+		}},
+	}
+	remote := &eval_api.OpenAIEval{
+		DataSourceConfig: map[string]any{"type": "custom"}, TestingCriteria: slices.Clone(req.TestingCriteria),
+	}
+	match, err := localRequestMatchesRemote(req, remote)
+	require.NoError(t, err)
+	assert.True(t, match)
+	remote.TestingCriteria[0].EvaluatorVersion = ""
+	match, err = localRequestMatchesRemote(req, remote)
+	require.NoError(t, err)
+	assert.False(t, match, "an explicitly requested version must not be normalized away")
+	assert.Equal(t, "latest", req.TestingCriteria[0].EvaluatorVersion)
 }

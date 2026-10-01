@@ -60,7 +60,7 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
 // ProviderEnv exposes environment variables and configuration to infrastructure providers.
-// Common implmentations: [Environment], and [ProviderScopedEnv].
+// Common implementations: [Environment], and [ProviderScopedEnv].
 type ProviderEnv interface {
 	// PersistableEnv returns the underlying environment, suitable to be saved to disk.
 	PersistableEnv() *Environment

@@ -537,6 +537,7 @@ func newRootCmd(
 func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
+		UseMiddleware("jsonOutput", middleware.NewJsonOutputMiddleware).
 		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry

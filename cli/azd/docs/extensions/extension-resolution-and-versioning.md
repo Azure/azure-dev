@@ -110,7 +110,7 @@ Version constraints differ between the CLI and `azure.yaml`:
 
 #### CLI `--version` flag
 
-The `azd extension install --version` flag accepts only an **exact version string** or **`latest`** (the default when omitted). It cannot be used when installing a bundle:
+The `azd extension install --version` flag accepts only an **exact version string** or **`latest`** (the default when omitted). An explicitly empty value (`--version=`) is rejected; omit the flag to use the default. The flag cannot be used when installing a bundle or multiple extensions:
 
 ```bash
 # Install an exact version

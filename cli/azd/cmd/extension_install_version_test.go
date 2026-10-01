@@ -16,8 +16,54 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExtensionInstall_EmptyVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name: "single extension", args: []string{"test.ext"},
+			wantErr: "--version cannot be empty",
+		},
+		{
+			name: "bundle", args: []string{"https://example.com/bundle.zip"},
+			wantErr: "cannot specify --version when installing an extension bundle",
+		},
+		{
+			name: "multiple extensions", args: []string{"test.ext", "other.ext"},
+			wantErr: "cannot specify --version with multiple extensions",
+		},
+	}
+	for _, tt := range tests {
+		for _, versionFlag := range [][]string{{"--version="}, {"--version", ""}, {"-v", ""}} {
+			t.Run(tt.name+"/"+versionFlag[0], func(t *testing.T) {
+				cmd := &cobra.Command{}
+				flags := newExtensionInstallFlags(cmd, &internal.GlobalCommandOptions{NoPrompt: true})
+				require.NoError(t, cmd.ParseFlags(append(append([]string{}, tt.args...), versionFlag...)))
+				action := newExtensionInstallAction(
+					cmd, cmd.Flags().Args(), flags, mockinput.NewMockConsole(), nil, nil, nil,
+				)
+				require.True(t, flags.versionSet)
+				result, err := action.Run(t.Context())
+				require.Nil(t, result)
+				require.ErrorContains(t, err, tt.wantErr)
+				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+				require.True(t, ok)
+				require.NotEmpty(t, suggestion.Suggestion)
+				if len(tt.args) > 1 || tt.name == "bundle" {
+					require.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
+				}
+			})
+		}
+	}
+}
 
 func TestExtensionInstall_ExplicitVersion(t *testing.T) {
 	const older, newer = "1.0.0-beta.29", "1.0.0-beta.30"
@@ -122,14 +168,18 @@ func TestExtensionInstall_ExplicitVersion(t *testing.T) {
 			if tt.interactive {
 				console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(tt.confirm)
 			}
-			action := &extensionInstallAction{
-				args: []string{id},
-				flags: &extensionInstallFlags{
-					version: tt.requested, source: "test", force: tt.force, noDependencies: true,
-					global: &internal.GlobalCommandOptions{NoPrompt: !tt.interactive},
-				},
-				console: console, sourceManager: sourceManager, extensionManager: manager,
+			cmd := &cobra.Command{}
+			flags := newExtensionInstallFlags(cmd, &internal.GlobalCommandOptions{NoPrompt: !tt.interactive})
+			args := []string{id, "--source=test", "--no-dependencies"}
+			if tt.requested != "" {
+				args = append(args, "--version="+tt.requested)
 			}
+			if tt.force {
+				args = append(args, "--force")
+			}
+			require.NoError(t, cmd.ParseFlags(args))
+			action := newExtensionInstallAction(cmd, cmd.Flags().Args(), flags, console, manager, sourceManager, nil)
+			require.Equal(t, tt.requested != "", flags.versionSet)
 
 			result, runErr := action.Run(t.Context())
 			require.NoError(t, manager.ReloadUserConfig())

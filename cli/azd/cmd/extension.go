@@ -1086,6 +1086,7 @@ func otherVersionsNewestFirst(versions []extensions.ExtensionVersion, latest str
 
 type extensionInstallFlags struct {
 	version        string
+	versionSet     bool
 	source         string
 	force          bool
 	noDependencies bool
@@ -1136,6 +1137,7 @@ type extensionInstallAction struct {
 }
 
 func newExtensionInstallAction(
+	cmd *cobra.Command,
 	args []string,
 	flags *extensionInstallFlags,
 	console input.Console,
@@ -1143,6 +1145,7 @@ func newExtensionInstallAction(
 	sourceManager *extensions.SourceManager,
 	transport policy.Transporter,
 ) actions.Action {
+	flags.versionSet = cmd.Flags().Changed("version")
 	return &extensionInstallAction{
 		args:             args,
 		flags:            flags,
@@ -1161,7 +1164,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 	})
 
 	bundleInstall := isBundleArg(a.args)
-	if bundleInstall && a.flags.version != "" {
+	versionSpecified := a.flags.versionSet || a.flags.version != ""
+	if bundleInstall && versionSpecified {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"cannot specify --version when installing an extension bundle: %w",
@@ -1191,12 +1195,18 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 	}
 
-	if len(extensionIds) > 1 && a.flags.version != "" {
+	if len(extensionIds) > 1 && versionSpecified {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"cannot specify --version with multiple extensions: %w",
 				internal.ErrInvalidFlagCombination),
 			Suggestion: "Install one extension at a time when using --version.",
+		}
+	}
+	if versionSpecified && a.flags.version == "" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        errors.New("--version cannot be empty"),
+			Suggestion: "Specify an exact extension version or latest, or omit --version to install the latest version.",
 		}
 	}
 	if err := validateExactVersionFlag(a.flags.version); err != nil {
@@ -3559,8 +3569,7 @@ func isNetworkError(err error) bool {
 		return false
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); ok {
 		return true
 	}
 

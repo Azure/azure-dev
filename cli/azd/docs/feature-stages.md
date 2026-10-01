@@ -47,4 +47,4 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Host         | Azure Kubernetes Service | Beta      |
 | Host         | Azure AI                 | Beta      |
 
-The Azure Functions Go runtime is in public preview; this is separate from azd's Beta feature stage.
+The Azure Functions Go runtime is in public preview; this is separate from the Azure Developer CLI Beta feature stage.

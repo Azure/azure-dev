@@ -277,6 +277,8 @@ overrides:
       - templating
   - filename: pkg/project/scaffold_gen.go
     words:
+      - CONTENTAZUREFILECONNECTIONSTRING
+      - CONTENTSHARE
       - AZUREFUNCTIONSWEBHOST
       - AZUREWEBJOBSSTORAGE
       - GUNICORN

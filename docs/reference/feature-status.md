@@ -36,7 +36,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | .NET (C#) | Stable |
 | Go (Azure Functions on Flex Consumption only) | Beta |
 
-The Azure Functions Go runtime is in public preview; this is separate from azd's Beta feature stage.
+The Azure Functions Go runtime is in public preview; this is separate from the Azure Developer CLI Beta feature stage.
 
 ## Infrastructure as Code
 

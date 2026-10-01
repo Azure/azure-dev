@@ -129,9 +129,9 @@ func (ec *evalContext) validateResponsesRun(
 	return nil
 }
 
-func incompatibleResponseMappings(id string) error {
+func incompatibleSourceContract(id string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
-		fmt.Sprintf("eval %q has stored-response mappings incompatible with the declared source", id),
+		fmt.Sprintf("eval %q has a stored source contract incompatible with the declared source", id),
 		"Remove the explicit id and deploy the declaration to create a compatible eval, then run it by name. "+
 			"The existing eval and its run history are retained.")
 }

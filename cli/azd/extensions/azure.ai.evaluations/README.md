@@ -306,10 +306,13 @@ and explicit `data_mapping` values take precedence.
 
 Managed response evals with positively identified stale item/sample bindings or
 incompatible text/items response bindings are replaced once, retaining the original
-eval and its run history. Missing mappings and unrelated service enrichment do not
-trigger blanket migration. An explicit `id:` with conflicting stored-response
-mappings is refused before dependency publication; remove the `id:` and deploy the
-declaration to migrate.
+eval and its run history. Missing inferred mappings and unrelated service enrichment do not
+trigger blanket migration. An explicit `id:` with conflicting response or trace
+source contracts is refused before dependency publication; remove the `id:` and deploy the
+declaration to migrate. Each explicitly authored `data_mapping` field must match the
+stored criterion exactly, including the column name, not just the item/sample namespace.
+Missing authored bindings are also conflicts; inferred defaults retain the narrower
+source-compatibility checks.
 
 A trace target names an agent filter, not a new invocation. Managed trace evals
 with positively identified legacy sample bindings or conflicting custom sample-schema

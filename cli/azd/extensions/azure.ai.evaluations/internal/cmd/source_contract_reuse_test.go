@@ -5,15 +5,18 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,6 +121,136 @@ func TestEnsureEvalOldDefaultsRequireDeliberateCriterionChange(t *testing.T) {
 			require.Equal(t, "{{item.tool_calls}}", (*posts)[0].TestingCriteria[0].DataMapping["tool_calls"])
 			require.Equal(t, "coherence_mapped", (*posts)[0].TestingCriteria[0].Name)
 		})
+	}
+}
+
+func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
+	for _, caller := range []string{"create", "up", "ensure"} {
+		for _, tc := range []struct {
+			name, source, field, stored, authored string
+			sampled                               bool
+		}{
+			{name: "trace sample schema", source: project.SourceTypeTraces, sampled: true},
+			{
+				name: "trace sample binding", source: project.SourceTypeTraces,
+				field: "response", stored: "{{sample.output_text}}",
+			},
+			{
+				name: "trace authored item field", source: project.SourceTypeTraces,
+				field: "query", stored: "{{item.old}}", authored: "{{item.new}}",
+			},
+			{
+				name: "response authored item field", source: project.SourceTypeResponses,
+				field: "query", stored: "{{item.old}}", authored: "{{item.new}}",
+			},
+			{
+				name: "response authored sample field", source: project.SourceTypeResponses,
+				field: "response", stored: "{{sample.old}}", authored: "{{sample.new}}",
+			},
+			{
+				name: "authored nonstandard field", source: project.SourceTypeResponses,
+				field: "context", stored: "{{item.old}}", authored: "{{item.new}}",
+			},
+			{
+				name: "missing authored binding", source: project.SourceTypeResponses,
+				field: "query", authored: "{{item.new}}",
+			},
+			{
+				name: "authored literal", source: project.SourceTypeResponses,
+				field: "context", stored: "old", authored: "new",
+			},
+		} {
+			t.Run(caller+"/"+tc.name, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				service.latest = "1"
+				service.versions = map[string]json.RawMessage{"1": responseReviewContract("string")}
+				cfg.Evaluators[0] = project.EvaluatorDecl{Name: "custom", Definition: map[string]any{
+					"type": "rubric", "dimensions": []any{map[string]any{"id": "clarity", "weight": 5}},
+				}}
+				group := sourceContractGroup(tc.source)
+				group.ID = "eval_pinned"
+				group.Evaluators = evalcore.EvaluatorList{{Evaluator: "custom", Name: "named_criterion"}}
+				if tc.authored != "" {
+					group.Evaluators[0].DataMapping = map[string]string{tc.field: tc.authored}
+				}
+				cfg.Evals = []project.Eval{group}
+				contract, err := evaluatorContract(service.versions["1"])
+				require.NoError(t, err)
+				request, err := buildEvalRequest(&group, map[string]*eval_api.EvaluatorSummary{"custom": contract}, nil)
+				require.NoError(t, err)
+				configJSON, err := json.Marshal(request.DataSourceConfig)
+				require.NoError(t, err)
+				remote := &eval_api.OpenAIEval{ID: group.ID, Name: "existing", TestingCriteria: request.TestingCriteria}
+				require.NoError(t, json.Unmarshal(configJSON, &remote.DataSourceConfig))
+				service.evals[group.ID] = remote
+				r := &evalReconciler{ec: ec}
+				if caller == "ensure" {
+					require.NoError(t, r.Validate(t.Context(), cfg, dir))
+				}
+				if tc.sampled {
+					remote.DataSourceConfig["include_sample_schema"] = true
+				}
+				if tc.field != "" {
+					if tc.stored == "" {
+						delete(remote.TestingCriteria[0].DataMapping, tc.field)
+					} else {
+						remote.TestingCriteria[0].DataMapping[tc.field] = tc.stored
+					}
+				}
+				before, err := json.Marshal(remote)
+				require.NoError(t, err)
+				if caller == "ensure" {
+					id, created, ensureErr := r.EnsureEval(t.Context(), group, "")
+					assert.Empty(t, id)
+					assert.False(t, created)
+					err = ensureErr
+				} else {
+					err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
+				}
+				require.ErrorContains(t, err, "incompatible with the declared source")
+				local, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+				assert.Contains(t, local.Suggestion, "explicit id")
+				assert.Zero(t, service.publishes)
+				assert.Empty(t, service.created)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.values)
+				after, err := json.Marshal(remote)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(before), string(after), "rejection must preserve the immutable eval")
+			})
+		}
+	}
+}
+
+func TestSourceContractPreservesInferredDefaultsAndMatchingAuthoredMappings(t *testing.T) {
+	for _, mode := range []string{project.SourceTypeTraces, project.SourceTypeResponses} {
+		for _, tc := range []struct {
+			name, stored, authored string
+		}{
+			{name: "missing inferred mapping"},
+			{name: "changed inferred item field", stored: "{{item.old}}"},
+			{name: "matching authored mapping", stored: "{{item.new}}", authored: "{{item.new}}"},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				group := sourceContractGroup(mode)
+				group.Evaluators[0].Name = "named_criterion"
+				if tc.authored != "" {
+					group.Evaluators[0].DataMapping = map[string]string{"query": tc.authored}
+				}
+				request, err := buildEvalRequest(&group, nil, nil)
+				require.NoError(t, err)
+				remote := &eval_api.OpenAIEval{TestingCriteria: []eval_api.TestingCriterion{{
+					Name: "named_criterion", EvaluatorName: "coherence",
+					DataMapping: map[string]string{"service_added": "{{item.enrichment}}"},
+				}}}
+				if tc.stored != "" {
+					remote.TestingCriteria[0].DataMapping["query"] = tc.stored
+				}
+				assert.False(t, conflictingSourceContract(group, remote, request))
+			})
+		}
 	}
 }
 

@@ -894,9 +894,9 @@ func (r *evalReconciler) EnsureEval(
 		if !responseSchemaMatches(&group, remote) {
 			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
 		}
-		if prepared, validated := r.prepared[group.Name]; validated && isResponsesEval(&group) &&
+		if prepared, validated := r.prepared[group.Name]; validated &&
 			conflictingSourceContract(prepared.group, remote, prepared.request) {
-			return "", false, incompatibleResponseMappings(group.ID)
+			return "", false, incompatibleSourceContract(group.ID)
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
@@ -1056,7 +1056,8 @@ func matchingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
 }
 
 // conflictingSourceContract detects positive evidence that stored mappings read
-// a different source. Missing mappings and unrelated enrichment are not edits.
+// a different source or disagree with authored bindings. Missing inferred
+// mappings and unrelated enrichment are not edits.
 func conflictingSourceContract(
 	group project.Eval, have *eval_api.OpenAIEval, want *eval_api.CreateOpenAIEvalRequest,
 ) bool {
@@ -1095,6 +1096,16 @@ func conflictingSourceContract(
 		for _, stored := range have.TestingCriteria {
 			if stored.Name != desired.Name || stored.EvaluatorName != desired.EvaluatorName {
 				continue
+			}
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() != desired.Name || ref.APIName() != desired.EvaluatorName {
+					continue
+				}
+				for field, binding := range ref.DataMapping {
+					if held, present := stored.DataMapping[field]; !present || held != binding {
+						return true
+					}
+				}
 			}
 			for _, field := range []string{"query", "response", "messages", "tool_calls", "tool_definitions"} {
 				from, to := namespace(stored.DataMapping[field]), namespace(desired.DataMapping[field])

@@ -308,7 +308,7 @@ func TestExplicitResponseMappingConflictBeforePublication(t *testing.T) {
 			}
 
 			err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
-			require.ErrorContains(t, err, "stored-response mappings incompatible")
+			require.ErrorContains(t, err, "stored source contract incompatible")
 			assert.Zero(t, service.publishes)
 			assert.Empty(t, service.created)
 			assert.Empty(t, env.config)

@@ -183,8 +183,8 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err != nil {
 			return messages.EvalProblem(group.Name, err)
 		}
-		if group.ID != "" && isResponsesEval(&group) && conflictingSourceContract(group, remote, request) {
-			return incompatibleResponseMappings(group.ID)
+		if group.ID != "" && conflictingSourceContract(group, remote, request) {
+			return incompatibleSourceContract(group.ID)
 		}
 		prepared[group.Name] = preparedEval{
 			declared: declared, group: group, request: request, schemas: schemas,

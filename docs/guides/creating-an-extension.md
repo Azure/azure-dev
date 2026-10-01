@@ -51,6 +51,8 @@ Implement the required interfaces for your declared capabilities. See the extens
 
 If your Go extension creates role assignments, use the preview [`AccountBeta().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `contracts/v1beta`. The host resolves the resource-tenant object ID and principal type without returning an access token. Consume an SDK and host release containing this method before replacing an existing lookup.
 
+Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
+
 ### 4. Build
 
 ```bash
@@ -89,7 +91,14 @@ For extensions that are still in development or preview, consider publishing to 
 - **Reuse parameter patterns** — Use established flags like `--subscription`, `--name`, `--type`
 - **Integrate with help** — Make your extension discoverable through `azd help`
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
-- **Telemetry** — Follow pattern-based classification (e.g., `ext.service.<errorCode>`)
+- **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
+  first-party `ReportUsage` attributes must be declared and classified in
+  `cli/azd/extensions/telemetry/fields.go`
+- **Deployment preview** — To support `azd deploy --preview`, register the host with
+  `WithBetaServiceTargetPreview` and implement `preview.ServiceTargetPreviewProvider`
+  from `pkg/azdext/preview`. This [v1beta-only contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+  is experimental. A preview runs on a fresh provider without `Initialize` and must not
+  build, deploy, or persist deployment state.
 
 ## Detailed Reference
 

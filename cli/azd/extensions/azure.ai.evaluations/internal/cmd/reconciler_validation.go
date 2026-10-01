@@ -27,6 +27,12 @@ type preparedEval struct {
 	localEvaluators []string
 }
 
+type preparedLocalDataset struct {
+	digest  string
+	pin     string
+	version string
+}
+
 // Validate prepares every eval before the first dependency is published.
 // Unlike the best-effort catalog used for discovery, a failed reference read
 // must stop reconciliation: it is not evidence that a reference is valid.
@@ -44,19 +50,15 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	}
 
 	columns := map[string]map[string]bool{}
+	datasetVersions := map[string]string{}
+	localDatasets := map[string]preparedLocalDataset{}
 	for _, decl := range cfg.Datasets {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		path := project.ResolveSource(baseDir, decl.File)
-		if path == "" {
-			if _, err := r.datasetReference(ctx, decl); err != nil {
-				return messages.DatasetProblem(decl.Name, err)
-			}
-			continue
-		}
 		available := map[string]any{}
-		fields, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
+		validateRow := func(row map[string]any, index int) error {
 			for field := range row {
 				available[field] = nil
 			}
@@ -70,7 +72,32 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				}
 			}
 			return nil
-		})
+		}
+		var fields map[string]bool
+		var err error
+		if path == "" {
+			var version string
+			version, err = r.datasetReference(ctx, decl)
+			if err == nil {
+				fields, err = r.inspectRegisteredDataset(ctx, decl.Name, version, validateRow)
+				datasetVersions[decl.Name] = version
+			}
+		} else {
+			var digest, version string
+			digest, err = project.Fingerprint(path)
+			if err == nil {
+				version, err = r.localDatasetReuse(ctx, decl, digest)
+			}
+			if err == nil {
+				localDatasets[decl.Name] = preparedLocalDataset{digest: digest, pin: decl.Version, version: version}
+				recorded := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+				if version != "" && version != recorded {
+					fields, err = r.inspectRegisteredDataset(ctx, decl.Name, version, validateRow)
+				} else {
+					fields, err = inspectJSONL(ctx, path, validateRow)
+				}
+			}
+		}
 		if err != nil {
 			return messages.DatasetProblem(decl.Name, err)
 		}
@@ -100,8 +127,8 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			return messages.EvaluatorProblem(decl.Name, err)
 		}
 		// Authored rubrics omit the schemas Foundry adds on publication.
-		// Validate reused versions against their published contract. Preserve
-		// authored fields when an edit will publish a new version.
+		// Reuse that contract when present, without replacing authored
+		// fields or treating a failed read as a missing evaluator.
 		remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
 		if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 			return messages.CheckingEvaluatorExists(decl.Name, err)
@@ -126,6 +153,10 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			if canReuseEvaluator(prior, digest, remote, body) {
 				schema = published
 			} else {
+				recorded := r.ec.privateValue(ctx, versionKey("evaluator", decl.Name))
+				if err := checkEvaluatorDrift(decl.Name, recorded, versionFromRaw(remote, "")); err != nil {
+					return messages.EvaluatorProblem(decl.Name, err)
+				}
 				if schema.Definition.DataSchema == nil {
 					schema.Definition.DataSchema = published.DataSchema()
 				}
@@ -183,6 +214,9 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err != nil {
 			return messages.EvalProblem(group.Name, err)
 		}
+		if err := validateDatasetInteractions(&group, request, columns[group.Dataset]); err != nil {
+			return messages.EvalProblem(group.Name, err)
+		}
 		if group.ID != "" && conflictingSourceContract(group, remote, request) {
 			return incompatibleSourceContract(group.ID)
 		}
@@ -195,7 +229,77 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		return err
 	}
 	r.prepared = prepared
+	r.datasetVersions = datasetVersions
+	r.localDatasets = localDatasets
 	return nil
+}
+
+// localDatasetReuse selects an unchanged local file's registered version.
+// An absent new pin requests publication; failed reads never establish absence.
+func (r *evalReconciler) localDatasetReuse(ctx context.Context, decl project.DatasetDecl, digest string) (string, error) {
+	if r.ec.privateValue(ctx, project.FingerprintKey("dataset", decl.Name)) != digest {
+		return "", nil
+	}
+	recorded := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+	if recorded == "" {
+		return "", nil
+	}
+	if decl.Version == "" {
+		if err := r.checkDatasetDrift(ctx, decl.Name, recorded); err != nil {
+			return "", err
+		}
+		return recorded, nil
+	}
+	_, err := r.ec.datasetClient.GetDataset(ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion)
+	if err == nil {
+		return decl.Version, nil
+	}
+	if dataset_api.IsNotFound(err) {
+		if decl.Version != recorded {
+			return "", nil
+		}
+		return "", messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
+	}
+	return "", messages.ReadingDatasetVersion(decl.Name, decl.Version, err)
+}
+
+// validateDatasetInteractions checks primary inputs in the final mappings, not
+// optional tool columns. Simulation outputs are generated from seed rows, while
+// trace and response sources have no dataset columns to inspect here.
+func validateDatasetInteractions(
+	group *project.Eval, request *eval_api.CreateOpenAIEvalRequest, columns map[string]bool,
+) error {
+	if columns == nil || group.Simulation != nil {
+		return nil
+	}
+	for _, criterion := range request.TestingCriteria {
+		fields := []string{"query", "response"}
+		if _, messages := criterion.DataMapping[conversationField]; messages {
+			fields = []string{conversationField}
+		}
+		var missing []string
+		for _, field := range fields {
+			if column, item := itemColumn(criterion.DataMapping[field]); item && !columns[column] &&
+				!slices.Contains(missing, column) {
+				missing = append(missing, column)
+			}
+		}
+		if len(missing) > 0 {
+			return messages.EvaluatorNeedsFields(criterion.EvaluatorName, missing)
+		}
+	}
+	return nil
+}
+
+func (r *evalReconciler) inspectRegisteredDataset(
+	ctx context.Context, name, version string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	content, err := r.ec.datasetClient.OpenDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil, messages.ReadingDatasetVersion(name, version, err)
+	}
+	defer content.Close()
+	return inspectJSONLContent(ctx, fmt.Sprintf("dataset %q version %q", name, version), content, validateRow)
 }
 
 // withCatalogEvaluatorPins resolves only authored pins. A service-resolved

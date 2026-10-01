@@ -153,9 +153,19 @@ const downloadedEvaluator = `{
 	"agent_metadata":{"wiring":"service-only-agent-wiring"},
 	"definition":{
 		"type":"rubric",
-		"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5}],
+		"dimensions":[{
+			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
+			"scale":{"maximum":9007199254740993},
+			"metadata":{"internal_count":9007199254740993}
+		}],
 		"pass_threshold":0.6,
 		"future_option":{"count":9007199254740993},
+		"id":"service-definition-id",
+		"created_at":"2026-09-17T00:00:00Z",
+		"creator":{"name":"service-creator"},
+		"metadata":{"owner":"service-only-definition-metadata"},
+		"generation":{"job_id":"service-generation-job"},
+		"warnings":[{"message":"service-warning"}],
 		"init_parameters":{"model":"judge"},
 		"metrics":[{"name":"score"}],
 		"data_schema":{"query":"string"},
@@ -166,6 +176,14 @@ const downloadedEvaluator = `{
 	}
 }`
 
+const editableDownloadedRubric = `{
+	"type":"rubric",
+	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
+		"scale":{"maximum":9007199254740993}}],
+	"pass_threshold":0.6,
+	"future_option":{"count":9007199254740993}
+}`
+
 func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 	dir := t.TempDir()
 	cmd := evaluatorDownloadCmd(t)
@@ -173,25 +191,15 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 	var output strings.Builder
 	cmd.SetOut(&output)
 	ec := evaluatorServing(t, []string{"3"}, downloadedEvaluator)
-	a := &evaluatorDownloadAction{cmd: cmd, name: "quality", version: "3", outputDir: dir}
+	path := filepath.Join(dir, "rubric-v3.json")
+	a := &evaluatorDownloadAction{cmd: cmd, name: "quality", version: "3", outFile: path}
 	require.NoError(t, a.download(t.Context(), ec))
 
-	path := filepath.Join(dir, "quality-3.json")
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	var rubric map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw, &rubric))
-	require.Equal(t, json.RawMessage(`"rubric"`), rubric["type"])
-	require.JSONEq(t, `[{"id":"accuracy","description":"Is it correct?","weight":5}]`, string(rubric["dimensions"]))
-	require.Equal(t, json.RawMessage(`0.6`), rubric["pass_threshold"])
-	require.JSONEq(t, `{"count":9007199254740993}`, string(rubric["future_option"]))
-	require.Contains(t, string(raw), "9007199254740993", "unknown editable values retain their exact numeric precision")
-	for _, key := range append([]string{
-		"name", "version", "definition", "display_name", "description", "categories",
-		"supported_evaluation_levels", "created_at", "agent_metadata",
-	}, rubricOwnedByTheService...) {
-		require.NotContains(t, rubric, key)
-	}
+	require.JSONEq(t, editableDownloadedRubric, string(raw), "unknown authored fields survive without service metadata")
+	require.Contains(t, string(raw), "9007199254740993", "unknown numeric values keep their precision")
+	require.NotContains(t, string(raw), "internal_count")
 	require.NotContains(t, string(raw), "service-only-agent-wiring")
 	require.NotContains(t, output.String(), "service-only-agent-wiring")
 	encodedPath, err := json.Marshal(path)
@@ -221,4 +229,22 @@ func TestEvaluatorDownloadProjectsEmptyRubricWithoutLosingUnknownFields(t *testi
 	require.NoError(t, err)
 	require.JSONEq(t, `{"type":"rubric","dimensions":[],"future_option":9007199254740993}`, string(downloaded))
 	require.Contains(t, string(downloaded), "9007199254740993")
+}
+
+func TestEditableRubricPreservesUnknownFieldsAndNumericPrecision(t *testing.T) {
+	const threshold = "0.60000000000000001"
+	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {
+		t.Run(dimensions, func(t *testing.T) {
+			raw := `{"name":"renamed-evaluator","definition":{"type":"rubric","dimensions":` + dimensions +
+				`,"pass_threshold":` + threshold + `,"future_option":{"count":9007199254740993},` +
+				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
+			downloaded, err := evaluatorDocument(json.RawMessage(raw))
+			require.NoError(t, err)
+			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+
+				`,"future_option":{"count":9007199254740993}}`,
+				string(downloaded))
+			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")
+			require.NotContains(t, string(downloaded), "old-evaluator-name")
+		})
+	}
 }

@@ -11,6 +11,13 @@ import (
 	"strings"
 )
 
+type rubricDimension struct {
+	ID               *string         `json:"id,omitempty"`
+	Description      *string         `json:"description,omitempty"`
+	Weight           json.RawMessage `json:"weight,omitempty"`
+	AlwaysApplicable *bool           `json:"always_applicable,omitempty"`
+}
+
 // validateRubricDefinition checks authored shape and numeric parameters without changing
 // the bytes used for digest and drift decisions. Rubrics require a dimensions
 // array; optional parameters and other kinds retain their own service contract.
@@ -38,7 +45,7 @@ func validateRubricDefinition(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("definition.pass_threshold must be a number between 0 and 1")
 		}
 	}
-	var dimensions []map[string]json.RawMessage
+	var dimensions []*rubricDimension
 	if err := json.Unmarshal(definition.Dimensions, &dimensions); err != nil {
 		return nil, fmt.Errorf("reading definition.dimensions: %w", err)
 	}
@@ -49,8 +56,8 @@ func validateRubricDefinition(raw json.RawMessage) (json.RawMessage, error) {
 		if dimension == nil {
 			return nil, fmt.Errorf("definition.dimensions[%d] must be an object", i)
 		}
-		if rawWeight, present := dimension["weight"]; present {
-			if !rubricNumberInRange(rawWeight, 1, 10, true) {
+		if len(dimension.Weight) > 0 {
+			if !rubricNumberInRange(dimension.Weight, 1, 10, true) {
 				return nil, fmt.Errorf("definition.dimensions[%d].weight must be a whole number between 1 and 10", i)
 			}
 		}

@@ -1535,18 +1535,6 @@ func NoFreeArtifactName(name string) error {
 			"or --output-dir to write elsewhere", name)
 }
 
-// DatasetVersionNotVerified reports a pinned version the service would not
-// confirm, on a deploy that is going ahead with it anyway.
-//
-// Failing here would break a deploy on a transient read, and the pin is the
-// author's explicit choice. Saying nothing reported the version verified when
-// all the deploy did was fail to look at it.
-func DatasetVersionNotVerified(name, version string, err error) error {
-	return fmt.Errorf(
-		"could not confirm dataset %q version %s still exists (%w); continuing with it",
-		name, version, err)
-}
-
 // ArtifactLeftAlone reports a destination a previous collection already filled.
 //
 // A rubric is meant to be edited, and `job show` is documented as safe to
@@ -1802,11 +1790,16 @@ func OutputFileAndDirBothGiven() error {
 		"--output-file and --output-dir both name where to write; pass one")
 }
 
-// OutputFileNeedsSingleFileDataset refuses a folder dataset written to one path.
+// OutputFileNeedsSingleFileDataset refuses content not confirmed as a single-file dataset.
 //
 // Picking one of its files to satisfy the flag hands back part of the dataset
 // under a name that claims to be all of it.
 func OutputFileNeedsSingleFileDataset(name, version string, files int) error {
+	if files == 1 {
+		return fmt.Errorf(
+			"dataset %s version %s contains one file, but its metadata does not identify it "+
+				"as a single-file dataset; use --output-dir", name, version)
+	}
 	return fmt.Errorf(
 		"dataset %s version %s holds %d files, so it has no single path to write; "+
 			"use --output-dir", name, version, files)

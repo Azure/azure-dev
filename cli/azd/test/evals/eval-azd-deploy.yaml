@@ -14,6 +14,7 @@ defaults:
   timeout: 5m
   executor: copilot-sdk
   model: gpt-5.6-terra
+  # Keep this out of eval-azd.experiments.yaml's subject-model axis so it never judges itself.
   judge_model: gpt-5.6-luna
 
 # lower the bar a bit so we can get an idea of when this gets worse, while still being okay
@@ -45,7 +46,7 @@ stimuli:
           scoring: binary
 
   - name: deploy-python-webapp
-  
+
     prompt: "I want to deploy a Python web app to Azure. What's the best way to do that?"
     rubric:
       - "Suggests azd as a way to stand up and deploy the app, with azd init before azd up or before azd provision/deploy"

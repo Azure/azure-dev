@@ -213,6 +213,12 @@ func TestReconciliationRejectsInvalidRubricBeforePublishingDataset(t *testing.T)
 			for _, parameters := range []string{
 				`{"type":"rubric"}`,
 				`{"dimensions":null}`,
+				`{"dimensions":{}}`,
+				`{"dimensions":[null]}`,
+				`{"dimensions":[42]}`,
+				`{"dimensions":[{"id":42}]}`,
+				`{"dimensions":[{"id":"clarity","description":42}]}`,
+				`{"dimensions":[{"id":"clarity","always_applicable":"yes"}]}`,
 				`{"dimensions":[{"id":"clarity","weight":0}]}`,
 				`{"dimensions":[{"id":"clarity","weight":11}]}`,
 				`{"dimensions":[{"id":"clarity","weight":1.5}]}`,

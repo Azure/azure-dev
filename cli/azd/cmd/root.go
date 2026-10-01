@@ -366,7 +366,13 @@ func newRootCmd(
 			},
 			RequireLogin: true,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
+				log.Println("Skipping deploy hooks due to preview flag.")
+				return false
+			}
+			return true
+		}).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.

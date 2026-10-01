@@ -276,18 +276,50 @@ the service's latest version without recreating the eval on each new version.
 Whole-service deployment rejects identical effective eval definitions, including
 when equivalent pins are spelled in different places. Targeted create still
 validates only its selected declaration and reserves the other evals' IDs.
-Migrating older pin fingerprints, including during a rename, can reuse the prior
-eval only when its complete stored criterion identities and effective pins match
-and no other declared eval owns it. Missing or conflicting evidence creates a new
-eval rather than associating the old history with a different policy.
+Renaming before older pin fingerprints have been migrated can reuse the prior
+eval only when its stored criteria confirm the same effective pins and no other
+declared eval owns it.
+When upgrading from a version that ignored catalog pins, the first reconciliation
+creates a new eval if its stored criteria were unpinned or used a different pin.
+Earlier runs remain on the old eval; they are not deleted or moved. Builds that
+already sent the correct pin but omitted it from their fingerprint can retain
+the existing eval only when its stored criterion identities and pins match.
 
 After a local rubric is reconciled, its evaluator contract is read from that
 exact service version rather than a potentially stale discovery listing.
 This contract read does not add an authored version pin. An unavailable or
 malformed contract is an error, not permission to reuse an older schema.
-When an unchanged rubric will be reused, preflight checks its published contract,
-not local metadata overrides, before writing reconciliation state or publishing
-dependencies. Authored metadata still applies when a rubric edit creates a new version.
+Preflight uses the same digest-aware reuse decision: when the rubric will not
+be republished, its existing service contract wins over authored metadata
+overrides. A genuine edit that will publish a new version keeps authored
+metadata precedence.
+If that prospective publication would overwrite an externally advanced evaluator,
+preflight reports the drift before publishing any dataset. Reconciliation checks
+again before evaluator publication to catch changes that occur after preflight.
+
+Registered dataset references are checked against the JSONL rows of the settled
+version before publication. This uses the existing read-credential/content
+path and requires permission to read those rows; unavailable or malformed
+content is not treated as an unknown schema that accepts every binding.
+Required evaluator columns must be present in every row. Reconciliation keeps
+the inspected version even if a newer version appears during the command.
+Primary interaction bindings in the prepared criteria are also checked:
+mapped `messages`, or mapped `query` and `response`, must resolve to columns
+present in every dataset row. Optional tool columns are not made required by
+this check, and generated sample bindings and simulation outputs are not
+mistaken for input dataset columns.
+An explicitly authored `data_mapping` is stricter than an optional default:
+each item column it names must exist in the known source rows, including explicit
+tool, context, and ground-truth bindings. Simulation default inference remains
+`messages`-only. An explicit `tool_definitions` binding opts into a generated field
+rather than a seed column; it does not expand inferred defaults or guarantee that
+a service response supplies that optional field.
+When an unchanged local dataset file is repinned to another registered version,
+preflight reads that selected version's content. The original file-to-published-
+version baseline is retained; denied metadata or content reads stop reconciliation.
+For unchanged, unpinned local datasets, an empty version listing requires a
+successful point read of the recorded version. A denied or failed point read
+stops preflight before any mutation; a successful read tolerates listing delays.
 
 Eval groups are immutable, so a change to a group's evaluators, target,
 evaluation level, or source type creates a new group and a new id. Per-run sampling,
@@ -364,7 +396,6 @@ Dataset and evaluator generation are independent. If one fails, a successful
 artifact remains registered, downloaded, and declared in the catalog. A failed
 catalog update is reported separately from a failed generation or download;
 it does not discard the downloaded artifact.
-
 Recollecting an existing evaluator artifact without `--force` preserves its
 authored catalog metadata, including explicit empty values, while filling
 missing metadata from the job. `--force` replaces the artifact and refreshes
@@ -411,6 +442,12 @@ auto-increments and nothing mutates in place.
 question, which is what a pipeline passes. `job delete` is the exception: it
 discards a record of finished work, not the artifact the job produced.
 
+After a successful eval deletion, the command removes its local named aliases,
+fingerprints, and scoped identity references, including when given a service ID.
+Unrelated eval scopes and shared dataset/evaluator versions are preserved.
+Failed or ambiguous deletes do not clear state. If local cleanup fails after
+the service has deleted the eval, a warning reports that failure separately.
+
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
 
@@ -423,6 +460,26 @@ eval still produces an error, and no cancellation prose is written to stdout.
 
 `azd ai eval create` closes with a link to the eval in the Portal, for a
 newly created eval and for one that already existed unchanged.
+
+### Downloading a dataset
+
+`azd ai eval dataset download <name> --version <version> --output-file <path>`
+supports single-file datasets even when their download credentials grant access
+to the parent container. Container-backed downloads require a complete listing
+with exactly one file and dataset metadata reporting `isSingleFile: true`.
+Folders (including one-file folders) and multi-file datasets require
+`--output-dir` and retain their relative layout.
+
+Single-file downloads without `--output-file` land as
+`<name>-<version><extension>` under `--output-dir` (the current directory by
+default), while folders land under `<name>-<version>/`. Omitting `--version`
+selects the latest version. Existing destinations require `--force` to replace,
+including with `--no-prompt`. JSON output reports the resolved version, path,
+file count, and single-file status.
+
+Overwrite protection also applies to destinations created while a download is
+in progress. A cancelled transfer leaves existing content unchanged and removes
+its temporary download files, even with `--force`.
 
 ## Evaluators
 
@@ -467,12 +524,24 @@ azd ai eval evaluator download support-quality --version 3 --output-file ./suppo
 azd ai eval evaluator update support-quality --from-file ./support-quality.json
 ```
 
-A rubric download uses the same editable JSON shape as generation: `type`,
-`dimensions`, and `pass_threshold`, plus any additional editable definition
-fields. It omits the service envelope and generated wiring such as
-`data_schema`, `init_parameters`, `metrics`, and `prompt_text`. Other evaluator
-kinds retain their full document. To inspect or export the full service response,
+A rubric download uses the same editable JSON shape as generation and job
+collection: `type: "rubric"`, `dimensions`, and `pass_threshold` when supplied.
+Each dimension retains `id`, `description`, `weight`, and `always_applicable`.
+Unknown definition and dimension fields are preserved for future authoring
+contracts, including their numeric precision. Only known service-envelope and
+catalog fields, service metadata (`metadata`, creation details, generation
+details, and warnings), and generated wiring (`data_schema`, `init_parameters`,
+`metrics`, and `prompt_text`, including camel-case aliases) are omitted.
+Prompt-based evaluators retain their
+separate full document, including their authored prompt. To inspect or export the full service response,
 use `azd ai eval evaluator show support-quality --version 3 -o json`.
+Malformed recognized rubrics fail download and collection before replacing an
+artifact or updating its catalog entry, rather than falling back to a full
+service-envelope export.
+`create` and `azd up` also reject null or non-array `dimensions`, non-object
+dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
+values during preflight, before uploading or tagging datasets or publishing
+evaluators. Validation preserves authored bytes for digest and drift decisions.
 
 Standalone `evaluator update` preserves the existing display name, description,
 categories, and supported evaluation levels. A full input document can explicitly
@@ -484,6 +553,10 @@ over catalog declarations, which take precedence over inherited service
 metadata. Explicit empty category and evaluation-level lists clear those
 fields. Metadata joins the publication body after digest and reuse decisions,
 so an unchanged rubric remains unpublished.
+Definition comparisons preserve exact JSON numeric values, including unknown
+dimension fields: adjacent large integers and precise decimal edits are changes,
+while equivalent spellings such as `1`, `1.0`, and `1e0` compare equal even before
+a local publication fingerprint has been recorded.
 
 Omitting `--version` downloads the latest version and reports which one was used.
 Existing files are not replaced unless `--force` is supplied.

@@ -47,6 +47,8 @@ type ServiceTargetMessage struct {
 	//	*ServiceTargetMessage_PublishResponse
 	//	*ServiceTargetMessage_EndpointsRequest
 	//	*ServiceTargetMessage_EndpointsResponse
+	//	*ServiceTargetMessage_PreviewRequest
+	//	*ServiceTargetMessage_PreviewResponse
 	MessageType   isServiceTargetMessage_MessageType `protobuf_oneof:"message_type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -238,6 +240,24 @@ func (x *ServiceTargetMessage) GetEndpointsResponse() *ServiceTargetEndpointsRes
 	return nil
 }
 
+func (x *ServiceTargetMessage) GetPreviewRequest() *ServiceTargetPreviewRequest {
+	if x != nil {
+		if x, ok := x.MessageType.(*ServiceTargetMessage_PreviewRequest); ok {
+			return x.PreviewRequest
+		}
+	}
+	return nil
+}
+
+func (x *ServiceTargetMessage) GetPreviewResponse() *ServiceTargetPreviewResponse {
+	if x != nil {
+		if x, ok := x.MessageType.(*ServiceTargetMessage_PreviewResponse); ok {
+			return x.PreviewResponse
+		}
+	}
+	return nil
+}
+
 type isServiceTargetMessage_MessageType interface {
 	isServiceTargetMessage_MessageType()
 }
@@ -302,6 +322,14 @@ type ServiceTargetMessage_EndpointsResponse struct {
 	EndpointsResponse *ServiceTargetEndpointsResponse `protobuf:"bytes,20,opt,name=endpoints_response,json=endpointsResponse,proto3,oneof"`
 }
 
+type ServiceTargetMessage_PreviewRequest struct {
+	PreviewRequest *ServiceTargetPreviewRequest `protobuf:"bytes,21,opt,name=preview_request,json=previewRequest,proto3,oneof"`
+}
+
+type ServiceTargetMessage_PreviewResponse struct {
+	PreviewResponse *ServiceTargetPreviewResponse `protobuf:"bytes,22,opt,name=preview_response,json=previewResponse,proto3,oneof"`
+}
+
 func (*ServiceTargetMessage_RegisterServiceTargetRequest) isServiceTargetMessage_MessageType() {}
 
 func (*ServiceTargetMessage_RegisterServiceTargetResponse) isServiceTargetMessage_MessageType() {}
@@ -331,6 +359,10 @@ func (*ServiceTargetMessage_PublishResponse) isServiceTargetMessage_MessageType(
 func (*ServiceTargetMessage_EndpointsRequest) isServiceTargetMessage_MessageType() {}
 
 func (*ServiceTargetMessage_EndpointsResponse) isServiceTargetMessage_MessageType() {}
+
+func (*ServiceTargetMessage_PreviewRequest) isServiceTargetMessage_MessageType() {}
+
+func (*ServiceTargetMessage_PreviewResponse) isServiceTargetMessage_MessageType() {}
 
 // InputParameter
 type ServiceTargetInputParameter struct {
@@ -657,10 +689,12 @@ func (x *ServiceTargetOptions) GetConfig() *structpb.Struct {
 }
 
 type RegisterServiceTargetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"` // unique identifier for the provider
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Host  string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"` // unique identifier for the provider
+	// Explicit opt-in; older extensions do not support deployment preview.
+	SupportsPreview bool `protobuf:"varint,2,opt,name=supports_preview,json=supportsPreview,proto3" json:"supports_preview,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RegisterServiceTargetRequest) Reset() {
@@ -698,6 +732,13 @@ func (x *RegisterServiceTargetRequest) GetHost() string {
 		return x.Host
 	}
 	return ""
+}
+
+func (x *RegisterServiceTargetRequest) GetSupportsPreview() bool {
+	if x != nil {
+		return x.SupportsPreview
+	}
+	return false
 }
 
 type RegisterServiceTargetResponse struct {
@@ -1035,6 +1076,149 @@ func (x *ServiceTargetDeployResponse) GetResult() *ServiceDeployResult {
 	return nil
 }
 
+// ServiceTargetPreviewRequest requests a read-only preview without initialization or deployment preparation.
+type ServiceTargetPreviewRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceConfig *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceTargetPreviewRequest) Reset() {
+	*x = ServiceTargetPreviewRequest{}
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceTargetPreviewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceTargetPreviewRequest) ProtoMessage() {}
+
+func (x *ServiceTargetPreviewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceTargetPreviewRequest.ProtoReflect.Descriptor instead.
+func (*ServiceTargetPreviewRequest) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ServiceTargetPreviewRequest) GetServiceConfig() *ServiceConfig {
+	if x != nil {
+		return x.ServiceConfig
+	}
+	return nil
+}
+
+// ServiceTargetPreviewResponse contains the read-only deployment preview.
+type ServiceTargetPreviewResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Result        *ServiceDeployPreviewResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceTargetPreviewResponse) Reset() {
+	*x = ServiceTargetPreviewResponse{}
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceTargetPreviewResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceTargetPreviewResponse) ProtoMessage() {}
+
+func (x *ServiceTargetPreviewResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceTargetPreviewResponse.ProtoReflect.Descriptor instead.
+func (*ServiceTargetPreviewResponse) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ServiceTargetPreviewResponse) GetResult() *ServiceDeployPreviewResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+// ServiceDeployPreviewResult describes a deployment without performing it.
+type ServiceDeployPreviewResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Data          *structpb.Struct       `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceDeployPreviewResult) Reset() {
+	*x = ServiceDeployPreviewResult{}
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceDeployPreviewResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceDeployPreviewResult) ProtoMessage() {}
+
+func (x *ServiceDeployPreviewResult) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceDeployPreviewResult.ProtoReflect.Descriptor instead.
+func (*ServiceDeployPreviewResult) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ServiceDeployPreviewResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ServiceDeployPreviewResult) GetData() *structpb.Struct {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 // ServicePackageResult represents the package result for deployment
 type ServicePackageResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1045,7 +1229,7 @@ type ServicePackageResult struct {
 
 func (x *ServicePackageResult) Reset() {
 	*x = ServicePackageResult{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[14]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1057,7 +1241,7 @@ func (x *ServicePackageResult) String() string {
 func (*ServicePackageResult) ProtoMessage() {}
 
 func (x *ServicePackageResult) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[14]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1070,7 +1254,7 @@ func (x *ServicePackageResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServicePackageResult.ProtoReflect.Descriptor instead.
 func (*ServicePackageResult) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{14}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ServicePackageResult) GetArtifacts() []*Artifact {
@@ -1090,7 +1274,7 @@ type ServicePublishResult struct {
 
 func (x *ServicePublishResult) Reset() {
 	*x = ServicePublishResult{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[15]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1102,7 +1286,7 @@ func (x *ServicePublishResult) String() string {
 func (*ServicePublishResult) ProtoMessage() {}
 
 func (x *ServicePublishResult) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[15]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1115,7 +1299,7 @@ func (x *ServicePublishResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServicePublishResult.ProtoReflect.Descriptor instead.
 func (*ServicePublishResult) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{15}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ServicePublishResult) GetArtifacts() []*Artifact {
@@ -1135,7 +1319,7 @@ type ServiceDeployResult struct {
 
 func (x *ServiceDeployResult) Reset() {
 	*x = ServiceDeployResult{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[16]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1147,7 +1331,7 @@ func (x *ServiceDeployResult) String() string {
 func (*ServiceDeployResult) ProtoMessage() {}
 
 func (x *ServiceDeployResult) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[16]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1160,7 +1344,7 @@ func (x *ServiceDeployResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceDeployResult.ProtoReflect.Descriptor instead.
 func (*ServiceDeployResult) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{16}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ServiceDeployResult) GetArtifacts() []*Artifact {
@@ -1181,7 +1365,7 @@ type ServiceTargetPackageRequest struct {
 
 func (x *ServiceTargetPackageRequest) Reset() {
 	*x = ServiceTargetPackageRequest{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[17]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1193,7 +1377,7 @@ func (x *ServiceTargetPackageRequest) String() string {
 func (*ServiceTargetPackageRequest) ProtoMessage() {}
 
 func (x *ServiceTargetPackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[17]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1206,7 +1390,7 @@ func (x *ServiceTargetPackageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPackageRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPackageRequest) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{17}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ServiceTargetPackageRequest) GetServiceConfig() *ServiceConfig {
@@ -1232,7 +1416,7 @@ type ServiceTargetPackageResponse struct {
 
 func (x *ServiceTargetPackageResponse) Reset() {
 	*x = ServiceTargetPackageResponse{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[18]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1244,7 +1428,7 @@ func (x *ServiceTargetPackageResponse) String() string {
 func (*ServiceTargetPackageResponse) ProtoMessage() {}
 
 func (x *ServiceTargetPackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[18]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1257,7 +1441,7 @@ func (x *ServiceTargetPackageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPackageResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPackageResponse) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{18}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ServiceTargetPackageResponse) GetResult() *ServicePackageResult {
@@ -1280,7 +1464,7 @@ type ServiceTargetPublishRequest struct {
 
 func (x *ServiceTargetPublishRequest) Reset() {
 	*x = ServiceTargetPublishRequest{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[19]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1292,7 +1476,7 @@ func (x *ServiceTargetPublishRequest) String() string {
 func (*ServiceTargetPublishRequest) ProtoMessage() {}
 
 func (x *ServiceTargetPublishRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[19]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1305,7 +1489,7 @@ func (x *ServiceTargetPublishRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPublishRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPublishRequest) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{19}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ServiceTargetPublishRequest) GetServiceConfig() *ServiceConfig {
@@ -1345,7 +1529,7 @@ type ServiceTargetPublishResponse struct {
 
 func (x *ServiceTargetPublishResponse) Reset() {
 	*x = ServiceTargetPublishResponse{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[20]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1357,7 +1541,7 @@ func (x *ServiceTargetPublishResponse) String() string {
 func (*ServiceTargetPublishResponse) ProtoMessage() {}
 
 func (x *ServiceTargetPublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[20]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1370,7 +1554,7 @@ func (x *ServiceTargetPublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPublishResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPublishResponse) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{20}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ServiceTargetPublishResponse) GetResult() *ServicePublishResult {
@@ -1391,7 +1575,7 @@ type PublishOptions struct {
 
 func (x *PublishOptions) Reset() {
 	*x = PublishOptions{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[21]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1403,7 +1587,7 @@ func (x *PublishOptions) String() string {
 func (*PublishOptions) ProtoMessage() {}
 
 func (x *PublishOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[21]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1416,7 +1600,7 @@ func (x *PublishOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishOptions.ProtoReflect.Descriptor instead.
 func (*PublishOptions) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{21}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *PublishOptions) GetImage() string {
@@ -1437,7 +1621,7 @@ type ServiceTargetEndpointsRequest struct {
 
 func (x *ServiceTargetEndpointsRequest) Reset() {
 	*x = ServiceTargetEndpointsRequest{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[22]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1449,7 +1633,7 @@ func (x *ServiceTargetEndpointsRequest) String() string {
 func (*ServiceTargetEndpointsRequest) ProtoMessage() {}
 
 func (x *ServiceTargetEndpointsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[22]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1462,7 +1646,7 @@ func (x *ServiceTargetEndpointsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetEndpointsRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetEndpointsRequest) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{22}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ServiceTargetEndpointsRequest) GetServiceConfig() *ServiceConfig {
@@ -1488,7 +1672,7 @@ type ServiceTargetEndpointsResponse struct {
 
 func (x *ServiceTargetEndpointsResponse) Reset() {
 	*x = ServiceTargetEndpointsResponse{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[23]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1500,7 +1684,7 @@ func (x *ServiceTargetEndpointsResponse) String() string {
 func (*ServiceTargetEndpointsResponse) ProtoMessage() {}
 
 func (x *ServiceTargetEndpointsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[23]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1513,7 +1697,7 @@ func (x *ServiceTargetEndpointsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetEndpointsResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetEndpointsResponse) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{23}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ServiceTargetEndpointsResponse) GetEndpoints() []string {
@@ -1535,7 +1719,7 @@ type ServiceTargetProgressMessage struct {
 
 func (x *ServiceTargetProgressMessage) Reset() {
 	*x = ServiceTargetProgressMessage{}
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[24]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1547,7 +1731,7 @@ func (x *ServiceTargetProgressMessage) String() string {
 func (*ServiceTargetProgressMessage) ProtoMessage() {}
 
 func (x *ServiceTargetProgressMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[24]
+	mi := &file_azd_extensions_v1beta_service_target_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1560,7 +1744,7 @@ func (x *ServiceTargetProgressMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetProgressMessage.ProtoReflect.Descriptor instead.
 func (*ServiceTargetProgressMessage) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{24}
+	return file_azd_extensions_v1beta_service_target_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ServiceTargetProgressMessage) GetRequestId() string {
@@ -1588,7 +1772,7 @@ var File_azd_extensions_v1beta_service_target_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\n" +
-	"*azd/extensions/v1beta/service_target.proto\x12\x15azd.extensions.v1beta\x1a\x1cgoogle/protobuf/struct.proto\x1a\"azd/extensions/v1beta/models.proto\x1a\"azd/extensions/v1beta/errors.proto\"\xa7\r\n" +
+	"*azd/extensions/v1beta/service_target.proto\x12\x15azd.extensions.v1beta\x1a\x1cgoogle/protobuf/struct.proto\x1a\"azd/extensions/v1beta/models.proto\x1a\"azd/extensions/v1beta/errors.proto\"\xe8\x0e\n" +
 	"\x14ServiceTargetMessage\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12;\n" +
@@ -1608,7 +1792,9 @@ const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\x0fpublish_request\x18\x11 \x01(\v22.azd.extensions.v1beta.ServiceTargetPublishRequestH\x00R\x0epublishRequest\x12`\n" +
 	"\x10publish_response\x18\x12 \x01(\v23.azd.extensions.v1beta.ServiceTargetPublishResponseH\x00R\x0fpublishResponse\x12c\n" +
 	"\x11endpoints_request\x18\x13 \x01(\v24.azd.extensions.v1beta.ServiceTargetEndpointsRequestH\x00R\x10endpointsRequest\x12f\n" +
-	"\x12endpoints_response\x18\x14 \x01(\v25.azd.extensions.v1beta.ServiceTargetEndpointsResponseH\x00R\x11endpointsResponseB\x0e\n" +
+	"\x12endpoints_response\x18\x14 \x01(\v25.azd.extensions.v1beta.ServiceTargetEndpointsResponseH\x00R\x11endpointsResponse\x12]\n" +
+	"\x0fpreview_request\x18\x15 \x01(\v22.azd.extensions.v1beta.ServiceTargetPreviewRequestH\x00R\x0epreviewRequest\x12`\n" +
+	"\x10preview_response\x18\x16 \x01(\v23.azd.extensions.v1beta.ServiceTargetPreviewResponseH\x00R\x0fpreviewResponseB\x0e\n" +
 	"\fmessage_type\"l\n" +
 	"\x1bServiceTargetInputParameter\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12#\n" +
@@ -1631,9 +1817,10 @@ const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\x06config\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06config\x1aC\n" +
 	"\x15DeploymentStacksEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"]\n" +
 	"\x1cRegisterServiceTargetRequest\x12\x12\n" +
-	"\x04host\x18\x01 \x01(\tR\x04host\"\x1f\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12)\n" +
+	"\x10supports_preview\x18\x02 \x01(\bR\x0fsupportsPreview\"\x1f\n" +
 	"\x1dRegisterServiceTargetResponse\"\x94\x02\n" +
 	"\x18GetTargetResourceRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12K\n" +
@@ -1656,7 +1843,14 @@ const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\x0fservice_context\x18\x02 \x01(\v2%.azd.extensions.v1beta.ServiceContextR\x0eserviceContext\x12N\n" +
 	"\x0ftarget_resource\x18\x03 \x01(\v2%.azd.extensions.v1beta.TargetResourceR\x0etargetResource\"a\n" +
 	"\x1bServiceTargetDeployResponse\x12B\n" +
-	"\x06result\x18\x01 \x01(\v2*.azd.extensions.v1beta.ServiceDeployResultR\x06result\"U\n" +
+	"\x06result\x18\x01 \x01(\v2*.azd.extensions.v1beta.ServiceDeployResultR\x06result\"j\n" +
+	"\x1bServiceTargetPreviewRequest\x12K\n" +
+	"\x0eservice_config\x18\x01 \x01(\v2$.azd.extensions.v1beta.ServiceConfigR\rserviceConfig\"i\n" +
+	"\x1cServiceTargetPreviewResponse\x12I\n" +
+	"\x06result\x18\x01 \x01(\v21.azd.extensions.v1beta.ServiceDeployPreviewResultR\x06result\"c\n" +
+	"\x1aServiceDeployPreviewResult\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12+\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\"U\n" +
 	"\x14ServicePackageResult\x12=\n" +
 	"\tartifacts\x18\x01 \x03(\v2\x1f.azd.extensions.v1beta.ArtifactR\tartifacts\"U\n" +
 	"\x14ServicePublishResult\x12=\n" +
@@ -1702,7 +1896,7 @@ func file_azd_extensions_v1beta_service_target_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1beta_service_target_proto_rawDescData
 }
 
-var file_azd_extensions_v1beta_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_azd_extensions_v1beta_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_azd_extensions_v1beta_service_target_proto_goTypes = []any{
 	(*ServiceTargetMessage)(nil),            // 0: azd.extensions.v1beta.ServiceTargetMessage
 	(*ServiceTargetInputParameter)(nil),     // 1: azd.extensions.v1beta.ServiceTargetInputParameter
@@ -1718,27 +1912,30 @@ var file_azd_extensions_v1beta_service_target_proto_goTypes = []any{
 	(*TargetResource)(nil),                  // 11: azd.extensions.v1beta.TargetResource
 	(*ServiceTargetDeployRequest)(nil),      // 12: azd.extensions.v1beta.ServiceTargetDeployRequest
 	(*ServiceTargetDeployResponse)(nil),     // 13: azd.extensions.v1beta.ServiceTargetDeployResponse
-	(*ServicePackageResult)(nil),            // 14: azd.extensions.v1beta.ServicePackageResult
-	(*ServicePublishResult)(nil),            // 15: azd.extensions.v1beta.ServicePublishResult
-	(*ServiceDeployResult)(nil),             // 16: azd.extensions.v1beta.ServiceDeployResult
-	(*ServiceTargetPackageRequest)(nil),     // 17: azd.extensions.v1beta.ServiceTargetPackageRequest
-	(*ServiceTargetPackageResponse)(nil),    // 18: azd.extensions.v1beta.ServiceTargetPackageResponse
-	(*ServiceTargetPublishRequest)(nil),     // 19: azd.extensions.v1beta.ServiceTargetPublishRequest
-	(*ServiceTargetPublishResponse)(nil),    // 20: azd.extensions.v1beta.ServiceTargetPublishResponse
-	(*PublishOptions)(nil),                  // 21: azd.extensions.v1beta.PublishOptions
-	(*ServiceTargetEndpointsRequest)(nil),   // 22: azd.extensions.v1beta.ServiceTargetEndpointsRequest
-	(*ServiceTargetEndpointsResponse)(nil),  // 23: azd.extensions.v1beta.ServiceTargetEndpointsResponse
-	(*ServiceTargetProgressMessage)(nil),    // 24: azd.extensions.v1beta.ServiceTargetProgressMessage
-	nil,                                     // 25: azd.extensions.v1beta.ServiceTargetOptions.DeploymentStacksEntry
-	nil,                                     // 26: azd.extensions.v1beta.TargetResource.MetadataEntry
-	(*ExtensionError)(nil),                  // 27: azd.extensions.v1beta.ExtensionError
-	(*ServiceConfig)(nil),                   // 28: azd.extensions.v1beta.ServiceConfig
-	(*structpb.Struct)(nil),                 // 29: google.protobuf.Struct
-	(*ServiceContext)(nil),                  // 30: azd.extensions.v1beta.ServiceContext
-	(*Artifact)(nil),                        // 31: azd.extensions.v1beta.Artifact
+	(*ServiceTargetPreviewRequest)(nil),     // 14: azd.extensions.v1beta.ServiceTargetPreviewRequest
+	(*ServiceTargetPreviewResponse)(nil),    // 15: azd.extensions.v1beta.ServiceTargetPreviewResponse
+	(*ServiceDeployPreviewResult)(nil),      // 16: azd.extensions.v1beta.ServiceDeployPreviewResult
+	(*ServicePackageResult)(nil),            // 17: azd.extensions.v1beta.ServicePackageResult
+	(*ServicePublishResult)(nil),            // 18: azd.extensions.v1beta.ServicePublishResult
+	(*ServiceDeployResult)(nil),             // 19: azd.extensions.v1beta.ServiceDeployResult
+	(*ServiceTargetPackageRequest)(nil),     // 20: azd.extensions.v1beta.ServiceTargetPackageRequest
+	(*ServiceTargetPackageResponse)(nil),    // 21: azd.extensions.v1beta.ServiceTargetPackageResponse
+	(*ServiceTargetPublishRequest)(nil),     // 22: azd.extensions.v1beta.ServiceTargetPublishRequest
+	(*ServiceTargetPublishResponse)(nil),    // 23: azd.extensions.v1beta.ServiceTargetPublishResponse
+	(*PublishOptions)(nil),                  // 24: azd.extensions.v1beta.PublishOptions
+	(*ServiceTargetEndpointsRequest)(nil),   // 25: azd.extensions.v1beta.ServiceTargetEndpointsRequest
+	(*ServiceTargetEndpointsResponse)(nil),  // 26: azd.extensions.v1beta.ServiceTargetEndpointsResponse
+	(*ServiceTargetProgressMessage)(nil),    // 27: azd.extensions.v1beta.ServiceTargetProgressMessage
+	nil,                                     // 28: azd.extensions.v1beta.ServiceTargetOptions.DeploymentStacksEntry
+	nil,                                     // 29: azd.extensions.v1beta.TargetResource.MetadataEntry
+	(*ExtensionError)(nil),                  // 30: azd.extensions.v1beta.ExtensionError
+	(*ServiceConfig)(nil),                   // 31: azd.extensions.v1beta.ServiceConfig
+	(*structpb.Struct)(nil),                 // 32: google.protobuf.Struct
+	(*ServiceContext)(nil),                  // 33: azd.extensions.v1beta.ServiceContext
+	(*Artifact)(nil),                        // 34: azd.extensions.v1beta.Artifact
 }
 var file_azd_extensions_v1beta_service_target_proto_depIdxs = []int32{
-	27, // 0: azd.extensions.v1beta.ServiceTargetMessage.error:type_name -> azd.extensions.v1beta.ExtensionError
+	30, // 0: azd.extensions.v1beta.ServiceTargetMessage.error:type_name -> azd.extensions.v1beta.ExtensionError
 	7,  // 1: azd.extensions.v1beta.ServiceTargetMessage.register_service_target_request:type_name -> azd.extensions.v1beta.RegisterServiceTargetRequest
 	8,  // 2: azd.extensions.v1beta.ServiceTargetMessage.register_service_target_response:type_name -> azd.extensions.v1beta.RegisterServiceTargetResponse
 	4,  // 3: azd.extensions.v1beta.ServiceTargetMessage.initialize_request:type_name -> azd.extensions.v1beta.ServiceTargetInitializeRequest
@@ -1747,44 +1944,49 @@ var file_azd_extensions_v1beta_service_target_proto_depIdxs = []int32{
 	10, // 6: azd.extensions.v1beta.ServiceTargetMessage.get_target_resource_response:type_name -> azd.extensions.v1beta.GetTargetResourceResponse
 	12, // 7: azd.extensions.v1beta.ServiceTargetMessage.deploy_request:type_name -> azd.extensions.v1beta.ServiceTargetDeployRequest
 	13, // 8: azd.extensions.v1beta.ServiceTargetMessage.deploy_response:type_name -> azd.extensions.v1beta.ServiceTargetDeployResponse
-	24, // 9: azd.extensions.v1beta.ServiceTargetMessage.progress_message:type_name -> azd.extensions.v1beta.ServiceTargetProgressMessage
-	17, // 10: azd.extensions.v1beta.ServiceTargetMessage.package_request:type_name -> azd.extensions.v1beta.ServiceTargetPackageRequest
-	18, // 11: azd.extensions.v1beta.ServiceTargetMessage.package_response:type_name -> azd.extensions.v1beta.ServiceTargetPackageResponse
-	19, // 12: azd.extensions.v1beta.ServiceTargetMessage.publish_request:type_name -> azd.extensions.v1beta.ServiceTargetPublishRequest
-	20, // 13: azd.extensions.v1beta.ServiceTargetMessage.publish_response:type_name -> azd.extensions.v1beta.ServiceTargetPublishResponse
-	22, // 14: azd.extensions.v1beta.ServiceTargetMessage.endpoints_request:type_name -> azd.extensions.v1beta.ServiceTargetEndpointsRequest
-	23, // 15: azd.extensions.v1beta.ServiceTargetMessage.endpoints_response:type_name -> azd.extensions.v1beta.ServiceTargetEndpointsResponse
-	28, // 16: azd.extensions.v1beta.ServiceTargetInitializeRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
-	25, // 17: azd.extensions.v1beta.ServiceTargetOptions.deployment_stacks:type_name -> azd.extensions.v1beta.ServiceTargetOptions.DeploymentStacksEntry
-	29, // 18: azd.extensions.v1beta.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
-	28, // 19: azd.extensions.v1beta.GetTargetResourceRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
-	11, // 20: azd.extensions.v1beta.GetTargetResourceRequest.default_target_resource:type_name -> azd.extensions.v1beta.TargetResource
-	11, // 21: azd.extensions.v1beta.GetTargetResourceResponse.target_resource:type_name -> azd.extensions.v1beta.TargetResource
-	26, // 22: azd.extensions.v1beta.TargetResource.metadata:type_name -> azd.extensions.v1beta.TargetResource.MetadataEntry
-	28, // 23: azd.extensions.v1beta.ServiceTargetDeployRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
-	30, // 24: azd.extensions.v1beta.ServiceTargetDeployRequest.service_context:type_name -> azd.extensions.v1beta.ServiceContext
-	11, // 25: azd.extensions.v1beta.ServiceTargetDeployRequest.target_resource:type_name -> azd.extensions.v1beta.TargetResource
-	16, // 26: azd.extensions.v1beta.ServiceTargetDeployResponse.result:type_name -> azd.extensions.v1beta.ServiceDeployResult
-	31, // 27: azd.extensions.v1beta.ServicePackageResult.artifacts:type_name -> azd.extensions.v1beta.Artifact
-	31, // 28: azd.extensions.v1beta.ServicePublishResult.artifacts:type_name -> azd.extensions.v1beta.Artifact
-	31, // 29: azd.extensions.v1beta.ServiceDeployResult.artifacts:type_name -> azd.extensions.v1beta.Artifact
-	28, // 30: azd.extensions.v1beta.ServiceTargetPackageRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
-	30, // 31: azd.extensions.v1beta.ServiceTargetPackageRequest.service_context:type_name -> azd.extensions.v1beta.ServiceContext
-	14, // 32: azd.extensions.v1beta.ServiceTargetPackageResponse.result:type_name -> azd.extensions.v1beta.ServicePackageResult
-	28, // 33: azd.extensions.v1beta.ServiceTargetPublishRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
-	30, // 34: azd.extensions.v1beta.ServiceTargetPublishRequest.service_context:type_name -> azd.extensions.v1beta.ServiceContext
-	11, // 35: azd.extensions.v1beta.ServiceTargetPublishRequest.target_resource:type_name -> azd.extensions.v1beta.TargetResource
-	21, // 36: azd.extensions.v1beta.ServiceTargetPublishRequest.publish_options:type_name -> azd.extensions.v1beta.PublishOptions
-	15, // 37: azd.extensions.v1beta.ServiceTargetPublishResponse.result:type_name -> azd.extensions.v1beta.ServicePublishResult
-	28, // 38: azd.extensions.v1beta.ServiceTargetEndpointsRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
-	11, // 39: azd.extensions.v1beta.ServiceTargetEndpointsRequest.target_resource:type_name -> azd.extensions.v1beta.TargetResource
-	0,  // 40: azd.extensions.v1beta.ServiceTargetService.Stream:input_type -> azd.extensions.v1beta.ServiceTargetMessage
-	0,  // 41: azd.extensions.v1beta.ServiceTargetService.Stream:output_type -> azd.extensions.v1beta.ServiceTargetMessage
-	41, // [41:42] is the sub-list for method output_type
-	40, // [40:41] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	27, // 9: azd.extensions.v1beta.ServiceTargetMessage.progress_message:type_name -> azd.extensions.v1beta.ServiceTargetProgressMessage
+	20, // 10: azd.extensions.v1beta.ServiceTargetMessage.package_request:type_name -> azd.extensions.v1beta.ServiceTargetPackageRequest
+	21, // 11: azd.extensions.v1beta.ServiceTargetMessage.package_response:type_name -> azd.extensions.v1beta.ServiceTargetPackageResponse
+	22, // 12: azd.extensions.v1beta.ServiceTargetMessage.publish_request:type_name -> azd.extensions.v1beta.ServiceTargetPublishRequest
+	23, // 13: azd.extensions.v1beta.ServiceTargetMessage.publish_response:type_name -> azd.extensions.v1beta.ServiceTargetPublishResponse
+	25, // 14: azd.extensions.v1beta.ServiceTargetMessage.endpoints_request:type_name -> azd.extensions.v1beta.ServiceTargetEndpointsRequest
+	26, // 15: azd.extensions.v1beta.ServiceTargetMessage.endpoints_response:type_name -> azd.extensions.v1beta.ServiceTargetEndpointsResponse
+	14, // 16: azd.extensions.v1beta.ServiceTargetMessage.preview_request:type_name -> azd.extensions.v1beta.ServiceTargetPreviewRequest
+	15, // 17: azd.extensions.v1beta.ServiceTargetMessage.preview_response:type_name -> azd.extensions.v1beta.ServiceTargetPreviewResponse
+	31, // 18: azd.extensions.v1beta.ServiceTargetInitializeRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	28, // 19: azd.extensions.v1beta.ServiceTargetOptions.deployment_stacks:type_name -> azd.extensions.v1beta.ServiceTargetOptions.DeploymentStacksEntry
+	32, // 20: azd.extensions.v1beta.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
+	31, // 21: azd.extensions.v1beta.GetTargetResourceRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	11, // 22: azd.extensions.v1beta.GetTargetResourceRequest.default_target_resource:type_name -> azd.extensions.v1beta.TargetResource
+	11, // 23: azd.extensions.v1beta.GetTargetResourceResponse.target_resource:type_name -> azd.extensions.v1beta.TargetResource
+	29, // 24: azd.extensions.v1beta.TargetResource.metadata:type_name -> azd.extensions.v1beta.TargetResource.MetadataEntry
+	31, // 25: azd.extensions.v1beta.ServiceTargetDeployRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	33, // 26: azd.extensions.v1beta.ServiceTargetDeployRequest.service_context:type_name -> azd.extensions.v1beta.ServiceContext
+	11, // 27: azd.extensions.v1beta.ServiceTargetDeployRequest.target_resource:type_name -> azd.extensions.v1beta.TargetResource
+	19, // 28: azd.extensions.v1beta.ServiceTargetDeployResponse.result:type_name -> azd.extensions.v1beta.ServiceDeployResult
+	31, // 29: azd.extensions.v1beta.ServiceTargetPreviewRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	16, // 30: azd.extensions.v1beta.ServiceTargetPreviewResponse.result:type_name -> azd.extensions.v1beta.ServiceDeployPreviewResult
+	32, // 31: azd.extensions.v1beta.ServiceDeployPreviewResult.data:type_name -> google.protobuf.Struct
+	34, // 32: azd.extensions.v1beta.ServicePackageResult.artifacts:type_name -> azd.extensions.v1beta.Artifact
+	34, // 33: azd.extensions.v1beta.ServicePublishResult.artifacts:type_name -> azd.extensions.v1beta.Artifact
+	34, // 34: azd.extensions.v1beta.ServiceDeployResult.artifacts:type_name -> azd.extensions.v1beta.Artifact
+	31, // 35: azd.extensions.v1beta.ServiceTargetPackageRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	33, // 36: azd.extensions.v1beta.ServiceTargetPackageRequest.service_context:type_name -> azd.extensions.v1beta.ServiceContext
+	17, // 37: azd.extensions.v1beta.ServiceTargetPackageResponse.result:type_name -> azd.extensions.v1beta.ServicePackageResult
+	31, // 38: azd.extensions.v1beta.ServiceTargetPublishRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	33, // 39: azd.extensions.v1beta.ServiceTargetPublishRequest.service_context:type_name -> azd.extensions.v1beta.ServiceContext
+	11, // 40: azd.extensions.v1beta.ServiceTargetPublishRequest.target_resource:type_name -> azd.extensions.v1beta.TargetResource
+	24, // 41: azd.extensions.v1beta.ServiceTargetPublishRequest.publish_options:type_name -> azd.extensions.v1beta.PublishOptions
+	18, // 42: azd.extensions.v1beta.ServiceTargetPublishResponse.result:type_name -> azd.extensions.v1beta.ServicePublishResult
+	31, // 43: azd.extensions.v1beta.ServiceTargetEndpointsRequest.service_config:type_name -> azd.extensions.v1beta.ServiceConfig
+	11, // 44: azd.extensions.v1beta.ServiceTargetEndpointsRequest.target_resource:type_name -> azd.extensions.v1beta.TargetResource
+	0,  // 45: azd.extensions.v1beta.ServiceTargetService.Stream:input_type -> azd.extensions.v1beta.ServiceTargetMessage
+	0,  // 46: azd.extensions.v1beta.ServiceTargetService.Stream:output_type -> azd.extensions.v1beta.ServiceTargetMessage
+	46, // [46:47] is the sub-list for method output_type
+	45, // [45:46] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1beta_service_target_proto_init() }
@@ -1810,6 +2012,8 @@ func file_azd_extensions_v1beta_service_target_proto_init() {
 		(*ServiceTargetMessage_PublishResponse)(nil),
 		(*ServiceTargetMessage_EndpointsRequest)(nil),
 		(*ServiceTargetMessage_EndpointsResponse)(nil),
+		(*ServiceTargetMessage_PreviewRequest)(nil),
+		(*ServiceTargetMessage_PreviewResponse)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1817,7 +2021,7 @@ func file_azd_extensions_v1beta_service_target_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_service_target_proto_rawDesc), len(file_azd_extensions_v1beta_service_target_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

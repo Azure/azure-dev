@@ -1,0 +1,19 @@
+Show the metadata returned by the service for a skill — including
+default_version and latest_version. To retrieve skill content, use
+'azd ai skill download <name>'.
+
+Usage
+  azd ai skill show <name> [flags]
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for show
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "json")
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
+
+Examples
+  Inspect skill metadata and version pointers
+    azd ai skill show greet-user

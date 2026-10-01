@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -701,11 +698,8 @@ func (ec *evalContext) pollGeneration(
 // writeRubric persists the rubric so the developer can edit weights and
 // descriptions and publish a new version.
 //
-// The definition is written through as it arrived rather than re-marshalled
-// from a struct. Re-marshalling keeps only the fields the struct models, and
-// dropped pass_threshold: the file then differed from the version that had just
-// been published, so the next deploy republished it, silently without a
-// threshold. Anything the service adds later would have been lost the same way.
+// Known service fields are omitted; unknown fields are preserved for future
+// authoring contracts. Raw JSON keeps numeric values from being rounded.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
@@ -730,21 +724,8 @@ func writeRubric(path string, result json.RawMessage) error {
 	return writeFileAtomic(path, body)
 }
 
-// rubricOwnedByTheService names the keys a reader cannot usefully edit.
-//
-// init_parameters, metrics and data_schema are the service's description of how
-// the evaluator is wired, and prompt_text on a rubric is generated from the
-// dimensions rather than authored. Left in the file they outnumbered the
-// dimensions several times over, so the one thing this artifact exists to be
-// edited for was the hardest part of it to find.
-var rubricOwnedByTheService = []string{
-	"init_parameters", "initParameters",
-	"metrics",
-	"data_schema", "dataSchema",
-	"prompt_text", "promptText",
-}
-
-// editableRubric reduces a returned rubric to the part worth editing.
+// editableRubric removes known service fields without discarding unknown
+// authored fields. Catalog metadata and runtime schemas stay on the registered resource.
 //
 // A nil result identifies another evaluator kind. A recognized malformed rubric
 // is an error, never permission to export the service envelope.
@@ -764,12 +745,12 @@ func editableRubric(definition json.RawMessage) ([]byte, error) {
 		(definitionKind == "" && len(kind.Dimensions) == 0) {
 		return nil, nil
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(definition, &fields); err != nil {
+	var rubric map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &rubric); err != nil {
 		return nil, fmt.Errorf("reading rubric definition: %w", err)
 	}
-	fields["type"] = json.RawMessage(`"rubric"`)
-	typed, err := json.Marshal(fields)
+	rubric["type"] = json.RawMessage(`"rubric"`)
+	typed, err := json.Marshal(rubric)
 	if err != nil {
 		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
@@ -777,71 +758,37 @@ func editableRubric(definition json.RawMessage) ([]byte, error) {
 		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
 	var dimensions []map[string]json.RawMessage
-	if err := json.Unmarshal(fields["dimensions"], &dimensions); err != nil {
+	if err := json.Unmarshal(rubric["dimensions"], &dimensions); err != nil {
 		return nil, fmt.Errorf("invalid rubric definition: reading dimensions: %w", err)
 	}
 	if dimensions == nil {
 		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
 	}
-	for _, key := range rubricOwnedByTheService {
-		delete(fields, key)
+	for _, key := range []string{
+		"metadata", "created_at", "createdAt", "creator", "generation", "warnings",
+		"init_parameters", "initParameters", "metrics", "data_schema", "dataSchema", "prompt_text", "promptText",
+	} {
+		delete(rubric, key)
+		for _, dimension := range dimensions {
+			delete(dimension, key)
+		}
+	}
+	for _, key := range []string{
+		"id", "name", "version", "display_name", "description", "categories",
+		"supported_evaluation_levels", "agent_metadata",
+	} {
+		delete(rubric, key)
+	}
+	rubric["dimensions"], err = json.Marshal(dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric dimensions: %w", err)
 	}
 
-	// Ordered, because this file is committed and read in diffs: Go ranges maps
-	// at random, so marshalling the map directly rewrote the whole rubric on
-	// every regeneration whether or not anything about it had changed.
-	pretty, err := json.MarshalIndent(orderedJSON(fields), "", "  ")
+	pretty, err := json.MarshalIndent(rubric, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
 	return append(pretty, '\n'), nil
-}
-
-// orderedJSON marshals a decoded object with its keys in a fixed order.
-//
-// The rubric's own three come first, in the order someone reads them, and
-// anything the service adds later follows in sorted order rather than being
-// dropped.
-type orderedJSON map[string]json.RawMessage
-
-func (o orderedJSON) MarshalJSON() ([]byte, error) {
-	leading := []string{"type", "dimensions", "pass_threshold", "passThreshold"}
-	rest := make([]string, 0, len(o))
-	for key := range o {
-		if !slices.Contains(leading, key) {
-			rest = append(rest, key)
-		}
-	}
-	sort.Strings(rest)
-
-	var b bytes.Buffer
-	b.WriteByte('{')
-	first := true
-	write := func(key string) {
-		raw, ok := o[key]
-		if !ok {
-			return
-		}
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		name, err := json.Marshal(key)
-		if err != nil {
-			return
-		}
-		b.Write(name)
-		b.WriteByte(':')
-		b.Write(raw)
-	}
-	for _, key := range leading {
-		write(key)
-	}
-	for _, key := range rest {
-		write(key)
-	}
-	b.WriteByte('}')
-	return b.Bytes(), nil
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

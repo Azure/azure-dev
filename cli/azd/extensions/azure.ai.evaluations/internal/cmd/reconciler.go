@@ -5,13 +5,16 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"maps"
+	"math/big"
 	"os"
 	"reflect"
 	"slices"
@@ -36,6 +39,10 @@ type evalReconciler struct {
 
 	// Reconciled service versions identify contracts, not authored identity pins.
 	evaluatorVersions map[string]string
+
+	// Registered dataset versions whose content was inspected by preflight.
+	datasetVersions map[string]string
+	localDatasets   map[string]preparedLocalDataset
 
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
@@ -231,9 +238,9 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 			legacyUnchanged = prior == sourceStripped || prior == fingerprintEra+sourceStripped
 		}
 		if digest != legacyDigest && legacyUnchanged {
-			// Earlier builds fingerprinted the reference before inheriting its
-			// catalog pin. Re-baseline an unchanged stored pin without forking
-			// history, but do not mistake a real catalog edit for migration.
+			// Some earlier lifecycle builds sent catalog pins but omitted them
+			// from fingerprints. Older builds ignored catalog pins entirely;
+			// those unpinned criteria must be recreated to honor the pin.
 			id := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
 			if id != "" {
 				remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
@@ -342,9 +349,13 @@ func (r *evalReconciler) EnsureDataset(
 	}
 	// No local source means the dataset is already registered; just confirm it.
 	if localPath == "" {
-		version, err := r.datasetReference(ctx, decl)
-		if err != nil {
-			return "", false, err
+		version := r.datasetVersions[decl.Name]
+		if version == "" || (decl.Version != "" && version != decl.Version) {
+			var err error
+			version, err = r.datasetReference(ctx, decl)
+			if err != nil {
+				return "", false, err
+			}
 		}
 
 		// Recorded so a run reads the version reconciliation settled on. Without
@@ -374,65 +385,36 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	key := project.FingerprintKey("dataset", decl.Name)
-	if prior := r.ec.privateValue(ctx, key); prior == digest {
-		// Unchanged since the last deploy; reuse the recorded version, but only
-		// after confirming nobody published a newer one outside the repo. An
-		// explicit `version:` is the author saying which version they want, so
-		// it settles the question and the check does not apply.
-		if version := r.ec.privateValue(ctx, versionKey("dataset", decl.Name)); version != "" {
-			if decl.Version == "" {
-				if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
-					return "", false, err
-				}
-				if err := r.applyDatasetTags(ctx, decl, version); err != nil {
-					return "", false, err
-				}
-				return version, false, nil
-			}
-
-			// A pin settles which version to use, not whether it is still
-			// there. Skipping the service entirely let a deleted version
-			// report as unchanged while the eval pointed at nothing.
-			_, getErr := r.ec.datasetClient.GetDataset(
-				ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
-			)
-			switch {
-			case getErr == nil || !dataset_api.IsNotFound(getErr):
-				// Deliberately not recorded. The key means "the version this file's
-				// content published", which is what the drift check compares
-				// against: writing the pin here made removing it later read as
-				// somebody having published behind the configuration's back, and
-				// failed the deploy. The run reads the pin from the declaration.
-				//
-				// Anything short of a confirmed absence leaves the pin alone
-				// rather than failing a deploy on a transient read -- but says so,
-				// because otherwise the deploy reports the version verified when
-				// all it did was fail to look.
-				if getErr != nil {
-					fmt.Fprint(warnWriter(ctx), messages.Warning(
-						messages.DatasetVersionNotVerified(decl.Name, decl.Version, getErr)))
-				}
-				// Not "changed", even when the pin moved. The flag chooses
-				// between "Published <kind> <name> version N" and "unchanged at
-				// version N", and re-pinning publishes nothing -- so reporting a
-				// move as a change would announce a publish that did not happen.
-				// The line still carries the pin, so it reads as unchanged at the
-				// version now in force, which is what took effect.
-				return decl.Version, false, nil
-
-			case decl.Version == version:
-				// The pin names the version this file already published, and it
-				// is gone -- someone deleted it out from under the deployment,
-				// which is what `create` hit straight after `dataset delete`.
-				// Republishing here would quietly undo that.
-				return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
-			}
-			// The pin names some other version, and it is not there: that is the
-			// author asking for it to be published, since `version` beside
-			// `file` is the version to publish rather than one to count from.
-			// Falls through to the upload instead of refusing over the version
-			// it was asked to create.
+	selected, validated := r.localDatasets[decl.Name]
+	if validated {
+		if selected.digest != digest || selected.pin != decl.Version {
+			return "", false, fmt.Errorf("dataset %q changed after validation; retry the command", decl.Name)
 		}
+	} else {
+		selected.version, err = r.localDatasetReuse(ctx, decl, digest)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if selected.version != "" {
+		if decl.Version == "" {
+			if validated {
+				if err := r.checkDatasetDrift(ctx, decl.Name, selected.version); err != nil {
+					return "", false, err
+				}
+			}
+			if err := r.applyDatasetTags(ctx, decl, selected.version); err != nil {
+				return "", false, err
+			}
+		} else if validated {
+			// A version selected by preflight must not become an upload if it
+			// disappears. The inspected rows, not the local file, were validated.
+			if _, err := r.datasetReference(ctx, decl); err != nil {
+				return "", false, err
+			}
+		}
+		// Preserve the file-to-published-version baseline when a pin is reused.
+		return selected.version, false, nil
 	}
 
 	// Uploaded by the path the author declared. Collapsing a file to its
@@ -544,7 +526,13 @@ func inspectJSONL(
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	return inspectJSONLContent(ctx, path, f, validateRow)
+}
+
+func inspectJSONLContent(
+	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	scanner := bufio.NewScanner(content)
 	// A row carrying a whole conversation runs well past the 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
@@ -569,10 +557,10 @@ func inspectJSONL(
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return nil, messages.JSONLRowInvalid(path, line, err)
+			return nil, messages.JSONLRowInvalid(source, line, err)
 		}
 		if len(row) == 0 {
-			return nil, messages.JSONLRowEmpty(path, line)
+			return nil, messages.JSONLRowEmpty(source, line)
 		}
 		if validateRow != nil {
 			if err := validateRow(row, rows); err != nil {
@@ -594,10 +582,10 @@ func inspectJSONL(
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(source, err)
 	}
 	if rows == 0 {
-		return nil, messages.JSONLNoRows(path)
+		return nil, messages.JSONLNoRows(source)
 	}
 	return columns, ctx.Err()
 }
@@ -616,12 +604,14 @@ func (r *evalReconciler) checkDatasetDrift(
 		// An empty listing is not proof the recorded version is gone: it is
 		// equally what a listing that has not caught up reports, and what a
 		// project the state does not belong to reports. The point read settles
-		// it, and only a confirmed 404 refuses -- the same rule the pinned path
-		// uses, so a transient read still does not fail a deploy.
+		// it: only a successful read establishes that the version is usable.
 		if _, getErr := r.ec.datasetClient.GetDataset(
 			ctx, name, recorded, ProjectEndpointAPIVersion,
-		); getErr != nil && dataset_api.IsNotFound(getErr) {
-			return messages.DatasetVersionNotFoundWithHint(name, recorded)
+		); getErr != nil {
+			if dataset_api.IsNotFound(getErr) {
+				return messages.DatasetVersionNotFoundWithHint(name, recorded)
+			}
+			return messages.ReadingDatasetVersion(name, recorded, getErr)
 		}
 		return nil
 	}
@@ -918,6 +908,10 @@ func (r *evalReconciler) EnsureEval(
 	// changing, and reusing the eval would let that reach a run unreported.
 	prepared, validated := r.prepared[group.Name]
 	req := prepared.request
+	columns := prepared.columns
+	if !validated {
+		columns = datasetColumnsFromPath(datasetPath)
+	}
 	if validated && len(prepared.localEvaluators) > 0 {
 		// Publishing a rubric can add a schema that the authored file does not
 		// carry. Refresh only these local, unpinned references; every other
@@ -946,11 +940,14 @@ func (r *evalReconciler) EnsureEval(
 		req, err = buildEvalRequest(
 			&group,
 			r.ec.evaluatorSchemas(ctx),
-			datasetColumnsFromPath(datasetPath),
+			columns,
 		)
 		if err != nil {
 			return "", false, err
 		}
+	}
+	if err := validateDatasetInteractions(&group, req, columns); err != nil {
+		return "", false, err
 	}
 
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
@@ -1264,22 +1261,82 @@ func sameDefinition(existing, candidate []byte) bool {
 
 	for key, want := range authored {
 		got, ok := onService[key]
-		if !ok || !equalJSON(got, want) {
+		if !ok {
+			return false
+		}
+		if key == "dimensions" && equalJSON(authored["type"], []byte(`"rubric"`)) {
+			if !sameAuthoredDimensions(got, want) {
+				return false
+			}
+		} else if !equalJSON(got, want) {
 			return false
 		}
 	}
 	return true
 }
 
-// equalJSON compares two JSON values structurally, so key order and
-// whitespace do not register as a change.
-func equalJSON(a, b json.RawMessage) bool {
-	var left, right any
-	if err := json.Unmarshal(a, &left); err != nil {
+// sameAuthoredDimensions ignores service-added fields without ignoring authored
+// edits, dimension order, or removals detected by the persisted file digest.
+func sameAuthoredDimensions(existing, candidate json.RawMessage) bool {
+	var have, want []map[string]json.RawMessage
+	if json.Unmarshal(existing, &have) != nil || json.Unmarshal(candidate, &want) != nil || len(have) != len(want) {
 		return false
 	}
-	if err := json.Unmarshal(b, &right); err != nil {
+	if have == nil || want == nil {
+		return have == nil && want == nil
+	}
+	for i, dimension := range want {
+		if dimension == nil || have[i] == nil {
+			return false
+		}
+		for key, value := range dimension {
+			if !equalJSON(have[i][key], value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// equalJSON compares two JSON values structurally, so key order and
+// whitespace do not register as a change. Numbers retain exact values while
+// equivalent decimal and exponent spellings compare equal.
+func equalJSON(a, b json.RawMessage) bool {
+	if !json.Valid(a) || !json.Valid(b) {
 		return false
+	}
+	var left, right any
+	leftDecoder, rightDecoder := json.NewDecoder(bytes.NewReader(a)), json.NewDecoder(bytes.NewReader(b))
+	leftDecoder.UseNumber()
+	rightDecoder.UseNumber()
+	if err := leftDecoder.Decode(&left); err != nil {
+		return false
+	}
+	if err := rightDecoder.Decode(&right); err != nil {
+		return false
+	}
+	return equalJSONValue(left, right)
+}
+
+func equalJSONValue(left, right any) bool {
+	switch left := left.(type) {
+	case json.Number:
+		right, ok := right.(json.Number)
+		if !ok {
+			return false
+		}
+		if left == right {
+			return true
+		}
+		leftNumber, leftOK := new(big.Rat).SetString(string(left))
+		rightNumber, rightOK := new(big.Rat).SetString(string(right))
+		return leftOK && rightOK && leftNumber.Cmp(rightNumber) == 0
+	case []any:
+		right, ok := right.([]any)
+		return ok && slices.EqualFunc(left, right, equalJSONValue)
+	case map[string]any:
+		right, ok := right.(map[string]any)
+		return ok && maps.EqualFunc(left, right, equalJSONValue)
 	}
 	return reflect.DeepEqual(left, right)
 }

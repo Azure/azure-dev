@@ -22,6 +22,12 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
+// BetaServiceTarget returns the experimental v1beta service target client.
+// Preview capabilities are not available through the stable ServiceTarget client.
+func (c *AzdClient) BetaServiceTarget() v1beta.ServiceTargetServiceClient {
+	return v1beta.NewServiceTargetServiceClient(c.connection)
+}
+
 // AzdClient is the client for the `azd` gRPC server.
 type AzdClient struct {
 	connection          *grpc.ClientConn

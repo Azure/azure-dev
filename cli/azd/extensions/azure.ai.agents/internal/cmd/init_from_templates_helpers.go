@@ -9,18 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
-	"path/filepath"
+	"path"
 	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
@@ -30,9 +28,6 @@ const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
 
 // Template type constants
 const (
-	// TemplateTypeAgent is a template that points to an agent.yaml manifest file.
-	TemplateTypeAgent = "agent"
-
 	// TemplateTypeAzd is a full azd template repository.
 	TemplateTypeAzd = "azd"
 
@@ -71,28 +66,42 @@ type AgentTemplate struct {
 	TemplateType       string   `json:"templateType"`
 }
 
-// EffectiveType determines the template type by inspecting the source URL
-// and the template's declared templateType.
-// If it ends with agent.yaml or agent.manifest.yaml, it's an agent manifest.
-// If it ends with azure.yaml or azure.yml AND templateType is "extension.ai.agent",
-// it's a unified azure.yaml template.
-// Otherwise, it's treated as a full azd template repo.
+// EffectiveType determines the supported template type from the source and
+// declared templateType. An empty result means the source is unsupported.
+//
+// Unified azure.yaml sources must be explicitly declared as agent templates.
+// Non-file sources remain full azd repositories. YAML files other than a
+// correctly declared azure.yaml are rejected rather than falling through to
+// the repository flow.
 func (t *AgentTemplate) EffectiveType() string {
-	lower := strings.ToLower(t.Source)
-	if strings.HasSuffix(lower, "/agent.yaml") ||
-		strings.HasSuffix(lower, "/agent.manifest.yaml") ||
-		lower == "agent.yaml" ||
-		lower == "agent.manifest.yaml" {
-		return TemplateTypeAgent
+	source := strings.TrimSpace(t.Source)
+	if source == "" {
+		return ""
 	}
-	if t.TemplateType == templateTypeExtensionAIAgent &&
-		(strings.HasSuffix(lower, "/azure.yaml") ||
-			strings.HasSuffix(lower, "/azure.yml") ||
-			lower == "azure.yaml" ||
-			lower == "azure.yml") {
-		return TemplateTypeAzureYaml
+
+	sourcePath := source
+	if parsed, err := url.Parse(source); err == nil && parsed.Path != "" {
+		sourcePath = parsed.Path
+	} else if delimiter := strings.IndexAny(sourcePath, "?#"); delimiter >= 0 {
+		sourcePath = sourcePath[:delimiter]
 	}
-	return TemplateTypeAzd
+
+	sourcePath = strings.TrimSuffix(strings.ReplaceAll(sourcePath, `\`, "/"), "/")
+	filename := strings.ToLower(path.Base(sourcePath))
+	switch filename {
+	case "azure.yaml", "azure.yml":
+		if t.TemplateType == templateTypeExtensionAIAgent {
+			return TemplateTypeAzureYaml
+		}
+		return ""
+	case "agent.yaml", "agent.yml", "agent.manifest.yaml", "agent.manifest.yml":
+		return ""
+	default:
+		if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
+			return ""
+		}
+		return TemplateTypeAzd
+	}
 }
 
 const (
@@ -116,8 +125,8 @@ const (
 	// Container Apps.
 	AgentKindChoiceHosted agentKindChoice = "hosted"
 	// AgentKindChoicePrompt is the prompt agent path — the customer declares
-	// model + instructions and Foundry runs the agent. The scaffolded agent.yaml
-	// uses kind: prompt (see agent_yaml.AgentKindPrompt). Whether it also names
+	// model + instructions and Foundry runs the agent. The generated service
+	// definition uses kind: prompt. Whether it also names
 	// a `harness:` is decided separately, by --harness or the kind menu entry.
 	AgentKindChoicePrompt agentKindChoice = "prompt"
 )
@@ -126,10 +135,10 @@ const (
 // letting `--harness none` degrade a harnessed template to a plain prompt agent.
 const harnessNone = "none"
 
-// resolveInitHarness resolves the harness written to the scaffolded agent.yaml.
+// resolveInitHarness resolves the harness written to the generated definition.
 // An explicit --harness value always wins over impliedHarness — the harness the
 // context already suggests, whether that is the menu entry the user picked or
-// the `harness:` block of a supplied manifest. Both are validated the same way,
+// an adopted service's `harness:` block. Both are validated the same way,
 // so a harness that is no longer accepted is reported wherever it came from.
 func resolveInitHarness(harnessFlag, impliedHarness string) (string, error) {
 	requested := harnessFlag
@@ -261,6 +270,7 @@ func fetchAgentTemplatesFromURL(
 	httpClient *http.Client,
 	url string,
 ) ([]AgentTemplate, error) {
+	displayURL := catalogURLForDisplay(url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -286,34 +296,58 @@ func fetchAgentTemplatesFromURL(
 		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
 	}
 
-	// Keep only agent-init entries. The shared templates.json manifest also
-	// carries the awesome-azd gallery; those entries must not surface here.
+	// Keep only supported agent-init entries. The shared templates.json
+	// manifest also carries the awesome-azd gallery, and older catalogs may
+	// still contain legacy agent manifest sources. Neither should surface.
 	filtered := make([]AgentTemplate, 0, len(all))
+	agentEntries := 0
+	unsupportedSources := 0
 	for _, t := range all {
-		if t.TemplateType == templateTypeExtensionAIAgent {
-			filtered = append(filtered, t)
+		if t.TemplateType != templateTypeExtensionAIAgent {
+			continue
 		}
+		agentEntries++
+		if t.EffectiveType() == "" {
+			unsupportedSources++
+			continue
+		}
+		filtered = append(filtered, t)
 	}
 
-	// Always emit the fetched/matched counts to make transition-period and
-	// misconfiguration issues debuggable.
+	// Emit counts without catalog source values, which may contain credentials.
 	log.Printf(
-		"agent templates manifest: fetched %d templateType=%q (source=%s)",
-		len(filtered), templateTypeExtensionAIAgent, url,
+		"agent templates manifest: accepted %d templateType=%q entries; rejected %d unsupported sources",
+		len(filtered), templateTypeExtensionAIAgent, unsupportedSources,
 	)
 
-	// If we received entries but filtered them all out, the manifest is
-	// almost certainly in the legacy format or the discriminator value has
-	// changed. Surface that explicitly instead of returning an empty list,
-	// which the caller cannot distinguish from an intentionally empty manifest.
-	if len(all) > 0 && len(filtered) == 0 {
+	if len(all) > 0 && agentEntries == 0 {
 		return nil, fmt.Errorf(
 			"agent templates manifest at %s contained %d entries but none had templateType=%q",
-			url, len(all), templateTypeExtensionAIAgent,
+			displayURL, len(all), templateTypeExtensionAIAgent,
+		)
+	}
+	if agentEntries > 0 && len(filtered) == 0 {
+		return nil, fmt.Errorf(
+			"agent templates manifest at %s contained %d templateType=%q entries but none used a supported "+
+				"azure.yaml or full repository source",
+			displayURL, agentEntries, templateTypeExtensionAIAgent,
 		)
 	}
 
 	return filtered, nil
+}
+
+func catalogURLForDisplay(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "<catalog URL>"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
 }
 
 // isFeatured reports whether the template carries the "featured" extensionTag,
@@ -330,7 +364,7 @@ func (t *AgentTemplate) isRecommended() bool {
 
 // promptAgentTemplate guides the user through language selection and template selection.
 // Returns the selected AgentTemplate. The caller should check EffectiveType() to determine
-// whether to use the agent.yaml manifest flow or the full azd template flow.
+// whether to use the unified azure.yaml flow or the full azd template flow.
 //
 // Templates tagged "featured" are shown first in a curated list. The template
 // tagged "recommended" gets a (Recommended) suffix in the label and is
@@ -522,74 +556,4 @@ func promptSelectTemplate(
 	}
 
 	return &templates[*resp.Value], nil
-}
-
-// findAgentManifest searches the directory tree rooted at dir for the first
-// agent.yaml or agent.manifest.yaml file. Returns the path if found, or empty string if not.
-func findAgentManifest(dir string) (string, error) {
-	manifestNames := map[string]bool{
-		"agent.yaml":          true,
-		"agent.manifest.yaml": true,
-	}
-
-	var found string
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // skip directories we can't read
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if manifestNames[strings.ToLower(d.Name())] {
-			found = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("searching for agent manifest: %w", err)
-	}
-
-	return found, nil
-}
-
-// detectLocalManifest checks only the immediate directory for an agent manifest file.
-// Returns the path to the found manifest (preferring agent.manifest.yaml over agent.yaml,
-// then .yml variants), or an empty string if none contain valid manifest content.
-// Returns a non-nil error for unexpected I/O failures (e.g. permission errors).
-func detectLocalManifest(dir string) (string, error) {
-	candidates := []string{
-		"agent.manifest.yaml",
-		"agent.yaml",
-		"agent.manifest.yml",
-		"agent.yml",
-	}
-
-	for _, name := range candidates {
-		candidate := filepath.Join(dir, name)
-		_, err := os.Stat(candidate)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return "", fmt.Errorf("checking for manifest %s: %w", candidate, err)
-		}
-		if isValidManifestFile(candidate) {
-			return candidate, nil
-		}
-	}
-	return "", nil
-}
-
-// isValidManifestFile reads the file and checks whether it can be loaded as
-// a valid AgentManifest via LoadAndValidateAgentManifest.
-func isValidManifestFile(path string) bool {
-	//nolint:gosec // path comes from a known filename in a user-controlled directory
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-
-	_, err = agent_yaml.LoadAndValidateAgentManifest(content)
-	return err == nil
 }

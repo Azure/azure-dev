@@ -20,6 +20,7 @@ type generationResult struct {
 	Status        string                `json:"status"`
 	JobID         string                `json:"job_id,omitempty"`
 	Error         string                `json:"error,omitempty"`
+	Suggestion    string                `json:"suggestion,omitempty"`
 	Recovery      string                `json:"recovery_command,omitempty"`
 	RetryGuidance string                `json:"retry_guidance,omitempty"`
 	Guidance      string                `json:"guidance,omitempty"`

@@ -7,7 +7,9 @@ import (
 	"fmt"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/urlsafe"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +32,10 @@ func reportCreatePartial(
 	if isJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), map[string]any{
 			"status": "failed", "name": name, "artifacts": artifacts,
-			"error": jsonErrorBody{Message: cause.Error()}, "recovery_command": retry,
+			"error": jsonErrorBody{
+				Message: urlsafe.Text(cause.Error()), Suggestion: urlsafe.Text(azdext.ErrorSuggestion(cause)),
+			},
+			"recovery_command": retry,
 		})
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), messages.CreateDependenciesRetained(retry))

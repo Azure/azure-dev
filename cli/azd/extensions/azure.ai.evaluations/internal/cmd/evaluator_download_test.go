@@ -223,6 +223,14 @@ func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 	}
 }
 
+func TestEvaluatorDownloadProjectsEmptyRubricWithoutLosingUnknownFields(t *testing.T) {
+	downloaded, err := evaluatorDocument(json.RawMessage(
+		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"rubric","dimensions":[],"future_option":9007199254740993}`, string(downloaded))
+	require.Contains(t, string(downloaded), "9007199254740993")
+}
+
 func TestEditableRubricPreservesUnknownFieldsAndNumericPrecision(t *testing.T) {
 	const threshold = "0.60000000000000001"
 	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {

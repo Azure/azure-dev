@@ -15,7 +15,9 @@ import (
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
@@ -654,7 +656,8 @@ func generationDocument(outcomes []generationOutcome) map[string]any {
 		}
 		if o.err != nil {
 			entry.Status = "failed"
-			entry.Error = o.err.Error()
+			entry.Error = urlsafe.Text(o.err.Error())
+			entry.Suggestion = urlsafe.Text(azdext.ErrorSuggestion(o.err))
 			if o.ref != nil {
 				entry.Status = "catalog_failed"
 			}

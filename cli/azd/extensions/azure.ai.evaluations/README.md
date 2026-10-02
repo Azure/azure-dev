@@ -97,6 +97,13 @@ Registered versions cannot be sampled by this run API. A positive `max_samples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
 rows. Remove the cap, or publish and select a smaller dataset.
 
+For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
+clears its configured cap. Trace/response sources and reruns selected by a bare
+eval ID reject every explicit `--max-samples` value, including zero, rather than
+silently ignoring it. Omit the flag to repeat a previous run's source; use
+`source.max_traces` to limit a declared trace source. Simulation declarations
+with a positive configured cap remain invalid even when the flag is zero.
+
 Genuinely unregistered local files still run inline and support a cap, but only
 after a complete empty version listing (or a not-found response) and not-found
 first-version probes confirm absence. Permissions, transient failures, and
@@ -285,8 +292,8 @@ dimension weights, when supplied, must be whole numbers
 from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
 Bounds and whole-number checks use the exact authored JSON value, including
 decimal and scientific notation, without floating-point rounding. A missing
-definition `type` is accepted for a hand-authored rubric; an explicitly null or
-empty type is invalid. These checks apply before publication and before replacing
+definition `type` is accepted for a hand-authored rubric; an explicitly null,
+empty, or whitespace-only type is invalid. These checks apply before publication and before replacing
 downloaded or collected rubric files.
 
 This is not a transaction across Foundry resources. If a later service operation
@@ -294,7 +301,9 @@ fails, successfully published shared versions are retained, not deleted. Fix the
 reported error and repeat the same command to reuse unchanged artifacts.
 For a partial `create -o json` failure, the single output document includes
 `status: "failed"`, the resolved `artifacts` with their versions and `published`
-flags, the error, and a `recovery_command`. The command still exits nonzero.
+flags, the error, and a `recovery_command`. When the error supplies remediation,
+`error.suggestion` preserves it alongside `error.message`. The command still exits nonzero.
+URLs in both `error.message` and `error.suggestion` omit user information, query strings, and fragments.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -356,11 +365,75 @@ For unchanged, unpinned local datasets, an empty version listing requires a
 successful point read of the recorded version. A denied or failed point read
 stops preflight before any mutation; a successful read tolerates listing delays.
 
-Eval groups are immutable, so a change to a group's evaluators, target or
-  sampling creates a new group and a new id. The id is cached in the extension's
-  own private state (`eval.state`) so repeat runs stay comparable. That is not
-  an azd environment value: it does not appear in `azd env get-values`, which
-  shows only what you put there.
+Eval groups are immutable, so a change to a group's evaluators, target,
+evaluation level, or source type creates a new group and a new id. Per-run sampling,
+response IDs, and trace filters retain the same ID while the stored contract remains compatible.
+The id is cached in the extension's own private state (`eval.state`) so repeat
+runs stay comparable. That is not an azd environment value: it does not appear
+in `azd env get-values`, which shows only what you put there.
+
+Stored-response evaluations (`source.type: responses`) use Foundry's
+`azure_ai_source` schema with `scenario: responses`. Human `azd ai eval show <eval>`
+output displays `Data Source` and `Scenario` for non-custom definitions so a
+response eval can be distinguished from a legacy custom-schema eval. JSON output
+retains the complete `data_source_config`.
+A deployment replaces an
+older custom-schema response eval with a compatible eval once, even when the
+declaration is unchanged. The old eval and its runs are retained; subsequent
+unchanged deployments reuse the new ID. Other evaluation modes retain compatible
+custom schemas without recreating their histories. Trace declarations also accept
+existing SDK-created `azure_ai_source` definitions with `scenario: traces` or
+`traces_preview`; declarations do not assume unknown schema types are compatible. Switching a declaration from stored
+responses to another source also creates an eval with the required custom schema.
+
+Stored-response turn evaluations bind retrieved output through the sample
+namespace without invoking a target. A published evaluator contract that requires
+a string uses `{{sample.output_text}}`; structured or unspecified response types
+retain `{{sample.output_items}}`. Conversation mappings retain `{{item.messages}}`,
+and explicit `data_mapping` values take precedence.
+
+Managed response evals with positively identified stale item/sample bindings or
+incompatible text/items response bindings are replaced once, retaining the original
+eval and its run history. Missing inferred mappings and unrelated service enrichment do not
+trigger blanket migration. An explicit `id:` with conflicting response or trace
+source contracts is refused before dependency publication; remove the `id:` and deploy the
+declaration to migrate. Each explicitly authored `data_mapping` field must match the
+stored criterion exactly, including the column name, not just the item/sample namespace.
+Missing authored bindings or a missing/renamed stored criterion for those bindings
+are also conflicts; inferred defaults retain the narrower source-compatibility checks.
+These checks apply to both built-in and custom evaluator references.
+
+A trace target names an agent filter, not a new invocation. Managed trace evals
+with positively identified legacy sample bindings or conflicting custom sample-schema
+settings migrate to completed-item bindings once, including when the agent filter
+is declared with `target.name`. The old eval and its runs are retained. Explicit
+`data_mapping` values still win, and compatible SDK trace scenarios ignore unrelated
+sample-schema enrichment. Missing or unknown evidence does not trigger this migration;
+unrelated optional/default mapping changes require a deliberate criterion change.
+
+An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
+schema. An incompatible response eval fails before starting a run. Remove the
+explicit `id:`, deploy the response-source declaration, then run it by name.
+Legacy rerun sources with bare response-ID rows are also rejected; running the
+declaration by name builds the required `item` envelopes without invoking an
+agent or changing the selected response IDs. Stored-response runs reject
+`--max-samples` (including explicit zero) and configured row caps; select
+`source.response_ids` to control which stored responses are evaluated.
+Inline reruns must map `response_id` to `{{item.<field>}}`, with a non-blank
+string ID at that field in every item. Invalid reruns identify the zero-based item
+index and reason without printing stored response IDs. Response-source IDs must not be blank.
+The current [Foundry deployed-interaction evaluation guidance](https://github.com/MicrosoftDocs/azure-ai-docs/blob/9d5bbd1edaf03beacdf92af2b0dcaacbff82d895/articles/foundry/observability/how-to/cloud-evaluation-deployed-interactions.md#evaluate-interactions-by-response-id)
+supports only `file_content` response retrieval on the OpenAI v1 evaluation-run
+route. Although the SDK model union includes `file_id`, the service documents that
+it returns HTTP 400. Such reruns are rejected locally; the CLI never silently
+downloads or expands a selected file into response IDs.
+The run checks schema compatibility in both directions, including a trace source
+switch or `--dataset` override of a response eval, before submitting a run.
+Bare-ID reruns retain other source/schema pairs from their previous run unless
+there is a known response/trace scenario mismatch. The schema read is required:
+an unreadable definition does not establish compatibility.
+Editor validation and create/deploy preflight reject positive `max_samples`
+for source-backed declarations, including sources loaded through `$ref`.
 
 ### Recovering partial generation
 
@@ -385,8 +458,10 @@ artifact's original input flags. Do not regenerate the successful artifact.
 
 With `-o json`, generation emits one document keyed by `dataset` and `evaluator`,
 including each outcome's `status`, `job_id`, and, on failure, `error`,
-`recovery_command`, and `retry_guidance`. Status is `submitted`, `succeeded`,
+`recovery_command`, and `retry_guidance`. An optional `suggestion` preserves
+structured remediation while keeping `error` a string. Status is `submitted`, `succeeded`,
 `failed`, or `catalog_failed`. Any failed outcome makes the command exit nonzero.
+URLs in both `error` and `suggestion` omit user information, query strings, and fragments.
 
 Generation changes catalog declarations, not an existing eval's references.
 When an existing eval does not reference a generated artifact, the command
@@ -615,6 +690,9 @@ use `azd ai eval evaluator show support-quality --version 3 -o json`.
 Malformed recognized rubrics fail download and collection before replacing an
 artifact or updating its catalog entry, rather than falling back to a full
 service-envelope export.
+Download and generation results must be JSON objects: null, arrays, strings,
+numbers, and booleans are rejected before writing files or catalog entries.
+Unknown object-shaped evaluator documents remain supported without dropping fields.
 `create` and `azd up` also reject null or non-array `dimensions`, non-object
 dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
 values during preflight, before uploading or tagging datasets or publishing

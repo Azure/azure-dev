@@ -321,7 +321,7 @@
       "description": "Manage Microsoft Foundry Routines from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.8.nightly.6906611",
+          "version": "1.0.0-beta.8.nightly.6911223",
           "requiredAzdVersion": ">=1.29.0",
           "capabilities": [
             "custom-commands",
@@ -341,7 +341,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "efb89065ad6acca329e0713c593b9f586a74916c62b265cdef6c82c6824dbfc3"
+                "value": "6183247bcc98168a652240755fbc5753b83da0b7cc81cba58f46a7bc6a119180"
               },
               "entryPoint": "azure-ai-routines-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-routines/nightly/azure-ai-routines-darwin-amd64.zip"
@@ -349,7 +349,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "02969447a7b2522bfda6cd3648900f11919147ec0ef6a7adcbc909043b6a024e"
+                "value": "7a086efafa530e647177cfd5cf1866bb6e572654be461efc4d34ce44a27b4aa2"
               },
               "entryPoint": "azure-ai-routines-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-routines/nightly/azure-ai-routines-darwin-arm64.zip"
@@ -357,7 +357,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "3f07bd50b7b955b5b5127dc27b44a3254dd7500f63c7c8416d4d09589d1f7260"
+                "value": "5a037735d42013b6b3f51eb522e333022bd77ee75d7db2e1aada68115d365aeb"
               },
               "entryPoint": "azure-ai-routines-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-routines/nightly/azure-ai-routines-linux-amd64.tar.gz"
@@ -365,7 +365,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "b65f881112a908ec7fd4eb4ce2fa45e4ad21bc070947aabf0ac5da47e1897e6c"
+                "value": "c0893a1d49115ec0e72e47fb82ef37e9556d61534ca563dd13be30351777f3cc"
               },
               "entryPoint": "azure-ai-routines-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-routines/nightly/azure-ai-routines-linux-arm64.tar.gz"
@@ -373,7 +373,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a6683a557daa718fd0f4d677867def0ec557a0cb487d3083228ae397ed8224f0"
+                "value": "d52f6ecd297d3751a97f14f89c5aaa0d4fcd99bf301aa7cf3200146e78dcc63b"
               },
               "entryPoint": "azure-ai-routines-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-routines/nightly/azure-ai-routines-windows-amd64.zip"
@@ -381,7 +381,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c0a469917b19387d0cb9129fae58b4ca7bb74ae8d4817e9f054053a559d8fcac"
+                "value": "58c7559f30a9c33d3214b4d60e22da9a5a23df872ad950d3bec0c144caee15f2"
               },
               "entryPoint": "azure-ai-routines-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-routines/nightly/azure-ai-routines-windows-arm64.zip"

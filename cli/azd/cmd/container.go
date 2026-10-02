@@ -244,10 +244,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Azd Context
 	//
-	// Using Transient for the scope here is important - the underlying container will cache an error result,
-	// preventing Lazy from retrying and basically _never_ being updatable. We have explicit flows
-	// where the project isn't defined until after some code has run, which means each time you
-	// ask for the lazy context it MUST run GetValue() _each_ time.
+	// Using Transient for the scope here is important - the underlying container will cache
+	// a failed result (nil), preventing Lazy from retrying and basically _never_ being
+	// updatable. We have explicit flows where the project isn't defined until after some
+	// code has run, which means each time we inject the AzdContext it MUST run
+	// GetValue() _each_ time.
 	container.MustRegisterTransient(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})

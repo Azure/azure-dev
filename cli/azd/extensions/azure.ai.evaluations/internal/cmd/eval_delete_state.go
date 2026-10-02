@@ -48,7 +48,7 @@ func (ec *evalContext) deleteEvalState(ctx context.Context, id string) error {
 				// Definition fingerprints are shared by name even when IDs are
 				// scoped. A surviving eval still needs that baseline for edits.
 				fingerprint := strings.TrimSuffix(base, "_ID")
-				keys = append(keys, fingerprint, fingerprint+project.EvalScopeSuffix)
+				keys = append(keys, fingerprint, fingerprint+project.EvalScopeSuffix, fingerprint+"_LOCAL_REQUEST_V1")
 			}
 		}
 		return keys

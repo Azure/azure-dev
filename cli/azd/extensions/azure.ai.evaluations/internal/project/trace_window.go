@@ -70,6 +70,7 @@ func validateSourceFields(source *SourceDecl) error {
 	switch source.Type {
 	case SourceTypeTraces:
 		inert = namesOfSet(
+			sourceField{"file", source.File != ""},
 			sourceField{"response_ids", len(source.ResponseIDs) > 0},
 			sourceField{"max_turns", source.MaxTurns != 0},
 		)
@@ -78,12 +79,24 @@ func validateSourceFields(source *SourceDecl) error {
 			return messages.MaxTurnsUnusable(source.MaxTurns)
 		}
 		inert = namesOfSet(
+			sourceField{"file", source.File != ""},
 			sourceField{"start_time", source.StartTime != ""},
 			sourceField{"end_time", source.EndTime != ""},
 			sourceField{"lookback_hours", source.LookbackHours != 0},
 			sourceField{"max_traces", source.MaxTraces != 0},
 			sourceField{"agent_name", source.AgentName != ""},
 			sourceField{"agent_version", source.AgentVersion != ""},
+		)
+	case SourceTypeLocal:
+		inert = namesOfSet(
+			sourceField{"start_time", source.StartTime != ""},
+			sourceField{"end_time", source.EndTime != ""},
+			sourceField{"lookback_hours", source.LookbackHours != 0},
+			sourceField{"max_traces", source.MaxTraces != 0},
+			sourceField{"agent_name", source.AgentName != ""},
+			sourceField{"agent_version", source.AgentVersion != ""},
+			sourceField{"response_ids", len(source.ResponseIDs) > 0},
+			sourceField{"max_turns", source.MaxTurns != 0},
 		)
 	default:
 		// An unsupported type is reported by the caller, which knows how to

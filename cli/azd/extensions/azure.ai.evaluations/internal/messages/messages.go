@@ -3212,8 +3212,20 @@ func SourceTypeMissing() error {
 }
 
 // SourceTypeNotSupported reports the same, where there is no index to name.
-func SourceTypeNotSupported(got, traces, responses string) error {
-	return fmt.Errorf("source.type %q is not supported; use %q or %q", got, traces, responses)
+func SourceTypeNotSupported(got string, supported ...string) error {
+	return fmt.Errorf("source.type %q is not supported; use %s", got, quoteList(supported))
+}
+
+// LocalSourceNeedsFile reports an explicit local source without a filesystem path.
+func LocalSourceNeedsFile() error {
+	return errors.New("source.file must name a local JSONL file for source.type: local; URLs are not supported")
+}
+
+// LocalSourceDatasetConflict refuses a catalog override of explicitly local bytes.
+func LocalSourceDatasetConflict(name string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--dataset conflicts with source.type: local on eval %q", name),
+		"Omit --dataset to run the declared local file, or select a separate catalog-backed eval.")
 }
 
 // TraceSourceNeedsAnAgent reports it where there is no index.
@@ -3628,7 +3640,22 @@ func MaxSamplesNegative(got int) error {
 			"Remove it to send every row, or set the number of rows to send", got)
 }
 
-// NegativeMaxSamplesFlag reports the same thing given on the command line.
+// SourceSampleFlagConflict reports an explicit dataset-sampling flag on a source-backed eval.
+func SourceSampleFlagConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--max-samples is not supported for source-backed eval %q, including an explicit value of 0", evalName),
+		"Omit --max-samples. For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
+// SourceSampleConflict reports a positive dataset cap applied to a trace or response source.
+func SourceSampleConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("max_samples cannot cap source-backed eval %q", evalName),
+		"Remove the positive max_samples value. "+
+			"For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
+// NegativeMaxSamplesFlag reports a row cap below zero given on the command line.
 func NegativeMaxSamplesFlag(got int) error {
 	return fmt.Errorf(
 		"--max-samples cannot be negative, got %d. "+

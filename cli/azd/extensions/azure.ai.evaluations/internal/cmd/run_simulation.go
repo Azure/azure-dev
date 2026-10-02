@@ -89,14 +89,14 @@ func (ec *evalContext) simulationDataSource(
 // run had been billed for the ones before it.
 func refuseUnusableSeedRows(group *project.Eval, items []map[string]any) error {
 	for i, item := range items {
-		if err := refuseUnusableSeedRow(group, item, i); err != nil {
+		if err := refuseUnusableSeedRow(group, item, i, false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func refuseUnusableSeedRow(group *project.Eval, item map[string]any, index int) error {
+func refuseUnusableSeedRow(group *project.Eval, item map[string]any, index int, forInit bool) error {
 	if _, isCompleted := item[completedRowsField]; isCompleted {
 		return simulationError(group,
 			fmt.Sprintf("row %d carries %q, which is a completed conversation rather than a scenario to simulate",
@@ -135,13 +135,13 @@ func refuseUnusableSeedRow(group *project.Eval, item map[string]any, index int) 
 			fmt.Sprintf("Shorten %s to at most %d characters and publish a new dataset version.",
 				seedDescriptionField, maxSeedDescriptionLength))
 	}
-	return checkDesiredTurns(group, item, index)
+	return checkDesiredTurns(group, item, index, forInit)
 }
 
 // checkDesiredTurns refuses a per-row turn count that is not a positive whole
 // number. JSON numbers decode as float64, so a fractional value is a real
 // possibility rather than a theoretical one.
-func checkDesiredTurns(group *project.Eval, item map[string]any, index int) error {
+func checkDesiredTurns(group *project.Eval, item map[string]any, index int, forInit bool) error {
 	if _, flat := item[seedTurnsField]; flat {
 		return simulationError(group,
 			fmt.Sprintf("row %d has %s outside %s; the service does not read this flat field",
@@ -187,11 +187,25 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int) erro
 		}
 	}
 	if turns > maxTurns {
+		suggestion := fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
+			maxField, turns, seedConfigField, seedTurnsField)
+		if maxField == "simulation.max_turns" && turns > project.MaxSimulationTurns {
+			suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. simulation.max_turns accepts %d to %d.",
+				seedConfigField, seedTurnsField, maxTurns, project.MinSimulationTurns, project.MaxSimulationTurns)
+		}
+		if maxField == "simulation.max_turns" && forInit {
+			if turns <= project.MaxSimulationTurns {
+				suggestion = fmt.Sprintf("Rerun init with --max-turns %d (%d-%d), or lower %s.%s on that row.",
+					turns, project.MinSimulationTurns, project.MaxSimulationTurns, seedConfigField, seedTurnsField)
+			} else {
+				suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. --max-turns accepts %d to %d.",
+					seedConfigField, seedTurnsField, maxTurns, project.MinSimulationTurns, project.MaxSimulationTurns)
+			}
+		}
 		return simulationError(group,
 			fmt.Sprintf("row %d asks for %d turns, but effective %s is %d",
 				index+1, turns, maxField, maxTurns),
-			fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
-				maxField, turns, seedConfigField, seedTurnsField))
+			suggestion)
 	}
 
 	return nil

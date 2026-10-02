@@ -102,6 +102,16 @@ For extensions that are still in development or preview, consider publishing to 
 
 ## Detailed Reference
 
+Treat failed mutating RPCs as uncertain unless the host confirms completion.
+For `Project.AddService`, use the optional
+[save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),
+fresh per-call metadata, and local ownership checks before compensating local
+edits. Older hosts require retention and explicit recovery guidance rather than
+status-code-based rollback.
+The acknowledgment covers completed pre-save rejections only on host builds
+that implement that behavior. It proves that the operation cannot write later;
+it does not replace a root-file comparison or ownership checks.
+
 For comprehensive extension development documentation, see:
 
 - [Extension Framework](../../cli/azd/docs/extensions/extension-framework.md) — Full framework guide

@@ -84,6 +84,38 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
+### Project service save acknowledgment
+
+`Project.AddService` supports an optional completion acknowledgment for callers
+that compensate their own local edits after a failed root save. The caller sends
+one fresh `azd-project-add-service-operation` metadata value (at most 64 bytes).
+On a returned error after acquiring the project mutation lock, the host echoes
+that value in the `azd-project-add-service-save-failed` trailer only after the
+operation has completed. This includes rejection before a save (such as an
+unsupported layered project) and a failed synchronous `project.Save`, including
+its file-write retries, cleanup, and restoration of the previous cached service.
+The acknowledgment is sent before releasing the mutation lock. Success, panics,
+and errors rejected before the lock do not carry it.
+
+A caller must capture fresh trailers for this invocation and require exactly one
+matching value before considering compensation. Status codes or trailer presence
+alone are not proof: cancellation, transport failures and malformed responses
+can be observed before a host write finishes. The acknowledgment is not a
+cross-file transaction; callers must still protect their own edits with locks
+and ownership checks. Missing, mismatched or duplicate values are uncertain
+outcomes, including when running on an older host, and require safe retention
+and explicit recovery guidance. Completion means the operation cannot write
+later, not that it wrote nothing before failing: compare root-file bytes and
+preserve local ownership checks before compensating.
+
+This optional metadata contract adds no RPC or protobuf field and requires no
+SDK-version bump. An extension using an older released SDK can use ordinary
+gRPC metadata and trailer call options. The wire names are intentionally
+duplicated across the host and such extensions; keep them aligned.
+Earlier hosts that acknowledge only failed save attempts still leave pre-save
+errors uncertain to clients. Installing an updated extension alone does not
+enable the broader acknowledgment; it requires a host build containing it.
+
 ## Deployment Preview
 
 `azd deploy --preview` calls an optional `Preview` on each selected service target

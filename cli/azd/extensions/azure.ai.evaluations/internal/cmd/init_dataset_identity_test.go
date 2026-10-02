@@ -1,0 +1,446 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"azureaieval/internal/exterrors"
+	"azureaieval/internal/project"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+var initIdentityDeclarations = map[string]string{
+	"local":      "  - name: seeds\n    file: ../original/seeds.jsonl\n    version: '7'\n    future_metadata: keep\n",
+	"nested ref": "  - name: seeds\n    $ref: ./parts/dataset.yaml\n    version: '7'\n",
+	"ref only":   "  - $ref: ./parts/dataset.yaml\n",
+	"registered": "  - name: seeds\n    version: '7'\n",
+}
+
+func initIdentityFixture(t *testing.T, declaration string, prompts *seedCorrectionPromptServer) *initHarness {
+	t.Helper()
+	h := newInitHarness(t, nil, prompts)
+	for _, dir := range []string{"original", "replacement", filepath.Join("evals", "parts", "inner"),
+		filepath.Join(".azure", "dev")} {
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+	}
+	for path, body := range map[string]string{
+		filepath.Join("original", "seeds.jsonl"): `{"test_case_description":""}`,
+		filepath.Join("replacement", "seeds.jsonl"): `{"test_case_description":"help",` +
+			`"simulation_configuration":{"desired_num_turns":20}}`,
+		filepath.Join("replacement", "corrected.jsonl"): `{"test_case_description":"help",` +
+			`"simulation_configuration":{"desired_num_turns":20}}`,
+		filepath.Join("evals", project.EvalConfigBase): "# Keep the original\nfuture_metadata: keep\ndatasets:\n" +
+			declaration + "  - name: unrelated\n    $ref: ./missing.yaml\n",
+		filepath.Join("evals", "parts", "dataset.yaml"): "$ref: ./inner/dataset.yaml\n",
+		filepath.Join("evals", "parts", "inner", "dataset.yaml"): "name: seeds\n" +
+			"file: ../../../original/seeds.jsonl\nversion: '7'\nfuture_metadata: keep\n",
+		filepath.Join(".azure", "dev", ".env"):        "KEEP=unchanged\n",
+		filepath.Join(".azure", "dev", "config.json"): `{"keep":true}`,
+	} {
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	}
+	return h
+}
+
+func TestInitDatasetFileCollisionPreservesState(t *testing.T) {
+	for name, declaration := range initIdentityDeclarations {
+		for _, mode := range []string{"simulation", "static", "turn"} {
+			for _, output := range []string{"human", "json"} {
+				t.Run(name+"/"+mode+"/"+output, func(t *testing.T) {
+					h := initIdentityFixture(t, declaration, &seedCorrectionPromptServer{})
+					before := initFileSnapshot(t, h.dir)
+					args := simulationInitArgs("./replacement/seeds.jsonl")
+					switch mode {
+					case "static":
+						args = []string{"--name", "quality", "--dataset", "./replacement/seeds.jsonl",
+							"--judge-model", "judge", "--conversation-mode", "static"}
+					case "turn":
+						args = []string{"--name", "quality", "--dataset", "./replacement/seeds.jsonl",
+							"--judge-model", "judge", "--target", "agent"}
+					}
+					if output == "human" {
+						args = append(args, "--no-prompt")
+					} else {
+						args = append(args, "--output", "json")
+					}
+					text, err := executeConversationInit(t, args...)
+					require.ErrorContains(t, err, "already declared")
+					validation, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeConflictingArguments, validation.Code)
+					assert.Contains(t, err.Error(), "seeds")
+					assert.Contains(t, err.Error(), "./replacement/seeds.jsonl")
+					assert.Empty(t, text, "no prompts or success-shaped document")
+					assert.Zero(t, h.project.wiringAttempts())
+					assert.Empty(t, h.usage.reported())
+					assert.Equal(t, before, initFileSnapshot(t, h.dir))
+				})
+			}
+		}
+	}
+}
+
+func TestInitDatasetRefusesInvalidFilenameDerivedNames(t *testing.T) {
+	for _, filename := range []string{".jsonl", "..jsonl", "...jsonl"} {
+		for _, mode := range []string{"simulation", "static", "turn"} {
+			for _, output := range []string{"human", "json"} {
+				t.Run(filename+"/"+mode+"/"+output, func(t *testing.T) {
+					h := newInitHarness(t, nil)
+					require.NoError(t, os.WriteFile(filename, []byte(`{"test_case_description":"help"}`), 0o600))
+					dataset := "./" + filename
+					args := simulationInitArgs(dataset)
+					switch mode {
+					case "static":
+						args = []string{"--name", "quality", "--dataset", dataset,
+							"--judge-model", "judge", "--conversation-mode", "static"}
+					case "turn":
+						args = []string{"--name", "quality", "--dataset", dataset,
+							"--judge-model", "judge", "--target", "agent"}
+					}
+					if output == "human" {
+						args = append(args, "--no-prompt")
+					} else {
+						args = append(args, "--output", "json")
+					}
+					before := initFileSnapshot(t, h.dir)
+					text, err := executeConversationInit(t, args...)
+					require.ErrorContains(t, err, "invalid catalog name")
+					assert.Contains(t, err.Error(), filename)
+					validation, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+					assert.Contains(t, validation.Suggestion, "Rename")
+					assert.Empty(t, text)
+					assert.Zero(t, h.project.wiringAttempts())
+					assert.Empty(t, h.usage.reported())
+					assert.Equal(t, before, initFileSnapshot(t, h.dir))
+				})
+			}
+		}
+	}
+}
+
+func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &seedCorrectionPromptServer{datasets: []string{"./seed.jsonl"}}
+	h := newInitHarness(t, nil, prompts)
+	for _, filename := range []string{".jsonl", h.seedRows} {
+		require.NoError(t, os.WriteFile(filename, []byte(`{"test_case_description":"help"}`), 0o600))
+	}
+	text, err := executeConversationInit(t, simulationInitArgs("./.jsonl")...)
+	require.NoError(t, err)
+	assert.Contains(t, text, "invalid catalog name")
+	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Datasets, 1)
+	require.Len(t, cfg.Evals, 1)
+	assert.Equal(t, "seed", cfg.Evals[0].Dataset)
+	assert.Equal(t, "seed", cfg.Datasets[0].Name)
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	assert.Equal(t, []int{0}, prompts.selectCounts, "correct the name before confirmation")
+}
+
+func TestInitDatasetDerivedNameUsesLookupRules(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1)} {
+		t.Run("invalid/"+name, func(t *testing.T) {
+			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
+			require.ErrorContains(t, err, "invalid catalog name")
+		})
+	}
+	for _, name := range []string{"seeds", ".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+		t.Run("valid/"+name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name+".jsonl")
+			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+			in := localDatasetScaffold(t, path)
+			plan, err := planScaffold(in)
+			require.NoError(t, err)
+			assert.Equal(t, name, plan.datasetName)
+		})
+	}
+}
+
+func TestInitDatasetCollisionCorrection(t *testing.T) {
+	for _, input := range []string{"explicit file", "declared dataset"} {
+		for _, cancel := range []bool{false, true} {
+			t.Run(input+"/"+map[bool]string{false: "distinct file", true: "cancel"}[cancel], func(t *testing.T) {
+				t.Setenv("AZD_NO_PROMPT", "false")
+				prompts := &seedCorrectionPromptServer{}
+				h := initIdentityFixture(t, initIdentityDeclarations["nested ref"], prompts)
+				args := simulationInitArgs("./replacement/seeds.jsonl")
+				wantPrompts := 1
+				if input == "declared dataset" {
+					args = simulationInitArgs("seeds")
+					prompts.datasets = append(prompts.datasets, "./replacement/seeds.jsonl")
+					wantPrompts++
+				}
+				if !cancel {
+					prompts.datasets = append(prompts.datasets, "./replacement/corrected.jsonl")
+				}
+				before := initFileSnapshot(t, h.dir)
+				text, err := executeConversationInit(t, append(args, "--num-conversations", "5", "--max-turns", "20")...)
+				assert.Contains(t, text, "already declared")
+				assert.Contains(t, text, "different filename stem")
+				if cancel {
+					require.Error(t, err)
+					assert.Equal(t, codes.Canceled, status.Code(err))
+					prompts.mu.Lock()
+					assert.Empty(t, prompts.messages)
+					prompts.mu.Unlock()
+					assert.Zero(t, h.project.wiringAttempts())
+					assert.Empty(t, h.usage.reported())
+					assert.Equal(t, before, initFileSnapshot(t, h.dir))
+				} else {
+					require.NoError(t, err)
+					after := initFileSnapshot(t, h.dir)
+					config := filepath.Join("evals", project.EvalConfigBase)
+					for path, content := range before {
+						if path == config {
+							assert.Contains(t, after[path], content)
+						} else {
+							assert.Equal(t, content, after[path], path)
+						}
+					}
+					var cfg project.EvalConfig
+					require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+					require.Len(t, cfg.Evals, 1)
+					assert.Equal(t, "corrected", cfg.Evals[0].Dataset)
+					assert.Equal(t, &project.Simulation{Model: "connection/simulator", NumConversations: 5, MaxTurns: 20},
+						cfg.Evals[0].Simulation)
+					assert.Equal(t, "judge", cfg.Evals[0].Evaluators[0].InitializationParameters["model"])
+					decl, err := project.ReadAuthoredDataset(filepath.Join(h.dir, "evals"), "corrected")
+					require.NoError(t, err)
+					require.NotNil(t, decl)
+					assert.Equal(t, filepath.Join(h.dir, "replacement", "corrected.jsonl"), decl.File)
+				}
+				prompts.mu.Lock()
+				defer prompts.mu.Unlock()
+				assert.Len(t, prompts.selectCounts, wantPrompts)
+				for _, count := range prompts.selectCounts {
+					assert.Zero(t, count, "collision must be resolved before confirmation")
+				}
+				assert.Empty(t, prompts.models)
+			})
+		}
+	}
+}
+
+func TestInitDatasetNameReusesRefOnlyDeclaration(t *testing.T) {
+	for _, mode := range []string{"static", "turn"} {
+		for _, correction := range []bool{false, true} {
+			t.Run(mode+"/"+map[bool]string{false: "explicit name", true: "corrected name"}[correction], func(t *testing.T) {
+				t.Setenv("AZD_NO_PROMPT", "false")
+				prompts := &seedCorrectionPromptServer{}
+				h := initIdentityFixture(t, initIdentityDeclarations["ref only"], prompts)
+				dataset := "seeds"
+				if correction {
+					dataset = "./replacement/seeds.jsonl"
+					prompts.datasets = []string{"seeds"}
+				}
+				args := []string{"--name", "quality", "--source", "dataset", "--dataset", dataset, "--judge-model", "judge"}
+				if mode == "static" {
+					args = append(args, "--conversation-mode", "static")
+				} else {
+					args = append(args, "--target", "agent")
+				}
+				if !correction {
+					args = append(args, "--output", "json")
+				}
+				before := initFileSnapshot(t, h.dir)
+				text, err := executeConversationInit(t, args...)
+				require.NoError(t, err)
+				if correction {
+					assert.Contains(t, text, "already declared")
+				} else {
+					assert.True(t, json.Valid([]byte(text)))
+				}
+				after := initFileSnapshot(t, h.dir)
+				config := filepath.Join("evals", project.EvalConfigBase)
+				var cfg project.EvalConfig
+				require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+				require.Len(t, cfg.Datasets, 2, "existing ref-only and unrelated declarations must not be duplicated")
+				require.Len(t, cfg.Evals, 1)
+				assert.Equal(t, "seeds", cfg.Evals[0].Dataset)
+				assert.Contains(t, after[config], before[config])
+				for path, content := range before {
+					if path != config {
+						assert.Equal(t, content, after[path], path)
+					}
+				}
+				decl, err := project.ReadAuthoredDataset(filepath.Join(h.dir, config), "seeds")
+				require.NoError(t, err)
+				require.NotNil(t, decl)
+				assert.Equal(t, filepath.Join(h.dir, "original", "seeds.jsonl"), decl.File)
+				var retained project.DatasetDecl
+				require.NoError(t, yaml.Unmarshal(
+					[]byte(after[filepath.Join("evals", "parts", "inner", "dataset.yaml")]), &retained))
+				assert.Equal(t, "7", retained.Version)
+			})
+		}
+	}
+}
+
+func TestInitDatasetReusesEquivalentFiles(t *testing.T) {
+	for _, declaration := range []string{"local", "nested ref", "ref only"} {
+		for _, spelling := range []string{"relative", "canonical", "absolute", "hard link"} {
+			t.Run(declaration+"/"+spelling, func(t *testing.T) {
+				h := initIdentityFixture(t, initIdentityDeclarations[declaration], &seedCorrectionPromptServer{})
+				path := "./original/seeds.jsonl"
+				require.NoError(t, os.WriteFile(filepath.FromSlash(path),
+					[]byte(`{"test_case_description":"help",`+
+						`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
+				switch spelling {
+				case "canonical":
+					path = "./original/../original/seeds.jsonl"
+				case "absolute":
+					path = filepath.Join(h.dir, "original", "seeds.jsonl")
+				case "hard link":
+					require.NoError(t, os.Mkdir("linked", 0o700))
+					path = filepath.Join("linked", "seeds.jsonl")
+					require.NoError(t, os.Link(filepath.Join("original", "seeds.jsonl"), path))
+				}
+				before := initFileSnapshot(t, h.dir)
+				text, err := executeConversationInit(t, append(simulationInitArgs(path), "--output", "json")...)
+				require.NoError(t, err)
+				assert.True(t, json.Valid([]byte(text)))
+				after := initFileSnapshot(t, h.dir)
+				config := filepath.Join("evals", project.EvalConfigBase)
+				assert.Contains(t, after[config], before[config], "pins, unknown metadata and refs must be unchanged")
+				var cfg project.EvalConfig
+				require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+				require.Len(t, cfg.Evals, 1)
+				assert.Equal(t, "seeds", cfg.Evals[0].Dataset)
+				assert.Len(t, cfg.Datasets, 2, "reuse must not duplicate a resolved ref-only declaration")
+				if declaration == "local" {
+					assert.Equal(t, "7", cfg.Datasets[0].Version)
+				}
+			})
+		}
+	}
+}
+
+func TestScaffoldDatasetFileIdentity(t *testing.T) {
+	for _, collision := range []bool{false, true} {
+		t.Run(map[bool]string{false: "same file", true: "different file"}[collision], func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.Mkdir("original", 0o700))
+			require.NoError(t, os.Mkdir("replacement", 0o700))
+			for _, dir := range []string{"original", "replacement"} {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "seeds.jsonl"), []byte(`{"query":"help"}`), 0o600))
+			}
+			cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{
+				{Name: "seeds", File: "../original/seeds.jsonl", Version: "7"},
+			}}
+			path := "./original/seeds.jsonl"
+			if collision {
+				path = "./replacement/seeds.jsonl"
+			}
+			_, err := planScaffold(scaffoldInput{
+				evalName: "quality", target: "agent", dataset: path, evalDir: "evals", cfg: cfg,
+			})
+			if collision {
+				require.ErrorContains(t, err, "already declared")
+				assert.Empty(t, cfg.Evals)
+			} else {
+				require.NoError(t, err)
+				require.Len(t, cfg.Evals, 1)
+				assert.Equal(t, "seeds", cfg.Evals[0].Dataset)
+			}
+			assert.Equal(t, []project.DatasetDecl{{Name: "seeds", File: "../original/seeds.jsonl", Version: "7"}},
+				cfg.Datasets)
+		})
+	}
+}
+
+func TestInitDatasetIdentityUsesExactConfigPath(t *testing.T) {
+	for _, location := range []struct {
+		name      string
+		filename  string
+		directory bool
+		sidecar   bool
+	}{
+		{name: "custom yaml", filename: "nightly.yaml"},
+		{name: "custom yml", filename: "nightly.yml"},
+		{name: "custom with default beside it", filename: "nightly.yaml", sidecar: true},
+		{name: "default directory", filename: project.EvalConfigBase, directory: true},
+		{name: "default file", filename: project.EvalConfigBase},
+		{name: "legacy directory", filename: project.LegacyEvalConfigBase, directory: true},
+		{name: "legacy file", filename: project.LegacyEvalConfigBase},
+	} {
+		for _, declaration := range []string{"local", "nested ref", "ref only"} {
+			for _, collision := range []bool{false, true} {
+				t.Run(location.name+"/"+declaration+"/"+map[bool]string{false: "same file", true: "collision"}[collision],
+					func(t *testing.T) {
+						h := initIdentityFixture(t, initIdentityDeclarations[declaration], &seedCorrectionPromptServer{})
+						require.NoError(t, os.WriteFile(filepath.Join("original", "seeds.jsonl"),
+							[]byte(`{"test_case_description":"help",`+
+								`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
+						require.NoError(t, os.Rename("evals", "config"))
+						config := filepath.Join("config", location.filename)
+						if location.filename != project.EvalConfigBase {
+							require.NoError(t, os.Rename(filepath.Join("config", project.EvalConfigBase), config))
+						}
+						if location.sidecar {
+							require.NoError(t, os.WriteFile(filepath.Join("config", project.EvalConfigBase),
+								[]byte("datasets:\n  - name: seeds\n    file: ../replacement/seeds.jsonl\n"), 0o600))
+						}
+						path := config
+						if location.directory {
+							path = "config"
+						}
+						dataset := "./original/../original/seeds.jsonl"
+						if collision {
+							dataset = "./replacement/seeds.jsonl"
+						}
+						before := initFileSnapshot(t, h.dir)
+						text, err := executeConversationInit(t, append(simulationInitArgs(dataset),
+							"--path", path, "--output", "json")...)
+						if collision {
+							require.ErrorContains(t, err, "already declared")
+							assert.Empty(t, text)
+							assert.Zero(t, h.project.wiringAttempts())
+							assert.Empty(t, h.usage.reported())
+							assert.Equal(t, before, initFileSnapshot(t, h.dir))
+							return
+						}
+						require.NoError(t, err)
+						var output map[string]any
+						require.NoError(t, json.Unmarshal([]byte(text), &output))
+						assert.Equal(t, config, output["evalConfig"])
+						assert.Equal(t, filepath.Join("config", project.DefaultDatasetsDir), output["datasetsDir"])
+						assert.Equal(t, filepath.Join("config", project.DefaultEvaluatorsDir), output["evaluatorsDir"])
+						after := initFileSnapshot(t, h.dir)
+						for file, content := range before {
+							if file == config {
+								assert.Contains(t, after[file], content, "append without rewriting declarations")
+							} else {
+								assert.Equal(t, content, after[file], file)
+							}
+						}
+						if location.filename != project.EvalConfigBase && !location.sidecar {
+							assert.NoFileExists(t, filepath.Join("config", project.EvalConfigBase))
+						}
+						var cfg project.EvalConfig
+						require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+						require.Len(t, cfg.Evals, 1)
+						assert.Equal(t, "seeds", cfg.Evals[0].Dataset)
+						assert.Len(t, cfg.Datasets, 2, "reuse must not duplicate the declaration")
+						assert.Equal(t, 1, h.project.wiringAttempts())
+					})
+			}
+		}
+	}
+}

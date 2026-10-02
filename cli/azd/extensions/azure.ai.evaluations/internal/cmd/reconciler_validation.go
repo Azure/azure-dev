@@ -67,7 +67,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				if group.Dataset != decl.Name || group.Simulation == nil {
 					continue
 				}
-				if err := refuseUnusableSeedRow(group, row, index); err != nil {
+				if err := refuseUnusableSeedRow(group, row, index, false); err != nil {
 					return err
 				}
 			}

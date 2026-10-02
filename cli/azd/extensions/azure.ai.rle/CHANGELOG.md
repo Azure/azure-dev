@@ -1,6 +1,6 @@
 # Release History
 
-## 0.4.0-preview (Unreleased)
+## 0.4.1-preview (Unreleased)
 
 - Align environment discovery and remote invocation with the refreshed RLE service routes and cursor-based response contracts.
 - Use `/rl_environments` consistently for environment and instance lifecycle APIs.
@@ -10,6 +10,7 @@
 - Delete the temporary instance and group on exit with Ctrl+C-independent cleanup and concise terminal status.
 - Persist the environment name as `environmentName` while continuing to read legacy `name` state files.
 - Authenticate and API-version OpenEnv gateway requests on the configured Foundry project origin, wait for runtime health before reporting readiness, and route the browser playground through an authenticated local proxy.
+- Initialize a required local folder by interactively selecting and sparsely downloading an environment from the RLE samples repository.
 
 ## 0.3.0-preview
 

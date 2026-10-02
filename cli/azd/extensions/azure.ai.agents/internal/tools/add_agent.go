@@ -69,7 +69,7 @@ func NewAddAgentTool() server.ServerTool {
 func unifiedInitGuidance(azureYamlLocation string) string {
 	return fmt.Sprintf(
 		"No files or resources were changed. To initialize this project from the unified azure.yaml, run:\n\n"+
-			"azd ai agent init -m %q",
+			"azd ai agent init -t %q",
 		azureYamlLocation,
 	)
 }

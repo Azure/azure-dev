@@ -31,7 +31,7 @@ type sampleListFlags struct {
 // `azd ai agent sample list -o json`.
 //
 // Consumers (especially AI coding agents) read this to discover which azure.yaml
-// URLs and repo URLs they can pass to `azd ai agent init -m <url>` or
+// URLs and repo URLs they can pass to `azd ai agent init -t <url>` or
 // `azd init -t <url>` without scraping documentation or guessing slugs.
 //
 // Schema stability: fields added in future versions MUST be additive; existing
@@ -65,7 +65,7 @@ type TemplateListItem struct {
 	Type string `json:"type"`
 
 	// ManifestURL is set when Type == "azure.yaml". This URL can be passed to
-	// `azd ai agent init -m <url>` for a one-shot headless init.
+	// `azd ai agent init -t <url>` for a one-shot headless init.
 	ManifestURL string `json:"manifestUrl,omitempty"`
 
 	// RepoURL is set when Type == "azd". This URL/slug can be passed to
@@ -85,7 +85,7 @@ type TemplateListItem struct {
 	Recommended bool `json:"recommended"`
 
 	// InitCommand is the recommended next command to run. For Type == "azure.yaml"
-	// it is `azd ai agent init -m <ManifestURL>`. For Type == "azd" it is
+	// it is `azd ai agent init -t <ManifestURL>`. For Type == "azd" it is
 	// `azd init -t <RepoURL>` -- note that the agent extension must be run
 	// separately after the core init completes.
 	//
@@ -138,11 +138,11 @@ func newSampleListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List available agent samples that can be used with `azd ai agent init -m`.",
+		Short:   "List available agent samples that can be used with `azd ai agent init -t`.",
 		Long: `List available agent samples from the curated catalog.
 
 Each entry includes the manifest URL or repo URL that can be passed back into
-` + "`azd ai agent init -m <url>`" + ` (for unified azure.yaml files) or ` + "`azd init -t <url>`" + `
+` + "`azd ai agent init -t <url>`" + ` (for unified azure.yaml files) or ` + "`azd init -t <url>`" + `
 (for full azd template repositories), and a ready-to-execute ` + "`initCommand`" + `
 string so coding agents don't have to compose flags.
 
@@ -159,7 +159,7 @@ The catalog is fetched from the same source the interactive template picker uses
   # Only featured (curated) samples as JSON
   azd ai agent sample list --featured-only --output json
 
-  # Only unified azure.yaml samples (ready for -m)
+  # Only unified azure.yaml samples (ready for -t)
   azd ai agent sample list --type azure.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -296,7 +296,7 @@ func mapAgentTemplateToDTO(t AgentTemplate) TemplateListItem {
 	switch effective {
 	case TemplateTypeAzureYaml:
 		item.ManifestURL = t.Source
-		item.InitCommand = fmt.Sprintf("azd ai agent init -m %q", t.Source)
+		item.InitCommand = fmt.Sprintf("azd ai agent init -t %q", t.Source)
 	case TemplateTypeAzd:
 		item.RepoURL = t.Source
 		item.InitCommand = fmt.Sprintf("azd init -t %q", t.Source)

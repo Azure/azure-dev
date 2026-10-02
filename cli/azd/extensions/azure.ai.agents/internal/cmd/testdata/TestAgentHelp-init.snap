@@ -1,11 +1,15 @@
 Initialize a new prompt, hosted, or voice agent project.
 
 Unified projects:
-When -m points at a unified azure.yaml (a project manifest that declares
+When -t points at a unified azure.yaml (a project manifest that declares
 services with host: azure.ai.project / azure.ai.agent / ...), that azure.yaml
 is adopted as the project manifest and its referenced files are placed at the
 project root. Standalone agent definitions and AgentManifest template wrappers
 are rejected with migration guidance.
+
+Compatibility
+--manifest / -m is deprecated and retained for compatibility. Use
+--template / -t instead.
 
 Voice Agents
 Use --kind prompt-voice to initialize a managed prompt voice agent without
@@ -45,7 +49,7 @@ A default .agentignore file is generated to control which files are excluded
 from code-deploy ZIP packaging (uses .gitignore syntax).
 
 Usage
-  azd ai agent init [<path>] [-m <azure.yaml pointer>] [--src <source directory>] [flags]
+  azd ai agent init [<path>] [-t <azure.yaml pointer>] [--src <source directory>] [flags]
 
 Flags
       --acr-connection string      : Foundry Azure Container Registry connection name to use for an existing project; incompatible with code deploy, --image, and prompt-voice agents
@@ -59,7 +63,6 @@ Flags
       --infra string[="bicep"]     : Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and Foundry files are generated as a separate infra/foundry layer. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.
       --instructions string        : System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.
       --kind string                : Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' (model + instructions; Foundry runs the agent), or 'prompt-voice' (a declarative voice agent; use --model for the speech-to-speech model and --voice for the output voice agent). When omitted, the hosted runtime is used. With --no-prompt, 'prompt' requires --agent-name and either --model or --model-deployment.
-  -m, --manifest string            : Path or supported GitHub URI to a unified azure.yaml project document
       --model string               : For hosted and prompt agents, name of the AI model to deploy. Defaults to 'gpt-5.4-mini' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.
   -d, --model-deployment string    : Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts
   -p, --project-id string          : Existing Microsoft Foundry Project Id to initialize your azd environment with
@@ -68,6 +71,7 @@ Flags
       --registry-connection string : Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.
       --runtime string             : Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.
   -s, --src string                 : Source directory for generated agents, or target directory when adopting a unified project
+  -t, --template string            : Path or supported GitHub URI to a unified azure.yaml project document
       --voice string               : Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). Rejected for other init flows. For existing voice services, edit azure.yaml. Example: en-US-Ava:DragonHDLatestNeural.
 
 Global Flags
@@ -80,11 +84,11 @@ Global Flags
 
 Examples
   Adopt a sample's unified azure.yaml as the project manifest
-    azd ai agent init -m ./azure.yaml
-    azd ai agent init -m https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
+    azd ai agent init -t ./azure.yaml
+    azd ai agent init -t https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
 
   Adopt a unified project with a unique Foundry agent name
-    azd ai agent init -m ./azure.yaml --agent-name my-unique-agent
+    azd ai agent init -t ./azure.yaml --agent-name my-unique-agent
 
   Initialize from local agent code
     azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
@@ -105,7 +109,7 @@ Examples
       --project-id "<resource-id>" --model-deployment gpt-4.1-mini
 
   Non-interactive unified project adoption
-    azd ai agent init --no-prompt -m ./azure.yaml --project-id "<resource-id>"
+    azd ai agent init --no-prompt -t ./azure.yaml --project-id "<resource-id>"
 
   Bring your own pre-built image (no source scaffolding, Dockerfile-based build setup, or ACR setup)
     azd ai agent init --no-prompt --agent-name my-agent \

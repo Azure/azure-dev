@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -135,6 +136,21 @@ func TestLocalMissingCatalogReadFailureMakesNoSubmission(t *testing.T) {
 }
 
 func TestLocalStreamingRetainsOnlyCapAndValidatesEveryRow(t *testing.T) {
+	// HeapAlloc covers the entire process, so run this workload without other package tests.
+	const helper = "AZD_TEST_LOCAL_STREAMING_MEMORY"
+	if os.Getenv(helper) != "1" {
+		binary, err := os.Executable()
+		require.NoError(t, err)
+		child := exec.CommandContext(t.Context(), binary,
+			"-test.run=^TestLocalStreamingRetainsOnlyCapAndValidatesEveryRow$",
+			"-test.count=1", "-test.timeout=60s", "-test.v")
+		child.Env = append(os.Environ(), helper+"=1")
+		output, err := child.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		require.Contains(t, string(output), "--- PASS: "+t.Name()+" (")
+		return
+	}
+
 	const total = 12000
 	dir := localSourceConfig(t, "", 1)
 	path := filepath.Join(dir, "local rows.jsonl")

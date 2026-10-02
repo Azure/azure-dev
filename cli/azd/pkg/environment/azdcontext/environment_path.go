@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-// ErrUnsafeEnvironmentPath identifies a filesystem link or a path outside the local state boundary.
+// ErrUnsafeEnvironmentPath identifies an unsupported filesystem entry or a path outside the local state boundary.
 var ErrUnsafeEnvironmentPath = errors.New("unsafe environment path")
 
 // resolveExistingPath resolves the nearest existing ancestor without treating dangling
@@ -53,6 +53,9 @@ func resolveEnvironmentChild(base, name string) (string, error) {
 	if err == nil {
 		if isEnvironmentLink(info) {
 			return "", fmt.Errorf("%w: %q must not be a symbolic link or reparse point", ErrUnsafeEnvironmentPath, path)
+		}
+		if !info.Mode().IsRegular() && !info.IsDir() {
+			return "", fmt.Errorf("%w: %q must be a regular file or directory", ErrUnsafeEnvironmentPath, path)
 		}
 		path, err = filepath.EvalSymlinks(path)
 		if err != nil {

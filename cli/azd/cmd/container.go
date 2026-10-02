@@ -115,6 +115,47 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 	return instance, nil
 }
 
+// newCommandConsole lets you create a new command console targeted at a given instance of cobra.Command.
+// Useful if you need to ensure you use the same streams and console formatting as a command, from the
+// outside.
+func newCommandConsole(
+	rootOptions *internal.GlobalCommandOptions,
+	formatter output.Formatter,
+	cmd *cobra.Command,
+) input.Console {
+	writer := cmd.OutOrStdout()
+	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
+	if formatter != nil && formatter.Kind() == output.JsonFormat {
+		writer = cmd.ErrOrStderr()
+	}
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
+
+	// Check for external prompt configuration from environment variables
+	var externalPromptCfg *input.ExternalPromptConfiguration
+	if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
+		if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
+			externalPromptCfg = &input.ExternalPromptConfiguration{
+				Endpoint:       endpoint,
+				Key:            key,
+				Transporter:    http.DefaultClient,
+				NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
+			}
+		}
+	}
+
+	return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
+		Stdin:  cmd.InOrStdin(),
+		Stdout: cmd.OutOrStdout(),
+		Stderr: cmd.ErrOrStderr(),
+	}, formatter, externalPromptCfg)
+}
+
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
@@ -124,42 +165,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)
 
-	container.MustRegisterScoped(func(
-		rootOptions *internal.GlobalCommandOptions,
-		formatter output.Formatter,
-		cmd *cobra.Command) input.Console {
-		writer := cmd.OutOrStdout()
-		// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-		if formatter != nil && formatter.Kind() == output.JsonFormat {
-			writer = cmd.ErrOrStderr()
-		}
-
-		if os.Getenv("NO_COLOR") != "" {
-			writer = colorable.NewNonColorable(writer)
-		}
-
-		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
-
-		// Check for external prompt configuration from environment variables
-		var externalPromptCfg *input.ExternalPromptConfiguration
-		if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
-			if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
-				externalPromptCfg = &input.ExternalPromptConfiguration{
-					Endpoint:       endpoint,
-					Key:            key,
-					Transporter:    http.DefaultClient,
-					NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
-				}
-			}
-		}
-
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
-			Stdin:  cmd.InOrStdin(),
-			Stdout: cmd.OutOrStdout(),
-			Stderr: cmd.ErrOrStderr(),
-		}, formatter, externalPromptCfg)
-	})
+	container.MustRegisterScoped(newCommandConsole)
 
 	container.MustRegisterSingleton(
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {

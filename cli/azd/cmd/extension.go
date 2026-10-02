@@ -1086,6 +1086,7 @@ func otherVersionsNewestFirst(versions []extensions.ExtensionVersion, latest str
 
 type extensionInstallFlags struct {
 	version        string
+	versionSet     bool
 	source         string
 	force          bool
 	noDependencies bool
@@ -1136,6 +1137,7 @@ type extensionInstallAction struct {
 }
 
 func newExtensionInstallAction(
+	cmd *cobra.Command,
 	args []string,
 	flags *extensionInstallFlags,
 	console input.Console,
@@ -1143,6 +1145,7 @@ func newExtensionInstallAction(
 	sourceManager *extensions.SourceManager,
 	transport policy.Transporter,
 ) actions.Action {
+	flags.versionSet = cmd.Flags().Changed("version")
 	return &extensionInstallAction{
 		args:             args,
 		flags:            flags,
@@ -1161,7 +1164,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 	})
 
 	bundleInstall := isBundleArg(a.args)
-	if bundleInstall && a.flags.version != "" {
+	versionSpecified := a.flags.versionSet || a.flags.version != ""
+	if bundleInstall && versionSpecified {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"cannot specify --version when installing an extension bundle: %w",
@@ -1191,12 +1195,18 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 	}
 
-	if len(extensionIds) > 1 && a.flags.version != "" {
+	if len(extensionIds) > 1 && versionSpecified {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"cannot specify --version with multiple extensions: %w",
 				internal.ErrInvalidFlagCombination),
 			Suggestion: "Install one extension at a time when using --version.",
+		}
+	}
+	if versionSpecified && a.flags.version == "" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("--version cannot be empty: %w", internal.ErrInvalidArgValue),
+			Suggestion: "Specify an exact extension version or latest, or omit --version to install the latest version.",
 		}
 	}
 	if err := validateExactVersionFlag(a.flags.version); err != nil {
@@ -1493,7 +1503,8 @@ func versionTransitionVerb(installedVersion, targetVersion string) string {
 // confirmSourceChange prompts before replacing an already-installed extension
 // with one from a different source (e.g. a bundle build over a registry build),
 // since the artifacts may differ. In --no-prompt mode it skips with --force
-// guidance. It reports whether the install should proceed.
+// guidance unless --version was supplied, in which case it fails.
+// It reports whether the install should proceed.
 func (a *extensionInstallAction) confirmSourceChange(
 	ctx context.Context,
 	stepMessage string,
@@ -1520,7 +1531,8 @@ func (a *extensionInstallAction) confirmSourceChange(
 
 // confirmReplace prompts with the given question and reports whether to proceed,
 // managing spinner state and prompt spacing. In --no-prompt mode it does not
-// prompt: it skips with noPromptSkipSuffix appended to the step message.
+// prompt: an explicit --version fails rather than being ignored; otherwise it
+// skips with noPromptSkipSuffix appended to the step message.
 func (a *extensionInstallAction) confirmReplace(
 	ctx context.Context,
 	stepMessage string,
@@ -1528,6 +1540,17 @@ func (a *extensionInstallAction) confirmReplace(
 	noPromptSkipSuffix string,
 ) (bool, error) {
 	if a.flags.global.NoPrompt {
+		if a.flags.version != "" {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return false, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"cannot install --version %q in non-interactive mode%s",
+					a.flags.version, noPromptSkipSuffix,
+				),
+				Suggestion: "Alternatively, run in an interactive terminal without --no-prompt " +
+					"(set AZD_NON_INTERACTIVE=false if automatic non-interactive mode is enabled).",
+			}
+		}
 		a.console.StopSpinner(ctx, stepMessage+output.WithGrayFormat(noPromptSkipSuffix), input.StepSkipped)
 		return false, nil
 	}
@@ -3546,8 +3569,7 @@ func isNetworkError(err error) bool {
 		return false
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); ok {
 		return true
 	}
 

@@ -30,7 +30,7 @@ type sampleListFlags struct {
 // TemplateListItem is the public JSON contract for a single template emitted by
 // `azd ai agent sample list -o json`.
 //
-// Consumers (especially AI coding agents) read this to discover which manifest
+// Consumers (especially AI coding agents) read this to discover which azure.yaml
 // URLs and repo URLs they can pass to `azd ai agent init -m <url>` or
 // `azd init -t <url>` without scraping documentation or guessing slugs.
 //
@@ -40,8 +40,8 @@ type sampleListFlags struct {
 // URL discriminator invariant: exactly one of ManifestURL or RepoURL is
 // populated on each item; Type indicates which one:
 //
-//   - Type == "agent" => ManifestURL is set, RepoURL is empty.
-//   - Type == "azd"   => RepoURL is set, ManifestURL is empty.
+//   - Type == "azure.yaml" => ManifestURL is set, RepoURL is empty.
+//   - Type == "azd"        => RepoURL is set, ManifestURL is empty.
 //
 // Consumers should switch on Type rather than testing both URL fields for
 // non-emptiness, so that adding future template types stays a single
@@ -59,12 +59,12 @@ type TemplateListItem struct {
 	// template picker.
 	Languages []string `json:"languages"`
 
-	// Type is the effective template type: "agent" for entries whose source
-	// points directly at an agent.yaml manifest, or "azd" for entries whose
-	// source is a full azd template repository.
+	// Type is the effective template type: "azure.yaml" for entries whose
+	// source points directly at a unified azure.yaml, or "azd" for entries
+	// whose source is a full azd template repository.
 	Type string `json:"type"`
 
-	// ManifestURL is set when Type == "agent". This URL can be passed to
+	// ManifestURL is set when Type == "azure.yaml". This URL can be passed to
 	// `azd ai agent init -m <url>` for a one-shot headless init.
 	ManifestURL string `json:"manifestUrl,omitempty"`
 
@@ -84,7 +84,7 @@ type TemplateListItem struct {
 	// (default pre-selected template in interactive mode).
 	Recommended bool `json:"recommended"`
 
-	// InitCommand is the recommended next command to run. For Type == "agent"
+	// InitCommand is the recommended next command to run. For Type == "azure.yaml"
 	// it is `azd ai agent init -m <ManifestURL>`. For Type == "azd" it is
 	// `azd init -t <RepoURL>` -- note that the agent extension must be run
 	// separately after the core init completes.
@@ -114,7 +114,7 @@ type sampleListResponse struct {
 var knownSampleListLanguages = []string{"python", "dotnetCsharp"}
 
 // Known template type filter values.
-var knownSampleListTypes = []string{TemplateTypeAgent, TemplateTypeAzd, TemplateTypeAzureYaml}
+var knownSampleListTypes = []string{TemplateTypeAzureYaml, TemplateTypeAzd}
 
 // SampleListAction owns the catalog-fetch + render side of `sample list`.
 //
@@ -142,7 +142,7 @@ func newSampleListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `List available agent samples from the curated catalog.
 
 Each entry includes the manifest URL or repo URL that can be passed back into
-` + "`azd ai agent init -m <url>`" + ` (for agent manifests) or ` + "`azd init -t <url>`" + `
+` + "`azd ai agent init -m <url>`" + ` (for unified azure.yaml files) or ` + "`azd init -t <url>`" + `
 (for full azd template repositories), and a ready-to-execute ` + "`initCommand`" + `
 string so coding agents don't have to compose flags.
 
@@ -159,8 +159,8 @@ The catalog is fetched from the same source the interactive template picker uses
   # Only featured (curated) samples as JSON
   azd ai agent sample list --featured-only --output json
 
-  # Only agent-manifest samples (ready for -m)
-  azd ai agent sample list --type agent`,
+  # Only unified azure.yaml samples (ready for -m)
+  azd ai agent sample list --type azure.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.output = extCtx.OutputFormat
@@ -248,13 +248,17 @@ func validateSampleListFlags(flags *sampleListFlags) error {
 func buildTemplateListItems(templates []AgentTemplate, flags *sampleListFlags) []TemplateListItem {
 	filtered := make([]AgentTemplate, 0, len(templates))
 	for _, t := range templates {
+		effectiveType := t.EffectiveType()
+		if effectiveType == "" {
+			continue
+		}
 		if flags.language != "" && !slices.Contains(t.Languages, flags.language) {
 			continue
 		}
 		if flags.featuredOnly && !t.isFeatured() {
 			continue
 		}
-		if flags.templateType != "" && t.EffectiveType() != flags.templateType {
+		if flags.templateType != "" && effectiveType != flags.templateType {
 			continue
 		}
 		filtered = append(filtered, t)
@@ -290,9 +294,6 @@ func mapAgentTemplateToDTO(t AgentTemplate) TemplateListItem {
 	}
 
 	switch effective {
-	case TemplateTypeAgent:
-		item.ManifestURL = t.Source
-		item.InitCommand = fmt.Sprintf("azd ai agent init -m %q", t.Source)
 	case TemplateTypeAzureYaml:
 		item.ManifestURL = t.Source
 		item.InitCommand = fmt.Sprintf("azd ai agent init -m %q", t.Source)

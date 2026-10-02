@@ -28,18 +28,21 @@ type evaluatorDownloadAction struct {
 
 // newEvaluatorDownloadCommand builds `evaluator download <name>`.
 //
-// `show --output-file` writes the same document, but it is the adoption path:
-// reconciliation points it at a file to overwrite, so it replaces what it finds.
-// A download is the opposite promise -- it refuses to destroy what is already
-// there without --force -- and it names the file itself, which is what makes
-// fetching several evaluators in one directory work.
+// Unlike show's complete service document, a rubric download contains the
+// editable definition. It refuses to replace an existing file without --force.
 func newEvaluatorDownloadCommand() *cobra.Command {
 	a := &evaluatorDownloadAction{}
 
 	cmd := &cobra.Command{
 		Use:   "download <name>",
-		Short: "Download a registered evaluator version's definition.",
-		Args:  requiredArgs(1),
+		Short: "Download an editable evaluator rubric.",
+		Long: "Download an editable evaluator rubric.\n\n" +
+			"Rubrics retain type, dimensions, pass_threshold, and unknown authored fields.\n" +
+			"Catalog metadata, generated wiring, and prompt_text are omitted from rubric files.\n" +
+			"Other evaluator kinds retain their complete document.\n" +
+			"Use evaluator show -o json for the full service response.\n" +
+			"Publishing with evaluator update preserves existing catalog metadata unless the input explicitly replaces it.",
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a.cmd, a.name = cmd, args[0]
 			return a.Run()
@@ -108,7 +111,11 @@ func (a *evaluatorDownloadAction) download(ctx context.Context, ec *evalContext)
 	if err := refuseExisting(path, a.force); err != nil {
 		return err
 	}
-	if err := writeFileAtomically(path, bytes.NewReader(evaluatorDocument(raw)), a.force); err != nil {
+	body, err := evaluatorDocument(raw)
+	if err != nil {
+		return messages.EvaluatorProblem(a.name, err)
+	}
+	if err := writeFileAtomically(path, bytes.NewReader(body), a.force); err != nil {
 		return err
 	}
 
@@ -143,19 +150,24 @@ func (a *evaluatorDownloadAction) destination(version string) (string, error) {
 	return filepath.Join(dir, leaf), nil
 }
 
-// evaluatorDocument is the service's document, indented when it is JSON.
-//
-// Only the indentation is this command's: a field this CLI does not model is
-// still the evaluator's, and dropping it would hand back something that no
-// longer round-trips through `evaluator update`.
-func evaluatorDocument(raw json.RawMessage) []byte {
-	var pretty any
-	if err := json.Unmarshal(raw, &pretty); err != nil {
-		return raw
+// evaluatorDocument uses the same editable rubric shape as generation.
+// Other evaluator kinds retain their complete document; invalid rubrics fail.
+func evaluatorDocument(raw json.RawMessage) ([]byte, error) {
+	var envelope struct {
+		Definition json.RawMessage `json:"definition"`
 	}
-	indented, err := json.MarshalIndent(pretty, "", "  ")
-	if err != nil {
-		return raw
+	if json.Unmarshal(raw, &envelope) == nil {
+		editable, err := editableRubric(envelope.Definition)
+		if err != nil {
+			return nil, err
+		}
+		if editable != nil {
+			return editable, nil
+		}
 	}
-	return append(indented, '\n')
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, raw, "", "  "); err != nil {
+		return raw, nil
+	}
+	return append(indented.Bytes(), '\n'), nil
 }

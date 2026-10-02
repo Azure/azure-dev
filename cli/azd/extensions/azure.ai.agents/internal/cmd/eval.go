@@ -279,21 +279,22 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 			agentVersion = info.Version
 			agentVersionSource = fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 		}
-		if ca, _, source, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path); loadErr == nil {
-			if agent_yaml.IsValidAgentKind(ca.Kind) {
-				agentKind = ca.Kind
-				switch source {
-				case projectpkg.AgentDefinitionSourceInline:
-					agentKindSource = "azure.yaml (inline)"
-				case projectpkg.AgentDefinitionSourceLegacyConfig:
-					agentKindSource = "azure.yaml (config)"
-				case projectpkg.AgentDefinitionSourceDisk:
-					agentKindSource = "agent.yaml"
-				}
-			}
-			if source.IsLegacy() {
-				projectpkg.WarnLegacyAgentShape(source)
-			}
+		ca, _, source, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path)
+		if loadErr != nil {
+			azdClient.Close()
+			return nil, exterrors.ValidationFromError(
+				loadErr,
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("failed to load agent definition for service %s", svc.Name),
+				"fix the agent service configuration in azure.yaml",
+			)
+		}
+		if agent_yaml.IsValidAgentKind(ca.Kind) {
+			agentKind = ca.Kind
+			agentKindSource = "azure.yaml (inline)"
+		}
+		if source.IsLegacy() {
+			projectpkg.WarnLegacyAgentShape(source)
 		}
 	}
 	if agentKind == "" {

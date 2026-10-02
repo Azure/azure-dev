@@ -101,6 +101,50 @@ func Test_Container_NewScope(t *testing.T) {
 	require.Same(t, scopedInstance2, scopedInstance3)
 }
 
+func Test_Container_ChildRegistrationOverridesAreIsolated(t *testing.T) {
+	// Each scope overrides the greeter inherited from its parent:
+	//
+	// rootContainer (rootGreeter)
+	// +-- childScope1 (child1Greeter)
+	// |   +-- childOfChildScope (childOfChildScopeGreeter)
+	// +-- childSiblingScope (childSiblingScopeGreeter)
+	rootContainer := NewNestedContainer(nil)
+	rootGreeter := &englishGreeter{name: "root"}
+	RegisterInstance[greeter](rootContainer, rootGreeter)
+
+	childScope1, err := rootContainer.NewScope()
+	require.NoError(t, err)
+	child1Greeter := &englishGreeter{name: "child-1"}
+	RegisterInstance[greeter](childScope1, child1Greeter)
+
+	childSiblingScope, err := rootContainer.NewScope()
+	require.NoError(t, err)
+	childSiblingScopeGreeter := &englishGreeter{name: "child-sibling-scope"}
+	RegisterInstance[greeter](childSiblingScope, childSiblingScopeGreeter)
+
+	childOfChildScope, err := childScope1.NewScope()
+	require.NoError(t, err)
+	childOfChildScopeGreeter := &englishGreeter{name: "child-of-child-scope"}
+	RegisterInstance[greeter](childOfChildScope, childOfChildScopeGreeter)
+
+	// Each override leaves the parent and sibling registrations unchanged.
+	var resolvedRoot greeter
+	require.NoError(t, rootContainer.Resolve(&resolvedRoot))
+	require.Same(t, rootGreeter, resolvedRoot)
+
+	var resolvedChild1 greeter
+	require.NoError(t, childScope1.Resolve(&resolvedChild1))
+	require.Same(t, child1Greeter, resolvedChild1)
+
+	var resolvedSibling greeter
+	require.NoError(t, childSiblingScope.Resolve(&resolvedSibling))
+	require.Same(t, childSiblingScopeGreeter, resolvedSibling)
+
+	var resolvedGrandchild greeter
+	require.NoError(t, childOfChildScope.Resolve(&resolvedGrandchild))
+	require.Same(t, childOfChildScopeGreeter, resolvedGrandchild)
+}
+
 func Test_Container_Transient_Register_Resolve(t *testing.T) {
 	container := NewNestedContainer(nil)
 	container.MustRegisterTransient(newTransientService)
@@ -171,9 +215,11 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, scope2Instance1)
 
-		// Instance 1 & 2 are singletons but overriden in each child scope so they should be different
-		require.NotSame(t, rootInstance, rootInstanceResolved)
-		require.NotSame(t, scope1Instance, scope2Instance)
+		// Each child overrides the inherited registration without changing the root or its sibling.
+		require.Same(t, rootInstance, rootInstanceResolved)
+		require.Same(t, scope1Instance, scope1Instance1)
+		require.Same(t, scope2Instance, scope2Instance1)
+		require.NotSame(t, scope1Instance1, scope2Instance1)
 	})
 }
 

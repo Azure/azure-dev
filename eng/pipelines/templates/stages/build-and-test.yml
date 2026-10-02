@@ -13,10 +13,7 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
-        # This job also builds Linux packages, runs injected Copacetic scanning,
-        # and performs disk cleanup. Those required steps no longer fit reliably
-        # within the original cross-build-only 20-minute budget.
-        TimeoutInMinutes: 30
+        JobTimeoutInMinutes: 40
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)
@@ -99,6 +96,7 @@ stages:
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
+            JobTimeoutInMinutes: ${{ coalesce(build.value.JobTimeoutInMinutes, 20) }}
             Variables: ${{ build.value.Variables }}
             TimeoutInMinutes: ${{ build.value.TimeoutInMinutes }}
 

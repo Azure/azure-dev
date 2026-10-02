@@ -55,6 +55,21 @@ func Text(text string) string {
 	})
 }
 
+// Link sanitizes an entire URL field, not prose. Invalid or ambiguous values
+// are hidden whole so whitespace cannot leave a credential outside a token.
+func Link(raw string) string {
+	if strings.IndexFunc(raw, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 ||
+		len(urlStart.FindAllStringIndex(raw, 2)) > 1 {
+		return "<redacted-url>"
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.Opaque != "" {
+		return "<redacted-url>"
+	}
+	parsed.ForceQuery = false
+	return URL(parsed)
+}
+
 // URL renders a URL with its credentials, query and fragment removed, keeping
 // the scheme, host and path so the log still says where the request went.
 func URL(u *url.URL) string {

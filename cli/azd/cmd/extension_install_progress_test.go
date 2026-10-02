@@ -52,17 +52,68 @@ type installProgressConsole struct {
 	input.Console
 	t      *testing.T
 	writer *installProgressBuffer
+	title  string
 }
 
 func (c *installProgressConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {
 	c.t.Helper()
 	before := strings.Count(c.writer.String(), title)
+	unchanged := c.IsSpinnerRunning(ctx) && c.title == title
 	c.Console.ShowSpinner(ctx, title, format)
+	c.title = title
 	if !c.IsSpinnerInteractive() {
+		if unchanged {
+			require.Never(c.t, func() bool {
+				return strings.Count(c.writer.String(), title) != before
+			}, 100*time.Millisecond, 5*time.Millisecond)
+			return
+		}
 		// Wait for asynchronous painting so fast local installs cannot hide duplicate progress.
 		require.Eventually(c.t, func() bool {
 			return strings.Count(c.writer.String(), title) > before
 		}, 2*time.Second, 5*time.Millisecond)
+	}
+}
+
+func TestExtensionUpdate_Progress(t *testing.T) {
+	const id = "test.progress"
+	for _, tty := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tty=%t", tty), func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+			t.Setenv("NO_COLOR", "1")
+			t.Setenv("TERM", "xterm")
+			mockCtx := mocks.NewMockContext(t.Context())
+			manager, sources := createUpgradeTestManager(t, mockCtx,
+				map[string]*extensions.Extension{
+					id: {Id: id, Version: "1.0.0", Source: "test"},
+				},
+				"https://test.example.com/progress-registry.json",
+				testRegistry(testExtMeta(id, "1.0.0", "test")))
+			writer := &installProgressBuffer{}
+			handles := &installProgressBuffer{}
+			console := &installProgressConsole{
+				Console: input.NewConsole(true, tty, input.Writers{Output: writer},
+					input.ConsoleHandles{Stdin: os.Stdin, Stdout: handles, Stderr: os.Stderr},
+					&output.NoneFormatter{}, nil),
+				t: t, writer: writer,
+			}
+			t.Cleanup(func() { console.StopSpinner(t.Context(), "", input.Step) })
+			action := newExtensionUpgradeAction([]string{id},
+				&extensionUpgradeFlags{global: &internal.GlobalCommandOptions{NoPrompt: true}},
+				&output.NoneFormatter{}, writer, console, sources, manager)
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+			require.False(t, console.IsSpinnerRunning(t.Context()))
+			require.Contains(t, writer.String(), "Skipped: Updating "+id)
+			if !tty {
+				require.Equal(t, 1, strings.Count(writer.String(), "Updating "+id+"\n"))
+			}
+			require.Empty(t, handles.String())
+			record, err := manager.GetInstalled(extensions.FilterOptions{Id: id})
+			require.NoError(t, err)
+			require.Equal(t, "1.0.0", record.Version)
+		})
 	}
 }
 

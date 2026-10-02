@@ -37,7 +37,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
-	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -1270,7 +1269,10 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, err
 		}
 
-		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+		// Selecting between sources stops progress while prompting.
+		if !a.console.IsSpinnerRunning(ctx) {
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+		}
 
 		candidate := resolution.Candidate(selectedExtension)
 		if shouldWarnNewerIncompatible(a.flags.version, candidate) {
@@ -1375,7 +1377,9 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			}
 
 			// Use upgrade logic for existing installations
-			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			if !a.console.IsSpinnerRunning(ctx) {
+				a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			}
 			// The user asked for this extension by name, so the reinstall records it as explicit
 			// even when the previous record was only a dependency install.
 			var dependencyResults []extensions.UpgradeResult
@@ -1403,7 +1407,6 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 		} else {
 			// Extension not installed - proceed with fresh install
-			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			extensionVersion, err = a.extensionManager.InstallWithOptions(
 				ctx,
 				selectedExtension,
@@ -3935,31 +3938,26 @@ func selectDistinctExtension(
 
 	console.StopSpinner(ctx, "", input.Step)
 
-	sourceChoices := make([]*uxlib.SelectChoice, len(matches))
+	sourceChoices := make([]string, len(matches))
 	for i, ext := range matches {
-		sourceChoices[i] = &uxlib.SelectChoice{
-			Value: ext.Source,
-			Label: ext.Source,
-		}
+		sourceChoices[i] = ext.Source
 	}
 
-	selectSource := uxlib.NewSelect(&uxlib.SelectOptions{
+	sourceResponseIndex, err := console.Select(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
 			"The %s extension was found in multiple sources.\nSelect the source to continue",
 			output.WithHighLightFormat(extensionId),
 		),
-		Choices:       sourceChoices,
-		SelectedIndex: defaultExtensionSourceIndex(matches),
+		Options:      sourceChoices,
+		DefaultValue: sourceChoices[*defaultExtensionSourceIndex(matches)],
 	})
-
-	sourceResponseIndex, err := selectSource.Ask(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select extension source: %w", err)
 	}
 
 	console.Message(ctx, "")
 
-	return matches[*sourceResponseIndex], nil
+	return matches[sourceResponseIndex], nil
 }
 
 func defaultExtensionSourceIndex(matches []*extensions.ExtensionMetadata) *int {

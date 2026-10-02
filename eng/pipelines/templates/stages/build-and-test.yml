@@ -38,6 +38,7 @@ parameters:
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
+        TimeoutInMinutes: 20
         Variables: 
           BuildTarget: azd-darwin-arm64
           BuildOutputName: azd
@@ -51,6 +52,7 @@ parameters:
         OSVmImage: $(WINDOWSVMIMAGE)
         OS: windows
         ImageKey: image
+        TimeoutInMinutes: 20
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)
@@ -96,6 +98,7 @@ stages:
             OS: ${{ build.value.OS }}
             JobTimeoutInMinutes: ${{ coalesce(build.value.JobTimeoutInMinutes, 20) }}
             Variables: ${{ build.value.Variables }}
+            TimeoutInMinutes: ${{ build.value.TimeoutInMinutes }}
 
       - job: MergeLinuxPackages
         pool:

@@ -16,6 +16,9 @@ parameters:
   - name: Variables
     type: object
     default: {}
+  - name: TimeoutInMinutes
+    type: number
+    default: 20
 
 jobs:
   - job: CrossBuildCLI_${{ parameters.NameSuffix }}

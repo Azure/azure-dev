@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -16,9 +17,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
@@ -157,6 +160,137 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	require.Same(t, lazyInstance, lazyComponent.lazy)
 	require.Same(t, lazyValue, directValue)
 	require.Same(t, directValue, staticComponent.concrete)
+}
+
+func Test_LocalDataStore_ResolutionAfterInit(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		name := "Root"
+		if nested {
+			name = "NestedWorkflow"
+		}
+		t.Run(name, func(t *testing.T) {
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, t.Context())
+			registerCommonDependencies(container)
+			container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+				return lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+					return nil, azdcontext.ErrNoProject
+				})
+			})
+			if nested {
+				var err error
+				container, err = container.NewScope()
+				require.NoError(t, err)
+			}
+
+			var dataStore environment.LocalDataStore
+			for range 2 {
+				require.ErrorIs(t, container.Resolve(&dataStore), azdcontext.ErrNoProject)
+			}
+
+			var lazyContext *lazy.Lazy[*azdcontext.AzdContext]
+			require.NoError(t, container.Resolve(&lazyContext))
+			azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			lazyContext.SetValue(azdContext)
+
+			require.NoError(t, container.Resolve(&dataStore))
+			require.Equal(t, filepath.Join(azdContext.EnvironmentRoot("test"), environment.DotEnvFileName),
+				dataStore.EnvPath(environment.New("test")))
+			_, err := dataStore.Get(t.Context(), "test")
+			require.ErrorIs(t, err, environment.ErrNotFound)
+		})
+	}
+}
+
+func Test_EnvironmentRegistrations_InitLifecycle(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		for _, firstLookup := range []string{"Context", "Manager", "DataStore"} {
+			scopeName := "Root"
+			if nested {
+				scopeName = "NestedWorkflow"
+			}
+			t.Run(scopeName+"/"+firstLookup, func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				root := ioc.NewNestedContainer(nil)
+				ioc.RegisterInstance(root, t.Context())
+				registerCommonDependencies(root)
+				ioc.RegisterInstance(root, newTestUserConfigManager(t))
+				console := mocks.NewMockContext(t.Context()).Console
+				root.MustRegisterScoped(func() input.Console { return console })
+
+				container := root
+				var sibling *ioc.NestedContainer
+				if nested {
+					var err error
+					container, err = root.NewScope()
+					require.NoError(t, err)
+					sibling, err = root.NewScope()
+					require.NoError(t, err)
+				}
+
+				var lazyManager *lazy.Lazy[environment.Manager]
+				require.NoError(t, container.Resolve(&lazyManager))
+				_, err := lazyManager.GetValue()
+				require.ErrorIs(t, err, azdcontext.ErrNoProject)
+				for range 2 {
+					switch firstLookup {
+					case "Context":
+						var azdContext *azdcontext.AzdContext
+						require.ErrorIs(t, container.Resolve(&azdContext), azdcontext.ErrNoProject)
+					case "Manager":
+						var manager environment.Manager
+						require.ErrorIs(t, container.Resolve(&manager), azdcontext.ErrNoProject)
+					case "DataStore":
+						var dataStore environment.LocalDataStore
+						require.ErrorIs(t, container.Resolve(&dataStore), azdcontext.ErrNoProject)
+					}
+				}
+
+				var lazyContext *lazy.Lazy[*azdcontext.AzdContext]
+				require.NoError(t, container.Resolve(&lazyContext))
+				azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+				lazyContext.SetValue(azdContext)
+				require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{Name: "test"}, azdContext.ProjectPath()))
+
+				manager, err := lazyManager.GetValue()
+				require.NoError(t, err)
+				env, err := manager.Create(t.Context(), environment.Spec{Name: "dev"})
+				require.NoError(t, err)
+				env.DotenvSet("LIFECYCLE_TEST", "saved")
+				require.NoError(t, manager.Save(t.Context(), env))
+				env.DotenvSet("LIFECYCLE_TEST", "unsaved")
+				require.NoError(t, manager.Reload(t.Context(), env))
+				require.Equal(t, "saved", env.Getenv("LIFECYCLE_TEST"))
+				require.Equal(t, filepath.Join(azdContext.EnvironmentRoot("dev"), environment.DotEnvFileName),
+					manager.EnvPath(env))
+
+				var resolvedManager environment.Manager
+				require.NoError(t, container.Resolve(&resolvedManager))
+				require.Same(t, manager, resolvedManager)
+				loaded, err := resolvedManager.Get(t.Context(), "dev")
+				require.NoError(t, err)
+				require.Equal(t, "saved", loaded.Getenv("LIFECYCLE_TEST"))
+				cached, err := resolvedManager.Get(t.Context(), "dev")
+				require.NoError(t, err)
+				require.Same(t, loaded, cached)
+				nextScope, err := root.NewScope()
+				require.NoError(t, err)
+				var nextManager environment.Manager
+				require.NoError(t, nextScope.Resolve(&nextManager))
+				require.Same(t, manager, nextManager)
+				nextEnv, err := nextManager.Get(t.Context(), "dev")
+				require.NoError(t, err)
+				require.Same(t, loaded, nextEnv)
+
+				if nested {
+					for _, untouched := range []*ioc.NestedContainer{root, sibling} {
+						var untouchedContext *azdcontext.AzdContext
+						require.ErrorIs(t, untouched.Resolve(&untouchedContext), azdcontext.ErrNoProject)
+					}
+				}
+			})
+		}
+	}
 }
 
 type testLazyComponent[T comparable] struct {

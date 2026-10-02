@@ -243,10 +243,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	// Scoped registration is required since the value of the azd context can change through the lifetime of a command
-	// Example: Within extensions multiple workflows can be dispatched which can cause the azd context to be updated.
-	// A specific example is within AI builder. It invokes `init` command when project is not found.
-	container.MustRegisterScoped(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	//
+	// Using Transient for the scope here is important - the underlying container will cache an error result,
+	// preventing Lazy from retrying and basically _never_ being updatable. We have explicit flows
+	// where the project isn't defined until after some code has run, which means each time you
+	// ask for the lazy context it MUST run GetValue() _each_ time.
+	container.MustRegisterTransient(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})
 
@@ -325,16 +327,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(serviceLocator ioc.ServiceLocator,
 			azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
-				azdCtx, err := azdContext.GetValue()
-				if err != nil {
+				if _, err := azdContext.GetValue(); err != nil {
 					return nil, err
 				}
 
-				// Register the Azd context instance as a singleton in the container if now available
-				ioc.RegisterInstance(container, azdCtx)
-
 				var envManager environment.Manager
-				err = serviceLocator.Resolve(&envManager)
+				err := serviceLocator.Resolve(&envManager)
 				if err != nil {
 					return nil, err
 				}

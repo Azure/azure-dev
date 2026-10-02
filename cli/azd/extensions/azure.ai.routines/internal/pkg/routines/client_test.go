@@ -107,6 +107,23 @@ func TestGetRoutine_Success(t *testing.T) {
 	assert.True(t, *got.Enabled)
 }
 
+func TestGetRoutine_PreservesCreatorAuthorizationFromRawResponse(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "api-version=v1", r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(
+			`{"name":"creator-routine","authorization":{"identity":"creator"}}`,
+		))
+	}))
+
+	got, err := client.GetRoutine(t.Context(), "creator-routine")
+	require.NoError(t, err)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, got.Authorization.Identity)
+}
+
 func TestGetRoutine_NotFound(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -219,6 +236,8 @@ func TestPutRoutine_Created(t *testing.T) {
 			return
 		}
 		assert.Equal(t, "new-routine", body.Name)
+		require.NotNil(t, body.Authorization)
+		assert.Equal(t, RoutineDispatchIdentityCreator, body.Authorization.Identity)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -226,10 +245,16 @@ func TestPutRoutine_Created(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(body)
 	}))
 
-	input := &Routine{Name: "new-routine", Description: "desc"}
+	input := &Routine{
+		Name:          "new-routine",
+		Description:   "desc",
+		Authorization: &RoutineAuthorization{Identity: RoutineDispatchIdentityCreator},
+	}
 	got, err := client.PutRoutine(t.Context(), "new-routine", input)
 	require.NoError(t, err)
 	assert.Equal(t, "new-routine", got.Name)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, got.Authorization.Identity)
 	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt.String())
 }
 

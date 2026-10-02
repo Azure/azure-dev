@@ -65,15 +65,27 @@ func (ft FlexibleTimestamp) String() string {
 	return string(ft)
 }
 
+// RoutineDispatchIdentityAgent is the default identity.
+const RoutineDispatchIdentityAgent = "agent"
+
+// RoutineDispatchIdentityCreator dispatches a routine as its creator.
+const RoutineDispatchIdentityCreator = "creator"
+
+// RoutineAuthorization holds a routine's dispatch identity.
+type RoutineAuthorization struct {
+	Identity string `json:"identity,omitempty" yaml:"identity,omitempty"`
+}
+
 // Routine represents a Foundry routine resource.
 type Routine struct {
-	Name        string                    `json:"name,omitempty"        yaml:"name,omitempty"`
-	Description string                    `json:"description,omitempty" yaml:"description,omitempty"`
-	Enabled     *bool                     `json:"enabled,omitempty"     yaml:"enabled,omitempty"`
-	Triggers    map[string]RoutineTrigger `json:"triggers,omitempty"    yaml:"triggers,omitempty"`
-	Action      *RoutineAction            `json:"action,omitempty"      yaml:"action,omitempty"`
-	CreatedAt   FlexibleTimestamp         `json:"created_at,omitempty"  yaml:"created_at,omitempty"`
-	UpdatedAt   FlexibleTimestamp         `json:"updated_at,omitempty"  yaml:"updated_at,omitempty"`
+	Name          string                    `json:"name,omitempty"          yaml:"name,omitempty"`
+	Description   string                    `json:"description,omitempty"   yaml:"description,omitempty"`
+	Enabled       *bool                     `json:"enabled,omitempty"       yaml:"enabled,omitempty"`
+	Authorization *RoutineAuthorization     `json:"authorization,omitempty" yaml:"authorization,omitempty"`
+	Triggers      map[string]RoutineTrigger `json:"triggers,omitempty"      yaml:"triggers,omitempty"`
+	Action        *RoutineAction            `json:"action,omitempty"        yaml:"action,omitempty"`
+	CreatedAt     FlexibleTimestamp         `json:"created_at,omitempty"    yaml:"created_at,omitempty"`
+	UpdatedAt     FlexibleTimestamp         `json:"updated_at,omitempty"    yaml:"updated_at,omitempty"`
 }
 
 // RoutineTrigger is the discriminated union for routine triggers.

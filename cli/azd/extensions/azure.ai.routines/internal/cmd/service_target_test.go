@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azure.ai.routines/internal/exterrors"
+	"azure.ai.routines/internal/pkg/routines"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,9 @@ func TestParseRoutineServiceConfig_ServiceLevel(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"description": "nightly summary",
 		"enabled":     true,
+		"authorization": map[string]any{
+			"identity": "creator",
+		},
 		"triggers": map[string]any{
 			"default": map[string]any{"type": "recurring", "cron_expression": "0 9 * * *"},
 		},
@@ -44,11 +48,29 @@ func TestParseRoutineServiceConfig_ServiceLevel(t *testing.T) {
 	assert.Equal(t, "nightly summary", body.Description)
 	require.NotNil(t, body.Enabled)
 	assert.True(t, *body.Enabled)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 	require.Contains(t, body.Triggers, "default")
 	assert.Equal(t, "recurring", body.Triggers["default"].Type)
 	assert.Equal(t, "0 9 * * *", body.Triggers["default"].CronExpression)
 	require.NotNil(t, body.Action)
 	assert.Equal(t, "summarizer", body.Action.AgentName)
+}
+
+func TestParseRoutineServiceConfig_InvalidDispatchIdentity(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name: "nightly",
+		Host: aiRoutineHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"authorization": map[string]any{"identity": "service"},
+		}),
+	}, "")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+	assert.Contains(t, localErr.Message, "authorization.identity")
 }
 
 // TestParseRoutineServiceConfig_ConfigFallback verifies routines written before
@@ -92,6 +114,8 @@ func TestParseRoutineServiceConfig_FileRef(t *testing.T) {
 			"  default:\n"+
 			"    type: schedule\n"+
 			"    cron_expression: \"0 2 * * *\"\n"+
+			"authorization:\n"+
+			"  identity: creator\n"+
 			"action:\n"+
 			"  type: invoke_agent_responses_api\n"+
 			"  agent_name: summarizer\n"+
@@ -111,6 +135,8 @@ func TestParseRoutineServiceConfig_FileRef(t *testing.T) {
 	}, root)
 	require.NoError(t, err)
 	assert.Equal(t, "referenced routine", body.Description)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 	assert.Equal(t, "0 2 * * *", body.Triggers["default"].CronExpression)
 	require.NotNil(t, body.Action)
 	assert.Equal(t, "summarizer", body.Action.AgentName)
@@ -127,12 +153,16 @@ func TestParseRoutineServiceConfig_FileRefOverlay(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "routine.yaml"),
-		[]byte("description: referenced routine\nenabled: true\n"),
+		[]byte(
+			"description: referenced routine\nenabled: true\n"+
+				"authorization:\n  identity: agent\n",
+		),
 		0o600,
 	))
 	props, err := structpb.NewStruct(map[string]any{
-		"$ref":        "./routine.yaml",
-		"description": "inline override",
+		"$ref":          "./routine.yaml",
+		"description":   "inline override",
+		"authorization": map[string]any{"identity": "creator"},
 	})
 	require.NoError(t, err)
 
@@ -145,6 +175,8 @@ func TestParseRoutineServiceConfig_FileRefOverlay(t *testing.T) {
 	assert.Equal(t, "inline override", body.Description)
 	require.NotNil(t, body.Enabled)
 	assert.True(t, *body.Enabled)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 }
 
 func TestResolveRoutineServiceRef_AbsolutePath(t *testing.T) {

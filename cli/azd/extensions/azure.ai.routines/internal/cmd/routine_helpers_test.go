@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,6 +130,153 @@ func TestBoolStr(t *testing.T) {
 			assert.Equal(t, tt.want, boolStr(tt.val))
 		})
 	}
+}
+
+func TestRoutineSummaryTable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		authorization *routines.RoutineAuthorization
+		wantIdentity  string
+	}{
+		{
+			name: "creator identity",
+			authorization: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityCreator,
+			},
+			wantIdentity: routines.RoutineDispatchIdentityCreator,
+		},
+		{
+			name: "agent identity",
+			authorization: &routines.RoutineAuthorization{
+				Identity: routines.RoutineDispatchIdentityAgent,
+			},
+			wantIdentity: routines.RoutineDispatchIdentityAgent,
+		},
+		{
+			name:         "missing authorization",
+			wantIdentity: routines.RoutineDispatchIdentityAgent,
+		},
+		{
+			name:          "empty identity",
+			authorization: &routines.RoutineAuthorization{},
+			wantIdentity:  routines.RoutineDispatchIdentityAgent,
+		},
+		{
+			name: "other non-empty identity",
+			authorization: &routines.RoutineAuthorization{
+				Identity: "other",
+			},
+			wantIdentity: "other",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output bytes.Buffer
+			routine := &routines.Routine{
+				Name:          "nightly",
+				Description:   "Daily summary",
+				Enabled:       new(true),
+				Authorization: test.authorization,
+				Triggers: map[string]routines.RoutineTrigger{
+					"default": {
+						Type:           "schedule",
+						CronExpression: "0 8 * * *",
+					},
+				},
+				Action: &routines.RoutineAction{
+					Type:      "invoke_agent_responses_api",
+					AgentName: "summarizer",
+				},
+			}
+
+			require.NoError(t, routineSummaryTable(&output, routine))
+			outputText := output.String()
+			for _, expected := range []string{
+				"Name:",
+				"nightly",
+				"Description:",
+				"Daily summary",
+				"Enabled:",
+				"Trigger (default):",
+				"schedule",
+				"Cron:",
+				"0 8 * * *",
+				"Action:",
+				"invoke_agent_responses_api",
+				"AgentName:",
+				"summarizer",
+			} {
+				assert.Contains(t, outputText, expected)
+			}
+
+			var identity string
+			foundIdentity := false
+			for line := range strings.SplitSeq(outputText, "\n") {
+				if after, ok := strings.CutPrefix(line, "Dispatch identity:"); ok {
+					identity = strings.TrimSpace(after)
+					foundIdentity = true
+					break
+				}
+			}
+			require.True(t, foundIdentity)
+			assert.Equal(t, test.wantIdentity, identity)
+		})
+	}
+}
+
+type routineSummaryFailingWriter struct {
+	err error
+}
+
+func (writer routineSummaryFailingWriter) Write([]byte) (int, error) {
+	return 0, writer.err
+}
+
+func TestRoutineSummaryTableReturnsWriteError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	err := routineSummaryTable(
+		routineSummaryFailingWriter{err: writeErr},
+		&routines.Routine{Name: "nightly"},
+	)
+	require.ErrorIs(t, err, writeErr)
+}
+
+type routineSummaryFailOnceWriter struct {
+	output     bytes.Buffer
+	err        error
+	writeCount int
+}
+
+func (writer *routineSummaryFailOnceWriter) Write(data []byte) (int, error) {
+	writer.writeCount++
+	if writer.writeCount == 1 {
+		return 0, writer.err
+	}
+	return writer.output.Write(data)
+}
+
+func TestRoutineSummaryTablePropagatesWriteErrorWithMultilineDescription(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	writer := &routineSummaryFailOnceWriter{err: writeErr}
+	err := routineSummaryTable(writer, &routines.Routine{
+		Name:        "nightly",
+		Description: "First line\nSecond line",
+	})
+
+	require.ErrorIs(t, err, writeErr)
+	assert.Equal(t, 1, writer.writeCount)
+	assert.Empty(t, writer.output.String())
 }
 
 // ─── sortedKeys ──────────────────────────────────────────────────────────────

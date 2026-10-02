@@ -37,7 +37,22 @@ func newRoutineShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func runRoutineShow(ctx context.Context, cmd *cobra.Command, name, output string) error {
-	client, _, err := newRoutineClient(ctx, cmd)
+	return runRoutineShowWithClientFactory(
+		ctx,
+		cmd,
+		name,
+		output,
+		routineUpsertClientFactoryFromCommand(cmd),
+	)
+}
+
+func runRoutineShowWithClientFactory(
+	ctx context.Context,
+	cmd *cobra.Command,
+	name, output string,
+	clientFactory routineUpsertClientFactory,
+) error {
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return err
 	}
@@ -55,6 +70,5 @@ func runRoutineShow(ctx context.Context, cmd *cobra.Command, name, output string
 		return printJSON(routine)
 	}
 
-	routineSummaryTable(routine)
-	return nil
+	return routineSummaryTable(cmd.OutOrStdout(), routine)
 }

@@ -17,28 +17,29 @@ import (
 
 // routineCreateFlags holds validated input for the create command.
 type routineCreateFlags struct {
-	name            string
-	trigger         string
-	timeZone        string
-	at              string
-	cronExpression  string
-	connectionID    string
-	owner           string
-	repository      string
-	issueEvent      string
-	provider        string
-	eventName       string
-	parametersJSON  string
-	action          string
-	agentName       string
-	agentEndpointID string
-	conversationID  string
-	sessionID       string
-	description     string
-	enabled         bool
-	force           bool
-	file            string
-	output          string
+	name             string
+	trigger          string
+	dispatchIdentity string
+	timeZone         string
+	at               string
+	cronExpression   string
+	connectionID     string
+	owner            string
+	repository       string
+	issueEvent       string
+	provider         string
+	eventName        string
+	parametersJSON   string
+	action           string
+	agentName        string
+	agentEndpointID  string
+	conversationID   string
+	sessionID        string
+	description      string
+	enabled          bool
+	force            bool
+	file             string
+	output           string
 }
 
 func newRoutineCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -52,9 +53,14 @@ func newRoutineCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Create a new Foundry routine.
 
 A routine pairs a trigger (--trigger) with an action (--action).
-Use --file to create from a YAML/JSON manifest file instead of individual flags.`,
+Use --file to create from a YAML/JSON manifest file instead of individual flags.
+Use --dispatch-identity creator or set authorization.identity in the manifest
+to dispatch with the creator identity; agent is the default.`,
 		Example: `  # Create a routine from a YAML manifest
   azd ai routine create nightly-summary --file ./routine.yaml
+
+  # Dispatch with the creator identity
+  azd ai routine create nightly-summary --trigger recurring --cron "0 8 * * *" --agent-name summarizer --dispatch-identity creator
 
   # Schedule an agent response every day at midnight UTC
   azd ai routine create nightly-summary --trigger recurring --cron "0 0 * * *" --agent-name summarizer`,
@@ -69,6 +75,8 @@ Use --file to create from a YAML/JSON manifest file instead of individual flags.
 
 	cmd.Flags().StringVar(&flags.trigger, "trigger", "",
 		"Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)")
+	cmd.Flags().StringVar(&flags.dispatchIdentity, "dispatch-identity", routines.RoutineDispatchIdentityAgent,
+		"Dispatch identity: agent (default) or creator")
 	cmd.Flags().StringVar(&flags.timeZone, "time-zone", "UTC",
 		"Time zone for the recurring trigger (e.g. 'America/New_York')")
 	cmd.Flags().StringVar(&flags.at, "at", "",
@@ -116,6 +124,25 @@ Use --file to create from a YAML/JSON manifest file instead of individual flags.
 }
 
 func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCreateFlags) error {
+	return runRoutineCreateWithClientFactory(
+		ctx,
+		cmd,
+		flags,
+		routineUpsertClientFactoryFromCommand(cmd),
+	)
+}
+
+func runRoutineCreateWithClientFactory(
+	ctx context.Context,
+	cmd *cobra.Command,
+	flags *routineCreateFlags,
+	clientFactory routineUpsertClientFactory,
+) error {
+	authorizationOverride, err := routineAuthorizationOverride(cmd, flags.dispatchIdentity)
+	if err != nil {
+		return err
+	}
+
 	// --file and --trigger are mutually exclusive
 	if flags.file != "" && flags.trigger != "" {
 		return exterrors.Validation(
@@ -178,6 +205,13 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 		body.Action = &action
 	}
 
+	if authorizationOverride != nil {
+		body.Authorization = authorizationOverride
+	}
+	if err := validateRoutineAuthorization(body.Authorization); err != nil {
+		return err
+	}
+
 	// Default Enabled to true when neither the flag nor the manifest provided
 	// a value. This matches the documented "enabled by default on creation"
 	// behavior while still letting a manifest's explicit `enabled: false` win.
@@ -185,18 +219,25 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 		body.Enabled = new(true)
 	}
 
-	client, _, err := newRoutineClient(ctx, cmd)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Check if exists when --force is not set.
-	if !flags.force {
-		existing, err := client.GetRoutine(ctx, flags.name)
-		if err != nil && !exterrors.IsNotFound(err) {
-			return exterrors.ServiceFromAzure(err, exterrors.OpGetRoutine)
+	existing, err := client.GetRoutine(ctx, flags.name)
+	if err != nil && !exterrors.IsNotFound(err) {
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetRoutine)
+	}
+	if existing != nil {
+		body.Authorization, err = routineAuthorizationForUpsert(
+			flags.name,
+			existing,
+			body.Authorization,
+		)
+		if err != nil {
+			return err
 		}
-		if existing != nil {
+		if !flags.force {
 			return exterrors.Validation(
 				exterrors.CodeRoutineAlreadyExists,
 				fmt.Sprintf("routine %q already exists", flags.name),
@@ -211,12 +252,31 @@ func runRoutineCreate(ctx context.Context, cmd *cobra.Command, flags *routineCre
 	}
 
 	if flags.output == "json" {
-		return printJSON(result)
+		return printJSONTo(cmd.OutOrStdout(), result)
 	}
 
-	fmt.Printf("Routine '%s' created.\n\n", result.Name)
-	routineSummaryTable(result)
-	return nil
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Routine '%s' created.\n\n", result.Name); err != nil {
+		return fmt.Errorf("failed to write routine creation output: %w", err)
+	}
+	return routineSummaryTable(cmd.OutOrStdout(), result)
+}
+
+func routineAuthorizationOverride(
+	cmd *cobra.Command,
+	identity string,
+) (*routines.RoutineAuthorization, error) {
+	if !cmd.Flags().Changed("dispatch-identity") {
+		return nil, nil
+	}
+	if !isSupportedRoutineDispatchIdentity(identity) {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("unsupported --dispatch-identity value %q", identity),
+			"supported values: agent, creator",
+		)
+	}
+
+	return &routines.RoutineAuthorization{Identity: identity}, nil
 }
 
 // buildTrigger constructs a RoutineTrigger from CLI flags.

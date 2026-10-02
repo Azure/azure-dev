@@ -214,7 +214,8 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 
 	store := newEnvironmentStoreForTest(t, mockContext, config, nil)
 	env := environment.New(mockEnvironments[0].Name)
-	path := store.EnvPath(env)
+	path, err := store.EnvPath(env)
+	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("projects/%s/users/me/environments/%s", config.Project, env.Name()), path)
 }
 

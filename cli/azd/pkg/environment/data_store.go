@@ -29,10 +29,10 @@ type SaveOptions struct {
 
 type DataStore interface {
 	// Gets the path to the environment .env file
-	EnvPath(env *Environment) string
+	EnvPath(env *Environment) (string, error)
 
 	// Gets the path to the environment JSON config file
-	ConfigPath(env *Environment) string
+	ConfigPath(env *Environment) (string, error)
 
 	// Gets a list of all environments within the stat store
 	List(ctx context.Context) ([]*contracts.EnvListEnvironment, error)

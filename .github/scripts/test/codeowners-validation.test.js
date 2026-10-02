@@ -6,12 +6,19 @@ import validate from '../src/codeowners-validation.js';
 const workflow = readFileSync(join(__dirname, '..', '..', 'workflows', 'codeowners-validation.yml'), 'utf8');
 
 function fixture() {
+  /** @type {Map<string, { type: string, size: number } | object[]>} */
+  const contents = new Map([['.github/CODEOWNERS', { type: 'file', size: 100 }]]);
   const github = {
     paginate: vi.fn().mockResolvedValue([{ filename: '.github/CODEOWNERS', status: 'modified' }]),
     rest: {
       pulls: { listFiles: vi.fn() },
       repos: {
-        getContent: vi.fn().mockResolvedValue({ data: { type: 'file', size: 100 } }),
+        getContent: vi.fn(/** @param {{ path: string }} request */ async ({ path }) => {
+          if (!contents.has(path)) {
+            throw Object.assign(new Error('Not Found'), { status: 404 });
+          }
+          return { data: contents.get(path) };
+        }),
         codeownersErrors: vi.fn().mockResolvedValue({ data: { errors: [] } }),
       },
     },
@@ -31,6 +38,7 @@ function fixture() {
   };
   const core = { info: vi.fn(), error: vi.fn(), setFailed: vi.fn() };
   return {
+    contents,
     github,
     context,
     core,
@@ -53,9 +61,12 @@ describe('CODEOWNERS validation workflow', () => {
     expect(workflow).toContain('await validate({ github, context, core });');
   });
 
-  it('succeeds without validating unrelated changes', async () => {
+  it.each([
+    { filename: 'README.md', status: 'modified' },
+    { filename: 'OWNERS', previous_filename: '.github/CODEOWNERS', status: 'renamed' },
+  ])('skips validation when the changed filename is $filename', async (file) => {
     const { github, core, run } = fixture();
-    github.paginate.mockResolvedValue([{ filename: 'README.md' }]);
+    github.paginate.mockResolvedValue([file]);
 
     await run();
 
@@ -67,11 +78,10 @@ describe('CODEOWNERS validation workflow', () => {
 
   it.each([
     { filename: '.github/CODEOWNERS', status: 'modified' },
-    { filename: 'CODEOWNERS', status: 'added' },
-    { filename: 'docs/CODEOWNERS', status: 'modified' },
-    { filename: '.github/CODEOWNERS', status: 'removed' },
-    { filename: 'archived-owners', previous_filename: '.github/CODEOWNERS', status: 'renamed' },
+    { filename: 'CODEOWNERS', status: 'removed' },
+    { filename: 'docs/CODEOWNERS', status: 'removed' },
     { filename: '.github/CODEOWNERS', previous_filename: 'owners', status: 'renamed' },
+    { filename: '.github/CODEOWNERS', previous_filename: 'docs/CODEOWNERS', status: 'renamed' },
   ])('validates $status changes involving $filename', async (file) => {
     const { github, context, core, run } = fixture();
     github.paginate.mockResolvedValue([file]);
@@ -81,9 +91,11 @@ describe('CODEOWNERS validation workflow', () => {
     expect(github.paginate).toHaveBeenCalledWith(github.rest.pulls.listFiles, {
       ...context.repo, pull_number: 42, per_page: 100,
     });
-    expect(github.rest.repos.getContent).toHaveBeenCalledExactlyOnceWith({
-      ...context.repo, ref: 'head-commit', path: '.github/CODEOWNERS',
-    });
+    expect(github.rest.repos.getContent.mock.calls).toEqual(
+      ['CODEOWNERS', 'docs/CODEOWNERS', '.github/CODEOWNERS'].map((path) => [{
+        ...context.repo, ref: 'head-commit', path,
+      }]),
+    );
     expect(github.rest.repos.codeownersErrors).toHaveBeenCalledExactlyOnceWith({
       ...context.repo, ref: 'head-commit',
     });
@@ -100,25 +112,61 @@ describe('CODEOWNERS validation workflow', () => {
     expect(github.rest.repos.codeownersErrors).not.toHaveBeenCalled();
   });
 
-  it('checks the size of the first supported file, skipping missing paths and directories', async () => {
-    const { github, core, run } = fixture();
-    github.paginate.mockResolvedValue([{ filename: '.github/CODEOWNERS', status: 'removed' }]);
-    github.rest.repos.getContent
-      .mockRejectedValueOnce({ status: 404 })
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ data: { type: 'file', size: 3 * 1024 * 1024 + 1 } });
+  it.each([
+    { filename: 'CODEOWNERS', status: 'added' },
+    { filename: 'docs/CODEOWNERS', status: 'modified' },
+    { filename: 'docs/CODEOWNERS', previous_filename: '.github/CODEOWNERS', status: 'renamed' },
+    { filename: 'CODEOWNERS', previous_filename: 'owners', status: 'renamed' },
+  ])('rejects $status fallback file $filename before native validation', async (file) => {
+    const { contents, github, context, core, run } = fixture();
+    github.paginate.mockResolvedValue([file]);
+    contents.set(file.filename, { type: 'file', size: 100 });
+    if (file.previous_filename === '.github/CODEOWNERS') {
+      contents.delete('.github/CODEOWNERS');
+    }
 
     await run();
 
-    expect(github.rest.repos.getContent.mock.calls.map(([request]) => request.path)).toEqual([
-      '.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS',
-    ]);
-    expect(core.setFailed).toHaveBeenCalledWith("docs/CODEOWNERS exceeds GitHub's 3 MiB limit and cannot be validated.");
+    expect(github.rest.repos.getContent).toHaveBeenCalledWith({
+      ...context.repo, ref: 'head-commit', path: file.filename,
+    });
+    expect(core.error).toHaveBeenCalledExactlyOnceWith(
+      `Keep ownership rules in .github/CODEOWNERS; remove the fallback file ${file.filename}.`,
+      { file: file.filename, startLine: 1, title: 'Unsupported CODEOWNERS location' },
+    );
+    expect(core.setFailed).toHaveBeenCalledWith(
+      'Only .github/CODEOWNERS is allowed. Remove the annotated fallback files.',
+    );
+    expect(github.rest.repos.codeownersErrors).not.toHaveBeenCalled();
+  });
+
+  it('rejects both dormant fallback files when only the canonical file changes', async () => {
+    const { contents, github, core, run } = fixture();
+    contents.set('CODEOWNERS', { type: 'file', size: 0 });
+    contents.set('docs/CODEOWNERS', { type: 'file', size: 100 });
+
+    await run();
+
+    expect(core.error.mock.calls.map(([, properties]) => properties.file)).toEqual(['CODEOWNERS', 'docs/CODEOWNERS']);
+    expect(core.setFailed).toHaveBeenCalledOnce();
+    expect(github.rest.repos.codeownersErrors).not.toHaveBeenCalled();
+  });
+
+  it('allows directories at fallback paths because they are not ownership files', async () => {
+    const { contents, core, run } = fixture();
+    contents.set('CODEOWNERS', []);
+    contents.set('docs/CODEOWNERS', []);
+
+    await run();
+
+    expect(core.error).not.toHaveBeenCalled();
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith('No CODEOWNERS errors reported by GitHub.');
   });
 
   it('rejects oversized files even when the native API reports no errors', async () => {
-    const { github, core, run } = fixture();
-    github.rest.repos.getContent.mockResolvedValue({ data: { type: 'file', size: 3 * 1024 * 1024 + 1 } });
+    const { contents, github, core, run } = fixture();
+    contents.set('.github/CODEOWNERS', { type: 'file', size: 3 * 1024 * 1024 + 1 });
 
     await run();
 
@@ -128,8 +176,8 @@ describe('CODEOWNERS validation workflow', () => {
   });
 
   it('allows a CODEOWNERS file exactly at the native size limit', async () => {
-    const { github, core, run } = fixture();
-    github.rest.repos.getContent.mockResolvedValue({ data: { type: 'file', size: 3 * 1024 * 1024 } });
+    const { contents, github, core, run } = fixture();
+    contents.set('.github/CODEOWNERS', { type: 'file', size: 3 * 1024 * 1024 });
 
     await run();
 
@@ -160,17 +208,23 @@ describe('CODEOWNERS validation workflow', () => {
     expect(core.setFailed).toHaveBeenCalledWith(
       'GitHub reported 2 CODEOWNERS error(s). Fix the annotated entries.',
     );
-    expect(github.rest.repos.getContent).not.toHaveBeenCalled();
+    expect(github.rest.repos.getContent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: '.github/CODEOWNERS' }),
+    );
     expect(core.info).not.toHaveBeenCalled();
   });
 
-  it('propagates native validation failures, including a missing CODEOWNERS file', async () => {
-    const { github, run } = fixture();
+  it('still fails when deletion leaves no CODEOWNERS file', async () => {
+    const { contents, github, run } = fixture();
+    contents.clear();
+    github.paginate.mockResolvedValue([{ filename: '.github/CODEOWNERS', status: 'removed' }]);
     const error = Object.assign(new Error('Not Found'), { status: 404 });
     github.rest.repos.codeownersErrors.mockRejectedValue(error);
 
     await expect(run()).rejects.toBe(error);
-    expect(github.rest.repos.getContent).not.toHaveBeenCalled();
+    expect(github.rest.repos.getContent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: '.github/CODEOWNERS' }),
+    );
   });
 
   it('propagates content API failures other than missing files', async () => {
@@ -198,8 +252,8 @@ describe('CODEOWNERS validation workflow', () => {
   });
 
   it('does not report success if the file size cannot be checked', async () => {
-    const { github, run } = fixture();
-    github.rest.repos.getContent.mockRejectedValue({ status: 404 });
+    const { contents, run } = fixture();
+    contents.set('.github/CODEOWNERS', []);
 
     await expect(run()).rejects.toThrow('Could not read CODEOWNERS to verify the file size.');
   });

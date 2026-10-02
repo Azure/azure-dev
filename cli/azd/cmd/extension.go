@@ -1269,10 +1269,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, err
 		}
 
-		// Selecting between sources stops progress while prompting.
-		if !a.console.IsSpinnerRunning(ctx) {
-			a.console.ShowSpinner(ctx, stepMessage, input.Step)
-		}
+		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		candidate := resolution.Candidate(selectedExtension)
 		if shouldWarnNewerIncompatible(a.flags.version, candidate) {
@@ -1377,9 +1374,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			}
 
 			// Use upgrade logic for existing installations
-			if !a.console.IsSpinnerRunning(ctx) {
-				a.console.ShowSpinner(ctx, stepMessage, input.Step)
-			}
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			// The user asked for this extension by name, so the reinstall records it as explicit
 			// even when the previous record was only a dependency install.
 			var dependencyResults []extensions.UpgradeResult

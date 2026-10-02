@@ -271,7 +271,8 @@ jobs:
       outputs:
       - output: pipelineArtifact
         path: cli/azd/cover-$(AZURE_DEV_CI_OS)
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        # Keep raw gotestsum events for diagnosing failures with missing assertion output.
+        condition: and(succeededOrFailed(), ne(variables['Skip.LiveTest'], 'true'))
         artifact: cover-$(AZURE_DEV_CI_OS)
         displayName: Upload code coverage
 

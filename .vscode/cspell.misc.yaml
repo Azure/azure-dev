@@ -115,6 +115,16 @@ overrides:
     - filename: docs/reference/telemetry-data.md
       words:
           - azdext
+    - filename: docs/guides/evaluations-dataset-release-testing.md
+      words:
+          - appservice
+          - concurx
+          - finetune
+    - filename: docs/guides/evaluation-scenario-ci.md
+      words:
+          - bugbash
+          - evals
+          - sien
     - filename: docs/guides/**/*.md
       words:
           - azdext

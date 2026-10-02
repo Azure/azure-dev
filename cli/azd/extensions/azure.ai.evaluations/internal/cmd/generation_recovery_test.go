@@ -78,6 +78,10 @@ func generationRecoveryFixtureWithDatasetStatus(
 				_, _ = w.Write([]byte(`{"error":{"code":"GenerationReadRefused"}}`))
 				return
 			}
+			if len(jobs) > 1 {
+				assert.NoError(t, json.NewEncoder(w).Encode(jobs[1]))
+				return
+			}
 			_, _ = w.Write([]byte(`{"id":"dataset-job","status":"failed","error":{"message":"dataset service failure"}}`))
 		} else {
 			assert.NoError(t, json.NewEncoder(w).Encode(completed))
@@ -244,6 +248,78 @@ func TestGenerationPartialJSONPreservesRemediation(t *testing.T) {
 			}
 			assert.Equal(t, 2, posts, "one job per artifact, no regeneration or rollback")
 			assert.NotEmpty(t, stderr.String())
+		})
+	}
+}
+
+func TestGenerationPartialJSONRedactsJobFailureMessage(t *testing.T) {
+	for _, tc := range []struct{ name, message, safeMessage string }{
+		{
+			"userinfo query fragment",
+			"Download https://fixture-user:fixture-password@example.test/rows.jsonl" +
+				"?sig=fixture-signature#fixture-fragment failed.",
+			"Download https://example.test/rows.jsonl failed.",
+		},
+		{
+			"whitespace query",
+			"Download https://example.test/rows.jsonl?sig= \tfixture-signature failed.",
+			"Download <redacted-url> failed.",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failedJob := &eval_api.GenerationJob{
+				ID: "dataset-job", Status: "failed", Error: &eval_api.JobError{Message: tc.message},
+			}
+			ec, plans, dir, requests := generationRecoveryFixture(t, recoveryRubricJob(), failedJob)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return ec.runGenerations(cmd, plans, generateFlags{path: dir})
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+			err := cmd.RunE(cmd, nil)
+			require.ErrorContains(t, err, tc.message, "the returned error remains unmodified")
+			assert.Equal(t, tc.message, failedJob.Error.Message)
+			assert.Equal(t, 1, exitCode)
+
+			var result map[string]generationResult
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			require.NoError(t, decoder.Decode(&result))
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF)
+			assert.Equal(t, "failed", result["dataset"].Status)
+			assert.Equal(t, "dataset-job", result["dataset"].JobID)
+			assert.Nil(t, result["dataset"].ArtifactRef)
+			assert.Contains(t, result["dataset"].Error, tc.safeMessage)
+			assert.Contains(t, result["dataset"].Recovery, "job show dataset-job --dataset")
+			assert.Contains(t, result["dataset"].RetryGuidance, "--dataset only")
+			assert.Equal(t, "succeeded", result["evaluator"].Status)
+			require.NotNil(t, result["evaluator"].ArtifactRef)
+			assert.Equal(t, "quality", result["evaluator"].Name)
+			assert.Equal(t, "1", result["evaluator"].Version)
+			require.FileExists(t, filepath.Join(dir, "evaluators", "quality.json"))
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evaluators, 1)
+			assert.Equal(t, "quality", cfg.Evaluators[0].Name)
+			assert.Empty(t, cfg.Datasets)
+			assert.Contains(t, stderr.String(), tc.safeMessage)
+			for _, sensitive := range []string{
+				"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
+			} {
+				assert.NotContains(t, out.String(), sensitive)
+				assert.NotContains(t, stderr.String(), sensitive)
+			}
+			assert.Len(t, *requests, 4, "one submit and one completed-job read per artifact")
+			for _, request := range *requests {
+				assert.NotContains(t, request, "DELETE")
+			}
 		})
 	}
 }

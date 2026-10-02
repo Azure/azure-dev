@@ -522,25 +522,53 @@ func TestPartialJSONSuggestionsDoNotDiscloseURLCredentials(t *testing.T) {
 	const suggestion = "Inspect https://fixture-user:fixture-password@example.test/remediation" +
 		"?sig=fixture-signature#fixture-fragment and retry."
 	const safeSuggestion = "Inspect https://example.test/remediation and retry."
-	checkPartialJSONSuggestionRedaction(t, suggestion, safeSuggestion)
+	checkPartialJSONErrorRedaction(t, "safe validation failure", "safe validation failure", suggestion, safeSuggestion)
 }
 
 func TestPartialJSONSuggestionsRedactWhitespaceSeparatedQueryValues(t *testing.T) {
 	for _, separator := range []string{" ", "\t", "\n", "\r\n"} {
 		t.Run(separator, func(t *testing.T) {
-			checkPartialJSONSuggestionRedaction(t,
+			checkPartialJSONErrorRedaction(t, "safe validation failure", "safe validation failure",
 				"Inspect https://example.test/remediation?sig="+separator+"fixture-signature and retry.",
 				"Inspect <redacted-url> and retry.")
 		})
 	}
 }
 
-func checkPartialJSONSuggestionRedaction(t *testing.T, suggestion, safeSuggestion string) {
+func TestPartialJSONMessagesDoNotDiscloseURLCredentials(t *testing.T) {
+	for _, tc := range []struct{ name, message, safeMessage string }{
+		{
+			"userinfo query fragment",
+			"Download https://fixture-user:fixture-password@example.test/artifact" +
+				"?sig=fixture-signature#fixture-fragment failed.",
+			"Download https://example.test/artifact failed.",
+		},
+		{
+			"malformed URL",
+			"Download https:/fixture-user:fixture-password@example.test/artifact?sig=fixture-signature failed.",
+			"Download <redacted-url> failed.",
+		},
+		{
+			"whitespace query",
+			"Download https://example.test/artifact?sig= \tfixture-signature failed.",
+			"Download <redacted-url> failed.",
+		},
+		{"plain message", "The service rejected the input.", "The service rejected the input."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const suggestion = "Check the project configuration and retry."
+			checkPartialJSONErrorRedaction(t, tc.message, tc.safeMessage, suggestion, suggestion)
+		})
+	}
+}
+
+func checkPartialJSONErrorRedaction(t *testing.T, message, safeMessage, suggestion, safeSuggestion string) {
 	t.Helper()
 	for _, surface := range []string{"create", "generation"} {
 		t.Run(surface, func(t *testing.T) {
-			original := &azdext.LocalError{Message: "safe validation failure", Suggestion: suggestion}
+			original := &azdext.LocalError{Message: message, Suggestion: suggestion}
 			cause := fmt.Errorf("wrapped: %w", original)
+			wantMessage := "wrapped: " + safeMessage
 			cmd := jsonCmd(t, "json")
 			cmd.SetContext(t.Context())
 			var out, stderr bytes.Buffer
@@ -559,8 +587,10 @@ func checkPartialJSONSuggestionRedaction(t *testing.T, suggestion, safeSuggestio
 							ref:  &project.ArtifactRef{Name: "retained", Source: "rows.jsonl", Version: "2"},
 						},
 						{
-							plan: generationPlan{Kind: generateKindEvaluator},
-							err:  cause,
+							plan:     generationPlan{Kind: generateKindEvaluator},
+							err:      cause,
+							report:   generationReport{jobID: "evaluator-job"},
+							recovery: "azd ai eval job show evaluator-job --evaluator",
 						},
 					})); err != nil {
 						return err
@@ -575,6 +605,7 @@ func checkPartialJSONSuggestionRedaction(t *testing.T, suggestion, safeSuggestio
 			reportFailuresAsJSON(cmd)
 			require.ErrorIs(t, cmd.RunE(cmd, nil), cause)
 			assert.Equal(t, 1, exitCode)
+			assert.Equal(t, message, original.Message, "redaction must not mutate the original error")
 			assert.Equal(t, suggestion, original.Suggestion, "redaction must not mutate the original error")
 
 			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
@@ -583,12 +614,14 @@ func checkPartialJSONSuggestionRedaction(t *testing.T, suggestion, safeSuggestio
 					Status    string               `json:"status"`
 					Artifacts []reconciledArtifact `json:"artifacts"`
 					Error     jsonErrorBody        `json:"error"`
+					Recovery  string               `json:"recovery_command"`
 				}
 				require.NoError(t, decoder.Decode(&result))
 				assert.Equal(t, "failed", result.Status)
 				assert.Equal(t, []reconciledArtifact{{"dataset", "retained", "2", true}}, result.Artifacts)
-				assert.Equal(t, cause.Error(), result.Error.Message)
+				assert.Equal(t, wantMessage, result.Error.Message)
 				assert.Equal(t, safeSuggestion, result.Error.Suggestion)
+				assert.Contains(t, result.Recovery, "azd ai eval create quality --from-file")
 			} else {
 				var result map[string]generationResult
 				require.NoError(t, decoder.Decode(&result))
@@ -599,11 +632,14 @@ func checkPartialJSONSuggestionRedaction(t *testing.T, suggestion, safeSuggestio
 				assert.Equal(t, "retained", result["dataset"].Name)
 				assert.Equal(t, "2", result["dataset"].Version)
 				assert.Equal(t, "failed", result["evaluator"].Status)
-				assert.Equal(t, cause.Error(), result["evaluator"].Error)
+				assert.Equal(t, wantMessage, result["evaluator"].Error)
 				assert.Equal(t, safeSuggestion, result["evaluator"].Suggestion)
+				assert.Equal(t, "evaluator-job", result["evaluator"].JobID)
+				assert.Equal(t, "azd ai eval job show evaluator-job --evaluator", result["evaluator"].Recovery)
+				assert.NotEmpty(t, result["evaluator"].RetryGuidance)
 			}
 			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "retain exactly one partial JSON document")
-			assert.Contains(t, stderr.String(), cause.Error())
+			assert.Contains(t, stderr.String(), wantMessage)
 			for _, sensitive := range []string{
 				"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
 			} {

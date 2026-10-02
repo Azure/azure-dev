@@ -74,6 +74,7 @@ words:
   # Looks like the protogen has a spelling error for panics
   - pancis
   - Paren
+  - Persistable
   - OIDCREQUESTURI
   - pkgux
   - ppid

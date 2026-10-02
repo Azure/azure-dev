@@ -77,7 +77,7 @@ type UpGraphAction struct {
 	importManager       *project.ImportManager
 	serviceManager      project.ServiceManager
 	projectManager      project.ProjectManager
-	serviceLocator      ioc.ServiceLocator
+	serviceLocator      *ioc.NestedContainer
 	defaultProvider     provisioning.DefaultProviderResolver
 	fileShareService    storage.FileShareService
 	cloud               *cloud.Cloud
@@ -99,7 +99,7 @@ func NewUpGraphAction(
 	importManager *project.ImportManager,
 	serviceManager project.ServiceManager,
 	projectManager project.ProjectManager,
-	serviceLocator ioc.ServiceLocator,
+	serviceLocator *ioc.NestedContainer,
 	defaultProvider provisioning.DefaultProviderResolver,
 	fileShareService storage.FileShareService,
 	cloud *cloud.Cloud,

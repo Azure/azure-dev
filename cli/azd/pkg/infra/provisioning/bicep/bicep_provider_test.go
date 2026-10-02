@@ -264,7 +264,7 @@ func TestWarnExternalResourceGroup(t *testing.T) {
 			mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions,
 		)
 		return &BicepProvider{
-			env:             env,
+			env:             environment.NewProviderScopedEnv(env, nil, nil),
 			console:         mockContext.Console,
 			resourceService: resourceService,
 		}
@@ -584,7 +584,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		&mockResourceManager{},
 		deploymentManager,
 		envManager,
-		env,
+		environment.NewProviderScopedEnv(env, nil, nil),
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, nil, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
@@ -1260,7 +1260,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		&mockResourceManager{},
 		nil,
 		&mockenv.MockEnvManager{},
-		env,
+		environment.NewProviderScopedEnv(env, nil, nil),
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, nil, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
@@ -1926,7 +1926,7 @@ func createBicepProviderWithEnvAndMode(
 		&mockResourceManager{},
 		deploymentManager,
 		envManager,
-		env,
+		environment.NewProviderScopedEnv(env, nil, nil),
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, nil, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},

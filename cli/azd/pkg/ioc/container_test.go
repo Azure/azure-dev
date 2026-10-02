@@ -774,6 +774,10 @@ func Test_ServiceLocator_SelfRegistered(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sl)
 		require.Same(t, c, sl)
+
+		var nc *NestedContainer
+		require.NoError(t, c.Resolve(&nc))
+		require.Same(t, c, nc, "Each nested container automatically has a *NestedContainer that points to itself")
 	})
 
 	t.Run("InNewRegistrationsOnly", func(t *testing.T) {
@@ -785,6 +789,27 @@ func Test_ServiceLocator_SelfRegistered(t *testing.T) {
 		err := child.Resolve(&sl)
 		require.NoError(t, err)
 		require.Same(t, child, sl)
+
+		var nc *NestedContainer
+		require.NoError(t, child.Resolve(&nc))
+		require.Same(t, child, nc)
+	})
+
+	t.Run("InNewScope", func(t *testing.T) {
+		t.Parallel()
+		parent := NewNestedContainer(nil)
+		child, err := parent.NewScope()
+		require.NoError(t, err)
+
+		// ServiceLocator is a read-only interface, over the top of actual NestedContainer
+		// so they both refer to the same underlying container.
+		var sl ServiceLocator
+		require.NoError(t, child.Resolve(&sl))
+		require.Same(t, child, sl)
+
+		var nc *NestedContainer
+		require.NoError(t, child.Resolve(&nc))
+		require.Same(t, child, nc)
 	})
 }
 

@@ -59,6 +59,33 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
+// ProviderEnv exposes environment variables and configuration to infrastructure providers.
+// Common implementations: [Environment], and [ProviderScopedEnv].
+type ProviderEnv interface {
+	// PersistableEnv returns the underlying environment, suitable to be saved to disk.
+	PersistableEnv() *Environment
+
+	Name() string
+	Getenv(key string) string
+	LookupEnv(key string) (string, bool)
+	Dotenv() map[string]string
+	DotenvSet(key, value string)
+	DotenvDelete(key string)
+	Environ() []string
+	GetSubscriptionId() string
+	SetSubscriptionId(id string)
+	GetLocation() string
+	SetLocation(location string)
+	GetConfig() config.Config
+}
+
+var _ ProviderEnv = (*Environment)(nil)
+
+// PersistableEnv returns the environment itself.
+func (e *Environment) PersistableEnv() *Environment {
+	return e
+}
+
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 //
@@ -85,6 +112,11 @@ type Environment struct {
 
 	// Config is environment specific config
 	Config config.Config
+}
+
+// GetConfig returns the environment configuration for provider views.
+func (e *Environment) GetConfig() config.Config {
+	return e.Config
 }
 
 // AzdInitialEnvironmentConfigName is part of a strategy to re-construct AZD environment in CI/CD from an initial state.

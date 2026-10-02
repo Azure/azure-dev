@@ -48,9 +48,15 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 		inner: current,
 	}
 
-	RegisterInstance[ServiceLocator](instance, instance)
+	registerSelf(instance)
 
 	return instance
+}
+
+// registerSelf makes the container resolvable as both ServiceLocator and *NestedContainer.
+func registerSelf(c *NestedContainer) {
+	RegisterInstance[ServiceLocator](c, c)
+	RegisterInstance(c, c)
 }
 
 // Creates a new container with only registrations from the given container.
@@ -87,7 +93,7 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 		inner: current,
 	}
 
-	RegisterInstance[ServiceLocator](instance, instance)
+	registerSelf(instance)
 
 	return instance
 }

@@ -31,6 +31,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestTerraformParametersUseInjectedEnvironmentView(t *testing.T) {
+	raw := environment.NewWithValues("test", map[string]string{
+		"EXISTING_SERVICE_BUS_NAME": "orders",
+	})
+	view := environment.NewProviderScopedEnv(raw, map[string]string{
+		"SERVICE_BUS_NAME": "EXISTING_SERVICE_BUS_NAME",
+	}, nil)
+	provider := NewTerraformProvider(
+		nil, nil, view, nil, &mockCurrentPrincipal{}, nil,
+	).(*TerraformProvider)
+
+	templatePath := filepath.Join(t.TempDir(), "parameters.template")
+	outputPath := filepath.Join(t.TempDir(), "parameters.json")
+	require.NoError(t, os.WriteFile(templatePath, []byte(`{"name":"${SERVICE_BUS_NAME}"}`), 0600))
+
+	require.NoError(t, provider.createInputParametersFile(t.Context(), templatePath, outputPath))
+	result, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"name":"orders"}`, string(result))
+	require.NotContains(t, raw.Dotenv(), "SERVICE_BUS_NAME")
+}
+
 func TestTerraformPlan(t *testing.T) {
 	skipIfTerraformNotInstalled(t)
 	mockContext := mocks.NewMockContext(t.Context())
@@ -313,7 +335,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 	provider := NewTerraformProvider(
 		terraformTools.NewCli(mockContext.CommandRunner),
 		envManager,
-		env,
+		environment.NewProviderScopedEnv(env, nil, nil),
 		mockContext.Console,
 		&mockCurrentPrincipal{},
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, nil, resourceService, cloud.AzurePublic()),
@@ -521,7 +543,7 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 			provider := NewTerraformProvider(
 				terraformTools.NewCli(mockContext.CommandRunner),
 				envManager,
-				env,
+				environment.NewProviderScopedEnv(env, nil, nil),
 				mockContext.Console,
 				&mockCurrentPrincipal{},
 				prompt.NewDefaultPrompter(

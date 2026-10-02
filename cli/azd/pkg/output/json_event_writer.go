@@ -13,8 +13,8 @@ import (
 	"sync"
 )
 
-// JsonOutputEnvVar is the environment variable that configures the append-only NDJSON output path.
-const JsonOutputEnvVar = "AZD_OUTPUT_NDJSON"
+// JsonOutputEnvVar is the environment variable that configures the append-only JSONL output path.
+const JsonOutputEnvVar = "AZD_OUTPUT_JSONL"
 
 // JsonEventWriter writes compact JSON events to an append-only file.
 type JsonEventWriter struct {

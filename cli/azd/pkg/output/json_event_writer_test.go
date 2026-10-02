@@ -17,7 +17,7 @@ import (
 
 func TestNewJsonEventWriterFromEnv(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
-	t.Setenv(JsonOutputEnvVar, path)
+	t.Setenv("AZD_OUTPUT_JSONL", path)
 
 	writer := NewJsonEventWriterFromEnv()
 

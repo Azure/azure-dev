@@ -4,6 +4,8 @@
 package project
 
 import (
+	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/braydonk/yaml"
@@ -28,6 +30,7 @@ func Test_AllResourceTypes(t *testing.T) {
 		ResourceTypeDbCosmos,
 		ResourceTypeHostAppService,
 		ResourceTypeHostContainerApp,
+		ResourceTypeHostFunctionApp,
 		ResourceTypeOpenAiModel,
 		ResourceTypeMessagingEventHubs,
 		ResourceTypeMessagingServiceBus,
@@ -61,6 +64,7 @@ func Test_ResourceType_String(t *testing.T) {
 			ResourceTypeHostContainerApp,
 			"Container App",
 		},
+		{"Function App", ResourceTypeHostFunctionApp, "Function App"},
 		{
 			"Open AI Model",
 			ResourceTypeOpenAiModel,
@@ -114,6 +118,7 @@ func Test_ResourceType_AzureResourceType(t *testing.T) {
 			ResourceTypeHostContainerApp,
 			"Microsoft.App/containerApps",
 		},
+		{"FunctionApp", ResourceTypeHostFunctionApp, "Microsoft.Web/sites"},
 		{
 			"Redis",
 			ResourceTypeDbRedis,
@@ -297,6 +302,373 @@ runtime:
 	assert.Equal(t, 3000, props.Port)
 	assert.Equal(t, AppServiceRuntimeStack("python"), props.Runtime.Stack)
 	assert.Equal(t, "3.12", props.Runtime.Version)
+}
+
+func Test_ResourceConfig_RoundTrip_HostFunctionApp(t *testing.T) {
+	yamlData := `
+type: host.functionapp
+runtime:
+  stack: python
+  version: "3.12"
+uses:
+  - storage
+env:
+  - name: GREETING
+    value: hello
+`
+	var resource ResourceConfig
+	require.NoError(t, yaml.Unmarshal([]byte(yamlData), &resource))
+	require.Equal(t, ResourceTypeHostFunctionApp, resource.Type)
+	props, ok := resource.Props.(FunctionAppProps)
+	require.True(t, ok)
+	assert.Equal(t, FunctionAppRuntime{Stack: "python", Version: "3.12"}, props.Runtime)
+	assert.Equal(t, []string{"storage"}, resource.Uses)
+
+	data, err := yaml.Marshal(&resource)
+	require.NoError(t, err)
+	var restored ResourceConfig
+	require.NoError(t, yaml.Unmarshal(data, &restored))
+	assert.Equal(t, resource.Props, restored.Props)
+	assert.Equal(t, resource.Uses, restored.Uses)
+}
+
+func Test_infraSpec_FunctionAppStorage(t *testing.T) {
+	tests := []struct {
+		name         string
+		storage      *ResourceConfig
+		uses         []string
+		wantManaged  bool
+		wantExisting string
+	}{
+		{name: "implicit", wantManaged: true},
+		{
+			name:        "implicit reuses managed storage",
+			storage:     &ResourceConfig{Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
+			wantManaged: true,
+		},
+		{
+			name:        "managed",
+			storage:     &ResourceConfig{Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
+			uses:        []string{"storage"},
+			wantManaged: true,
+		},
+		{
+			name: "existing",
+			storage: &ResourceConfig{
+				Name: "storage", Type: ResourceTypeStorage, Existing: true, Props: StorageProps{},
+			},
+			uses:         []string{"storage"},
+			wantExisting: "existingStorage",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp, Uses: tt.uses,
+						Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+					},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+				},
+			}
+			if tt.storage != nil {
+				cfg.Resources["storage"] = tt.storage
+			}
+			spec, err := infraSpec(cfg)
+			require.NoError(t, err)
+			require.Len(t, spec.Services, 1)
+			require.NotNil(t, spec.Services[0].FunctionStorage)
+			assert.Equal(t, tt.wantManaged, spec.StorageAccount != nil)
+			assert.Equal(t, tt.wantExisting, spec.Services[0].FunctionStorage.ExistingName)
+			assert.Equal(t, scaffold.FunctionAppKind, spec.Services[0].Host)
+			assert.Equal(t, "python", spec.Services[0].Runtime.Type)
+
+			files, err := infraFs(t.Context(), cfg)
+			require.NoError(t, err)
+			content, err := fs.ReadFile(files, "resources.bicep")
+			require.NoError(t, err)
+			bicep := strings.ReplaceAll(string(content), "\r\n", "\n")
+			assert.Contains(t, bicep, "'azd-service-name': 'api'")
+			assert.Contains(t, bicep, "AzureWebJobsStorage__credential: 'managedidentity'")
+			assert.Contains(t, bicep, "AzureWebJobsStorage__clientId: apiIdentity.outputs.clientId")
+			assert.Contains(t, bicep, "userAssignedIdentityResourceId: apiIdentity.outputs.resourceId")
+			assert.Contains(t, bicep, "AzureFunctionsWebHost__hostid: 'azd-${uniqueString(resourceGroup().id, 'api')}'")
+			assert.Contains(t, bicep, "output AZURE_RESOURCE_API_ID")
+			if tt.wantExisting != "" {
+				assert.Contains(t, bicep, "scope: resourceGroup(existingStorageIdSegments[2]")
+				assert.NotContains(t, bicep, "module storageAccount ")
+				assert.Contains(t, bicep, "module api_existingStorage_Contributor ")
+			} else {
+				assert.Contains(t, bicep, "dependsOn: [\n    storageAccount\n  ]")
+				assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
+			}
+		})
+	}
+}
+
+func Test_infraSpec_FunctionAppRuntimeByLanguage(t *testing.T) {
+	for _, tt := range []struct {
+		language ServiceLanguageKind
+		stack    string
+		version  string
+	}{
+		{ServiceLanguagePython, "python", "3.12"},
+		{ServiceLanguageJavaScript, "node", "22"},
+		{ServiceLanguageTypeScript, "node", "22"},
+		{ServiceLanguageDotNet, "dotnet-isolated", "8.0"},
+		{ServiceLanguageCsharp, "dotnet-isolated", "8.0"},
+		{ServiceLanguageFsharp, "dotnet-isolated", "8.0"},
+		{ServiceLanguageJava, "java", "21"},
+		{ServiceLanguageGo, "go", "1.0"},
+	} {
+		t.Run(string(tt.language), func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp,
+						Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: tt.stack, Version: tt.version}},
+					},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: AzureFunctionTarget, Language: tt.language},
+				},
+			}
+			spec, err := infraSpec(cfg)
+			require.NoError(t, err)
+			require.Len(t, spec.Services, 1)
+			require.NotNil(t, spec.Services[0].Runtime)
+			assert.Equal(t, tt.stack, spec.Services[0].Runtime.Type)
+			assert.Equal(t, tt.version, spec.Services[0].Runtime.Version)
+
+			files, err := infraFs(t.Context(), cfg)
+			require.NoError(t, err)
+			content, err := fs.ReadFile(files, "resources.bicep")
+			require.NoError(t, err)
+			assert.Contains(t, string(content), "name: '"+tt.stack+"'")
+			assert.Contains(t, string(content), "version: '"+tt.version+"'")
+
+			wrongStack := "python"
+			if tt.stack == wrongStack {
+				wrongStack = "node"
+			}
+			cfg.Resources["api"].Props = FunctionAppProps{
+				Runtime: FunctionAppRuntime{Stack: wrongStack, Version: tt.version},
+			}
+			_, err = infraSpec(cfg)
+			require.ErrorContains(t, err, "runtime.stack must match the service language ("+tt.stack+")")
+		})
+	}
+}
+
+func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
+	cfg := &ProjectConfig{
+		Resources: map[string]*ResourceConfig{
+			"api": {
+				Name: "api", Type: ResourceTypeHostFunctionApp,
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+			"worker": {
+				Name: "worker", Type: ResourceTypeHostFunctionApp,
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+		},
+		Services: map[string]*ServiceConfig{
+			"api":    {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+			"worker": {Name: "worker", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+		},
+	}
+	spec, err := infraSpec(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, spec.StorageAccount)
+	require.Len(t, spec.Services, 2)
+
+	files, err := infraFs(t.Context(), cfg)
+	require.NoError(t, err)
+	content, err := fs.ReadFile(files, "resources.bicep")
+	require.NoError(t, err)
+	bicep := string(content)
+	assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
+	assert.Contains(t, bicep, "module apiFunctionStorage 'modules/function-storage.bicep'")
+	assert.Contains(t, bicep, "module workerFunctionStorage 'modules/function-storage.bicep'")
+	assert.Contains(t, bicep, "principalId: apiIdentity.outputs.principalId")
+	assert.Contains(t, bicep, "principalId: workerIdentity.outputs.principalId")
+	assert.Contains(t, bicep, "take('api', 32)")
+	assert.Contains(t, bicep, "take('worker', 32)")
+	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'api')")
+	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'worker')")
+}
+
+func Test_infraSpec_FunctionAppRejectsUnsupportedConfiguration(t *testing.T) {
+	tests := []struct {
+		name    string
+		runtime FunctionAppRuntime
+		uses    []string
+		host    ServiceTargetKind
+		lang    ServiceLanguageKind
+		wantErr string
+	}{
+		{"missing runtime", FunctionAppRuntime{}, nil, AzureFunctionTarget, ServiceLanguagePython,
+			"runtime.stack"},
+		{"mismatched stack", FunctionAppRuntime{Stack: "node", Version: "22"}, nil,
+			AzureFunctionTarget, ServiceLanguagePython, "runtime.stack"},
+		{"invalid version", FunctionAppRuntime{Stack: "python", Version: "3.12'evil"}, nil,
+			AzureFunctionTarget, ServiceLanguagePython, "runtime.version"},
+		{"wrong host", FunctionAppRuntime{Stack: "python", Version: "3.12"}, nil,
+			AppServiceTarget, ServiceLanguagePython, "host: function"},
+		{"multiple storage references", FunctionAppRuntime{Stack: "python", Version: "3.12"},
+			[]string{"storage", "other"}, AzureFunctionTarget, ServiceLanguagePython, "multiple storage"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp, Uses: tt.uses,
+						Props: FunctionAppProps{Runtime: tt.runtime},
+					},
+					"storage": {Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: tt.host, Language: tt.lang},
+				},
+			}
+			if tt.name == "multiple storage references" {
+				cfg.Resources["other"] = &ResourceConfig{
+					Name: "other", Type: ResourceTypeStorage, Existing: true, Props: StorageProps{},
+				}
+			}
+			_, err := infraSpec(cfg)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func Test_infraSpec_FunctionAppRejectsReservedSettings(t *testing.T) {
+	for _, setting := range []string{
+		"AzureWebJobsStorage__credential",
+		"azurewebjobsstorage__credential",
+		"AzureFunctionsWebHost__hostid",
+		"FUNCTIONS_WORKER_RUNTIME",
+		"APPLICATIONINSIGHTS_CONNECTION_STRING",
+		"APPLICATIONINSIGHTS_AUTHENTICATION_STRING",
+		"AZURE_CLIENT_ID",
+	} {
+		t.Run(setting, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp,
+						Props: FunctionAppProps{
+							Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+							Env:     []ServiceEnvVar{{Name: setting, Value: "override"}},
+						},
+					},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+				},
+			}
+			_, err := infraSpec(cfg)
+			require.ErrorContains(t, err, "cannot override required Function App setting "+setting)
+		})
+	}
+}
+
+func Test_infraSpec_FunctionAppRejectsUnsupportedSettings(t *testing.T) {
+	for _, setting := range []string{
+		"FUNCTIONS_EXTENSION_VERSION",
+		"FUNCTIONS_WORKER_RUNTIME_VERSION",
+		"WEBSITE_RUN_FROM_PACKAGE",
+		"WEBSITE_CONTENTSHARE",
+		"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+		"SCM_DO_BUILD_DURING_DEPLOYMENT",
+		"ENABLE_ORYX_BUILD",
+	} {
+		for _, name := range []string{setting, strings.ToLower(setting)} {
+			t.Run(name, func(t *testing.T) {
+				cfg := &ProjectConfig{
+					Resources: map[string]*ResourceConfig{
+						"api": {
+							Name: "api", Type: ResourceTypeHostFunctionApp,
+							Props: FunctionAppProps{
+								Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+								Env:     []ServiceEnvVar{{Name: name, Value: "unsupported-value"}},
+							},
+						},
+					},
+					Services: map[string]*ServiceConfig{
+						"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+					},
+				}
+				_, err := infraSpec(cfg)
+				require.ErrorContains(t, err, "cannot set "+name)
+				require.ErrorContains(t, err, "not supported by Flex Consumption")
+				assert.NotContains(t, err.Error(), "unsupported-value")
+			})
+		}
+	}
+}
+
+func Test_infraSpec_FunctionAppRejectsUnsupportedUse(t *testing.T) {
+	cfg := &ProjectConfig{
+		Resources: map[string]*ResourceConfig{
+			"api": {
+				Name: "api", Type: ResourceTypeHostFunctionApp, Uses: []string{"unsupported"},
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+			"unsupported": {Name: "unsupported", Type: ResourceType("custom.unsupported")},
+		},
+		Services: map[string]*ServiceConfig{
+			"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+		},
+	}
+	_, err := infraSpec(cfg)
+	require.ErrorContains(t, err, "Function App api cannot use unsupported resource unsupported (custom.unsupported)")
+}
+
+func Test_infraSpec_FunctionAppUsesResources(t *testing.T) {
+	cfg := &ProjectConfig{
+		Resources: map[string]*ResourceConfig{
+			"api": {
+				Name: "api", Type: ResourceTypeHostFunctionApp,
+				Uses: []string{"storage", "bus", "cosmos", "search"},
+				Props: FunctionAppProps{
+					Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+					Env:     []ServiceEnvVar{{Name: "GREETING", Value: "hello"}},
+				},
+			},
+			"storage": {Name: "storage", Type: ResourceTypeStorage, Props: StorageProps{}},
+			"bus":     {Name: "bus", Type: ResourceTypeMessagingServiceBus, Props: ServiceBusProps{}},
+			"cosmos":  {Name: "cosmos", Type: ResourceTypeDbCosmos, Props: CosmosDBProps{}},
+			"search":  {Name: "search", Type: ResourceTypeAiSearch},
+		},
+		Services: map[string]*ServiceConfig{
+			"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+		},
+	}
+	spec, err := infraSpec(cfg)
+	require.NoError(t, err)
+	require.Len(t, spec.Services, 1)
+	assert.NotNil(t, spec.Services[0].StorageAccount)
+	assert.NotNil(t, spec.Services[0].ServiceBus)
+	assert.NotNil(t, spec.Services[0].DbCosmos)
+	assert.NotNil(t, spec.Services[0].AISearch)
+
+	files, err := infraFs(t.Context(), cfg)
+	require.NoError(t, err)
+	content, err := fs.ReadFile(files, "resources.bicep")
+	require.NoError(t, err)
+	for _, setting := range []string{
+		"GREETING: 'hello'",
+		"AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name",
+		"AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint",
+		"AZURE_AI_SEARCH_ENDPOINT: search.outputs.endpoint",
+	} {
+		assert.Contains(t, string(content), setting)
+	}
 }
 
 func Test_ResourceConfig_UnmarshalYAML_OpenAiModel(t *testing.T) {

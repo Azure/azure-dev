@@ -42,7 +42,7 @@ services:
 | Property | Type | Description |
 |---|---|---|
 | `project` | string | Relative path to the service source directory |
-| `language` | string | Service language (`dotnet`, `csharp`, `fsharp`, `py`, `js`, `ts`, `java`, `docker`, `custom`) |
+| `language` | string | Service language (`dotnet`, `csharp`, `fsharp`, `py`, `js`, `ts`, `java`, `go`, `docker`, `custom`); `go` is supported only for Azure Functions on Flex Consumption (`host: function`) |
 | `host` | string | **Required.** Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, etc.) |
 | `module` | string | Bicep module path for the service's infrastructure |
 | `hooks` | map | Service-level lifecycle hooks |
@@ -166,6 +166,37 @@ Function Apps support code and container deployment:
 - **Container deploy**: Configure `language: docker`, set `docker.path` for a non-Docker language, or provide a pre-built `image`. azd builds or resolves the image, publishes it to ACR when needed, and updates the Function App's `linuxFxVersion`.
 
 Container-based Function infrastructure must configure a Linux Function App, an initial `DOCKER|` image reference, and registry pull access before deployment. These settings remain the responsibility of Bicep or Terraform. If the provisioned Function App and the service disagree about the deployment mode, azd fails before attempting an incompatible upload and identifies the configuration mismatch.
+
+For **compose projects**, `azd add` can create a `host.functionapp` resource for a source-based service on Linux Flex Consumption (FC1). This generates the Function App, FC1 plan, deployment container, monitoring, and identity-based host-storage access. The resource requires a matching service with `host: function`, a source project containing `host.json`, and a `runtime` with `stack` (`python`, `node`, `dotnet-isolated`, `java`, or `go`) and a numeric `version`. JavaScript and TypeScript use `node`; Go is in public preview. .NET in-process projects and container-based Function Apps are not supported by this compose resource; container deployment with user-provided infrastructure is unchanged.
+
+```yaml
+services:
+  api:
+    project: ./src/api
+    language: py
+    host: function
+resources:
+  api:
+    type: host.functionapp
+    runtime:
+      stack: python
+      version: "3.12"
+    uses:
+      - storage
+    env:
+      - name: MY_SETTING
+        value: hello
+  storage:
+    type: storage
+```
+
+Without a storage resource in `uses`, azd uses the project's managed storage account, creating one implicitly if the project has none. Multiple Function Apps without a storage reference share this account, but each gets its own deployment container, user-assigned identity, and host ID. Referencing exactly one managed or existing `storage` resource selects that account for host state and deployment; other resources can also be referenced for application settings and access. Existing storage can be in another resource group and must be configured with its resource ID in the environment. Required Function App settings, including `AzureWebJobsStorage*` and `AzureFunctionsWebHost__hostid`, cannot be overridden through `resources.<name>.env`. Explicitly select a Flex Consumption-supported region and runtime version for your project.
+
+Runtime versions use numeric strings, not App Service suffixes such as `22-lts`. Examples include `"3.12"` for `python`, `"22"` for `node`, `"8.0"` for `dotnet-isolated`, `"21"` for `java`, and `"1.0"` for `go`. The runtime stack must match the service language; these examples are not a complete list of supported versions.
+
+The compose resource also rejects these [deprecated Flex Consumption settings](https://learn.microsoft.com/azure/azure-functions/functions-app-settings#flex-consumption-plan-deprecations) in `env`: `FUNCTIONS_EXTENSION_VERSION`, `FUNCTIONS_WORKER_RUNTIME_VERSION`, `WEBSITE_RUN_FROM_PACKAGE`, `WEBSITE_CONTENTSHARE`, `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`, `SCM_DO_BUILD_DURING_DEPLOYMENT`, and `ENABLE_ORYX_BUILD`. Configure the runtime through `resources.<name>.runtime` and remote builds through the service's `remoteBuild` property instead.
+
+Generated Function Apps allow `https://portal.azure.com` as a CORS origin so functions can be invoked from the Azure portal. Function Apps provisioned with user-provided infrastructure must configure CORS separately.
 
 Unlike App Service, Function Apps always deploy to the main site. Deployment slots are not part of the Function App workflow, so `AZD_DEPLOY_{SERVICE}_SLOT_NAME` has no effect and azd never prompts for a slot.
 

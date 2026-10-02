@@ -35,8 +35,10 @@ func Load() (*template.Template, error) {
 		"formatParam":      FormatParameter,
 		"hasACA":           HasACA,
 		"hasAppService":    HasAppService,
+		"hasFunctionApp":   HasFunctionApp,
 		"isACA":            IsACA,
 		"isAppService":     IsAppService,
+		"isFunctionApp":    IsFunctionApp,
 	}
 
 	t, err := template.New("templates").
@@ -83,6 +85,10 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files,
 			"/modules/role-assignment.bicep",
 			"/modules/role-assignment.json")
+	}
+
+	if HasFunctionApp(spec.Services) {
+		files = append(files, "/modules/function-storage.bicep")
 	}
 
 	if spec.AiFoundryProject != nil && spec.AISearch != nil {

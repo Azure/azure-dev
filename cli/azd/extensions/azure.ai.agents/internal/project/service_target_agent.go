@@ -34,7 +34,6 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/containerref"
@@ -291,18 +290,26 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 	if !serviceConfigHasRef(p.serviceConfig) {
 		return nil
 	}
-	if p.projectPath == "" {
-		proj, err := p.azdClient.Project().Get(ctx, nil)
-		if err != nil {
-			return exterrors.Dependency(
-				exterrors.CodeProjectNotFound,
-				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
-				"run 'azd init' to initialize your project",
-			)
-		}
-		p.projectPath = proj.GetProject().GetPath()
+	if err := p.loadProjectPath(ctx); err != nil {
+		return err
 	}
 	return p.resolveServiceConfig()
+}
+
+func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
+	if p.projectPath != "" {
+		return nil
+	}
+	proj, err := p.azdClient.Project().Get(ctx, nil)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeProjectNotFound,
+			fmt.Sprintf("failed to get project while resolving agent service: %s", err),
+			"run 'azd init' to initialize your project",
+		)
+	}
+	p.projectPath = proj.GetProject().GetPath()
+	return nil
 }
 
 // resolveServiceConfig expands local $ref includes on the current service
@@ -669,10 +676,23 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
+	if err := p.loadProjectPath(ctx); err != nil {
+		return nil, err
+	}
+
+	validation, err := ValidateAgentEndpointOperation(
+		p.serviceConfig,
+		p.projectPath,
+		AgentEndpointOperationReport,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Prompt agents expose a single workspace-rooted Responses endpoint on the
 	// harness. Build it from the service config, resolved against the azd
 	// environment so `azd show` reports the same target deploy published.
-	if p.isPromptAgentService() {
+	if validation.Kind == agent_yaml.AgentKindPrompt {
 		settings, err := p.resolvedPromptAgentSettings(ctx)
 		if err != nil {
 			return nil, err
@@ -686,37 +706,14 @@ func (p *AgentServiceTargetProvider) Endpoints(
 			if name == "" {
 				name = serviceConfig.GetName()
 			}
-			return []string{buildResponsesProtocolURL(settings.ProjectEndpoint, name)}, nil
+			return []string{PromptAgentResponsesEndpoint(settings, name, true)}, nil
 		}
-		return []string{promptAgentResponsesEndpoint(settings)}, nil
-	}
-	if err := p.ensureEnv(ctx); err != nil {
-		return nil, err
+		return []string{PromptAgentResponsesEndpoint(settings, managed.Name, false)}, nil
 	}
 
-	// Get all environment values
-	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: p.env.Name,
-	})
+	azdEnv, err := p.endpointEnvironmentValues(ctx)
 	if err != nil {
-		return nil, exterrors.Dependency(
-			exterrors.CodeEnvironmentValuesFailed,
-			fmt.Sprintf("failed to get environment values: %s", err),
-			"run 'azd env get-values' to verify environment state",
-		)
-	}
-
-	azdEnv := make(map[string]string, len(resp.KeyValues))
-	for _, kval := range resp.KeyValues {
-		azdEnv[kval.Key] = kval.Value
-	}
-	// Check if required environment variables are set
-	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
+		return nil, err
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
@@ -724,36 +721,23 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 
-	// Voice agents (kind: prompt-voice) use the base ENDPOINT as their callable
-	// endpoint and deploy completion marker, and unified deploys also record
-	// VERSION. Gate the base-endpoint path on the service's actual declared
-	// kind (resolved via the shared agentkind lookup, so this agrees with the
-	// deploy path and next-step reader) rather than on the env-var shape: a hosted
-	// agent whose deploy partially failed (or whose vars were cleaned up) can also
-	// present an empty VERSION with a lingering ENDPOINT, and for that case we
-	// must still surface the actionable CodeMissingAgentEnvVars error below.
-	// Kind resolution is best-effort here:
-	// an error (or non-voice result) simply falls through to the hosted guard, so
-	// hosted services keep their prior behavior on a path that never resolved
-	// config before.
-	// Endpoints may run in a fresh CLI process (e.g. `azd show`) where
-	// ensureDeployContext has not populated p.projectPath or p.agentDefinitionPath.
-	// A voice definition supplied via a root `$ref` can only be classified with
-	// the project root, so resolve that root here to match deploy classification.
-	// Both are resolved best-effort: any failure falls through to the hosted guard
-	// below, so hosted behavior is unchanged.
-	projectRoot := p.projectPath
-	if projectRoot == "" {
-		if proj, perr := p.azdClient.Project().Get(ctx, nil); perr == nil {
-			projectRoot = proj.Project.Path
+	if agent_yaml.IsVoiceAgentKind(validation.Kind) {
+		if endpoint := strings.TrimSpace(azdEnv[agentEndpointKey]); endpoint != "" {
+			return []string{endpoint}, nil
 		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("%s environment variable is required", agentEndpointKey),
+			"run 'azd deploy' to deploy the voice agent and set its callable endpoint",
+		)
 	}
-	if err := validateRuntimeAgentSources(serviceConfig); err != nil {
-		return nil, err
-	}
-	if isVoice, err := agentkind.IsPromptVoice(serviceConfig, projectRoot); err == nil &&
-		isVoice && azdEnv[agentEndpointKey] != "" {
-		return []string{azdEnv[agentEndpointKey]}, nil
+
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		)
 	}
 
 	if azdEnv[agentNameKey] == "" || azdEnv[agentVersionKey] == "" {
@@ -782,6 +766,31 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	return endpoints, nil
+}
+
+func (p *AgentServiceTargetProvider) endpointEnvironmentValues(ctx context.Context) (map[string]string, error) {
+	if err := p.ensureEnv(ctx); err != nil {
+		return nil, err
+	}
+	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: p.env.Name,
+	})
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get environment values: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
+	}
+
+	azdEnv := make(map[string]string, len(resp.KeyValues))
+	for _, value := range resp.KeyValues {
+		if value == nil {
+			continue
+		}
+		azdEnv[value.Key] = value.Value
+	}
+	return azdEnv, nil
 }
 
 // GetTargetResource returns a custom target resource for the agent service

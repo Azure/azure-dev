@@ -11,6 +11,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
+  - [Lifecycle output (beta)](#lifecycle-output-beta)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
@@ -87,6 +88,24 @@ func main() {
     azdext.Run(rootCmd)
 }
 ```
+
+### Lifecycle output (beta)
+
+`HandlerOutput` is available only on the `v1beta.EventMessage` stream. It is
+carried in the `handler_output` oneof field, and its invocation `request_id`
+is set on the enclosing event message. The stable `v1` event message and
+stable `EventServiceClient` do not expose this feature.
+
+Go extensions opt in through `AzdClient.EventsBeta()`, which returns a
+generated `v1beta.EventServiceClient`. A beta client must include request IDs
+on its messages and wait for matching subscription acknowledgements. The host
+correlates handler output with the invocation and retains bounded output for
+deploy hooks after the preview closes. A legacy beta stream whose initial
+subscription has no request ID keeps the older behavior but cannot send
+correlated output. The default language scaffolds continue to use stable `v1`.
+
+See the [extension framework guide](extension-framework.md#event-service)
+for the host behavior and the demo implementation.
 
 ### RunOption / WithPreExecute
 

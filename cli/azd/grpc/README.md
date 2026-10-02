@@ -20,6 +20,15 @@ The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
 
+Correlated lifecycle output is beta-only. The beta event stream carries
+subscription acknowledgements, a top-level `request_id` and `error`, and
+`HandlerOutput` progress messages. Stable event contracts and the default
+language scaffolds remain unchanged. New clients can opt in through the
+generated `v1beta` EventService client; streams whose first subscription has
+no request ID keep using the legacy adapter without correlated output. See
+[extension contract versioning](../docs/extensions/contract-versioning.md)
+for the host routing and compatibility rules.
+
 ## Generate contracts
 
 Run generation from `cli/azd`:

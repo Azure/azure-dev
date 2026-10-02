@@ -2485,6 +2485,25 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+- **HandlerOutput**
+  Carries output emitted by a lifecycle handler while it is running.
+
+  Contains:
+  - `output`: The text written by the handler.
+
+`HandlerOutput` is available only on the beta `EventMessage` stream. The
+invocation `request_id` is on the enclosing event message, not in the output
+payload. Stable `v1` event messages and the default language scaffolds do not
+include this field.
+
+Go clients opt in with `AzdClient.EventsBeta()`, which returns the generated
+`v1beta.EventServiceClient`. They must include request IDs on messages and wait
+for subscription acknowledgements. The host correlates output with the
+invocation and retains bounded output for `predeploy` and `postdeploy` hooks
+after the preview closes. A legacy beta stream whose first subscription has no
+request ID keeps the older behavior but cannot send correlated output. See
+[contract versioning](contract-versioning.md#host-registration-and-adaptation)
+for the stream routing rules.
 
 #### ServiceContext and Service Event Arguments
 

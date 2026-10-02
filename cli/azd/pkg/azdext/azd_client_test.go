@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
+
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 const (
@@ -143,4 +145,17 @@ func Test_AzdClient_Telemetry(t *testing.T) {
 	require.NotNil(t, first)
 	require.NotNil(t, second)
 	require.NotSame(t, first, second)
+}
+
+func Test_AzdClient_EventsBetaIsExplicit(t *testing.T) {
+	client := &AzdClient{}
+
+	var stableClient EventServiceClient = client.Events()
+	var betaClient v1beta.EventServiceClient = client.EventsBeta()
+
+	require.NotNil(t, stableClient)
+	require.NotNil(t, betaClient)
+	require.Nil(t, (&EventMessage{}).ProtoReflect().Descriptor().
+		Fields().
+		ByName("handler_output"))
 }

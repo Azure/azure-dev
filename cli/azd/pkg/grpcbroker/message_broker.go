@@ -87,6 +87,67 @@ type handlerWrapper struct {
 	progressIndex int // parameter index for progress callback
 }
 
+type responseChannel[TMessage any] struct {
+	messages      chan *TMessage
+	requestDone   <-chan struct{}
+	closed        chan struct{}
+	closeOnce     sync.Once
+	mu            sync.Mutex
+	closedState   bool
+	activeSenders int
+	closedCond    *sync.Cond
+}
+
+func newResponseChannel[TMessage any](ctx context.Context, bufferSize int) *responseChannel[TMessage] {
+	response := &responseChannel[TMessage]{
+		messages:    make(chan *TMessage, bufferSize),
+		requestDone: ctx.Done(),
+		closed:      make(chan struct{}),
+	}
+	response.closedCond = sync.NewCond(&response.mu)
+	return response
+}
+
+func (c *responseChannel[TMessage]) close() {
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.closedState = true
+		close(c.closed)
+		for c.activeSenders > 0 {
+			c.closedCond.Wait()
+		}
+		close(c.messages)
+		c.mu.Unlock()
+	})
+}
+
+func (c *responseChannel[TMessage]) send(message *TMessage) bool {
+	c.mu.Lock()
+	if c.closedState {
+		c.mu.Unlock()
+		return false
+	}
+	c.activeSenders++
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.activeSenders--
+		if c.closedState && c.activeSenders == 0 {
+			c.closedCond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
+
+	select {
+	case c.messages <- message:
+		return true
+	case <-c.requestDone:
+	case <-c.closed:
+	}
+
+	return false
+}
+
 // MessageBroker handles bidirectional message routing for gRPC streams.
 // It supports both client pattern (request/response correlation via RequestId)
 // and server pattern (handler registration for incoming requests).
@@ -100,10 +161,10 @@ type MessageBroker[TMessage any] struct {
 	logger        *log.Logger // Private logger for broker trace output; can be silenced independently
 	stream        BidiStream[TMessage]
 	envelope      MessageEnvelope[TMessage]
-	name          string                                     // Name identifier for logging purposes
-	responseChans syncmap.Map[string, chan *TMessage]        // Used for storing response channels by request id
-	handlers      syncmap.Map[reflect.Type, *handlerWrapper] // Used for storing message handlers by request type
-	sendMu        sync.Mutex                                 // Protects concurrent stream.Send() calls
+	name          string                                          // Name identifier for logging purposes
+	responseChans syncmap.Map[string, *responseChannel[TMessage]] // Used for storing response channels by request id
+	handlers      syncmap.Map[reflect.Type, *handlerWrapper]      // Used for storing message handlers by request type
+	sendMu        sync.Mutex                                      // Protects concurrent stream.Send() calls
 
 	// Ready signaling for when the broker starts receiving messages
 	readyCh   chan struct{} // Closed when Run() starts, signals readiness to all waiters
@@ -231,9 +292,12 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 	msgType := reflect.TypeOf(innerMsg)
 	mb.logger.Printf("[%s] [RequestId=%s] Sending request, MessageType=%v", mb.name, requestId, msgType)
 
-	ch := make(chan *TMessage, 1)
-	mb.responseChans.Store(requestId, ch)
-	defer mb.responseChans.Delete(requestId)
+	response := newResponseChannel[TMessage](ctx, 1)
+	mb.responseChans.Store(requestId, response)
+	defer func() {
+		mb.responseChans.Delete(requestId)
+		response.close()
+	}()
 
 	// Send request in goroutine to ensure we're waiting before response arrives
 	errCh := make(chan error, 1)
@@ -262,7 +326,7 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 				return nil, err
 			}
 			mb.logger.Printf("[%s] [RequestId=%s] Request sent successfully, MessageType=%v", mb.name, requestId, msgType)
-		case resp, ok := <-ch:
+		case resp, ok := <-response.messages:
 			if !ok {
 				mb.logger.Printf("[%s] [RequestId=%s] Channel closed (broker stopped)", mb.name, requestId)
 				return nil, errors.New("channel closed by broker")
@@ -336,12 +400,13 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	msgType := reflect.TypeOf(innerMsg)
 
 	// Use a larger buffer to handle multiple progress messages without blocking the dispatcher
-	ch := make(chan *TMessage, 50)
+	response := newResponseChannel[TMessage](ctx, 50)
 	mb.logger.Printf("[%s] [RequestId=%s] Registering channel, MessageType=%v", mb.name, requestId, msgType)
-	mb.responseChans.Store(requestId, ch)
+	mb.responseChans.Store(requestId, response)
 	defer func() {
 		mb.logger.Printf("[%s] [RequestId=%s] Cleaning up channel", mb.name, requestId)
 		mb.responseChans.Delete(requestId)
+		response.close()
 	}()
 
 	// Send request in goroutine to ensure we're waiting before response arrives
@@ -383,9 +448,13 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 				requestId,
 				msgType,
 			)
-		case resp, ok := <-ch:
+		case resp, ok := <-response.messages:
 			if !ok {
-				mb.logger.Printf("[%s] [RequestId=%s] Channel closed (dispatcher likely stopped)", mb.name, requestId)
+				mb.logger.Printf(
+					"[%s] [RequestId=%s] Channel closed (dispatcher likely stopped)",
+					mb.name,
+					requestId,
+				)
 				return nil, errors.New("channel closed by dispatcher")
 			}
 
@@ -485,9 +554,9 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 				return fmt.Errorf("stream receive failed: %w", err)
 			}
 
-			// Process the received message asynchronously
-			// This allows the dispatcher to continue receiving while handlers execute
-			go mb.processMessage(ctx, resp)
+			// Route responses synchronously to preserve stream ordering.
+			// Handler execution remains asynchronous in processMessage.
+			mb.processMessage(ctx, resp)
 		}
 	}
 }
@@ -509,7 +578,14 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 				requestId,
 				msgType,
 			)
-			ch <- resp
+			if !ch.send(resp) {
+				mb.logger.Printf(
+					"[%s] Dropped progress message for canceled RequestId=%s, MessageType=%v",
+					mb.name,
+					requestId,
+					msgType,
+				)
+			}
 		} else {
 			mb.logger.Printf(
 				"[%s] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
@@ -527,27 +603,40 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 	if requestId != "" {
 		if ch, ok := mb.responseChans.Load(requestId); ok {
 			// Warn when channel buffer is actually nearly full
-			if cap(ch) > 1 && len(ch) >= cap(ch)-1 {
+			if cap(ch.messages) > 1 && len(ch.messages) >= cap(ch.messages)-1 {
 				mb.logger.Printf(
 					"[%s] WARNING: Channel buffer nearly full for RequestId=%s (len=%d, cap=%d)",
 					mb.name,
 					requestId,
-					len(ch),
-					cap(ch),
+					len(ch.messages),
+					cap(ch.messages),
 				)
 			}
 
 			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
-			ch <- resp
-			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
-				mb.name, requestId, msgType)
+			if ch.send(resp) {
+				mb.logger.Printf(
+					"[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
+					mb.name,
+					requestId,
+					msgType,
+				)
+			} else {
+				mb.logger.Printf(
+					"[%s] Dropped message for canceled RequestId=%s, MessageType=%v",
+					mb.name,
+					requestId,
+					msgType,
+				)
+			}
 			return
 		}
 	}
 
-	// No channel found, try to route to handler (server pattern - incoming request)
-	mb.processHandlerRequest(ctx, resp, requestId, msgType)
+	// No channel found, try to route to a handler (server pattern).
+	// Handler execution is asynchronous so it cannot block receiving.
+	go mb.processHandlerRequest(ctx, resp, requestId, msgType)
 }
 
 // processHandlerRequest extracts the inner message, finds the appropriate handler,
@@ -708,9 +797,10 @@ func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, reque
 // Close gracefully shuts down the broker (optional, for cleanup)
 func (mb *MessageBroker[TMessage]) Close() {
 	// Close all pending channels
-	mb.responseChans.Range(func(key string, ch chan *TMessage) bool {
-		close(ch)
-		mb.responseChans.Delete(key)
+	mb.responseChans.Range(func(key string, _ *responseChannel[TMessage]) bool {
+		if ch, ok := mb.responseChans.LoadAndDelete(key); ok {
+			ch.close()
+		}
 		return true
 	})
 }

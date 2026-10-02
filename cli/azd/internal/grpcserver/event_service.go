@@ -4,10 +4,15 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -22,6 +27,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+const maxLifecycleOutputBytes = 32 * 1024
 
 // noEnvResolver is a resolver that always returns an empty string.
 // This is used when an environment is not available to resolve environment variables referenced in project config.
@@ -38,6 +45,58 @@ type eventService struct {
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 	lazyProject    *lazy.Lazy[*project.ProjectConfig]
 	lazyEnv        *lazy.Lazy[*environment.Environment]
+}
+
+type boundedLifecycleOutput struct {
+	mu        sync.Mutex
+	buffer    bytes.Buffer
+	truncated bool
+}
+
+func (b *boundedLifecycleOutput) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.truncated {
+		return len(data), nil
+	}
+
+	remaining := maxLifecycleOutputBytes - b.buffer.Len()
+	if len(data) > remaining {
+		writeSize := remaining
+		for writeSize > 0 && writeSize < len(data) && !utf8.RuneStart(data[writeSize]) {
+			writeSize--
+		}
+		_, _ = b.buffer.Write(data[:writeSize])
+		b.truncated = true
+		return len(data), nil
+	}
+
+	_, _ = b.buffer.Write(data)
+	return len(data), nil
+}
+
+func (b *boundedLifecycleOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	output := b.buffer.String()
+	if b.truncated {
+		output += "\n... lifecycle output truncated ..."
+	}
+	return strings.TrimRight(output, "\r\n")
+}
+
+func lifecycleOutputProgress(
+	output *boundedLifecycleOutput,
+) grpcbroker.ProgressFunc {
+	if output == nil {
+		return nil
+	}
+
+	return func(message string) {
+		_, _ = output.Write([]byte(message))
+	}
 }
 
 func NewEventService(
@@ -143,7 +202,13 @@ func (s *eventService) createProjectEventHandler(
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
-			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+			cleanupPreview, _ := s.syncExtensionOutput(
+				ctx,
+				extension,
+				previewTitle,
+				false,
+			)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -260,7 +325,13 @@ func (s *eventService) createServiceEventHandler(
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
-			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+			cleanupPreview, _ := s.syncExtensionOutput(
+				ctx,
+				extension,
+				previewTitle,
+				false,
+			)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -338,13 +409,14 @@ func (s *eventService) createServiceEventHandler(
 	}
 }
 
-// syncExtensionOutput displays the extension output in the preview experience.
-// defer the returned function to stop the previewer when the function exits.
+// syncExtensionOutput displays extension output in the preview experience.
+// Deploy lifecycle output is also retained after the preview closes.
 func (s *eventService) syncExtensionOutput(
 	ctx context.Context,
 	extension *extensions.Extension,
 	previewTitle string,
-) func() {
+	persistOutput bool,
+) (func(), *boundedLifecycleOutput) {
 	// Display the extension output in the preview experience
 	previewOptions := &input.ShowPreviewerOptions{
 		Prefix:       "  ",
@@ -357,11 +429,40 @@ func (s *eventService) syncExtensionOutput(
 	previewWriter := s.console.ShowPreviewer(ctx, previewOptions)
 	extOut.AddWriter(previewWriter)
 
+	var output *boundedLifecycleOutput
+	if persistOutput {
+		output = &boundedLifecycleOutput{}
+	}
+
 	// Stop the previewer when the function exits.
 	return func() {
-		s.console.StopPreviewer(ctx, false)
+		if previewWriter != io.Discard {
+			s.console.StopPreviewer(ctx, false)
+		}
 		extOut.RemoveWriter(previewWriter)
+
+		if persistOutput {
+			s.persistExtensionOutput(ctx, output.String())
+		}
+	}, output
+}
+
+func shouldPersistLifecycleOutput(eventName string) bool {
+	return eventName == "pre"+string(project.ProjectEventDeploy) ||
+		eventName == "post"+string(project.ProjectEventDeploy)
+}
+
+func (s *eventService) persistExtensionOutput(ctx context.Context, output string) {
+	if output == "" {
+		return
 	}
+
+	if persister, ok := s.console.(input.PreviewerOutputPersister); ok {
+		persister.PersistPreviewerOutput(ctx, output)
+		return
+	}
+
+	s.console.Message(ctx, output)
 }
 
 // runWithEnvReload reloads the environment before and after executing the provided action.

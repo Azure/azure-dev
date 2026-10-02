@@ -92,6 +92,15 @@ message even when stable does not define that value. Such a preview value also
 requires a beta method override; stable business logic must not be expected to
 interpret it.
 
+The lifecycle `EventService.EventStream` uses a focused beta override for
+correlated deploy-hook output. The beta stream adds subscription
+acknowledgements, a top-level `request_id` and `error`, and a `HandlerOutput`
+message. Stable event messages and stable handler APIs remain unchanged. Go
+clients opt in through `AzdClient.EventsBeta()`. If the first beta
+subscription has no request ID, the host uses the legacy adapter so existing
+beta clients keep their current behavior without acknowledgements or
+correlated output.
+
 An additive beta-only method does not require a matching stable method.
 `make proto` generates a beta handler that calls a focused override when
 present and otherwise returns `codes.Unimplemented`. Adding the method cannot

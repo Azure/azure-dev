@@ -6,6 +6,8 @@ Architecture of the gRPC-based extension system in azd.
 
 Extensions are external processes that communicate with azd via gRPC. They allow third parties and first-party teams to add new capabilities — languages, hosting targets, event handlers, and more — without modifying the core CLI.
 
+The extension framework itself is **generally available (GA)** and considered stable. See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions, registries, or specific capabilities may still carry their own experimental or pre-release status independent of the framework's GA status.
+
 ## Architecture
 
 ```text

@@ -1370,7 +1370,11 @@ When `azd` invokes an extension command, the following steps occur:
     - Additional environment variables from the current `azd` environment are also set.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
-    - If a non-zero exit code is returned, `azd` reports the operation as an error.
+    - If the extension succeeds, `azd` exits with code `0`.
+    - If the extension returns a positive exit code, `azd` reports the operation as an error and exits with the same code. For example, an extension can use code `2` for a quality gate breach and code `1` for an operational failure so scripts can distinguish them.
+    - If invocation fails before an extension exit code is available, `azd` exits with code `1`.
+
+Structured error reporting preserves the extension's exit code while providing diagnostics and telemetry classification. These exit-code rules apply to directly invoked extension commands, not lifecycle event handlers or service target providers.
 
 To enable interaction with `azd` from within the extension, the extension must leverage a gRPC client and connect to the server using the address specified in the `AZD_SERVER` environment variable.
 

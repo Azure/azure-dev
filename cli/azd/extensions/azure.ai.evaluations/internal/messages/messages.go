@@ -283,6 +283,11 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
+// ExportAvailableResults offers a snapshot without claiming a moving run is complete.
+func ExportAvailableResults(eval, runID string) string {
+	return "\nExport available results:\n" + exportRunCommand(eval, runID)
+}
+
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
@@ -348,6 +353,12 @@ func RunMustBeNamed(evalID string) error {
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
 		evalID, shellArg(evalID))
+}
+
+// ListedRunMissingID refuses to guess an identifier omitted by the service.
+func ListedRunMissingID(evalID string) error {
+	return fmt.Errorf("the service omitted the newest run ID for eval %q; "+
+		"supply --run with a known run ID instead of selecting the latest run", evalID)
 }
 
 // ReadingRun reports a failure to read the run the caller named.
@@ -551,22 +562,23 @@ func NoRowsScored() string {
 	return "\nNo rows have been scored yet.\n"
 }
 
-// SamplesNeedingALook closes a --failed-only listing, holding the rows that
-// failed apart from the rows nothing managed to score.
-//
-// One count covering both contradicted the totals printed two lines above it,
-// which is what a reader compares it with: a run reporting 5 failed and 8
-// errored closed with "13 sample(s) failed at least one evaluator".
-// FilteredItemCount closes a filtered listing by naming the filter it applied.
-//
-// --failed-only used to keep rows nothing had scored and then count them as
-// failures, so the footer contradicted the totals directly above it.
-//
-// Phrased as "6 of 15 test cases failed" rather than "are failed": the status
-// reads as the verb, which is what the results spec prints and what a reader
-// says out loud.
-func FilteredItemCount(shown, total int, status string) string {
-	return fmt.Sprintf("\n%d of %d test cases %s\n", shown, total, status)
+// NoMatchingRows describes an empty selection without claiming the run has no results.
+func NoMatchingRows() string {
+	return "\nNo results match the selected status filter.\n"
+}
+
+// FilteredItemCount names only the rows displayed, not the run's total failures.
+func FilteredItemCount(shown int, status string, all bool) string {
+	scope := " on this page"
+	if all {
+		scope = ""
+	}
+	return fmt.Sprintf("\nShowing %s%s.\n", countOf(shown, status+" test case"), scope)
+}
+
+// FilteredRunTotal distinguishes the service's matching and full-run totals.
+func FilteredRunTotal(matching, total int, status string) string {
+	return fmt.Sprintf("Full run: %d %s of %s (service-reported).\n", matching, status, countOf(total, "total test case"))
 }
 
 // UnknownItemStatus reports a --status value that names no outcome.
@@ -590,6 +602,21 @@ func GateSawUnscoredRows(errored, skipped, total int) error {
 		"%s of %d samples were not scored, so the pass rate this gate read covers "+
 			"only the rest; use --fail-on any-failure to count them against the run",
 		unscoredBreakdown(errored, skipped), total)
+}
+
+// GateUnaccountedRows identifies a count mismatch without assigning an outcome.
+func GateUnaccountedRows(unaccounted, total, scored int) error {
+	return fmt.Errorf(
+		"%d of %d rows are not accounted for by the reported counts; the pass-rate gate covers %d scored rows",
+		unaccounted, total, scored)
+}
+
+// GateCountsUnavailable reports an indeterminate gate without a quality verdict.
+func GateCountsUnavailable(missing []string) error {
+	return fmt.Errorf(
+		"evaluation gate is indeterminate: result_counts did not report %s; "+
+			"inspect the run with `azd ai eval run show` and retry when the required counts are available",
+		strings.Join(missing, ", "))
 }
 
 // unscoredBreakdown counts what a pass rate left out, by what it was.
@@ -965,15 +992,6 @@ func OutputFileCannotHoldBothArtifacts(outputDir string) error {
 func UsingLastRun(runID string) string {
 	return fmt.Sprintf(
 		"Using last run: %s (select a specific run with --run)\n", runID)
-}
-
-// PortalLinkAfterRows closes a per-sample listing with the run's one link.
-//
-// Labelled the way every other view labels it: the run's report page is in the
-// portal, and a reader looking for the link should not have to know two words
-// for it.
-func PortalLinkAfterRows(url string) string {
-	return fmt.Sprintf("\nPortal: %s\n", url)
 }
 
 // ExportFormatUnsupported reports an --format the export command cannot write.
@@ -3900,6 +3918,11 @@ func RubricDimensionsNotReturned() string {
 	return "\nRubric dimensions: not returned by service\n"
 }
 
+// RubricDimensionsUnreadable preserves valid detail output while identifying malformed data.
+func RubricDimensionsUnreadable() string {
+	return "\nWARNING: Dimension scores could not be read; use --output json to inspect the service data.\n"
+}
+
 // LocalContextHeading opens what init settled without asking.
 func LocalContextHeading() string {
 	return "\nUsing local configuration:\n"
@@ -4122,7 +4145,10 @@ func explainGenerationWarning(code string) string {
 }
 
 // PortalLink closes a detail view with the asset's portal URL.
-func PortalLink(url string) string {
+func PortalLink(url string, redacted bool) string {
+	if redacted {
+		return fmt.Sprintf("Portal (redacted link; may open a general page): %s\n", url)
+	}
 	return fmt.Sprintf("Portal: %s\n", url)
 }
 

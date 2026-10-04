@@ -33,7 +33,8 @@ func reportCreatePartial(
 		return emitJSON(cmd.OutOrStdout(), map[string]any{
 			"status": "failed", "name": name, "artifacts": artifacts,
 			"error": jsonErrorBody{
-				Message: urlsafe.Text(cause.Error()), Suggestion: urlsafe.Text(azdext.ErrorSuggestion(cause)),
+				Message: jsonMessage(cause), Code: errorCode(cause),
+				Suggestion: urlsafe.Text(azdext.ErrorSuggestion(cause)),
 			},
 			"recovery_command": retry,
 		})

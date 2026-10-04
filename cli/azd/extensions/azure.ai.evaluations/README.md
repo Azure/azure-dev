@@ -501,6 +501,19 @@ under `-o json`, including mutually exclusive flags such as `--wait --no-wait`
 and missing required flag groups. They still fail without running command hooks
 or writing evaluation artifacts.
 
+Every command's `-o json` failure document carries a stable `error.code`
+alongside `error.message` (and `error.suggestion` when one applies). A local
+validation failure (an invalid `--evaluation-level`, `--evaluator`, `--fail-on`,
+or `--max-samples`, or a malformed local dataset row) reports its own code.
+Cobra's own Args and flag-group failures, and any other error this CLI does not
+classify, report a stable unclassified code rather than omitting the field or
+guessing one from the message text. A refused request from the backing service
+(for example a missing run or a conflicting delete) keeps its diagnostic
+sentence and, when the service supplied one, its own code; the JSON document
+omits the full internal service endpoint that sentence would otherwise carry,
+while the human-readable and stderr diagnostics still name which service
+answered.
+
 `azd ai eval run output list --failed-only` displays a page of failing test
 cases, not the full run's failure count. Its footer separates the number shown
 on that page from the service-reported failures and total test cases for the

@@ -31,22 +31,31 @@ func conciseServiceError(err error) error {
 
 	message := serviceMessageFrom(respErr)
 	code := strings.TrimSpace(respErr.ErrorCode)
-	var text string
+	var sentence string
 	switch {
 	case message != "" && code != "":
-		text = fmt.Sprintf("%s (HTTP %d %s)", message, respErr.StatusCode, code)
+		sentence = fmt.Sprintf("%s (HTTP %d %s)", message, respErr.StatusCode, code)
 	case message != "":
-		text = fmt.Sprintf("%s (HTTP %d)", message, respErr.StatusCode)
+		sentence = fmt.Sprintf("%s (HTTP %d)", message, respErr.StatusCode)
 	case code != "":
-		text = fmt.Sprintf("the service refused the request: HTTP %d %s",
+		sentence = fmt.Sprintf("the service refused the request: HTTP %d %s",
 			respErr.StatusCode, code)
 	default:
-		text = fmt.Sprintf("the service refused the request: HTTP %d", respErr.StatusCode)
+		sentence = fmt.Sprintf("the service refused the request: HTTP %d", respErr.StatusCode)
 	}
+	// text is the full diagnostic sentence Error() and existing human output
+	// read; safe is the same sentence without the service endpoint, which is
+	// what -o json reads instead so a refused request's JSON document never
+	// discloses which Foundry account or project backed the call.
+	text := sentence
 	if target := refusedTarget(respErr); target != "" {
 		text += " from " + target
 	}
-	return &serviceError{text: text, cause: err}
+	stableCode := code
+	if stableCode == "" {
+		stableCode = fmt.Sprintf("http_%d", respErr.StatusCode)
+	}
+	return &serviceError{text: text, safe: sentence, code: stableCode, cause: err}
 }
 
 // refusedTarget names which service refused, and nothing else about the call.
@@ -66,8 +75,14 @@ func refusedTarget(respErr *azcore.ResponseError) string {
 }
 
 // serviceError says the sentence and carries the response underneath.
+//
+// text is the full diagnostic sentence, including which service refused the
+// call; Error() and existing human output read it. safe is the same sentence
+// without that service endpoint, read instead when serializing to -o json.
 type serviceError struct {
 	text  string
+	safe  string
+	code  string
 	cause error
 }
 
@@ -76,6 +91,15 @@ func (e *serviceError) Error() string { return e.text }
 // Unwrap is what keeps the status checks working: they look for the azcore
 // error by type, and it is still in the chain.
 func (e *serviceError) Unwrap() error { return e.cause }
+
+// SafeMessage is read instead of Error() when serializing to -o json, so the
+// JSON document never discloses the full internal service endpoint.
+func (e *serviceError) SafeMessage() string { return e.safe }
+
+// Code is read alongside SafeMessage so a refused request's JSON document
+// carries something stable to branch on, as every other validation failure
+// already does.
+func (e *serviceError) Code() string { return e.code }
 
 // serviceMessageFrom digs the human sentence out of an error response body.
 //

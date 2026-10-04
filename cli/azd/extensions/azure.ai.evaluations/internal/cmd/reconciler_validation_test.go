@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
@@ -450,7 +451,19 @@ func TestCreatePartialJSONPreservesRemediation(t *testing.T) {
 			assert.Equal(t, "failed", result.Status)
 			assert.Equal(t, cfg.Evals[0].Name, result.Name)
 			assert.Equal(t, []reconciledArtifact{{"dataset", "turn-tests", "1.0", true}}, result.Artifacts)
-			assert.Equal(t, err.Error(), result.Error.Message)
+			if status == http.StatusForbidden {
+				assert.Equal(t, err.Error(), result.Error.Message)
+				assert.Equal(t, exterrors.CodeAuthFailed, result.Error.Code)
+			} else {
+				// ADO 5572140: the JSON message strips the internal service
+				// endpoint a service refusal would otherwise carry; stderr
+				// (asserted below) keeps the full diagnostic for a human.
+				assert.Equal(t, jsonMessage(err), result.Error.Message)
+				assert.NotEqual(t, err.Error(), result.Error.Message)
+				assert.NotContains(t, result.Error.Message, "127.0.0.1")
+				assert.Contains(t, err.Error(), "127.0.0.1")
+				assert.Equal(t, "CreateRefused", result.Error.Code)
+			}
 			assert.Equal(t, wantSuggestion, result.Error.Suggestion)
 			assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
 			assert.Contains(t, stderr.String(), err.Error())

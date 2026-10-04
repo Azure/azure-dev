@@ -6,6 +6,7 @@ package watch
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -20,6 +22,11 @@ import (
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
 )
+
+// reconcileInterval bounds how long a file removed inside the per-file watch
+// registration window (see reconcileCreated) can appear stuck in Created
+// before this safety net clears it.
+const reconcileInterval = 100 * time.Millisecond
 
 type Watcher interface {
 	// Deprecated: Use GetFileChanges().String() instead.
@@ -92,8 +99,21 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 	go func() {
 		defer watcher.Close()
 
+		// Some backends (notably fsnotify's Darwin kqueue backend) emit the
+		// synthetic Create event for a new file in a watched directory before
+		// the per-file watch is registered: dirChange -> sendCreateIfNew
+		// sends Create, then calls internalWatch/addWatch to open the file's
+		// own kevent. A file removed inside that window is never watched
+		// individually, so no Remove event is ever generated for it, and it
+		// would otherwise be stuck in Created forever. reconcileCreated is a
+		// portable, backend-agnostic safety net for exactly that case.
+		reconcileTicker := time.NewTicker(reconcileInterval)
+		defer reconcileTicker.Stop()
+
 		for {
 			select {
+			case <-reconcileTicker.C:
+				fw.reconcileCreated()
 			case event := <-watcher.Events:
 				// Fast path: ignore events matching hardcoded glob patterns.
 				shouldIgnore := false
@@ -314,6 +334,25 @@ func (fc FileChanges) String() string {
 		b.WriteString(change.String())
 	}
 	return b.String()
+}
+
+// reconcileCreated removes an entry from Created whose backing file no
+// longer exists.
+//
+// This mirrors the explicit Remove-event handling for a file that was
+// created and removed within this watch session: the path disappears
+// entirely rather than being reported as Deleted, so a file whose terminal
+// Remove event a backend never emitted is indistinguishable from one whose
+// Remove event arrived normally.
+func (fw *fileWatcher) reconcileCreated() {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	for name := range fw.fileChanges.Created {
+		if _, err := os.Lstat(name); errors.Is(err, os.ErrNotExist) {
+			delete(fw.fileChanges.Created, name)
+		}
+	}
 }
 
 // GetFileChanges returns all file changes tracked by the watcher, sorted by path.

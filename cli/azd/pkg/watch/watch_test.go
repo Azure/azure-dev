@@ -315,6 +315,50 @@ func TestGetFileChanges_CreateThenDelete(t *testing.T) {
 		"ephemeral.txt should be removed from Created after delete, not moved to Deleted")
 }
 
+func TestReconcileCreated_RemovesMissingFile(t *testing.T) {
+	// Exercises the fix in isolation, without depending on real OS event
+	// timing or a specific fsnotify backend: construct the exact state a
+	// backend could leave behind when a file is removed inside the per-file
+	// watch registration window (Created holds the path, but the backend
+	// never emits the Remove event because it never finished watching the
+	// file), and confirm reconcileCreated clears it the same way the normal
+	// Remove-event path would.
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "gone.txt")
+	require.NoError(t, os.WriteFile(missing, []byte("x"), 0600))
+	require.NoError(t, os.Remove(missing))
+
+	fw := &fileWatcher{fileChanges: &fileChanges{
+		Created:  map[string]bool{missing: true},
+		Modified: map[string]bool{},
+		Deleted:  map[string]bool{},
+	}}
+
+	fw.reconcileCreated()
+
+	changes := fw.GetFileChanges()
+	require.Empty(t, changes, "a missing file must be cleared entirely, not moved to Deleted")
+}
+
+func TestReconcileCreated_PreservesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present.txt")
+	require.NoError(t, os.WriteFile(present, []byte("x"), 0600))
+
+	fw := &fileWatcher{fileChanges: &fileChanges{
+		Created:  map[string]bool{present: true},
+		Modified: map[string]bool{},
+		Deleted:  map[string]bool{},
+	}}
+
+	fw.reconcileCreated()
+
+	changes := fw.GetFileChanges()
+	require.Len(t, changes, 1)
+	require.Equal(t, present, changes[0].Path)
+	require.Equal(t, FileCreated, changes[0].ChangeType)
+}
+
 func TestGetFileChanges_RenameFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

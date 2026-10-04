@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // conciseServiceError reduces a service refusal to the sentence it carried.
@@ -100,6 +101,28 @@ func (e *serviceError) SafeMessage() string { return e.safe }
 // carries something stable to branch on, as every other validation failure
 // already does.
 func (e *serviceError) Code() string { return e.code }
+
+// authServiceError pairs an auth-classified LocalError with a safe message
+// that omits the service endpoint, mirroring serviceError's JSON/human split
+// for the 401/403 range ServiceRefused reclassifies. Without this, the
+// endpoint-bearing concise sentence ServiceRefused formats into the
+// LocalError's own Message would reach -o json without redaction, since
+// LocalError does not otherwise satisfy safeJSONError.
+type authServiceError struct {
+	*azdext.LocalError
+	safe string
+}
+
+// Unwrap keeps azdext.ErrorSuggestion and other LocalError lookups working.
+func (e *authServiceError) Unwrap() error { return e.LocalError }
+
+// SafeMessage is read instead of Error() when serializing to -o json.
+func (e *authServiceError) SafeMessage() string { return e.safe }
+
+// Code satisfies the same JSON-safety contract as serviceError.Code; the
+// embedded LocalError already carries the classification exterrors.Auth
+// assigned.
+func (e *authServiceError) Code() string { return e.LocalError.Code }
 
 // serviceMessageFrom digs the human sentence out of an error response body.
 //

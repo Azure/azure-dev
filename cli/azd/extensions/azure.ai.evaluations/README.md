@@ -459,8 +459,10 @@ artifact's original input flags. Do not regenerate the successful artifact.
 With `-o json`, generation emits one document keyed by `dataset` and `evaluator`,
 including each outcome's `status`, `job_id`, and, on failure, `error`,
 `recovery_command`, and `retry_guidance`. An optional `suggestion` preserves
-structured remediation while keeping `error` a string. Status is `submitted`, `succeeded`,
-`failed`, or `catalog_failed`. Any failed outcome makes the command exit nonzero.
+structured remediation while keeping `error` a string. A failed outcome also
+carries the same stable `code` every other command's failure reports. Status is
+`submitted`, `succeeded`, `failed`, or `catalog_failed`. Any failed outcome
+makes the command exit nonzero.
 URLs in both `error` and `suggestion` omit user information, query strings, and fragments.
 
 Generation changes catalog declarations, not an existing eval's references.
@@ -502,16 +504,18 @@ and missing required flag groups. They still fail without running command hooks
 or writing evaluation artifacts.
 
 Every command's `-o json` failure document carries a stable `error.code`
-alongside `error.message` (and `error.suggestion` when one applies). A local
-validation failure (an invalid `--evaluation-level`, `--evaluator`, `--fail-on`,
-or `--max-samples`, or a malformed local dataset row) reports its own code.
-Cobra's own Args and flag-group failures, and any other error this CLI does not
-classify, report a stable unclassified code rather than omitting the field or
-guessing one from the message text. A refused request from the backing service
-(for example a missing run or a conflicting delete) keeps its diagnostic
-sentence and, when the service supplied one, its own code; the JSON document
-omits the full internal service endpoint that sentence would otherwise carry,
-while the human-readable and stderr diagnostics still name which service
+alongside `error.message` (and `error.suggestion` when one applies); `generate`'s
+own partial-result document (below) carries the same `code` per failed outcome
+instead. A local validation failure (an invalid `--evaluation-level`,
+`--evaluator`, `--fail-on`, or `--max-samples`, or a malformed local dataset row)
+reports its own code. Cobra's own Args and flag-group failures, and any other
+error this CLI does not classify, report a stable unclassified code rather than
+omitting the field or guessing one from the message text. A refused request
+from the backing service (for example a missing run or a conflicting delete)
+keeps its diagnostic sentence and, when the service supplied one, its own code;
+the JSON document omits the full internal service endpoint that sentence would
+otherwise carry, while the human-readable and stderr diagnostics still name
+which service
 answered.
 
 `azd ai eval run output list --failed-only` displays a page of failing test

@@ -4257,13 +4257,29 @@ func isCredentialUnavailable(err error) bool {
 func ServiceRefused(status int, err error) error {
 	concise := conciseServiceError(err)
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return exterrors.Auth(
-			exterrors.CodeAuthFailed,
-			fmt.Sprintf(
-				"the Foundry project refused the request (HTTP %d): %v. "+
-					"Run `azd auth login`, and check you have access to this project",
-				status, concise),
-			"run `azd auth login`, and check you have access to this project")
+		full := concise.Error()
+		safe := full
+		if svc, ok := errors.AsType[*serviceError](concise); ok {
+			safe = svc.SafeMessage()
+		}
+		const (
+			tail       = "Run `azd auth login`, and check you have access to this project"
+			suggestion = "run `azd auth login`, and check you have access to this project"
+		)
+		return &authServiceError{
+			LocalError: &azdext.LocalError{
+				Message: fmt.Sprintf(
+					"the Foundry project refused the request (HTTP %d): %s. %s", status, full, tail),
+				Code:       exterrors.CodeAuthFailed,
+				Category:   azdext.LocalErrorCategoryAuth,
+				Suggestion: suggestion,
+			},
+			// Same wording as Message, but built from the endpoint-free
+			// sentence, so -o json never discloses which Foundry account or
+			// project backed the refused call.
+			safe: fmt.Sprintf(
+				"the Foundry project refused the request (HTTP %d): %s. %s", status, safe, tail),
+		}
 	}
 	return concise
 }

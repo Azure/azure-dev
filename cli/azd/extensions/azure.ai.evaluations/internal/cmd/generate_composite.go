@@ -656,7 +656,8 @@ func generationDocument(outcomes []generationOutcome) map[string]any {
 		}
 		if o.err != nil {
 			entry.Status = "failed"
-			entry.Error = urlsafe.Text(o.err.Error())
+			entry.Error = jsonMessage(o.err)
+			entry.Code = errorCode(o.err)
 			entry.Suggestion = urlsafe.Text(azdext.ErrorSuggestion(o.err))
 			if o.ref != nil {
 				entry.Status = "catalog_failed"

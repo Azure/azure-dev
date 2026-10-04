@@ -324,6 +324,39 @@ func TestGenerationPartialJSONRedactsJobFailureMessage(t *testing.T) {
 	}
 }
 
+// generationDocument's entry.Error used to bypass jsonMessage, so a service
+// refusal reaching generation's own partial-result document still disclosed
+// the internal service endpoint even after the ordinary -o json envelope was
+// fixed. A failed outcome must also carry the same stable code every other
+// failure reports.
+func TestGenerationDocumentOmitsTheServiceEndpointAndCarriesACode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	ec := evalContextFor(srv)
+
+	_, err := ec.evalClient.GetDataGenerationJob(t.Context(), "job_1", "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "127.0.0.1",
+		"the synthetic cause must actually carry an endpoint to redact")
+
+	doc := generationDocument([]generationOutcome{{plan: generationPlan{Kind: generateKindDataset}, err: err}})
+	raw, marshalErr := json.Marshal(doc)
+	require.NoError(t, marshalErr)
+
+	var decoded map[string]generationResult
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	entry := decoded["dataset"]
+	assert.Equal(t, "failed", entry.Status)
+	assert.Equal(t, jsonMessage(err), entry.Error)
+	assert.NotContains(t, entry.Error, "127.0.0.1",
+		"the JSON document must not disclose the internal service endpoint")
+	assert.Equal(t, errorCode(err), entry.Code)
+	assert.NotEmpty(t, entry.Code, "a failed outcome must carry the same stable code every other failure reports")
+}
+
 func TestGenerationCatalogFailureCanRecoverWithoutRegeneration(t *testing.T) {
 	ec, plans, dir, requests := generationRecoveryFixture(t)
 	// This also models a concurrent config edit made while generation polls.

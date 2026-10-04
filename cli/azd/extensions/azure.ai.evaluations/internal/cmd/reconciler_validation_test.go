@@ -452,7 +452,16 @@ func TestCreatePartialJSONPreservesRemediation(t *testing.T) {
 			assert.Equal(t, cfg.Evals[0].Name, result.Name)
 			assert.Equal(t, []reconciledArtifact{{"dataset", "turn-tests", "1.0", true}}, result.Artifacts)
 			if status == http.StatusForbidden {
-				assert.Equal(t, err.Error(), result.Error.Message)
+				// This review's follow-up finding: the auth projection used
+				// to flatten SafeMessage/Code, so the JSON message still
+				// carried the full endpoint. It must now be sanitized the
+				// same way the non-auth branch below already is, while the
+				// auth code/suggestion and the full human/stderr diagnostic
+				// survive unchanged.
+				assert.Equal(t, jsonMessage(err), result.Error.Message)
+				assert.NotEqual(t, err.Error(), result.Error.Message)
+				assert.NotContains(t, result.Error.Message, "127.0.0.1")
+				assert.Contains(t, err.Error(), "127.0.0.1")
 				assert.Equal(t, exterrors.CodeAuthFailed, result.Error.Code)
 			} else {
 				// ADO 5572140: the JSON message strips the internal service

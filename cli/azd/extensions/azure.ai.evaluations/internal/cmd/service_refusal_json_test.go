@@ -6,11 +6,15 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"azureaieval/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,4 +112,64 @@ func TestJobDeleteConflictKeepsContextButOmitsTheEndpointFromJSON(t *testing.T) 
 	assert.Equal(t, safe, doc.Error.Message)
 	assert.Equal(t, code, doc.Error.Code)
 	assert.NotContains(t, out.String(), "127.0.0.1")
+}
+
+// A 401 or 403 is reclassified into an auth LocalError with its own
+// suggestion, which used to flatten the concise cause's safe/code interface:
+// -o json still disclosed the full endpoint for an authorization failure even
+// after the other statuses were fixed. The auth classification, suggestion,
+// and full human/stderr diagnostic must all survive alongside the fix.
+func TestAuthRefusalJSONOmitsTheEndpointButKeepsItsClassification(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, `{"error":{"message":"caller lacks access"}}`)
+			}))
+			t.Cleanup(srv.Close)
+			ec := evalContextFor(srv)
+
+			_, err := ec.evalClient.GetOpenAIEval(t.Context(), "eval_verified")
+			require.Error(t, err)
+
+			full := err.Error()
+			assert.Contains(t, full, "127.0.0.1")
+			assert.Contains(t, full, "caller lacks access")
+			assert.Contains(t, full, "azd auth login")
+
+			safe := jsonMessage(err)
+			assert.NotContains(t, safe, "127.0.0.1",
+				"the JSON document must not disclose the internal service endpoint")
+			assert.Contains(t, safe, "caller lacks access")
+			assert.Contains(t, safe, "azd auth login")
+
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "the auth classification must still be reachable")
+			assert.Equal(t, exterrors.CodeAuthFailed, local.Code)
+			assert.Equal(t, "run `azd auth login`, and check you have access to this project", local.Suggestion)
+			assert.Equal(t, exterrors.CodeAuthFailed, errorCode(err))
+
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(c int) { exitCode = c }
+			t.Cleanup(func() { exitProcess = priorExit })
+
+			require.ErrorIs(t, failAs(cmd, err), err)
+			assert.Equal(t, 1, exitCode)
+
+			var doc jsonError
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			require.NoError(t, decoder.Decode(&doc))
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "exactly one JSON document")
+			assert.Equal(t, safe, doc.Error.Message)
+			assert.Equal(t, exterrors.CodeAuthFailed, doc.Error.Code)
+			assert.Equal(t, "run `azd auth login`, and check you have access to this project", doc.Error.Suggestion)
+			assert.NotContains(t, out.String(), "127.0.0.1")
+		})
+	}
 }

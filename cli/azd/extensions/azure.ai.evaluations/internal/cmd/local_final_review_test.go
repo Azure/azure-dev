@@ -281,6 +281,99 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 	assert.Equal(t, 2, count)
 }
 
+// Two azure.ai.eval configurations can declare an eval with the same name but
+// different local item schemas -- an ordinary layout per EvalScope's own
+// rationale. Only the id and digest aliases are config-scoped; the immutable
+// local-request baseline must be too, or the second configuration's deploy
+// overwrites the first's baseline and forces an unrelated recreation on its
+// next deploy, forking that eval's run history.
+func TestLocalRequestBaselineIsScopedAcrossConfigurations(t *testing.T) {
+	dirA := localSourceConfig(t, "{\"query\":\"first\"}\n", 1)
+	dirB := localSourceConfig(t, "{\"query\":\"second\",\"extra\":\"now available\"}\n", 1)
+	cfgA, err := project.OpenEvalConfig(dirA)
+	require.NoError(t, err)
+	cfgA.Evals[0].Evaluators[0].DataMapping = nil
+	cfgB, err := project.OpenEvalConfig(dirB)
+	require.NoError(t, err)
+	cfgB.Evals[0].Evaluators[0].DataMapping = nil
+	groupA, groupB := cfgA.Evals[0], cfgB.Evals[0]
+
+	// The declared structures must be indistinguishable to the shared
+	// definition baseline: only their local file content differs, which is
+	// precisely the gap the local-request fingerprint exists to cover.
+	digestA, err := project.FingerprintGroup(groupA)
+	require.NoError(t, err)
+	digestB, err := project.FingerprintGroup(groupB)
+	require.NoError(t, err)
+	require.Equal(t, digestA, digestB, "fixture must isolate the local-request fingerprint, not the declared digest")
+
+	state := &testEnvServer{state: map[string]string{}}
+	created := map[string]*eval_api.CreateOpenAIEvalRequest{}
+	count := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/openai/v1/evals" {
+			var request eval_api.CreateOpenAIEvalRequest
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			count++
+			id := fmt.Sprintf("eval_%d", count)
+			created[id] = &request
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"id": id}))
+			return
+		}
+		if r.Method == http.MethodGet {
+			id := filepath.Base(r.URL.Path)
+			req := created[id]
+			if req == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"id": id, "name": req.Name, "metadata": req.Metadata,
+				"data_source_config": req.DataSourceConfig, "testing_criteria": req.TestingCriteria,
+			}))
+			return
+		}
+		t.Errorf("unexpected mutation: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	t.Cleanup(server.Close)
+
+	ensure := func(scope string, group project.Eval, dir string) (string, bool) {
+		ec := evalContextFor(server)
+		ec.azdClient = newTestAzdClient(t, state)
+		ec.envName, ec.rootKnown = "test", true
+		ec.schemas = map[string]*eval_api.EvaluatorSummary{"builtin.relevance": {
+			Name: "builtin.relevance", Definition: &eval_api.EvaluatorContract{DataSchema: &eval_api.JSONSchema{
+				Type: "object", Required: []string{"query"},
+				Properties: map[string]any{
+					"query": map[string]any{"type": "string"}, "extra": map[string]any{"type": "string"},
+				},
+			}},
+		}}
+		r := &evalReconciler{ec: ec, scope: scope}
+		id, changed, err := r.EnsureEval(t.Context(), group, group.LocalSourcePath(dir))
+		require.NoError(t, err)
+		return id, changed
+	}
+
+	firstA, changed := ensure(scopeA, groupA, dirA)
+	assert.True(t, changed)
+	firstB, changed := ensure(scopeB, groupB, dirB)
+	assert.True(t, changed)
+	require.NotEqual(t, firstA, firstB)
+
+	secondA, changed := ensure(scopeA, groupA, dirA)
+	assert.False(t, changed, "a different configuration's local contract must not fork this eval's history")
+	assert.Equal(t, firstA, secondA)
+
+	secondB, changed := ensure(scopeB, groupB, dirB)
+	assert.False(t, changed)
+	assert.Equal(t, firstB, secondB)
+
+	assert.Equal(t, 2, count, "only the two distinct local contracts create an eval")
+}
+
 func localIdentityFixture(t *testing.T) (*evalContext, *testEnvServer, *catalogPinService, *project.EvalConfig, string) {
 	t.Helper()
 	ec, env, service, cfg, dir := newCatalogPinFixture(t)

@@ -240,7 +240,7 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 		if err != nil {
 			return evalDecision{}, err
 		}
-		if prior := r.ec.privateValue(ctx, localRequestKey(group.Name)); prior != "" && prior != current {
+		if prior := r.ec.scopedValue(ctx, localRequestKey(group.Name), r.scope); prior != "" && prior != current {
 			recreate = true
 		}
 	}
@@ -990,7 +990,7 @@ func (r *evalReconciler) EnsureEval(
 		if err != nil {
 			return "", false, err
 		}
-		if prior := r.ec.privateValue(ctx, localRequestKey(group.Name)); prior != "" && prior != localFingerprint {
+		if prior := r.ec.scopedValue(ctx, localRequestKey(group.Name), r.scope); prior != "" && prior != localFingerprint {
 			recreate = true
 		}
 	}
@@ -1056,7 +1056,7 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
 			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
 			if localFingerprint != "" {
-				r.ec.remember(ctx, localRequestKey(group.Name), localFingerprint)
+				r.ec.rememberScoped(ctx, localRequestKey(group.Name), r.scope, localFingerprint)
 			}
 			r.claim(cached, group.Name)
 			return cached, false, nil
@@ -1071,7 +1071,7 @@ func (r *evalReconciler) EnsureEval(
 	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
 	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
 	if localFingerprint != "" {
-		r.ec.remember(ctx, localRequestKey(group.Name), localFingerprint)
+		r.ec.rememberScoped(ctx, localRequestKey(group.Name), r.scope, localFingerprint)
 	}
 	r.claim(created.ID, group.Name)
 	return created.ID, true, nil

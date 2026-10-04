@@ -34,7 +34,8 @@ func (ec *evalContext) deleteEvalState(ctx context.Context, id string) error {
 			keys = append(keys, key)
 			affected[base] = true
 			if scopeSuffix != "" && strings.HasPrefix(base, project.EnvKeyFingerprintPrefix) {
-				keys = append(keys, strings.TrimSuffix(base, "_ID")+scopeSuffix)
+				fingerprint := strings.TrimSuffix(base, "_ID")
+				keys = append(keys, fingerprint+scopeSuffix, fingerprint+"_LOCAL_REQUEST_V1"+scopeSuffix)
 			}
 		}
 		for base := range affected {
@@ -48,7 +49,8 @@ func (ec *evalContext) deleteEvalState(ctx context.Context, id string) error {
 				// Definition fingerprints are shared by name even when IDs are
 				// scoped. A surviving eval still needs that baseline for edits.
 				fingerprint := strings.TrimSuffix(base, "_ID")
-				keys = append(keys, fingerprint, fingerprint+project.EvalScopeSuffix, fingerprint+"_LOCAL_REQUEST_V1")
+				keys = append(keys, fingerprint, fingerprint+project.EvalScopeSuffix, fingerprint+"_LOCAL_REQUEST_V1",
+					fingerprint+"_LOCAL_REQUEST_V1"+project.EvalScopeSuffix)
 			}
 		}
 		return keys

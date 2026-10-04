@@ -118,6 +118,20 @@ Earlier hosts that acknowledge only failed save attempts still leave pre-save
 errors uncertain to clients. Installing an updated extension alone does not
 enable the broader acknowledgment; it requires a host build containing it.
 
+A `v1beta` caller uses a typed contract for the same acknowledgment instead of
+the metadata/trailer convention, so the capability is discoverable from the
+beta service definition and generated clients rather than relying on an
+undocumented header name. The caller sets `AddServiceRequest.operation_id`
+(the typed counterpart of the `azd-project-add-service-operation` metadata
+value). On the same acknowledged failures described above, the host attaches
+an `AddServiceAcknowledgment` message (echoing `operation_id`) as a
+`google.rpc.Status` detail on the returned error, instead of a trailer. Both
+transports share the same core mutation logic and acknowledgment timing; only
+the operation-identifier transport and the acknowledgment surface differ. A
+caller on an older beta SDK without the `operation_id` field is unaffected and
+simply does not opt in, the same as a `v1` caller that supplies no metadata
+value.
+
 ## Deployment Preview
 
 `azd deploy --preview` calls an optional `Preview` on each selected service target

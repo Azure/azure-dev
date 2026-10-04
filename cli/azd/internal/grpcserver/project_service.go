@@ -236,35 +236,70 @@ func (s *projectService) envResolver() mapper.Resolver {
 //
 // The service name from req.Service.Name is used as the key in the services map.
 // If the services map doesn't exist, it will be initialized.
+//
+// This is the v1 entry point. It reads the caller's operation identifier from the
+// azd-project-add-service-operation gRPC metadata convention and, on an acknowledged failure,
+// echoes it back via the azd-project-add-service-save-failed trailer. The v1beta entry point
+// (BetaProjectServiceAddServiceOverride, see project_service_beta.go) reads the same identifier
+// from a typed AddServiceRequest.operation_id field instead and reports the acknowledgment as a
+// typed AddServiceAcknowledgment gRPC status detail. Both entry points share addService below.
 func (s *projectService) AddService(
 	ctx context.Context, req *azdext.AddServiceRequest,
 ) (_ *azdext.EmptyResponse, resultErr error) {
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	tokens := incoming.Get("azd-project-add-service-operation")
+	token := ""
+	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
+		token = tokens[0]
+	}
+
+	acknowledged, err := s.addService(ctx, req, token)
+	if err != nil {
+		if acknowledged {
+			if trailerErr := grpc.SetTrailer(
+				ctx, metadata.Pairs("azd-project-add-service-save-failed", token),
+			); trailerErr != nil {
+				err = fmt.Errorf("%w; acknowledging completed operation failure: %w", err, trailerErr)
+			}
+		}
+		return nil, err
+	}
+
+	return &azdext.EmptyResponse{}, nil
+}
+
+// addService performs the AddService mutation shared by the v1 gRPC metadata/trailer
+// acknowledgment convention and the v1beta typed AddServiceAcknowledgment contract.
+// operationToken is the caller-supplied operation identifier from whichever transport the
+// caller used, or empty when the caller did not opt in.
+//
+// acknowledged reports whether the mutation lock was acquired and any synchronous save/restore
+// work completed before the returned error -- the same point at which the documented
+// acknowledgment contract promises a signal to an opted-in caller. Success, panics, and errors
+// returned before the lock do not set acknowledged.
+func (s *projectService) addService(
+	ctx context.Context, req *azdext.AddServiceRequest, operationToken string,
+) (acknowledged bool, resultErr error) {
 	if req.Service == nil || req.Service.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+		return false, status.Error(codes.InvalidArgument, "service name cannot be empty")
 	}
 
 	s.configMutationMu.Lock()
 	defer s.configMutationMu.Unlock()
 
-	incoming, _ := metadata.FromIncomingContext(ctx)
-	tokens := incoming.Get("azd-project-add-service-operation")
-	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
-		token := tokens[0]
+	if operationToken != "" {
 		// Runs after synchronous work and cache restoration, but before releasing the mutation lock.
-		// The named error stays nil during a panic, which is not a confirmed completion.
+		// acknowledged stays false during a panic, which is not a confirmed completion.
 		defer func() {
-			if resultErr == nil {
-				return
-			}
-			if err := grpc.SetTrailer(ctx, metadata.Pairs("azd-project-add-service-save-failed", token)); err != nil {
-				resultErr = fmt.Errorf("%w; acknowledging completed operation failure: %w", resultErr, err)
+			if resultErr != nil {
+				acknowledged = true
 			}
 		}()
 	}
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	// Reload the project config from disk before mutating so we never clobber
@@ -272,20 +307,20 @@ func (s *projectService) AddService(
 	// azure.yaml after the lazy cache was first resolved. Other mutating handlers
 	// (SetConfig*, SetServiceConfig*, UnsetConfig*) reload for the same reason.
 	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
-		return nil, err
+		return false, err
 	}
 
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	if projectConfig.Format() == project.ProjectFormatLayersV2 {
-		return nil, status.Error(codes.Unimplemented, "adding services to layered projects is not supported")
+		return false, status.Error(codes.Unimplemented, "adding services to layered projects is not supported")
 	}
 
 	serviceConfig, err := s.mapService(req.Service)
 	if err != nil {
-		return nil, fmt.Errorf("failed converting service configuration, %w", err)
+		return false, fmt.Errorf("failed converting service configuration, %w", err)
 	}
 
 	if projectConfig.Services == nil {
@@ -320,10 +355,10 @@ func (s *projectService) AddService(
 		} else {
 			delete(projectConfig.Services, req.Service.Name)
 		}
-		return nil, err
+		return false, err
 	}
 
-	return &azdext.EmptyResponse{}, nil
+	return false, nil
 }
 
 // preserveUnchangedEnvTemplates restores the original env value templates from existing for

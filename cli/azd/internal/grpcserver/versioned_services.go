@@ -103,6 +103,11 @@ func (s *Server) registerServices() error {
 			}
 		}
 	}
+	if ps, ok := s.projectService.(*projectService); ok {
+		if _, supplied := betaServiceOverrides[BetaProjectService]; !supplied {
+			betaServiceOverrides[BetaProjectService] = &betaProjectServiceOverride{service: ps}
+		}
+	}
 
 	legacyExtensionService := &betaExtensionServiceAdapter{
 		stable:   s.extensionService,

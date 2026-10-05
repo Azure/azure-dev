@@ -573,7 +573,7 @@ func Test_LazyEnvironmentResolver_Getenv_Success(t *testing.T) {
 	})
 
 	resolver := &lazyEnvironmentResolver{
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return env, nil
 		}),
 	}
@@ -587,7 +587,7 @@ func Test_LazyEnvironmentResolver_Getenv_Error(t *testing.T) {
 	t.Parallel()
 
 	resolver := &lazyEnvironmentResolver{
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return nil, assert.AnError
 		}),
 	}

@@ -19,7 +19,7 @@ import (
 
 type TestProvider struct {
 	envManager  environment.Manager
-	env         *environment.Environment
+	env         environment.Env
 	projectPath string
 	options     provisioning.Options
 	console     input.Console
@@ -141,7 +141,7 @@ func (p *TestProvider) PlannedOutputs(ctx context.Context) ([]provisioning.Plann
 
 func NewTestProvider(
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	prompters prompt.Prompter,
 ) provisioning.Provider {

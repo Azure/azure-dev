@@ -37,14 +37,14 @@ type eventService struct {
 
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 	lazyProject    *lazy.Lazy[*project.ProjectConfig]
-	lazyEnv        *lazy.Lazy[*environment.Environment]
+	lazyEnv        *lazy.Lazy[environment.Env]
 }
 
 func NewEventService(
 	extensionManager *extensions.Manager,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
@@ -377,7 +377,7 @@ func (s *eventService) runWithEnvReload(ctx context.Context, action func() error
 	}
 
 	// Reload before invoking event handler to ensure environment is updated
-	if err := envManager.Reload(ctx, env); err != nil {
+	if err := envManager.Reload(ctx, env.BackingEnv()); err != nil {
 		return err
 	}
 
@@ -387,5 +387,5 @@ func (s *eventService) runWithEnvReload(ctx context.Context, action func() error
 	}
 
 	// Reload after invoking event handler to ensure environment is updated
-	return envManager.Reload(ctx, env)
+	return envManager.Reload(ctx, env.BackingEnv())
 }

@@ -192,7 +192,7 @@ func createTestEventService() (*eventService, *MockEventStreamingServer) {
 	})
 
 	// Create lazy environment
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		env := environment.NewWithValues("test-env", map[string]string{
 			"AZURE_SUBSCRIPTION_ID": "test-sub-id",
 			"AZURE_LOCATION":        "eastus2",
@@ -673,7 +673,7 @@ func TestEventService_New(t *testing.T) {
 		return &project.ProjectConfig{Name: "test"}, nil
 	})
 
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("test", map[string]string{}), nil
 	})
 

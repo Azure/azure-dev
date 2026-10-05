@@ -20,7 +20,7 @@ import (
 
 type HooksMiddleware struct {
 	envManager     environment.Manager
-	env            *environment.Environment
+	env            environment.Env
 	projectConfig  *project.ProjectConfig
 	importManager  *project.ImportManager
 	commandRunner  exec.CommandRunner
@@ -32,7 +32,7 @@ type HooksMiddleware struct {
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
 	commandRunner exec.CommandRunner,

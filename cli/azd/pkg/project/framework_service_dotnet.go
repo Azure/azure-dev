@@ -23,14 +23,14 @@ const (
 )
 
 type dotnetProject struct {
-	env       *environment.Environment
+	env       environment.Env
 	dotnetCli *dotnet.Cli
 }
 
 // NewDotNetProject creates a new instance of a dotnet project
 func NewDotNetProject(
 	dotNetCli *dotnet.Cli,
-	env *environment.Environment,
+	env environment.Env,
 ) FrameworkService {
 	return &dotnetProject{
 		env:       env,

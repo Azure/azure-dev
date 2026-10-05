@@ -48,7 +48,7 @@ type Prompter interface {
 
 type DefaultPrompter struct {
 	console           input.Console
-	env               *environment.Environment
+	env               environment.Env
 	accountManager    account.Manager
 	userConfigManager config.UserConfigManager
 	resourceService   *azapi.ResourceService
@@ -56,7 +56,7 @@ type DefaultPrompter struct {
 }
 
 func NewDefaultPrompter(
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	accountManager account.Manager,
 	userConfigManager config.UserConfigManager,

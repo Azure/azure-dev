@@ -28,7 +28,7 @@ type ExternalServiceTarget struct {
 	targetKind ServiceTargetKind
 	console    input.Console
 	prompters  prompt.Prompter
-	lazyEnv    *lazy.Lazy[*environment.Environment]
+	lazyEnv    *lazy.Lazy[environment.Env]
 
 	broker  *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
 	preview ExternalPreviewFunc
@@ -58,7 +58,7 @@ func NewExternalServiceTarget(
 	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage],
 	console input.Console,
 	prompters prompt.Prompter,
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	preview ExternalPreviewFunc,
 ) ServiceTarget {
 	target := &ExternalServiceTarget{
@@ -433,7 +433,7 @@ func (e *ExternalServiceTargetResponseError) Error() string {
 	return fmt.Sprintf("invalid %s response: %s", e.Operation, e.Detail)
 }
 
-func envResolver(env *environment.Environment) mapper.Resolver {
+func envResolver(env environment.Env) mapper.Resolver {
 	return func(key string) string {
 		if env == nil {
 			return ""
@@ -448,14 +448,14 @@ func envResolver(env *environment.Environment) mapper.Resolver {
 // session environment. When the environment cannot be loaded, the failure is logged and
 // expandable values are expanded with empty strings.
 func serviceConfigToProto(
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	serviceConfig *ServiceConfig,
 ) (*azdext.ServiceConfig, error) {
 	if serviceConfig == nil {
 		return nil, nil
 	}
 
-	var env *environment.Environment
+	var env environment.Env
 	if lazyEnv != nil {
 		var err error
 		env, err = lazyEnv.GetValue()

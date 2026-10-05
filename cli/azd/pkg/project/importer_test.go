@@ -37,7 +37,7 @@ func TestImportManagerHasService(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -78,7 +78,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -131,7 +131,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -177,7 +177,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -221,7 +221,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -347,7 +347,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{
 				"DOTNET_ENVIRONMENT": "Development",
 			}), nil
@@ -544,7 +544,7 @@ func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -683,7 +683,7 @@ func TestImportManagerServiceStableValidation(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
@@ -765,7 +765,7 @@ func TestImportManagerServiceStableWithDependencies(t *testing.T) {
 	manager := NewImportManager(&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {

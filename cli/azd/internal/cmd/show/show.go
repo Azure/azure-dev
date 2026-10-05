@@ -329,7 +329,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, nil
 }
 
-func (s *showAction) showResource(ctx context.Context, name string, env *environment.Environment) error {
+func (s *showAction) showResource(ctx context.Context, name string, env environment.Env) error {
 	id, err := infra.ResourceId(name, env)
 	if err != nil {
 		return fmt.Errorf("resolving '%s': %w", name, err)
@@ -640,7 +640,7 @@ func showContainerAppJob(
 }
 
 func (s *showAction) serviceEndpoint(
-	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
+	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env environment.Env) string {
 	resourceManager, err := s.lazyResourceManager.GetValue()
 	if err != nil {
 		log.Printf("error: getting lazy resource manager. Endpoints will be empty: %v", err)

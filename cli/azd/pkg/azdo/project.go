@@ -107,7 +107,7 @@ func GetProjectFromNew(
 	ctx context.Context,
 	repoPath string,
 	connection *azuredevops.Connection,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 ) (string, string, error) {
 	var project *core.TeamProjectReference

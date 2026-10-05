@@ -45,7 +45,7 @@ type ExternalFrameworkService struct {
 	languageName string
 	languageKind ServiceLanguageKind
 	console      input.Console
-	lazyEnv      *lazy.Lazy[*environment.Environment]
+	lazyEnv      *lazy.Lazy[environment.Env]
 
 	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]
 }
@@ -57,7 +57,7 @@ func NewExternalFrameworkService(
 	extension *extensions.Extension,
 	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage],
 	console input.Console,
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 ) FrameworkService {
 	service := &ExternalFrameworkService{
 		extension:    extension,

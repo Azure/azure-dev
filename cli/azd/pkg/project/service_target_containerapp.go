@@ -33,7 +33,7 @@ import (
 )
 
 type containerAppTarget struct {
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
@@ -50,7 +50,7 @@ type containerAppTarget struct {
 // The target resource can be partially filled with only ResourceGroupName, since container apps
 // can be provisioned during deployment.
 func NewContainerAppTarget(
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
@@ -160,7 +160,7 @@ func (at *containerAppTarget) Publish(
 		at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteContainer.Location)
 	}
 
-	if err := at.envManager.Save(ctx, at.env); err != nil {
+	if err := at.envManager.Save(ctx, at.env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving image name to environment: %w", err)
 	}
 
@@ -514,7 +514,7 @@ func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, service
 			}
 
 			at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
-			return at.envManager.Save(ctx, at.env)
+			return at.envManager.Save(ctx, at.env.BackingEnv())
 		},
 	)
 }

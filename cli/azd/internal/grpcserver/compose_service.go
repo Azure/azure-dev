@@ -22,13 +22,13 @@ import (
 type composeService struct {
 	azdext.UnimplementedComposeServiceServer
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
-	lazyEnv        *lazy.Lazy[*environment.Environment]
+	lazyEnv        *lazy.Lazy[environment.Env]
 	lazyEnvManger  *lazy.Lazy[environment.Manager]
 }
 
 func NewComposeService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	lazyEnvManger *lazy.Lazy[environment.Manager],
 ) azdext.ComposeServiceServer {
 	return &composeService{
@@ -85,7 +85,7 @@ func (c *composeService) AddResource(
 		// save resource id to env
 		env.DotenvSet(infra.ResourceIdName(req.Resource.Name), resourceId)
 
-		err = envManager.Save(ctx, env)
+		err = envManager.Save(ctx, env.BackingEnv())
 		if err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}

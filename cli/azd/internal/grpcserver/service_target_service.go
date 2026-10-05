@@ -28,7 +28,7 @@ type ServiceTargetService struct {
 	azdext.UnimplementedServiceTargetServiceServer
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
-	lazyEnv          *lazy.Lazy[*environment.Environment]
+	lazyEnv          *lazy.Lazy[environment.Env]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
 	previewMap       map[string]*serviceTargetPreviewRegistration
 	providerMapMu    sync.Mutex
@@ -38,7 +38,7 @@ type ServiceTargetService struct {
 func NewServiceTargetService(
 	container *ioc.NestedContainer,
 	extensionManager *extensions.Manager,
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 ) azdext.ServiceTargetServiceServer {
 	return &ServiceTargetService{
 		container:        container,

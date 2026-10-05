@@ -16,12 +16,12 @@ import (
 )
 
 type pythonProject struct {
-	env *environment.Environment
+	env environment.Env
 	cli *python.Cli
 }
 
 // NewPythonProject creates a new instance of the Python project
-func NewPythonProject(cli *python.Cli, env *environment.Environment) FrameworkService {
+func NewPythonProject(cli *python.Cli, env environment.Env) FrameworkService {
 	return &pythonProject{
 		env: env,
 		cli: cli,

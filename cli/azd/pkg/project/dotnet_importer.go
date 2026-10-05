@@ -36,7 +36,7 @@ type hostCheckResult struct {
 type DotNetImporter struct {
 	dotnetCli           *dotnet.Cli
 	console             input.Console
-	lazyEnv             *lazy.Lazy[*environment.Environment]
+	lazyEnv             *lazy.Lazy[environment.Env]
 	lazyEnvManager      *lazy.Lazy[environment.Manager]
 	alphaFeatureManager *alpha.FeatureManager
 
@@ -61,7 +61,7 @@ type manifestCacheKey struct {
 func NewDotNetImporter(
 	dotnetCli *dotnet.Cli,
 	console input.Console,
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	alphaFeatureManager *alpha.FeatureManager,
 ) *DotNetImporter {

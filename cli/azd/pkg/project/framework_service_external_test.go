@@ -533,7 +533,7 @@ func Test_ExternalFrameworkService_toProtoServiceConfigExpandsEnvironment(t *tes
 	env := environment.NewWithValues("test", map[string]string{
 		"SERVICE_VALUE": "resolved",
 	})
-	efs := &ExternalFrameworkService{lazyEnv: lazy.From(env)}
+	efs := &ExternalFrameworkService{lazyEnv: lazy.From[environment.Env](env)}
 	serviceConfig := &ServiceConfig{
 		Name: "api",
 		Environment: osutil.ExpandableMap{
@@ -553,7 +553,7 @@ func Test_ExternalFrameworkService_toProtoServiceConfigExpandsEnvironment(t *tes
 }
 
 func Test_ExternalFrameworkService_toProtoServiceConfigEnvLoadError(t *testing.T) {
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return nil, errors.New("no environment")
 	})
 	efs := &ExternalFrameworkService{lazyEnv: lazyEnv}
@@ -579,7 +579,7 @@ func Test_ExternalFrameworkService_toProtoServiceConfigEnvResolvedPerCall(t *tes
 	// The environment is resolved from the lazy on every conversion, so an environment
 	// that becomes available after the service is constructed is still picked up.
 	var env *environment.Environment
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		if env == nil {
 			return nil, errors.New("no environment yet")
 		}

@@ -18,13 +18,13 @@ var errSpringAppDeprecated = errors.New(
 )
 
 type springAppTarget struct {
-	env        *environment.Environment
+	env        environment.Env
 	envManager environment.Manager
 }
 
 // NewSpringAppTarget creates the spring app service target.
 func NewSpringAppTarget(
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 ) ServiceTarget {
 	return &springAppTarget{

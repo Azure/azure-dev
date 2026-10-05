@@ -22,7 +22,7 @@ import (
 )
 
 type showResource struct {
-	env             *environment.Environment
+	env             environment.Env
 	kvService       keyvault.KeyVaultService
 	resourceService *azapi.ResourceService
 	console         input.Console

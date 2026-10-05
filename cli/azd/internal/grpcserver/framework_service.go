@@ -27,7 +27,7 @@ type FrameworkService struct {
 	azdext.UnimplementedFrameworkServiceServer
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
-	lazyEnv          *lazy.Lazy[*environment.Environment]
+	lazyEnv          *lazy.Lazy[environment.Env]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]
 	providerMapMu    sync.Mutex
 }
@@ -36,7 +36,7 @@ type FrameworkService struct {
 func NewFrameworkService(
 	container *ioc.NestedContainer,
 	extensionManager *extensions.Manager,
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 ) azdext.FrameworkServiceServer {
 	return &FrameworkService{
 		container:        container,

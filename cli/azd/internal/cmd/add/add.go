@@ -46,7 +46,7 @@ func NewAddCmd() *cobra.Command {
 type AddAction struct {
 	azd              workflow.AzdCommandRunner
 	azdCtx           *azdcontext.AzdContext
-	env              *environment.Environment
+	env              environment.Env
 	envManager       environment.Manager
 	subManager       *account.SubscriptionsManager
 	alphaManager     *alpha.FeatureManager
@@ -274,7 +274,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if envModified {
-		err = a.envManager.Save(ctx, a.env)
+		err = a.envManager.Save(ctx, a.env.BackingEnv())
 		if err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}
@@ -475,7 +475,7 @@ func NewAddAction(
 	envManager environment.Manager,
 	subManager *account.SubscriptionsManager,
 	alphaManager *alpha.FeatureManager,
-	env *environment.Environment,
+	env environment.Env,
 	creds account.SubscriptionCredentialProvider,
 	prompter prompt.Prompter,
 	rm infra.ResourceManager,

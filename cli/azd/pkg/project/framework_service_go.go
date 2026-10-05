@@ -30,13 +30,13 @@ const (
 )
 
 type goProject struct {
-	env   *environment.Environment
+	env   environment.Env
 	goCli *golang.Cli
 }
 
 // NewGoProject creates a new instance of a Go project framework service.
 func NewGoProject(
-	env *environment.Environment,
+	env environment.Env,
 	goCli *golang.Cli,
 ) FrameworkService {
 	return &goProject{

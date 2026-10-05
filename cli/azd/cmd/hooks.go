@@ -78,7 +78,7 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 
 type hooksRunAction struct {
 	projectConfig  *project.ProjectConfig
-	env            *environment.Environment
+	env            environment.Env
 	envManager     environment.Manager
 	importManager  *project.ImportManager
 	commandRunner  exec.CommandRunner
@@ -91,7 +91,7 @@ type hooksRunAction struct {
 func newHooksRunAction(
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	commandRunner exec.CommandRunner,
 	console input.Console,

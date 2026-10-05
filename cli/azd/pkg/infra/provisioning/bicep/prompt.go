@@ -224,7 +224,7 @@ func (p *BicepProvider) promptForParameter(
 		if paramIsMappedToAzureLocation && !valueDefinedInEnv {
 			// set the location in the environment variable
 			p.env.SetLocation(location)
-			if err := p.envManager.Save(ctx, p.env); err != nil {
+			if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 				return nil, fmt.Errorf("setting location in environment variable: %w", err)
 			}
 		}

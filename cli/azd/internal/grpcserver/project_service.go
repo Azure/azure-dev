@@ -31,7 +31,7 @@ type projectService struct {
 
 	lazyAzdContext      *lazy.Lazy[*azdcontext.AzdContext]
 	lazyResourceManager *lazy.Lazy[project.ResourceManager]
-	lazyEnv             *lazy.Lazy[*environment.Environment]
+	lazyEnv             *lazy.Lazy[environment.Env]
 	importManager       *project.ImportManager
 	lazyProjectConfig   *lazy.Lazy[*project.ProjectConfig]
 	ghCli               *github.Cli
@@ -52,7 +52,7 @@ type projectService struct {
 func NewProjectService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 	importManager *project.ImportManager,
 	ghCli *github.Cli,

@@ -41,7 +41,7 @@ func CreateBuildPolicy(
 	projectId string,
 	repoId string,
 	buildDefinition *build.BuildDefinition,
-	env *environment.Environment) error {
+	env environment.Env) error {
 	client, err := policy.NewClient(ctx, connection)
 	if err != nil {
 		return err

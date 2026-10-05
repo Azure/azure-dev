@@ -39,7 +39,7 @@ var (
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
 	envManager   environment.Manager
-	env          *environment.Environment
+	env          environment.Env
 	prompters    prompt.Prompter
 	console      input.Console
 	cli          *terraform.Cli
@@ -67,7 +67,7 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 func NewTerraformProvider(
 	cli *terraform.Cli,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	prompters prompt.Prompter,

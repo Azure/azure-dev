@@ -94,7 +94,7 @@ func NewPublishAction(
 	serviceManager project.ServiceManager,
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
-	environment *environment.Environment,
+	environment environment.Env,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
 	azCli *azapi.AzureClient,
@@ -132,7 +132,7 @@ type PublishAction struct {
 	args                []string
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
+	env                 environment.Env
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
 	resourceManager     project.ResourceManager

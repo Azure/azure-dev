@@ -868,7 +868,7 @@ func newMyCommandAction(
 	azureService *azure.AzureService,
 	// Standard azd services
 	azdContext *azdcontext.AzdContext,
-	env *environment.Environment,
+	env environment.Env,
 ) actions.Action {
 	return &myCommandAction{
 		flags:        flags,
@@ -890,7 +890,7 @@ func newMyCommandAction(
 
 // Environment and context
 azdContext *azdcontext.AzdContext
-env *environment.Environment
+env environment.Env
 
 // Azure services
 accountManager account.Manager

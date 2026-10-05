@@ -98,7 +98,7 @@ func (ch *ContainerHelper) DockerfileBuilder() *DockerfileBuilder {
 func (ch *ContainerHelper) DefaultImageName(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 ) (string, error) {
 	return fmt.Sprintf("%s/%s-%s",
 		strings.ToLower(serviceConfig.Project.Name),
@@ -117,7 +117,7 @@ func (ch *ContainerHelper) DefaultImageTag() string {
 func (ch *ContainerHelper) RegistryName(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 ) (string, error) {
 	registryName, found := env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !found {
@@ -156,7 +156,7 @@ func (ch *ContainerHelper) RegistryName(
 func (ch *ContainerHelper) GeneratedImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 ) (*docker.ContainerImage, error) {
 	// Parse the image from azure.yaml configuration when available
 	configuredImage, err := serviceConfig.Docker.Image.Envsubst(env.Getenv)
@@ -209,7 +209,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	serviceConfig *ServiceConfig,
 	localImageTag string,
 	imageOverride *imageOverride,
-	env *environment.Environment,
+	env environment.Env,
 ) (string, error) {
 	registryName, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
@@ -245,7 +245,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 func (ch *ContainerHelper) LocalImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 ) (string, error) {
 	configuredImage, err := ch.GeneratedImage(ctx, serviceConfig, env)
 	if err != nil {
@@ -257,7 +257,7 @@ func (ch *ContainerHelper) LocalImageTag(
 
 func resolveImagePassthrough(
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 ) (string, error) {
 	if !serviceConfig.Docker.ImagePassthrough {
 		return "", nil
@@ -312,7 +312,7 @@ func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceCon
 func (ch *ContainerHelper) Login(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 ) (string, error) {
 	registryName, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
@@ -335,7 +335,7 @@ func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-	env *environment.Environment,
+	env environment.Env,
 ) (_ *azapi.DockerCredentials, err error) {
 	ctx, span := tracing.Start(ctx, events.ContainerCredentialsEvent)
 	defer func() { span.EndWithStatus(err) }()
@@ -391,7 +391,7 @@ func (ch *ContainerHelper) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	if serviceConfig.Docker.ImagePassthrough {
@@ -410,7 +410,7 @@ func (ch *ContainerHelper) Build(
 func (ch *ContainerHelper) buildLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
@@ -556,7 +556,7 @@ func (ch *ContainerHelper) buildLocalImage(
 	}, nil
 }
 
-func resolveDockerBuildArgs(buildArgs []osutil.ExpandableString, env *environment.Environment) ([]string, error) {
+func resolveDockerBuildArgs(buildArgs []osutil.ExpandableString, env environment.Env) ([]string, error) {
 	dockerBuildArgs := make([]string, 0, len(buildArgs))
 	for _, arg := range buildArgs {
 		buildArgValue, err := arg.Envsubst(env.Getenv)
@@ -570,12 +570,12 @@ func resolveDockerBuildArgs(buildArgs []osutil.ExpandableString, env *environmen
 	return resolveDockerParameters(dockerBuildArgs, env)
 }
 
-func resolveDockerParameters(source []string, env *environment.Environment) ([]string, error) {
+func resolveDockerParameters(source []string, env environment.Env) ([]string, error) {
 	result := make([]string, len(source))
 	for i, arg := range source {
 		evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
 			path := match
-			value, has := env.Config.GetString(path)
+			value, has := env.GetConfig().GetString(path)
 			if !has {
 				return "", fmt.Errorf("parameter %s not found", path)
 			}
@@ -594,7 +594,7 @@ func (ch *ContainerHelper) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	if serviceConfig.Docker.ImagePassthrough {
@@ -617,7 +617,7 @@ func (ch *ContainerHelper) packageLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	var imageId string
@@ -786,7 +786,7 @@ func (ch *ContainerHelper) Publish(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
 ) (_ *ServicePublishResult, err error) {
@@ -880,7 +880,7 @@ func (ch *ContainerHelper) publishLocalFallback(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
@@ -959,7 +959,7 @@ func (ch *ContainerHelper) publishLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
@@ -1084,7 +1084,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (_ string, err error) {
@@ -1236,7 +1236,7 @@ func dockerBuildArgsToAcrArguments(
 }
 
 func dockerBuildArgEnvResolver(
-	env *environment.Environment,
+	env environment.Env,
 	buildEnv []string,
 ) func(string) (string, bool) {
 	effectiveEnv := map[string]string{}
@@ -1270,7 +1270,7 @@ func (ch *ContainerHelper) runDotnetPublish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
-	env *environment.Environment,
+	env environment.Env,
 	progress *async.Progress[ServiceProgress],
 ) (string, error) {
 	progress.SetProgress(NewServiceProgress("Logging into registry"))

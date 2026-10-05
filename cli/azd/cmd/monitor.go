@@ -61,7 +61,7 @@ func newMonitorCmd() *cobra.Command {
 
 type monitorAction struct {
 	azdCtx               *azdcontext.AzdContext
-	env                  *environment.Environment
+	env                  environment.Env
 	subResolver          account.SubscriptionResolver
 	resourceManager      infra.ResourceManager
 	resourceService      *azapi.ResourceService
@@ -73,7 +73,7 @@ type monitorAction struct {
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
+	env environment.Env,
 	subResolver account.SubscriptionResolver,
 	resourceManager infra.ResourceManager,
 	resourceService *azapi.ResourceService,

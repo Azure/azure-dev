@@ -124,7 +124,8 @@ func memoryNode(
 // not own — from blocking the deploy.
 //
 // The comparison is shared with the azure.yaml memoryStores: path. Prompt-agent
-// keys match the wire field paths, so no label mapping is needed.
+// authoring uses camelCase, so the wire field paths require label mapping before
+// they are shown to the user.
 func reportMemoryStoreDrift(
 	g *promptGraph,
 	storeName string,

@@ -26,9 +26,6 @@ import (
 func TestPromptAgentInlineRoundTripPreservesMemory(t *testing.T) {
 	t.Parallel()
 
-	updateDelay := 300
-	maxMemories := 5
-	enabled := true
 	original := agent_yaml.PromptAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindPrompt,
@@ -40,10 +37,10 @@ func TestPromptAgentInlineRoundTripPreservesMemory(t *testing.T) {
 			Store:          "conversation-store",
 			ChatModel:      "gpt-4.1-mini",
 			EmbeddingModel: "text-embedding-3-small",
-			UpdateDelay:    &updateDelay,
-			MaxMemories:    &maxMemories,
+			UpdateDelay:    new(300),
+			MaxMemories:    new(5),
 			Options: &agent_yaml.PromptMemoryOptions{
-				UserProfileEnabled: &enabled,
+				UserProfileEnabled: new(true),
 			},
 		},
 	}
@@ -51,13 +48,15 @@ func TestPromptAgentInlineRoundTripPreservesMemory(t *testing.T) {
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
 	require.Contains(t, props.AsMap(), "memory", "memory block must survive into azure.yaml")
-	memory := props.AsMap()["memory"].(map[string]any)
+	memory, ok := props.AsMap()["memory"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "gpt-4.1-mini", memory["chatModel"])
 	require.Equal(t, "text-embedding-3-small", memory["embeddingModel"])
 	require.Equal(t, float64(300), memory["updateDelay"])
 	require.Equal(t, float64(5), memory["maxMemories"])
 	require.NotContains(t, memory, "chat_model")
-	options := memory["options"].(map[string]any)
+	options, ok := memory["options"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, true, options["userProfileEnabled"])
 	require.NotContains(t, options, "user_profile_enabled")
 
@@ -230,8 +229,11 @@ policies:
 	)
 	request, err := agent_yaml.CreatePromptAgentAPIRequest(refAgent, nil)
 	require.NoError(t, err)
-	apiDefinition := request.Definition.(agent_api.ManagedAgentDefinition)
-	apiTool := apiDefinition.Tools[0].(map[string]any)
+	apiDefinition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+	require.True(t, ok)
+	require.Len(t, apiDefinition.Tools, 1)
+	apiTool, ok := apiDefinition.Tools[0].(map[string]any)
+	require.True(t, ok)
 	require.NotContains(t, apiTool, "defaultConfig")
 	require.Equal(t, map[string]any{"enabled": false}, apiTool["default_config"])
 	require.Equal(

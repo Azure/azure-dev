@@ -163,7 +163,9 @@ func TestPromptToolsForAPI(t *testing.T) {
 	}
 
 	mapped := promptToolsForAPI([]any{authored, passThrough})
-	copilot := mapped[0].(map[string]any)
+	require.Len(t, mapped, 2)
+	copilot, ok := mapped[0].(map[string]any)
+	require.True(t, ok)
 	require.NotContains(t, copilot, "defaultConfig")
 	require.Equal(t, map[string]any{"enabled": false}, copilot["default_config"])
 	require.Equal(t, passThrough, mapped[1])

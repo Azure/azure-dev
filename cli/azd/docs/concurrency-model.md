@@ -19,6 +19,24 @@ it protects are co-located by convention.
 
 ---
 
+## Watcher reporting snapshots
+
+`fileWatcher` has one registration owner and an independent event consumer.
+Directory discovery queues a coalesced root rescan. Both reporting methods join
+in-flight registration and a rescan already queued when the owner accepts their
+barrier before capturing file-change accounting. The consumer continues draining
+backend events while reporting waits; no accounting mutex spans that wait.
+Discoveries arriving after the barrier drains its pending notification are later
+work, not part of an atomic filesystem-wide snapshot. Shutdown releases waiters
+through `done`; obtain a complete final snapshot before canceling the watcher.
+
+The accounting snapshot copies its maps under `fileWatcher.mu`, checks created
+paths outside that lock, and reclaims the live created-path map only when its
+revision is unchanged. A newer event cannot be pruned by an older filesystem
+result. Startup file provenance remains immutable after registration begins.
+
+---
+
 ## Scheduler limits and phase groups
 
 The graph scheduler applies a hard global ceiling and optional limits for named

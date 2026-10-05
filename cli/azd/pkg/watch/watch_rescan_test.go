@@ -6,6 +6,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -15,6 +16,96 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFinalSnapshot_JoinsQueuedAndInFlightDiscovery(t *testing.T) {
+	fw, backend := startupFixture(t)
+	marker := filepath.Join(fw.root, "initial.txt")
+	require.NoError(t, os.WriteFile(marker, []byte("x"), 0600))
+	entered := make(chan string, 2)
+	release := make(chan struct{}, 2)
+	seen := make(map[string]bool)
+	backend.add = func(path string) error {
+		if path != fw.root && !seen[path] {
+			seen[path] = true
+			entered <- path
+			<-release
+			for range 51 {
+				backend.events <- fsnotify.Event{Name: marker, Op: fsnotify.Write}
+			}
+		}
+		return nil
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+	t.Cleanup(func() {
+		cancel()
+		close(release)
+		waitStartupExit(t, fw.done)
+	})
+	children := make([]string, 2)
+	for i := range 2 {
+		dir := filepath.Join(fw.root, fmt.Sprintf("new-%d", i))
+		require.NoError(t, os.Mkdir(dir, 0700))
+		children[i] = filepath.Join(dir, "child.txt")
+		require.NoError(t, os.WriteFile(children[i], []byte("x"), 0600))
+		backend.events <- fsnotify.Event{Name: dir, Op: fsnotify.Create}
+		if i == 0 {
+			select {
+			case path := <-entered:
+				require.Equal(t, dir, path)
+			case <-time.After(2 * time.Second):
+				t.Fatal("first subtree did not enter registration")
+			}
+		}
+	}
+	backend.events <- fsnotify.Event{Name: marker, Op: fsnotify.Write}
+	require.Eventually(t, func() bool {
+		fw.mu.Lock()
+		defer fw.mu.Unlock()
+		return fw.fileChanges.Modified[marker]
+	}, 2*time.Second, time.Millisecond)
+	snapshot := make(chan FileChanges, 1)
+	finished := make(chan struct{})
+	go func() {
+		snapshot <- fw.GetFileChanges()
+		cancel()
+		close(finished)
+	}()
+	select {
+	case <-finished:
+		t.Fatal("snapshot returned before in-flight registration completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	release <- struct{}{}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued subtree was abandoned")
+	}
+	select {
+	case <-finished:
+		t.Fatal("snapshot returned before queued registration completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	release <- struct{}{}
+	waitStartupExit(t, finished)
+	waitStartupExit(t, fw.done)
+	expected := FileChanges{
+		{Path: marker, ChangeType: FileModified},
+		{Path: children[0], ChangeType: FileCreated},
+		{Path: children[1], ChangeType: FileCreated},
+	}
+	require.Equal(t, expected, <-snapshot)
+	stoppedSnapshot := make(chan FileChanges, 1)
+	go func() { stoppedSnapshot <- fw.GetFileChanges() }()
+	select {
+	case changes := <-stoppedSnapshot:
+		require.Equal(t, expected, changes)
+	case <-time.After(2 * time.Second):
+		t.Fatal("snapshot waited for an owner that already stopped")
+	}
+	require.NotContains(t, fw.initialFiles, children[0])
+}
 
 func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 	for _, duringAdd := range []bool{false, true} {

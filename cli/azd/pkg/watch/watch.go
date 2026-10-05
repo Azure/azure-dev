@@ -41,6 +41,7 @@ type fileWatcher struct {
 	mu           sync.Mutex
 	revision     uint64
 	done         chan struct{}
+	flush        chan chan struct{}
 }
 
 type watchBackend interface {
@@ -141,6 +142,7 @@ func (fw *fileWatcher) start(
 	backendDone := make(chan struct{})
 	consumerDone := make(chan struct{})
 	fw.done = make(chan struct{})
+	fw.flush = make(chan chan struct{})
 	go func() {
 		defer close(consumerDone)
 		defer cancel()
@@ -235,14 +237,24 @@ func (fw *fileWatcher) start(
 		if err != nil {
 			return
 		}
+		scan := func() {
+			if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil && watchCtx.Err() == nil {
+				log.Printf("failed to update directory watches for %s: %v", fw.root, err)
+			}
+		}
 		for {
 			select {
 			case <-watchCtx.Done():
 				return
 			case <-rescan:
-				if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil && watchCtx.Err() == nil {
-					log.Printf("failed to update directory watches for %s: %v", fw.root, err)
+				scan()
+			case barrier := <-fw.flush:
+				select {
+				case <-rescan:
+					scan()
+				default:
 				}
+				close(barrier)
 			}
 		}
 	}()
@@ -252,6 +264,23 @@ func (fw *fileWatcher) start(
 		return fmt.Errorf("watcher failed: %w", err)
 	}
 	return nil
+}
+
+// flushDirectories joins in-flight registration and a rescan already queued when
+// the owner accepts the barrier, without blocking event accounting or consumption.
+func (fw *fileWatcher) flushDirectories() {
+	if fw.flush == nil {
+		return
+	}
+	barrier := make(chan struct{})
+	select {
+	case fw.flush <- barrier:
+		select {
+		case <-barrier:
+		case <-fw.done:
+		}
+	case <-fw.done:
+	}
 }
 
 // reconcileInitialFiles closes the inventory-to-registration deletion gap.
@@ -505,6 +534,7 @@ func (fc FileChanges) String() string {
 // The fixed startup inventory distinguishes pre-existing files from late events
 // for reclaimed ephemeral paths, without retaining a tombstone for each path.
 func (fw *fileWatcher) snapshotFileChanges(stat func(string) (os.FileInfo, error)) fileChanges {
+	fw.flushDirectories()
 	fw.mu.Lock()
 	revision := fw.revision
 	snapshot := fileChanges{

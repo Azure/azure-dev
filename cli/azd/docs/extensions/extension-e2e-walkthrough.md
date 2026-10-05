@@ -269,6 +269,7 @@ Always confirm tag operations with the user before applying.`)
                 ).
                 AddTool("set_tag", newSetTagHandler(builder), azdext.MCPToolOptions{
                     Description: "Set a tag on all resources in a resource group",
+                    Destructive: true,
                 },
                     mcp.WithString("resourceGroup",
                         mcp.Required(),
@@ -337,7 +338,7 @@ func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
             if err != nil || webhook.Scheme != "https" || webhook.User != nil ||
                 (webhook.Host != "audit.example.com" && webhook.Host != "audit.example.com:443") {
                 return azdext.MCPErrorResult(
-                    "audit webhook must use the trusted HTTPS host audit.example.com on port 443 without userinfo"), nil
+                    "audit webhook must use the trusted HTTPS host audit.example.com on port 443 without embedded credentials"), nil
             }
             policy := builder.SecurityPolicy()
             if policy == nil {
@@ -403,7 +404,7 @@ func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
 - A fixed trusted webhook host, no redirects, and a 10-second HTTP timeout.
   Webhook failures are tool errors; they do not undo the already completed tag
   operation. Errors omit raw URLs and underlying HTTP errors to avoid exposing
-  URL credentials or query tokens.
+  embedded URL credentials or query tokens.
 
 ---
 

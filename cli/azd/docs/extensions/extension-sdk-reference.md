@@ -452,7 +452,8 @@ boundary, as in the [walkthrough](extension-e2e-walkthrough.md#step-4-build-an-m
 If arbitrary untrusted hosts must be supported, use a transport that validates
 the actual dial addresses and connects only to those validated addresses;
 `CheckURL` alone is insufficient. Policy errors can contain raw URLs, so do not
-return or log them without removing userinfo, query strings, and fragments.
+return or log them without removing embedded credentials, query strings, and
+fragments.
 
 ### SSRFSafeRedirect
 

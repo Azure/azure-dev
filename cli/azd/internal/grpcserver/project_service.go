@@ -29,6 +29,8 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+const maxAddServiceOperationIDBytes = 64
+
 type projectService struct {
 	azdext.UnimplementedProjectServiceServer
 
@@ -250,7 +252,7 @@ func (s *projectService) AddService(
 	incoming, _ := metadata.FromIncomingContext(ctx)
 	tokens := incoming.Get("azd-project-add-service-operation")
 	token := ""
-	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
+	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= maxAddServiceOperationIDBytes {
 		token = tokens[0]
 	}
 

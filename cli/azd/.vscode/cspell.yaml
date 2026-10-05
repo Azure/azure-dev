@@ -533,6 +533,7 @@ overrides:
   - filename: grpc/generateadapters/main.go
     words:
       - generateadapters
+      - tctx
   - filename: grpc/generatefacade/main.go
     words:
       - generatefacade

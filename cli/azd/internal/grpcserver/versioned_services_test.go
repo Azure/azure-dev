@@ -92,6 +92,23 @@ func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
 			},
 			want: "beta-only service TelemetryService uses its native implementation",
 		},
+		{
+			name: "chain wrong service method",
+			overrides: map[BetaService]any{
+				BetaPromptService: betaOverrideChain{nil, betaAccountOverride{}},
+			},
+			want: "does not implement a generated focused method override interface",
+		},
+		{
+			name: "nested chain whole generated server",
+			overrides: map[BetaService]any{
+				BetaAccountService: betaOverrideChain{
+					betaAccountOverride{},
+					betaOverrideChain{v1beta.UnimplementedAccountServiceServer{}},
+				},
+			},
+			want: "must implement focused method override interfaces",
+		},
 	}
 
 	for _, test := range tests {

@@ -21,8 +21,9 @@ clients, and their request and response types come from `contracts/v1beta`.
 
 `AzdClient.ProjectBeta()` also returns a generated beta client. Its
 `AddServiceRequest.operation_id` opts into an `AddServiceAcknowledgment`
-status detail on completed failures. `Project()` retains the stable request
-shape and optional metadata/trailer acknowledgment. See
+status detail on completed failures. The identifier is limited to 64 bytes;
+longer values are rejected before project mutation. `Project()` retains the
+stable request shape and optional metadata/trailer acknowledgment. See
 [Project service save acknowledgment](../../../../docs/architecture/extension-framework.md#project-service-save-acknowledgment)
 for timing and conservative recovery rules. Use a published SDK containing
 these beta symbols and a host containing the focused override; the existence
@@ -94,6 +95,15 @@ should implement only the focused method interfaces they need. Do not embed the 
 `Unimplemented<Service>Server`: doing so would claim every method. Host
 registration rejects whole generated beta servers, unknown service keys, and
 values that do not implement a focused interface.
+
+Built-in project overrides are composed per method with caller overrides.
+A caller's focused method takes precedence for that method only; an unrelated
+override does not disable the built-in `AddService` acknowledgment behavior.
+The beta-only `GetAddServiceCapabilities(EmptyRequest)` probe advertises the
+selected implementation through `GetAddServiceCapabilitiesResponse` field
+`acknowledgment_supported = 1`. A custom `AddService` is unsupported by default
+and must explicitly override the probe to opt in to the complete contract.
+The probe is read-only and does not load project configuration.
 
 An additive beta enum value on an existing shared request field is different
 from an additive field: proto3 preserves its numeric value in the stable

@@ -99,11 +99,28 @@ carry the acknowledgment.
 
 For the preview channel, `AzdClient.ProjectBeta()` exposes the generated
 `v1beta.ProjectServiceClient`. Set `AddServiceRequest.operation_id` to a fresh
-per-call identifier. The host returns an `AddServiceAcknowledgment` with that
+per-call identifier of at most 64 bytes (not characters). Longer identifiers
+are rejected with `InvalidArgument` before project mutation or saving.
+The host returns an `AddServiceAcknowledgment` with that
 identifier as a `google.rpc.Status` detail on the same completed failures,
 instead of a trailer. Existing host-error codes, messages, and structured
 details are preserved alongside the acknowledgment. The stable protobuf shape
 is unchanged.
+
+Before choosing the typed mutation, call the beta-only, read-only
+`ProjectService.GetAddServiceCapabilities(EmptyRequest)` RPC.
+`GetAddServiceCapabilitiesResponse.acknowledgment_supported` is true for the
+built-in implementation, including when an unrelated focused method is
+overridden. A custom `AddService` override is unsupported unless it explicitly
+implements the capability override and guarantees the acknowledgment contract.
+The probe does not load or save project configuration.
+
+Only an explicit unsupported response or `Unimplemented` from this probe
+permits an older stable-SDK path. Authentication, cancellation, and transient
+probe errors abort before mutation. Once a mutation path is selected, do not
+fall back or replay on any mutation error, including `Unimplemented`.
+The stable path cannot establish typed completion; do not infer support from
+legacy trailers or the presence of a beta route.
 
 Require exactly one matching acknowledgment before considering compensation
 of local edits. Missing, mismatched, duplicate, or lost acknowledgments remain

@@ -36,7 +36,7 @@ func newRealProjectServiceServer(t *testing.T) (azdext.ProjectServiceServer, *pr
 	return server, ps
 }
 
-func newProjectE2EServer(t *testing.T) (*ServerInfo, *projectService) {
+func newProjectE2EServer(t *testing.T, options ...ServerOption) (*ServerInfo, *projectService) {
 	t.Helper()
 	projectServer, ps := newRealProjectServiceServer(t)
 	server := NewServer(
@@ -59,6 +59,7 @@ func newProjectE2EServer(t *testing.T) (*ServerInfo, *projectService) {
 		azdext.UnimplementedValidationServiceServer{},
 		v1beta.UnimplementedTelemetryServiceServer{},
 	)
+	server.WithOptions(options...)
 	serverInfo, err := server.Start()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, server.Stop()) })

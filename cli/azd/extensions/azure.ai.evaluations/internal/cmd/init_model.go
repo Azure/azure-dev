@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -89,9 +90,33 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 		if model := modelDeploymentFromAzdEnv(commandContext(cmd)); model != "" {
 			return model, nil
 		}
-		return "", messages.JudgeModelRequired()
+		if noPrompt(cmd) {
+			return "", messages.JudgeModelRequired()
+		}
+		return promptInitModel(cmd, messages.JudgeModelPrompt(), messages.JudgeModelHelp(), messages.JudgeModelRequired())
 	}
 	return chooseJudgeModel(cmd, deployments)
+}
+
+func promptInitModel(cmd *cobra.Command, message, help string, required error) (string, error) {
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", messages.ConnectingToAzd(err)
+	}
+	defer client.Close()
+
+	resp, err := client.Prompt().Prompt(commandContext(cmd), &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message: message, HelpMessage: help, Required: true,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("asking for %s: %w", message, err)
+	}
+	if resp == nil || strings.TrimSpace(resp.GetValue()) == "" {
+		return "", required
+	}
+	return strings.TrimSpace(resp.GetValue()), nil
 }
 
 // chooseJudgeModel settles a list of candidates: one is the answer, more than

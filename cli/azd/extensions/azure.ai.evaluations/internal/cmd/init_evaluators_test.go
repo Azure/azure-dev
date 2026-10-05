@@ -37,7 +37,35 @@ func TestEvaluatorChoicesOfferProductionComposites(t *testing.T) {
 	assert.Equal(t, []string{
 		evalcore.BuiltinPrefix + "output_quality",
 		evalcore.BuiltinPrefix + "tool_use_quality",
-	}, evaluatorChoices(nil))
+	}, evaluatorChoices(nil, project.EvaluationLevelTurn))
+}
+
+// Custom declarations are filtered by the evaluation level they declare
+// support for; an evaluator declaring no levels, or an unfamiliar one, is
+// offered everywhere rather than assumed incompatible.
+func TestInitEvaluatorChoicesRespectKnownLocalCompatibility(t *testing.T) {
+	cfg := &project.EvalConfig{Evaluators: []project.EvaluatorDecl{
+		{Name: "turn-only", SupportedEvaluationLevels: []string{"turn"}},
+		{Name: "conversation-only", SupportedEvaluationLevels: []string{"conversation"}},
+		{Name: "unknown"},
+		{Name: "future", SupportedEvaluationLevels: []string{"future-level"}},
+	}}
+	for _, level := range evaluationLevels {
+		t.Run(level, func(t *testing.T) {
+			choices := evaluatorChoices(cfg, level)
+			assert.Contains(t, choices, level+"-only")
+			assert.Contains(t, choices, "unknown")
+			assert.Contains(t, choices, "future")
+			for _, other := range evaluationLevels {
+				if other != level {
+					assert.NotContains(t, choices, other+"-only")
+					require.ErrorContains(t, validateInitEvaluatorLevels(cfg, []string{other + "-only"}, level),
+						"--evaluation-level "+level)
+				}
+			}
+			assert.NoError(t, validateInitEvaluatorLevels(cfg, []string{"unknown", "future"}, level))
+		})
+	}
 }
 
 // The prompt offers the curated composites plus whatever the local catalog
@@ -49,7 +77,7 @@ func TestEvaluatorChoicesOfferTheCatalogToo(t *testing.T) {
 		{Name: "tone-check"},
 	}}
 
-	got := evaluatorChoices(cfg)
+	got := evaluatorChoices(cfg, project.EvaluationLevelTurn)
 
 	assert.Equal(t, []string{
 		evalcore.BuiltinPrefix + "output_quality",
@@ -63,7 +91,7 @@ func TestResolveEvaluatorsNoPromptUsesAvailableCompositeDefaults(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().Bool("no-prompt", true, "")
 
-	got, chosen, err := resolveEvaluators(cmd, nil, defaultEvaluators())
+	got, chosen, err := resolveEvaluators(cmd, nil, project.EvaluationLevelTurn, defaultEvaluators())
 
 	require.NoError(t, err)
 	assert.False(t, chosen)
@@ -74,7 +102,7 @@ func TestResolveEvaluatorsRefusesUnavailableCompositeDefaults(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().Bool("no-prompt", true, "")
 
-	_, _, err := resolveEvaluators(cmd, nil,
+	_, _, err := resolveEvaluators(cmd, nil, project.EvaluationLevelTurn,
 		[]string{evalcore.BuiltinPrefix + "output_quality"})
 
 	require.Error(t, err)
@@ -123,7 +151,7 @@ func TestResolveEvaluatorsInteractivePreselectsCompositesAndPreservesSelection(t
 	cmd.Flags().String("output", "", "")
 	cmd.SetContext(t.Context())
 
-	got, chosen, err := resolveEvaluators(cmd, nil, defaultEvaluators())
+	got, chosen, err := resolveEvaluators(cmd, nil, project.EvaluationLevelTurn, defaultEvaluators())
 
 	require.NoError(t, err)
 	assert.True(t, chosen)

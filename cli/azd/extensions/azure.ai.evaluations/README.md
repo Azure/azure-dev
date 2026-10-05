@@ -116,6 +116,46 @@ job JSON output, including source prompts and instructions.
 
 ### Simulating multi-turn conversations
 
+Choose how conversation datasets are used during `init`:
+
+```bash
+# Score completed message transcripts, without invoking an agent.
+azd ai eval init --conversation-mode static --dataset completed-transcripts --judge-model judge-deployment
+
+# Create conversations from scenario seeds, then grade the resulting messages.
+azd ai eval init --conversation-mode simulation --target support-agent --dataset retail-seeds --simulation-model model-connection/simulator-deployment --judge-model judge-deployment --num-conversations 1 --max-turns 5 --no-prompt
+```
+
+`--conversation-mode` implies `--source dataset` and
+`--evaluation-level conversation` when they are omitted. Without this flag,
+interactive init offers **Static** or **Simulation** for a conversation dataset;
+`--no-prompt` and `--output json` default to static. Static mode writes neither
+`target:` nor `simulation:` and rejects `--target`, because completed transcripts
+are scored as they stand. Trace-backed conversations continue to use
+`--source traces --evaluation-level conversation` and filter by the selected agent.
+
+| Init flag | Applies to | Meaning |
+|---|---|---|
+| `--conversation-mode static\|simulation` | Conversation datasets | Completed messages or scenario-seed simulation. |
+| `--simulation-model` | Simulation only | `connection-name/model-deployment` for the simulated user. Interactive init lists eligible Azure OpenAI connections and asks for the deployment; unattended init requires the complete reference. |
+| `--num-conversations` | Simulation only | Conversations per seed, 1 to 5; default 1. |
+| `--max-turns` | Simulation only | Maximum turns, 1 to 20; omission preserves the service default. |
+
+Explicit zero is invalid for both numeric flags. Simulation flags with static,
+turn, or trace evaluation are rejected rather than ignored. Simulation needs an
+agent target, seed dataset, simulation model, and judge model. Non-interactive
+init reports all unresolved required inputs together, naming the flags to supply.
+Init is add-only and preserves existing YAML and unknown fields. Simulation init
+reads the Foundry project connection catalog and rejects missing connections or
+connections that are not Azure OpenAI before writing files. A catalog failure,
+including a failure on a later page, fails init rather than using partial results.
+Other init modes make no new live lookups beyond the bounded built-in evaluator
+catalogue check.
+The evaluator picker excludes custom evaluators whose local
+`supported_evaluation_levels` explicitly excludes the selected level; an explicit
+incompatible `--evaluator` is rejected. Missing or unfamiliar metadata remains
+unknown, with authoritative compatibility checked when the eval is created.
+
 The example above grades rows that already hold an exchange. A `simulation:`
 block instead has the service hold the conversation first — a simulator model
 plays the user against your deployed agent — and grades the transcript it
@@ -217,6 +257,19 @@ is refused instead of scored against the seeded text.
 
 `azd ai eval generate --evaluation-level conversation` writes seeds in this
 shape and tags the registered dataset so a later run knows what it holds.
+Its printed init command selects `--conversation-mode simulation`. Run that
+command interactively to select an eligible Azure OpenAI connection and enter
+its deployment, or add
+`--simulation-model <connection-name/model-deployment> --judge-model <deployment> --no-prompt` for
+automation (also supply `--target` if generation had no agent).
+The generation, simulation, and judge deployments are independent choices.
+Init never copies the generation or judge model into the simulation model, and
+an explicitly supplied simulation reference is validated without being replaced
+by a discovered connection.
+Generation declares artifacts only; it does not attach them to an existing eval
+or replace its configuration. If a generated rubric declares an incompatible
+evaluation level, the handoff warns and uses the built-in default instead; the
+rubric remains in the catalogue.
 
 Simulation run summaries, `run show`, and `run output list` retain the run's
 dataset name and version and distinguish **requested configuration** from

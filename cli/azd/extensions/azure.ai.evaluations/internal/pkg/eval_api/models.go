@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+// Connection is a project connection returned by the Foundry data plane.
+type Connection struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// ConnectionList is a page of project connections.
+type ConnectionList struct {
+	Value    []Connection `json:"value"`
+	NextLink string       `json:"nextLink,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Data Generation Jobs
 // ---------------------------------------------------------------------------

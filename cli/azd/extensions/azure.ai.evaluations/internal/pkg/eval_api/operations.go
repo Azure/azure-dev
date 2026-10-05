@@ -34,6 +34,7 @@ const (
 	pathDatasets                = "/datasets"
 	pathOpenAIEvals             = "/openai/v1/evals"
 	pathAgents                  = "/agents"
+	pathConnections             = "/connections"
 )
 
 // EvalClient provides methods for interacting with the Azure AI eval APIs.
@@ -78,6 +79,25 @@ func NewEvalClientFromPipeline(endpoint string, pipeline runtime.Pipeline) *Eval
 		endpoint: endpoint,
 		pipeline: pipeline,
 	}
+}
+
+// ListConnections returns the project's complete connection catalog.
+func (c *EvalClient) ListConnections(ctx context.Context, apiVersion string) (*ConnectionList, error) {
+	first, err := doRequestTyped[ConnectionList](
+		c, ctx, http.MethodGet, pathConnections, nil, nil, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	return walkNextLinks(
+		ctx,
+		c,
+		first,
+		func(page *ConnectionList) string { return page.NextLink },
+		func(into, page *ConnectionList) {
+			into.Value = append(into.Value, page.Value...)
+			into.NextLink = page.NextLink
+		},
+	)
 }
 
 // CreateDataGenerationJob starts a dataset generation job for eval onboarding.

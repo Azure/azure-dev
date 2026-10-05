@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"azureaieval/internal/pkg/eval_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,7 +126,7 @@ type initHarness struct {
 // AZD_SERVER is what azdext.NewAzdClient reads, so the command under test
 // opens its own connection exactly as it does in production rather than being
 // handed one the test built.
-func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
+func newInitHarness(t *testing.T, addServiceErr error, prompts ...azdext.PromptServiceServer) *initHarness {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -145,6 +147,9 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, harness.project)
 	azdext.RegisterTelemetryServiceServer(server, harness.usage)
+	if len(prompts) > 0 {
+		azdext.RegisterPromptServiceServer(server, prompts[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -164,7 +169,11 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 func (h *initHarness) runInit(t *testing.T, args ...string) error {
 	t.Helper()
 
-	cmd := newInitCommand()
+	cmd := newInitCommandWithOptions(initCommandOptions{
+		listModelConnections: func(context.Context) ([]eval_api.Connection, error) {
+			return []eval_api.Connection{{Name: "connection", Type: modelConnectionType}}, nil
+		},
+	})
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	// Global flags azd would have supplied.

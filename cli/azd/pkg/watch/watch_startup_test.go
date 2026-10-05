@@ -135,7 +135,7 @@ func TestNewWatcher_InitialRegistrationFailureJoinsConsumer(t *testing.T) {
 	waitStartupExit(t, backend.closed)
 }
 
-func TestNewWatcher_CancellationUnblocksInitialAdd(t *testing.T) {
+func TestNewWatcher_CancellationDrainsInitialAddBeforeClose(t *testing.T) {
 	fw, backend := startupFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -143,10 +143,13 @@ func TestNewWatcher_CancellationUnblocksInitialAdd(t *testing.T) {
 		cancel()
 		select {
 		case <-backend.closed:
-			return ctx.Err()
-		case <-time.After(2 * time.Second):
-			return errors.New("cancellation did not close the blocked backend")
+			return errors.New("backend closed before Add completed")
+		default:
 		}
+		for range 51 {
+			backend.events <- fsnotify.Event{Op: fsnotify.Write}
+		}
+		return ctx.Err()
 	}
 	err := fw.start(ctx, backend, backend.events, backend.errors)
 	require.ErrorIs(t, err, context.Canceled)
@@ -206,7 +209,7 @@ func TestNewWatcher_DiscoversFilesCreatedDuringRegistration(t *testing.T) {
 	waitStartupExit(t, fw.done)
 }
 
-func TestNewWatcher_CancellationUnblocksDynamicAdd(t *testing.T) {
+func TestNewWatcher_CancellationDrainsDynamicAddBeforeClose(t *testing.T) {
 	fw, backend := startupFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -218,10 +221,13 @@ func TestNewWatcher_CancellationUnblocksDynamicAdd(t *testing.T) {
 		cancel()
 		select {
 		case <-backend.closed:
-			return ctx.Err()
-		case <-time.After(2 * time.Second):
-			return errors.New("cancellation did not close the dynamic Add")
+			return errors.New("backend closed before dynamic Add completed")
+		default:
 		}
+		for range 51 {
+			backend.events <- fsnotify.Event{Op: fsnotify.Write}
+		}
+		return ctx.Err()
 	}
 	require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
 	require.NoError(t, os.Mkdir(child, 0700))

@@ -131,23 +131,17 @@ func (fw *fileWatcher) start(
 	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
-	// Cancellation must unblock an Add even when the consumer is registering
-	// a newly created directory rather than selecting on watchCtx.Done.
-	closeDone := make(chan struct{})
-	stopClose := context.AfterFunc(watchCtx, func() {
-		defer close(closeDone)
-		watcher.Close()
-	})
+	// A single registration owner serializes Add and Close. The consumer keeps
+	// draining until that owner finishes its pending Add and closes the backend:
+	// Windows Close can otherwise abandon an Add reply or race another Close.
+	rescan := make(chan struct{}, 1)
+	registered := make(chan error, 1)
+	backendDone := make(chan struct{})
+	consumerDone := make(chan struct{})
 	fw.done = make(chan struct{})
 	go func() {
-		defer close(fw.done)
+		defer close(consumerDone)
 		defer cancel()
-		defer watcher.Close()
-		defer func() {
-			if !stopClose() {
-				<-closeDone
-			}
-		}()
 
 		for events != nil || watcherErrors != nil {
 			select {
@@ -155,6 +149,9 @@ func (fw *fileWatcher) start(
 				if !ok {
 					events = nil
 					continue
+				}
+				if watchCtx.Err() != nil {
+					continue // Still drain backend events until pending registration completes.
 				}
 				// Fast path: ignore events matching hardcoded glob patterns.
 				shouldIgnore := false
@@ -191,10 +188,12 @@ func (fw *fileWatcher) start(
 				}
 
 				if event.Has(fsnotify.Create) && isDir {
-					// New directory created - start watching it if not ignored
+					// Coalesce directory discoveries into one root rescan, not a
+					// per-path queue or synchronous Add on the event consumer.
 					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-						if err := fw.watchRecursive(watchCtx, name, watcher); err != nil {
-							log.Printf("failed to watch new directory %s: %v", name, err)
+						select {
+						case rescan <- struct{}{}:
+						default:
 						}
 					}
 				} else if !isDir {
@@ -208,15 +207,42 @@ func (fw *fileWatcher) start(
 					continue
 				}
 				log.Printf("watcher error: %v", err)
-			case <-watchCtx.Done():
+			case <-backendDone:
 				return
 			}
 		}
 	}()
 
-	if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil {
-		cancel()
-		watcher.Close()
+	go func() {
+		defer func() {
+			cancel()
+			watcher.Close()
+			close(backendDone)
+			<-consumerDone
+			close(fw.done)
+		}()
+
+		err := fw.watchRecursive(watchCtx, fw.root, watcher)
+		if err == nil {
+			err = watchCtx.Err()
+		}
+		registered <- err
+		if err != nil {
+			return
+		}
+		for {
+			select {
+			case <-watchCtx.Done():
+				return
+			case <-rescan:
+				if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil && watchCtx.Err() == nil {
+					log.Printf("failed to update directory watches for %s: %v", fw.root, err)
+				}
+			}
+		}
+	}()
+
+	if err := <-registered; err != nil {
 		<-fw.done
 		return fmt.Errorf("watcher failed: %w", err)
 	}

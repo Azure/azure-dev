@@ -684,6 +684,15 @@ A custom rubric is a JSON list of weighted dimensions:
 `weight` is an **integer from 1 to 10**. Weights do not need to sum to
 anything.
 
+### Validating explicit local rows
+
+Primary mapped `query`, `response`, or `messages` values follow the same rules as
+declared datasets: empty or whitespace-only strings and non-string/non-array
+values are rejected, even when the evaluator schema permits them. Empty arrays
+remain accepted. The entire file is checked, including rows beyond a configured
+cap, using both authored and stored mappings before publishing dependencies or
+submitting a run.
+
 ### Editing a registered rubric
 
 Download a version, edit its dimensions or pass threshold, then publish the edit:

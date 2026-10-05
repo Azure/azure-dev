@@ -277,19 +277,19 @@ func TestExplicitLocalAuthoredContractReplacesOlderType(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			dir, _ := localPublicationConfig(t, false, false)
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
-				[]byte("{\"query\":7}\n"), 0o600))
+				[]byte("{\"count\":7}\n"), 0o600))
 			cfg, err := project.OpenEvalConfig(dir)
 			require.NoError(t, err)
-			cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"query": "{{item.query}}"}
+			cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"count": "{{item.count}}"}
 			cfg.Evals[0].Evaluators[0].InitializationParameters = nil
 			cfg.Evaluators[0].Definition["data_schema"] = map[string]any{
-				"type": "object", "required": []string{"query"},
-				"properties": map[string]any{"query": map[string]any{"type": "integer"}},
+				"type": "object", "required": []string{"count"},
+				"properties": map[string]any{"count": map[string]any{"type": "integer"}},
 			}
 			writeLocalContractConfig(t, dir, cfg)
 			ec, requests, env := localPublicationContext(t, true, &eval_api.JSONSchema{
-				Type: "object", Required: []string{"query"},
-				Properties: map[string]any{"query": map[string]any{"type": "integer"}},
+				Type: "object", Required: []string{"count"},
+				Properties: map[string]any{"count": map[string]any{"type": "integer"}},
 			})
 			if operation == "create" {
 				err = runLocalCreate(t, ec, dir, "local-quality")

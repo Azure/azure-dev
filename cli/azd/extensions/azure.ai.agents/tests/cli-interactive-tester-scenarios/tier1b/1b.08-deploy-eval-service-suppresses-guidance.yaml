@@ -14,12 +14,29 @@
 # the invocation link is still present. An always-run post hook cleans up
 # with `azd down`.
 #
-# The injected `quality` service has no installed service-target provider.
-# `azd deploy` only resolves service targets for the services named on its
-# command line, so targeting the agent service by its exact name below never
-# touches `quality` and cannot fail with an unsupported-host error. Do NOT
-# change the deploy goal below to bare `azd deploy` — that deploys every
-# declared service, including `quality`, and would fail for that reason alone.
+# The injected `quality` service declares `condition: "false"` (a quoted
+# string, matching ServiceConfig.IsEnabled's literal truthy/falsy set). This
+# is load-bearing, not cosmetic: `azd provision` with no target resolves ALL
+# condition-enabled services via ServiceStableFiltered(ctx, cfg, "", getenv)
+# and calls InitializeServices/EnsureAllTools on that list, which resolves
+# each service's target via GetServiceTarget. `azure.ai.eval` has no
+# installed service-target provider in this suite, so without the disabled
+# condition, provision itself would fail with an unsupported-host error
+# before the agent is ever deployed. `condition: "false"` excludes `quality`
+# from that filtered list, so provision only initializes the agent service.
+# The deploy-note check is unaffected: ProjectService.Get (and therefore
+# p.projectServices, which `projectDeclaresEvaluationService` inspects) returns
+# every declared service from azure.yaml unconditionally — condition is a
+# deploy-time filter, not a declaration filter — so the disabled `quality`
+# service is still detected and the guidance is still suppressed.
+#
+# The injected `quality` service also has no installed service-target
+# provider. `azd deploy` only resolves service targets for the services
+# named on its command line, so targeting the agent service by its exact
+# name below never touches `quality` and cannot fail with an
+# unsupported-host error either. Do NOT change the deploy goal below to bare
+# `azd deploy` — that deploys every declared service regardless of
+# condition, including `quality`, and would fail for that reason alone.
 name: "deploy-eval-service-suppresses-guidance"
 command: "azd provision"
 cwd: "{prerequisite_scaffold_dir}"
@@ -46,7 +63,7 @@ pre:
   - run: |
       f="{prerequisite_scaffold_dir}/azure.yaml"
       if ! grep -q 'host: azure.ai.eval' "$f"; then
-        if ! awk '/^services:$/ && !inserted { print; print "  quality:"; print "    host: azure.ai.eval"; inserted=1; next } { print } END { if (!inserted) exit 1 }' "$f" > "$f.tmp"; then
+        if ! awk '/^services:$/ && !inserted { print; print "  quality:"; print "    host: azure.ai.eval"; print "    condition: \"false\""; inserted=1; next } { print } END { if (!inserted) exit 1 }' "$f" > "$f.tmp"; then
           rm -f "$f.tmp"
           echo "PRECONDITION FAILED: 'services:' top-level key not found in azure.yaml"
           exit 1
@@ -57,9 +74,13 @@ pre:
         echo "PRECONDITION FAILED: azure.ai.eval service was not injected"
         exit 1
       fi
-      echo "Verified azure.ai.eval service declared in azure.yaml"
+      if ! grep -A1 'host: azure.ai.eval' "$f" | grep -q 'condition: "false"'; then
+        echo "PRECONDITION FAILED: injected azure.ai.eval service is missing condition: \"false\" — azd provision would fail resolving its unsupported service target"
+        exit 1
+      fi
+      echo "Verified azure.ai.eval service declared (condition: \"false\") in azure.yaml"
     cwd: "{prerequisite_scaffold_dir}"
-    name: "inject a declared azure.ai.eval service into azure.yaml"
+    name: "inject a disabled, declared azure.ai.eval service into azure.yaml"
   - run: |
       bash "{fixtures_dir}/scripts/override-model-deployment.sh" \
         "{model}" "{model_version}" "{model_sku}"
@@ -74,7 +95,7 @@ post:
     timeout: 900
 
 goals:
-  - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold. The project's azure.yaml was edited during setup to also declare a 'quality' service with host 'azure.ai.eval' — do not remove it."
+  - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold. The project's azure.yaml was edited during setup to also declare a disabled 'quality' service (host 'azure.ai.eval', condition: \"false\") — do not remove it or its condition. Provision must succeed without any unsupported-service-host error; the disabled condition is what keeps 'quality' out of provision's service initialization."
   - "After provision succeeds, run `azd deploy {prefix}-t1-eval-svc-{instance}` (the exact agent service name from init — NOT bare 'azd deploy') and wait for it to complete. Naming the service deploys only the agent; the 'quality' service has no installed provider and must not be deployed."
   - "In the deploy output, locate the informational note attached to the agent endpoint. Confirm it contains 'For information on invoking the agent, see' and the aka.ms invocation link, and confirm it does NOT contain 'Set up an evaluation suite' or 'azd ai eval init' anywhere. The project already declares an azure.ai.eval service, so the evaluation suggestion must be suppressed."
   - "Run 'azd ai agent show' and verify the agent is accessible — confirm it reports an agent name and endpoint URL."

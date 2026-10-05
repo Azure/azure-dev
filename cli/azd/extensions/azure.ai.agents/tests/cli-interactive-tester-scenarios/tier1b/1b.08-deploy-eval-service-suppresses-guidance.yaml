@@ -31,12 +31,17 @@
 # service is still detected and the guidance is still suppressed.
 #
 # The injected `quality` service also has no installed service-target
-# provider. `azd deploy` only resolves service targets for the services
-# named on its command line, so targeting the agent service by its exact
-# name below never touches `quality` and cannot fail with an
-# unsupported-host error either. Do NOT change the deploy goal below to bare
-# `azd deploy` — that deploys every declared service regardless of
-# condition, including `quality`, and would fail for that reason alone.
+# provider. The named deploy goal below targets the agent service by its
+# exact name rather than bare `azd deploy`. This is NOT because bare deploy
+# would otherwise fail: `internal/cmd/deploy.go` calls the same
+# ServiceStableFiltered(ctx, cfg, targetServiceName, getenv) with an empty
+# target when no service is named, so `condition: "false"` excludes
+# `quality` from bare deploy's service list for the identical reason it is
+# excluded from provision's — bare deploy would not resolve or fail on it
+# either. The named target is kept for scenario explicitness: it pins this
+# scenario to deploying specifically the agent service regardless of what
+# else the scaffold declares, rather than relying on `quality` happening to
+# be the only enabled service.
 name: "deploy-eval-service-suppresses-guidance"
 command: "azd provision"
 cwd: "{prerequisite_scaffold_dir}"

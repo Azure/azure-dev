@@ -37,8 +37,11 @@ type TestResponse struct {
 	Result string
 }
 
-// SimulatedBidiStream simulates a bidirectional gRPC stream with two endpoints
+// SimulatedBidiStream simulates a bidirectional gRPC stream with two endpoints.
+// Like grpc-go, canceling the RPC's context unblocks pending reads and writes.
+// See https://grpc.io/docs/guides/cancellation/.
 type SimulatedBidiStream struct {
+	ctx            context.Context
 	clientToServer chan *TestMessage
 	serverToClient chan *TestMessage
 	done           chan struct{}
@@ -46,8 +49,9 @@ type SimulatedBidiStream struct {
 	mu             sync.Mutex
 }
 
-func NewSimulatedBidiStream() *SimulatedBidiStream {
+func NewSimulatedBidiStream(ctx context.Context) *SimulatedBidiStream {
 	return &SimulatedBidiStream{
+		ctx:            ctx,
 		clientToServer: make(chan *TestMessage, 10),
 		serverToClient: make(chan *TestMessage, 10),
 		done:           make(chan struct{}),
@@ -89,6 +93,8 @@ func (c *clientSideStream) Send(msg *TestMessage) error {
 		return nil
 	case <-c.sim.done:
 		return io.EOF
+	case <-c.sim.ctx.Done():
+		return status.FromContextError(c.sim.ctx.Err()).Err()
 	}
 }
 
@@ -98,6 +104,8 @@ func (c *clientSideStream) Recv() (*TestMessage, error) {
 		return msg, nil
 	case <-c.sim.done:
 		return nil, io.EOF
+	case <-c.sim.ctx.Done():
+		return nil, status.FromContextError(c.sim.ctx.Err()).Err()
 	}
 }
 
@@ -117,6 +125,8 @@ func (s *serverSideStream) Send(msg *TestMessage) error {
 		return nil
 	case <-s.sim.done:
 		return io.EOF
+	case <-s.sim.ctx.Done():
+		return status.FromContextError(s.sim.ctx.Err()).Err()
 	}
 }
 
@@ -126,6 +136,8 @@ func (s *serverSideStream) Recv() (*TestMessage, error) {
 		return msg, nil
 	case <-s.sim.done:
 		return nil, io.EOF
+	case <-s.sim.ctx.Done():
+		return nil, status.FromContextError(s.sim.ctx.Err()).Err()
 	}
 }
 
@@ -177,7 +189,7 @@ func (e *SimpleMessageEnvelope) CreateProgressMessage(requestId string, message 
 
 // TestOn_RegistersHandler tests that handlers are registered correctly
 func TestOn_RegistersHandler(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -199,7 +211,7 @@ func TestOn_RegistersHandler(t *testing.T) {
 
 // TestOn_RegistersHandlerWithProgress tests that handlers with progress callback are registered correctly
 func TestOn_RegistersHandlerWithProgress(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -226,7 +238,7 @@ func TestOn_RegistersHandlerWithProgress(t *testing.T) {
 
 // TestOn_InvalidHandler tests validation of invalid handler signatures
 func TestOn_InvalidHandler(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -287,7 +299,7 @@ func TestOn_InvalidHandler(t *testing.T) {
 
 // TestSend_Success tests successful fire-and-forget send
 func TestSend_Success(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -310,7 +322,7 @@ func TestSend_Success(t *testing.T) {
 
 // TestSendAndWait_NoRequestId tests that SendAndWait fails when request ID is missing
 func TestSendAndWait_NoRequestId(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -326,7 +338,7 @@ func TestSendAndWait_NoRequestId(t *testing.T) {
 
 // TestEndToEnd_ClientSendsServerResponds tests full bidirectional flow
 func TestEndToEnd_ClientSendsServerResponds(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -390,7 +402,7 @@ func TestEndToEnd_ClientSendsServerResponds(t *testing.T) {
 
 // TestEndToEnd_SendAndWaitWithProgress tests send with progress updates
 func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -470,7 +482,7 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 
 // TestEndToEnd_HandlerReturnsError tests error propagation from handler to client
 func TestEndToEnd_HandlerReturnsError(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -523,7 +535,7 @@ func TestEndToEnd_HandlerReturnsError(t *testing.T) {
 
 // TestEndToEnd_MultipleHandlers tests that different message types route to correct handlers
 func TestEndToEnd_MultipleHandlers(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -613,37 +625,159 @@ func TestEndToEnd_MultipleHandlers(t *testing.T) {
 	<-clientDone
 }
 
-// TestRun_ContextCancellation tests that Run handles context cancellation
+type recvFuncStream struct {
+	BidiStream[TestMessage]
+	recv func() (*TestMessage, error)
+}
+
+func (s *recvFuncStream) Recv() (*TestMessage, error) {
+	return s.recv()
+}
+
+// TestRun_ContextCancellation tests cancellation while Recv is blocked.
 func TestRun_ContextCancellation(t *testing.T) {
-	sim := NewSimulatedBidiStream()
-	defer sim.Close()
+	for _, tt := range []struct {
+		name      string
+		newStream func(*SimulatedBidiStream) BidiStream[TestMessage]
+	}{
+		{name: "Client", newStream: (*SimulatedBidiStream).ClientStream},
+		{name: "Server", newStream: (*SimulatedBidiStream).ServerStream},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			sim := NewSimulatedBidiStream(ctx)
+			defer sim.Close()
 
-	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+			endpoint := tt.newStream(sim)
+			recvStarted := make(chan struct{})
+			recvReturned := make(chan struct{})
+			stream := &recvFuncStream{
+				BidiStream: endpoint,
+				recv: func() (*TestMessage, error) {
+					close(recvStarted)
+					defer close(recvReturned)
+					return endpoint.Recv()
+				},
+			}
+			envelope := &SimpleMessageEnvelope{}
+			broker := NewMessageBroker(stream, envelope, "test", nil)
+			response := make(chan *TestMessage, 1)
+			broker.responseChans.Store("pending", response)
 
-	ctx, cancel := context.WithCancel(t.Context())
+			// Start broker
+			done := make(chan error, 1)
+			go func() {
+				done <- broker.Run(ctx)
+			}()
 
-	// Start broker
-	done := make(chan error, 1)
-	go func() {
-		done <- broker.Run(ctx)
-	}()
+			select {
+			case <-recvStarted:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Run did not start receiving")
+			}
 
-	// Cancel context
-	cancel()
+			cancel()
 
-	// Verify Run exits with context canceled error
-	select {
-	case err := <-done:
-		assert.Equal(t, context.Canceled, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not exit after context cancellation")
+			// Verify Run exits with context canceled error
+			select {
+			case err := <-done:
+				require.ErrorIs(t, err, context.Canceled)
+			case <-time.After(5 * time.Second):
+				t.Fatal("Run did not exit after context cancellation")
+			}
+			select {
+			case _, open := <-response:
+				require.False(t, open, "Run should close pending response channels")
+			default:
+				t.Fatal("Run did not close pending response channels")
+			}
+
+			select {
+			case <-recvReturned:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Recv did not exit after context cancellation")
+			}
+		})
+	}
+}
+
+func TestRun_AlreadyCanceled(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		ctx  func() (context.Context, context.CancelFunc)
+		want error
+	}{
+		{
+			name: "Canceled",
+			ctx:  func() (context.Context, context.CancelFunc) { return context.WithCancel(t.Context()) },
+			want: context.Canceled,
+		},
+		{
+			name: "DeadlineExceeded",
+			ctx:  func() (context.Context, context.CancelFunc) { return context.WithDeadline(t.Context(), time.Now()) },
+			want: context.DeadlineExceeded,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recvCalled := make(chan struct{}, 1)
+			stream := &recvFuncStream{
+				recv: func() (*TestMessage, error) {
+					recvCalled <- struct{}{}
+					return nil, io.EOF
+				},
+			}
+			broker := NewMessageBroker(stream, &SimpleMessageEnvelope{}, "test", nil)
+			ctx, cancel := tt.ctx()
+			cancel()
+
+			require.ErrorIs(t, broker.Run(ctx), tt.want)
+			select {
+			case <-recvCalled:
+				t.Fatal("Run called Recv with an already canceled context")
+			default:
+			}
+		})
+	}
+}
+
+func TestRun_ReceiveErrors(t *testing.T) {
+	receiveErr := errors.New("receive failed")
+	for _, tt := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "EOF", err: io.EOF},
+		{name: "UnavailableEOF", err: status.Error(codes.Unavailable, "transport EOF")},
+		{name: "Canceled", err: status.Error(codes.Canceled, "stream canceled")},
+		{name: "ReceiveFailure", err: receiveErr, want: receiveErr},
+		{
+			name: "ResourceExhausted",
+			err:  status.Error(codes.ResourceExhausted, "message too large"),
+			want: ErrResourceExhausted,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stream := &recvFuncStream{
+				recv: func() (*TestMessage, error) {
+					return nil, tt.err
+				},
+			}
+			broker := NewMessageBroker(stream, &SimpleMessageEnvelope{}, "test", nil)
+			err := broker.Run(t.Context())
+			if tt.want == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tt.want)
+			}
+		})
 	}
 }
 
 // TestRun_GracefulShutdown_EOF tests EOF handling
 func TestRun_GracefulShutdown_EOF(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
@@ -660,7 +794,7 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 
 // TestClose_ClosesAllChannels tests that Close properly cleans up
 func TestClose_ClosesAllChannels(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -708,7 +842,7 @@ func TestEndToEnd_HandlerPanic(t *testing.T) {
 	defer cancel()
 
 	// Create simulated stream and both client/server brokers
-	stream := NewSimulatedBidiStream()
+	stream := NewSimulatedBidiStream(t.Context())
 	clientBroker := NewMessageBroker(stream.ClientStream(), &SimpleMessageEnvelope{}, "client", nil)
 	serverBroker := NewMessageBroker(stream.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
 
@@ -775,7 +909,7 @@ func TestEndToEnd_HandlerPanic(t *testing.T) {
 func TestReady_BlocksUntilRunStarts(t *testing.T) {
 	t.Parallel()
 
-	stream := NewSimulatedBidiStream()
+	stream := NewSimulatedBidiStream(t.Context())
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
@@ -832,7 +966,7 @@ func TestReady_BlocksUntilRunStarts(t *testing.T) {
 func TestReady_CompletesImmediatelyAfterRunStarts(t *testing.T) {
 	t.Parallel()
 
-	stream := NewSimulatedBidiStream()
+	stream := NewSimulatedBidiStream(t.Context())
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
@@ -863,7 +997,7 @@ func TestReady_CompletesImmediatelyAfterRunStarts(t *testing.T) {
 func TestReady_MultipleCallersAllComplete(t *testing.T) {
 	t.Parallel()
 
-	stream := NewSimulatedBidiStream()
+	stream := NewSimulatedBidiStream(t.Context())
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
@@ -904,7 +1038,7 @@ func TestReady_MultipleCallersAllComplete(t *testing.T) {
 func TestReady_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	stream := NewSimulatedBidiStream()
+	stream := NewSimulatedBidiStream(t.Context())
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
@@ -935,7 +1069,7 @@ func TestReady_ContextCancellation(t *testing.T) {
 func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 	t.Parallel()
 
-	stream := NewSimulatedBidiStream()
+	stream := NewSimulatedBidiStream(t.Context())
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
@@ -992,7 +1126,7 @@ func TestWrapResourceExhausted_OtherGRPCCode(t *testing.T) {
 }
 
 func TestInvokeHandler_NilNilSuppressesResponse(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -1024,7 +1158,7 @@ func TestInvokeHandler_NilNilSuppressesResponse(t *testing.T) {
 }
 
 func TestInvokeHandler_NilEnvelopeWithError(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -1052,7 +1186,7 @@ func TestInvokeHandler_NilEnvelopeWithError(t *testing.T) {
 }
 
 func TestProcessHandlerRequest_NilNilHandler_NoSend(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -1082,7 +1216,7 @@ func TestProcessHandlerRequest_NilNilHandler_NoSend(t *testing.T) {
 }
 
 func TestProcessHandlerRequest_NoHandler_Drops(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -1107,7 +1241,7 @@ func TestProcessHandlerRequest_NoHandler_Drops(t *testing.T) {
 }
 
 func TestProcessHandlerRequest_NilInnerMsg(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}

@@ -132,34 +132,15 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 
 				fw.mu.Lock()
 
-				switch {
-				case event.Has(fsnotify.Create):
-					if isDir {
-						// New directory created - start watching it if not ignored
-						if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-							if err := fw.watchRecursive(name, watcher); err != nil {
-								log.Printf("failed to watch new directory %s: %v", name, err)
-							}
-						}
-					} else {
-						// Only track file creation, not directory creation
-						fileChanges.Created[name] = true
-					}
-				case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
-					// Only track file changes, not directory changes
-					if !isDir && !fileChanges.Created[name] && !fileChanges.Deleted[name] {
-						fileChanges.Modified[name] = true
-					}
-				case event.Has(fsnotify.Remove):
-					// Handle both file and directory removal, but only track files
-					if !isDir {
-						if fileChanges.Created[name] {
-							delete(fileChanges.Created, name)
-						} else {
-							fileChanges.Deleted[name] = true
-							delete(fileChanges.Modified, name)
+				if event.Has(fsnotify.Create) && isDir {
+					// New directory created - start watching it if not ignored
+					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
+						if err := fw.watchRecursive(name, watcher); err != nil {
+							log.Printf("failed to watch new directory %s: %v", name, err)
 						}
 					}
+				} else if !isDir {
+					fw.trackFileEventLocked(event)
 				}
 				fw.mu.Unlock()
 			case err := <-watcher.Errors:
@@ -175,6 +156,26 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 	}
 
 	return fw, nil
+}
+
+// trackFileEventLocked updates file change accounting. The caller must hold fw.mu.
+func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
+	name := event.Name
+	switch {
+	case event.Has(fsnotify.Create):
+		fw.fileChanges.Created[name] = true
+	case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
+		if !fw.fileChanges.Created[name] && !fw.fileChanges.Deleted[name] {
+			fw.fileChanges.Modified[name] = true
+		}
+	case event.Has(fsnotify.Remove):
+		if fw.fileChanges.Created[name] {
+			delete(fw.fileChanges.Created, name)
+		} else {
+			fw.fileChanges.Deleted[name] = true
+			delete(fw.fileChanges.Modified, name)
+		}
+	}
 }
 
 func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) error {
@@ -209,9 +210,9 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
-	fw.reconcileCreatedLocked()
+	createdFiles := fw.existingCreatedFilesLocked()
 
-	createdFileLength := len(fw.fileChanges.Created)
+	createdFileLength := len(createdFiles)
 	modifiedFileLength := len(fw.fileChanges.Modified)
 	deletedFileLength := len(fw.fileChanges.Deleted)
 
@@ -234,7 +235,7 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 	}
 
 	if createdFileLength > 0 {
-		for file := range fw.fileChanges.Created {
+		for _, file := range createdFiles {
 			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created  "), getDisplayPath(file))
 		}
 	}
@@ -319,33 +320,35 @@ func (fc FileChanges) String() string {
 	return b.String()
 }
 
-// reconcileCreatedLocked removes Created entries whose backing files no longer
-// exist. The caller must hold fw.mu.
+// existingCreatedFilesLocked filters missing created files from reported changes.
+// The caller must hold fw.mu.
 //
 // Some backends (notably Darwin kqueue) can miss Remove events when a file is
 // removed before its per-file watch is registered. Reconcile before reporting
 // changes, even if the final snapshot immediately precedes watcher cancellation.
-// As with an explicit Remove event, a file created and removed in this session
-// disappears entirely rather than being reported as Deleted.
-func (fw *fileWatcher) reconcileCreatedLocked() {
+// Retain Created provenance until Remove is consumed: deleting it here would
+// cause a queued Remove to misclassify an ephemeral file as Deleted.
+func (fw *fileWatcher) existingCreatedFilesLocked() []string {
+	files := make([]string, 0, len(fw.fileChanges.Created))
 	for name := range fw.fileChanges.Created {
-		if _, err := os.Lstat(name); errors.Is(err, os.ErrNotExist) {
-			delete(fw.fileChanges.Created, name)
+		if _, err := os.Lstat(name); !errors.Is(err, os.ErrNotExist) {
+			files = append(files, name)
 		}
 	}
+	return files
 }
 
-// GetFileChanges reconciles missing created files and returns all tracked file
-// changes, sorted by path.
+// GetFileChanges returns tracked file changes, excluding missing created files,
+// sorted by path.
 func (fw *fileWatcher) GetFileChanges() FileChanges {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
-	fw.reconcileCreatedLocked()
+	createdFiles := fw.existingCreatedFilesLocked()
 
 	changes := make(FileChanges, 0,
-		len(fw.fileChanges.Created)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
+		len(createdFiles)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
 
-	for file := range fw.fileChanges.Created {
+	for _, file := range createdFiles {
 		changes = append(changes, FileChange{Path: file, ChangeType: FileCreated})
 	}
 	for file := range fw.fileChanges.Modified {

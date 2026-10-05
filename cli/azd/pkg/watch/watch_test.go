@@ -315,14 +315,9 @@ func TestGetFileChanges_CreateThenDelete(t *testing.T) {
 		"ephemeral.txt should be removed from Created after delete, not moved to Deleted")
 }
 
-func TestReconcileCreated_RemovesMissingFile(t *testing.T) {
-	// Exercises the fix in isolation, without depending on real OS event
-	// timing or a specific fsnotify backend: construct the exact state a
-	// backend could leave behind when a file is removed inside the per-file
-	// watch registration window (Created holds the path, but the backend
-	// never emits the Remove event because it never finished watching the
-	// file), and confirm reconcileCreated clears it the same way the normal
-	// Remove-event path would.
+func TestGetFileChanges_ReconcilesMissingCreatedFile(t *testing.T) {
+	// Model a missed Remove event without starting a backend or waiting for
+	// a ticker: the first snapshot must clear the stale Created entry.
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "gone.txt")
 	require.NoError(t, os.WriteFile(missing, []byte("x"), 0600))
@@ -334,13 +329,13 @@ func TestReconcileCreated_RemovesMissingFile(t *testing.T) {
 		Deleted:  map[string]bool{},
 	}}
 
-	fw.reconcileCreated()
-
 	changes := fw.GetFileChanges()
 	require.Empty(t, changes, "a missing file must be cleared entirely, not moved to Deleted")
+	require.Empty(t, fw.fileChanges.Created)
+	require.Empty(t, fw.GetFileChanges(), "later snapshots must not restore the removed entry")
 }
 
-func TestReconcileCreated_PreservesExistingFile(t *testing.T) {
+func TestGetFileChanges_PreservesExistingCreatedFile(t *testing.T) {
 	dir := t.TempDir()
 	present := filepath.Join(dir, "present.txt")
 	require.NoError(t, os.WriteFile(present, []byte("x"), 0600))
@@ -351,12 +346,42 @@ func TestReconcileCreated_PreservesExistingFile(t *testing.T) {
 		Deleted:  map[string]bool{},
 	}}
 
-	fw.reconcileCreated()
-
 	changes := fw.GetFileChanges()
 	require.Len(t, changes, 1)
 	require.Equal(t, present, changes[0].Path)
 	require.Equal(t, FileCreated, changes[0].ChangeType)
+}
+
+func TestGetFileChanges_ReconciliationPreservesOtherChanges(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "a-created.txt")
+	modified := filepath.Join(dir, "b-modified.txt")
+	deleted := filepath.Join(dir, "c-deleted.txt")
+
+	for _, exists := range []bool{false, true} {
+		name := "missing modified file"
+		if exists {
+			name = "existing modified file"
+		}
+		t.Run(name, func(t *testing.T) {
+			if exists {
+				require.NoError(t, os.WriteFile(modified, []byte("x"), 0600))
+			}
+			fw := &fileWatcher{fileChanges: &fileChanges{
+				Created:  map[string]bool{missing: true},
+				Modified: map[string]bool{modified: true},
+				Deleted:  map[string]bool{deleted: true},
+			}}
+
+			require.Equal(t, FileChanges{
+				{Path: modified, ChangeType: FileModified},
+				{Path: deleted, ChangeType: FileDeleted},
+			}, fw.GetFileChanges())
+			require.Empty(t, fw.fileChanges.Created)
+			require.Equal(t, map[string]bool{modified: true}, fw.fileChanges.Modified)
+			require.Equal(t, map[string]bool{deleted: true}, fw.fileChanges.Deleted)
+		})
+	}
 }
 
 func TestGetFileChanges_RenameFile(t *testing.T) {

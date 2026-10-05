@@ -199,6 +199,24 @@ file on disk.
 
 ---
 
+## `pkg/watch.fileWatcher`
+
+`mu sync.Mutex` protects the change maps, pending creation rechecks,
+reconciled-path markers, and creation sequence. Event updates and readers take
+this lock. Directory watch registration and filesystem rechecks run outside it.
+
+The watcher checks only newly created paths, once per creation, in batches of at
+most 64 on the 100 ms timer. It does not repeatedly scan accumulated `Created`
+entries. Each result is applied under the lock only if its creation sequence
+still matches, so a stale absence cannot erase a recreated path.
+
+A reconciled missing creation disappears from the change maps rather than
+becoming a deletion. Its marker suppresses queued write, rename, and remove
+events; the next create or remove clears the marker. Other filesystem errors
+are logged and preserve the creation without starting an unbounded retry loop.
+
+---
+
 ## `pkg/tools/kubectl.Cli`
 
 | Lock              | Protects                                  | Acquired by                                                   |

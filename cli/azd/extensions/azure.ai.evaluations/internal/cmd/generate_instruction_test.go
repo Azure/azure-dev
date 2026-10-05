@@ -278,15 +278,15 @@ func TestGenerationEmptyOrConflictingInstructionFlagsFailBeforeWrites(t *testing
 			root.SetOut(&out)
 			root.SetErr(&bytes.Buffer{})
 			root.SetArgs(append([]string{"generate", "--no-prompt", "--output", "json"}, args...))
-			require.ErrorContains(t, root.Execute(), "agent-instruction")
-			if len(args) == 4 {
-				// Cobra rejects mutually exclusive flags before the JSON command wrapper runs.
-				assert.Empty(t, out.String())
-			} else {
-				var doc map[string]any
-				require.NoError(t, json.Unmarshal(out.Bytes(), &doc), "refusal must be one JSON document")
-				assert.Contains(t, doc, "error")
+			err := root.Execute()
+			require.ErrorContains(t, err, "agent-instruction")
+			var doc struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
 			}
+			require.NoError(t, json.Unmarshal(out.Bytes(), &doc), "refusal must be one JSON document")
+			assert.Equal(t, err.Error(), doc.Error.Message, "JSON must preserve the actual validation error")
 			assert.Equal(t, before, initFileSnapshot(t, h.dir))
 			assert.Zero(t, h.project.wiringAttempts())
 		})

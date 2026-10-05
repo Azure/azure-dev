@@ -545,6 +545,7 @@ overrides:
       - hostproject
   - filename: extensions/azure.ai.evaluations/internal/hostproject/*.go
     words:
+      - generateprojectclient
       - hostproject
       - descriptorpb
       - dynamicpb

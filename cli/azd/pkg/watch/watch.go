@@ -23,10 +23,10 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// reconcileInterval bounds how long a file removed inside the per-file watch
-// registration window (see reconcileCreated) can appear stuck in Created
-// before this safety net clears it.
-const reconcileInterval = 100 * time.Millisecond
+const (
+	reconcileInterval  = 100 * time.Millisecond
+	reconcileBatchSize = 64
+)
 
 type Watcher interface {
 	// Deprecated: Use GetFileChanges().String() instead.
@@ -41,7 +41,10 @@ type fileWatcher struct {
 	globIgnorePaths []string
 	ignoreMatcher   *ignore.Matcher
 	root            string
-	mu              sync.Mutex
+	pendingCreated  map[string]uint64
+	reconciledPaths map[string]bool
+	createSequence  uint64
+	mu              sync.Mutex // Protects fileChanges, pendingCreated, reconciledPaths, and createSequence.
 }
 
 type fileChanges struct {
@@ -94,6 +97,8 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		globIgnorePaths: globIgnorePaths,
 		ignoreMatcher:   ignoreMatcher,
 		root:            cwd,
+		pendingCreated:  make(map[string]uint64),
+		reconciledPaths: make(map[string]bool),
 	}
 
 	go func() {
@@ -105,15 +110,15 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		// sends Create, then calls internalWatch/addWatch to open the file's
 		// own kevent. A file removed inside that window is never watched
 		// individually, so no Remove event is ever generated for it, and it
-		// would otherwise be stuck in Created forever. reconcileCreated is a
-		// portable, backend-agnostic safety net for exactly that case.
+		// would otherwise be stuck in Created forever. Recheck each creation
+		// once, in bounded batches, rather than polling all accumulated changes.
 		reconcileTicker := time.NewTicker(reconcileInterval)
 		defer reconcileTicker.Stop()
 
 		for {
 			select {
 			case <-reconcileTicker.C:
-				fw.reconcileCreated()
+				fw.reconcileCreated(os.Lstat)
 			case event := <-watcher.Events:
 				// Fast path: ignore events matching hardcoded glob patterns.
 				shouldIgnore := false
@@ -149,38 +154,14 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 					}
 				}
 
-				fw.mu.Lock()
-
-				switch {
-				case event.Has(fsnotify.Create):
-					if isDir {
-						// New directory created - start watching it if not ignored
-						if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-							if err := fw.watchRecursive(name, watcher); err != nil {
-								log.Printf("failed to watch new directory %s: %v", name, err)
-							}
-						}
-					} else {
-						// Only track file creation, not directory creation
-						fileChanges.Created[name] = true
-					}
-				case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
-					// Only track file changes, not directory changes
-					if !isDir && !fileChanges.Created[name] && !fileChanges.Deleted[name] {
-						fileChanges.Modified[name] = true
-					}
-				case event.Has(fsnotify.Remove):
-					// Handle both file and directory removal, but only track files
-					if !isDir {
-						if fileChanges.Created[name] {
-							delete(fileChanges.Created, name)
-						} else {
-							fileChanges.Deleted[name] = true
-							delete(fileChanges.Modified, name)
+				if event.Has(fsnotify.Create) && isDir {
+					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
+						if err := fw.watchRecursive(name, watcher); err != nil {
+							log.Printf("failed to watch new directory %s: %v", name, err)
 						}
 					}
 				}
-				fw.mu.Unlock()
+				fw.recordEvent(event, isDir)
 			case err := <-watcher.Errors:
 				log.Printf("watcher error: %v", err)
 			case <-ctx.Done():
@@ -194,6 +175,37 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 	}
 
 	return fw, nil
+}
+
+func (fw *fileWatcher) recordEvent(event fsnotify.Event, isDir bool) {
+	if isDir {
+		return
+	}
+
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	name := event.Name
+	switch {
+	case event.Has(fsnotify.Create):
+		delete(fw.reconciledPaths, name)
+		fw.createSequence++
+		fw.pendingCreated[name] = fw.createSequence
+		fw.fileChanges.Created[name] = true
+	case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
+		if !fw.fileChanges.Created[name] && !fw.fileChanges.Deleted[name] && !fw.reconciledPaths[name] {
+			fw.fileChanges.Modified[name] = true
+		}
+	case event.Has(fsnotify.Remove):
+		delete(fw.pendingCreated, name)
+		if fw.fileChanges.Created[name] {
+			delete(fw.fileChanges.Created, name)
+		} else if !fw.reconciledPaths[name] {
+			fw.fileChanges.Deleted[name] = true
+			delete(fw.fileChanges.Modified, name)
+		}
+		delete(fw.reconciledPaths, name)
+	}
 }
 
 func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) error {
@@ -336,22 +348,37 @@ func (fc FileChanges) String() string {
 	return b.String()
 }
 
-// reconcileCreated removes an entry from Created whose backing file no
-// longer exists.
-//
-// This mirrors the explicit Remove-event handling for a file that was
-// created and removed within this watch session: the path disappears
-// entirely rather than being reported as Deleted, so a file whose terminal
-// Remove event a backend never emitted is indistinguishable from one whose
-// Remove event arrived normally.
-func (fw *fileWatcher) reconcileCreated() {
+// reconcileCreated checks a bounded batch of new paths once, outside the state
+// lock. A missing creation disappears entirely; its marker suppresses queued
+// events until the next Create or Remove. Sequence checks keep stale filesystem
+// results from applying to a later creation of the same path.
+func (fw *fileWatcher) reconcileCreated(lstat func(string) (os.FileInfo, error)) {
 	fw.mu.Lock()
-	defer fw.mu.Unlock()
-
-	for name := range fw.fileChanges.Created {
-		if _, err := os.Lstat(name); errors.Is(err, os.ErrNotExist) {
-			delete(fw.fileChanges.Created, name)
+	batch := make(map[string]uint64, min(len(fw.pendingCreated), reconcileBatchSize))
+	for name, sequence := range fw.pendingCreated {
+		batch[name] = sequence
+		if len(batch) == reconcileBatchSize {
+			break
 		}
+	}
+	fw.mu.Unlock()
+
+	for name, sequence := range batch {
+		_, err := lstat(name)
+		missing := errors.Is(err, os.ErrNotExist)
+		if err != nil && !missing {
+			log.Printf("failed to recheck created file %s: %v", name, err)
+		}
+
+		fw.mu.Lock()
+		if fw.pendingCreated[name] == sequence {
+			delete(fw.pendingCreated, name)
+			if missing && fw.fileChanges.Created[name] {
+				delete(fw.fileChanges.Created, name)
+				fw.reconciledPaths[name] = true
+			}
+		}
+		fw.mu.Unlock()
 	}
 }
 

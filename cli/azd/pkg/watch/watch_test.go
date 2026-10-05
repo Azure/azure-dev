@@ -5,12 +5,14 @@ package watch
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/require"
 )
 
@@ -328,13 +330,10 @@ func TestReconcileCreated_RemovesMissingFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(missing, []byte("x"), 0600))
 	require.NoError(t, os.Remove(missing))
 
-	fw := &fileWatcher{fileChanges: &fileChanges{
-		Created:  map[string]bool{missing: true},
-		Modified: map[string]bool{},
-		Deleted:  map[string]bool{},
-	}}
+	fw := newTestFileWatcher()
+	fw.recordEvent(fsnotify.Event{Name: missing, Op: fsnotify.Create}, false)
 
-	fw.reconcileCreated()
+	fw.reconcileCreated(os.Lstat)
 
 	changes := fw.GetFileChanges()
 	require.Empty(t, changes, "a missing file must be cleared entirely, not moved to Deleted")
@@ -345,18 +344,161 @@ func TestReconcileCreated_PreservesExistingFile(t *testing.T) {
 	present := filepath.Join(dir, "present.txt")
 	require.NoError(t, os.WriteFile(present, []byte("x"), 0600))
 
-	fw := &fileWatcher{fileChanges: &fileChanges{
-		Created:  map[string]bool{present: true},
-		Modified: map[string]bool{},
-		Deleted:  map[string]bool{},
-	}}
+	fw := newTestFileWatcher()
+	fw.recordEvent(fsnotify.Event{Name: present, Op: fsnotify.Create}, false)
 
-	fw.reconcileCreated()
+	fw.reconcileCreated(os.Lstat)
 
 	changes := fw.GetFileChanges()
 	require.Len(t, changes, 1)
 	require.Equal(t, present, changes[0].Path)
 	require.Equal(t, FileCreated, changes[0].ChangeType)
+}
+
+func TestReconcileCreated_LateEvents(t *testing.T) {
+	for _, op := range []fsnotify.Op{fsnotify.Remove, fsnotify.Write, fsnotify.Rename} {
+		t.Run(op.String(), func(t *testing.T) {
+			name := filepath.Join(t.TempDir(), "gone.txt")
+			fw := newTestFileWatcher()
+			fw.recordEvent(fsnotify.Event{Name: name, Op: fsnotify.Create}, false)
+
+			fw.reconcileCreated(os.Lstat)
+			fw.recordEvent(fsnotify.Event{Name: name, Op: op}, false)
+
+			require.Empty(t, fw.GetFileChanges(), "queued events must not revive a reconciled creation")
+		})
+	}
+}
+
+func TestReconcileCreated_UnlocksForIO(t *testing.T) {
+	fw := newTestFileWatcher()
+	fw.recordEvent(fsnotify.Event{Name: "present.txt", Op: fsnotify.Create}, false)
+
+	fw.reconcileCreated(func(string) (os.FileInfo, error) {
+		unlocked := fw.mu.TryLock()
+		if unlocked {
+			fw.mu.Unlock()
+		}
+		require.True(t, unlocked, "filesystem I/O must not hold the shared state lock")
+		return nil, nil
+	})
+}
+
+func newTestFileWatcher() *fileWatcher {
+	return &fileWatcher{
+		fileChanges: &fileChanges{
+			Created:  map[string]bool{},
+			Modified: map[string]bool{},
+			Deleted:  map[string]bool{},
+		},
+		pendingCreated:  map[string]uint64{},
+		reconciledPaths: map[string]bool{},
+	}
+}
+
+func TestReconcileCreated_BoundedOneShot(t *testing.T) {
+	fw := newTestFileWatcher()
+	const paths = 2*reconcileBatchSize + 1
+	for i := range paths {
+		fw.recordEvent(fsnotify.Event{Name: fmt.Sprintf("created-%d.txt", i), Op: fsnotify.Create}, false)
+	}
+
+	calls := map[string]int{}
+	for remaining := paths; remaining > 0; remaining -= reconcileBatchSize {
+		before := len(calls)
+		fw.reconcileCreated(func(name string) (os.FileInfo, error) {
+			calls[name]++
+			return nil, nil
+		})
+		require.Equal(t, min(remaining, reconcileBatchSize), len(calls)-before)
+	}
+	fw.reconcileCreated(func(string) (os.FileInfo, error) {
+		t.Fatal("existing creations must not be polled again")
+		return nil, nil
+	})
+
+	require.Empty(t, fw.pendingCreated)
+	require.Len(t, fw.GetFileChanges(), paths)
+	for name, count := range calls {
+		require.Equal(t, 1, count, "path %s must be checked only once", name)
+	}
+}
+
+func TestReconcileCreated_ClearsMarkerOnPathReuse(t *testing.T) {
+	for _, op := range []fsnotify.Op{fsnotify.Create, fsnotify.Remove} {
+		t.Run(op.String(), func(t *testing.T) {
+			name := filepath.Join(t.TempDir(), "reused.txt")
+			fw := newTestFileWatcher()
+			fw.recordEvent(fsnotify.Event{Name: name, Op: fsnotify.Create}, false)
+			fw.reconcileCreated(os.Lstat)
+			require.True(t, fw.reconciledPaths[name])
+
+			fw.recordEvent(fsnotify.Event{Name: name, Op: op}, false)
+			require.Empty(t, fw.reconciledPaths)
+			fw.recordEvent(fsnotify.Event{Name: name, Op: fsnotify.Remove}, false)
+			if op == fsnotify.Create {
+				require.Empty(t, fw.GetFileChanges(), "the new create/remove pair must cancel normally")
+			} else {
+				require.Equal(t, FileChanges{{Path: name, ChangeType: FileDeleted}}, fw.GetFileChanges(),
+					"the marker must not suppress a later independent removal")
+			}
+		})
+	}
+}
+
+func TestReconcileCreated_StaleResults(t *testing.T) {
+	for _, op := range []fsnotify.Op{fsnotify.Create, fsnotify.Remove} {
+		t.Run(op.String(), func(t *testing.T) {
+			name := "reused.txt"
+			fw := newTestFileWatcher()
+			fw.recordEvent(fsnotify.Event{Name: name, Op: fsnotify.Create}, false)
+
+			fw.reconcileCreated(func(string) (os.FileInfo, error) {
+				fw.recordEvent(fsnotify.Event{Name: name, Op: op}, false)
+				return nil, os.ErrNotExist
+			})
+
+			require.Empty(t, fw.reconciledPaths, "a stale absence must not mark a newer state as reconciled")
+			if op == fsnotify.Create {
+				require.Equal(t, FileChanges{{Path: name, ChangeType: FileCreated}}, fw.GetFileChanges())
+				require.Len(t, fw.pendingCreated, 1, "a new creation needs its own recheck")
+				fw.reconcileCreated(func(string) (os.FileInfo, error) {
+					return nil, nil
+				})
+			} else {
+				require.Empty(t, fw.GetFileChanges())
+			}
+			require.Empty(t, fw.pendingCreated)
+		})
+	}
+}
+
+func TestReconcileCreated_StatFailurePreservesCreation(t *testing.T) {
+	fw := newTestFileWatcher()
+	fw.recordEvent(fsnotify.Event{Name: "inaccessible.txt", Op: fsnotify.Create}, false)
+
+	fw.reconcileCreated(func(string) (os.FileInfo, error) {
+		return nil, os.ErrPermission
+	})
+
+	require.Equal(t, FileChanges{{Path: "inaccessible.txt", ChangeType: FileCreated}}, fw.GetFileChanges())
+	require.Empty(t, fw.pendingCreated, "a failed one-shot recheck must not become unbounded polling")
+	require.Empty(t, fw.reconciledPaths)
+}
+
+func TestReconcileCreated_RemoveCancelsRecheck(t *testing.T) {
+	fw := newTestFileWatcher()
+	fw.recordEvent(fsnotify.Event{Name: "removed.txt", Op: fsnotify.Create}, false)
+	fw.recordEvent(fsnotify.Event{Name: "removed.txt", Op: fsnotify.Remove}, false)
+
+	fw.reconcileCreated(func(string) (os.FileInfo, error) {
+		t.Fatal("an already removed creation must not be rechecked")
+		return nil, nil
+	})
+
+	require.Empty(t, fw.GetFileChanges())
+	require.Empty(t, fw.pendingCreated)
+	require.Empty(t, fw.reconciledPaths)
 }
 
 func TestGetFileChanges_RenameFile(t *testing.T) {

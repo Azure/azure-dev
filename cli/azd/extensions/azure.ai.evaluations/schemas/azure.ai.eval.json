@@ -219,8 +219,8 @@
         "model": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^[^/\\s]+(?:/[^/\\s]+)?$",
-          "description": "Plain model name or connection-qualified deployment (connection-name/model-deployment) the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
+          "pattern": "^[^/\\x00-\\x20\\x7f-\\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+(?:/[^/\\x00-\\x20\\x7f-\\x9f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+)?$",
+          "description": "Plain model name or connection-qualified deployment (connection-name/model-deployment) the simulated user speaks with, without Unicode whitespace or control characters. Other Unicode characters are allowed. Not the judge model an evaluator initializes, and not the model that generated the seeds."
         },
         "num_conversations": {
           "type": "integer",

@@ -351,6 +351,8 @@ Once a version is resolved, installation proceeds through these steps:
 7. **Set permissions** — On Unix-like systems, set the executable permission on the extension binary.
 8. **Update configuration**. Save the version, dependencies, and `installedAsDependency` flag under `extension.installed` in `~/.azd/config.json`. See [installed metadata](#installed-metadata) for ownership rules.
 
+Installation progress updates in place in an interactive terminal. In redirected or non-TTY output, each uninterrupted install emits at most one `Installing <id>` progress line rather than animation frames. Progress resumes after a source-selection or replacement prompt, or a compatibility warning. Final statuses and dependency results are reported separately.
+
 ### Re-installing over an existing extension
 
 `azd extension install <id>` keys off the extension **id**, so installing an id that is already present is handled based on whether the **source** is changing and on the version relationship. `--force` bypasses all of these guards.

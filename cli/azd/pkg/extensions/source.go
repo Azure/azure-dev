@@ -82,41 +82,12 @@ type registrySource struct {
 	registry *Registry
 }
 
-var errInvalidVersionMigrations = errors.New("invalid versionMigrations")
-
 // newRegistrySource creates a new registry source.
 func newRegistrySource(name string, registry *Registry) (Source, error) {
-	if registry == nil {
-		return nil, fmt.Errorf("source %q registry is nil", name)
-	}
-	if err := validateSourceVersionMigrations(name, registry.Extensions); err != nil {
-		return nil, err
-	}
 	return &registrySource{
 		name:     name,
 		registry: registry,
 	}, nil
-}
-
-func validateSourceVersionMigrations(name string, extensions []*ExtensionMetadata) error {
-	for _, extension := range extensions {
-		if extension == nil || len(extension.VersionMigrations) == 0 {
-			continue
-		}
-		result := ExtensionValidationResult{Valid: true}
-		validateVersionMigrations(&result, extension)
-		if !result.Valid {
-			messages := make([]string, 0, len(result.Issues))
-			for _, issue := range result.Issues {
-				messages = append(messages, issue.Message)
-			}
-			return fmt.Errorf(
-				"%w: source %q extension %q: %s",
-				errInvalidVersionMigrations, name, extension.Id, strings.Join(messages, "; "),
-			)
-		}
-	}
-	return nil
 }
 
 func (ts *registrySource) Name() string {

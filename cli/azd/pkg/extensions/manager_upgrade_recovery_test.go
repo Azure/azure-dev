@@ -92,13 +92,12 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			platform := runtime.GOOS + "/" + runtime.GOARCH
 			metadata := &ExtensionMetadata{
 				Id: "test.recovery", Source: "test",
-				VersionMigrations: []ExtensionVersionMigration{{From: "1.0.47-beta", To: "1.0.0-beta.1"}},
 				Versions: []ExtensionVersion{{
-					Version: "1.0.47-beta", EntryPoint: filepath.Base(oldPath),
+					Version: "1.0.0", EntryPoint: filepath.Base(oldPath),
 					Artifacts: map[string]ExtensionArtifact{platform: {URL: oldPath}},
 				}},
 			}
-			_, err = manager.Install(t.Context(), metadata, "1.0.47-beta")
+			_, err = manager.Install(t.Context(), metadata, "1.0.0")
 			require.NoError(t, err)
 			installed, err := manager.GetInstalled(FilterOptions{Id: metadata.Id})
 			require.NoError(t, err)
@@ -125,7 +124,7 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 				entry = filepath.Base(newPath)
 			}
 			metadata.Versions = []ExtensionVersion{{
-				Version: "1.0.0-beta.1", EntryPoint: entry,
+				Version: "1.1.0", EntryPoint: entry,
 				Artifacts: map[string]ExtensionArtifact{platform: {URL: newPath, Checksum: test.checksum}},
 			}}
 			ctx := t.Context()

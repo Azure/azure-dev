@@ -102,7 +102,7 @@ type ExtensionVersionAlternative struct {
 func (e *ExtensionVersionNotFoundError) Alternatives() []ExtensionVersionAlternative {
 	latestVersions := make([]ExtensionVersionAlternative, 0, len(e.Matches))
 	for _, match := range e.Matches {
-		latestVersion := bestSatisfyingExtensionVersionForAzd("", match, e.AzdVersion)
+		latestVersion := bestSatisfyingVersionForAzd("", match.Versions, e.AzdVersion)
 		if latestVersion == nil {
 			continue
 		}
@@ -169,7 +169,7 @@ func (e *ExtensionAzdVersionIncompatibleError) Error() string {
 func (e *ExtensionAzdVersionIncompatibleError) Suggestion() string {
 	constraints := make([]string, 0, len(e.Matches))
 	for _, match := range e.Matches {
-		selected := bestSatisfyingExtensionVersion(e.Version, match)
+		selected := bestSatisfyingVersion(e.Version, match.Versions)
 		if selected == nil || selected.RequiredAzdVersion == "" ||
 			slices.Contains(constraints, selected.RequiredAzdVersion) {
 			continue
@@ -294,7 +294,7 @@ func ClassifyInstallResolution(
 	}
 
 	for _, extension := range catalogue {
-		publishedVersion := bestSatisfyingExtensionVersion(options.Version, extension)
+		publishedVersion := bestSatisfyingVersion(options.Version, extension.Versions)
 		if publishedVersion == nil {
 			if options.Version != "" && !strings.EqualFold(options.Version, "latest") {
 				result.VersionMismatches = append(result.VersionMismatches, extension)
@@ -302,7 +302,7 @@ func ClassifyInstallResolution(
 			continue
 		}
 
-		selectedVersion := bestSatisfyingExtensionVersionForAzd(options.Version, extension, azdVersion)
+		selectedVersion := bestSatisfyingVersionForAzd(options.Version, extension.Versions, azdVersion)
 		if selectedVersion == nil {
 			if extensionVersionMatchesResolution(publishedVersion, options) {
 				result.IncompatibleMatches = append(result.IncompatibleMatches, extension)
@@ -343,7 +343,7 @@ func newInstallCandidate(
 		return candidate
 	}
 
-	compat := FilterCompatibleExtensionVersions(extension, azdVersion)
+	compat := FilterCompatibleVersions(extension.Versions, azdVersion)
 	candidate.LatestOverall = compat.LatestOverall
 	candidate.LatestCompatible = compat.LatestCompatible
 	candidate.HasNewerIncompatible = compat.HasNewerIncompatible

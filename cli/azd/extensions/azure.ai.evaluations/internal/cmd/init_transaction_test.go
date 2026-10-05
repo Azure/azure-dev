@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"azureaieval/internal/hostproject"
 	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -24,9 +25,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
@@ -298,33 +300,32 @@ func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
 }
 
 func TestInitRootSaveRequiresMatchingCompletionAcknowledgement(t *testing.T) {
-	for _, ack := range []string{"missing", "wrong", "duplicate", "content-type only"} {
+	for _, ack := range []string{"missing", "wrong", "duplicate", "malformed", "wrong type"} {
 		for _, code := range []codes.Code{codes.Unknown, codes.Internal, codes.PermissionDenied} {
 			t.Run(ack+"/"+code.String(), func(t *testing.T) {
 				h := newInitHarness(t, nil)
 				h.project.setSaveFailureAcknowledgement(false)
 				configPath := filepath.Join(h.dir, "quality.yml")
-				h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-					incoming, _ := metadata.FromIncomingContext(ctx)
-					tokens := incoming.Get("azd-project-add-service-operation")
-					if len(tokens) != 1 || tokens[0] == "" {
-						return status.Error(codes.Internal, "missing operation token")
-					}
-					var trailer metadata.MD
-					switch ack {
-					case "wrong":
-						trailer = metadata.Pairs("azd-project-add-service-save-failed", "another-operation")
-					case "duplicate":
-						trailer = metadata.Pairs("azd-project-add-service-save-failed", tokens[0],
-							"azd-project-add-service-save-failed", tokens[0])
-					case "content-type only":
-						trailer = metadata.Pairs("content-type", "application/grpc")
-					}
-					if err := grpc.SetTrailer(ctx, trailer); err != nil {
-						return err
-					}
+				h.project.setAddServiceHandler(func(context.Context, *azdext.AddServiceRequest) error {
 					return status.Error(code, "save outcome unavailable")
 				})
+				h.project.betaAck = func(operation string, err error) error {
+					withAck := initAcknowledgmentStatus(t, operation, err)
+					st := status.Convert(withAck).Proto()
+					switch ack {
+					case "missing":
+						st.Details = nil
+					case "wrong":
+						return initAcknowledgmentStatus(t, "another-operation", err)
+					case "duplicate":
+						st.Details = append(st.Details, st.Details[0])
+					case "malformed":
+						st.Details[0].Value = []byte{0x0e}
+					case "wrong type":
+						st.Details[0].TypeUrl = "type.googleapis.com/azd.extensions.v1.AddServiceAcknowledgment"
+					}
+					return status.FromProto(st).Err()
+				}
 				text, err := executeConversationInit(t, "--path", configPath, "--name", "quality",
 					"--source", "traces", "--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
 				require.ErrorContains(t, err, "could not safely roll back")
@@ -343,20 +344,15 @@ func TestInitRootSaveDoesNotReuseAcknowledgementAcrossRetries(t *testing.T) {
 	configPath := filepath.Join(h.dir, "quality.yml")
 	var mu sync.Mutex
 	var tokens []string
-	h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-		incoming, _ := metadata.FromIncomingContext(ctx)
-		current := incoming.Get("azd-project-add-service-operation")
-		if len(current) != 1 {
-			return status.Error(codes.Internal, "missing operation token")
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		tokens = append(tokens, current[0])
-		if err := grpc.SetTrailer(ctx, metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); err != nil {
-			return err
-		}
+	h.project.setAddServiceHandler(func(context.Context, *azdext.AddServiceRequest) error {
 		return os.ErrPermission
 	})
+	h.project.betaAck = func(operation string, err error) error {
+		mu.Lock()
+		defer mu.Unlock()
+		tokens = append(tokens, operation)
+		return initAcknowledgmentStatus(t, tokens[0], err)
+	}
 	args := []string{"--path", configPath, "--name", "quality", "--source", "traces",
 		"--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json"}
 	_, err := executeConversationInit(t, args...)
@@ -376,7 +372,8 @@ type malformedSaveResponseCodec struct{}
 func (malformedSaveResponseCodec) Name() string { return "proto" }
 
 func (malformedSaveResponseCodec) Marshal(value any) ([]byte, error) {
-	if _, ok := value.(*azdext.EmptyResponse); ok {
+	if message, ok := value.(proto.Message); ok &&
+		strings.HasSuffix(string(message.ProtoReflect().Descriptor().FullName()), ".EmptyResponse") {
 		return []byte{0x0e}, nil // Invalid protobuf wire type after the handler has completed.
 	}
 	message, ok := value.(proto.Message)
@@ -384,6 +381,20 @@ func (malformedSaveResponseCodec) Marshal(value any) ([]byte, error) {
 		return nil, fmt.Errorf("not a protobuf message: %T", value)
 	}
 	return proto.Marshal(message)
+}
+
+func initAcknowledgmentStatus(t *testing.T, operation string, err error) error {
+	t.Helper()
+	client, clientErr := hostproject.NewClient(nil)
+	require.NoError(t, clientErr)
+	ack, messageErr := client.Message("AddServiceAcknowledgment")
+	require.NoError(t, messageErr)
+	ack.Set(ack.Descriptor().Fields().ByName("operation_id"), protoreflect.ValueOfString(operation))
+	detail, marshalErr := anypb.New(ack)
+	require.NoError(t, marshalErr)
+	st := status.Convert(err).Proto()
+	st.Details = append(st.Details, detail)
+	return status.FromProto(st).Err()
 }
 
 func (malformedSaveResponseCodec) Unmarshal(body []byte, value any) error {

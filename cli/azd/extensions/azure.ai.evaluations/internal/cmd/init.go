@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"sync"
 
 	"azureaieval/internal/exterrors"
+	"azureaieval/internal/hostproject"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
@@ -30,7 +32,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -1528,22 +1529,37 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	// Optional host capability; literals are shared with the core handler so
-	// extensions using the released SDK do not need a new protocol dependency.
-	token := rand.Text()
-	callCtx := metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", token)
-	var trailers metadata.MD
-	_, err = azdClient.Project().AddService(callCtx, &azdext.AddServiceRequest{
-		Service: &azdext.ServiceConfig{
-			Name:                 name,
-			Host:                 project.EvalHost,
-			Uses:                 evalServiceUses(resp.GetProject(), target),
-			AdditionalProperties: props,
-		},
-	}, grpc.Trailer(&trailers), grpc.MaxRetryRPCBufferSize(0))
+	preview, closePreview, err := hostproject.Connect()
 	if err != nil {
-		ack := trailers.Get("azd-project-add-service-save-failed")
-		if len(ack) != 1 || ack[0] != token {
+		return "", "", messages.ConnectingToAzd(err)
+	}
+	defer func() {
+		if closeErr := closePreview(); closeErr != nil {
+			// Closing a completed transport does not change the mutation outcome.
+			log.Printf("closing azd project transport: %v", closeErr)
+		}
+	}()
+	capable, err := preview.SupportsAcknowledgment(ctx)
+	if err != nil {
+		return "", "", messages.AddingServiceTo(rootFilename, err)
+	}
+	service := &azdext.ServiceConfig{
+		Name:                 name,
+		Host:                 project.EvalHost,
+		Uses:                 evalServiceUses(resp.GetProject(), target),
+		AdditionalProperties: props,
+	}
+	completed := false
+	if capable {
+		completed, err = preview.AddService(ctx, service, rand.Text())
+	} else {
+		// Backward compatibility only: older hosts cannot confirm a failed save completed.
+		// TODO: Remove this fallback after the SDK/core release and minimum host version update.
+		_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: service},
+			grpc.MaxRetryRPCBufferSize(0))
+	}
+	if err != nil {
+		if !completed {
 			err = &initWiringUncertainError{error: err}
 		}
 		return "", "", messages.AddingServiceTo(rootFilename, err)

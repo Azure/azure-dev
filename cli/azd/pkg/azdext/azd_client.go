@@ -174,6 +174,12 @@ func (c *AzdClient) Project() ProjectServiceClient {
 	return c.projectClient
 }
 
+// ProjectBeta returns the preview project client, including read-only AddService
+// capability discovery and typed completed-failure acknowledgments.
+func (c *AzdClient) ProjectBeta() v1beta.ProjectServiceClient {
+	return v1beta.NewProjectServiceClient(c.connection)
+}
+
 // Environment returns the environment service client.
 func (c *AzdClient) Environment() EnvironmentServiceClient {
 	if c.environmentClient == nil {

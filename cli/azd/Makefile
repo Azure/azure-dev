@@ -31,6 +31,8 @@ proto: proto-check-tools
 		-stable-source $(CONTRACTS_V1_DIR) \
 		-beta-source $(CONTRACTS_V1BETA_DIR) \
 		-output $(ADAPTER_FILE)
+	go run ./grpc/generateprojectclient \
+		-output extensions/azure.ai.evaluations/internal/hostproject/descriptors_generated.go
 
 proto-check-tools:
 	@test "$$(protoc --version)" = "$(PROTOC_VERSION)" || \

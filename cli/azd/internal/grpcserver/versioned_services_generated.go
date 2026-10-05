@@ -308,6 +308,11 @@ type BetaProjectServiceAddServiceOverride interface {
 	AddService(context.Context, *v1beta.AddServiceRequest) (*v1beta.EmptyResponse, error)
 }
 
+// BetaProjectServiceGetAddServiceCapabilitiesOverride overrides the beta ProjectService.GetAddServiceCapabilities method before stable adaptation.
+type BetaProjectServiceGetAddServiceCapabilitiesOverride interface {
+	GetAddServiceCapabilities(context.Context, *v1beta.EmptyRequest) (*v1beta.GetAddServiceCapabilitiesResponse, error)
+}
+
 // BetaProjectServiceGetResolvedServicesOverride overrides the beta ProjectService.GetResolvedServices method before stable adaptation.
 type BetaProjectServiceGetResolvedServicesOverride interface {
 	GetResolvedServices(context.Context, *v1beta.EmptyRequest) (*v1beta.GetResolvedServicesResponse, error)
@@ -376,6 +381,7 @@ func validateBetaProjectServiceOverride(override any) error {
 		reflect.TypeFor[BetaProjectServiceGetOverride](),
 		reflect.TypeFor[BetaProjectServiceGetServiceTargetResourceOverride](),
 		reflect.TypeFor[BetaProjectServiceAddServiceOverride](),
+		reflect.TypeFor[BetaProjectServiceGetAddServiceCapabilitiesOverride](),
 		reflect.TypeFor[BetaProjectServiceGetResolvedServicesOverride](),
 		reflect.TypeFor[BetaProjectServiceParseGitHubUrlOverride](),
 		reflect.TypeFor[BetaProjectServiceGetConfigSectionOverride](),
@@ -823,7 +829,7 @@ func (a *betaAccountServiceAdapter) ListSubscriptions(
 	ctx context.Context,
 	req *v1beta.ListSubscriptionsRequest,
 ) (*v1beta.ListSubscriptionsResponse, error) {
-	if override, ok := a.override.(BetaAccountServiceListSubscriptionsOverride); ok {
+	if override, ok := findBetaOverride[BetaAccountServiceListSubscriptionsOverride](a.override); ok {
 		return override.ListSubscriptions(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -840,7 +846,7 @@ func (a *betaAccountServiceAdapter) LookupTenant(
 	ctx context.Context,
 	req *v1beta.LookupTenantRequest,
 ) (*v1beta.LookupTenantResponse, error) {
-	if override, ok := a.override.(BetaAccountServiceLookupTenantOverride); ok {
+	if override, ok := findBetaOverride[BetaAccountServiceLookupTenantOverride](a.override); ok {
 		return override.LookupTenant(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -857,7 +863,7 @@ func (a *betaAccountServiceAdapter) GetCurrentPrincipal(
 	ctx context.Context,
 	req *v1beta.GetCurrentPrincipalRequest,
 ) (*v1beta.GetCurrentPrincipalResponse, error) {
-	if override, ok := a.override.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
+	if override, ok := findBetaOverride[BetaAccountServiceGetCurrentPrincipalOverride](a.override); ok {
 		return override.GetCurrentPrincipal(ctx, req)
 	}
 	return a.UnimplementedAccountServiceServer.GetCurrentPrincipal(ctx, req)
@@ -875,7 +881,7 @@ func (a *betaAiModelServiceAdapter) ListModels(
 	ctx context.Context,
 	req *v1beta.ListModelsRequest,
 ) (*v1beta.ListModelsResponse, error) {
-	if override, ok := a.override.(BetaAiModelServiceListModelsOverride); ok {
+	if override, ok := findBetaOverride[BetaAiModelServiceListModelsOverride](a.override); ok {
 		return override.ListModels(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -892,7 +898,7 @@ func (a *betaAiModelServiceAdapter) ResolveModelDeployments(
 	ctx context.Context,
 	req *v1beta.ResolveModelDeploymentsRequest,
 ) (*v1beta.ResolveModelDeploymentsResponse, error) {
-	if override, ok := a.override.(BetaAiModelServiceResolveModelDeploymentsOverride); ok {
+	if override, ok := findBetaOverride[BetaAiModelServiceResolveModelDeploymentsOverride](a.override); ok {
 		return override.ResolveModelDeployments(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -909,7 +915,7 @@ func (a *betaAiModelServiceAdapter) ListUsages(
 	ctx context.Context,
 	req *v1beta.ListUsagesRequest,
 ) (*v1beta.ListUsagesResponse, error) {
-	if override, ok := a.override.(BetaAiModelServiceListUsagesOverride); ok {
+	if override, ok := findBetaOverride[BetaAiModelServiceListUsagesOverride](a.override); ok {
 		return override.ListUsages(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -926,7 +932,7 @@ func (a *betaAiModelServiceAdapter) ListLocationsWithQuota(
 	ctx context.Context,
 	req *v1beta.ListLocationsWithQuotaRequest,
 ) (*v1beta.ListLocationsWithQuotaResponse, error) {
-	if override, ok := a.override.(BetaAiModelServiceListLocationsWithQuotaOverride); ok {
+	if override, ok := findBetaOverride[BetaAiModelServiceListLocationsWithQuotaOverride](a.override); ok {
 		return override.ListLocationsWithQuota(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -943,7 +949,7 @@ func (a *betaAiModelServiceAdapter) ListModelLocationsWithQuota(
 	ctx context.Context,
 	req *v1beta.ListModelLocationsWithQuotaRequest,
 ) (*v1beta.ListModelLocationsWithQuotaResponse, error) {
-	if override, ok := a.override.(BetaAiModelServiceListModelLocationsWithQuotaOverride); ok {
+	if override, ok := findBetaOverride[BetaAiModelServiceListModelLocationsWithQuotaOverride](a.override); ok {
 		return override.ListModelLocationsWithQuota(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -968,7 +974,7 @@ func (a *betaContainerServiceAdapter) Build(
 	ctx context.Context,
 	req *v1beta.ContainerBuildRequest,
 ) (*v1beta.ContainerBuildResponse, error) {
-	if override, ok := a.override.(BetaContainerServiceBuildOverride); ok {
+	if override, ok := findBetaOverride[BetaContainerServiceBuildOverride](a.override); ok {
 		return override.Build(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -985,7 +991,7 @@ func (a *betaContainerServiceAdapter) Package(
 	ctx context.Context,
 	req *v1beta.ContainerPackageRequest,
 ) (*v1beta.ContainerPackageResponse, error) {
-	if override, ok := a.override.(BetaContainerServicePackageOverride); ok {
+	if override, ok := findBetaOverride[BetaContainerServicePackageOverride](a.override); ok {
 		return override.Package(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1002,7 +1008,7 @@ func (a *betaContainerServiceAdapter) Publish(
 	ctx context.Context,
 	req *v1beta.ContainerPublishRequest,
 ) (*v1beta.ContainerPublishResponse, error) {
-	if override, ok := a.override.(BetaContainerServicePublishOverride); ok {
+	if override, ok := findBetaOverride[BetaContainerServicePublishOverride](a.override); ok {
 		return override.Publish(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1027,7 +1033,7 @@ func (a *betaDeploymentServiceAdapter) GetDeployment(
 	ctx context.Context,
 	req *v1beta.EmptyRequest,
 ) (*v1beta.GetDeploymentResponse, error) {
-	if override, ok := a.override.(BetaDeploymentServiceGetDeploymentOverride); ok {
+	if override, ok := findBetaOverride[BetaDeploymentServiceGetDeploymentOverride](a.override); ok {
 		return override.GetDeployment(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1044,7 +1050,7 @@ func (a *betaDeploymentServiceAdapter) GetDeploymentContext(
 	ctx context.Context,
 	req *v1beta.EmptyRequest,
 ) (*v1beta.GetDeploymentContextResponse, error) {
-	if override, ok := a.override.(BetaDeploymentServiceGetDeploymentContextOverride); ok {
+	if override, ok := findBetaOverride[BetaDeploymentServiceGetDeploymentContextOverride](a.override); ok {
 		return override.GetDeploymentContext(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1069,7 +1075,7 @@ func (a *betaEnvironmentServiceAdapter) GetCurrent(
 	ctx context.Context,
 	req *v1beta.EmptyRequest,
 ) (*v1beta.EnvironmentResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetCurrentOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetCurrentOverride](a.override); ok {
 		return override.GetCurrent(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1086,7 +1092,7 @@ func (a *betaEnvironmentServiceAdapter) List(
 	ctx context.Context,
 	req *v1beta.EmptyRequest,
 ) (*v1beta.EnvironmentListResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceListOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceListOverride](a.override); ok {
 		return override.List(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1103,7 +1109,7 @@ func (a *betaEnvironmentServiceAdapter) Get(
 	ctx context.Context,
 	req *v1beta.GetEnvironmentRequest,
 ) (*v1beta.EnvironmentResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetOverride](a.override); ok {
 		return override.Get(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1120,7 +1126,7 @@ func (a *betaEnvironmentServiceAdapter) Select(
 	ctx context.Context,
 	req *v1beta.SelectEnvironmentRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceSelectOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceSelectOverride](a.override); ok {
 		return override.Select(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1137,7 +1143,7 @@ func (a *betaEnvironmentServiceAdapter) GetValues(
 	ctx context.Context,
 	req *v1beta.GetEnvironmentRequest,
 ) (*v1beta.KeyValueListResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetValuesOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetValuesOverride](a.override); ok {
 		return override.GetValues(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1154,7 +1160,7 @@ func (a *betaEnvironmentServiceAdapter) GetValue(
 	ctx context.Context,
 	req *v1beta.GetEnvRequest,
 ) (*v1beta.KeyValueResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetValueOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetValueOverride](a.override); ok {
 		return override.GetValue(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1171,7 +1177,7 @@ func (a *betaEnvironmentServiceAdapter) SetValue(
 	ctx context.Context,
 	req *v1beta.SetEnvRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceSetValueOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceSetValueOverride](a.override); ok {
 		return override.SetValue(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1188,7 +1194,7 @@ func (a *betaEnvironmentServiceAdapter) GetConfig(
 	ctx context.Context,
 	req *v1beta.GetConfigRequest,
 ) (*v1beta.GetConfigResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetConfigOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetConfigOverride](a.override); ok {
 		return override.GetConfig(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1205,7 +1211,7 @@ func (a *betaEnvironmentServiceAdapter) GetConfigString(
 	ctx context.Context,
 	req *v1beta.GetConfigStringRequest,
 ) (*v1beta.GetConfigStringResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetConfigStringOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetConfigStringOverride](a.override); ok {
 		return override.GetConfigString(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1222,7 +1228,7 @@ func (a *betaEnvironmentServiceAdapter) GetConfigSection(
 	ctx context.Context,
 	req *v1beta.GetConfigSectionRequest,
 ) (*v1beta.GetConfigSectionResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceGetConfigSectionOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceGetConfigSectionOverride](a.override); ok {
 		return override.GetConfigSection(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1239,7 +1245,7 @@ func (a *betaEnvironmentServiceAdapter) SetConfig(
 	ctx context.Context,
 	req *v1beta.SetConfigRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceSetConfigOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceSetConfigOverride](a.override); ok {
 		return override.SetConfig(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1256,7 +1262,7 @@ func (a *betaEnvironmentServiceAdapter) UnsetConfig(
 	ctx context.Context,
 	req *v1beta.UnsetConfigRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaEnvironmentServiceUnsetConfigOverride); ok {
+	if override, ok := findBetaOverride[BetaEnvironmentServiceUnsetConfigOverride](a.override); ok {
 		return override.UnsetConfig(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1280,7 +1286,7 @@ var _ v1beta.EventServiceServer = (*betaEventServiceAdapter)(nil)
 func (a *betaEventServiceAdapter) EventStream(
 	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
 ) error {
-	if override, ok := a.override.(BetaEventServiceEventStreamOverride); ok {
+	if override, ok := findBetaOverride[BetaEventServiceEventStreamOverride](a.override); ok {
 		return override.EventStream(stream)
 	}
 	return a.stable.EventStream(&versionedBidiServerStream[
@@ -1321,7 +1327,7 @@ func (a *betaExtensionServiceAdapter) Ready(
 	ctx context.Context,
 	req *v1beta.ReadyRequest,
 ) (*v1beta.ReadyResponse, error) {
-	if override, ok := a.override.(BetaExtensionServiceReadyOverride); ok {
+	if override, ok := findBetaOverride[BetaExtensionServiceReadyOverride](a.override); ok {
 		return override.Ready(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1338,7 +1344,7 @@ func (a *betaExtensionServiceAdapter) ReportError(
 	ctx context.Context,
 	req *v1beta.ReportErrorRequest,
 ) (*v1beta.ReportErrorResponse, error) {
-	if override, ok := a.override.(BetaExtensionServiceReportErrorOverride); ok {
+	if override, ok := findBetaOverride[BetaExtensionServiceReportErrorOverride](a.override); ok {
 		return override.ReportError(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1362,7 +1368,7 @@ var _ v1beta.FrameworkServiceServer = (*betaFrameworkServiceAdapter)(nil)
 func (a *betaFrameworkServiceAdapter) Stream(
 	stream grpc.BidiStreamingServer[v1beta.FrameworkServiceMessage, v1beta.FrameworkServiceMessage],
 ) error {
-	if override, ok := a.override.(BetaFrameworkServiceStreamOverride); ok {
+	if override, ok := findBetaOverride[BetaFrameworkServiceStreamOverride](a.override); ok {
 		return override.Stream(stream)
 	}
 	return a.stable.Stream(&versionedBidiServerStream[
@@ -1403,7 +1409,7 @@ func (a *betaProjectServiceAdapter) Get(
 	ctx context.Context,
 	req *v1beta.EmptyRequest,
 ) (*v1beta.GetProjectResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetOverride](a.override); ok {
 		return override.Get(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1420,7 +1426,7 @@ func (a *betaProjectServiceAdapter) GetServiceTargetResource(
 	ctx context.Context,
 	req *v1beta.GetServiceTargetResourceRequest,
 ) (*v1beta.GetServiceTargetResourceResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetServiceTargetResourceOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetServiceTargetResourceOverride](a.override); ok {
 		return override.GetServiceTargetResource(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1437,7 +1443,7 @@ func (a *betaProjectServiceAdapter) AddService(
 	ctx context.Context,
 	req *v1beta.AddServiceRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceAddServiceOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceAddServiceOverride](a.override); ok {
 		return override.AddService(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1450,11 +1456,21 @@ func (a *betaProjectServiceAdapter) AddService(
 	)
 }
 
+func (a *betaProjectServiceAdapter) GetAddServiceCapabilities(
+	ctx context.Context,
+	req *v1beta.EmptyRequest,
+) (*v1beta.GetAddServiceCapabilitiesResponse, error) {
+	if override, ok := findBetaOverride[BetaProjectServiceGetAddServiceCapabilitiesOverride](a.override); ok {
+		return override.GetAddServiceCapabilities(ctx, req)
+	}
+	return a.UnimplementedProjectServiceServer.GetAddServiceCapabilities(ctx, req)
+}
+
 func (a *betaProjectServiceAdapter) GetResolvedServices(
 	ctx context.Context,
 	req *v1beta.EmptyRequest,
 ) (*v1beta.GetResolvedServicesResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetResolvedServicesOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetResolvedServicesOverride](a.override); ok {
 		return override.GetResolvedServices(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1471,7 +1487,7 @@ func (a *betaProjectServiceAdapter) ParseGitHubUrl(
 	ctx context.Context,
 	req *v1beta.ParseGitHubUrlRequest,
 ) (*v1beta.ParseGitHubUrlResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceParseGitHubUrlOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceParseGitHubUrlOverride](a.override); ok {
 		return override.ParseGitHubUrl(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1488,7 +1504,7 @@ func (a *betaProjectServiceAdapter) GetConfigSection(
 	ctx context.Context,
 	req *v1beta.GetProjectConfigSectionRequest,
 ) (*v1beta.GetProjectConfigSectionResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetConfigSectionOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetConfigSectionOverride](a.override); ok {
 		return override.GetConfigSection(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1505,7 +1521,7 @@ func (a *betaProjectServiceAdapter) GetConfigValue(
 	ctx context.Context,
 	req *v1beta.GetProjectConfigValueRequest,
 ) (*v1beta.GetProjectConfigValueResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetConfigValueOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetConfigValueOverride](a.override); ok {
 		return override.GetConfigValue(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1522,7 +1538,7 @@ func (a *betaProjectServiceAdapter) SetConfigSection(
 	ctx context.Context,
 	req *v1beta.SetProjectConfigSectionRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceSetConfigSectionOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceSetConfigSectionOverride](a.override); ok {
 		return override.SetConfigSection(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1539,7 +1555,7 @@ func (a *betaProjectServiceAdapter) SetConfigValue(
 	ctx context.Context,
 	req *v1beta.SetProjectConfigValueRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceSetConfigValueOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceSetConfigValueOverride](a.override); ok {
 		return override.SetConfigValue(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1556,7 +1572,7 @@ func (a *betaProjectServiceAdapter) UnsetConfig(
 	ctx context.Context,
 	req *v1beta.UnsetProjectConfigRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceUnsetConfigOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceUnsetConfigOverride](a.override); ok {
 		return override.UnsetConfig(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1573,7 +1589,7 @@ func (a *betaProjectServiceAdapter) GetServiceConfigSection(
 	ctx context.Context,
 	req *v1beta.GetServiceConfigSectionRequest,
 ) (*v1beta.GetServiceConfigSectionResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetServiceConfigSectionOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetServiceConfigSectionOverride](a.override); ok {
 		return override.GetServiceConfigSection(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1590,7 +1606,7 @@ func (a *betaProjectServiceAdapter) GetServiceConfigValue(
 	ctx context.Context,
 	req *v1beta.GetServiceConfigValueRequest,
 ) (*v1beta.GetServiceConfigValueResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceGetServiceConfigValueOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceGetServiceConfigValueOverride](a.override); ok {
 		return override.GetServiceConfigValue(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1607,7 +1623,7 @@ func (a *betaProjectServiceAdapter) SetServiceConfigSection(
 	ctx context.Context,
 	req *v1beta.SetServiceConfigSectionRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceSetServiceConfigSectionOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceSetServiceConfigSectionOverride](a.override); ok {
 		return override.SetServiceConfigSection(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1624,7 +1640,7 @@ func (a *betaProjectServiceAdapter) SetServiceConfigValue(
 	ctx context.Context,
 	req *v1beta.SetServiceConfigValueRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceSetServiceConfigValueOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceSetServiceConfigValueOverride](a.override); ok {
 		return override.SetServiceConfigValue(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1641,7 +1657,7 @@ func (a *betaProjectServiceAdapter) UnsetServiceConfig(
 	ctx context.Context,
 	req *v1beta.UnsetServiceConfigRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaProjectServiceUnsetServiceConfigOverride); ok {
+	if override, ok := findBetaOverride[BetaProjectServiceUnsetServiceConfigOverride](a.override); ok {
 		return override.UnsetServiceConfig(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1666,7 +1682,7 @@ func (a *betaPromptServiceAdapter) PromptSubscription(
 	ctx context.Context,
 	req *v1beta.PromptSubscriptionRequest,
 ) (*v1beta.PromptSubscriptionResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptSubscriptionOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptSubscriptionOverride](a.override); ok {
 		return override.PromptSubscription(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1683,7 +1699,7 @@ func (a *betaPromptServiceAdapter) PromptLocation(
 	ctx context.Context,
 	req *v1beta.PromptLocationRequest,
 ) (*v1beta.PromptLocationResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptLocationOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptLocationOverride](a.override); ok {
 		return override.PromptLocation(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1700,7 +1716,7 @@ func (a *betaPromptServiceAdapter) PromptResourceGroup(
 	ctx context.Context,
 	req *v1beta.PromptResourceGroupRequest,
 ) (*v1beta.PromptResourceGroupResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptResourceGroupOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptResourceGroupOverride](a.override); ok {
 		return override.PromptResourceGroup(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1717,7 +1733,7 @@ func (a *betaPromptServiceAdapter) Confirm(
 	ctx context.Context,
 	req *v1beta.ConfirmRequest,
 ) (*v1beta.ConfirmResponse, error) {
-	if override, ok := a.override.(BetaPromptServiceConfirmOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServiceConfirmOverride](a.override); ok {
 		return override.Confirm(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1734,7 +1750,7 @@ func (a *betaPromptServiceAdapter) Prompt(
 	ctx context.Context,
 	req *v1beta.PromptRequest,
 ) (*v1beta.PromptResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptOverride](a.override); ok {
 		return override.Prompt(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1751,7 +1767,7 @@ func (a *betaPromptServiceAdapter) Select(
 	ctx context.Context,
 	req *v1beta.SelectRequest,
 ) (*v1beta.SelectResponse, error) {
-	if override, ok := a.override.(BetaPromptServiceSelectOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServiceSelectOverride](a.override); ok {
 		return override.Select(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1768,7 +1784,7 @@ func (a *betaPromptServiceAdapter) MultiSelect(
 	ctx context.Context,
 	req *v1beta.MultiSelectRequest,
 ) (*v1beta.MultiSelectResponse, error) {
-	if override, ok := a.override.(BetaPromptServiceMultiSelectOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServiceMultiSelectOverride](a.override); ok {
 		return override.MultiSelect(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1785,7 +1801,7 @@ func (a *betaPromptServiceAdapter) PromptSubscriptionResource(
 	ctx context.Context,
 	req *v1beta.PromptSubscriptionResourceRequest,
 ) (*v1beta.PromptSubscriptionResourceResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptSubscriptionResourceOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptSubscriptionResourceOverride](a.override); ok {
 		return override.PromptSubscriptionResource(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1802,7 +1818,7 @@ func (a *betaPromptServiceAdapter) PromptResourceGroupResource(
 	ctx context.Context,
 	req *v1beta.PromptResourceGroupResourceRequest,
 ) (*v1beta.PromptResourceGroupResourceResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptResourceGroupResourceOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptResourceGroupResourceOverride](a.override); ok {
 		return override.PromptResourceGroupResource(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1819,7 +1835,7 @@ func (a *betaPromptServiceAdapter) PromptAiModel(
 	ctx context.Context,
 	req *v1beta.PromptAiModelRequest,
 ) (*v1beta.PromptAiModelResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptAiModelOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptAiModelOverride](a.override); ok {
 		return override.PromptAiModel(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1836,7 +1852,7 @@ func (a *betaPromptServiceAdapter) PromptAiDeployment(
 	ctx context.Context,
 	req *v1beta.PromptAiDeploymentRequest,
 ) (*v1beta.PromptAiDeploymentResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptAiDeploymentOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptAiDeploymentOverride](a.override); ok {
 		return override.PromptAiDeployment(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1853,7 +1869,7 @@ func (a *betaPromptServiceAdapter) PromptAiLocationWithQuota(
 	ctx context.Context,
 	req *v1beta.PromptAiLocationWithQuotaRequest,
 ) (*v1beta.PromptAiLocationWithQuotaResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptAiLocationWithQuotaOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptAiLocationWithQuotaOverride](a.override); ok {
 		return override.PromptAiLocationWithQuota(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1870,7 +1886,7 @@ func (a *betaPromptServiceAdapter) PromptAiModelLocationWithQuota(
 	ctx context.Context,
 	req *v1beta.PromptAiModelLocationWithQuotaRequest,
 ) (*v1beta.PromptAiModelLocationWithQuotaResponse, error) {
-	if override, ok := a.override.(BetaPromptServicePromptAiModelLocationWithQuotaOverride); ok {
+	if override, ok := findBetaOverride[BetaPromptServicePromptAiModelLocationWithQuotaOverride](a.override); ok {
 		return override.PromptAiModelLocationWithQuota(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1894,7 +1910,7 @@ var _ v1beta.ProvisioningServiceServer = (*betaProvisioningServiceAdapter)(nil)
 func (a *betaProvisioningServiceAdapter) Stream(
 	stream grpc.BidiStreamingServer[v1beta.ProvisioningMessage, v1beta.ProvisioningMessage],
 ) error {
-	if override, ok := a.override.(BetaProvisioningServiceStreamOverride); ok {
+	if override, ok := findBetaOverride[BetaProvisioningServiceStreamOverride](a.override); ok {
 		return override.Stream(stream)
 	}
 	return a.stable.Stream(&versionedBidiServerStream[
@@ -1934,7 +1950,7 @@ var _ v1beta.ServiceTargetServiceServer = (*betaServiceTargetServiceAdapter)(nil
 func (a *betaServiceTargetServiceAdapter) Stream(
 	stream grpc.BidiStreamingServer[v1beta.ServiceTargetMessage, v1beta.ServiceTargetMessage],
 ) error {
-	if override, ok := a.override.(BetaServiceTargetServiceStreamOverride); ok {
+	if override, ok := findBetaOverride[BetaServiceTargetServiceStreamOverride](a.override); ok {
 		return override.Stream(stream)
 	}
 	return a.stable.Stream(&versionedBidiServerStream[
@@ -1975,7 +1991,7 @@ func (a *betaUserConfigServiceAdapter) Get(
 	ctx context.Context,
 	req *v1beta.GetUserConfigRequest,
 ) (*v1beta.GetUserConfigResponse, error) {
-	if override, ok := a.override.(BetaUserConfigServiceGetOverride); ok {
+	if override, ok := findBetaOverride[BetaUserConfigServiceGetOverride](a.override); ok {
 		return override.Get(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -1992,7 +2008,7 @@ func (a *betaUserConfigServiceAdapter) GetString(
 	ctx context.Context,
 	req *v1beta.GetUserConfigStringRequest,
 ) (*v1beta.GetUserConfigStringResponse, error) {
-	if override, ok := a.override.(BetaUserConfigServiceGetStringOverride); ok {
+	if override, ok := findBetaOverride[BetaUserConfigServiceGetStringOverride](a.override); ok {
 		return override.GetString(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -2009,7 +2025,7 @@ func (a *betaUserConfigServiceAdapter) GetSection(
 	ctx context.Context,
 	req *v1beta.GetUserConfigSectionRequest,
 ) (*v1beta.GetUserConfigSectionResponse, error) {
-	if override, ok := a.override.(BetaUserConfigServiceGetSectionOverride); ok {
+	if override, ok := findBetaOverride[BetaUserConfigServiceGetSectionOverride](a.override); ok {
 		return override.GetSection(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -2026,7 +2042,7 @@ func (a *betaUserConfigServiceAdapter) Set(
 	ctx context.Context,
 	req *v1beta.SetUserConfigRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaUserConfigServiceSetOverride); ok {
+	if override, ok := findBetaOverride[BetaUserConfigServiceSetOverride](a.override); ok {
 		return override.Set(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -2043,7 +2059,7 @@ func (a *betaUserConfigServiceAdapter) Unset(
 	ctx context.Context,
 	req *v1beta.UnsetUserConfigRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaUserConfigServiceUnsetOverride); ok {
+	if override, ok := findBetaOverride[BetaUserConfigServiceUnsetOverride](a.override); ok {
 		return override.Unset(ctx, req)
 	}
 	return adaptBetaUnary(
@@ -2067,7 +2083,7 @@ var _ v1beta.ValidationServiceServer = (*betaValidationServiceAdapter)(nil)
 func (a *betaValidationServiceAdapter) Stream(
 	stream grpc.BidiStreamingServer[v1beta.ValidationMessage, v1beta.ValidationMessage],
 ) error {
-	if override, ok := a.override.(BetaValidationServiceStreamOverride); ok {
+	if override, ok := findBetaOverride[BetaValidationServiceStreamOverride](a.override); ok {
 		return override.Stream(stream)
 	}
 	return a.stable.Stream(&versionedBidiServerStream[
@@ -2108,7 +2124,7 @@ func (a *betaWorkflowServiceAdapter) Run(
 	ctx context.Context,
 	req *v1beta.RunWorkflowRequest,
 ) (*v1beta.EmptyResponse, error) {
-	if override, ok := a.override.(BetaWorkflowServiceRunOverride); ok {
+	if override, ok := findBetaOverride[BetaWorkflowServiceRunOverride](a.override); ok {
 		return override.Run(ctx, req)
 	}
 	return adaptBetaUnary(

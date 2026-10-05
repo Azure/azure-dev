@@ -144,3 +144,14 @@ func Test_AzdClient_Telemetry(t *testing.T) {
 	require.NotNil(t, second)
 	require.NotSame(t, first, second)
 }
+
+func Test_AzdClient_ProjectBeta(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.ProjectBeta()
+	second := client.ProjectBeta()
+
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.NotSame(t, first, second)
+}

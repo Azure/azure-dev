@@ -19,6 +19,11 @@ therefore do not have stable `v1` generated types or facade aliases. The
 corresponding `AzdClient` convenience accessors return generated `v1beta`
 clients, and their request and response types come from `contracts/v1beta`.
 
+`AzdClient.ProjectBeta()` likewise exposes the generated preview project client
+without changing the stable `Project()` accessor. After consuming an SDK release
+containing it, use `ProjectBeta().GetAddServiceCapabilities` before opting into
+typed `AddService` completion acknowledgments.
+
 ## Channel policy
 
 `v1` is the compatibility-protected stable contract. Changes must be additive:
@@ -99,6 +104,19 @@ make host registration fail. Wire the override through the existing
 `NewServer` options rather than adding another constructor dependency. After
 the capability graduates to stable, the regenerated adapter automatically
 uses stable business logic when no override is configured.
+
+Built-in focused project overrides compose with caller overrides per method.
+A caller override for `Get`, for example, does not suppress the built-in
+`AddService` acknowledgment or read-only capability handler. Custom `AddService`
+implementations must explicitly supply their own capability response to advertise
+acknowledgment support.
+
+For preview fields absent from released SDKs, the evaluations extension snapshots
+canonical descriptors with `grpc/generateprojectclient` during `make proto` and
+uses a private dynamic registry. This avoids duplicate global registration and
+does not introduce a second schema. Keep this bridge temporary: after the SDK
+release, consume generated beta clients directly and update the minimum host
+before removing the old-host fallback.
 
 Stable handlers can return gRPC statuses containing stable contract messages
 in `Any` details. Before a beta response is sent, the host translates every

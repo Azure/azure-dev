@@ -32,6 +32,23 @@ type BetaService string
 // ServerOption customizes gRPC server construction.
 type ServerOption func(*Server)
 
+// betaOverrideChain composes focused overrides without claiming unrelated methods.
+type betaOverrideChain []any
+
+func findBetaOverride[T any](override any) (T, bool) {
+	if chain, ok := override.(betaOverrideChain); ok {
+		for _, candidate := range chain {
+			if value, ok := findBetaOverride[T](candidate); ok {
+				return value, true
+			}
+		}
+		var zero T
+		return zero, false
+	}
+	value, ok := override.(T)
+	return value, ok
+}
+
 // WithBetaServiceOverride supplies an implementation of one or more generated beta method override interfaces.
 // Shared beta methods dispatch to the override before adapting to stable business logic. Beta-only methods dispatch
 // to the override or return codes.Unimplemented.
@@ -51,6 +68,14 @@ func validateBetaServiceOverride(
 	focusedOverrides ...reflect.Type,
 ) error {
 	if override == nil {
+		return nil
+	}
+	if chain, ok := override.(betaOverrideChain); ok {
+		for _, candidate := range chain {
+			if err := validateBetaServiceOverride(service, candidate, wholeServer, focusedOverrides...); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
@@ -104,8 +129,9 @@ func (s *Server) registerServices() error {
 		}
 	}
 	if ps, ok := s.projectService.(*projectService); ok {
-		if _, supplied := betaServiceOverrides[BetaProjectService]; !supplied {
-			betaServiceOverrides[BetaProjectService] = &betaProjectServiceOverride{service: ps}
+		custom := betaServiceOverrides[BetaProjectService]
+		betaServiceOverrides[BetaProjectService] = betaOverrideChain{
+			custom, &betaProjectServiceOverride{service: ps, custom: custom},
 		}
 	}
 

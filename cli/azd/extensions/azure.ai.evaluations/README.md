@@ -204,11 +204,21 @@ is removed. Dataset files, artifact directories, lock files, and existing
 the host's save outcome is uncertain after cancellation or a connection failure,
 or rollback fails, init reports that recovery is incomplete and leaves an
 explicit inspection instruction rather than overwriting concurrent edits.
-Older azd hosts do not send this optional acknowledgment. On those hosts, init
+Init first checks the read-only beta `ProjectService.GetAddServiceCapabilities`
+RPC. Capable hosts receive a typed `operation_id`; rollback requires exactly one
+matching `AddServiceAcknowledgment` status detail. Missing, malformed, stale,
+wrong-type, or duplicate details retain the scaffold. Cancellation, authentication
+and transport errors never cause a mutating request to be replayed.
+An explicit unsupported response or an unavailable capability RPC selects the
+older stable path. Other capability failures stop before the root mutation.
+Older azd hosts do not send this typed acknowledgment. On those hosts, init
 retains the scaffold and reports manual recovery instead of promising an
 automatic retry. Inspect the retained eval and its root service reference;
 do not delete preexisting evaluations. This does not require a newer SDK or
-change the minimum supported host version.
+change the minimum supported host version (`>=1.33.0`). The compatibility-only
+fallback will be removed after the SDK/core release and minimum-host update.
+Canonical beta descriptors are generated into a private registry so this extension
+continues to build against its released SDK pin without local dependency overrides.
 Host builds with completed-operation acknowledgment also cover rejection before
 a save, including unsupported layered projects. Older installed hosts do not
 gain that behavior from an extension update. Completion is not proof that the

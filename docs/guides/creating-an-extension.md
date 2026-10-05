@@ -105,9 +105,12 @@ For extensions that are still in development or preview, consider publishing to 
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
 For `Project.AddService`, use the optional
 [save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),
-fresh per-call metadata, and local ownership checks before compensating local
-edits. Older hosts require retention and explicit recovery guidance rather than
-status-code-based rollback.
+the read-only beta `GetAddServiceCapabilities` RPC, a fresh typed operation ID,
+and local ownership checks before compensating local edits. Only an explicit
+unsupported response or `Unimplemented` from the capability RPC selects an older
+host path. Never retry a failed mutating RPC on another channel. Older hosts
+require retention and explicit recovery guidance rather than status-code-based
+rollback; do not trust custom metadata/trailers as a substitute for the typed API.
 The acknowledgment covers completed pre-save rejections only on host builds
 that implement that behavior. It proves that the operation cannot write later;
 it does not replace a root-file comparison or ownership checks.

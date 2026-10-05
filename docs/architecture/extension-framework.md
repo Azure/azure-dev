@@ -88,49 +88,44 @@ For directly invoked extension commands, the host preserves the extension proces
 
 ### Project service save acknowledgment
 
-`Project.AddService` supports an optional completion acknowledgment for callers
-that compensate their own local edits after a failed root save. The caller sends
-one fresh `azd-project-add-service-operation` metadata value (at most 64 bytes).
-On a returned error after acquiring the project mutation lock, the host echoes
-that value in the `azd-project-add-service-save-failed` trailer only after the
-operation has completed. This includes rejection before a save (such as an
-unsupported layered project) and a failed synchronous `project.Save`, including
-its file-write retries, cleanup, and restoration of the previous cached service.
-The acknowledgment is sent before releasing the mutation lock. Success, panics,
-and errors rejected before the lock do not carry it.
+The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.
+This read-only RPC advertises whether the active `AddService` implementation
+supports `AddServiceRequest.operation_id` and `AddServiceAcknowledgment` status
+details. An unrelated focused beta override does not disable the built-in
+implementation. A custom `AddService` override must explicitly advertise its
+own support; the built-in capability response otherwise reports false.
 
-A caller must capture fresh trailers for this invocation and require exactly one
-matching value before considering compensation. Status codes or trailer presence
-alone are not proof: cancellation, transport failures and malformed responses
-can be observed before a host write finishes. The acknowledgment is not a
-cross-file transaction; callers must still protect their own edits with locks
-and ownership checks. Missing, mismatched or duplicate values are uncertain
-outcomes, including when running on an older host, and require safe retention
-and explicit recovery guidance. Completion means the operation cannot write
-later, not that it wrote nothing before failing: compare root-file bytes and
-preserve local ownership checks before compensating.
+When supported, the caller supplies a fresh operation ID and makes exactly one
+beta `AddService` call. A failed operation that acquired the project mutation
+lock attaches an `AddServiceAcknowledgment` detail echoing that ID. Completion,
+including synchronous save retries, cleanup, and cache restoration, happens
+under the mutation lock. The status detail is serialized after the shared
+mutation helper returns and releases that lock. Success, panics, and errors
+rejected before the lock do not carry a failure acknowledgment. Detail-attachment
+failures are explicit internal errors, not confirmed completion.
 
-This optional metadata contract adds no RPC or protobuf field and requires no
-SDK-version bump. An extension using an older released SDK can use ordinary
-gRPC metadata and trailer call options. The wire names are intentionally
-duplicated across the host and such extensions; keep them aligned.
-Earlier hosts that acknowledge only failed save attempts still leave pre-save
-errors uncertain to clients. Installing an updated extension alone does not
-enable the broader acknowledgment; it requires a host build containing it.
+Require exactly one well-formed matching detail before compensating local
+edits. Missing, malformed, stale, wrong-type, or duplicate details are uncertain
+outcomes. Cancellation, deadlines, authentication/authorization and transport
+failures are not safe completion signals. Completion is not proof that the
+root file stayed unchanged: retain root-byte comparisons, local locks, and
+ownership checks before rollback.
 
-A `v1beta` caller uses a typed contract for the same acknowledgment instead of
-the metadata/trailer convention, so the capability is discoverable from the
-beta service definition and generated clients rather than relying on an
-undocumented header name. The caller sets `AddServiceRequest.operation_id`
-(the typed counterpart of the `azd-project-add-service-operation` metadata
-value). On the same acknowledged failures described above, the host attaches
-an `AddServiceAcknowledgment` message (echoing `operation_id`) as a
-`google.rpc.Status` detail on the returned error, instead of a trailer. Both
-transports share the same core mutation logic and acknowledgment timing; only
-the operation-identifier transport and the acknowledgment surface differ. A
-caller on an older beta SDK without the `operation_id` field is unaffected and
-simply does not opt in, the same as a `v1` caller that supplies no metadata
-value.
+An explicit false capability response or `Unimplemented` from the read-only
+RPC selects the older stable host path. Other capability errors stop before
+mutation; errors from the subsequent mutation never trigger a fallback replay.
+Older hosts can still succeed normally, but failed saves retain the scaffold
+with manual recovery guidance. This backward-compatibility path must be removed
+after the SDK/core release and a minimum-host-version update.
+
+The evaluations extension currently uses a private dynamic descriptor registry
+generated from the canonical beta schema by `grpc/generateprojectclient`.
+This permits reproducible builds with its released SDK pin, without a local
+replace, pseudo-version, duplicate schema, or conflicting global protobuf
+registration. Both SDK v1.34.0 and v1.35.0 lack these new project fields; upgrading
+to v1.35.0 alone would not make them available. Regeneration is part of `make proto`.
+The existing stable metadata/trailer transport remains for already-built
+clients only; evaluations init no longer sends or trusts it.
 
 ## Deployment Preview
 

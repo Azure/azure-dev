@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -19,9 +20,19 @@ import (
 // save acknowledgment" section of docs/architecture/extension-framework.md.
 type betaProjectServiceOverride struct {
 	service *projectService
+	custom  any
 }
 
 var _ BetaProjectServiceAddServiceOverride = (*betaProjectServiceOverride)(nil)
+
+// GetAddServiceCapabilities only advertises the built-in acknowledgment implementation.
+// A custom AddService override must supply its own capability implementation to opt in.
+func (o *betaProjectServiceOverride) GetAddServiceCapabilities(
+	context.Context, *v1beta.EmptyRequest,
+) (*v1beta.GetAddServiceCapabilitiesResponse, error) {
+	_, custom := findBetaOverride[BetaProjectServiceAddServiceOverride](o.custom)
+	return &v1beta.GetAddServiceCapabilitiesResponse{AcknowledgmentSupported: !custom}, nil
+}
 
 // AddService adapts the v1beta AddServiceRequest.operation_id field onto the shared mutation
 // logic. On an acknowledged failure it attaches an AddServiceAcknowledgment detail to the
@@ -38,13 +49,14 @@ func (o *betaProjectServiceOverride) AddService(
 	acknowledged, err := o.service.addService(ctx, stableReq, req.GetOperationId())
 	if err != nil {
 		if acknowledged {
-			if withDetails, detailErr := status.Convert(err).WithDetails(
+			withDetails, detailErr := status.Convert(err).WithDetails(
 				&v1beta.AddServiceAcknowledgment{OperationId: req.GetOperationId()},
-			); detailErr == nil {
+			)
+			if detailErr == nil {
 				return nil, withDetails.Err()
 			}
-			// Attaching the detail failed; return the original acknowledged error rather than
-			// silently downgrading to an unacknowledged one.
+			return nil, status.Errorf(codes.Internal,
+				"AddService failed: %v; attaching completion acknowledgment: %v", err, detailErr)
 		}
 		return nil, err
 	}

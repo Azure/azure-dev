@@ -35,6 +35,10 @@ the Go contracts under `pkg/azdext/contracts/v1` and
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
+It also snapshots the canonical beta project descriptor set for the evaluations
+extension's released-SDK-compatible private dynamic client with
+`grpc/generateprojectclient`. Do not edit this generated snapshot or duplicate
+the protobuf schema in the extension.
 Before generating bindings, it compiles descriptor sets for the stable
 scaffold protos and canonical `v1` protos and verifies that every scaffold
 message, enum, service, and method remains a wire-compatible subset of the

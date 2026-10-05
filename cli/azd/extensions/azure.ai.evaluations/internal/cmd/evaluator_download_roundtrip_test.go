@@ -135,7 +135,8 @@ func TestEvaluatorDownloadRoundTripWithDeclaration(t *testing.T) {
 	definition, ok := body["definition"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, 0.7, definition["pass_threshold"])
-	require.Len(t, definition, 3, "only authored rubric fields are published")
+	require.Len(t, definition, 4, "unknown authored rubric fields are published too")
+	require.Contains(t, definition, "future_option")
 
 	ec.state = nil
 	version, published, err = r.EnsureEvaluator(t.Context(), decl, path)
@@ -186,7 +187,8 @@ func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
 			definition, ok := published["definition"].(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, 0.7, definition["pass_threshold"])
-			require.Len(t, definition, 3, "only authored rubric fields are published")
+			require.Len(t, definition, 4, "unknown authored rubric fields are published too")
+			require.Contains(t, definition, "future_option")
 			require.True(t, json.Valid([]byte(out.String())), "update stdout remains one JSON document")
 		})
 	}
@@ -289,8 +291,10 @@ func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
 				assert.Equal(t, wantLevels, published["supported_evaluation_levels"])
 				assert.NotContains(t, published, "created_at")
 				assert.NotContains(t, published, "agent_metadata")
-				assert.NotContains(t, string(service.versions["4"]), "9007199254740993",
-					"unknown service metadata must not return through the editable file")
+				assert.Contains(t, string(service.versions["4"]), "9007199254740993",
+					"unknown authored numeric fields must survive publication without rounding")
+				assert.NotContains(t, string(service.versions["4"]), "internal_count")
+				assert.NotContains(t, string(service.versions["4"]), "service-only-definition-metadata")
 				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
 				assert.Equal(t, 1, service.publishes, "unchanged retry must not publish a fifth version")
 				assert.Len(t, service.created, 1, "metadata inheritance must not turn latest into an authored pin")

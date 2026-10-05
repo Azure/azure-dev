@@ -1005,7 +1005,7 @@ func TestSimulationRegisteredIdentityRemainsStrict(t *testing.T) {
 	}
 }
 
-func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
+func TestRunTraceRerunWithSampleSchemaRejectsExplicitDatasetCaps(t *testing.T) {
 	for _, sourceType := range []string{"azure_ai_traces", "azure_ai_trace_data_source_preview"} {
 		for _, cap := range []string{"", "0", "1"} {
 			t.Run(sourceType+"/"+cap, func(t *testing.T) {
@@ -1026,6 +1026,81 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 						schemaReads++
 						_, err := io.WriteString(w,
 							`{"id":"eval_trace","data_source_config":{"type":"custom","include_sample_schema":false}}`)
+						assert.NoError(t, err)
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
+						reads++
+						assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": []any{
+							map[string]any{"id": "previous", "data_source": source},
+						}}))
+					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/eval_trace/runs"):
+						posts++
+						_, err := io.WriteString(w, `{"id":"run_trace","status":"queued"}`)
+						assert.NoError(t, err)
+					default:
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+						w.WriteHeader(http.StatusBadRequest)
+					}
+				}))
+				t.Cleanup(srv.Close)
+				var out bytes.Buffer
+				command := buildRunCommand("start", "")
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				command.Flags().String("output", "json", "")
+				if cap != "" {
+					require.NoError(t, command.Flags().Set("max-samples", cap))
+				}
+				flag, err := command.Flags().GetInt("max-samples")
+				require.NoError(t, err)
+				action := &runStartAction{
+					cmd: command, flags: &runStartFlags{
+						groupName: "eval_trace", evalPath: t.TempDir(), maxSamples: flag,
+					},
+					newContext: func(context.Context, string) (*evalContext, error) {
+						return evalContextFor(srv), nil
+					},
+				}
+				err = action.Run()
+				if cap == "" {
+					require.NoError(t, err)
+					assert.Equal(t, 1, reads)
+					assert.Equal(t, 1, schemaReads)
+					assert.Equal(t, 1, posts)
+				} else {
+					require.ErrorContains(t, err, "max-samples")
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					assert.Zero(t, reads)
+					assert.Zero(t, schemaReads)
+					assert.Zero(t, posts)
+					assert.Empty(t, out.String())
+				}
+			})
+		}
+	}
+}
+
+func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
+	for _, sourceType := range []string{"azure_ai_traces", "azure_ai_trace_data_source_preview"} {
+		for _, cap := range []string{"", "0", "1"} {
+			t.Run(sourceType+"/"+cap, func(t *testing.T) {
+				reads, posts, schemaReads := 0, 0, 0
+				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
+				if sourceType == "azure_ai_trace_data_source_preview" {
+					source = map[string]any{
+						"type": sourceType,
+						"trace_source": map[string]any{
+							"type": "agent_filter", "agent_name": "agent", "start_time": 1, "end_time": 2,
+						},
+					}
+				}
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_trace"):
+						schemaReads++
+						_, err := io.WriteString(w, `{"id":"eval_trace","data_source_config":{"type":"custom"}}`)
 						assert.NoError(t, err)
 					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
 						reads++

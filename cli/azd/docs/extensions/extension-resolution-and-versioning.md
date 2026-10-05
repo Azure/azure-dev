@@ -145,6 +145,168 @@ requiredVersions:
 
 When multiple versions satisfy the constraint, `azd` selects the **highest** matching version. For example, if versions `1.0.0`, `1.1.0`, and `1.2.0` are available and the constraint is `^1.0.0`, version `1.2.0` is installed.
 
+### Correcting a Historical Version Scheme
+
+Registry schema 1.1 adds `versionMigrations` for the exceptional case where released versions used a semantic version that accidentally sorts above the corrected release line. The metadata is declared on the extension, not in `azd` code:
+
+```json
+{
+  "id": "example.extension",
+  "versionMigrations": [
+    {
+      "from": "1.0.47-beta",
+      "to": "1.0.0-beta.1"
+    }
+  ],
+  "versions": [
+    {
+      "version": "1.0.0-beta.1"
+    }
+  ]
+}
+```
+
+This places the exact `from` version immediately before `to` for latest-version, update, downgrade-guard, and source-promotion comparisons. `to` and later semantic versions are therefore valid successors even when raw SemVer would rank `from` higher. The `from` version may be historical and absent from the current registry; `to` must be published by the same extension.
+
+Migration metadata does **not** change version constraint eligibility. Exact pins still select the pinned version, and ranges still apply normal SemVer prerelease rules before migration ordering chooses among eligible releases. Extensions without `versionMigrations` retain strict SemVer behavior.
+
+Registry validation requires `from` to have higher raw SemVer precedence than `to` and rejects malformed versions, duplicate `from` entries, unpublished `to` versions, self-migrations, and chained migrations. Use this mechanism only to repair an already-published ordering mistake; do not use it to avoid normal SemVer versioning.
+
+### Stage the Host Before Migrating Installed Extensions
+
+Migration metadata only takes effect in a host that implements `versionMigrations`.
+Accepting registry schema 1.1 does not prove that capability: azd 1.34.2 accepts the
+new minor schema, ignores the migration field, and skips an update from installed
+`1.0.47-beta` to `1.0.0-beta.1`, including an explicit update `--version` request.
+Its success exit code can therefore describe a skipped update, not a migration.
+An extension's `requiredAzdVersion` does not retrofit migration support into that host.
+
+Before publishing a migration-dependent registry change, release and verify a host
+containing the migration implementation. Record the actual containing host release,
+artifact checksum and installed-host acceptance; do not infer a minimum release from
+a local build, an SDK version or a schema number. Registry publication remains blocked
+until that containing host is available and the old-host recovery instructions are
+verified. This source implementation does not establish an official containing release.
+
+For an already-installed historical version:
+
+1. Record `azd version`, `azd extension list --installed --output json` and
+   `azd extension source list`. Preserve the existing user configuration, extension
+   files and project/evaluation history.
+2. Install the verified migration-capable host through the
+   [azd installation instructions](https://aka.ms/azd/install). Run `azd version`
+   again and verify the executable selected by your shell. Keep the same configuration
+   directory and registered source; do not uninstall the extension or reset its state.
+3. Use that host to update from the original source, then verify the installed version:
+
+   ```bash
+   azd extension update <extension-id> --source <registered-source> --no-prompt
+   azd extension list --installed --output json
+   ```
+
+The migration-capable host preserves the target's previous files and installed record
+while replacing it. If replacement fails, it attempts to restore both and reports the
+failure with a nonzero exit code. A failed recovery is reported explicitly, including
+the retained backup path when file restoration fails. Completed dependency updates are
+not rolled back. After correcting an unavailable artifact or checksum, retry the same
+update; do not use a state reset, alias, forced downgrade or modified SemVer comparator.
+This recovery is for handled command failures, not a guarantee against a process crash.
+
+An exact historical pin still requires its original registry entry and artifact.
+`versionMigrations` does not create either. Preserve immutable historical releases and
+checksums, including public builds 46 and 47; if a version was already absent from the
+registry before this change, report that absence separately rather than manufacturing
+history or claiming the migration makes that version installable again.
+
+`Test_CLI_Extension_MigrationHostStaging` runs the official azd 1.34.2 executable
+provided by `CLI_TEST_LEGACY_AZD_PATH` and the candidate host against one isolated
+configuration. It verifies the old-host skip, host staging without a reset, failed
+replacement recovery, successful retry and rejection of a missing historical pin.
+Its extension artifacts are local fixtures, not proof of public historical artifacts
+or official delivery of the candidate host.
+
+### Resolve an Exact Historical Pin from Its Authoritative Source
+
+An exact pin resolves only when the selected source's `versions[]` contains that
+version and its unchanged artifact is available for the requested platform.
+`versionMigrations` changes ordering; it does not supply missing version entries,
+artifact URLs or historical bytes.
+
+If an authoritative historical source retains the original entry and artifact,
+verify its immutable registry URL, registry checksum and artifact checksum first.
+Use a URL pinned to an actual commit or immutable release, not a moving branch.
+For an absent extension, register that source before a non-interactive install:
+
+```bash
+# Replace the placeholders with verified historical metadata and an exact version.
+azd extension source add -n historical-source -t url -l "<immutable-registry-url>" --no-prompt
+azd extension install <extension-id> --source historical-source --version <exact-version> --no-prompt
+azd extension list --installed --output json
+```
+
+The URL is a placeholder, not an Azure canonical registry or an approved feed.
+Direct installation from an unregistered URL can fail under `--no-prompt`;
+explicit source registration avoids silently accepting a new source during install.
+Verify the resulting installed version, selected source and binary checksum.
+
+An absent evaluations extension was installed in an isolated configuration using
+official azd 1.34.2 and the personal feed
+[registry at commit `55c6030`](https://github.com/m7md7sien/azd-foundry-feed/blob/55c603038d48d7a88193d17c8c1f7ed50b77dde2/registry.json).
+The preserved registry bytes contain `1.0.47-beta` and match SHA-256
+`6276596740a5d976d48cc144df3a5afbe697ec02c44c4b2fac6868458e078cdc`.
+Its immutable Windows archive matches
+`d98e2b9d5808bfe6cd75f335b941ce377ec4386fe77e6a881f1e8f614ac062ca`;
+the executable member and installed binary match
+`a0301e37af02ac40c069d73151d3cab21aa02b9210c0c96d35d43bd1e1269c26`.
+The native `azd ai eval version` command reports
+`azure.ai.evaluations 1.0.47-beta` with exit code zero.
+
+This establishes a personal-source exact-pin install and binary identity, not a
+completed migration or canonical Azure history. The canonical Azure registry still
+lacks the historical `1.0.47-beta` entry; official `1.0.0-beta.1` metadata cannot
+substitute for it. The original artifact manifest identifies source `ec25f89` but
+records `sourcePublished=false`, and the executable's Go build information lacks
+a VCS revision or linker source binding. Binary-to-source correspondence therefore
+remains unproven. Dataset installation and an existing-installation migration or
+recovery journey were not established by this exact-pin demonstration.
+
+For an existing installation, preserve its configuration, files and history, and
+honor replacement and source-change confirmations or non-interactive errors.
+Do not add `--force`, uninstall or reset state to bypass those decisions.
+Canonical Azure historical pins still require authoritative metadata in the
+applicable canonical source or an explicit source-policy disposition. This guide
+does not authorize registry changes, dataset normalization, GA policy or a new feed
+identity, and does not resolve the historical-pin tracking requirement by itself.
+Keep the [containing-host staging requirement](#stage-the-host-before-migrating-installed-extensions)
+separate from this historical-source route.
+
+### Check Each Extension's Normalization Contract
+
+Migration ordering is scoped to one extension and one exact historical version.
+An evaluation migration does not authorize or implement a dataset migration. Under
+ordinary SemVer, dataset `1.0.0-beta.35` is newer than `1.0.0-beta.1`. Without a
+dataset migration, even a migration-capable host skips that replacement through
+`azd extension update`, including an exact `--version 1.0.0-beta.1` request.
+A same-source install over the existing version remains a downgrade and asks for
+confirmation. In `--no-prompt` mode, an explicit `--version` request fails instead
+of being ignored; without an explicit version it skips, unless `--force` was requested.
+Neither uninstall/reinstall nor forced replacement is the supported migration journey.
+
+A fresh install can select the corrected version when the registry publishes it
+and its host requirement is satisfied; that proves neither an installed-user
+upgrade nor historical pin availability. An exact historical pin still requires
+the original version entry and artifact. An approved migration changes update
+ordering, not raw SemVer pin or range eligibility, and cannot recover an absent
+historical release.
+
+Before preparing a registry update, bind each newly built artifact's host
+requirement to its actual manifest, rather than copying an older registry
+constraint. For example, `>=1.27.1` and `>=1.33.0` admit different hosts.
+Keep immutable historical metadata and artifacts unchanged. Independently approve
+any dataset normalization transition and stage the verified containing host before
+publishing migration-dependent metadata; neither manifest floor proves that host
+has been released.
+
 ## azd Version Compatibility
 
 ### `requiredAzdVersion` Field
@@ -428,6 +590,8 @@ Use pre-release suffixes for testing before a stable release:
 ```
 
 When `latest` is specified (or the version is omitted), `azd` selects the **highest semantic version**, which can be a pre-release if it sorts higher than the latest stable version. For semver range constraints in `azure.yaml`, pre-release versions are generally excluded unless the constraint itself explicitly includes a pre-release identifier.
+
+If a published prerelease used an incorrect scheme that blocks its corrected successor, add a validated [`versionMigrations`](#correcting-a-historical-version-scheme) entry in the registry publication change. Do not renumber a corrected prerelease solely to outrank the mistake.
 
 ## Troubleshooting
 

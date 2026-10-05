@@ -220,9 +220,10 @@ func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationR
 	for i, ver := range ext.Versions {
 		validateVersion(&result, ext.Id, i, &ver, strict)
 	}
+	validateVersionMigrations(&result, ext)
 
-	// Find latest version using semver ordering
-	latestVer := findLatestVersion(ext.Versions)
+	// Find latest version using semver and declared migration ordering.
+	latestVer := findLatestVersion(ext)
 	if latestVer != nil {
 		result.LatestVersion = latestVer.Version
 		result.Capabilities = latestVer.Capabilities
@@ -236,29 +237,82 @@ func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationR
 	return result
 }
 
-// findLatestVersion finds the latest version using strict semver ordering.
-func findLatestVersion(versions []ExtensionVersion) *ExtensionVersion {
+func findLatestVersion(ext *ExtensionMetadata) *ExtensionVersion {
 	var latest *ExtensionVersion
-	var latestSemver *semver.Version
-
-	for i := range versions {
-		v, err := semver.StrictNewVersion(versions[i].Version)
-		if err != nil {
+	for i := range ext.Versions {
+		if _, err := semver.StrictNewVersion(ext.Versions[i].Version); err != nil {
 			continue
 		}
+		if latest == nil ||
+			CompareExtensionVersions(ext, ext.Versions[i].Version, latest.Version) > 0 {
+			latest = &ext.Versions[i]
+		}
+	}
+	if latest == nil && len(ext.Versions) > 0 {
+		return &ext.Versions[len(ext.Versions)-1]
+	}
+	return latest
+}
 
-		if latestSemver == nil || v.GreaterThan(latestSemver) {
-			latest = &versions[i]
-			latestSemver = v
+func validateVersionMigrations(result *ExtensionValidationResult, ext *ExtensionMetadata) {
+	published := make(map[string]struct{}, len(ext.Versions))
+	for _, version := range ext.Versions {
+		published[version.Version] = struct{}{}
+	}
+
+	fromVersions := make(map[string]int, len(ext.VersionMigrations))
+	for i, migration := range ext.VersionMigrations {
+		prefix := fmt.Sprintf("versionMigrations[%d]", i)
+		from, fromErr := semver.StrictNewVersion(migration.From)
+		if fromErr != nil {
+			result.addError(fmt.Sprintf(
+				"%s.from: invalid semver format %q", prefix, migration.From,
+			))
+		}
+		to, toErr := semver.StrictNewVersion(migration.To)
+		if toErr != nil {
+			result.addError(fmt.Sprintf(
+				"%s.to: invalid semver format %q", prefix, migration.To,
+			))
+		}
+		if migration.From == migration.To {
+			result.addError(fmt.Sprintf("%s: 'from' and 'to' must differ", prefix))
+		}
+		if fromErr == nil && toErr == nil && !from.GreaterThan(to) {
+			result.addError(fmt.Sprintf(
+				"%s: 'from' must have higher raw semantic-version precedence than 'to'",
+				prefix,
+			))
+		}
+		if _, ok := published[migration.To]; !ok {
+			result.addError(fmt.Sprintf(
+				"%s.to: successor version %q is not published by this extension",
+				prefix,
+				migration.To,
+			))
+		}
+		if previous, ok := fromVersions[migration.From]; ok {
+			result.addError(fmt.Sprintf(
+				"%s.from: version %q is already migrated by versionMigrations[%d]",
+				prefix,
+				migration.From,
+				previous,
+			))
+		} else {
+			fromVersions[migration.From] = i
 		}
 	}
 
-	// If no valid semver found, fall back to last element
-	if latest == nil && len(versions) > 0 {
-		latest = &versions[len(versions)-1]
+	for i, migration := range ext.VersionMigrations {
+		if successorIndex, ok := fromVersions[migration.To]; ok {
+			result.addError(fmt.Sprintf(
+				"versionMigrations[%d].to: successor version %q cannot also be migrated by versionMigrations[%d]",
+				i,
+				migration.To,
+				successorIndex,
+			))
+		}
 	}
-
-	return latest
 }
 
 // validateVersion validates a single version entry within an extension.

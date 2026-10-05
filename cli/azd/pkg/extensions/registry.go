@@ -24,7 +24,7 @@ type Provider struct {
 }
 
 // CurrentRegistrySchemaVersion is the current registry schema version that azd produces.
-const CurrentRegistrySchemaVersion = "1.0"
+const CurrentRegistrySchemaVersion = "1.1"
 
 // MaxSupportedMajorVersion is the highest major schema version this version of azd can consume.
 const MaxSupportedMajorVersion = 1
@@ -80,6 +80,9 @@ type ExtensionMetadata struct {
 	Description string `json:"description"`
 	// Website is the URL to the extension's documentation or homepage
 	Website string `json:"website,omitempty"`
+	// VersionMigrations defines exceptional ordering for historical versions that used an
+	// incorrect version scheme. Each exact From version sorts immediately before To.
+	VersionMigrations []ExtensionVersionMigration `json:"versionMigrations,omitempty"`
 	// Versions is a list of versions of the extension that are released over time.
 	Versions []ExtensionVersion `json:"versions"`
 	// Source is used to store the extension source from where the extension is fetched
@@ -90,6 +93,15 @@ type ExtensionMetadata struct {
 	Tags []string `json:"tags,omitempty"`
 	// Platforms is a map of platform specific metadata required for extensions
 	Platforms map[string]map[string]any `json:"platforms,omitempty"`
+}
+
+// ExtensionVersionMigration rebases one exact historical version immediately before a
+// published successor version without changing normal semantic-version constraint matching.
+type ExtensionVersionMigration struct {
+	// From is the exact historical version that used the old ordering scheme.
+	From string `json:"from"`
+	// To is the first published version in the corrected ordering scheme.
+	To string `json:"to"`
 }
 
 // SourceCategoryOrUnknown returns the source category, defaulting legacy metadata to unknown.

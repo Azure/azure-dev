@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -263,7 +264,8 @@ func TestConfirmSourceChange(t *testing.T) {
 		action := newConfirmTestAction(console, false)
 
 		proceed, err := action.confirmSourceChange(
-			context.Background(), "Installing", installed.Id, installed, extensions.BundleSourceName, "1.0.0",
+			context.Background(), "Installing", installed.Id, installed,
+			&extensions.ExtensionMetadata{Source: extensions.BundleSourceName}, "1.0.0",
 		)
 		require.NoError(t, err)
 		require.True(t, proceed)
@@ -277,7 +279,8 @@ func TestConfirmSourceChange(t *testing.T) {
 		action := newConfirmTestAction(console, false)
 
 		proceed, err := action.confirmSourceChange(
-			context.Background(), "Installing", installed.Id, installed, extensions.BundleSourceName, "2.0.0",
+			context.Background(), "Installing", installed.Id, installed,
+			&extensions.ExtensionMetadata{Source: extensions.BundleSourceName}, "2.0.0",
 		)
 		require.NoError(t, err)
 		require.True(t, proceed)
@@ -291,7 +294,8 @@ func TestConfirmSourceChange(t *testing.T) {
 		action := newConfirmTestAction(console, false)
 
 		proceed, err := action.confirmSourceChange(
-			context.Background(), "Installing", installed.Id, installed, extensions.BundleSourceName, "0.9.0",
+			context.Background(), "Installing", installed.Id, installed,
+			&extensions.ExtensionMetadata{Source: extensions.BundleSourceName}, "0.9.0",
 		)
 		require.NoError(t, err)
 		require.False(t, proceed)
@@ -312,7 +316,8 @@ func TestConfirmSourceChange(t *testing.T) {
 		action := newConfirmTestAction(console, false)
 
 		proceed, err := action.confirmSourceChange(
-			context.Background(), "Installing", bundleInstalled.Id, bundleInstalled, "azd", "1.0.0",
+			context.Background(), "Installing", bundleInstalled.Id, bundleInstalled,
+			&extensions.ExtensionMetadata{Source: "azd"}, "1.0.0",
 		)
 		require.NoError(t, err)
 		require.True(t, proceed)
@@ -326,7 +331,8 @@ func TestConfirmSourceChange(t *testing.T) {
 		action := newConfirmTestAction(console, true)
 
 		proceed, err := action.confirmSourceChange(
-			context.Background(), "Installing", installed.Id, installed, extensions.BundleSourceName, "1.0.0",
+			context.Background(), "Installing", installed.Id, installed,
+			&extensions.ExtensionMetadata{Source: extensions.BundleSourceName}, "1.0.0",
 		)
 		require.NoError(t, err)
 		require.False(t, proceed)
@@ -336,9 +342,9 @@ func TestConfirmSourceChange(t *testing.T) {
 // lastConfirmQuestion returns the latest prompt from the mock console.
 func lastConfirmQuestion(console *mockinput.MockConsole) string {
 	out := console.Output()
-	for i := len(out) - 1; i >= 0; i-- {
-		if strings.HasSuffix(strings.TrimSpace(out[i]), "?") {
-			return out[i]
+	for _, o := range slices.Backward(out) {
+		if strings.HasSuffix(strings.TrimSpace(o), "?") {
+			return o
 		}
 	}
 	return ""
@@ -404,7 +410,7 @@ func TestVersionTransitionVerb(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		require.Equal(t, tc.expected, versionTransitionVerb(tc.installed, tc.target),
+		require.Equal(t, tc.expected, versionTransitionVerb(nil, tc.installed, tc.target),
 			"installed=%s target=%s", tc.installed, tc.target)
 	}
 }

@@ -78,6 +78,7 @@ func TestExtensionInstall_ExplicitVersion(t *testing.T) {
 		force           bool
 		interactive     bool
 		confirm         bool
+		migrations      []extensions.ExtensionVersionMigration
 		wantError       bool
 		wantInstall     bool
 	}{
@@ -113,6 +114,15 @@ func TestExtensionInstall_ExplicitVersion(t *testing.T) {
 		{
 			name: "same source upgrade", installed: older, installedSource: "test",
 			requested: newer, target: newer, wantInstall: true,
+		},
+		{
+			name:      "declared migration is an upgrade",
+			installed: "1.0.47-beta", installedSource: "test",
+			target: "1.0.0-beta.1", wantInstall: true,
+			migrations: []extensions.ExtensionVersionMigration{{
+				From: "1.0.47-beta",
+				To:   "1.0.0-beta.1",
+			}},
 		},
 		{name: "default downgrade still skips", installed: newer, installedSource: "test", target: older},
 		{
@@ -158,7 +168,7 @@ func TestExtensionInstall_ExplicitVersion(t *testing.T) {
 			mockCtx := mocks.NewMockContext(t.Context())
 			manager, sourceManager := createUpgradeTestManager(t, mockCtx, installed,
 				"https://test.example.com/version-registry.json", testRegistry(&extensions.ExtensionMetadata{
-					Id: id, Source: "test",
+					Id: id, Source: "test", VersionMigrations: tt.migrations,
 					Versions: []extensions.ExtensionVersion{{
 						Version: tt.target, EntryPoint: entryPoint,
 						Artifacts: map[string]extensions.ExtensionArtifact{

@@ -63,29 +63,32 @@ func (c *UpdateChecker) CheckForUpdate(
 	}
 
 	// Get latest version from cache
-	latestVersion, err := c.cacheManager.GetExtensionLatestVersion(ctx, extension.Source, extension.Id)
+	metadata, err := c.cacheManager.GetExtension(ctx, extension.Source, extension.Id)
 	if err != nil {
 		// Cache miss or extension not found - not an error, just no update info
 		log.Printf("could not get latest version for %s: %v", extension.Id, err)
 		return result, nil
 	}
+	latest := LatestExtensionVersion(metadata)
+	if latest == nil {
+		log.Printf("extension %s has no published versions", extension.Id)
+		return result, nil
+	}
+	latestVersion := latest.Version
 
 	result.LatestVersion = latestVersion
 
-	// Compare versions using semver
-	installed, err := semver.NewVersion(extension.Version)
-	if err != nil {
+	if _, err := semver.NewVersion(extension.Version); err != nil {
 		log.Printf("failed to parse installed version %s: %v", extension.Version, err)
 		return result, nil
 	}
 
-	latest, err := semver.NewVersion(latestVersion)
-	if err != nil {
+	if _, err := semver.NewVersion(latestVersion); err != nil {
 		log.Printf("failed to parse latest version %s: %v", latestVersion, err)
 		return result, nil
 	}
 
-	result.HasUpdate = latest.GreaterThan(installed)
+	result.HasUpdate = IsExtensionVersionUpgrade(metadata, extension.Version, latestVersion)
 	return result, nil
 }
 

@@ -425,3 +425,34 @@ func Test_LatestVersion(t *testing.T) {
 		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
 	})
 }
+
+func Test_VersionMigrationOrdering(t *testing.T) {
+	t.Parallel()
+
+	extension := &ExtensionMetadata{
+		VersionMigrations: []ExtensionVersionMigration{{
+			From: "1.0.47-beta",
+			To:   "1.0.0-beta.1",
+		}},
+		Versions: []ExtensionVersion{
+			{Version: "1.0.47-beta"},
+			{Version: "1.0.0-beta.1"},
+			{Version: "1.0.0-beta.2"},
+		},
+	}
+
+	require.Equal(t, "1.0.0-beta.2", LatestExtensionVersion(extension).Version)
+	require.True(t, IsExtensionVersionUpgrade(extension, "1.0.47-beta", "1.0.0-beta.1"))
+	require.True(t, IsExtensionVersionUpgrade(extension, "1.0.47-beta", "1.0.0"))
+	require.True(t, IsExtensionVersionDowngrade(extension, "1.0.0-beta.1", "1.0.47-beta"))
+	require.False(t, IsExtensionVersionDowngrade(extension, "1.0.47-beta", "1.0.0-beta.1"))
+
+	ordinary := &ExtensionMetadata{Versions: extension.Versions[:2]}
+	require.Equal(t, "1.0.47-beta", LatestExtensionVersion(ordinary).Version)
+	require.True(t, IsExtensionVersionDowngrade(ordinary, "1.0.47-beta", "1.0.0-beta.1"))
+	require.Equal(
+		t,
+		semver.MustParse("1.0.0-BETA").Compare(semver.MustParse("1.0.0-beta")),
+		CompareExtensionVersions(ordinary, "1.0.0-BETA", "1.0.0-beta"),
+	)
+}

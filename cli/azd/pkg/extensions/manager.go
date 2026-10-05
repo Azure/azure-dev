@@ -213,12 +213,12 @@ func (m *Manager) resolveDependency(
 			continue
 		}
 
-		publishedVersion := bestSatisfyingVersion(dependency.Version, matches[0].Versions)
+		publishedVersion := bestSatisfyingExtensionVersion(dependency.Version, matches[0])
 		if publishedVersion == nil {
 			foundWithoutMatchingVersion = true
 			continue
 		}
-		if bestSatisfyingVersionForAzd(dependency.Version, matches[0].Versions, azdVersion) != nil {
+		if bestSatisfyingExtensionVersionForAzd(dependency.Version, matches[0], azdVersion) != nil {
 			return matches[0], nil
 		}
 		incompatibleVersion = publishedVersion
@@ -312,29 +312,27 @@ func matchesVersionConstraint(expr, candidate string) bool {
 	return constraint.Check(parsedVersion)
 }
 
-// isDowngrade reports whether moving from current to target is a version regression.
-// Returns false if either version is not valid semver.
-func isDowngrade(current, target string) bool {
-	currentSemver, err := semver.NewVersion(current)
-	if err != nil {
-		return false
+func bestSatisfyingExtensionVersion(
+	expr string,
+	extension *ExtensionMetadata,
+) *ExtensionVersion {
+	if extension == nil {
+		return nil
 	}
-	targetSemver, err := semver.NewVersion(target)
-	if err != nil {
-		return false
-	}
-	return targetSemver.LessThan(currentSemver)
+	return bestSatisfyingVersionFromMetadata(expr, extension, extension.Versions)
 }
 
-// bestSatisfyingVersion returns the highest published version satisfying expr.
-// Empty or "latest" selects the latest version; non-semver tags use exact match.
-func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionVersion {
+func bestSatisfyingVersionFromMetadata(
+	expr string,
+	extension *ExtensionMetadata,
+	versions []ExtensionVersion,
+) *ExtensionVersion {
 	if len(versions) == 0 {
 		return nil
 	}
 
 	if expr == "" || strings.EqualFold(expr, "latest") {
-		return LatestVersion(versions)
+		return latestExtensionVersion(extension, versions)
 	}
 
 	constraint, err := semver.NewConstraint(expr)
@@ -348,8 +346,7 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionV
 		return nil
 	}
 
-	var best *semver.Version
-	var bestIdx int
+	bestIdx := -1
 	for i := range versions {
 		v, err := semver.NewVersion(versions[i].Version)
 		if err != nil {
@@ -358,24 +355,36 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionV
 		if !constraint.Check(v) {
 			continue
 		}
-		if best == nil || v.GreaterThan(best) {
-			best = v
+		if bestIdx == -1 ||
+			CompareExtensionVersions(extension, versions[i].Version, versions[bestIdx].Version) > 0 {
 			bestIdx = i
 		}
 	}
-	if best == nil {
+	if bestIdx == -1 {
 		return nil
 	}
 	return &versions[bestIdx]
 }
 
-func bestSatisfyingVersionForAzd(
+func bestSatisfyingExtensionVersionForAzd(
 	expr string,
+	extension *ExtensionMetadata,
+	azdVersion *semver.Version,
+) *ExtensionVersion {
+	if extension == nil {
+		return nil
+	}
+	return bestSatisfyingVersionForAzdFromMetadata(expr, extension, extension.Versions, azdVersion)
+}
+
+func bestSatisfyingVersionForAzdFromMetadata(
+	expr string,
+	extension *ExtensionMetadata,
 	versions []ExtensionVersion,
 	azdVersion *semver.Version,
 ) *ExtensionVersion {
 	if azdVersion == nil {
-		return bestSatisfyingVersion(expr, versions)
+		return bestSatisfyingVersionFromMetadata(expr, extension, versions)
 	}
 
 	compatible := make([]ExtensionVersion, 0, len(versions))
@@ -385,7 +394,7 @@ func bestSatisfyingVersionForAzd(
 		}
 	}
 
-	return bestSatisfyingVersion(expr, compatible)
+	return bestSatisfyingVersionFromMetadata(expr, extension, compatible)
 }
 
 // ResolveExtensionVersion selects the highest release that matches versionPreference and azdVersion.
@@ -398,12 +407,12 @@ func ResolveExtensionVersion(
 		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	selected := bestSatisfyingVersionForAzd(versionPreference, extension.Versions, azdVersion)
+	selected := bestSatisfyingExtensionVersionForAzd(versionPreference, extension, azdVersion)
 	if selected != nil {
 		return selected, nil
 	}
 
-	published := bestSatisfyingVersion(versionPreference, extension.Versions)
+	published := bestSatisfyingExtensionVersion(versionPreference, extension)
 	if published != nil {
 		return nil, &ExtensionAzdVersionIncompatibleError{
 			ExtensionId: extension.Id,
@@ -1209,11 +1218,22 @@ func (m *Manager) upgradeInternal(
 	extension *ExtensionMetadata,
 	opts UpgradeOptions,
 	visited map[string]struct{},
-) (*ExtensionVersion, []UpgradeResult, error) {
-	asDependency := false
-	if installed, err := m.GetInstalled(FilterOptions{Id: extension.Id}); err == nil && installed != nil {
-		asDependency = installed.InstalledAsDependency && !opts.PromoteToExplicit
+) (version *ExtensionVersion, results []UpgradeResult, err error) {
+	installed, err := m.GetInstalled(FilterOptions{Id: extension.Id})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get installed extension: %w", err)
 	}
+	asDependency := installed.InstalledAsDependency && !opts.PromoteToExplicit
+
+	finish, err := m.prepareUpgradeRecovery(installed)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		err = errors.Join(err, finish(recoveryCtx, err != nil))
+	}()
 
 	if err := m.Uninstall(ctx, extension.Id); err != nil {
 		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
@@ -1242,6 +1262,67 @@ func (m *Manager) upgradeInternal(
 
 	depUpgrades := m.evaluateDependencyChanges(ctx, extension, extensionVersion, opts, visited)
 	return extensionVersion, depUpgrades, nil
+}
+
+// prepareUpgradeRecovery preserves the target's files and installed record
+// until its replacement succeeds. Completed dependency changes are retained.
+func (m *Manager) prepareUpgradeRecovery(installed *Extension) (func(context.Context, bool) error, error) {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user config directory: %w", err)
+	}
+	extensionRoot := filepath.Join(userConfigDir, "extensions")
+	extensionDir := filepath.Join(extensionRoot, installed.Id)
+	if installed.Id == "" || extensionDir == extensionRoot || !osutil.IsPathContained(extensionRoot, extensionDir) {
+		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
+	}
+	if err := os.MkdirAll(extensionRoot, osutil.PermissionDirectory); err != nil {
+		return nil, fmt.Errorf("failed to create extension directory: %w", err)
+	}
+	backupDir, err := os.MkdirTemp(extensionRoot, ".upgrade-backup-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create extension backup: %w", err)
+	}
+	backupPath := filepath.Join(backupDir, "installed")
+	hasFiles := false
+	if err := os.Rename(extensionDir, backupPath); err == nil {
+		hasFiles = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, errors.Join(
+			fmt.Errorf("failed to preserve installed extension files: %w", err),
+			os.Remove(backupDir),
+		)
+	}
+	previous := installed
+	return func(ctx context.Context, failed bool) error {
+		if failed {
+			if err := osutil.RemoveAll(ctx, extensionDir); err != nil {
+				return fmt.Errorf("failed to remove unsuccessful replacement; backup retained at %q: %w", backupDir, err)
+			}
+			if hasFiles {
+				if err := osutil.Rename(ctx, backupPath, extensionDir); err != nil {
+					return fmt.Errorf("failed to restore installed files; backup retained at %q: %w", backupDir, err)
+				}
+			}
+			records, err := m.ListInstalled()
+			if err != nil {
+				return fmt.Errorf("failed to load installed metadata during recovery: %w", err)
+			}
+			records = maps.Clone(records)
+			records[previous.Id] = previous
+			if err := m.userConfig.Set(installedConfigKey, records); err != nil {
+				return fmt.Errorf("failed to restore installed extension metadata: %w", err)
+			}
+			m.installed = nil
+			if err := m.configManager.Save(m.userConfig); err != nil {
+				return fmt.Errorf("failed to save restored installed extension metadata: %w", err)
+			}
+		}
+		if err := osutil.RemoveAll(ctx, backupDir); err != nil {
+			return fmt.Errorf("failed to clean up extension backup %q: %w", backupDir, err)
+		}
+		return nil
+	}, nil
 }
 
 // evaluateDependencyChanges returns dependency upgrade work needed after a parent upgrade.
@@ -1355,7 +1436,7 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, m.azdVersion)
+		bestVersion := bestSatisfyingExtensionVersionForAzd(dep.Version, childMetadata, m.azdVersion)
 		if bestVersion == nil {
 			// If no published version matches, keep a compatible installed version.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
@@ -1363,7 +1444,7 @@ func (m *Manager) evaluateDependencyChanges(
 			}
 			var resultErr error
 			var suggestion string
-			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
+			publishedVersion := bestSatisfyingExtensionVersion(dep.Version, childMetadata)
 			if publishedVersion == nil {
 				versionErr := &DependencyVersionNotFoundError{
 					DependencyId: dep.Id,
@@ -1401,7 +1482,7 @@ func (m *Manager) evaluateDependencyChanges(
 
 		// Refuse to silently downgrade: a user (or sibling pack) may have moved the dependency
 		// past this pack's declared range deliberately.
-		if isDowngrade(installed.Version, bestVersion.Version) {
+		if IsExtensionVersionDowngrade(childMetadata, installed.Version, bestVersion.Version) {
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				// Installed is newer but still satisfies the constraint — keep it, no-op.
 				continue

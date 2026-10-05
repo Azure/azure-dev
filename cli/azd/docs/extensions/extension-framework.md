@@ -1086,6 +1086,29 @@ To share the forked registry with others just provide the raw github link to the
 1. Commit the changes to the local branch, `git commit -am "<description>"`
 1. Create PR for the changes within `azure/azure-dev` repo
 
+If a historical release used an incorrect version scheme that SemVer ranks above the corrected release line, add
+`versionMigrations` to that extension's registry entry in the publication PR. The migration must name the exact
+historical `from` version and a corrected `to` version published by the same registry update. See
+[Correcting a Historical Version Scheme](./extension-resolution-and-versioning.md#correcting-a-historical-version-scheme).
+
+Authorize and validate each extension's historical transition separately. A migration declared for evaluations
+does not change dataset ordering. For example, dataset `1.0.0-beta.35` ranks above `1.0.0-beta.1` under ordinary
+SemVer; staging a migration-capable host alone does not make that replacement an update. Publish a dataset migration
+only after approving that exact transition, not by assuming an evaluation normalization policy covers it.
+
+Registry metadata for a newly built artifact must reflect its actual manifest `requiredAzdVersion`. A retained
+registry constraint such as `>=1.27.1` must not be reused for an artifact whose manifest requires `>=1.33.0`.
+Neither constraint establishes migration capability. Do not relabel immutable historical artifacts or rewrite their
+metadata to prepare a new build; keep publication metadata separate until the containing host and artifacts are verified.
+
+Stage and verify an actually released migration-capable host **before** publishing metadata that installed users
+need for this update. Older hosts, including azd 1.34.2, accept schema 1.1 but ignore `versionMigrations`; they
+can report a successful command while skipping the corrected release as a downgrade. A schema bump or extension
+minimum alone is not a host-delivery receipt. Preserve historical release artifacts, exact pins and installed state;
+follow [host staging and recovery](./extension-resolution-and-versioning.md#stage-the-host-before-migrating-installed-extensions)
+instead of uninstalling, resetting state or forcing a downgrade. A local candidate build proves source behavior,
+not official availability of a containing host release.
+
 Once PR has been merged the extension updates are now live in the official `azd` extension source registry.
 
 ### Extension Manifest
@@ -3362,7 +3385,7 @@ Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "extensions": [ ... ]
 }
 ```
@@ -3372,7 +3395,7 @@ Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"
 | Scenario | Behavior |
 |----------|----------|
 | Missing `schemaVersion` | Treated as `"1.0"` for backward compatibility |
-| Same major, newer minor (e.g. `"1.1"`) | Accepted silently — minor bumps are backward compatible |
+| Same major, newer minor (e.g. `"1.1"`) | Accepted silently; unknown optional fields may be ignored |
 | Newer major (e.g. `"2.0"`) | Rejected with an error and update guidance |
 | `0.x` (e.g. `"0.1"`) | Accepted — pre-release schema versions are valid |
 | Malformed version string | Rejected with a descriptive parse error |
@@ -3383,7 +3406,7 @@ When azd encounters a registry with a schema version it cannot support, it will
 display an error with a suggestion to update:
 
 ```
-ERROR: registry schema version 2.0 is not supported (max supported: 1.0)
+ERROR: registry schema version 2.0 is not supported (max supported: 1.1)
 
 Suggestion: Update azd to the latest version to use this registry
   https://aka.ms/azd/install
@@ -3393,8 +3416,10 @@ Suggestion: Update azd to the latest version to use this registry
 
 When publishing a third-party registry:
 
-1. **Include `schemaVersion`**: Add `"schemaVersion": "1.0"` at the top level of your registry JSON.
+1. **Include `schemaVersion`**: Add `"schemaVersion": "1.1"` at the top level of your registry JSON.
    Omitting it works but triggers a validation warning.
 2. **Use the JSON schema**: Reference `extensions/registry.schema.json` for the full format specification.
-3. **Minor version bumps** add optional fields that older azd versions can safely ignore.
+3. **Minor version bumps** add optional fields that older azd versions may ignore. Acceptance does not prove
+   support for a field's behavior. Stage a containing host first when installed users require that behavior,
+   such as exceptional version ordering through `versionMigrations`.
 4. **Major version bumps** indicate breaking changes that require a newer azd version.

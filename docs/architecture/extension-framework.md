@@ -84,6 +84,8 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
+For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
+
 ## Deployment Preview
 
 `azd deploy --preview` calls an optional `Preview` on each selected service target

@@ -454,11 +454,13 @@ func nameIsAPathComponent(name string) bool {
 }
 
 type generationOutcome struct {
-	plan   generationPlan
-	ref    *project.ArtifactRef
-	report generationReport
-	output bytes.Buffer
-	err    error
+	plan     generationPlan
+	ref      *project.ArtifactRef
+	report   generationReport
+	output   bytes.Buffer
+	err      error
+	recovery string
+	guidance string
 }
 
 // runGenerations submits the plans from buildGeneratePlans concurrently.
@@ -534,7 +536,24 @@ func (ec *evalContext) runGenerations(
 			err = addEvaluatorToCatalog(cmd, flags.path, o.ref)
 		}
 		if err != nil {
+			o.err = err
 			failures = append(failures, err)
+		} else if o.ref != nil {
+			o.guidance = generationCatalogGuidance(flags.path, o.plan.Kind, o.ref.Name)
+		}
+	}
+
+	for i := range outcomes {
+		o := &outcomes[i]
+		if o.err != nil {
+			var err error
+			o.recovery, err = generationRecoveryCommand(*o, flags, ec.endpoint, ec.envName)
+			if err != nil {
+				failures = append(failures, err)
+			}
+		}
+		if o.guidance != "" && !isJSON(cmd) {
+			fmt.Fprint(out, messages.Warning(errors.New(o.guidance)))
 		}
 	}
 
@@ -554,6 +573,9 @@ func (ec *evalContext) runGenerations(
 	}
 
 	if len(failures) > 0 {
+		if !isJSON(cmd) {
+			writeGenerationPartial(out, outcomes)
+		}
 		return messages.SomeGenerationsFailed(failures)
 	}
 	// What was produced, what it was billed under, and the one command that
@@ -619,22 +641,29 @@ func generationDocument(outcomes []generationOutcome) map[string]any {
 	produced := map[string]any{}
 	for i := range outcomes {
 		o := &outcomes[i]
-		var entry any
-		switch {
-		case o.ref != nil:
-			entry = o.ref
-		case o.report.jobID != "":
-			entry = map[string]string{"job_id": o.report.jobID}
+		entry := generationResult{
+			ArtifactRef: o.ref,
+			Status:      "submitted",
+			JobID:       o.report.jobID,
+			Warnings:    o.report.warnings,
+			Recovery:    o.recovery,
+			Guidance:    o.guidance,
 		}
+		if o.ref != nil {
+			entry.Status = "succeeded"
+		}
+		if o.err != nil {
+			entry.Status = "failed"
+			entry.Error = o.err.Error()
+			if o.ref != nil {
+				entry.Status = "catalog_failed"
+			}
+			entry.RetryGuidance = messages.GenerationRetryGuidance(string(o.plan.Kind), o.report.jobID != "")
+		}
+		// Preserve the existing warned-artifact envelope.
 		if len(o.report.warnings) > 0 {
-			warned := map[string]any{"warnings": o.report.warnings}
-			if entry != nil {
-				warned["artifact"] = entry
-			}
-			if o.report.jobID != "" {
-				warned["job_id"] = o.report.jobID
-			}
-			entry = warned
+			entry.Artifact = o.ref
+			entry.ArtifactRef = nil
 		}
 		produced[string(o.plan.Kind)] = entry
 	}

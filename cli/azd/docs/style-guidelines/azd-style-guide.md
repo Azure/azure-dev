@@ -434,6 +434,10 @@ Use `console.ShowSpinner()` and `console.StopSpinner()` from [`pkg/input/console
 console.ShowSpinner(ctx, "Creating App Service: my-app-r2w2adrz3rvwxu", input.Step)
 ```
 
+`ShowSpinner` starts a stopped spinner, resumes a paused spinner, or updates a running spinner's title. Repeating the current title while the spinner is running is a no-op; callers do not need an `IsSpinnerRunning` guard. In non-TTY output, unchanged running progress does not print duplicate lines, while title changes and restarts after explicit stops still produce progress messages. `StopSpinner` continues to report the final status separately.
+
+Keep calls that restore progress after a prompt or warning: those flows may stop the spinner. When a previewer is active, `ShowSpinner` updates its header instead; JSON output does not render a spinner.
+
 ## Testing Standards
 
 ### Test Structure

@@ -79,7 +79,7 @@ func TestNewWatcher_ConsumesEventsDuringInitialRegistration(t *testing.T) {
 	select {
 	case <-filled:
 	case <-time.After(2 * time.Second):
-		t.Fatal("initial registration did not reach injected backend backpressure")
+		t.Fatal("initial registration did not reach injected backend event queue pressure")
 	}
 	select {
 	case result := <-finished:
@@ -207,6 +207,47 @@ func TestNewWatcher_DiscoversFilesCreatedDuringRegistration(t *testing.T) {
 	require.Equal(t, FileChanges{{Path: file, ChangeType: FileCreated}}, fw.GetFileChanges())
 	cancel()
 	waitStartupExit(t, fw.done)
+}
+
+func TestNewWatcher_DiscoversFilesDeletedDuringRegistration(t *testing.T) {
+	for _, removeDirectory := range []bool{false, true} {
+		name := "file"
+		if removeDirectory {
+			name = "directory"
+		}
+		t.Run(name, func(t *testing.T) {
+			fw, backend := startupFixture(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			child := filepath.Join(fw.root, "child")
+			require.NoError(t, os.Mkdir(child, 0700))
+			file := filepath.Join(child, "existing.txt")
+			require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
+			ignored := filepath.Join(fw.root, "ignored.txt")
+			require.NoError(t, os.WriteFile(ignored, []byte("x"), 0600))
+			require.NoError(t, os.WriteFile(filepath.Join(fw.root, ".gitignore"), []byte("ignored.txt\n"), 0600))
+			matcher, err := ignore.NewMatcher(fw.root)
+			require.NoError(t, err)
+			fw.ignoreMatcher = matcher
+			backend.add = func(path string) error {
+				if path != fw.root {
+					return nil
+				}
+				if err := os.Remove(ignored); err != nil {
+					return err
+				}
+				if removeDirectory {
+					return os.RemoveAll(child)
+				}
+				return os.Remove(file)
+			}
+			require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+			require.Contains(t, fw.initialFiles, file)
+			require.Equal(t, FileChanges{{Path: file, ChangeType: FileDeleted}}, fw.GetFileChanges())
+			cancel()
+			waitStartupExit(t, fw.done)
+		})
+	}
 }
 
 func TestNewWatcher_CancellationDrainsDynamicAddBeforeClose(t *testing.T) {

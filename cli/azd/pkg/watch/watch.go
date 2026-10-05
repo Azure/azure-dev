@@ -224,6 +224,9 @@ func (fw *fileWatcher) start(
 
 		err := fw.watchRecursive(watchCtx, fw.root, watcher)
 		if err == nil {
+			err = fw.reconcileInitialFiles(watchCtx)
+		}
+		if err == nil {
 			err = watchCtx.Err()
 		}
 		registered <- err
@@ -245,6 +248,31 @@ func (fw *fileWatcher) start(
 	if err := <-registered; err != nil {
 		<-fw.done
 		return fmt.Errorf("watcher failed: %w", err)
+	}
+	return nil
+}
+
+func (fw *fileWatcher) reconcileInitialFiles(ctx context.Context) error {
+	// A deletion between the inventory and parent registration has no backend
+	// event. Recheck only startup paths after all watches have been installed.
+	for path := range fw.initialFiles {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(fw.root, path)
+		if err != nil {
+			return fmt.Errorf("failed to compute relative path for %s: %w", path, err)
+		}
+		if fw.ignoreMatcher.IsIgnored(relPath, false) {
+			continue
+		}
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			fw.mu.Lock()
+			fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Remove})
+			fw.mu.Unlock()
+		} else if err != nil {
+			return fmt.Errorf("failed to reconcile watched file %s: %w", path, err)
+		}
 	}
 	return nil
 }

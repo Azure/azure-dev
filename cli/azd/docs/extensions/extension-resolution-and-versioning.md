@@ -257,26 +257,16 @@ Direct installation from an unregistered URL can fail under `--no-prompt`;
 explicit source registration avoids silently accepting a new source during install.
 Verify the resulting installed version, selected source and binary checksum.
 
-An absent evaluations extension was installed in an isolated configuration using
-official azd 1.34.2 and the personal feed
-[registry at commit `55c6030`](https://github.com/m7md7sien/azd-foundry-feed/blob/55c603038d48d7a88193d17c8c1f7ed50b77dde2/registry.json).
-The preserved registry bytes contain `1.0.47-beta` and match SHA-256
-`6276596740a5d976d48cc144df3a5afbe697ec02c44c4b2fac6868458e078cdc`.
-Its immutable Windows archive matches
-`d98e2b9d5808bfe6cd75f335b941ce377ec4386fe77e6a881f1e8f614ac062ca`;
-the executable member and installed binary match
-`a0301e37af02ac40c069d73151d3cab21aa02b9210c0c96d35d43bd1e1269c26`.
-The native `azd ai eval version` command reports
-`azure.ai.evaluations 1.0.47-beta` with exit code zero.
-
-This establishes a personal-source exact-pin install and binary identity, not a
-completed migration or canonical Azure history. The canonical Azure registry still
-lacks the historical `1.0.47-beta` entry; official `1.0.0-beta.1` metadata cannot
-substitute for it. The original artifact manifest identifies source `ec25f89` but
-records `sourcePublished=false`, and the executable's Go build information lacks
-a VCS revision or linker source binding. Binary-to-source correspondence therefore
-remains unproven. Dataset installation and an existing-installation migration or
-recovery journey were not established by this exact-pin demonstration.
+The command sequence above is illustrative guidance, not evidence of a completed
+historical installation. The evaluations `1.0.47-beta` identity is user-reported;
+no authoritative personal-feed registry record, artifact receipt or checksum set
+was retained for it, as clarified in the source qualification on
+[#10307](https://github.com/Azure/azure-dev/pull/10307). The canonical Azure registry
+also lacks that historical entry. Official `1.0.0-beta.1` metadata and bytes cannot
+substitute for the missing historical evidence. Exact-pin restoration remains
+blocked pending an authoritative feed-owner record. Neither a historical binary
+identity nor an existing-installation migration or recovery journey is established
+by these examples.
 
 For an existing installation, preserve its configuration, files and history, and
 honor replacement and source-change confirmations or non-interactive errors.

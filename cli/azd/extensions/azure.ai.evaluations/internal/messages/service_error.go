@@ -82,6 +82,10 @@ func refusedTarget(respErr *azcore.ResponseError) string {
 }
 
 // serviceError says the sentence and carries the response underneath.
+//
+// text is the full diagnostic sentence, including which service refused the
+// call; Error() and existing human output read it. safe is the same sentence
+// without that service endpoint, read instead when serializing to -o json.
 type serviceError struct {
 	text  string
 	safe  string

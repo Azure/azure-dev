@@ -207,6 +207,17 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
 	recreate := substanceChanged(prior, definition, digest)
+	if recreate && group.Source != nil {
+		legacy := group
+		legacy.Source = nil
+		legacyDefinition, err := project.FingerprintDefinition(legacy)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
+			recreate = false
+		}
+	}
 	if recreate && validated {
 		legacyDigest, err := project.FingerprintGroup(prepared.declared)
 		if err != nil {
@@ -1136,6 +1147,13 @@ func conflictingSourceContract(
 		return false
 	}
 	if group.Source != nil {
+		// Unrecognized future source types have no established positive-evidence
+		// rules here yet, so they are not treated as conflicting.
+		switch group.Source.Type {
+		case project.SourceTypeTraces, project.SourceTypeResponses, project.SourceTypeLocal:
+		default:
+			return false
+		}
 		switch have.DataSourceConfig["scenario"] {
 		case "responses":
 			if group.Source.Type == project.SourceTypeTraces {

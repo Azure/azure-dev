@@ -69,10 +69,10 @@ func memoryNode(
 			// model deployment and vector store have already been provisioned.
 			missing := make([]string, 0, 2)
 			if strings.TrimSpace(memory.ChatModel) == "" {
-				missing = append(missing, "memory.chat_model")
+				missing = append(missing, "memory.chatModel")
 			}
 			if strings.TrimSpace(memory.EmbeddingModel) == "" {
-				missing = append(missing, "memory.embedding_model")
+				missing = append(missing, "memory.embeddingModel")
 			}
 			if len(missing) > 0 {
 				return exterrors.Validation(
@@ -117,7 +117,7 @@ func memoryNode(
 // from what the agent definition declares.
 //
 // Memory stores are created-if-missing and never updated, so editing
-// memory.chat_model in a manifest whose store already exists has no effect. The
+// memory.chatModel in a manifest whose store already exists has no effect. The
 // deploy still succeeds, which is the problem: without this, the definition and
 // the resource disagree silently and indefinitely. Warning rather than failing
 // keeps a store shared with another agent — whose definition this service does
@@ -133,7 +133,7 @@ func reportMemoryStoreDrift(
 ) {
 	drifted := describeMemoryStoreDrift(
 		diffMemoryStoreDefinition(memoryStoreDefinition(declared), live.Definition),
-		nil,
+		azureYamlMemoryStoreLabels,
 	)
 	if len(drifted) == 0 {
 		return

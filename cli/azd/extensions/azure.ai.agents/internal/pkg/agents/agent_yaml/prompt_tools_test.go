@@ -68,6 +68,14 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 			wantErr: `tools[0]: unknown field "default_enabled"`,
 		},
 		{
+			name: "copilot toolset rejects snake case default config",
+			tools: []any{map[string]any{
+				"type":           githubCopilotToolsetPreview,
+				"default_config": map[string]any{"enabled": false},
+			}},
+			wantErr: `tools[0]: unknown field "default_config"`,
+		},
+		{
 			// Unrecognized is not an error: the type may simply be newer than
 			// this build of azd.
 			name:  "unrecognized type is allowed through",
@@ -134,12 +142,34 @@ func TestPromptAgent_ValidateCopilotToolset(t *testing.T) {
 	agent := &PromptAgent{
 		Harness: NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
 		Tools: []any{map[string]any{
-			"type":           githubCopilotToolsetPreview,
-			"default_config": map[string]any{"enabled": false},
-			"configs":        []any{map[string]any{"name": "web", "enabled": true}},
+			"type":          githubCopilotToolsetPreview,
+			"defaultConfig": map[string]any{"enabled": false},
+			"configs":       []any{map[string]any{"name": "web", "enabled": true}},
 		}},
 	}
 	require.NoError(t, agent.ValidateTools())
+}
+
+func TestPromptToolsForAPI(t *testing.T) {
+	t.Parallel()
+
+	authored := map[string]any{
+		"type":          githubCopilotToolsetPreview,
+		"defaultConfig": map[string]any{"enabled": false},
+	}
+	passThrough := map[string]any{
+		"type":          "some_future_tool",
+		"defaultConfig": map[string]any{"preserved": true},
+	}
+
+	mapped := promptToolsForAPI([]any{authored, passThrough})
+	copilot := mapped[0].(map[string]any)
+	require.NotContains(t, copilot, "defaultConfig")
+	require.Equal(t, map[string]any{"enabled": false}, copilot["default_config"])
+	require.Equal(t, passThrough, mapped[1])
+
+	require.Contains(t, authored, "defaultConfig", "mapping must not mutate the authored definition")
+	require.NotContains(t, authored, "default_config")
 }
 
 func TestPromptAgent_UnrecognizedToolTypes(t *testing.T) {

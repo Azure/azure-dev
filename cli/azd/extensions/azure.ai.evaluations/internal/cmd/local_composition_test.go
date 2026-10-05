@@ -112,13 +112,14 @@ func TestExplicitLocalSelectedTypedContractOverridesLatest(t *testing.T) {
 	group.Dataset = ""
 	group.Source = &project.SourceDecl{Type: project.SourceTypeLocal, File: "rows.jsonl"}
 	group.Evaluators[0].Version = "7"
+	group.Evaluators[0].DataMapping = map[string]string{"count": "{{item.count}}"}
 	latest, err := evaluatorContract([]byte(service.definition))
 	require.NoError(t, err)
 	ec.schemas = map[string]*eval_api.EvaluatorSummary{"builtin.valid": latest}
 	service.definition = `{"definition":{"data_schema":` +
-		`{"properties":{"query":{"type":"integer"}},"required":["query"]}}}`
+		`{"properties":{"count":{"type":"integer"}},"required":["count"]}}}`
 	path := filepath.Join(dir, "rows.jsonl")
-	require.NoError(t, os.WriteFile(path, []byte("{\"query\":9007199254740993}\n"), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte("{\"count\":9007199254740993}\n"), 0o600))
 	r := &evalReconciler{ec: ec}
 	require.NoError(t, r.PreflightLocalEval(t.Context(), *group, path))
 	require.NoError(t, r.Validate(t.Context(), cfg, dir))
@@ -127,7 +128,7 @@ func TestExplicitLocalSelectedTypedContractOverridesLatest(t *testing.T) {
 	require.Len(t, service.createdRequests, 1)
 	properties, ok := service.createdRequests[0].DataSourceConfig.ItemSchema["properties"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, map[string]any{"type": "integer"}, properties["query"])
+	assert.Equal(t, map[string]any{"type": "integer"}, properties["count"])
 	assert.Equal(t, "7", service.createdRequests[0].TestingCriteria[0].EvaluatorVersion)
 	assert.Same(t, latest, ec.schemas["builtin.valid"], "pin resolution must not rewrite the latest catalog cache")
 }
@@ -148,23 +149,28 @@ func TestExplicitLocalPublicationInvalidatesCatalog(t *testing.T) {
 }
 
 func TestExplicitLocalRunInheritsCatalogPin(t *testing.T) {
-	dir := localSourceConfig(t, "{\"query\":9007199254740993}\n", 0)
+	dir := localSourceConfig(t, "{\"count\":9007199254740993}\n", 0)
 	cfg, err := project.OpenEvalConfig(dir)
 	require.NoError(t, err)
 	cfg.Evals[0].Evaluators[0].Evaluator = "custom.valid"
+	cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"count": "{{item.count}}"}
 	cfg.Evaluators = []project.EvaluatorDecl{{Name: "custom.valid", Version: "7"}}
 	body, err := json.Marshal(cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 	latest, err := evaluatorContract([]byte(`{"definition":{"data_schema":` +
-		`{"properties":{"query":{"type":"string"}},"required":["query"]}}}`))
+		`{"properties":{"count":{"type":"string"}},"required":["count"]}}}`))
 	require.NoError(t, err)
 	selected, err := evaluatorContract([]byte(`{"definition":{"data_schema":` +
-		`{"properties":{"query":{"type":"integer"}},"required":["query"]}}}`))
+		`{"properties":{"count":{"type":"integer"}},"required":["count"]}}}`))
 	require.NoError(t, err)
 	ec, requests := localSourceContext(t, func(definition map[string]any) {
 		definition["data_source_config"] = map[string]any{"type": "custom", "item_schema": map[string]any{
-			"type": "object", "properties": map[string]any{"query": map[string]any{"type": "integer"}},
+			"type": "object", "properties": map[string]any{"count": map[string]any{"type": "integer"}},
+		}}
+		definition["testing_criteria"] = []any{map[string]any{
+			"name": "valid", "evaluator_name": "custom.valid",
+			"data_mapping": map[string]string{"count": "{{item.count}}"},
 		}}
 	})
 	ec.schemas = map[string]*eval_api.EvaluatorSummary{
@@ -176,7 +182,7 @@ func TestExplicitLocalRunInheritsCatalogPin(t *testing.T) {
 	require.Len(t, recorded, 4)
 	assert.Equal(t, "/evaluators/custom.valid/versions/7", recorded[0].path)
 	assert.Equal(t, http.MethodPost, recorded[3].method)
-	assert.Contains(t, string(recorded[3].body), `"query":9007199254740993`)
+	assert.Contains(t, string(recorded[3].body), `"count":9007199254740993`)
 }
 
 func TestExplicitLocalCatalogPinPreflightUsesSelectedContract(t *testing.T) {
@@ -188,13 +194,14 @@ func TestExplicitLocalCatalogPinPreflightUsesSelectedContract(t *testing.T) {
 			group.Dataset = ""
 			group.Source = &project.SourceDecl{Type: project.SourceTypeLocal, File: "rows.jsonl"}
 			group.Evaluators[0].Evaluator = "custom.valid"
+			group.Evaluators[0].DataMapping = map[string]string{"count": "{{item.count}}"}
 			cfg.Evaluators = []project.EvaluatorDecl{{Name: "custom.valid", Version: "7"}}
 			latest, err := evaluatorContract([]byte(service.definition))
 			require.NoError(t, err)
 			ec.schemas = map[string]*eval_api.EvaluatorSummary{"custom.valid": latest}
 			service.definition = `{"definition":{"data_schema":` +
-				`{"properties":{"query":{"type":"integer"}},"required":["query"]}}}`
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":42}\n"), 0o600))
+				`{"properties":{"count":{"type":"integer"}},"required":["count"]}}}`
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte("{\"count\":42}\n"), 0o600))
 			if caller == "create" {
 				body, err := json.Marshal(cfg)
 				require.NoError(t, err)

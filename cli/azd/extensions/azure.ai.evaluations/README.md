@@ -365,6 +365,11 @@ dataset pins and fail-closed empty-list behavior are unchanged.
 
 Validation streams the entire file, including rows beyond a cap, while retaining
 only the rows a capped run can submit. Create/deploy preflight retains no row set.
+Primary mapped `query`, `response`, or `messages` values follow the same rules as
+declared datasets: empty or whitespace-only strings and non-string/non-array
+values are rejected, even when the evaluator schema permits them. Empty arrays
+remain accepted. These checks apply to both authored and stored mappings before
+publishing dependencies or submitting a run.
 Uncapped runs still retain every submitted row. Repeated scans use the same file
 handle and reject content changes detected during validation.
 

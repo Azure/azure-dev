@@ -271,7 +271,12 @@ func TestBuildRunDataSource_Responses(t *testing.T) {
 		map[string]string{"response_id": "{{item.response_id}}"},
 		ds.ItemGenerationParams.DataMapping)
 	require.NotNil(t, ds.ItemGenerationParams.Source)
-	assert.Len(t, ds.ItemGenerationParams.Source.Content, 2)
+	assert.Equal(t, []map[string]any{
+		{"item": map[string]any{"response_id": "resp_1"}},
+		{"item": map[string]any{"response_id": "resp_2"}},
+	}, ds.ItemGenerationParams.Source.Content)
+	assert.Nil(t, ds.Target)
+	assert.Nil(t, ds.InputMessages)
 }
 
 func TestBuildRunDataSource_ResponsesWithoutIDsIsRefused(t *testing.T) {

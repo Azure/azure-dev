@@ -115,10 +115,11 @@ func NoEvaluatorsChosen() error {
 // the verdict does not exist yet when --no-wait returns, so the gate was
 // silently dropped and the command exited 0 however the run turned out.
 func GateNeedsTheWait() error {
-	return errors.New(
-		"--fail-on needs a result to judge, and --no-wait returns before there " +
-			"is one. Drop --no-wait, or reattach with `azd ai eval run show " +
-			"<run> --wait --fail-on <gate>`")
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		"--fail-on needs a result to judge, and --no-wait returns before there "+
+			"is one. Drop --no-wait, or reattach with `azd ai eval run show "+
+			"<run> --wait --fail-on <gate>`",
+		"")
 }
 
 // GateOutlivedTheWait reports a gate that never got a verdict because the run
@@ -830,8 +831,10 @@ func EvaluationLevelChoice(level string) string {
 
 // EvaluationLevelNotAChoice reports an --evaluation-level that names neither.
 func EvaluationLevelNotAChoice(given string, levels []string) error {
-	return fmt.Errorf("--evaluation-level %q is not an evaluation level; use %s",
-		given, strings.Join(levels, " or "))
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--evaluation-level %q is not an evaluation level; use %s",
+			given, strings.Join(levels, " or ")),
+		"")
 }
 
 // SelectingEvaluationLevel reports a failed evaluation-level prompt.
@@ -1036,17 +1039,23 @@ func ExportedTestCases(count int, path string) string {
 
 // FailOnInvalid reports a --fail-on value that is neither form of threshold.
 func FailOnInvalid(spec string) error {
-	return fmt.Errorf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec),
+		"")
 }
 
 // FailOnRateNotNumber reports a --fail-on pass rate that will not parse.
 func FailOnRateNotNumber(rate string) error {
-	return fmt.Errorf("--fail-on pass-rate must be a number, got %q", rate)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on pass-rate must be a number, got %q", rate),
+		"")
 }
 
 // FailOnRateOutOfRange reports a --fail-on pass rate outside 0..1.
 func FailOnRateOutOfRange(value float64) error {
-	return fmt.Errorf("--fail-on pass-rate must be between 0 and 1, got %v", value)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on pass-rate must be between 0 and 1, got %v", value),
+		"")
 }
 
 // GateNoResultCounts reports a gate that has nothing to measure against.
@@ -1752,14 +1761,17 @@ func JSONLLineInvalid(line int, err error) error {
 
 // JSONLRowInvalid reports a row that is not JSON before the file is published.
 func JSONLRowInvalid(path string, line int, err error) error {
-	return fmt.Errorf(
-		"%s line %d is not valid JSON: %w. Every line must be one JSON object",
-		path, line, err)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s line %d is not valid JSON: %s. Every line must be one JSON object",
+			path, line, err),
+		"")
 }
 
 // JSONLRowEmpty reports a row that parses to nothing to evaluate.
 func JSONLRowEmpty(path string, line int) error {
-	return fmt.Errorf("%s line %d is an empty object, which evaluates to nothing", path, line)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s line %d is an empty object, which evaluates to nothing", path, line),
+		"")
 }
 
 // JSONLNoRows reports a dataset file with nothing in it to evaluate.
@@ -2814,14 +2826,18 @@ func JudgeModelRequired() error {
 // EvaluatorRefEmpty reports an --evaluator that carries no name, which is what
 // a stray comma leaves behind.
 func EvaluatorRefEmpty() error {
-	return errors.New("--evaluator was given an empty reference: name an evaluator, " +
-		"or use builtin.<name> for a built-in")
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		"--evaluator was given an empty reference: name an evaluator, "+
+			"or use builtin.<name> for a built-in",
+		"")
 }
 
 // EvaluatorRefMalformed reports a reference no evaluator can be found under.
 func EvaluatorRefMalformed(ref string) error {
-	return fmt.Errorf("%q is not an evaluator reference: repeat --evaluator, or separate "+
-		"them with commas, and use builtin.<name> for a built-in", ref)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%q is not an evaluator reference: repeat --evaluator, or separate "+
+			"them with commas, and use builtin.<name> for a built-in", ref),
+		"")
 }
 
 // EvaluatorRefNotAPath reports an --evaluator value carrying path separators.
@@ -2831,9 +2847,11 @@ func EvaluatorRefMalformed(ref string) error {
 // uploads whatever that resolves to. Refused rather than cleaned up: a reader
 // who typed a path meant something other than this flag.
 func EvaluatorRefNotAPath(ref string) error {
-	return fmt.Errorf("%q looks like a path, not an evaluator name: pass a name such as "+
-		"builtin.relevance or quality, and declare a rubric file with source: in the "+
-		"configuration instead", ref)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%q looks like a path, not an evaluator name: pass a name such as "+
+			"builtin.relevance or quality, and declare a rubric file with source: in the "+
+			"configuration instead", ref),
+		"")
 }
 
 // EvaluatorBuiltinUnknown reports a builtin.<name> the project's catalogue does
@@ -3288,6 +3306,18 @@ func ResponsesSourceNeedsResponseIDs() error {
 	return errors.New("source.response_ids is required for a responses source")
 }
 
+// ResponsesSourceBlankResponseID identifies an invalid entry without printing stored response IDs.
+func ResponsesSourceBlankResponseID(index int) error {
+	return fmt.Errorf("source.response_ids[%d] must not be blank; supply a stored response ID or remove this entry", index)
+}
+
+// SourceSampleConflict refuses a dataset cap on a source-backed evaluation.
+func SourceSampleConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--max-samples or max_samples cannot cap source-backed eval %q", evalName),
+		"Remove the dataset cap. For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
 func AtLeastOneEvaluatorRequired(index int, eval string) error {
 	return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", index, eval)
@@ -3687,9 +3717,10 @@ func MaxSamplesNegative(got int) error {
 
 // NegativeMaxSamplesFlag reports the same thing given on the command line.
 func NegativeMaxSamplesFlag(got int) error {
-	return fmt.Errorf(
-		"--max-samples cannot be negative, got %d. "+
-			"Omit it to send every row, or give the number of rows to send", got)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--max-samples cannot be negative, got %d. "+
+			"Omit it to send every row, or give the number of rows to send", got),
+		"")
 }
 
 // FlagDoesNotApply reports a flag given to a generate that produces nothing it
@@ -4283,13 +4314,29 @@ func isCredentialUnavailable(err error) bool {
 func ServiceRefused(status int, err error) error {
 	concise := conciseServiceError(err)
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return exterrors.Auth(
-			exterrors.CodeAuthFailed,
-			fmt.Sprintf(
-				"the Foundry project refused the request (HTTP %d): %v. "+
-					"Run `azd auth login`, and check you have access to this project",
-				status, concise),
-			"run `azd auth login`, and check you have access to this project")
+		full := concise.Error()
+		safe := full
+		if svc, ok := errors.AsType[*serviceError](concise); ok {
+			safe = svc.SafeMessage()
+		}
+		const (
+			tail       = "Run `azd auth login`, and check you have access to this project"
+			suggestion = "run `azd auth login`, and check you have access to this project"
+		)
+		return &authServiceError{
+			LocalError: &azdext.LocalError{
+				Message: fmt.Sprintf(
+					"the Foundry project refused the request (HTTP %d): %s. %s", status, full, tail),
+				Code:       exterrors.CodeAuthFailed,
+				Category:   azdext.LocalErrorCategoryAuth,
+				Suggestion: suggestion,
+			},
+			// Same wording as Message, but built from the endpoint-free
+			// sentence, so -o json never discloses which Foundry account or
+			// project backed the refused call.
+			safe: fmt.Sprintf(
+				"the Foundry project refused the request (HTTP %d): %s. %s", status, safe, tail),
+		}
 	}
 	return concise
 }

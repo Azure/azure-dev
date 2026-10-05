@@ -39,6 +39,37 @@ func executeConversationInit(t *testing.T, args ...string) (string, error) {
 	return out.String(), err
 }
 
+func TestInitJSONSuppressesProseAndPromptsWithoutNoPromptFlag(t *testing.T) {
+	for _, format := range []string{"default", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &conversationPromptServer{}
+			h := newInitHarness(t, nil, prompts)
+			text, err := executeConversationInit(t,
+				"--name", "quality", "--source", "dataset", "--target", "agent",
+				"--dataset", h.seedRows, "--judge-model", "judge",
+				"--evaluator", "builtin.task_completion", "--no-prompt=false", "--output", format)
+			require.NoError(t, err)
+			assert.Equal(t, 1, h.project.wiringAttempts())
+			prompts.mu.Lock()
+			defer prompts.mu.Unlock()
+			if format == "json" {
+				var doc map[string]any
+				require.NoError(t, json.Unmarshal([]byte(text), &doc),
+					"stdout must contain exactly one JSON document without context or confirmation prose")
+				assert.Equal(t, "quality", doc["eval"])
+				assert.Empty(t, prompts.messages)
+				assert.Empty(t, prompts.models)
+			} else {
+				assert.Contains(t, text, messages.LocalContextHeading())
+				assert.Contains(t, text, messages.ScaffoldSummaryHeading())
+				assert.Contains(t, prompts.messages,
+					messages.ConfirmScaffoldPrompt(filepath.ToSlash(filepath.Join(h.dir, "evals", "azure.eval.yaml"))))
+			}
+		})
+	}
+}
+
 func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -201,7 +232,7 @@ func TestInitConversationRejectsIgnoredFlagsAndNumericBounds(t *testing.T) {
 	}
 }
 
-func TestInitConversationAggregatesNoninteractiveRequiredInputs(t *testing.T) {
+func TestInitConversationAggregatesNonInteractiveRequiredInputs(t *testing.T) {
 	for _, unattended := range [][]string{{"--no-prompt"}, {"--output", "json"}} {
 		t.Run(strings.Join(unattended, " "), func(t *testing.T) {
 			h := newInitHarness(t, nil)

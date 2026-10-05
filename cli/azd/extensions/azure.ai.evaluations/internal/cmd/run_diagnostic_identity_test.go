@@ -32,6 +32,8 @@ const runWithoutID = `{"status":"in_progress","unknown":{"preserved":true}}`
 func (t *runBudgetTransport) Do(req *http.Request) (*http.Response, error) {
 	body := ""
 	switch {
+	case req.Method == http.MethodGet && req.URL.Path == "/openai/v1/evals/eval_resolved":
+		body = `{"id":"eval_resolved","data_source_config":{"type":"custom"}}`
 	case strings.HasSuffix(req.URL.Path, "/runs/run_resolved"):
 		t.getRunCall++
 		if t.caller == "start" || t.getRunCall > 1 {

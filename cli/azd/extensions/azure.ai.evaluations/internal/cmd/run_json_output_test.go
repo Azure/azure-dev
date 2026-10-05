@@ -275,6 +275,8 @@ func TestRunJSONCallersPreserveInlineSourceNumbers(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_numbers"):
+					_, _ = w.Write([]byte(`{"id":"eval_numbers","data_source_config":{"type":"custom"}}`))
 				case strings.HasSuffix(r.URL.Path, "/runs/run_numbers"):
 					_, _ = w.Write([]byte(response))
 				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):

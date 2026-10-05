@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"slices"
+	"strings"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
@@ -24,6 +25,7 @@ type preparedEval struct {
 	request         *eval_api.CreateOpenAIEvalRequest
 	schemas         map[string]*eval_api.EvaluatorSummary
 	columns         map[string]bool
+	malformed       map[string]bool
 	localEvaluators []string
 }
 
@@ -48,8 +50,22 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	if err := effective.Validate(); err != nil {
 		return err
 	}
+	for i := range effective.Evals {
+		group := &effective.Evals[i]
+		if !group.IsLocalSource() {
+			continue
+		}
+		input, err := openLocalInput(ctx, group, group.LocalSourcePath(baseDir))
+		if err != nil {
+			return err
+		}
+		if err := input.file.Close(); err != nil {
+			return messages.ReadingPath(input.path, err)
+		}
+	}
 
 	columns := map[string]map[string]bool{}
+	malformedColumns := map[string]map[string]bool{}
 	datasetVersions := map[string]string{}
 	localDatasets := map[string]preparedLocalDataset{}
 	for _, decl := range cfg.Datasets {
@@ -58,16 +74,20 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		}
 		path := project.ResolveSource(baseDir, decl.File)
 		available := map[string]any{}
+		malformed := map[string]bool{}
 		validateRow := func(row map[string]any, index int) error {
 			for field := range row {
 				available[field] = nil
+				if malformedTextValue(row[field]) {
+					malformed[field] = true
+				}
 			}
 			for i := range cfg.Evals {
 				group := &cfg.Evals[i]
 				if group.Dataset != decl.Name || group.Simulation == nil {
 					continue
 				}
-				if err := refuseUnusableSeedRow(group, row, index); err != nil {
+				if err := refuseUnusableSeedRow(group, row, index, false); err != nil {
 					return err
 				}
 			}
@@ -110,6 +130,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			}
 		}
 		columns[decl.Name] = fields
+		malformedColumns[decl.Name] = malformed
 	}
 
 	schemas := map[string]*eval_api.EvaluatorSummary{}
@@ -117,8 +138,6 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		// Registered-only entries are resolved below using each reference's
-		// effective pin, which may override an unused catalog default.
 		if !decl.CarriesItsRubric() {
 			continue
 		}
@@ -127,8 +146,8 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			return messages.EvaluatorProblem(decl.Name, err)
 		}
 		// Authored rubrics omit the schemas Foundry adds on publication.
-		// Reuse that contract when present, without replacing authored
-		// fields or treating a failed read as a missing evaluator.
+		// Validate reused versions against their published contract. Preserve
+		// authored fields when an edit will publish a new version.
 		remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
 		if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 			return messages.CheckingEvaluatorExists(decl.Name, err)
@@ -163,6 +182,9 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				if schema.Definition.InitParameters == nil {
 					schema.Definition.InitParameters = published.InitSchema()
 				}
+				if schema.SupportedEvaluationLevels == nil {
+					schema.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
+				}
 			}
 		}
 		schemas[evaluatorSchemaKey(decl.Name, decl.Version)] = schema
@@ -173,9 +195,15 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		var remote *eval_api.OpenAIEval
 		if group.ID != "" {
-			if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+			var err error
+			remote, err = r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+			if err != nil {
 				return messages.ReadingEval(group.ID, err)
+			}
+			if !responseSchemaMatches(&group, remote) {
+				return incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
 			}
 		}
 		declared := group
@@ -194,6 +222,14 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			if schemas[key] != nil {
 				continue
 			}
+			if group.IsLocalSource() {
+				schema, err := r.ec.selectedEvaluatorContract(ctx, ref.Evaluator, ref.Version)
+				if err != nil {
+					return err
+				}
+				schemas[key] = schema
+				continue
+			}
 			body, err := r.ec.evalClient.GetEvaluatorRaw(ctx, ref.Evaluator, ref.Version, ProjectEndpointAPIVersion)
 			if err != nil {
 				return messages.EvaluatorNotLocalNorFound(ref.Evaluator, err)
@@ -204,16 +240,27 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			}
 			schemas[key] = schema
 		}
-		request, err := buildEvalRequest(&group, schemas, columns[group.Dataset])
+		groupColumns := columns[group.Dataset]
+		groupMalformed := malformedColumns[group.Dataset]
+		var request *eval_api.CreateOpenAIEvalRequest
+		var err error
+		if group.IsLocalSource() {
+			request, groupColumns, err = validateLocalFile(ctx, &group, group.LocalSourcePath(baseDir), schemas)
+		} else {
+			request, err = buildEvalRequest(&group, schemas, groupColumns)
+		}
 		if err != nil {
 			return messages.EvalProblem(group.Name, err)
 		}
-		if err := validateDatasetInteractions(&group, request, columns[group.Dataset]); err != nil {
+		if err := validateDatasetInteractions(&group, request, groupColumns, groupMalformed); err != nil {
 			return messages.EvalProblem(group.Name, err)
+		}
+		if group.ID != "" && conflictingSourceContract(group, remote, request) {
+			return incompatibleSourceContract(group.ID)
 		}
 		prepared[group.Name] = preparedEval{
 			declared: declared, group: group, request: request, schemas: schemas,
-			columns: columns[group.Dataset], localEvaluators: localEvaluators,
+			columns: groupColumns, malformed: groupMalformed, localEvaluators: localEvaluators,
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -258,7 +305,7 @@ func (r *evalReconciler) localDatasetReuse(ctx context.Context, decl project.Dat
 // optional tool columns. Simulation outputs are generated from seed rows, while
 // trace and response sources have no dataset columns to inspect here.
 func validateDatasetInteractions(
-	group *project.Eval, request *eval_api.CreateOpenAIEvalRequest, columns map[string]bool,
+	group *project.Eval, request *eval_api.CreateOpenAIEvalRequest, columns, malformed map[string]bool,
 ) error {
 	if columns == nil || group.Simulation != nil {
 		return nil
@@ -268,18 +315,43 @@ func validateDatasetInteractions(
 		if _, messages := criterion.DataMapping[conversationField]; messages {
 			fields = []string{conversationField}
 		}
-		var missing []string
+		var missing, invalid []string
 		for _, field := range fields {
-			if column, item := itemColumn(criterion.DataMapping[field]); item && !columns[column] &&
-				!slices.Contains(missing, column) {
-				missing = append(missing, column)
+			column, item := itemColumn(criterion.DataMapping[field])
+			if !item {
+				continue
+			}
+			switch {
+			case !columns[column]:
+				if !slices.Contains(missing, column) {
+					missing = append(missing, column)
+				}
+			case malformed[column]:
+				if !slices.Contains(invalid, column) {
+					invalid = append(invalid, column)
+				}
 			}
 		}
 		if len(missing) > 0 {
 			return messages.EvaluatorNeedsFields(criterion.EvaluatorName, missing)
 		}
+		if len(invalid) > 0 {
+			return messages.EvaluatorFieldMalformed(criterion.EvaluatorName, invalid)
+		}
 	}
 	return nil
+}
+
+// malformedTextValue checks interaction input shapes while preserving accepted empty message arrays.
+func malformedTextValue(value any) bool {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []any:
+		return false
+	default:
+		return true
+	}
 }
 
 func (r *evalReconciler) inspectRegisteredDataset(
@@ -296,16 +368,7 @@ func (r *evalReconciler) inspectRegisteredDataset(
 // withCatalogEvaluatorPins resolves only authored pins. A service-resolved
 // latest version is not an edit and must never change an eval's identity.
 func withCatalogEvaluatorPins(group project.Eval, cfg *project.EvalConfig) project.Eval {
-	group.Evaluators = slices.Clone(group.Evaluators)
-	for i := range group.Evaluators {
-		ref := &group.Evaluators[i]
-		if ref.Version == "" {
-			if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok {
-				ref.Version = decl.Version
-			}
-		}
-	}
-	return group
+	return cfg.WithCatalogEvaluatorPins(group)
 }
 
 func validateDatasetTarget(group *project.Eval, available map[string]any) error {

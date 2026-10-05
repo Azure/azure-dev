@@ -35,6 +35,8 @@ type evalCreateAction struct {
 	cmd   *cobra.Command
 	flags *evalCreateFlags
 	name  string
+	// Instance-scoped context construction keeps the action usable with injected clients.
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 // newEvalCreateCommand creates one declared eval without deploying the rest.
@@ -48,7 +50,13 @@ func newEvalCreateCommand() *cobra.Command {
 			"`azd up` reconciles every eval in the file. This creates a single one, " +
 			"for a project that is not deployed as a whole — or, with --from-file, " +
 			"for no project at all.\n\n" +
-			"The name is optional while the configuration declares exactly one eval.",
+			"The name is optional while the configuration declares exactly one eval.\n\n" +
+			"Evaluator inputs receive explicit default data mappings. Override them with data_mapping " +
+			"in the evaluator reference. Map messages or separate query/response fields, never both. " +
+			"Defaults retain tool_definitions and, at turn level, tool_calls. " +
+			"Explicit local sources omit optional default item bindings absent from the file; " +
+			"authored bindings and required evaluator inputs are still validated. " +
+			"Map context or ground_truth explicitly when needed; catalog properties do not supply missing data.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evalCreateAction{cmd: cmd, flags: flags, name: firstArg(args)}).Run()
@@ -58,7 +66,8 @@ func newEvalCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.fromFile, "from-file", "",
 		"Read the configuration from this path instead of the eval directory.")
 	cmd.Flags().StringVar(&flags.evalDir, "path", "",
-		"Directory holding the evaluation configuration. Defaults to the directory "+
+		"Configuration file or directory to read from. New .yaml or .yml paths are "+
+			"files; existing directories remain directories. Defaults to the directory "+
 			"init scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -99,7 +108,11 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	contextFactory := a.newContext
+	if contextFactory == nil {
+		contextFactory = newEvalContext
+	}
+	ec, err := contextFactory(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -129,6 +142,9 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	datasetPath := ""
 	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 		datasetPath = project.ResolveSource(baseDir, decl.File)
+	}
+	if eval.IsLocalSource() {
+		datasetPath = eval.LocalSourcePath(baseDir)
 	}
 
 	reconciler := &evalReconciler{ec: ec}
@@ -364,9 +380,10 @@ func filterEvalsByName(evals []eval_api.OpenAIEval, name string) []eval_api.Open
 
 // evalShowAction reports one eval definition.
 type evalShowAction struct {
-	cmd      *cobra.Command
-	endpoint string
-	evalID   string
+	cmd        *cobra.Command
+	endpoint   string
+	evalID     string
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 func newEvalShowCommand() *cobra.Command {
@@ -387,7 +404,11 @@ func newEvalShowCommand() *cobra.Command {
 
 func (a *evalShowAction) Run() error {
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	newContext := a.newContext
+	if newContext == nil {
+		newContext = newEvalContext
+	}
+	ec, err := newContext(ctx, a.endpoint)
 	if err != nil {
 		return err
 	}
@@ -425,16 +446,18 @@ func (a *evalShowAction) Run() error {
 	if graders := evalGraders(group); graders != "" {
 		detail = append(detail, field{"Evaluators", graders})
 	}
+	// A custom schema does not identify a row source; non-custom scenarios do.
+	if source, _ := group.DataSourceConfig["type"].(string); source != "" && source != "custom" {
+		detail = append(detail, field{"Data Source", source})
+		if scenario, _ := group.DataSourceConfig["scenario"].(string); scenario != "" {
+			detail = append(detail, field{"Scenario", scenario})
+		}
+	}
 	return emitDetail(a.cmd.OutOrStdout(), detail)
 }
 
 // evalGraders lists the evaluators the eval grades with, preferring the
 // reference a caller would recognize over the criterion label.
-//
-// data_source_config is deliberately not shown beside it: every eval this
-// extension creates carries type "custom", which describes the item schema
-// rather than where the rows come from, so a "Source" row would read as an
-// answer while always saying the same thing.
 func evalGraders(group *eval_api.OpenAIEval) string {
 	if group == nil {
 		return ""

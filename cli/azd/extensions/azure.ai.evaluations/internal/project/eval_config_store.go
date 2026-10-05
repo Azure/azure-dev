@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -102,21 +103,18 @@ func ensureEvalDir(location string) (string, error) {
 	return dir, nil
 }
 
-// namesAFile reports whether a location is the configuration file rather than
-// the directory holding it. A path that does not exist is read as a directory,
-// which is what `init` is given before it writes anything.
-//
-// Except when the name itself settles it. Stat can only answer for a path that
-// exists, so a recorded or $ref-declared configuration that had since been
-// deleted read as a directory: `init` then wrote <path>/azure.eval.yaml while
-// the wiring still pointed at <path>, and `azd up` deployed neither.
+// namesAFile keeps existing directories as directories and recognizes YAML
+// filenames before they exist. Otherwise init would create a directory named
+// custom.yaml and write a different configuration inside it.
 func namesAFile(location string) bool {
-	switch filepath.Base(location) {
-	case EvalConfigBase, LegacyEvalConfigBase:
+	if info, err := os.Stat(location); err == nil {
+		return !info.IsDir()
+	}
+	switch strings.ToLower(filepath.Ext(location)) {
+	case ".yaml", ".yml":
 		return true
 	}
-	info, err := os.Stat(location)
-	return err == nil && !info.IsDir()
+	return false
 }
 
 // ResolveEvalConfigPath is the configuration this location actually holds:
@@ -133,6 +131,22 @@ func ResolveEvalConfigPath(location string) (string, error) {
 		return "", err
 	}
 	return resolvedConfigPath(location), nil
+}
+
+// ResolveEvalConfigPathForWrite resolves a location for authoring, rejecting a
+// selected symbolic link before directory classification can hide it.
+func ResolveEvalConfigPathForWrite(location string) (string, error) {
+	if err := checkConfigSymlink(location); err != nil {
+		return "", err
+	}
+	path, err := ResolveEvalConfigPath(location)
+	if err != nil {
+		return "", err
+	}
+	if err := checkConfigSymlink(path); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // resolvedConfigPath is the naming rule on its own, for the two functions that
@@ -359,13 +373,14 @@ func DecodeEvalConfig(data []byte, name string) (*EvalConfig, error) {
 // a generate into an existing project updates the configuration it already
 // references rather than leaving an inert second one beside it.
 func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
-	if err := checkOneConfig(evalDir); err != nil {
+	path, err := ResolveEvalConfigPathForWrite(evalDir)
+	if err != nil {
 		return err
 	}
 	if _, err := ensureEvalDir(evalDir); err != nil {
 		return err
 	}
-	return SaveEvalConfigTo(resolvedConfigPath(evalDir), cfg)
+	return SaveEvalConfigTo(path, cfg)
 }
 
 // SaveEvalConfigTo writes cfg over an explicit path, for callers that already
@@ -385,7 +400,24 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 	return writeConfigBytes(path, body)
 }
 
-// writeConfigBytes replaces the configuration at path with body.
+func checkConfigSymlink(path string) error {
+	// A trailing separator or "." otherwise makes Lstat follow a directory link.
+	info, err := os.Lstat(filepath.Clean(path))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return messages.ReadingEvalConfig(path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return messages.WritingEvalConfig(path,
+			errors.New("configuration is a symbolic link; select the target file directly to edit it"))
+	}
+	return nil
+}
+
+// writeConfigBytes replaces the configuration at path with body, rejecting
+// symbolic links rather than replacing the link or bypassing the target's lock.
 //
 // The replacement is atomic because os.WriteFile truncates first, and this file
 // is read by other processes. A reader landing inside that window sees zero
@@ -394,6 +426,9 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 // missing. Renaming into place means a reader sees either the whole old file or
 // the whole new one.
 func writeConfigBytes(path string, body []byte) error {
+	if err := checkConfigSymlink(path); err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".azd-eval-config-*")
 	if err != nil {

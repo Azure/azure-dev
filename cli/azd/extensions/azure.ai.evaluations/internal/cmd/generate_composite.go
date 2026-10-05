@@ -6,16 +6,21 @@ package cmd
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
@@ -48,14 +53,19 @@ type generateCommandFlags struct {
 
 // generateAction generates a dataset and a rubric evaluator together.
 type generateAction struct {
-	cmd   *cobra.Command
-	flags *generateCommandFlags
+	cmd        *cobra.Command
+	flags      *generateCommandFlags
+	newContext func(context.Context, string) (*evalContext, error)
 	// resolved holds what only the service can supply, kept so a second pass
 	// through the confirmation does not read the agent again.
 	resolved generationPlan
 }
 
 func newGenerateCommand() *cobra.Command {
+	return newGenerateCommandWithContext(newEvalContext)
+}
+
+func newGenerateCommandWithContext(newContext func(context.Context, string) (*evalContext, error)) *cobra.Command {
 	flags := &generateCommandFlags{}
 
 	cmd := &cobra.Command{
@@ -66,10 +76,13 @@ func newGenerateCommand() *cobra.Command {
 			"Neither is an input to the other, so the jobs run together and each " +
 			"reports its own outcome; the command fails if either did.\n\n" +
 			"--from selects one or more of the sources the service generates the " +
-			"dataset from, and is repeatable.",
+			"dataset from, and is repeatable.\n\n" +
+			"When no instructions are supplied or detected, interactive generation offers " +
+			"Type instructions or Load from file. Use --agent-instruction or --agent-instruction-file " +
+			"to supply them directly; --no-prompt and --output json never ask.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&generateAction{cmd: cmd, flags: flags}).Run()
+			return (&generateAction{cmd: cmd, flags: flags, newContext: newContext}).Run()
 		},
 	}
 
@@ -78,10 +91,10 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&flags.wantEvaluator, "evaluator", false,
 		"Generate only the evaluator. Omit both flags to generate both.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset-name", "",
-		"Name for the generated dataset. Defaults to <target>-turn-tests or "+
-			"<target>-conversation-tests, following --evaluation-level.")
+		"Name for the generated dataset (at most 50 characters). Defaults to <deployed-agent>-turn-tests or "+
+			"<deployed-agent>-conversation-tests. Long default prefixes are shortened consistently; explicit names are not.")
 	cmd.Flags().StringVar(&flags.evaluatorName, "evaluator-name", "",
-		"Name for the generated evaluator. Defaults to <target>-evaluator.")
+		"Name for the generated evaluator. Defaults to <deployed-agent>-evaluator.")
 	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
 		fmt.Sprintf("What one generated row is: %s. Defaults to %s. Dataset only.",
 			strings.Join(evaluationLevels, " or "), project.EvaluationLevelTurn))
@@ -101,6 +114,9 @@ func newGenerateCommand() *cobra.Command {
 }
 
 func (a *generateAction) Run() error {
+	if err := validateInstructionFlags(a.cmd, &a.flags.shared); err != nil {
+		return err
+	}
 	dataset, evaluator := selectedArtifacts(a.flags.wantDataset, a.flags.wantEvaluator)
 	// Checked before any network work, so a flag that cannot apply
 	// costs nothing to find out about. Changed() rather than the value,
@@ -130,6 +146,9 @@ func (a *generateAction) Run() error {
 	}
 
 	if dataset {
+		if err := validateGeneratedDatasetName(a.flags.datasetName); err != nil {
+			return err
+		}
 		for _, src := range a.flags.from {
 			if err := project.ValidateGenerateSource(src); err != nil {
 				return err
@@ -171,7 +190,7 @@ func (a *generateAction) Run() error {
 	if err != nil {
 		return err
 	}
-	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, contextPlan)
+	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, contextPlan, a.newContext)
 	if err != nil {
 		return err
 	}
@@ -215,6 +234,7 @@ func (a *generateAction) Run() error {
 	var plans []generationPlan
 	level := ""
 	levelSettled := false
+	nameTarget, nameTargetResolved := target, false
 	for {
 		// Asked before the dataset is named, because the name says which level
 		// its rows hold. Asked at most once: a second pass through the
@@ -226,11 +246,19 @@ func (a *generateAction) Run() error {
 			}
 			levelSettled = true
 		}
+		if !nameTargetResolved &&
+			(choices.dataset && a.flags.datasetName == "" || choices.evaluator && a.flags.evaluatorName == "") {
+			nameTarget, err = ec.generationNameTarget(a.cmd.Context(), target)
+			if err != nil {
+				return err
+			}
+			nameTargetResolved = true
+		}
 
 		plans, err = buildGeneratePlans(generateRequest{
 			flags:           &a.flags.shared,
 			cmd:             a.cmd,
-			target:          target,
+			target:          nameTarget,
 			dataset:         choices.dataset,
 			evaluator:       choices.evaluator,
 			datasetName:     a.flags.datasetName,
@@ -302,7 +330,8 @@ type generateRequest struct {
 	// cmd is what the collision prompt asks through, and what --no-prompt is
 	// read from. Nil in tests that only exercise the naming rules, which never
 	// reach a prompt because nothing is on disk to collide with.
-	cmd             *cobra.Command
+	cmd *cobra.Command
+	// target supplies default names only; resolvePlan preserves the execution selector.
 	target          string
 	dataset         bool
 	evaluator       bool
@@ -425,12 +454,43 @@ func generatedName(explicit, target, kind, suffix string) (string, error) {
 		if target == "" {
 			return "", messages.GeneratedNameNeedsATarget(kind)
 		}
+		if kind == string(generateKindDataset) {
+			target = generatedDatasetPrefix(target)
+		}
 		name = target + "-" + suffix
 	}
 	if !nameIsAPathComponent(name) {
 		return "", messages.GeneratedNameNotAFileName(kind, name)
 	}
+	if kind == string(generateKindDataset) {
+		if err := validateGeneratedDatasetName(name); err != nil {
+			return "", err
+		}
+	}
 	return name, nil
+}
+
+// Dataset generation has a narrower name limit than the general asset APIs.
+const generatedDatasetNameMaxLength = 50
+
+func validateGeneratedDatasetName(name string) error {
+	if utf8.RuneCountInString(name) > generatedDatasetNameMaxLength {
+		return messages.GeneratedDatasetNameTooLong(name, generatedDatasetNameMaxLength)
+	}
+	return nil
+}
+
+func generatedDatasetPrefix(target string) string {
+	// Use one stem for both levels and leave room for every offered collision suffix.
+	reserve := len("-"+datasetNameSuffix(project.EvaluationLevelConversation)) +
+		len("-"+strconv.Itoa(collisionSuffixLimit))
+	limit := generatedDatasetNameMaxLength - reserve
+	runes := []rune(target)
+	if len(runes) <= limit {
+		return target
+	}
+	digest := project.FingerprintBytes([]byte(target))[:8]
+	return string(runes[:limit-len(digest)-1]) + "-" + digest
 }
 
 // nameIsAPathComponent reports whether a name stays where it is put.
@@ -584,33 +644,68 @@ func (ec *evalContext) runGenerations(
 	// unlabelled, and the caller was left to work out that `init` was next and
 	// to retype every name it had just chosen for them.
 	if !isJSON(cmd) && !flags.noWait {
-		writeGenerationCompleted(out, outcomes)
+		writeGenerationCompleted(out, outcomes, flags.path)
 	}
 	return nil
 }
 
 // writeGenerationCompleted closes a successful generation.
-func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome) {
+func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, configPath string) {
 	fmt.Fprint(out, messages.GenerationCompleted())
+	simulation := false
+	hasTarget, hasDataset := false, false
 	for i := range outcomes {
 		if id := outcomes[i].report.jobID; id != "" {
 			fmt.Fprint(out, messages.GenerationJobLine(string(outcomes[i].plan.Kind), id))
 		}
+		if outcomes[i].ref == nil {
+			continue
+		}
+		hasTarget = hasTarget || outcomes[i].plan.Agent != ""
+		if outcomes[i].plan.Kind == generateKindDataset {
+			hasDataset = true
+			simulation = outcomes[i].plan.EvaluationLevel == project.EvaluationLevelConversation
+		}
 	}
-	if next := initHandoff(outcomes); next != "" {
+	if incompatible := incompatibleHandoffEvaluator(outcomes); incompatible != nil {
+		fmt.Fprint(out, messages.HandoffEvaluatorIncompatible(incompatible.Name))
+	}
+	agent, dataset, level, evaluator := initHandoffInputs(outcomes)
+	if next := initHandoff(outcomes, configPath); next != "" {
 		fmt.Fprint(out, messages.FirstNextStep(next))
+		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
+	} else if dataset != "" || evaluator != "" {
+		fmt.Fprint(out, messages.InitHandoffManualInputs(printablePath(configPath), agent, dataset, level, evaluator))
+		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
 	}
 }
 
 // initHandoff is the `eval init` that turns what was just generated into an
-// eval, with every value it needs already filled in.
+// eval. Conversation seeds select simulation; init asks for the independent
+// simulation model rather than reusing the generation model.
 //
-// --target is included even though `init` can detect it: the handoff is
-// documented to run exactly as printed, and the detection depends on the
-// project being readable at the time it is run rather than at the time it was
-// printed.
-func initHandoff(outcomes []generationOutcome) string {
-	var agent, dataset, level, evaluator string
+// Known targets are included even though init can detect local services.
+// Guidance names unresolved target and dataset inputs without inventing them.
+func initHandoff(outcomes []generationOutcome, configPath string) string {
+	configPath = filepath.ToSlash(printablePath(configPath))
+	agent, dataset, level, evaluator := initHandoffInputs(outcomes)
+	for _, value := range []string{configPath, agent, dataset, level, evaluator} {
+		if !messages.CanInlineShellArg(value) {
+			return ""
+		}
+	}
+	if dataset == "" && evaluator == "" {
+		return ""
+	}
+	next := messages.InitHandoffCommand(agent, dataset, level, evaluator)
+	if configPath != "" {
+		next += " --path " + quoteForShell(configPath)
+	}
+	return next
+}
+
+func initHandoffInputs(outcomes []generationOutcome) (agent, dataset, level, evaluator string) {
+	incompatible := incompatibleHandoffEvaluator(outcomes)
 	for i := range outcomes {
 		o := &outcomes[i]
 		if o.ref == nil {
@@ -622,13 +717,34 @@ func initHandoff(outcomes []generationOutcome) string {
 			dataset = o.ref.Name
 			level = o.plan.EvaluationLevel
 		default:
-			evaluator = o.ref.Name
+			if o.ref != incompatible {
+				evaluator = o.ref.Name
+			}
 		}
 	}
-	if dataset == "" && evaluator == "" {
-		return ""
+	return agent, dataset, level, evaluator
+}
+
+func incompatibleHandoffEvaluator(outcomes []generationOutcome) *project.ArtifactRef {
+	var level string
+	var evaluator *project.ArtifactRef
+	for _, outcome := range outcomes {
+		if outcome.ref == nil {
+			continue
+		}
+		if outcome.plan.Kind == generateKindDataset {
+			level = outcome.plan.EvaluationLevel
+		} else {
+			evaluator = outcome.ref
+		}
 	}
-	return messages.InitHandoffCommand(agent, dataset, level, evaluator)
+	if level != "" && evaluator != nil &&
+		!initEvaluatorSupportsLevel(&project.EvaluatorDecl{
+			SupportedEvaluationLevels: evaluator.SupportedEvaluationLevels,
+		}, level) {
+		return evaluator
+	}
+	return nil
 }
 
 // generationDocument keys each outcome by the artifact it was for, so a caller
@@ -654,7 +770,9 @@ func generationDocument(outcomes []generationOutcome) map[string]any {
 		}
 		if o.err != nil {
 			entry.Status = "failed"
-			entry.Error = o.err.Error()
+			entry.Error = jsonMessage(o.err)
+			entry.Code = errorCode(o.err)
+			entry.Suggestion = urlsafe.Text(azdext.ErrorSuggestion(o.err))
 			if o.ref != nil {
 				entry.Status = "catalog_failed"
 			}

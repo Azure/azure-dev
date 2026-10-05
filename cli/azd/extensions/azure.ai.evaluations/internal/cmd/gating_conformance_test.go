@@ -49,26 +49,19 @@ func TestRunCompletedSeparatesRegressionFromFailureToRun(t *testing.T) {
 	}
 }
 
-// pass-rate is passed/(passed+failed): the share of the rows something actually
-// graded. Errored and skipped rows are outside it, because an infrastructure
-// failure is not a quality signal, and this is the figure the portal reports.
-//
-// The cost is real and deliberate: a run with two passes and thirteen errors
-// scores a perfect rate. `any-failure` is the gate that still counts those, and
-// a pass-rate gate warns when it judged only part of a run.
-func TestPassRateIsMeasuredOverTheRowsThatWereScored(t *testing.T) {
+// pass-rate is passed/total: every terminal row that did not pass counts
+// against the run, regardless of whether it failed, errored, or was skipped.
+func TestPassRateIsMeasuredOverTheWholeRun(t *testing.T) {
 	g, err := parseGate("pass-rate=0.8")
 	require.NoError(t, err)
 
-	// 2 passed, 1 failed, 1 errored: 2 of 3 scored is 66.7%, below 80%.
+	// 2 passed, 1 failed, 1 errored: 2 of 4 total is 50%, below 80%.
 	breach := g.breach(&eval_api.EvalRunResultCounts{Total: 4, Passed: 2, Failed: 1, Errored: 1})
-	require.NotEmpty(t, breach, "a scored row that failed still counts")
-	assert.Contains(t, breach, "66.7%")
+	require.NotEmpty(t, breach, "every non-passing row must count")
+	assert.Contains(t, breach, "50.0%")
 
-	// The same run without the failure: everything scored, passed, so the
-	// errored row does not drag a quality number down on its own.
-	assert.Empty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1}),
-		"nothing graded the errored row, so it is not evidence of a regression")
+	assert.NotEmpty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 2, Errored: 1}),
+		"an errored row did not pass and must lower the run-level rate")
 
 	assert.Empty(t, g.breach(&eval_api.EvalRunResultCounts{Total: 3, Passed: 3}))
 }
@@ -114,6 +107,10 @@ func TestFailOnSitsOnTheWaitingCommands(t *testing.T) {
 	usage := find(t, "run start").Flags().Lookup("fail-on").Usage
 	for _, form := range []string{"any-failure", "pass-rate"} {
 		assert.Containsf(t, usage, form, "--fail-on accepts %q, so its help has to say so", form)
+	}
+	for _, term := range []string{"total test cases", "failed", "errored", "skipped"} {
+		assert.Containsf(t, strings.ToLower(usage), term,
+			"the help must say that %q contributes to the run-level denominator", term)
 	}
 	assert.Contains(t, strings.ToLower(usage), "1",
 		"the help has to name the exit code a caller observes, which is the only reason to use the flag")

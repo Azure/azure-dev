@@ -327,7 +327,7 @@ func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
 	require.NoError(t, err)
 	text := string(body)
 
-	require.Contains(t, text, "name: support-agent-trace-eval")
+	require.Contains(t, text, "name: support-agent-trace-turn-eval")
 	require.Contains(t, text, "type: traces")
 	require.Contains(t, text, "agent_name: support-agent",
 		"a trace run has no target, so agent_name is what scopes it")

@@ -33,18 +33,18 @@ func TestRunGatesPreserveCountPresence(t *testing.T) {
 			{"absent counts", "", "indeterminate", "indeterminate"},
 			{"null counts", `null`, "indeterminate", "indeterminate"},
 			{"empty counts", `{}`, "indeterminate", "indeterminate"},
-			{"absent total", `{"passed":1,"failed":0}`, "pass", "indeterminate"},
-			{"null total", `{"total":null,"passed":1,"failed":0}`, "pass", "indeterminate"},
+			{"absent total", `{"passed":1,"failed":0}`, "indeterminate", "indeterminate"},
+			{"null total", `{"total":null,"passed":1,"failed":0}`, "indeterminate", "indeterminate"},
 			{"only passed", `{"passed":1}`, "indeterminate", "indeterminate"},
-			{"absent failed", `{"total":1,"passed":1}`, "indeterminate", "pass"},
-			{"null failed", `{"total":1,"passed":1,"failed":null}`, "indeterminate", "pass"},
+			{"absent failed", `{"total":1,"passed":1}`, "pass", "pass"},
+			{"null failed", `{"total":1,"passed":1,"failed":null}`, "pass", "pass"},
 			{"absent passed", `{"total":1,"failed":0}`, "indeterminate", "indeterminate"},
 			{"null passed", `{"total":1,"passed":null,"failed":0}`, "indeterminate", "indeterminate"},
 			{"zero total", `{"total":0}`, "breach", "breach"},
-			{"zero scored", `{"passed":0,"failed":0}`, "breach", "indeterminate"},
-			{"known failure unknown total", `{"passed":0,"failed":1}`, "breach", "indeterminate"},
+			{"zero outcomes unknown total", `{"passed":0,"failed":0}`, "indeterminate", "indeterminate"},
+			{"known failure unknown total", `{"passed":0,"failed":1}`, "indeterminate", "indeterminate"},
 			{"all passed", `{"total":1,"passed":1,"failed":0}`, "pass", "pass"},
-			{"unscored rows", `{"total":3,"passed":1,"failed":0,"errored":1,"skipped":1}`, "pass", "breach"},
+			{"non-passing rows", `{"total":3,"passed":1,"failed":0,"errored":1,"skipped":1}`, "breach", "breach"},
 		} {
 			for _, spec := range []string{"", "pass-rate=0.5", "any-failure"} {
 				outcome := "pass"
@@ -102,6 +102,8 @@ func TestRunGatesPreserveCountPresence(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_counts"):
+			_, _ = io.WriteString(w, `{"id":"eval_counts","data_source_config":{"type":"custom"}}`)
 		case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):
 			_, _ = io.WriteString(w, response)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):

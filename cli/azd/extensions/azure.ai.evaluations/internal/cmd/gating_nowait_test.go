@@ -6,8 +6,12 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
+	"azureaieval/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,6 +38,11 @@ func TestFailOnWithNoWaitIsRefused(t *testing.T) {
 		assert.Contains(t, err.Error(), "--no-wait")
 		assert.Containsf(t, err.Error(), "run show",
 			"the refusal has to name the way to gate a run started with --no-wait")
+		// ADO 5572140: this refusal used to reach -o json with a message and
+		// no code at all.
+		local, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "the refusal must carry a structured code")
+		assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
 	}
 }
 
@@ -52,4 +61,25 @@ func TestFailOnAloneIsStillAccepted(t *testing.T) {
 		assert.NotContains(t, err.Error(), "--no-wait",
 			"a gate without --no-wait must not be refused for needing the wait")
 	}
+}
+
+// A negative --max-samples reads as "no cap" everywhere else, so it was
+// silently sending the whole dataset to a billed run. Refused up front,
+// before any network work. ADO 5572140: this refusal used to reach -o json
+// with a message and no code at all.
+func TestNegativeMaxSamplesFlagIsRefusedBeforeAnyNetworkWork(t *testing.T) {
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"run", "start", "--max-samples", "-1"})
+
+	err := root.ExecuteContext(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--max-samples")
+	assert.Contains(t, err.Error(), "cannot be negative")
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "the refusal must carry a structured code")
+	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 }

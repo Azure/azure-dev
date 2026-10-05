@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -114,10 +115,11 @@ func NoEvaluatorsChosen() error {
 // the verdict does not exist yet when --no-wait returns, so the gate was
 // silently dropped and the command exited 0 however the run turned out.
 func GateNeedsTheWait() error {
-	return errors.New(
-		"--fail-on needs a result to judge, and --no-wait returns before there " +
-			"is one. Drop --no-wait, or reattach with `azd ai eval run show " +
-			"<run> --wait --fail-on <gate>`")
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		"--fail-on needs a result to judge, and --no-wait returns before there "+
+			"is one. Drop --no-wait, or reattach with `azd ai eval run show "+
+			"<run> --wait --fail-on <gate>`",
+		"")
 }
 
 // GateOutlivedTheWait reports a gate that never got a verdict because the run
@@ -131,7 +133,7 @@ func GateOutlivedTheWait(runID string, budget time.Duration) error {
 	return fmt.Errorf(
 		"run %s outlived the %s wait, so --fail-on never got a result to judge. "+
 			"The run is still going: reattach with `azd ai eval run show %s "+
-			"--wait --fail-on <gate>`", runID, budget, shellArg(runID))
+			"--wait --fail-on <gate>`", terminalValue(runID), budget, shellArg(runID))
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
@@ -190,7 +192,7 @@ func WaitInterrupted(runID string, err error) error {
 	return fmt.Errorf(
 		"stopped waiting on run %s, which is still running: %w. "+
 			"Pick it back up with `azd ai eval run show %s`",
-		runID, err, shellArg(runID))
+		terminalValue(runID), err, shellArg(runID))
 }
 
 // WaitingForRun says a run has started and this command is now watching it.
@@ -241,13 +243,10 @@ func TestCaseResults(total, passed, failed, errored, skipped int, rate string) s
 	} {
 		fmt.Fprintf(&b, "%-10s %4d\n", row.label, row.count)
 	}
-	// The denominator is spelled out. Rows nothing could grade are outside it,
-	// so a run that errored on most of its samples can report a high rate, and
-	// naming the two terms is what stops that reading as a verdict on the whole
-	// run. It is also the figure `--fail-on pass-rate` compares.
-	if passed+failed > 0 {
-		fmt.Fprintf(&b, "%-10s %4s (%d / (%d passed + %d failed))\n",
-			"Pass rate", rate, passed, passed, failed)
+	// Display and gating include every terminal test case in the denominator.
+	if total > 0 {
+		fmt.Fprintf(&b, "%-10s %4s (%d passed / %d total test cases)\n",
+			"Pass rate", rate, passed, total)
 	} else {
 		fmt.Fprintf(&b, "%-10s %4s\n", "Pass rate", rate)
 	}
@@ -352,7 +351,7 @@ func RunMustBeNamed(evalID string) error {
 		"name the run to act on: this environment has no run recorded for eval %s, "+
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
-		evalID, shellArg(evalID))
+		terminalValue(evalID), shellArg(evalID))
 }
 
 // ListedRunMissingID refuses to guess an identifier omitted by the service.
@@ -518,17 +517,13 @@ func ItemResultTotals(total, passed, failed, errored, skipped int) string {
 		total, passed, failed, errored, skipped)
 }
 
-// ScoredPassRateLine names the denominator in the same breath as the rate.
-//
-// The figure was printed bare beside a sample count, which read as passed over
-// total; a partly errored run then looked like a quality result rather than an
-// infrastructure one.
-func ScoredPassRateLine(passed, scored int) string {
-	if scored == 0 {
-		return "Pass rate: n/a (nothing was scored)\n"
+// RunPassRateLine names the all-terminal-row denominator beside the rate.
+func RunPassRateLine(passed, total int) string {
+	if total == 0 {
+		return "Pass rate: n/a (no test cases were reported)\n"
 	}
-	return fmt.Sprintf("Pass rate: %.1f%% (%d / %d scored test cases)\n",
-		100*float64(passed)/float64(scored), passed, scored)
+	return fmt.Sprintf("Pass rate: %.1f%% (%d passed / %d total test cases)\n",
+		100*float64(passed)/float64(total), passed, total)
 }
 
 // countOf names a count and its noun, pluralized by adding "s".
@@ -587,28 +582,12 @@ func UnknownItemStatus(given string, known []string) error {
 		given, strings.Join(known, ", "))
 }
 
-// GateSawUnscoredRows warns that a pass-rate gate judged only part of the run.
-//
-// The rate excludes rows nothing could grade, so a run that errored on most of
-// its samples can clear a threshold on the few that survived. The gate is the
-// one place a pipeline is guaranteed to read, so it is said there rather than
-// left for someone to notice in the summary.
-//
-// Errored and skipped are named apart because they ask for different things: a
-// run that errored is one to retry, and one that skipped is one to look at the
-// data for. A single "not scored" count answered neither question.
-func GateSawUnscoredRows(errored, skipped, total int) error {
-	return fmt.Errorf(
-		"%s of %d samples were not scored, so the pass rate this gate read covers "+
-			"only the rest; use --fail-on any-failure to count them against the run",
-		unscoredBreakdown(errored, skipped), total)
-}
-
 // GateUnaccountedRows identifies a count mismatch without assigning an outcome.
-func GateUnaccountedRows(unaccounted, total, scored int) error {
+func GateUnaccountedRows(unaccounted, total int) error {
 	return fmt.Errorf(
-		"%d of %d rows are not accounted for by the reported counts; the pass-rate gate covers %d scored rows",
-		unaccounted, total, scored)
+		"%d of %d rows are not accounted for by the reported outcome counts; "+
+			"the pass-rate denominator still includes all %d rows",
+		unaccounted, total, total)
 }
 
 // GateCountsUnavailable reports an indeterminate gate without a quality verdict.
@@ -617,18 +596,6 @@ func GateCountsUnavailable(missing []string) error {
 		"evaluation gate is indeterminate: result_counts did not report %s; "+
 			"inspect the run with `azd ai eval run show` and retry when the required counts are available",
 		strings.Join(missing, ", "))
-}
-
-// unscoredBreakdown counts what a pass rate left out, by what it was.
-func unscoredBreakdown(errored, skipped int) string {
-	switch {
-	case errored > 0 && skipped > 0:
-		return fmt.Sprintf("%d errored and %d skipped", errored, skipped)
-	case skipped > 0:
-		return fmt.Sprintf("%d skipped", skipped)
-	default:
-		return fmt.Sprintf("%d errored", errored)
-	}
 }
 
 // GeneratedNameNotAFileName reports a generated artifact name that would not
@@ -688,6 +655,16 @@ func EnterDatasetHelp() string {
 // DatasetIsRequired refuses an empty answer to that prompt.
 func DatasetIsRequired() string {
 	return "A dataset-backed evaluation needs a dataset to grade."
+}
+
+// InitDatasetRejected explains how to correct an unusable local dataset.
+func InitDatasetRejected(why error) string {
+	detail := why.Error()
+	if local, ok := errors.AsType[*azdext.LocalError](why); ok && local.Suggestion != "" {
+		detail += "\n  " + local.Suggestion
+	}
+	return fmt.Sprintf("\n  %s\n  Correct the dataset file and enter its path or dataset name again, "+
+		"or choose another dataset. Press Ctrl+C to cancel before rerunning init with different flags.\n", detail)
 }
 
 // SelectingDataset reports a failed dataset prompt.
@@ -819,8 +796,10 @@ func EvaluationLevelChoice(level string) string {
 
 // EvaluationLevelNotAChoice reports an --evaluation-level that names neither.
 func EvaluationLevelNotAChoice(given string, levels []string) error {
-	return fmt.Errorf("--evaluation-level %q is not an evaluation level; use %s",
-		given, strings.Join(levels, " or "))
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--evaluation-level %q is not an evaluation level; use %s",
+			given, strings.Join(levels, " or ")),
+		"")
 }
 
 // SelectingEvaluationLevel reports a failed evaluation-level prompt.
@@ -1025,17 +1004,23 @@ func ExportedTestCases(count int, path string) string {
 
 // FailOnInvalid reports a --fail-on value that is neither form of threshold.
 func FailOnInvalid(spec string) error {
-	return fmt.Errorf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec),
+		"")
 }
 
 // FailOnRateNotNumber reports a --fail-on pass rate that will not parse.
 func FailOnRateNotNumber(rate string) error {
-	return fmt.Errorf("--fail-on pass-rate must be a number, got %q", rate)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on pass-rate must be a number, got %q", rate),
+		"")
 }
 
 // FailOnRateOutOfRange reports a --fail-on pass rate outside 0..1.
 func FailOnRateOutOfRange(value float64) error {
-	return fmt.Errorf("--fail-on pass-rate must be between 0 and 1, got %v", value)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on pass-rate must be between 0 and 1, got %v", value),
+		"")
 }
 
 // GateNoResultCounts reports a gate that has nothing to measure against.
@@ -1048,9 +1033,9 @@ func GateSamplesDidNotPass(unpassed, total int) string {
 	return fmt.Sprintf("%d of %d samples did not pass", unpassed, total)
 }
 
-// GateNoRowsScored reports a pass-rate gate over a run that scored nothing.
-func GateNoRowsScored() string {
-	return "the run scored no rows, so its pass rate is below any threshold"
+// GateNoTestCases reports a pass-rate gate over a run with no test cases.
+func GateNoTestCases() string {
+	return "the run reported no test cases, so its pass rate is below any threshold"
 }
 
 // GatePassRateBelow reports a pass-rate gate that was breached.
@@ -1084,6 +1069,19 @@ func GeneratedNameNeedsATarget(kind string) error {
 	return fmt.Errorf(
 		"no name for the generated %s and no target to derive one from: "+
 			"pass --%s-name, or --target", kind, kind)
+}
+
+// GeneratedDatasetNameTooLong preserves an explicit name by refusing it, not truncating it.
+func GeneratedDatasetNameTooLong(name string, maximum int) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--dataset-name %q exceeds the generation limit of %d characters", name, maximum),
+		"Choose a shorter --dataset-name, or omit it to use a bounded default derived from the deployed agent.")
+}
+
+// GenerationNameTargetUnresolved refuses to derive default names from an unverified local key.
+func GenerationNameTargetUnresolved(err error) error {
+	return fmt.Errorf("resolving the deployed agent name for default artifact names: %w; "+
+		"retry the project lookup, or provide explicit --dataset-name and --evaluator-name for the artifacts selected", err)
 }
 
 // GenerationFailed labels one half of a composite generate that did not finish.
@@ -1174,19 +1172,22 @@ func ReadingInstructions(named string, err error) error {
 	return fmt.Errorf("reading instructions %q: %w", named, err)
 }
 
-// InstructionSourceFile names the local file generation was seeded from.
+// InstructionSourceFile displays only the basename of the local instruction file.
 //
 // A fragment, not a sentence: it is read twice, once in the detection line and
 // once in the confirmation, and a sentence would only fit the first.
 func InstructionSourceFile(path string) string {
-	return filepath.ToSlash(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
 
 // InstructionSourceFlag names instructions the caller supplied themselves,
-// preferring the file they named over the flag that named it.
+// displaying only the basename when they supplied a file.
 func InstructionSourceFlag(path string) string {
 	if path != "" {
-		return filepath.ToSlash(path)
+		return InstructionSourceFile(path)
 	}
 	return "--agent-instruction"
 }
@@ -1220,6 +1221,31 @@ func InstructionSourceTyped() string {
 // generation context.
 func InstructionsNotDetected() string {
 	return "Agent instructions: not detected\n"
+}
+
+// SelectInstructionSourcePrompt asks how to supply missing generation context.
+func SelectInstructionSourcePrompt() string {
+	return "How would you like to provide agent instructions?"
+}
+
+// TypeInstructionsChoice selects direct instruction entry.
+func TypeInstructionsChoice() string { return "Type instructions" }
+
+// LoadInstructionsChoice selects an existing local instruction file.
+func LoadInstructionsChoice() string { return "Load from file" }
+
+// EnterInstructionFilePrompt asks for the file to read, not its contents.
+func EnterInstructionFilePrompt() string { return "Path to the agent instructions file:" }
+
+// EnterInstructionFileHelp describes the same input as --agent-instruction-file.
+func EnterInstructionFileHelp() string {
+	return "Path to a non-empty local text file, relative to the current directory or absolute. " +
+		"Enter the path without shell quotes; spaces are supported."
+}
+
+// InstructionFileRejected asks for a corrected path without restarting generation.
+func InstructionFileRejected(err error) string {
+	return fmt.Sprintf("\n  %v\n  Enter a corrected file path, or press Ctrl+C to cancel.\n", err)
 }
 
 // EnterAgentInstructionPrompt asks what the agent is for.
@@ -1271,7 +1297,9 @@ func GenerationJobLine(kind, jobID string) string {
 }
 
 // InitHandoffCommand is the `eval init` that turns generated artifacts into an
-// eval, with every value already filled in.
+// eval, carrying the known artifact choices. Conversation generation produces
+// seeds, so its handoff selects simulation. The simulation model is deliberately
+// omitted: generation does not establish which deployment should play the user.
 //
 // Printed resolved rather than as a shape. A reader who has just watched the
 // command choose a name, a level and an evaluator should not have to retype
@@ -1285,7 +1313,10 @@ func InitHandoffCommand(agent, dataset, level, evaluator string) string {
 	if dataset != "" {
 		cmd += " --source dataset --dataset " + ShellArg(dataset)
 		if level != "" {
-			cmd += " --evaluation-level " + level
+			cmd += " --evaluation-level " + ShellArg(level)
+		}
+		if level == "conversation" {
+			cmd += " --conversation-mode simulation"
 		}
 	}
 	if evaluator != "" {
@@ -1489,13 +1520,13 @@ func ArtifactAppearedDuringGeneration(path, jobID string) error {
 		return fmt.Errorf(
 			"%s was created while the job was running; "+
 				"pass --force to overwrite it, or --output-dir to write elsewhere",
-			path)
+			terminalValue(path))
 	}
 	return fmt.Errorf(
 		"%s was created while the job was running, so it was left alone; "+
 			"the generated output is ready — collect it with "+
 			"`azd ai eval job show %s --force`, or to a different place with --output-dir",
-		path, shellArg(jobID))
+		terminalValue(path), shellArg(jobID))
 }
 
 // ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
@@ -1695,14 +1726,17 @@ func JSONLLineInvalid(line int, err error) error {
 
 // JSONLRowInvalid reports a row that is not JSON before the file is published.
 func JSONLRowInvalid(path string, line int, err error) error {
-	return fmt.Errorf(
-		"%s line %d is not valid JSON: %w. Every line must be one JSON object",
-		path, line, err)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s line %d is not valid JSON: %s. Every line must be one JSON object",
+			path, line, err),
+		"")
 }
 
 // JSONLRowEmpty reports a row that parses to nothing to evaluate.
 func JSONLRowEmpty(path string, line int) error {
-	return fmt.Errorf("%s line %d is an empty object, which evaluates to nothing", path, line)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s line %d is an empty object, which evaluates to nothing", path, line),
+		"")
 }
 
 // JSONLNoRows reports a dataset file with nothing in it to evaluate.
@@ -2014,7 +2048,7 @@ func DatasetNotGeneratedYet(dataset, path string) error {
 			"If this entry came from a `$ref`, note that a relative `file:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- write the path relative to the configuration instead",
-		filepath.ToSlash(path), shellArg(dataset))
+		terminalValue(filepath.ToSlash(path)), shellArg(dataset))
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -2134,6 +2168,14 @@ func EvaluatorNeedsFields(evaluator string, missing []string) error {
 		evaluator, quoteList(missing), pluralColumns(missing))
 }
 
+// EvaluatorFieldMalformed reports a required interaction column with an unusable value.
+func EvaluatorFieldMalformed(evaluator string, columns []string) error {
+	return fmt.Errorf(
+		"evaluator %q requires %s to be a non-empty string or an array on every row; "+
+			"fix the value in the dataset, or rebind %s with `data_mapping`",
+		evaluator, quoteList(columns), pluralColumns(columns))
+}
+
 // EvaluatorLevelUnsupported reports an evaluation level the evaluator refuses.
 func EvaluatorLevelUnsupported(evaluator, level string, supported []string) error {
 	return fmt.Errorf(
@@ -2182,7 +2224,7 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 			"If this entry came from a `$ref`, note that a relative `source:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- carry the rubric under `definition:` instead",
-		filepath.ToSlash(path), shellArg(evaluator))
+		terminalValue(filepath.ToSlash(path)), shellArg(evaluator))
 }
 
 // RubricBelongsUnderDefinition reports a rubric written at evaluator entry
@@ -2309,7 +2351,7 @@ func EvaluatorDrifted(evaluator, remote, recorded string) error {
 			"behind, so read it with `azd ai eval evaluator show %s --version %s "+
 			"--output-file <path>` and bring it into the declared source before "+
 			"deploying again, or delete that version if it was a mistake",
-		evaluator, remote, recorded, shellArg(evaluator), shellArg(remote))
+		evaluator, terminalValue(remote), terminalValue(recorded), shellArg(evaluator), shellArg(remote))
 }
 
 // EvaluatorVersionNotAdvancing reports a publish the service kept answering with
@@ -2645,7 +2687,7 @@ func SourceNotADataSource(source, dataset, traces string) error {
 
 // TracesTakesNoDataset reports --dataset paired with a trace-backed eval.
 func TracesTakesNoDataset() error {
-	return errors.New("--source traces reads production traces, so it takes no --dataset")
+	return InitFlagConflict("dataset", "cannot be used with --source traces, which reads production traces")
 }
 
 // MaxTracesNeedsTraceSource reports --max-traces without a trace-backed eval.
@@ -2757,14 +2799,18 @@ func JudgeModelRequired() error {
 // EvaluatorRefEmpty reports an --evaluator that carries no name, which is what
 // a stray comma leaves behind.
 func EvaluatorRefEmpty() error {
-	return errors.New("--evaluator was given an empty reference: name an evaluator, " +
-		"or use builtin.<name> for a built-in")
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		"--evaluator was given an empty reference: name an evaluator, "+
+			"or use builtin.<name> for a built-in",
+		"")
 }
 
 // EvaluatorRefMalformed reports a reference no evaluator can be found under.
 func EvaluatorRefMalformed(ref string) error {
-	return fmt.Errorf("%q is not an evaluator reference: repeat --evaluator, or separate "+
-		"them with commas, and use builtin.<name> for a built-in", ref)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%q is not an evaluator reference: repeat --evaluator, or separate "+
+			"them with commas, and use builtin.<name> for a built-in", ref),
+		"")
 }
 
 // EvaluatorRefNotAPath reports an --evaluator value carrying path separators.
@@ -2774,9 +2820,11 @@ func EvaluatorRefMalformed(ref string) error {
 // uploads whatever that resolves to. Refused rather than cleaned up: a reader
 // who typed a path meant something other than this flag.
 func EvaluatorRefNotAPath(ref string) error {
-	return fmt.Errorf("%q looks like a path, not an evaluator name: pass a name such as "+
-		"builtin.relevance or quality, and declare a rubric file with source: in the "+
-		"configuration instead", ref)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%q looks like a path, not an evaluator name: pass a name such as "+
+			"builtin.relevance or quality, and declare a rubric file with source: in the "+
+			"configuration instead", ref),
+		"")
 }
 
 // EvaluatorBuiltinUnknown reports a builtin.<name> the project's catalogue does
@@ -3212,8 +3260,20 @@ func SourceTypeMissing() error {
 }
 
 // SourceTypeNotSupported reports the same, where there is no index to name.
-func SourceTypeNotSupported(got, traces, responses string) error {
-	return fmt.Errorf("source.type %q is not supported; use %q or %q", got, traces, responses)
+func SourceTypeNotSupported(got string, supported ...string) error {
+	return fmt.Errorf("source.type %q is not supported; use %s", got, quoteList(supported))
+}
+
+// LocalSourceNeedsFile reports an explicit local source without a filesystem path.
+func LocalSourceNeedsFile() error {
+	return errors.New("source.file must name a local JSONL file for source.type: local; URLs are not supported")
+}
+
+// LocalSourceDatasetConflict refuses a catalog override of explicitly local bytes.
+func LocalSourceDatasetConflict(name string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--dataset conflicts with source.type: local on eval %q", name),
+		"Omit --dataset to run the declared local file, or select a separate catalog-backed eval.")
 }
 
 // TraceSourceNeedsAnAgent reports it where there is no index.
@@ -3229,6 +3289,11 @@ func TraceSourceNeedsAnAgent() error {
 // ResponsesSourceNeedsResponseIDs reports it where there is no index.
 func ResponsesSourceNeedsResponseIDs() error {
 	return errors.New("source.response_ids is required for a responses source")
+}
+
+// ResponsesSourceBlankResponseID identifies an invalid entry without printing stored response IDs.
+func ResponsesSourceBlankResponseID(index int) error {
+	return fmt.Errorf("source.response_ids[%d] must not be blank; supply a stored response ID or remove this entry", index)
 }
 
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
@@ -3628,11 +3693,27 @@ func MaxSamplesNegative(got int) error {
 			"Remove it to send every row, or set the number of rows to send", got)
 }
 
-// NegativeMaxSamplesFlag reports the same thing given on the command line.
+// SourceSampleFlagConflict reports an explicit dataset-sampling flag on a source-backed eval.
+func SourceSampleFlagConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--max-samples is not supported for source-backed eval %q, including an explicit value of 0", evalName),
+		"Omit --max-samples. For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
+// SourceSampleConflict reports a positive dataset cap applied to a trace or response source.
+func SourceSampleConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("max_samples cannot cap source-backed eval %q", evalName),
+		"Remove the positive max_samples value. "+
+			"For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
+// NegativeMaxSamplesFlag reports a row cap below zero given on the command line.
 func NegativeMaxSamplesFlag(got int) error {
-	return fmt.Errorf(
-		"--max-samples cannot be negative, got %d. "+
-			"Omit it to send every row, or give the number of rows to send", got)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--max-samples cannot be negative, got %d. "+
+			"Omit it to send every row, or give the number of rows to send", got),
+		"")
 }
 
 // FlagDoesNotApply reports a flag given to a generate that produces nothing it
@@ -4226,13 +4307,29 @@ func isCredentialUnavailable(err error) bool {
 func ServiceRefused(status int, err error) error {
 	concise := conciseServiceError(err)
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return exterrors.Auth(
-			exterrors.CodeAuthFailed,
-			fmt.Sprintf(
-				"the Foundry project refused the request (HTTP %d): %v. "+
-					"Run `azd auth login`, and check you have access to this project",
-				status, concise),
-			"run `azd auth login`, and check you have access to this project")
+		full := concise.Error()
+		safe := full
+		if svc, ok := errors.AsType[*serviceError](concise); ok {
+			safe = svc.SafeMessage()
+		}
+		const (
+			tail       = "Run `azd auth login`, and check you have access to this project"
+			suggestion = "run `azd auth login`, and check you have access to this project"
+		)
+		return &authServiceError{
+			LocalError: &azdext.LocalError{
+				Message: fmt.Sprintf(
+					"the Foundry project refused the request (HTTP %d): %s. %s", status, full, tail),
+				Code:       exterrors.CodeAuthFailed,
+				Category:   azdext.LocalErrorCategoryAuth,
+				Suggestion: suggestion,
+			},
+			// Same wording as Message, but built from the endpoint-free
+			// sentence, so -o json never discloses which Foundry account or
+			// project backed the refused call.
+			safe: fmt.Sprintf(
+				"the Foundry project refused the request (HTTP %d): %s. %s", status, safe, tail),
+		}
 	}
 	return concise
 }
@@ -4416,17 +4513,16 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // carried one of those characters would run it when pasted. They are named
 // rather than inlined: the command stops being copy-and-run for that argument,
 // which is the honest outcome, because it cannot be made both runnable and
-// safe here. Backslashes are left alone, so a Windows path comes back as itself.
+// safe here. Native path separators should be normalized by path-aware callers.
 func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	// The three that cannot survive being wrapped: two expand, one breaks the
-	// quoting itself.
-	if strings.ContainsAny(v, "$`\"") {
+	// Expansion syntax and embedded quotes are not literal across the supported shells.
+	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
-	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
+	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]{}#~!@") {
 		return v
 	}
 	return `"` + v + `"`
@@ -4443,6 +4539,19 @@ const shellArgNeedsQuoting = "VALUE_NEEDS_QUOTING"
 // rule decides how every printed command quotes what it carries.
 func ShellArg(v string) string {
 	return shellArg(v)
+}
+
+// CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
+func CanInlineShellArg(v string) bool {
+	return !strings.ContainsAny(v, "$`\"%!\\^") && strings.IndexFunc(v, unicode.IsControl) == -1
+}
+
+// terminalValue preserves ordinary display text and escapes embedded terminal controls.
+func terminalValue(v string) string {
+	if strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 // ConfirmDelete asks before removing something published.

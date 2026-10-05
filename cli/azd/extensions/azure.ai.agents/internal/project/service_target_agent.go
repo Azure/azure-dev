@@ -202,6 +202,7 @@ const (
 	// Keep the legacy metadata value for consumers that identify this artifact
 	// source; definitions now come from direct/root-$ref azure.yaml services.
 	preBuiltImageArtifactSource = "agent.yaml"
+	evaluationServiceHost       = "azure.ai.eval"
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -3541,13 +3542,26 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
-			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
-				"https://aka.ms/azd-agents-invoke") +
-				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval generate")
+			note := "For information on invoking the agent, see " + output.WithLinkFormat(
+				"https://aka.ms/azd-agents-invoke")
+			if !p.projectDeclaresEvaluationService() {
+				note += "\n\nSet up an evaluation suite to measure quality and impact in one step with " +
+					output.WithHighLightFormat("azd ai eval init")
+			}
+			last.Metadata["note"] = note
 		}
 	}
 
 	return artifacts
+}
+
+func (p *AgentServiceTargetProvider) projectDeclaresEvaluationService() bool {
+	for service := range maps.Values(p.projectServices) {
+		if service.GetHost() == evaluationServiceHost {
+			return true
+		}
+	}
+	return false
 }
 
 // augmentDeployNote enriches the last endpoint artifact's note with a

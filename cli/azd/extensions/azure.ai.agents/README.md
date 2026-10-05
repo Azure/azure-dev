@@ -185,6 +185,11 @@ Deploy Agents through the normal azd project lifecycle:
 - `azd deploy --all` deploys all services, with ordering defined by `uses`.
 - `azd up` provisions and deploys the project.
 
+After a successful deployment, endpoint guidance recommends `azd ai eval init`
+when `azure.yaml` does not declare an `azure.ai.eval` service. When an evaluation
+service is already declared, the setup guidance is omitted. The deprecated
+`azd ai agent eval generate` command is never recommended.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration

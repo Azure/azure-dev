@@ -30,7 +30,7 @@ type Watcher interface {
 
 type fileWatcher struct {
 	fileChanges     *fileChanges
-	watcher         *fsnotify.Watcher
+	watcher         watchBackend
 	ignoredFolders  map[string]struct{}
 	globIgnorePaths []string
 	ignoreMatcher   *ignore.Matcher
@@ -38,6 +38,12 @@ type fileWatcher struct {
 	// initialFiles is fixed at startup, not extended by transient paths.
 	initialFiles map[string]struct{}
 	mu           sync.Mutex
+	done         chan struct{}
+}
+
+type watchBackend interface {
+	Add(string) error
+	Close() error
 }
 
 type fileChanges struct {
@@ -47,12 +53,6 @@ type fileChanges struct {
 }
 
 func NewWatcher(ctx context.Context) (Watcher, error) {
-	fileChanges := &fileChanges{
-		Created:  make(map[string]bool),
-		Modified: make(map[string]bool),
-		Deleted:  make(map[string]bool),
-	}
-
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
@@ -62,6 +62,22 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 	if err != nil {
 		watcher.Close()
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	fw, err := newFileWatcher(ctx, cwd, watcher, watcher.Events, watcher.Errors)
+	if err != nil {
+		return nil, err
+	}
+	return fw, nil
+}
+
+func newFileWatcher(
+	ctx context.Context, cwd string, watcher watchBackend, events <-chan fsnotify.Event, watcherErrors <-chan error,
+) (*fileWatcher, error) {
+	fileChanges := &fileChanges{
+		Created:  make(map[string]bool),
+		Modified: make(map[string]bool),
+		Deleted:  make(map[string]bool),
 	}
 
 	// Load ignore patterns from .azdxignore and .gitignore files.
@@ -93,17 +109,53 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		initialFiles:    make(map[string]struct{}),
 	}
 
-	if err := fw.watchRecursive(cwd, watcher, true); err != nil {
+	if err := fw.start(ctx, watcher, events, watcherErrors); err != nil {
+		return nil, err
+	}
+	return fw, nil
+}
+
+func (fw *fileWatcher) start(
+	ctx context.Context, watcher watchBackend, events <-chan fsnotify.Event, watcherErrors <-chan error,
+) error {
+	// Build immutable provenance without registering watches. Add may need the
+	// backend's event queue drained to complete on Windows.
+	if err := fw.walkTracked(ctx, fw.root, func(path string, info os.FileInfo) error {
+		if !info.IsDir() {
+			fw.initialFiles[path] = struct{}{}
+		}
+		return nil
+	}); err != nil {
 		watcher.Close()
-		return nil, fmt.Errorf("watcher failed: %w", err)
+		return fmt.Errorf("failed to inventory watched files: %w", err)
 	}
 
+	watchCtx, cancel := context.WithCancel(ctx)
+	// Cancellation must unblock an Add even when the consumer is registering
+	// a newly created directory rather than selecting on watchCtx.Done.
+	closeDone := make(chan struct{})
+	stopClose := context.AfterFunc(watchCtx, func() {
+		defer close(closeDone)
+		watcher.Close()
+	})
+	fw.done = make(chan struct{})
 	go func() {
+		defer close(fw.done)
+		defer cancel()
 		defer watcher.Close()
+		defer func() {
+			if !stopClose() {
+				<-closeDone
+			}
+		}()
 
-		for {
+		for events != nil || watcherErrors != nil {
 			select {
-			case event := <-watcher.Events:
+			case event, ok := <-events:
+				if !ok {
+					events = nil
+					continue
+				}
 				// Fast path: ignore events matching hardcoded glob patterns.
 				shouldIgnore := false
 				for _, pattern := range fw.globIgnorePaths {
@@ -138,28 +190,37 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 					}
 				}
 
-				fw.mu.Lock()
-
 				if event.Has(fsnotify.Create) && isDir {
 					// New directory created - start watching it if not ignored
 					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-						if err := fw.watchRecursive(name, watcher, false); err != nil {
+						if err := fw.watchRecursive(watchCtx, name, watcher); err != nil {
 							log.Printf("failed to watch new directory %s: %v", name, err)
 						}
 					}
 				} else if !isDir {
+					fw.mu.Lock()
 					fw.trackFileEventLocked(event)
+					fw.mu.Unlock()
 				}
-				fw.mu.Unlock()
-			case err := <-watcher.Errors:
+			case err, ok := <-watcherErrors:
+				if !ok {
+					watcherErrors = nil
+					continue
+				}
 				log.Printf("watcher error: %v", err)
-			case <-ctx.Done():
+			case <-watchCtx.Done():
 				return
 			}
 		}
 	}()
 
-	return fw, nil
+	if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil {
+		cancel()
+		watcher.Close()
+		<-fw.done
+		return fmt.Errorf("watcher failed: %w", err)
+	}
+	return nil
 }
 
 // trackFileEventLocked updates file change accounting. The caller must hold fw.mu.
@@ -183,8 +244,13 @@ func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
 	}
 }
 
-func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher, initial bool) error {
+func (fw *fileWatcher) walkTracked(
+	ctx context.Context, root string, visit func(string, os.FileInfo) error,
+) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			return err
 		}
@@ -202,20 +268,28 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher, in
 					return filepath.SkipDir
 				}
 			}
+		}
+		return visit(path, info)
+	})
+}
 
-			err = watcher.Add(path)
-			if err != nil {
+func (fw *fileWatcher) watchRecursive(ctx context.Context, root string, watcher watchBackend) error {
+	return fw.walkTracked(ctx, root, func(path string, info os.FileInfo) error {
+		if info.IsDir() {
+			if err := watcher.Add(path); err != nil {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)
 			}
-		} else if initial {
-			fw.initialFiles[path] = struct{}{}
 		} else {
 			// Children may predate registration of their newly created directory,
 			// so the backend need not deliver individual Create events for them.
 			if relPath, relErr := filepath.Rel(fw.root, path); relErr != nil {
 				return fmt.Errorf("failed to compute relative path for %s: %w", path, relErr)
 			} else if !fw.ignoreMatcher.IsIgnored(relPath, false) {
-				fw.fileChanges.Created[path] = true
+				if _, existed := fw.initialFiles[path]; !existed {
+					fw.mu.Lock()
+					fw.fileChanges.Created[path] = true
+					fw.mu.Unlock()
+				}
 			}
 		}
 		return nil

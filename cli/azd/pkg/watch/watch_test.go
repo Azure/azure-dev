@@ -426,7 +426,13 @@ func TestGetFileChanges_NewPopulatedDirectory(t *testing.T) {
 			Deleted:  map[string]bool{},
 		},
 	}
-	require.NoError(t, fw.watchRecursive(root, backend, true))
+	require.NoError(t, fw.walkTracked(t.Context(), root, func(path string, info os.FileInfo) error {
+		if !info.IsDir() {
+			fw.initialFiles[path] = struct{}{}
+		}
+		return nil
+	}))
+	require.NoError(t, fw.watchRecursive(t.Context(), root, backend))
 	require.Equal(t, map[string]struct{}{initial: {}, ignoreFile: {}}, fw.initialFiles,
 		"the initial inventory must contain files, not directories")
 	dir := filepath.Join(root, "new-directory")
@@ -435,9 +441,7 @@ func TestGetFileChanges_NewPopulatedDirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(child, []byte("x"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "ignored.log"), []byte("x"), 0600))
 
-	fw.mu.Lock()
-	err = fw.watchRecursive(dir, backend, false)
-	fw.mu.Unlock()
+	err = fw.watchRecursive(t.Context(), dir, backend)
 	require.NoError(t, err)
 	require.Equal(t, map[string]struct{}{initial: {}, ignoreFile: {}}, fw.initialFiles,
 		"new children must not extend the fixed initial inventory")

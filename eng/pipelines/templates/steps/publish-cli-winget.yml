@@ -67,7 +67,7 @@ steps:
           if ($manifestContent -notmatch '(?m)^PackageIdentifier:\s+Microsoft\.Azd\s*$') {
             throw "WinGet manifest has an unexpected package identifier: $manifestFilePath"
           }
-          if ($manifestContent -notmatch "(?m)^PackageVersion:\s+$(MSI_VERSION)\s*$") {
+          if ($manifestContent -notmatch ('(?m)^PackageVersion:\s+{0}\s*$' -f [regex]::Escape('$(MSI_VERSION)'))) {
             throw "WinGet manifest has an unexpected package version: $manifestFilePath"
           }
         }

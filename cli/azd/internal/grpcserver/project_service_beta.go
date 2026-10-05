@@ -30,7 +30,7 @@ func (o *betaProjectServiceOverride) AddService(
 	acknowledged, err := o.service.addService(ctx, stableReq, req.GetOperationId())
 	if err != nil {
 		if acknowledged {
-			withDetails, detailErr := status.Convert(err).WithDetails(
+			withDetails, detailErr := status.Convert(mapHostError(err)).WithDetails(
 				&v1beta.AddServiceAcknowledgment{OperationId: req.GetOperationId()},
 			)
 			if detailErr != nil {

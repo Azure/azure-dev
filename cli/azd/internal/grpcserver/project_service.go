@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log"
@@ -275,8 +276,8 @@ func (s *projectService) AddService(
 //
 // acknowledged reports whether the mutation lock was acquired and any synchronous save/restore
 // work completed before the returned error -- the same point at which the documented
-// acknowledgment contract promises a signal to an opted-in caller. Success, panics, and errors
-// returned before the lock do not set acknowledged.
+// acknowledgment contract promises a signal to an opted-in caller. Success, panics, cancellation,
+// deadline expiration, and errors returned before the lock do not set acknowledged.
 func (s *projectService) addService(
 	ctx context.Context, req *azdext.AddServiceRequest, operationToken string,
 ) (acknowledged bool, resultErr error) {
@@ -291,7 +292,11 @@ func (s *projectService) addService(
 		// Runs after synchronous work and cache restoration, but before releasing the mutation lock.
 		// acknowledged stays false during a panic, which is not a confirmed completion.
 		defer func() {
-			if resultErr != nil {
+			code := status.Code(resultErr)
+			if resultErr != nil &&
+				!errors.Is(resultErr, context.Canceled) &&
+				!errors.Is(resultErr, context.DeadlineExceeded) &&
+				code != codes.Canceled && code != codes.DeadlineExceeded {
 				acknowledged = true
 			}
 		}()

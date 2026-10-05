@@ -93,14 +93,17 @@ For directly invoked extension commands, the host preserves the extension proces
 On a failure after acquiring the project mutation lock, the host echoes that
 value in the `azd-project-add-service-save-failed` trailer after synchronous
 work completes. This includes completed pre-save rejections and failed saves
-after restoring the previous cached service. Success, panics, and validation
-errors rejected before the lock do not carry the acknowledgment.
+after restoring the previous cached service. Success, panics, cancellation,
+deadline expiration, and validation errors rejected before the lock do not
+carry the acknowledgment.
 
 For the preview channel, `AzdClient.ProjectBeta()` exposes the generated
 `v1beta.ProjectServiceClient`. Set `AddServiceRequest.operation_id` to a fresh
 per-call identifier. The host returns an `AddServiceAcknowledgment` with that
 identifier as a `google.rpc.Status` detail on the same completed failures,
-instead of a trailer. The stable protobuf shape is unchanged.
+instead of a trailer. Existing host-error codes, messages, and structured
+details are preserved alongside the acknowledgment. The stable protobuf shape
+is unchanged.
 
 Require exactly one matching acknowledgment before considering compensation
 of local edits. Missing, mismatched, duplicate, or lost acknowledgments remain

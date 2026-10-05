@@ -117,18 +117,6 @@ func (s *initProjectServer) AddService(
 	return &azdext.EmptyResponse{}, nil
 }
 
-func (s *initProjectServer) setAddServiceHandler(handler func(context.Context, *azdext.AddServiceRequest) error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onAddService = handler
-}
-
-func (s *initProjectServer) setSaveFailureAcknowledgement(enabled bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ackSaveError = enabled
-}
-
 func (s *initProjectServer) wiringAttempts() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -42,7 +42,7 @@ func ValidateAgentServiceDefinition(
 
 	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
 	if err != nil {
-		return AgentDefinitionValidation{}, err
+		return AgentDefinitionValidation{}, invalidAgentDefinitionError(svc, err)
 	}
 
 	kind, name, err := validatedAgentIdentity(svc, resolved)

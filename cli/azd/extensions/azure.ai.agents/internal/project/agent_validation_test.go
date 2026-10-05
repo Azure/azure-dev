@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -175,6 +176,21 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 			want:     "unsupported type",
 		},
 		{
+			name: "prompt conflicting authored skill versions",
+			values: map[string]any{
+				"kind":         "prompt",
+				"name":         "prompt-agent",
+				"model":        "gpt-4.1-mini",
+				"instructions": "Help.",
+				"skills": []any{
+					map[string]any{"name": " Research ", "version": "1"},
+					map[string]any{"name": "research", "version": "2"},
+				},
+			},
+			wantCode: exterrors.CodeInvalidAgentManifest,
+			want:     `conflicting authored versions "1" and "2"`,
+		},
+		{
 			name: "hosted session",
 			values: map[string]any{
 				"kind": "hosted",
@@ -265,6 +281,52 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestValidateAgentServiceDefinitionClassifiesRootRefErrors(t *testing.T) {
+	t.Run("preserves file ref diagnostics", func(t *testing.T) {
+		root := t.TempDir()
+		props, err := structpb.NewStruct(map[string]any{"$ref": "./missing-agent.yaml"})
+		require.NoError(t, err)
+		svc := &azdext.ServiceConfig{
+			Name:                 "agent-service",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		}
+
+		_, err = ValidateAgentServiceDefinition(svc, root)
+
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+		require.Equal(t, foundry.CodeInvalidFileRef, localErr.Code)
+		require.Equal(t, "Check that the path is correct and the file exists and is readable.", localErr.Suggestion)
+	})
+
+	t.Run("classifies plain resolver errors", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "agent.yaml"),
+			[]byte("kind: prompt\nname: prompt-agent\nproject: ./src\n"),
+			0o600,
+		))
+		props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+		require.NoError(t, err)
+		svc := &azdext.ServiceConfig{
+			Name:                 "agent-service",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		}
+
+		_, err = ValidateAgentServiceDefinition(svc, root)
+
+		require.ErrorContains(t, err, `root $ref must not provide core field "project"`)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+		require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+		require.Equal(t,
+			"fix the agent definition in azure.yaml or its explicitly referenced file",
+			localErr.Suggestion)
+	})
 }
 
 func TestValidateAgentServiceDefinitionRejectsMalformedSkill(t *testing.T) {

@@ -302,6 +302,9 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 }
 
 func (g *promptGraph) validate() error {
+	if err := g.managed.ValidateAuthoredSkills(); err != nil {
+		return err
+	}
 	for _, n := range g.nodes {
 		if n.Validate == nil {
 			continue

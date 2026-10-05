@@ -278,6 +278,12 @@ func (fw *fileWatcher) walkTracked(
 			return ctxErr
 		}
 		if err != nil {
+			// Walk captures sibling names before visiting them; a removed child
+			// must not prevent discovery of later, unrelated directories.
+			if path != root && errors.Is(err, os.ErrNotExist) {
+				log.Printf("debug: path disappeared during watch traversal %s", path)
+				return nil
+			}
 			return err
 		}
 		if info.IsDir() {
@@ -303,6 +309,19 @@ func (fw *fileWatcher) watchRecursive(ctx context.Context, root string, watcher 
 	return fw.walkTracked(ctx, root, func(path string, info os.FileInfo) error {
 		if info.IsDir() {
 			if err := watcher.Add(path); err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return fmt.Errorf("failed to watch directory %s: %w; watch context ended: %w", path, err, ctxErr)
+				}
+				if path != root && errors.Is(err, os.ErrNotExist) {
+					_, statErr := os.Lstat(path)
+					if errors.Is(statErr, os.ErrNotExist) {
+						log.Printf("debug: directory disappeared before watch registration %s", path)
+						return filepath.SkipDir
+					}
+					if statErr != nil {
+						return fmt.Errorf("failed to watch directory %s: %w; failed to verify path: %w", path, err, statErr)
+					}
+				}
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)
 			}
 		} else {

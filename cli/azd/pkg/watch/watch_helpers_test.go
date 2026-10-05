@@ -4,6 +4,7 @@
 package watch
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -96,6 +97,10 @@ func TestFileChanges_String_MultipleEntries(t *testing.T) {
 }
 
 func TestGetFileChanges_Sorting(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, name := range []string{"z.txt", "a.txt"} {
+		require.NoError(t, os.WriteFile(name, []byte("x"), 0600))
+	}
 	fc := &fileChanges{
 		Created:  map[string]bool{"z.txt": true, "a.txt": true},
 		Modified: map[string]bool{"m.txt": true},
@@ -113,6 +118,8 @@ func TestGetFileChanges_Sorting(t *testing.T) {
 }
 
 func TestGetFileChanges_ChangeTypes(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile("new.txt", []byte("x"), 0600))
 	fc := &fileChanges{
 		Created:  map[string]bool{"new.txt": true},
 		Modified: map[string]bool{"mod.txt": true},

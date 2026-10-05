@@ -4,6 +4,11 @@
     "description": "Schema defining the structure of azd extensions, including versions, artifacts, and dependencies.",
     "type": "object",
     "definitions": {
+        "SemanticVersion": {
+            "type": "string",
+            "description": "Strict semantic version. Numeric core and prerelease identifiers have no leading zeros; build identifiers may have leading zeros.",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
         "Extension": {
             "type": "object",
             "title": "Extension",
@@ -70,14 +75,12 @@
             "additionalProperties": false,
             "properties": {
                 "from": {
-                    "type": "string",
-                    "description": "Exact semantic version written by the historical version scheme.",
-                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                    "$ref": "#/definitions/SemanticVersion",
+                    "description": "Exact semantic version written by the historical version scheme."
                 },
                 "to": {
-                    "type": "string",
-                    "description": "First published semantic version in the corrected scheme. This version and later semantic versions are successors of 'from'.",
-                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                    "$ref": "#/definitions/SemanticVersion",
+                    "description": "First published semantic version in the corrected scheme. This version and later semantic versions are successors of 'from'."
                 }
             },
             "required": [
@@ -91,9 +94,8 @@
             "description": "Defines a specific version of an extension, including artifacts and dependencies.",
             "properties": {
                 "version": {
-                    "type": "string",
-                    "description": "Version number following semantic versioning.",
-                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                    "$ref": "#/definitions/SemanticVersion",
+                    "description": "Version number following semantic versioning."
                 },
                 "requiredAzdVersion": {
                     "type": "string",

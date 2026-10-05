@@ -170,6 +170,12 @@ This places the exact `from` version immediately before `to` for latest-version,
 
 Migration metadata does **not** change version constraint eligibility. Exact pins still select the pinned version, and ranges still apply normal SemVer prerelease rules before migration ordering chooses among eligible releases. Extensions without `versionMigrations` retain strict SemVer behavior.
 
+The registry schema's version and migration fields require strict SemVer: numeric
+core and prerelease identifiers cannot have leading zeros. Build metadata and
+prerelease identifiers containing letters or hyphens may retain leading zeros.
+This schema rule does not change runtime support for exact non-SemVer tags or
+the syntax of version constraints.
+
 Registry validation requires `from` to have higher raw SemVer precedence than `to` and rejects malformed versions, duplicate `from` entries, unpublished `to` versions, self-migrations, and chained migrations. Normal source loading and cache reads enforce these same migration invariants before version selection, reporting the source, extension and invalid mapping without rewriting its metadata. Use this mechanism only to repair an already-published ordering mistake; do not use it to avoid normal SemVer versioning.
 
 ### Stage the Host Before Migrating Installed Extensions
@@ -205,7 +211,9 @@ For an already-installed historical version:
    ```
 
 The migration-capable host preserves the target's previous files and installed record
-while replacing it. If replacement fails, it attempts to restore both and reports the
+while replacing it. On Windows, staging the backup retries transient file locks
+using the update's context; cancellation stops those retries before uninstall.
+If replacement fails, it attempts to restore both and reports the
 failure with a nonzero exit code. A failed recovery is reported explicitly, including
 the retained backup path when file restoration fails. Completed dependency updates are
 not rolled back. After correcting an unavailable artifact or checksum, retry the same

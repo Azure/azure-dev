@@ -95,6 +95,7 @@ words:
   - tsx
   - triaging
   - Retryable
+  - rescan
   - runcontext
   - surveyterm
   - Toolhelp

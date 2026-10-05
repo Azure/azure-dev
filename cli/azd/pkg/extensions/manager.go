@@ -1225,7 +1225,7 @@ func (m *Manager) upgradeInternal(
 	}
 	asDependency := installed.InstalledAsDependency && !opts.PromoteToExplicit
 
-	finish, err := m.prepareUpgradeRecovery(installed)
+	finish, err := m.prepareUpgradeRecovery(ctx, installed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1266,7 +1266,9 @@ func (m *Manager) upgradeInternal(
 
 // prepareUpgradeRecovery preserves the target's files and installed record
 // until its replacement succeeds. Completed dependency changes are retained.
-func (m *Manager) prepareUpgradeRecovery(installed *Extension) (func(context.Context, bool) error, error) {
+func (m *Manager) prepareUpgradeRecovery(
+	ctx context.Context, installed *Extension,
+) (func(context.Context, bool) error, error) {
 	userConfigDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user config directory: %w", err)
@@ -1285,7 +1287,7 @@ func (m *Manager) prepareUpgradeRecovery(installed *Extension) (func(context.Con
 	}
 	backupPath := filepath.Join(backupDir, "installed")
 	hasFiles := false
-	if err := os.Rename(extensionDir, backupPath); err == nil {
+	if err := osutil.Rename(ctx, extensionDir, backupPath); err == nil {
 		hasFiles = true
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, errors.Join(

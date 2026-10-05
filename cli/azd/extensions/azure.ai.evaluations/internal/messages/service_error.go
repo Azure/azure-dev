@@ -57,7 +57,10 @@ func conciseServiceError(err error) error {
 	default:
 		sentence = fmt.Sprintf("the service refused the request: HTTP %d", respErr.StatusCode)
 	}
-
+	// text is the full diagnostic sentence Error() and existing human output
+	// read; safe is the same sentence without the service endpoint, which is
+	// what -o json reads instead so a refused request's JSON document never
+	// discloses which Foundry account or project backed the call.
 	text := sentence
 	if target := refusedTarget(respErr); target != "" {
 		text += " from " + target
@@ -82,6 +85,10 @@ func refusedTarget(respErr *azcore.ResponseError) string {
 }
 
 // serviceError says the sentence and carries the response underneath.
+//
+// text is the full diagnostic sentence, including which service refused the
+// call; Error() and existing human output read it. safe is the same sentence
+// without that service endpoint, read instead when serializing to -o json.
 type serviceError struct {
 	text  string
 	safe  string

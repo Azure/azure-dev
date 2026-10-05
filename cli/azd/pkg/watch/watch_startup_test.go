@@ -276,3 +276,278 @@ func TestNewWatcher_CancellationDrainsDynamicAddBeforeClose(t *testing.T) {
 	waitStartupExit(t, fw.done)
 	waitStartupExit(t, backend.closed)
 }
+
+func TestFileChanges_SlowStatDoesNotBlockOrPruneConcurrentEvents(t *testing.T) {
+	fw, _ := startupFixture(t)
+	file := filepath.Join(fw.root, "created.txt")
+	fw.mu.Lock()
+	fw.trackFileEventLocked(fsnotify.Event{Name: file, Op: fsnotify.Create})
+	fw.mu.Unlock()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	result := make(chan fileChanges, 1)
+	go func() {
+		result <- fw.snapshotFileChanges(func(string) (os.FileInfo, error) {
+			close(started)
+			<-release
+			return nil, os.ErrNotExist
+		})
+	}()
+	waitStartupExit(t, started)
+	eventDone := make(chan struct{})
+	go func() {
+		fw.mu.Lock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: file, Op: fsnotify.Create})
+		fw.mu.Unlock()
+		close(eventDone)
+	}()
+	waitStartupExit(t, eventDone)
+	release <- struct{}{}
+	select {
+	case snapshot := <-result:
+		require.Empty(t, snapshot.Created, "the earlier report excludes its missing path")
+	case <-time.After(2 * time.Second):
+		t.Fatal("snapshot did not finish after filesystem I/O completed")
+	}
+	fw.mu.Lock()
+	require.Contains(t, fw.fileChanges.Created, file, "a stale stat must not prune a newer Create")
+	fw.mu.Unlock()
+	require.Empty(t, fw.GetFileChanges())
+	fw.mu.Lock()
+	require.Empty(t, fw.fileChanges.Created, "a subsequent quiescent snapshot still reclaims missing paths")
+	fw.mu.Unlock()
+}
+
+func TestNewWatcher_ReconcilesDeletionBeforeInitialRegistration(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		name := "initial file"
+		if nested {
+			name = "initial nested directory"
+		}
+		t.Run(name, func(t *testing.T) {
+			fw, backend := startupFixture(t)
+			parent := fw.root
+			if nested {
+				parent = filepath.Join(fw.root, "nested")
+				require.NoError(t, os.Mkdir(parent, 0700))
+			}
+			file := filepath.Join(parent, "initial.txt")
+			require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
+			backend.add = func(path string) error {
+				if path != fw.root {
+					return nil
+				}
+				if err := os.Remove(file); err != nil {
+					return err
+				}
+				if nested {
+					return os.Remove(parent)
+				}
+				return nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+			t.Cleanup(func() {
+				cancel()
+				waitStartupExit(t, fw.done)
+			})
+			require.Equal(t, FileChanges{{Path: file, ChangeType: FileDeleted}}, fw.GetFileChanges(),
+				"a missing backend Remove during registration must not lose an initial deletion")
+			require.Equal(t, map[string]struct{}{file: {}}, fw.initialFiles,
+				"registration reconciliation must not mutate initial provenance")
+			fw.mu.Lock()
+			fw.trackFileEventLocked(fsnotify.Event{Name: file, Op: fsnotify.Remove})
+			fw.mu.Unlock()
+			require.Equal(t, FileChanges{{Path: file, ChangeType: FileDeleted}}, fw.GetFileChanges(),
+				"a later real Remove must preserve the reconciled deletion")
+		})
+	}
+}
+
+func TestNewWatcher_StartupReconciliationHonorsIgnores(t *testing.T) {
+	fw, backend := startupFixture(t)
+	ignoreFile := filepath.Join(fw.root, ".azdxignore")
+	require.NoError(t, os.WriteFile(ignoreFile, []byte("*.log\nignored/\n"), 0600))
+	matcher, err := ignore.NewMatcher(fw.root)
+	require.NoError(t, err)
+	fw.ignoreMatcher = matcher
+	file := filepath.Join(fw.root, "ignored.log")
+	dir := filepath.Join(fw.root, "ignored")
+	require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
+	require.NoError(t, os.Mkdir(dir, 0700))
+	child := filepath.Join(dir, "child.txt")
+	require.NoError(t, os.WriteFile(child, []byte("x"), 0600))
+	backend.add = func(path string) error {
+		if path == fw.root {
+			if err := os.Remove(file); err != nil {
+				return err
+			}
+			if err := os.Remove(child); err != nil {
+				return err
+			}
+			return os.Remove(dir)
+		}
+		return nil
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+	t.Cleanup(func() {
+		cancel()
+		waitStartupExit(t, fw.done)
+	})
+	require.Empty(t, fw.GetFileChanges(), "ignored startup deletions must not leak into changes")
+	require.NotContains(t, fw.initialFiles, child, "ignored directories must not be inventoried")
+}
+
+func TestNewWatcher_StartupReconciliationPreservesFileIgnoreSemantics(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		name := "initial file removed"
+		if directory {
+			name = "initial file replaced by directory"
+		}
+		t.Run(name, func(t *testing.T) {
+			fw, backend := startupFixture(t)
+			require.NoError(t, os.WriteFile(filepath.Join(fw.root, ".azdxignore"), []byte("ignored/\n"), 0600))
+			matcher, err := ignore.NewMatcher(fw.root)
+			require.NoError(t, err)
+			fw.ignoreMatcher = matcher
+			require.False(t, matcher.IsIgnored("ignored", false), "the original file is not ignored")
+			require.True(t, matcher.IsIgnored("ignored", true), "the pattern ignores only directories")
+			path := filepath.Join(fw.root, "ignored")
+			require.NoError(t, os.WriteFile(path, []byte("original"), 0600))
+			backend.add = func(parent string) error {
+				if parent != fw.root {
+					return nil
+				}
+				if _, exists := fw.initialFiles[path]; !exists {
+					return errors.New("the original tracked file was not inventoried before Add")
+				}
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+				if directory {
+					return os.Mkdir(path, 0700)
+				}
+				return nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+			t.Cleanup(func() {
+				cancel()
+				waitStartupExit(t, fw.done)
+			})
+			require.Contains(t, fw.initialFiles, path)
+			for range 2 {
+				require.Equal(t, FileChanges{{Path: path, ChangeType: FileDeleted}}, fw.GetFileChanges(),
+					"a directory-only ignore must not suppress the original file deletion")
+			}
+		})
+	}
+}
+
+func TestNewWatcher_StartupReconciliationRetainsOriginalDeletion(t *testing.T) {
+	for _, directory := range []bool{true, false} {
+		name := "initial file replaced by directory"
+		if !directory {
+			name = "initial file briefly recreated with observed Create"
+		}
+		t.Run(name, func(t *testing.T) {
+			fw, backend := startupFixture(t)
+			path := filepath.Join(fw.root, "initial.txt")
+			require.NoError(t, os.WriteFile(path, []byte("original"), 0600))
+			backend.add = func(parent string) error {
+				if parent != fw.root {
+					return nil
+				}
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+				if directory {
+					return os.Mkdir(path, 0700)
+				}
+				if err := os.WriteFile(path, []byte("recreated"), 0600); err != nil {
+					return err
+				}
+				// Inject the same accounting used by the consumer, without
+				// depending on channel scheduling or an actual Remove event.
+				fw.mu.Lock()
+				fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Create})
+				fw.mu.Unlock()
+				return os.Remove(path)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+			t.Cleanup(func() {
+				cancel()
+				waitStartupExit(t, fw.done)
+			})
+			for range 2 {
+				require.Equal(t, FileChanges{{Path: path, ChangeType: FileDeleted}}, fw.GetFileChanges(),
+					"startup provenance must preserve the original deletion")
+			}
+			require.Empty(t, fw.fileChanges.Created)
+			require.Empty(t, fw.fileChanges.Modified)
+			require.Equal(t, map[string]struct{}{path: {}}, fw.initialFiles)
+		})
+	}
+}
+
+func TestReconcileInitialFiles_PreservesAccountingAndErrors(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		fault    error
+		cancel   bool
+		created  bool
+		wantType FileChangeType
+	}{
+		{name: "present modified", wantType: FileModified},
+		{name: "missing modified", fault: os.ErrNotExist, wantType: FileDeleted},
+		{name: "present recreated", created: true, wantType: FileCreated},
+		{name: "missing recreated", fault: os.ErrNotExist, created: true, wantType: FileDeleted},
+		{name: "permission", fault: os.ErrPermission, wantType: FileModified},
+		{name: "backend lookup failure", fault: errors.New("injected lookup failure"), wantType: FileModified},
+		{name: "canceled lookup", cancel: true, wantType: FileModified},
+		{name: "missing and cancellation", fault: os.ErrNotExist, cancel: true, wantType: FileModified},
+		{name: "permission and cancellation", fault: os.ErrPermission, cancel: true, wantType: FileModified},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fw, _ := startupFixture(t)
+			path := filepath.Join(fw.root, "initial.txt")
+			require.NoError(t, os.WriteFile(path, []byte("x"), 0600))
+			info, err := os.Lstat(path)
+			require.NoError(t, err)
+			fw.initialFiles[path] = struct{}{}
+			if test.created {
+				fw.fileChanges.Created[path] = true
+			} else {
+				fw.fileChanges.Modified[path] = true
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			err = fw.reconcileInitialFiles(ctx, func(string) (os.FileInfo, error) {
+				if test.cancel {
+					cancel()
+				}
+				if test.fault != nil {
+					return nil, &os.PathError{Op: "Lstat", Path: path, Err: test.fault}
+				}
+				return info, nil
+			})
+			if test.cancel {
+				require.ErrorIs(t, err, context.Canceled)
+			}
+			if test.fault != nil && (!errors.Is(test.fault, os.ErrNotExist) || test.cancel) {
+				require.ErrorIs(t, err, test.fault)
+			} else if !test.cancel {
+				require.NoError(t, err)
+			}
+			require.Equal(t, FileChanges{{Path: path, ChangeType: test.wantType}}, fw.GetFileChanges())
+			require.Equal(t, map[string]struct{}{path: {}}, fw.initialFiles)
+		})
+	}
+}

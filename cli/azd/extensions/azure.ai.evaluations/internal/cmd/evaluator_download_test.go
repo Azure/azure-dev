@@ -142,6 +142,7 @@ func TestEvaluatorDownloadRefusesAVersionThatIsNotAPathComponent(t *testing.T) {
 	require.Error(t, a.download(t.Context(), ec))
 }
 
+// #nosec G101 -- synthetic credential-bearing service metadata verifies non-disclosure; never requested.
 const downloadedEvaluator = `{
 	"name":"quality",
 	"version":"3",
@@ -155,15 +156,15 @@ const downloadedEvaluator = `{
 		"type":"rubric",
 		"dimensions":[{
 			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
-			"metadata":{"internal_count":9007199254740993}
+			"metadata":{"internal_count":9007199254740993,"url":"https://dimension-user:dimension-password@example.test"}
 		}],
 		"pass_threshold":0.6,
 		"future_option":{"count":9007199254740993},
 		"id":"service-definition-id",
 		"created_at":"2026-09-17T00:00:00Z",
 		"creator":{"name":"service-creator"},
-		"metadata":{"owner":"service-only-definition-metadata"},
-		"generation":{"job_id":"service-generation-job"},
+		"metadata":{"owner":"service-only-definition-metadata","url":"https://service-user:service-password@example.test"},
+		"generation":{"job_id":"service-generation-job","url":"https://example.test?sig=service-secret#private-fragment"},
 		"warnings":[{"message":"service-warning"}],
 		"init_parameters":{"model":"judge"},
 		"metrics":[{"name":"score"}],
@@ -178,7 +179,8 @@ const downloadedEvaluator = `{
 const editableDownloadedRubric = `{
 	"type":"rubric",
 	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false}],
-	"pass_threshold":0.6
+	"pass_threshold":0.6,
+	"future_option":{"count":9007199254740993}
 }`
 
 func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
@@ -194,10 +196,15 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.JSONEq(t, editableDownloadedRubric, string(raw), "the authored surface has exactly three root fields")
-	require.NotContains(t, string(raw), "9007199254740993", "unknown service metadata is not editable")
+	require.JSONEq(t, editableDownloadedRubric, string(raw), "unknown authored fields remain editable")
+	require.Contains(t, string(raw), "9007199254740993", "unknown authored numeric values retain their precision")
 	require.NotContains(t, string(raw), "service-only-agent-wiring")
 	require.NotContains(t, output.String(), "service-only-agent-wiring")
+	for _, secret := range []string{
+		"dimension-user", "dimension-password", "service-user", "service-password", "service-secret", "private-fragment",
+	} {
+		require.NotContains(t, string(raw)+output.String(), secret)
+	}
 	encodedPath, err := json.Marshal(path)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"evaluator":"quality","version":"3","path":`+string(encodedPath)+`}`, output.String())
@@ -219,7 +226,15 @@ func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 	}
 }
 
-func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
+func TestEvaluatorDownloadProjectsEmptyRubricWithoutLosingUnknownFields(t *testing.T) {
+	downloaded, err := evaluatorDocument(json.RawMessage(
+		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"rubric","dimensions":[],"future_option":9007199254740993}`, string(downloaded))
+	require.Contains(t, string(downloaded), "9007199254740993")
+}
+
+func TestEditableRubricPreservesUnknownFieldsAndNumericPrecision(t *testing.T) {
 	const threshold = "0.60000000000000001"
 	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {
 		t.Run(dimensions, func(t *testing.T) {
@@ -228,10 +243,49 @@ func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
 				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
 			downloaded, err := evaluatorDocument(json.RawMessage(raw))
 			require.NoError(t, err)
-			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+`}`,
+			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+
+				`,"future_option":{"count":9007199254740993}}`,
 				string(downloaded))
 			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")
+			require.Contains(t, string(downloaded), "9007199254740993")
 			require.NotContains(t, string(downloaded), "old-evaluator-name")
+		})
+	}
+}
+
+func TestEditableRubricPreservesFutureDimensionFieldsAndRemovesKnownServiceCredentials(t *testing.T) {
+	const definition = `{"type":"rubric","dimensions":[{
+			"id":"accuracy","weight":5,"future_dimension":{"limit":9007199254740993},
+			"metadata":{"url":"https://dim-user:dim-secret@example.test?sig=dim-token#dim-fragment"},
+			"promptText":"service prompt"
+		}],"future_option":{"threshold":0.60000000000000001},
+		"generation":{"url":"https://job-user:job-secret@example.test?sig=job-token#job-fragment"},
+		"initParameters":{"key":"service-key"}}`
+	const expected = `{"type":"rubric","dimensions":[{
+			"id":"accuracy","weight":5,"future_dimension":{"limit":9007199254740993}
+		}],"future_option":{"threshold":0.60000000000000001}}`
+	for _, caller := range []string{"download", "generation"} {
+		t.Run(caller, func(t *testing.T) {
+			result := json.RawMessage(`{"definition":` + definition + `}`)
+			var artifact []byte
+			var err error
+			if caller == "download" {
+				artifact, err = evaluatorDocument(result)
+			} else {
+				path := filepath.Join(t.TempDir(), "rubric.json")
+				require.NoError(t, writeRubric(path, result))
+				artifact, err = os.ReadFile(path)
+			}
+			require.NoError(t, err)
+			require.JSONEq(t, expected, string(artifact))
+			require.Contains(t, string(artifact), "9007199254740993")
+			require.Contains(t, string(artifact), "0.60000000000000001")
+			for _, secret := range []string{
+				"dim-user", "dim-secret", "dim-token", "dim-fragment",
+				"job-user", "job-secret", "job-token", "job-fragment", "service-key",
+			} {
+				require.NotContains(t, string(artifact), secret)
+			}
 		})
 	}
 }

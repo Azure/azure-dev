@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,6 +39,7 @@ type fileWatcher struct {
 	// initialFiles is fixed at startup, not extended by transient paths.
 	initialFiles map[string]struct{}
 	mu           sync.Mutex
+	revision     uint64
 	done         chan struct{}
 }
 
@@ -224,7 +226,7 @@ func (fw *fileWatcher) start(
 
 		err := fw.watchRecursive(watchCtx, fw.root, watcher)
 		if err == nil {
-			err = fw.reconcileInitialFiles(watchCtx)
+			err = fw.reconcileInitialFiles(watchCtx, os.Lstat)
 		}
 		if err == nil {
 			err = watchCtx.Err()
@@ -252,9 +254,14 @@ func (fw *fileWatcher) start(
 	return nil
 }
 
-func (fw *fileWatcher) reconcileInitialFiles(ctx context.Context) error {
-	// A deletion between the inventory and parent registration has no backend
-	// event. Recheck only startup paths after all watches have been installed.
+// reconcileInitialFiles closes the inventory-to-registration deletion gap.
+// Unlike later transient creations, a missing initial file is always a deletion,
+// even if it was briefly recreated or its path is now a directory.
+func (fw *fileWatcher) reconcileInitialFiles(
+	ctx context.Context, stat func(string) (os.FileInfo, error),
+) error {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
 	for path := range fw.initialFiles {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -266,12 +273,20 @@ func (fw *fileWatcher) reconcileInitialFiles(ctx context.Context) error {
 		if fw.ignoreMatcher.IsIgnored(relPath, false) {
 			continue
 		}
-		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-			fw.mu.Lock()
-			fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Remove})
-			fw.mu.Unlock()
+		info, err := stat(path)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if err != nil {
+				return fmt.Errorf("failed to reconcile initial file %s: %w; watch context ended: %w", path, err, ctxErr)
+			}
+			return ctxErr
+		}
+		if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
+			delete(fw.fileChanges.Created, path)
+			delete(fw.fileChanges.Modified, path)
+			fw.fileChanges.Deleted[path] = true
+			fw.revision++
 		} else if err != nil {
-			return fmt.Errorf("failed to reconcile watched file %s: %w", path, err)
+			return fmt.Errorf("failed to reconcile initial file %s: %w", path, err)
 		}
 	}
 	return nil
@@ -279,6 +294,7 @@ func (fw *fileWatcher) reconcileInitialFiles(ctx context.Context) error {
 
 // trackFileEventLocked updates file change accounting. The caller must hold fw.mu.
 func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
+	fw.revision++
 	name := event.Name
 	_, existed := fw.initialFiles[name]
 	switch {
@@ -361,6 +377,7 @@ func (fw *fileWatcher) watchRecursive(ctx context.Context, root string, watcher 
 				if _, existed := fw.initialFiles[path]; !existed {
 					fw.mu.Lock()
 					fw.fileChanges.Created[path] = true
+					fw.revision++
 					fw.mu.Unlock()
 				}
 			}
@@ -370,13 +387,12 @@ func (fw *fileWatcher) watchRecursive(ctx context.Context, root string, watcher 
 }
 
 func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
-	createdFiles := fw.existingCreatedFilesLocked()
+	changes := fw.snapshotFileChanges(os.Lstat)
+	createdFiles := slices.Collect(maps.Keys(changes.Created))
 
 	createdFileLength := len(createdFiles)
-	modifiedFileLength := len(fw.fileChanges.Modified)
-	deletedFileLength := len(fw.fileChanges.Deleted)
+	modifiedFileLength := len(changes.Modified)
+	deletedFileLength := len(changes.Deleted)
 
 	if createdFileLength == 0 && modifiedFileLength == 0 && deletedFileLength == 0 {
 		return
@@ -403,13 +419,13 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 	}
 
 	if modifiedFileLength > 0 {
-		for file := range fw.fileChanges.Modified {
+		for file := range changes.Modified {
 			fmt.Println(output.WithGrayFormat("| "), color.YellowString("± Modified "), getDisplayPath(file))
 		}
 	}
 
 	if deletedFileLength > 0 {
-		for file := range fw.fileChanges.Deleted {
+		for file := range changes.Deleted {
 			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
@@ -482,52 +498,56 @@ func (fc FileChanges) String() string {
 	return b.String()
 }
 
-// existingCreatedFilesLocked filters missing created files from reported changes.
-// The caller must hold fw.mu.
-//
+// snapshotFileChanges filters missing created files outside the event-accounting lock.
 // Some backends (notably Darwin kqueue) can miss Remove events when a file is
 // removed before its per-file watch is registered. Reconcile before reporting
 // changes, even if the final snapshot immediately precedes watcher cancellation.
 // The fixed startup inventory distinguishes pre-existing files from late events
 // for reclaimed ephemeral paths, without retaining a tombstone for each path.
-func (fw *fileWatcher) existingCreatedFilesLocked() []string {
-	files := make([]string, 0, len(fw.fileChanges.Created))
-	for name := range fw.fileChanges.Created {
-		if info, err := os.Lstat(name); errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
-			continue
-		} else {
-			files = append(files, name)
+func (fw *fileWatcher) snapshotFileChanges(stat func(string) (os.FileInfo, error)) fileChanges {
+	fw.mu.Lock()
+	revision := fw.revision
+	snapshot := fileChanges{
+		Created: maps.Clone(fw.fileChanges.Created), Modified: maps.Clone(fw.fileChanges.Modified),
+		Deleted: maps.Clone(fw.fileChanges.Deleted),
+	}
+	fw.mu.Unlock()
+
+	retained := make(map[string]bool, len(snapshot.Created))
+	for name, created := range snapshot.Created {
+		if info, err := stat(name); !errors.Is(err, os.ErrNotExist) && (err != nil || !info.IsDir()) {
+			retained[name] = created
 		}
 	}
-	if len(files) != len(fw.fileChanges.Created) {
-		// Rebuild rather than just delete keys so peak transient map capacity
-		// can also be reclaimed after a burst of ephemeral files.
-		retained := make(map[string]bool, len(files))
-		for _, name := range files {
-			retained[name] = fw.fileChanges.Created[name]
+	if len(retained) != len(snapshot.Created) {
+		fw.mu.Lock()
+		// A concurrent event may recreate a path after its stat result. Only
+		// reclaim the live map when this snapshot still owns its revision.
+		if fw.revision == revision {
+			fw.fileChanges.Created = maps.Clone(retained)
+			fw.revision++
 		}
-		fw.fileChanges.Created = retained
+		fw.mu.Unlock()
 	}
-	return files
+	snapshot.Created = retained
+	return snapshot
 }
 
 // GetFileChanges returns tracked file changes, excluding missing created files,
 // sorted by path.
 func (fw *fileWatcher) GetFileChanges() FileChanges {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
-	createdFiles := fw.existingCreatedFilesLocked()
+	snapshot := fw.snapshotFileChanges(os.Lstat)
 
 	changes := make(FileChanges, 0,
-		len(createdFiles)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
+		len(snapshot.Created)+len(snapshot.Modified)+len(snapshot.Deleted))
 
-	for _, file := range createdFiles {
+	for file := range snapshot.Created {
 		changes = append(changes, FileChange{Path: file, ChangeType: FileCreated})
 	}
-	for file := range fw.fileChanges.Modified {
+	for file := range snapshot.Modified {
 		changes = append(changes, FileChange{Path: file, ChangeType: FileModified})
 	}
-	for file := range fw.fileChanges.Deleted {
+	for file := range snapshot.Deleted {
 		changes = append(changes, FileChange{Path: file, ChangeType: FileDeleted})
 	}
 

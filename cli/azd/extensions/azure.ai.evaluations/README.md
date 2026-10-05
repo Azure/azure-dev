@@ -1210,16 +1210,22 @@ azd ai eval evaluator update support-quality --from-file ./support-quality.json
 ```
 
 A rubric download uses the same editable JSON shape as generation and job
-collection: only `type: "rubric"`, `dimensions`, and `pass_threshold` when supplied.
-Each dimension retains only `id`, `description`, `weight`, and
-`always_applicable`. Unknown service fields, the service envelope, catalog
-metadata, and generated wiring such as `data_schema`, `init_parameters`,
-`metrics`, and `prompt_text` are omitted. Prompt-based evaluators retain their
+collection: `type: "rubric"`, `dimensions`, and `pass_threshold` when supplied.
+Each dimension retains `id`, `description`, `weight`, and `always_applicable`.
+Unknown definition and dimension fields are preserved for future authoring
+contracts, including their numeric precision. Only known service-envelope and
+catalog fields, service metadata (`metadata`, creation details, generation
+details, and warnings), and generated wiring (`data_schema`, `init_parameters`,
+`metrics`, and `prompt_text`, including camel-case aliases) are omitted.
+Prompt-based evaluators retain their
 separate full document, including their authored prompt. To inspect or export the full service response,
 use `azd ai eval evaluator show support-quality --version 3 -o json`.
 Malformed recognized rubrics fail download and collection before replacing an
 artifact or updating its catalog entry, rather than falling back to a full
 service-envelope export.
+Download and generation results must be JSON objects: null, arrays, strings,
+numbers, and booleans are rejected before writing files or catalog entries.
+Unknown object-shaped evaluator documents remain supported without dropping fields.
 `create` and `azd up` also reject null or non-array `dimensions`, non-object
 dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
 values during preflight, before uploading or tagging datasets or publishing

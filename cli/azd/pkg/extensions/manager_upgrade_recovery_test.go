@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,14 +36,15 @@ func (m *recoveryConfigManager) Save(cfg config.Config, path string) error {
 
 func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 	tests := []struct {
-		name      string
-		artifact  string
-		entry     string
-		checksum  ExtensionChecksum
-		cancel    bool
-		failSave  int
-		version   string
-		wantError string
+		name             string
+		artifact         string
+		entry            string
+		checksum         ExtensionChecksum
+		cancel           bool
+		cancelOnDownload bool
+		failSave         int
+		version          string
+		wantError        string
 	}{
 		{name: "missing artifact", artifact: "missing", wantError: "failed to download artifact"},
 		{
@@ -54,6 +56,7 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		{name: "entry point", artifact: "replacement", entry: "absent", wantError: "executable permission"},
 		{name: "missing release", artifact: "replacement", version: "9.0.0", wantError: "was not found"},
 		{name: "cancellation", artifact: "cancel", cancel: true, wantError: "context canceled"},
+		{name: "download cancellation", artifact: "cancel", cancelOnDownload: true, wantError: "context canceled"},
 		{name: "uninstall save", artifact: "replacement", failSave: 1, wantError: "injected save failure"},
 		{name: "install save", artifact: "replacement", failSave: 2, wantError: "injected save failure"},
 	}
@@ -106,7 +109,7 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			if test.artifact != "missing" {
 				require.NoError(t, os.WriteFile(newPath, []byte("replacement bytes"), 0o600))
 			}
-			if test.cancel {
+			if test.cancel || test.cancelOnDownload {
 				newPath = "https://test.example.com/cancel"
 			}
 			entry := test.entry
@@ -120,15 +123,34 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			ctx := t.Context()
 			configManager.saveCalls = 0
 			configManager.failAt = test.failSave
-			if test.cancel {
+			downloadCanceled := false
+			if test.cancel || test.cancelOnDownload {
 				cancelCtx, cancel := context.WithCancel(ctx)
-				cancel()
+				defer cancel()
+				if test.cancel {
+					cancel()
+				}
 				ctx = cancelCtx
+				mockCtx.HttpClient.When(func(request *http.Request) bool {
+					return request.Method == http.MethodGet && request.URL.String() == newPath
+				}).RespondFn(func(request *http.Request) (*http.Response, error) {
+					if test.cancelOnDownload {
+						_, statErr := os.Stat(installedPath)
+						require.ErrorIs(t, statErr, os.ErrNotExist)
+						cancel()
+						downloadCanceled = true
+					}
+					require.ErrorIs(t, request.Context().Err(), context.Canceled)
+					return nil, request.Context().Err()
+				})
 			}
 			_, _, err = manager.Upgrade(ctx, metadata, DefaultUpgradeOptions(test.version))
 			require.ErrorContains(t, err, test.wantError)
-			if test.cancel {
+			if test.cancel || test.cancelOnDownload {
 				require.ErrorIs(t, err, context.Canceled)
+			}
+			if test.cancelOnDownload {
+				require.True(t, downloadCanceled)
 			}
 			if test.failSave != 0 {
 				require.ErrorIs(t, err, configManager.saveError)

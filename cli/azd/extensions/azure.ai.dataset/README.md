@@ -62,17 +62,6 @@ reconcile it and no eval could name it.
 
 Once a file exists, `create` registers it here.
 
-Conversation generation produces scenario seeds, not completed transcripts.
-Use `azd ai eval init --conversation-mode simulation` to author an evaluation
-that turns those seeds into conversations; static mode instead scores completed
-messages without invoking an agent. Simulation requires an independent plain
-model name or `connection-name/model-deployment` reference. Plain names are passed
-unchanged without connection lookup; qualified references validate the project
-connection before init writes configuration. See the
-[evaluation authoring contract](../azure.ai.evaluations/README.md) for seed
-validation, qualified local-binding reuse, connection discovery, and evaluator
-selection. Dataset registration does not establish evaluator or model availability.
-
 ## Project endpoint
 
 Every command resolves the Foundry project endpoint in this order:

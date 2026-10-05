@@ -207,6 +207,17 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
 	recreate := substanceChanged(prior, definition, digest)
+	if recreate && group.Source != nil {
+		legacy := group
+		legacy.Source = nil
+		legacyDefinition, err := project.FingerprintDefinition(legacy)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
+			recreate = false
+		}
+	}
 	if recreate && validated {
 		legacyDigest, err := project.FingerprintGroup(prepared.declared)
 		if err != nil {

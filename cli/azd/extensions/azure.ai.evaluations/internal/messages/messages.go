@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -4477,7 +4478,7 @@ func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	// Expansion syntax and embedded quotes are not literal across the supported shells.
+	// Expansion syntax, embedded quotes and terminal controls cannot be safely inlined.
 	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
@@ -4500,9 +4501,9 @@ func ShellArg(v string) string {
 	return shellArg(v)
 }
 
-// CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
+// CanInlineShellArg reports whether ShellArg can preserve v without shell expansion or terminal control characters.
 func CanInlineShellArg(v string) bool {
-	return !strings.ContainsAny(v, "$`\"%!\\^\r\n\x00")
+	return !strings.ContainsAny(v, "$`\"%!\\^") && strings.IndexFunc(v, unicode.IsControl) == -1
 }
 
 // ConfirmDelete asks before removing something published.

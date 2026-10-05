@@ -268,8 +268,9 @@ The successful human `eval create` next step retains that filename rather than
 selecting the default config in the artifact directory.
 For an evaluation name beginning with `-`, the next step places `--path` before
 `--` and the literal name, so the name cannot be interpreted as a flag.
-If the name or path cannot be portably quoted, init displays escaped exact-name/path
-values and manual create guidance instead of a runnable placeholder command.
+If the name or path cannot be portably quoted or contains a Unicode control
+character, init displays escaped exact-name/path values and manual create guidance
+instead of a runnable placeholder command.
 The same fallback applies to names that look like a joined `-C` working-directory
 flag, which some azd hosts consume even after `--`; the authored name is not changed.
 New paths ending in `.yaml` or `.yml` are treated as configuration files,
@@ -439,10 +440,12 @@ evaluation level, the handoff warns and uses the built-in default instead; the
 rubric remains in the catalogue.
 If any handoff value contains shell expansion syntax or cannot be portably quoted,
 including a dollar sign, backtick, double quote, percent sign, exclamation mark,
-backslash, or caret,
+backslash, caret, or any Unicode control character (C0, DEL, or C1),
 generation displays the exact escaped values and manual initialization guidance
 instead of a copyable command. Quote that path for your shell when supplying
 `--path`; generation never substitutes a different path into a runnable handoff.
+Control characters, including ESC, BEL, and tabs, are escaped rather than emitted
+raw in this guidance. Safe Unicode names and paths are unchanged.
 
 Simulation run summaries, `run show`, and `run output list` retain the run's
 dataset name and version and distinguish **requested configuration** from

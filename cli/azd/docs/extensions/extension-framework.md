@@ -1091,6 +1091,16 @@ If a historical release used an incorrect version scheme that SemVer ranks above
 historical `from` version and a corrected `to` version published by the same registry update. See
 [Correcting a Historical Version Scheme](./extension-resolution-and-versioning.md#correcting-a-historical-version-scheme).
 
+Authorize and validate each extension's historical transition separately. A migration declared for evaluations
+does not change dataset ordering. For example, dataset `1.0.0-beta.35` ranks above `1.0.0-beta.1` under ordinary
+SemVer; staging a migration-capable host alone does not make that replacement an update. Publish a dataset migration
+only after approving that exact transition, not by assuming an evaluation normalization policy covers it.
+
+Registry metadata for a newly built artifact must reflect its actual manifest `requiredAzdVersion`. A retained
+registry constraint such as `>=1.27.1` must not be reused for an artifact whose manifest requires `>=1.33.0`.
+Neither constraint establishes migration capability. Do not relabel immutable historical artifacts or rewrite their
+metadata to prepare a new build; keep publication metadata separate until the containing host and artifacts are verified.
+
 Stage and verify an actually released migration-capable host **before** publishing metadata that installed users
 need for this update. Older hosts, including azd 1.34.2, accept schema 1.1 but ignore `versionMigrations`; they
 can report a successful command while skipping the corrected release as a downgrade. A schema bump or extension

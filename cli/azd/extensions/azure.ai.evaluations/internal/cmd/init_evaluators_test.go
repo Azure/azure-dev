@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
@@ -44,8 +46,10 @@ func TestInitEvaluatorChoicesRespectKnownLocalCompatibility(t *testing.T) {
 			assert.Contains(t, choices, strings.ToLower(level)+"-only")
 			assert.Contains(t, choices, strings.ToLower(level)+"-mixed-case")
 			assert.Contains(t, choices, "unknown")
-			assert.Contains(t, choices, "future")
-			assert.Contains(t, choices, "mixed-future")
+			assert.NotContains(t, choices, "future")
+			assert.Equal(t, strings.EqualFold(level, "turn"), slices.Contains(choices, "mixed-future"))
+			require.ErrorContains(t, validateInitEvaluatorLevels(cfg, []string{"future"}, level),
+				"--evaluation-level "+level)
 			for _, other := range evaluationLevels {
 				if !strings.EqualFold(other, level) {
 					assert.NotContains(t, choices, other+"-only")
@@ -57,7 +61,55 @@ func TestInitEvaluatorChoicesRespectKnownLocalCompatibility(t *testing.T) {
 				}
 			}
 			assert.NoError(t, validateInitEvaluatorLevels(cfg,
-				[]string{"unknown", "future", "mixed-future", strings.ToLower(level) + "-mixed-case"}, level))
+				[]string{"unknown", strings.ToLower(level) + "-mixed-case"}, level))
+		})
+	}
+}
+
+func TestInitEvaluatorLevelsMatchReconciliation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		levels []string
+		want   bool
+	}{
+		{"absent metadata", nil, true},
+		{"empty metadata", []string{}, true},
+		{"exact match", []string{"turn"}, true},
+		{"case-insensitive match", []string{"TuRn"}, true},
+		{"both known levels", []string{"conversation", "turn"}, true},
+		{"unknown only", []string{"future-level"}, false},
+		{"wrong known level", []string{"conversation"}, false},
+		{"wrong known and unknown", []string{"conversation", "future-level"}, false},
+		{"unknown and wrong known", []string{"future-level", "conversation"}, false},
+		{"exact match and unknown", []string{"turn", "future-level"}, true},
+		{"unknown and exact match", []string{"future-level", "TuRn"}, true},
+		{"blank only", []string{""}, false},
+		{"non-exact whitespace", []string{" turn "}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decl := project.EvaluatorDecl{Name: "custom", SupportedEvaluationLevels: tc.levels}
+			schema := eval_api.EvaluatorSummary{SupportedEvaluationLevels: tc.levels}
+			level := project.EvaluationLevelTurn
+			assert.Equal(t, tc.want, schema.SupportsLevel(level))
+			assert.Equal(t, tc.want, initEvaluatorSupportsLevel(&decl, level))
+			eval := &project.Eval{
+				EvaluationLevel: level,
+				Evaluators:      evalcore.EvaluatorList{{Evaluator: decl.Name}},
+			}
+			reconcileErr := checkEvaluatorRequirements(eval, map[string]*eval_api.EvaluatorSummary{decl.Name: &schema})
+			cfg := &project.EvalConfig{Evaluators: []project.EvaluatorDecl{decl}}
+			choices := evaluatorChoices(cfg, level)
+			err := validateInitEvaluatorLevels(cfg, []string{decl.Name}, level)
+			if tc.want {
+				assert.Contains(t, choices, decl.Name)
+				require.NoError(t, err)
+				require.NoError(t, reconcileErr)
+			} else {
+				assert.NotContains(t, choices, decl.Name)
+				require.ErrorContains(t, err, "--evaluator custom")
+				assert.ErrorContains(t, err, "--evaluation-level turn")
+				require.Error(t, reconcileErr)
+			}
 		})
 	}
 }

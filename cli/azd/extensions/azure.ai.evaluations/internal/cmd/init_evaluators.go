@@ -208,20 +208,11 @@ func resolveEvaluators(
 	return chosen, true, nil
 }
 
+// initEvaluatorSupportsLevel applies the same compatibility contract as
+// reconciliation: an empty list is unconstrained; a nonempty list must match.
 func initEvaluatorSupportsLevel(decl *project.EvaluatorDecl, level string) bool {
-	if len(decl.SupportedEvaluationLevels) == 0 {
-		return true
-	}
-	for _, supported := range decl.SupportedEvaluationLevels {
-		if strings.EqualFold(supported, level) {
-			return true
-		}
-		if !slices.ContainsFunc(evaluationLevels, func(known string) bool { return strings.EqualFold(known, supported) }) {
-			// Future or unfamiliar metadata is not proof of incompatibility.
-			return true
-		}
-	}
-	return false
+	schema := eval_api.EvaluatorSummary{SupportedEvaluationLevels: decl.SupportedEvaluationLevels}
+	return schema.SupportsLevel(level)
 }
 
 func validateInitEvaluatorLevels(cfg *project.EvalConfig, refs []string, level string) error {

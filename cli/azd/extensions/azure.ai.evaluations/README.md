@@ -549,11 +549,11 @@ remain directories, even if their names end in `.yaml`.
 Init supports `--output default` for human-readable output and `--output json`
 for structured output. Unsupported formats are rejected before any authored writes.
 Registered datasets with no local file are not fetched or checked by init.
-The evaluator picker excludes custom evaluators whose local
-`supported_evaluation_levels` explicitly excludes the selected level (compared
-case-insensitively); an explicit incompatible `--evaluator` is rejected.
-Missing or unfamiliar metadata remains
-unknown, with authoritative compatibility checked when the eval is created.
+For a nonempty local `supported_evaluation_levels` list, the evaluator picker
+requires an exact case-insensitive match for the selected level; an explicit
+incompatible `--evaluator` is rejected. Unfamiliar entries do not grant support
+for other levels. Missing or empty lists remain unconstrained, with authoritative
+compatibility checked when the eval is created.
 Omitting `--evaluator` keeps the default selection or opens the interactive
 picker. An explicitly empty `--evaluator` is rejected rather than silently
 restoring the default.

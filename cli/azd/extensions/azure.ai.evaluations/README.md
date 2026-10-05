@@ -461,21 +461,22 @@ Human summaries, run details, and listings also distinguish unreported counters
 from explicit zeros. Partial counters are marked `not reported` rather than
 inventing a failure/error split or a pass rate without known operands.
 Waited summaries also show a complete set of explicitly reported zero counters;
-their pass rate is `-` because no rows were scored.
-Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
-between the total and reported result counts does not replace an explicit zero
-with inferred errors.
+their pass rate is `-` because no test cases were reported.
+The run-level pass rate is passed test cases divided by total test cases, so
+failed, errored, skipped, and otherwise unpassed rows all count against the
+run. This same definition is used by summaries, details, listings, and
+`--fail-on pass-rate`.
+A mismatch between the total and reported result counts does not replace an
+explicit zero with inferred errors.
 When reported totals leave rows unaccounted for, a neutral warning names that
-gap and the scored denominator without assigning failed, errored, or skipped
-outcomes. A pass-rate gate requires reported `passed` and `failed` counts and
-does not require a total; `any-failure` requires reported `total` and `passed`
-counts because it counts every non-passing row against the run. Missing or null
-required counters make the gate indeterminate: the command returns an
-operational error (extension exit 1), never a quality verdict based on invented
-zeros. An explicitly reported zero total still breaches either gate, and a
-reported zero scored denominator still breaches a pass-rate gate. Determinate
-quality breaches retain extension exit 2; the azd host exposes extension
-failures as exit 1.
+gap while confirming that the pass-rate denominator still includes the full
+total, without assigning failed, errored, or skipped outcomes. Both gate forms
+require reported `total` and `passed` counts. Missing or null required counters
+make the gate indeterminate: the command returns an operational error
+(extension exit 1), never a quality verdict based on invented zeros. An
+explicitly reported zero total still breaches either gate. Determinate quality
+breaches retain extension exit 2; the azd host exposes extension failures as
+exit 1.
 
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics

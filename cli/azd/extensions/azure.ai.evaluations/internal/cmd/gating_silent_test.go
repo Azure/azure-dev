@@ -36,10 +36,10 @@ func TestFailOnRejectsAThresholdThatCanNeverFire(t *testing.T) {
 	assert.InDelta(t, 0.8, g.passRate, 1e-9)
 }
 
-// A run that graded nothing has not passed. The pass-rate gate always said so;
-// any-failure computed Total-Passed, which is zero for an empty run, and let it
-// through -- the one shape a gate exists to catch.
-func TestEveryGateBreachesOnARunThatScoredNothing(t *testing.T) {
+// A run with no test cases has not passed. Any-failure once computed
+// Total-Passed, which is zero for an empty run, and let it through -- the one
+// shape a gate exists to catch.
+func TestEveryGateBreachesOnARunWithNoTestCases(t *testing.T) {
 	empty := &eval_api.EvalRunResultCounts{Total: 0}
 
 	anyFailure, err := parseGate("any-failure")
@@ -67,8 +67,6 @@ func TestGatesStillJudgeRunsThatScoredSomething(t *testing.T) {
 
 	rate, err := parseGate("pass-rate=0.8")
 	require.NoError(t, err)
-	// Spelled out with Failed rather than left to total, because the rate is
-	// measured over what was scored: passed plus failed.
 	assert.Empty(t, rate.breach(&eval_api.EvalRunResultCounts{Total: 10, Passed: 9, Failed: 1}))
 	assert.NotEmpty(t, rate.breach(&eval_api.EvalRunResultCounts{Total: 10, Passed: 7, Failed: 3}))
 

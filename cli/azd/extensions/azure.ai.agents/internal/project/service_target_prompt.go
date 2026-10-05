@@ -427,7 +427,15 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		fmt.Fprintf(os.Stderr, "Prompt agent %q version %s is already active.\n", request.Name, latest.Version)
 	}
 
-	if err := p.registerPromptAgentEnvVars(ctx, serviceConfig, request.Name, latest.Version, settings, bindings); err != nil {
+	if err := p.registerPromptAgentEnvVars(
+		ctx,
+		serviceConfig,
+		request.Name,
+		latest.Version,
+		settings,
+		managed.HarnessType() != "",
+		bindings,
+	); err != nil {
 		return nil, err
 	}
 
@@ -645,7 +653,7 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 }
 
 // registerPromptAgentEnvVars stores the deployed prompt agent's identity and
-// harness invocation endpoint in the azd environment, mirroring the hosted
+// Responses invocation endpoint in the azd environment, mirroring the hosted
 // AGENT_{KEY}_* convention so downstream commands (show/invoke) resolve.
 // bindings carries ids resolved by the deploy graph that must survive into the
 // next deploy (currently the vector store id).
@@ -654,6 +662,7 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	serviceConfig *azdext.ServiceConfig,
 	agentName, version string,
 	settings *PromptAgentSettings,
+	harnessed bool,
 	bindings map[string]any,
 ) error {
 	if agentName == "" {
@@ -664,7 +673,7 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
-	endpoint := PromptAgentResponsesEndpoint(settings, agentName, false)
+	endpoint := PromptAgentResponsesEndpoint(settings, agentName, harnessed)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},

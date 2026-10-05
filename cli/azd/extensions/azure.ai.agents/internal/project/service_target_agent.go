@@ -312,6 +312,22 @@ func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error 
 	return nil
 }
 
+func (p *AgentServiceTargetProvider) agentDefinitionValidationServiceConfig() *azdext.ServiceConfig {
+	if p.serviceConfig == nil ||
+		p.agentDefinitionRef == "" ||
+		serviceConfigHasRef(p.serviceConfig) {
+		return p.serviceConfig
+	}
+
+	validationConfig := *p.serviceConfig
+	validationConfig.AdditionalProperties = &structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			AgentDefinitionRefKey: structpb.NewStringValue(p.agentDefinitionRef),
+		},
+	}
+	return &validationConfig
+}
+
 // resolveServiceConfig expands local $ref includes on the current service
 // config. Successful expansion removes the $ref, making repeat calls no-ops.
 func (p *AgentServiceTargetProvider) resolveServiceConfig() error {
@@ -681,7 +697,7 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	validation, err := ValidateAgentEndpointOperation(
-		p.serviceConfig,
+		p.agentDefinitionValidationServiceConfig(),
 		p.projectPath,
 		AgentEndpointOperationReport,
 	)

@@ -238,7 +238,7 @@ func missingAgentServiceError(templatePointer string) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
 		fmt.Sprintf(
-			"manifest %q is a unified azure.yaml but does not declare an agent service",
+			"manifest %q is an azure.yaml project document but does not declare an agent service",
 			templatePointer,
 		),
 		fmt.Sprintf(
@@ -294,7 +294,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 	if err := yaml.Unmarshal(content, &document); err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("parsing unified azure.yaml from %q: %s", display, err),
+			fmt.Sprintf("parsing azure.yaml project document from %q: %s", display, err),
 			"Provide a valid azure.yaml project document with an azure.ai.agent service.",
 		)
 	}
@@ -318,7 +318,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 
 	return nil, exterrors.Validation(
 		exterrors.CodeInvalidAgentManifest,
-		fmt.Sprintf("%q is not a unified azure.yaml project document", display),
+		fmt.Sprintf("%q is not an azure.yaml project document", display),
 		"Provide an azure.yaml document with a services mapping and at least one azure.ai.agent service.",
 	)
 }
@@ -340,7 +340,7 @@ func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error
 		return nil, false, exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
 			fmt.Sprintf(
-				"could not read unified azure.yaml from %q: %s",
+				"could not read azure.yaml project document from %q: %s",
 				safeInitSourceDisplay(templatePointer),
 				err,
 			),
@@ -371,7 +371,7 @@ func readExplicitManifestContent(
 		if err != nil {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidManifestPointer,
-				fmt.Sprintf("could not read unified azure.yaml from %q: %s", display, err),
+				fmt.Sprintf("could not read azure.yaml project document from %q: %s", display, err),
 				"Provide an existing local azure.yaml path.",
 			)
 		}
@@ -385,13 +385,13 @@ func readExplicitManifestContent(
 	if content, recognized, err := readPublicGitHubManifest(ctx, templatePointer, httpClient); recognized && err == nil {
 		return content, nil
 	} else if exterrors.IsCancellation(err) {
-		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+		return nil, exterrors.Cancelled("reading the azure.yaml project document was cancelled")
 	}
 
 	if readAuthenticated == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
-			fmt.Sprintf("could not download unified azure.yaml from %q", display),
+			fmt.Sprintf("could not download azure.yaml project document from %q", display),
 			"Verify the URL and authenticate with `gh auth login` if the repository is private.",
 		)
 	}
@@ -400,7 +400,7 @@ func readExplicitManifestContent(
 		return content, nil
 	}
 	if exterrors.IsCancellation(err) {
-		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+		return nil, exterrors.Cancelled("reading the azure.yaml project document was cancelled")
 	}
 	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return nil, localErr
@@ -408,7 +408,7 @@ func readExplicitManifestContent(
 	return nil, exterrors.Dependency(
 		exterrors.CodeGitHubDownloadFailed,
 		fmt.Sprintf(
-			"could not download unified azure.yaml from %q: %s",
+			"could not download azure.yaml project document from %q: %s",
 			display,
 			safeInitSourceError(err, templatePointer),
 		),
@@ -828,7 +828,7 @@ func runInitFromAzureYaml(
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf("a project azure.yaml already exists in %q, so the sample's "+
-				"unified azure.yaml cannot be adopted there", targetDir),
+				"azure.yaml project document cannot be adopted there", targetDir),
 			"run this command in an empty directory (or pass a new target directory) to "+
 				"adopt the sample, or add the agent service directly to this project's azure.yaml",
 		)
@@ -1038,7 +1038,7 @@ func stageAzdTemplateRepository(
 		return "", noop, exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
 			fmt.Sprintf("%q points to a file, not a full repository template", safeInitSourceDisplay(templateSource)),
-			"Use -t for a unified azure.yaml file, or choose a full repository template source.",
+			"Use -t for an azure.yaml project document, or choose a full repository template source.",
 		)
 	}
 

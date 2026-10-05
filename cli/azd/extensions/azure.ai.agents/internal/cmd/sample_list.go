@@ -142,7 +142,7 @@ func newSampleListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `List available agent samples from the curated catalog.
 
 Each entry includes the manifest URL or repo URL that can be passed back into
-` + "`azd ai agent init -t <url>`" + ` (for unified azure.yaml files) or ` + "`azd init -t <url>`" + `
+` + "`azd ai agent init -t <url>`" + ` (for azure.yaml project documents) or ` + "`azd init -t <url>`" + `
 (for full azd template repositories), and a ready-to-execute ` + "`initCommand`" + `
 string so coding agents don't have to compose flags.
 
@@ -159,7 +159,7 @@ The catalog is fetched from the same source the interactive template picker uses
   # Only featured (curated) samples as JSON
   azd ai agent sample list --featured-only --output json
 
-  # Only unified azure.yaml samples (ready for -t)
+  # Only azure.yaml project samples (ready for -t)
   azd ai agent sample list --type azure.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

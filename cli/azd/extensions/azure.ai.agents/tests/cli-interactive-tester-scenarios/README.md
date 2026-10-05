@@ -183,7 +183,7 @@ them reuse that session credential.
 ### GitHub login (remote azure.yaml scenarios)
 
 The remote project scenarios (`1.03-init-from-azure-yaml-url`,
-`1.05-init-flag-agent-name`) download a unified azure.yaml — and its sibling
+`1.05-init-flag-agent-name`) download an azure.yaml project document — and its sibling
 files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
 but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
 would otherwise drop into an **interactive GitHub login** mid-run. Like
@@ -637,7 +637,7 @@ How they're used here:
   (`1.04-init-from-code`, `1.06-init-deploy-mode-code`) also copy a committed Python
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
-- **`pre` gh-auth guard** — the remote unified azure.yaml scenarios (`1.03-init-from-azure-yaml-url`,
+- **`pre` gh-auth guard** — the remote azure.yaml project scenarios (`1.03-init-from-azure-yaml-url`,
   `1.05-init-flag-agent-name`) run `gh auth status` and fail fast if GitHub
   CLI isn't authenticated, because downloading the project file and its sibling
   files can fall back to the `gh` CLI (and an interactive login) when the anonymous GitHub API is

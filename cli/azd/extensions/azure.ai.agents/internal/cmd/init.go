@@ -678,9 +678,9 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
-Unified projects:
-When -t points at a unified azure.yaml (a project manifest that declares
-services with host: azure.ai.project / azure.ai.agent / ...), that azure.yaml
+Azure.yaml projects:
+When -t points at an azure.yaml project document that declares
+services with host: azure.ai.project / azure.ai.agent / ..., that azure.yaml
 is adopted as the project manifest and its referenced files are placed at the
 project root. Standalone agent definitions and AgentManifest template wrappers
 are rejected with migration guidance.
@@ -720,16 +720,16 @@ agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
 
 Use --agent-name to choose a unique Foundry agent name when initializing from
-a reusable unified project.
+a reusable azure.yaml project.
 
 File Exclusions:
 A default .agentignore file is generated to control which files are excluded
 from code-deploy ZIP packaging (uses .gitignore syntax).`,
-		Example: `  # Adopt a sample's unified azure.yaml as the project manifest
+		Example: `  # Adopt a sample's azure.yaml as the project manifest
   azd ai agent init -t ./azure.yaml
   azd ai agent init -t https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
 
-  # Adopt a unified project with a unique Foundry agent name
+  # Adopt an azure.yaml project with a unique Foundry agent name
   azd ai agent init -t ./azure.yaml --agent-name my-unique-agent
 
   # Initialize from local agent code
@@ -750,7 +750,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --no-prompt --kind prompt --agent-name my-agent \
     --project-id "<resource-id>" --model-deployment gpt-4.1-mini
 
-  # Non-interactive unified project adoption
+  # Non-interactive azure.yaml project adoption
   azd ai agent init --no-prompt -t ./azure.yaml --project-id "<resource-id>"
 
   # Bring your own pre-built image (no source scaffolding, Dockerfile-based build setup, or ACR setup)
@@ -1177,7 +1177,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return exterrors.Validation(
 							exterrors.CodeInvalidAgentManifest,
 							fmt.Sprintf("unsupported agent template type %q", selectedTemplate.EffectiveType()),
-							"Choose a unified azure.yaml or full azd repository template.",
+							"Choose an azure.yaml project document or full azd repository template.",
 						)
 					}
 
@@ -1248,7 +1248,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		))
 
 	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "",
-		"Path or supported GitHub URI to a unified azure.yaml project document")
+		"Path or supported GitHub URI to an azure.yaml project document")
 	cmd.Flags().StringVarP(&flags.templatePointer, "manifest", "m", "",
 		"Deprecated alias for --template")
 	_ = cmd.Flags().MarkDeprecated("manifest", "use --template/-t instead")
@@ -1262,7 +1262,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"Source directory for generated agents, or target directory when adopting a unified project")
+		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		fmt.Sprintf("Protocols supported by the agent (%s). Can be specified multiple times.", knownProtocolNames()))
@@ -1325,8 +1325,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"full ARM resource ID. The policy must already exist; azd attaches it, it does not "+
 			"create it. When omitted, you are prompted to pick from the policies on the account; "+
 			"with --no-prompt no policy is attached. "+
-			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting unified "+
-			"azure.yaml or a full repository template; declare policies in azure.yaml instead.")
+			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an "+
+			"azure.yaml project document or a full repository template; declare policies in azure.yaml instead.")
 
 	return cmd
 }
@@ -1460,7 +1460,7 @@ func validateUnifiedInitFlags(cmd *cobra.Command) error {
 	return exterrors.Validation(
 		exterrors.CodeConflictingArguments,
 		fmt.Sprintf(
-			"unified azure.yaml adoption cannot apply these explicitly set inputs: %s",
+			"azure.yaml project adoption cannot apply these explicitly set inputs: %s",
 			strings.Join(conflicts, ", "),
 		),
 		"Remove the conflicting flags or update the agent services in azure.yaml before running init.",
@@ -1803,7 +1803,7 @@ func isLocalFilePath(path string) bool {
 }
 
 // checkNotDirectory returns a validation error when path is a directory
-// instead of a unified azure.yaml file.
+// instead of an azure.yaml project document.
 func checkNotDirectory(path string) error {
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
@@ -1812,8 +1812,8 @@ func checkNotDirectory(path string) error {
 
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
-		fmt.Sprintf("'%s' is a directory, not a unified azure.yaml file", safeInitSourceDisplay(path)),
-		"the --template flag must point to a unified azure.yaml file, not a directory",
+		fmt.Sprintf("'%s' is a directory, not an azure.yaml project document", safeInitSourceDisplay(path)),
+		"the --template flag must point to an azure.yaml project document, not a directory",
 	)
 }
 
@@ -1930,7 +1930,7 @@ func (a *InitAction) addVoiceAgentToProject(
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrappers cannot be generated by the standalone voice init flow",
-			"use a unified azure.yaml that declares both the hosted target and the voice wrapper",
+			"use an azure.yaml project document that declares both the hosted target and the voice wrapper",
 		)
 	}
 
@@ -2663,7 +2663,7 @@ func validateRegistryConnectionFlag(
 	if image == "" && !hasAzureYamlInput {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--registry-connection requires --image when no unified azure.yaml input is provided",
+			"--registry-connection requires --image when no azure.yaml project input is provided",
 			"Pass --image <registry/image:tag> or provide an image on the hosted agent service in azure.yaml",
 		)
 	}

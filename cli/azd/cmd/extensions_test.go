@@ -4,7 +4,10 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -14,6 +17,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 // findChildByName returns the child action descriptor with the given name, or nil if not found.
@@ -182,6 +188,128 @@ func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
 	require.NotNil(t, evalCmd)
 	require.Equal(t, "Extension for fine tuning AI models.", finetuneCmd.Options.Command.Short)
 	require.Equal(t, "Extension for evaluating AI models.", evalCmd.Options.Command.Short)
+}
+
+func TestExtensionNamespaceDocs(t *testing.T) {
+	t.Parallel()
+	const overviewURL = "https://learn.microsoft.com/azure/developer/azure-developer-cli/extensions/overview"
+	tests := []struct {
+		name       string
+		namespaces []string
+		args       []string
+		coreParent bool
+		wantURL    string
+	}{
+		{
+			name:       "shared namespace",
+			namespaces: []string{"ai.eval", "ai.dataset"},
+			args:       []string{"ai", "--docs"},
+			wantURL:    overviewURL,
+		},
+		{
+			name:       "shared namespace reversed",
+			namespaces: []string{"ai.dataset", "ai.eval"},
+			args:       []string{"ai", "--docs"},
+			wantURL:    overviewURL,
+		},
+		{
+			name:       "deep intermediate namespace",
+			namespaces: []string{"ai.models.eval"},
+			args:       []string{"ai", "models", "--docs"},
+			wantURL:    overviewURL,
+		},
+		{
+			name:       "explicit help takes precedence",
+			namespaces: []string{"ai.eval"},
+			args:       []string{"ai", "--docs", "--help"},
+		},
+		{
+			name:       "disabled docs does not open a browser",
+			namespaces: []string{"ai.eval"},
+			args:       []string{"ai", "--docs=false"},
+		},
+		{
+			name:       "existing core namespace retains reference anchor",
+			namespaces: []string{"env.demo"},
+			args:       []string{"env", "--docs"},
+			coreParent: true,
+			wantURL:    referenceDocumentationUrl + "azd-env",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := newTestRoot()
+			if tt.coreParent {
+				root.Add("env", &actions.ActionDescriptorOptions{})
+			}
+			for _, namespace := range tt.namespaces {
+				require.NoError(t, bindExtension(root, &extensions.Extension{
+					Id:        namespace,
+					Namespace: namespace,
+				}))
+			}
+
+			container := ioc.NewNestedContainer(nil)
+			testCtx := mocks.NewMockContext(t.Context())
+			container.MustRegisterSingleton(func() input.Console {
+				return testCtx.Console
+			})
+			cmd, err := NewCobraBuilder(container).BuildCommand(root)
+			require.NoError(t, err)
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+
+			var calledURL string
+			ctx := WithBrowserOverride(t.Context(), func(_ context.Context, _ input.Console, url string) {
+				calledURL = url
+			})
+			cmd.SetArgs(tt.args)
+			require.NoError(t, cmd.ExecuteContext(ctx))
+			require.Equal(t, tt.wantURL, calledURL)
+			if tt.wantURL == "" {
+				require.Contains(t, output.String(), "Commands for the ai extension namespace.")
+			}
+		})
+	}
+}
+
+func TestExtensionDocsDelegation(t *testing.T) {
+	t.Parallel()
+	tests := [][]string{
+		{"ai", "eval", "--docs"},
+		{"ai", "eval", "run", "--docs"},
+		{"ai", "eval", "run", "start", "--docs"},
+		{"ai", "dataset", "--docs"},
+		{"ai", "dataset", "create", "--docs"},
+	}
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			root := newTestRoot()
+			require.NoError(t, bindExtension(root, &extensions.Extension{
+				Id:        "azure.ai." + args[1],
+				Namespace: "ai." + args[1],
+			}))
+			leaf := findChildByName(findChildByName(root, "ai"), args[1])
+			require.NotNil(t, leaf)
+			leaf.Options.ActionResolver = nil
+			var delegatedArgs []string
+			leaf.Options.Command.RunE = func(cmd *cobra.Command, args []string) error {
+				delegatedArgs = slices.Clone(args)
+				return nil
+			}
+			cmd, err := NewCobraBuilder(ioc.NewNestedContainer(nil)).BuildCommand(root)
+			require.NoError(t, err)
+			ctx := WithBrowserOverride(t.Context(), func(_ context.Context, _ input.Console, _ string) {
+				t.Error("the host must not handle an extension's --docs flag")
+			})
+			cmd.SetArgs(args)
+			require.NoError(t, cmd.ExecuteContext(ctx))
+			require.Equal(t, args[2:], delegatedArgs)
+		})
+	}
 }
 
 func TestStripCwdFlag(t *testing.T) {

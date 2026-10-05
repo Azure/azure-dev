@@ -90,6 +90,10 @@ For extensions that are still in development or preview, consider publishing to 
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)
 - **Reuse parameter patterns** — Use established flags like `--subscription`, `--name`, `--type`
 - **Integrate with help** — Make your extension discoverable through `azd help`
+- **Documentation routing** — The host's `--docs` flag opens the extensions overview for
+  intermediate namespace groups such as `azd ai`. At and below your extension's namespace,
+  the extension handles flags itself; `--docs` is not automatically supplied by the host
+  or Go SDK. See [Command Documentation Routing](../architecture/extension-framework.md#command-documentation-routing).
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
   first-party `ReportUsage` attributes must be declared and classified in

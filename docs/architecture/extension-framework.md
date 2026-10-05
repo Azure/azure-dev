@@ -138,6 +138,18 @@ for registration and provider requirements.
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
 
+## Command Documentation Routing
+
+The host creates intermediate command groups for dotted extension namespaces. For example,
+extensions registered as `ai.eval` and `ai.dataset` share the host-owned `azd ai` group.
+`azd ai --docs` opens the [extensions overview](https://learn.microsoft.com/azure/developer/azure-developer-cli/extensions/overview),
+not a generated anchor in the built-in command reference. Existing built-in command groups
+retain their reference anchors even when an extension adds a child command.
+
+Commands at and below the extension's own namespace are delegated to the extension process.
+Their flags, including whether they support `--docs`, are determined by that extension.
+Use `--help` for its command-specific usage.
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

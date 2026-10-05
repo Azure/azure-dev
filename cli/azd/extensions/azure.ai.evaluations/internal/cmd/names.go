@@ -6,6 +6,7 @@ package cmd
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // assetNamePattern is what the service accepts for a dataset name. Its own
@@ -41,7 +42,7 @@ func validAssetName(name string) bool {
 //
 // What stays refused is what cannot address anything, or what would leave the
 // path. The name is URL-escaped into the request path, so a space is fine and a
-// separator is not.
+// separator or Unicode control character is not.
 func validLookupName(name string) bool {
 	if name == "" || name == "." || name == ".." || len(name) > assetNameMaxLength {
 		return false
@@ -49,10 +50,5 @@ func validLookupName(name string) bool {
 	if strings.ContainsAny(name, `/\`) {
 		return false
 	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return false
-		}
-	}
-	return true
+	return strings.IndexFunc(name, unicode.IsControl) < 0
 }

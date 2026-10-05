@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,7 +95,8 @@ func TestInitDatasetFileCollisionPreservesState(t *testing.T) {
 }
 
 func TestInitDatasetRefusesInvalidFilenameDerivedNames(t *testing.T) {
-	for _, filename := range []string{".jsonl", "..jsonl", "...jsonl"} {
+	for _, filename := range []string{".jsonl", "..jsonl", "...jsonl", "seed\u0080.jsonl", "seed\u0085.jsonl",
+		"seed\u009b.jsonl", "seed\u009f.jsonl"} {
 		for _, mode := range []string{"simulation", "static", "turn"} {
 			for _, output := range []string{"human", "json"} {
 				t.Run(filename+"/"+mode+"/"+output, func(t *testing.T) {
@@ -118,7 +120,7 @@ func TestInitDatasetRefusesInvalidFilenameDerivedNames(t *testing.T) {
 					before := initFileSnapshot(t, h.dir)
 					text, err := executeConversationInit(t, args...)
 					require.ErrorContains(t, err, "invalid catalog name")
-					assert.Contains(t, err.Error(), filename)
+					assert.Contains(t, err.Error(), strconv.Quote(dataset))
 					validation, ok := errors.AsType[*azdext.LocalError](err)
 					require.True(t, ok)
 					assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
@@ -155,7 +157,8 @@ func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
 }
 
 func TestInitDatasetDerivedNameUsesLookupRules(t *testing.T) {
-	for _, name := range []string{"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1)} {
+	for _, name := range []string{"", ".", "..", "control\n", "control\u0085", "control\u009b",
+		strings.Repeat("a", assetNameMaxLength+1)} {
 		t.Run("invalid/"+name, func(t *testing.T) {
 			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
 			require.ErrorContains(t, err, "invalid catalog name")

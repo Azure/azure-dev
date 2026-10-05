@@ -4,6 +4,7 @@
 package watch
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"os"
@@ -392,7 +393,7 @@ func newTestFileWatcher() *fileWatcher {
 			Deleted:  map[string]bool{},
 		},
 		pendingCreated:  map[string]uint64{},
-		reconciledPaths: map[string]bool{},
+		reconciledPaths: map[string]*list.Element{},
 	}
 }
 
@@ -431,7 +432,7 @@ func TestReconcileCreated_ClearsMarkerOnPathReuse(t *testing.T) {
 			fw := newTestFileWatcher()
 			fw.recordEvent(fsnotify.Event{Name: name, Op: fsnotify.Create}, false)
 			fw.reconcileCreated(os.Lstat)
-			require.True(t, fw.reconciledPaths[name])
+			require.Contains(t, fw.reconciledPaths, name)
 
 			fw.recordEvent(fsnotify.Event{Name: name, Op: op}, false)
 			require.Empty(t, fw.reconciledPaths)
@@ -499,6 +500,78 @@ func TestReconcileCreated_RemoveCancelsRecheck(t *testing.T) {
 	require.Empty(t, fw.GetFileChanges())
 	require.Empty(t, fw.pendingCreated)
 	require.Empty(t, fw.reconciledPaths)
+}
+
+func TestReconcileCreated_BoundsSuppressionMarkers(t *testing.T) {
+	fw := newTestFileWatcher()
+	for batch := range reconciledPathLimit/reconcileBatchSize + 2 {
+		for offset := range reconcileBatchSize {
+			name := fmt.Sprintf("gone-%d.txt", batch*reconcileBatchSize+offset)
+			fw.recordEvent(fsnotify.Event{Name: name, Op: fsnotify.Create}, false)
+		}
+		fw.reconcileCreated(func(string) (os.FileInfo, error) { return nil, os.ErrNotExist })
+		require.LessOrEqual(t, len(fw.reconciledPaths), reconciledPathLimit)
+		require.Equal(t, len(fw.reconciledPaths), fw.reconciledOrder.Len())
+		require.Empty(t, fw.GetFileChanges())
+	}
+	require.Len(t, fw.reconciledPaths, reconciledPathLimit)
+	require.Empty(t, fw.pendingCreated)
+	name := fw.reconciledOrder.Back().Value.(reconciledPath).name
+	for _, op := range []fsnotify.Op{fsnotify.Write, fsnotify.Rename, fsnotify.Remove} {
+		fw.recordEvent(fsnotify.Event{Name: name, Op: op}, false)
+		require.Empty(t, fw.GetFileChanges(), "retained markers must still suppress queued events")
+	}
+}
+
+func TestReconciledMarkersExpireWithoutNewCreations(t *testing.T) {
+	fw := newTestFileWatcher()
+	now := time.Now()
+	fw.markReconciled("old.txt", now.Add(-reconciledPathRetention))
+	fw.markReconciled("recent.txt", now)
+	require.NotContains(t, fw.reconciledPaths, "old.txt")
+	fw.pruneReconciled(now.Add(reconciledPathRetention - time.Nanosecond))
+	require.Contains(t, fw.reconciledPaths, "recent.txt")
+	fw.pruneReconciled(now.Add(reconciledPathRetention))
+	require.Empty(t, fw.reconciledPaths)
+	require.Zero(t, fw.reconciledOrder.Len())
+	require.Empty(t, fw.GetFileChanges(), "retiring metadata must not generate changes")
+}
+
+func TestReconcileCreated_IdleTickRetiresExpiredMarkersWithoutIO(t *testing.T) {
+	fw := newTestFileWatcher()
+	fw.markReconciled("old.txt", time.Now().Add(-2*reconciledPathRetention))
+	fw.reconcileCreated(func(string) (os.FileInfo, error) {
+		t.Fatal("idle retirement must not do filesystem I/O")
+		return nil, nil
+	})
+	require.Empty(t, fw.reconciledPaths)
+	require.Zero(t, fw.reconciledOrder.Len())
+	require.Empty(t, fw.GetFileChanges())
+	fw.recordEvent(fsnotify.Event{Name: "old.txt", Op: fsnotify.Write}, false)
+	require.Equal(t, FileChanges{{Path: "old.txt", ChangeType: FileModified}}, fw.GetFileChanges(),
+		"events beyond the retention window receive ordinary handling")
+}
+
+func TestReconciledMarkersRetireOldestWithoutErasingNewGeneration(t *testing.T) {
+	fw := newTestFileWatcher()
+	now := time.Now()
+	for i := range reconciledPathLimit {
+		fw.markReconciled(fmt.Sprintf("gone-%d.txt", i), now)
+	}
+	fw.markReconciled("gone-0.txt", now.Add(time.Second))
+	fw.markReconciled("new.txt", now.Add(time.Second))
+	require.Len(t, fw.reconciledPaths, reconciledPathLimit)
+	require.Contains(t, fw.reconciledPaths, "gone-0.txt", "refresh must not leave an old queue entry")
+	require.NotContains(t, fw.reconciledPaths, "gone-1.txt", "oldest remaining marker is retired")
+
+	fw.recordEvent(fsnotify.Event{Name: "gone-0.txt", Op: fsnotify.Create}, false)
+	fw.pruneReconciled(now.Add(2 * reconciledPathRetention))
+	require.Empty(t, fw.reconciledPaths)
+	require.Zero(t, fw.reconciledOrder.Len())
+	require.Equal(t, FileChanges{{Path: "gone-0.txt", ChangeType: FileCreated}}, fw.GetFileChanges())
+	require.Contains(t, fw.pendingCreated, "gone-0.txt")
+	fw.recordEvent(fsnotify.Event{Name: "gone-0.txt", Op: fsnotify.Remove}, false)
+	require.Empty(t, fw.GetFileChanges(), "retirement must not affect the later create/remove generation")
 }
 
 func TestGetFileChanges_RenameFile(t *testing.T) {

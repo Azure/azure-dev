@@ -202,8 +202,9 @@ file on disk.
 ## `pkg/watch.fileWatcher`
 
 `mu sync.Mutex` protects the change maps, pending creation rechecks,
-reconciled-path markers, and creation sequence. Event updates and readers take
-this lock. Directory watch registration and filesystem rechecks run outside it.
+reconciled-path markers and their retirement queue, and creation sequence.
+Event updates and readers take this lock. Directory watch registration and
+filesystem rechecks run outside it.
 
 The watcher checks only newly created paths, once per creation, in batches of at
 most 64 on the 100 ms timer. It does not repeatedly scan accumulated `Created`
@@ -214,6 +215,15 @@ A reconciled missing creation disappears from the change maps rather than
 becoming a deletion. Its marker suppresses queued write, rename, and remove
 events; the next create or remove clears the marker. Other filesystem errors
 are logged and preserve the creation without starting an unbounded retry loop.
+
+Suppression metadata is bounded to 4,096 paths and one minute of retention.
+The oldest marker is retired when the limit is reached; expired markers are
+removed even when no new files are created. Queue entries are removed together
+with their map entries, so path reuse does not accumulate stale retirement
+records.
+Retirement never alters change maps or pending creation generations. Events
+arriving after a marker is retired receive ordinary event handling; indefinite
+late-event suppression would require unbounded historical path storage.
 
 ---
 

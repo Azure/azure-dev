@@ -248,7 +248,7 @@ Correcting the dataset never silently changes the selected cap.
 Local files derive their dataset name from the filename without its extension.
 That name must be non-empty, cannot be `.` or `..`, and must satisfy the existing
 dataset lookup-name rules: at most 255 bytes, with no path separators or
-control characters.
+Unicode control characters (C0, DEL, and C1); safe Unicode names remain supported.
 If that name is already declared for a different file (or has no local file),
 init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique

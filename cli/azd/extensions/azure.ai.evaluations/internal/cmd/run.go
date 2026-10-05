@@ -1457,10 +1457,10 @@ func renderRun(
 	} else if c := run.ResultCounts; c != nil && len(run.ReportedResultCounts()) < 5 {
 		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts())
 	} else if c := run.ResultCounts; c != nil {
-		rate, _, scored := scoredPassRate(c)
+		rate, _, available := runPassRateValue(c)
 		fmt.Fprint(out, messages.TestCaseResults(
 			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
-			passRateText(rate, scored)))
+			passRateText(rate, available)))
 	}
 
 	var means map[string]float64
@@ -1544,10 +1544,10 @@ func followUpEvalRef(run *eval_api.OpenAIEvalRun) string {
 	return run.Metadata[metaEvalName]
 }
 
-// passRateText is the rate, or a dash where nothing was scored. A rate over no
-// rows is not zero, it is absent.
-func passRateText(rate float64, scored bool) string {
-	if !scored {
+// passRateText is the rate, or a dash where no test cases were reported. A rate
+// over no rows is not zero, it is absent.
+func passRateText(rate float64, available bool) string {
+	if !available {
 		return "-"
 	}
 	return fmt.Sprintf("%.1f%%", rate*100)

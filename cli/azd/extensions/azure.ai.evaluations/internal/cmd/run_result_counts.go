@@ -48,10 +48,10 @@ func renderReportedRunCounts(out io.Writer, heading string, counts map[string]in
 		fmt.Fprintf(out, "%-10s %4s\n", row.Key, resultCountText(counts, row.Value))
 	}
 	passed, passedKnown := counts["passed"]
-	failed, failedKnown := counts["failed"]
-	if passedKnown && failedKnown {
-		fmt.Fprintf(out, "%-10s %s (%d passed / (%d passed + %d failed))\n",
-			"Pass rate", formatRate(passed, passed+failed), passed, passed, failed)
+	total, totalKnown := counts["total"]
+	if passedKnown && totalKnown {
+		fmt.Fprintf(out, "%-10s %s (%d passed / %d total test cases)\n",
+			"Pass rate", formatRate(passed, total), passed, total)
 	} else {
 		fmt.Fprint(out, "Pass rate  not reported\n")
 	}
@@ -73,8 +73,8 @@ func reportedRunPassRate(run *eval_api.OpenAIEvalRun) string {
 	}
 	counts := run.ReportedResultCounts()
 	_, passedKnown := counts["passed"]
-	_, failedKnown := counts["failed"]
-	if !passedKnown || !failedKnown {
+	_, totalKnown := counts["total"]
+	if !passedKnown || !totalKnown {
 		return "not reported"
 	}
 	return runPassRate(run.ResultCounts)

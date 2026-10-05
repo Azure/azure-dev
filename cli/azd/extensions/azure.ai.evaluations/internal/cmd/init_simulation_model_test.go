@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -182,7 +183,12 @@ func TestInitSimulationModelDiscoveryBeforeWrites(t *testing.T) {
 			if tc.explicit != "" {
 				args = append(args, "--simulation-model", tc.explicit)
 			}
-			text, err := executeConversationInit(t, args...)
+			text, err := executeConversationInitWithConnections(t, func(context.Context) ([]eval_api.Connection, error) {
+				return []eval_api.Connection{
+					{Name: "connection", Type: modelConnectionType},
+					{Name: "override", Type: modelConnectionType},
+				}, nil
+			}, args...)
 			if tc.wantErr {
 				require.ErrorContains(t, err, "--simulation-model")
 				assert.Empty(t, text)

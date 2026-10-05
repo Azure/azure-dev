@@ -385,8 +385,11 @@ func TestConversationHandoffOnlyIncludesCompatibleGeneratedEvaluators(t *testing
 				assert.NotContains(t, out.String(), "does not support")
 			} else {
 				assert.NotContains(t, command, "--evaluator hero-agent-evaluator")
+				assert.NotContains(t, command, "--evaluator")
 				assert.Contains(t, out.String(), "does not support")
 				assert.Contains(t, out.String(), "remains in the catalogue")
+				assert.Contains(t, out.String(), "default composite selection")
+				assert.NotContains(t, out.String(), "uses builtin.task_completion instead")
 			}
 		})
 	}

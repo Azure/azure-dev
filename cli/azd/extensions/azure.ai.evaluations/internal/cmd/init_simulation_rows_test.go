@@ -309,7 +309,7 @@ func TestInitSimulationValidatesAfterInteractiveModeAndModel(t *testing.T) {
 	prompts.mu.Lock()
 	defer prompts.mu.Unlock()
 	require.Len(t, prompts.models, 1, "the simulator was chosen before validating the seed rows")
-	assert.Len(t, prompts.messages, 1, "the mode picker ran, but no Add confirmation")
+	assert.Len(t, prompts.messages, 2, "mode and connection pickers ran, but no Add confirmation")
 	assert.Len(t, prompts.selectCounts, 1, "invalid rows offered correction before cancellation")
 	assert.Equal(t, before, initFileSnapshot(t, h.dir))
 }

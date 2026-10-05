@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"azureaieval/internal/pkg/eval_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -203,7 +205,11 @@ func newInitHarnessWithOptions(
 func (h *initHarness) runInit(t *testing.T, args ...string) error {
 	t.Helper()
 
-	cmd := newInitCommand()
+	cmd := newInitCommandWithOptions(initCommandOptions{
+		listModelConnections: func(context.Context) ([]eval_api.Connection, error) {
+			return []eval_api.Connection{{Name: "connection", Type: modelConnectionType}}, nil
+		},
+	})
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	// Global flags azd would have supplied.

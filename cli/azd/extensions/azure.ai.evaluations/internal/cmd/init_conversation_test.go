@@ -19,24 +19,20 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
+	"azureaieval/internal/pkg/eval_api"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func executeConversationInit(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	cmd := newInitCommand()
-	cmd.Flags().Bool("no-prompt", false, "")
-	cmd.Flags().StringP("output", "o", "", "")
-	cmd.SetContext(t.Context())
-	cmd.SilenceErrors, cmd.SilenceUsage = true, true
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return out.String(), err
+	return executeConversationInitWithConnections(t, func(context.Context) ([]eval_api.Connection, error) {
+		return []eval_api.Connection{{Name: "connection", Type: modelConnectionType}}, nil
+	}, args...)
 }
 
 func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
@@ -90,7 +86,9 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 			assert.NotEmpty(t, doc.EvaluationLevel, "the selected level must be present in machine-readable output")
 			require.NoError(t, project.ValidateRunnable(&eval))
 			assert.Equal(t, "judge", eval.Evaluators[0].InitializationParameters["model"])
-			assert.Equal(t, "builtin.task_completion", eval.Evaluators[0].Evaluator)
+			require.Len(t, eval.Evaluators, 2)
+			assert.Equal(t, "builtin.output_quality", eval.Evaluators[0].Evaluator)
+			assert.Equal(t, "builtin.tool_use_quality", eval.Evaluators[1].Evaluator)
 			assert.Equal(t, 1, h.project.wiringAttempts())
 			if tc.target {
 				require.NotNil(t, eval.Target)
@@ -220,12 +218,15 @@ func TestInitConversationAggregatesNoninteractiveRequiredInputs(t *testing.T) {
 
 type conversationPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
-	mu        sync.Mutex
-	mode      int32
-	decision  int32
-	messages  []string
-	models    []*azdext.PromptOptions
-	onConfirm func() error
+	mu            sync.Mutex
+	mode          int32
+	decision      int32
+	messages      []string
+	models        []*azdext.PromptOptions
+	onConfirm     func() error
+	connection    int32
+	selects       []*azdext.SelectOptions
+	connectionErr error
 }
 
 func (s *conversationPromptServer) Select(
@@ -234,8 +235,15 @@ func (s *conversationPromptServer) Select(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, req.GetOptions().GetMessage())
+	s.selects = append(s.selects, req.GetOptions())
 	if req.GetOptions().GetMessage() == messages.SelectConversationModePrompt() {
 		return &azdext.SelectResponse{Value: new(s.mode)}, nil
+	}
+	if req.GetOptions().GetMessage() == messages.SimulationModelConnectionPrompt() {
+		if s.connectionErr != nil {
+			return nil, s.connectionErr
+		}
+		return &azdext.SelectResponse{Value: new(s.connection)}, nil
 	}
 	if s.onConfirm != nil {
 		if err := s.onConfirm(); err != nil {
@@ -253,6 +261,9 @@ func (s *conversationPromptServer) Prompt(
 	s.models = append(s.models, req.GetOptions())
 	if req.GetOptions().GetMessage() == messages.JudgeModelPrompt() {
 		return &azdext.PromptResponse{Value: "judge"}, nil
+	}
+	if req.GetOptions().GetMessage() == messages.SimulationModelDeploymentPrompt() {
+		return &azdext.PromptResponse{Value: "simulator"}, nil
 	}
 	return &azdext.PromptResponse{Value: "connection/simulator"}, nil
 }
@@ -290,7 +301,7 @@ func TestInitConversationInteractivePickerAndModelPrompt(t *testing.T) {
 			assert.Contains(t, prompts.messages, messages.SelectConversationModePrompt())
 			if mode == 1 {
 				require.Len(t, prompts.models, 1)
-				assert.Equal(t, messages.SimulationModelPrompt(), prompts.models[0].Message)
+				assert.Equal(t, messages.SimulationModelDeploymentPrompt(), prompts.models[0].Message)
 				assert.Empty(t, prompts.models[0].DefaultValue, "never guess the simulator from the judge")
 				require.NotNil(t, cfg.Evals[0].Simulation)
 				assert.Equal(t, "connection/simulator", cfg.Evals[0].Simulation.Model)
@@ -393,7 +404,7 @@ func TestGeneratedConversationHandoffPromptsForIndependentModels(t *testing.T) {
 	prompts.mu.Lock()
 	defer prompts.mu.Unlock()
 	require.Len(t, prompts.models, 2)
-	assert.Equal(t, messages.SimulationModelPrompt(), prompts.models[0].Message)
+	assert.Equal(t, messages.SimulationModelDeploymentPrompt(), prompts.models[0].Message)
 	assert.Equal(t, messages.JudgeModelPrompt(), prompts.models[1].Message)
 	for _, prompt := range prompts.models {
 		assert.Empty(t, prompt.DefaultValue)
@@ -541,4 +552,206 @@ func TestInitImpliedStaticModeConflictNamesActualChoice(t *testing.T) {
 			assert.Equal(t, before, initFileSnapshot(t, h.dir))
 		})
 	}
+}
+
+func executeConversationInitWithConnections(
+	t *testing.T,
+	listConnections func(context.Context) ([]eval_api.Connection, error),
+	args ...string,
+) (string, error) {
+	t.Helper()
+	cmd := newInitCommandWithOptions(initCommandOptions{listModelConnections: listConnections})
+	cmd.Flags().Bool("no-prompt", false, "")
+	cmd.Flags().StringP("output", "o", "", "")
+	cmd.SetContext(t.Context())
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+func TestInitSimulationDiscoversEligibleModelConnections(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &conversationPromptServer{connection: 1}
+	h := newInitHarness(t, nil, prompts)
+	catalogue := func(context.Context) ([]eval_api.Connection, error) {
+		return []eval_api.Connection{
+			{Name: "zeta", Type: modelConnectionType},
+			{Name: "storage", Type: "AzureBlob"},
+			{Name: "alpha", Type: modelConnectionType},
+			{Name: "alpha", Type: modelConnectionType},
+		}, nil
+	}
+
+	_, err := executeConversationInitWithConnections(t, catalogue,
+		"--name", "quality", "--conversation-mode", "simulation",
+		"--target", "agent", "--dataset", "seeds", "--judge-model", "judge")
+
+	require.NoError(t, err)
+	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Evals, 1)
+	require.NotNil(t, cfg.Evals[0].Simulation)
+	assert.Equal(t, "zeta/simulator", cfg.Evals[0].Simulation.Model)
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	var connectionSelect *azdext.SelectOptions
+	for _, selectOptions := range prompts.selects {
+		if selectOptions.Message == messages.SimulationModelConnectionPrompt() {
+			connectionSelect = selectOptions
+			break
+		}
+	}
+	require.NotNil(t, connectionSelect)
+	require.Len(t, connectionSelect.Choices, 2)
+	assert.Equal(t, "alpha", connectionSelect.Choices[0].Label)
+	assert.Equal(t, "zeta", connectionSelect.Choices[1].Label)
+}
+
+func TestInitSimulationExplicitModelWinsWithoutPrompting(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &conversationPromptServer{}
+	h := newInitHarness(t, nil, prompts)
+
+	_, err := executeConversationInitWithConnections(t, func(context.Context) ([]eval_api.Connection, error) {
+		return []eval_api.Connection{
+			{Name: "explicit", Type: modelConnectionType},
+			{Name: "other", Type: modelConnectionType},
+		}, nil
+	}, "--name", "quality", "--conversation-mode", "simulation",
+		"--target", "agent", "--dataset", "seeds", "--judge-model", "judge",
+		"--simulation-model", "explicit/deployment")
+
+	require.NoError(t, err)
+	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Evals, 1)
+	assert.Equal(t, "explicit/deployment", cfg.Evals[0].Simulation.Model)
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	assert.NotContains(t, prompts.messages, messages.SimulationModelConnectionPrompt())
+	assert.Empty(t, prompts.models, "the explicit connection and deployment must both win")
+}
+
+func TestInitSimulationNoPromptDoesNotGuessAConnection(t *testing.T) {
+	h := newInitHarness(t, nil)
+	called := false
+	before := initFileSnapshot(t, h.dir)
+
+	text, err := executeConversationInitWithConnections(t, func(context.Context) ([]eval_api.Connection, error) {
+		called = true
+		return []eval_api.Connection{{Name: "only", Type: modelConnectionType}}, nil
+	}, "--name", "quality", "--conversation-mode", "simulation",
+		"--target", "agent", "--dataset", "seeds", "--judge-model", "judge", "--no-prompt")
+
+	require.ErrorContains(t, err, "--simulation-model")
+	assert.False(t, called, "non-interactive init must not discover a default it was not given")
+	assert.Empty(t, text)
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	assert.Zero(t, h.project.wiringAttempts())
+}
+
+func TestInitSimulationRejectsInvalidConnectionBeforeWriting(t *testing.T) {
+	tests := []struct {
+		name        string
+		connections []eval_api.Connection
+		want        string
+	}{
+		{
+			name:        "not found",
+			connections: []eval_api.Connection{{Name: "other", Type: modelConnectionType}},
+			want:        "was not found",
+		},
+		{
+			name:        "wrong kind",
+			connections: []eval_api.Connection{{Name: "connection", Type: "AzureBlob"}},
+			want:        `has type "AzureBlob"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			before := initFileSnapshot(t, h.dir)
+
+			text, err := executeConversationInitWithConnections(t,
+				func(context.Context) ([]eval_api.Connection, error) { return tt.connections, nil },
+				"--name", "quality", "--conversation-mode", "simulation",
+				"--target", "agent", "--dataset", "seeds", "--judge-model", "judge",
+				"--simulation-model", "connection/simulator", "--output", "json")
+
+			require.ErrorContains(t, err, tt.want)
+			assert.Empty(t, text)
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+			assert.Zero(t, h.project.wiringAttempts())
+		})
+	}
+}
+
+func TestInitSimulationSurfacesPartialCatalogFailureBeforeWriting(t *testing.T) {
+	h := newInitHarness(t, nil)
+	before := initFileSnapshot(t, h.dir)
+
+	text, err := executeConversationInitWithConnections(t,
+		func(context.Context) ([]eval_api.Connection, error) {
+			return []eval_api.Connection{{Name: "connection", Type: modelConnectionType}},
+				errors.New("reading a later page of the listing: service unavailable")
+		},
+		"--name", "quality", "--conversation-mode", "simulation",
+		"--target", "agent", "--dataset", "seeds", "--judge-model", "judge",
+		"--simulation-model", "connection/simulator", "--output", "json")
+
+	require.ErrorContains(t, err, "reading a later page")
+	require.ErrorContains(t, err, "listing Foundry project connections")
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeConnectionCatalogFailed, local.Code)
+	assert.Empty(t, text)
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	assert.Zero(t, h.project.wiringAttempts())
+}
+
+func TestInitSimulationRequiresAnEligibleConnectionBeforeWriting(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &conversationPromptServer{}
+	h := newInitHarness(t, nil, prompts)
+	before := initFileSnapshot(t, h.dir)
+
+	text, err := executeConversationInitWithConnections(t,
+		func(context.Context) ([]eval_api.Connection, error) {
+			return []eval_api.Connection{{Name: "storage", Type: "AzureBlob"}}, nil
+		},
+		"--name", "quality", "--conversation-mode", "simulation",
+		"--target", "agent", "--dataset", "seeds", "--judge-model", "judge")
+
+	require.ErrorContains(t, err, "no eligible Azure OpenAI model connections")
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeMissingModelConnection, local.Code)
+	assert.Empty(t, text)
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	assert.Zero(t, h.project.wiringAttempts())
+}
+
+func TestInitSimulationConnectionSelectionCancellationWritesNothing(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &conversationPromptServer{
+		connectionErr: status.Error(codes.Canceled, "cancelled"),
+	}
+	h := newInitHarness(t, nil, prompts)
+	before := initFileSnapshot(t, h.dir)
+
+	text, err := executeConversationInit(t,
+		"--name", "quality", "--conversation-mode", "simulation",
+		"--target", "agent", "--dataset", "seeds", "--judge-model", "judge")
+
+	require.Error(t, err)
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeCancelled, local.Code)
+	assert.Empty(t, text)
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	assert.Zero(t, h.project.wiringAttempts())
 }

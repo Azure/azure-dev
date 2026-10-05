@@ -4,11 +4,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
+	"unicode"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -18,6 +23,7 @@ import (
 const (
 	conversationModeStatic     = "static"
 	conversationModeSimulation = "simulation"
+	modelConnectionType        = "AzureOpenAI"
 )
 
 func (a *initAction) validateConversationFlags(source, level, mode string) error {
@@ -165,4 +171,136 @@ func resolveSimulationModel(cmd *cobra.Command, explicit string, authored []stri
 	}
 	fmt.Fprint(cmd.OutOrStdout(), messages.UnverifiedSimulationModel(model))
 	return model, nil
+}
+
+func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string, authored []string) (string, error) {
+	model := strings.TrimSpace(explicit)
+	if model == "" && slices.ContainsFunc(authored, func(value string) bool {
+		return (&project.Simulation{Model: value}).Validate() == nil
+	}) {
+		var err error
+		model, err = resolveSimulationModel(cmd, "", authored)
+		if err != nil {
+			return "", err
+		}
+	}
+	if model != "" {
+		if err := validateSimulationModel(model); err != nil {
+			return "", err
+		}
+		connections, err := a.modelConnectionCatalogue(cmd.Context())
+		if err != nil {
+			return "", messages.ListingSimulationModelConnections(err)
+		}
+		if err := validateSimulationModelConnection(model, connections); err != nil {
+			return "", err
+		}
+		return model, nil
+	}
+	if noPrompt(cmd) {
+		return "", messages.SimulationModelRequired()
+	}
+	connections, err := a.modelConnectionCatalogue(cmd.Context())
+	if err != nil {
+		return "", messages.ListingSimulationModelConnections(err)
+	}
+	eligible := eligibleSimulationModelConnections(connections)
+	if len(eligible) == 0 {
+		return "", messages.NoEligibleSimulationModelConnections()
+	}
+	connection, err := selectSimulationModelConnection(cmd, eligible)
+	if err != nil {
+		return "", err
+	}
+	deployment, err := promptInitModel(cmd, messages.SimulationModelDeploymentPrompt(),
+		messages.SimulationModelDeploymentHelp(), messages.SimulationModelDeploymentRequired())
+	if err != nil {
+		return "", err
+	}
+	model = connection + "/" + deployment
+	if err := validateSimulationModel(model); err != nil {
+		return "", err
+	}
+	return model, nil
+}
+
+func readModelConnectionCatalogue(ctx context.Context) ([]eval_api.Connection, error) {
+	ec, err := newEvalContext(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	defer ec.Close()
+	catalogue, err := ec.evalClient.ListConnections(ctx, ProjectConnectionsAPIVersion)
+	if err != nil {
+		return nil, err
+	}
+	return catalogue.Value, nil
+}
+
+func validateSimulationModel(model string) error {
+	if err := (&project.Simulation{Model: model}).Validate(); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidParameter, fmt.Sprintf("--simulation-model: %v", err),
+			"Use connection-name/model-deployment for the simulated user, independently of the judge and generation models.")
+	}
+	return nil
+}
+
+func validateSimulationModelConnection(model string, connections []eval_api.Connection) error {
+	connectionName := strings.SplitN(model, "/", 2)[0]
+	var found *eval_api.Connection
+	for i := range connections {
+		connection := &connections[i]
+		if connection.Name != connectionName {
+			continue
+		}
+		if connection.Type == modelConnectionType {
+			return nil
+		}
+		found = connection
+	}
+	if found == nil {
+		return messages.SimulationModelConnectionNotFound(connectionName)
+	}
+	return messages.SimulationModelConnectionWrongKind(connectionName, found.Type)
+}
+
+func eligibleSimulationModelConnections(connections []eval_api.Connection) []string {
+	names := make(map[string]struct{})
+	for _, connection := range connections {
+		if connection.Type != modelConnectionType || !validSimulationConnectionName(connection.Name) {
+			continue
+		}
+		names[connection.Name] = struct{}{}
+	}
+	return slices.Sorted(maps.Keys(names))
+}
+
+func validSimulationConnectionName(name string) bool {
+	return name != "" && name == strings.TrimSpace(name) &&
+		!strings.Contains(name, "/") && !strings.ContainsFunc(name, unicode.IsSpace)
+}
+
+func selectSimulationModelConnection(cmd *cobra.Command, connections []string) (string, error) {
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", messages.ConnectingToAzd(err)
+	}
+	defer client.Close()
+	choices := make([]*azdext.SelectChoice, 0, len(connections))
+	for _, connection := range connections {
+		choices = append(choices, &azdext.SelectChoice{Label: connection, Value: connection})
+	}
+	resp, err := client.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: messages.SimulationModelConnectionPrompt(), Choices: choices,
+			SelectedIndex: preselect(0), EnableFiltering: filteringFor(len(choices)),
+		},
+	})
+	if err != nil {
+		return "", exterrors.FromPrompt(err, "selecting a simulation model connection")
+	}
+	if resp == nil || resp.Value == nil || int(resp.GetValue()) < 0 || int(resp.GetValue()) >= len(connections) {
+		return "", messages.SimulationModelConnectionRequired()
+	}
+	return connections[resp.GetValue()], nil
 }

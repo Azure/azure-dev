@@ -24,10 +24,16 @@ const (
 // Error codes for dependency failures (missing resources, services, env values).
 const (
 	CodeMissingProjectEndpoint = "missing_project_endpoint"
+	CodeMissingModelConnection = "missing_model_connection"
 )
 
 // Error codes for auth failures.
 const (
 	CodeLoginExpired = "login_expired"
 	CodeAuthFailed   = "auth_failed"
+)
+
+// Error codes for internal failures.
+const (
+	CodeConnectionCatalogFailed = "connection_catalog_failed"
 )

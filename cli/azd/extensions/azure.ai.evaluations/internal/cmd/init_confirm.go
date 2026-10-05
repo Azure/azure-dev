@@ -31,7 +31,8 @@ type initContext struct {
 	configExisted bool
 	// tracesWired is memoized by the caller, so asking it again inside a
 	// second pass costs nothing.
-	tracesWired func() bool
+	tracesWired   func() bool
+	knownBuiltins func() []string
 }
 
 // initAnswers is everything the prompt sequence settles.
@@ -106,6 +107,13 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 		if !noPrompt(a.cmd) {
 			return err
 		}
+		if local, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			local.Category != azdext.LocalErrorCategoryValidation {
+			return err
+		}
+		if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
+			return err
+		}
 		unresolved = append(unresolved, err)
 		return nil
 	}
@@ -125,7 +133,7 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 			return initAnswers{}, messages.InitFlagConflict("target",
 				"must name an agent for simulation, not a model service")
 		}
-		model, err := resolveSimulationModel(a.cmd, a.flags.simulationModel, ctx.simulationModels)
+		model, err := a.resolveSimulationModel(a.cmd, a.flags.simulationModel, ctx.simulationModels)
 		if err := collect(err); err != nil {
 			return initAnswers{}, err
 		}
@@ -183,7 +191,11 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	answers.evaluators = a.flags.evaluators
 	answers.evaluatorsChosen = len(answers.evaluators) > 0
 	if len(answers.evaluators) == 0 {
-		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(a.cmd, ctx.cfg, answers.evaluationLevel)
+		var known []string
+		if ctx.knownBuiltins != nil {
+			known = ctx.knownBuiltins()
+		}
+		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(a.cmd, ctx.cfg, answers.evaluationLevel, known)
 		if err != nil {
 			return initAnswers{}, err
 		}

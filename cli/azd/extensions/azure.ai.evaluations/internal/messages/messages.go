@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -132,7 +133,7 @@ func GateOutlivedTheWait(runID string, budget time.Duration) error {
 	return fmt.Errorf(
 		"run %s outlived the %s wait, so --fail-on never got a result to judge. "+
 			"The run is still going: reattach with `azd ai eval run show %s "+
-			"--wait --fail-on <gate>`", runID, budget, shellArg(runID))
+			"--wait --fail-on <gate>`", terminalValue(runID), budget, shellArg(runID))
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
@@ -191,7 +192,7 @@ func WaitInterrupted(runID string, err error) error {
 	return fmt.Errorf(
 		"stopped waiting on run %s, which is still running: %w. "+
 			"Pick it back up with `azd ai eval run show %s`",
-		runID, err, shellArg(runID))
+		terminalValue(runID), err, shellArg(runID))
 }
 
 // WaitingForRun says a run has started and this command is now watching it.
@@ -242,13 +243,10 @@ func TestCaseResults(total, passed, failed, errored, skipped int, rate string) s
 	} {
 		fmt.Fprintf(&b, "%-10s %4d\n", row.label, row.count)
 	}
-	// The denominator is spelled out. Rows nothing could grade are outside it,
-	// so a run that errored on most of its samples can report a high rate, and
-	// naming the two terms is what stops that reading as a verdict on the whole
-	// run. It is also the figure `--fail-on pass-rate` compares.
-	if passed+failed > 0 {
-		fmt.Fprintf(&b, "%-10s %4s (%d / (%d passed + %d failed))\n",
-			"Pass rate", rate, passed, passed, failed)
+	// Display and gating include every terminal test case in the denominator.
+	if total > 0 {
+		fmt.Fprintf(&b, "%-10s %4s (%d passed / %d total test cases)\n",
+			"Pass rate", rate, passed, total)
 	} else {
 		fmt.Fprintf(&b, "%-10s %4s\n", "Pass rate", rate)
 	}
@@ -353,7 +351,7 @@ func RunMustBeNamed(evalID string) error {
 		"name the run to act on: this environment has no run recorded for eval %s, "+
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
-		evalID, shellArg(evalID))
+		terminalValue(evalID), shellArg(evalID))
 }
 
 // ListedRunMissingID refuses to guess an identifier omitted by the service.
@@ -519,17 +517,13 @@ func ItemResultTotals(total, passed, failed, errored, skipped int) string {
 		total, passed, failed, errored, skipped)
 }
 
-// ScoredPassRateLine names the denominator in the same breath as the rate.
-//
-// The figure was printed bare beside a sample count, which read as passed over
-// total; a partly errored run then looked like a quality result rather than an
-// infrastructure one.
-func ScoredPassRateLine(passed, scored int) string {
-	if scored == 0 {
-		return "Pass rate: n/a (nothing was scored)\n"
+// RunPassRateLine names the all-terminal-row denominator beside the rate.
+func RunPassRateLine(passed, total int) string {
+	if total == 0 {
+		return "Pass rate: n/a (no test cases were reported)\n"
 	}
-	return fmt.Sprintf("Pass rate: %.1f%% (%d / %d scored test cases)\n",
-		100*float64(passed)/float64(scored), passed, scored)
+	return fmt.Sprintf("Pass rate: %.1f%% (%d passed / %d total test cases)\n",
+		100*float64(passed)/float64(total), passed, total)
 }
 
 // countOf names a count and its noun, pluralized by adding "s".
@@ -588,28 +582,12 @@ func UnknownItemStatus(given string, known []string) error {
 		given, strings.Join(known, ", "))
 }
 
-// GateSawUnscoredRows warns that a pass-rate gate judged only part of the run.
-//
-// The rate excludes rows nothing could grade, so a run that errored on most of
-// its samples can clear a threshold on the few that survived. The gate is the
-// one place a pipeline is guaranteed to read, so it is said there rather than
-// left for someone to notice in the summary.
-//
-// Errored and skipped are named apart because they ask for different things: a
-// run that errored is one to retry, and one that skipped is one to look at the
-// data for. A single "not scored" count answered neither question.
-func GateSawUnscoredRows(errored, skipped, total int) error {
-	return fmt.Errorf(
-		"%s of %d samples were not scored, so the pass rate this gate read covers "+
-			"only the rest; use --fail-on any-failure to count them against the run",
-		unscoredBreakdown(errored, skipped), total)
-}
-
 // GateUnaccountedRows identifies a count mismatch without assigning an outcome.
-func GateUnaccountedRows(unaccounted, total, scored int) error {
+func GateUnaccountedRows(unaccounted, total int) error {
 	return fmt.Errorf(
-		"%d of %d rows are not accounted for by the reported counts; the pass-rate gate covers %d scored rows",
-		unaccounted, total, scored)
+		"%d of %d rows are not accounted for by the reported outcome counts; "+
+			"the pass-rate denominator still includes all %d rows",
+		unaccounted, total, total)
 }
 
 // GateCountsUnavailable reports an indeterminate gate without a quality verdict.
@@ -618,18 +596,6 @@ func GateCountsUnavailable(missing []string) error {
 		"evaluation gate is indeterminate: result_counts did not report %s; "+
 			"inspect the run with `azd ai eval run show` and retry when the required counts are available",
 		strings.Join(missing, ", "))
-}
-
-// unscoredBreakdown counts what a pass rate left out, by what it was.
-func unscoredBreakdown(errored, skipped int) string {
-	switch {
-	case errored > 0 && skipped > 0:
-		return fmt.Sprintf("%d errored and %d skipped", errored, skipped)
-	case skipped > 0:
-		return fmt.Sprintf("%d skipped", skipped)
-	default:
-		return fmt.Sprintf("%d errored", errored)
-	}
 }
 
 // GeneratedNameNotAFileName reports a generated artifact name that would not
@@ -1067,9 +1033,9 @@ func GateSamplesDidNotPass(unpassed, total int) string {
 	return fmt.Sprintf("%d of %d samples did not pass", unpassed, total)
 }
 
-// GateNoRowsScored reports a pass-rate gate over a run that scored nothing.
-func GateNoRowsScored() string {
-	return "the run scored no rows, so its pass rate is below any threshold"
+// GateNoTestCases reports a pass-rate gate over a run with no test cases.
+func GateNoTestCases() string {
+	return "the run reported no test cases, so its pass rate is below any threshold"
 }
 
 // GatePassRateBelow reports a pass-rate gate that was breached.
@@ -1554,13 +1520,13 @@ func ArtifactAppearedDuringGeneration(path, jobID string) error {
 		return fmt.Errorf(
 			"%s was created while the job was running; "+
 				"pass --force to overwrite it, or --output-dir to write elsewhere",
-			path)
+			terminalValue(path))
 	}
 	return fmt.Errorf(
 		"%s was created while the job was running, so it was left alone; "+
 			"the generated output is ready — collect it with "+
 			"`azd ai eval job show %s --force`, or to a different place with --output-dir",
-		path, shellArg(jobID))
+		terminalValue(path), shellArg(jobID))
 }
 
 // ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
@@ -2082,7 +2048,7 @@ func DatasetNotGeneratedYet(dataset, path string) error {
 			"If this entry came from a `$ref`, note that a relative `file:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- write the path relative to the configuration instead",
-		filepath.ToSlash(path), shellArg(dataset))
+		terminalValue(filepath.ToSlash(path)), shellArg(dataset))
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -2258,7 +2224,7 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 			"If this entry came from a `$ref`, note that a relative `source:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- carry the rubric under `definition:` instead",
-		filepath.ToSlash(path), shellArg(evaluator))
+		terminalValue(filepath.ToSlash(path)), shellArg(evaluator))
 }
 
 // RubricBelongsUnderDefinition reports a rubric written at evaluator entry
@@ -2385,7 +2351,7 @@ func EvaluatorDrifted(evaluator, remote, recorded string) error {
 			"behind, so read it with `azd ai eval evaluator show %s --version %s "+
 			"--output-file <path>` and bring it into the declared source before "+
 			"deploying again, or delete that version if it was a mistake",
-		evaluator, remote, recorded, shellArg(evaluator), shellArg(remote))
+		evaluator, terminalValue(remote), terminalValue(recorded), shellArg(evaluator), shellArg(remote))
 }
 
 // EvaluatorVersionNotAdvancing reports a publish the service kept answering with
@@ -4577,7 +4543,15 @@ func ShellArg(v string) string {
 
 // CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
 func CanInlineShellArg(v string) bool {
-	return !strings.ContainsAny(v, "$`\"%!\\^\r\n\x00")
+	return !strings.ContainsAny(v, "$`\"%!\\^") && strings.IndexFunc(v, unicode.IsControl) == -1
+}
+
+// terminalValue preserves ordinary display text and escapes embedded terminal controls.
+func terminalValue(v string) string {
+	if strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 // ConfirmDelete asks before removing something published.

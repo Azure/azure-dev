@@ -15,7 +15,8 @@ unattended use. When using `--no-prompt`, supply an independently selected
 `--judge-model <deployment>`; conversation simulation also needs
 `--simulation-model <connection-name/model-deployment>` unless exactly one previously
 configured qualified simulator binding is available in the selected evaluation
-configuration. The printed command never assumes that the
+configuration. Simulation validates the selected connection against the Foundry
+project before authoring files. The printed command never assumes that the
 generation model should fill either role.
 
 When no instructions are supplied or detected locally or from the deployed agent,
@@ -453,15 +454,20 @@ turn, or trace evaluation are rejected rather than ignored. Simulation needs an
 agent target, seed dataset, simulation model, and judge model. Non-interactive
 init reports all unresolved required inputs together, naming the flags to supply.
 Init is add-only, preserves existing YAML and unknown fields, and makes no new
-live lookups beyond the bounded built-in evaluator catalogue check.
+service writes. Simulation reads the Foundry project connection catalogue before
+creating any configuration, directories, locks, or root-service wiring.
 When `--simulation-model` is omitted, init can reuse immediate
 `evals[].simulation.model` strings from the selected configuration. One distinct
 qualified binding is selected automatically; several offer a picker with
 **Enter another name**. Under `--no-prompt` or `--output json`, several bindings
 require an explicit `--simulation-model` before any writes. With no usable
-binding, interactive init retains free text and unattended init names the
-missing flag. These values are unverified until service validation, not proof
-that a connection or deployment is ready. Bare judge deployments cannot supply
+binding, interactive init lists eligible Azure OpenAI connections and then asks
+for the deployment name; unattended init names the missing flag. Explicit and
+reused references must name an existing Azure OpenAI project connection.
+Missing, unknown, or wrong-kind connections and failed or partial catalogue
+reads stop init without authored writes. Connection discovery follows all pages.
+This checks connection identity and kind, not whether a deployment is ready or
+whether the target service accepts a particular evaluator request. Bare judge deployments cannot supply
 the missing connection name. Init never opens unrelated `$ref` files to find
 simulator suggestions, and it never changes existing model selections.
 
@@ -557,6 +563,16 @@ compatibility checked when the eval is created.
 Omitting `--evaluator` keeps the default selection or opens the interactive
 picker. An explicitly empty `--evaluator` is rejected rather than silently
 restoring the default.
+The default shortlist is `builtin.output_quality` and `builtin.tool_use_quality`;
+an explicit selection replaces both rather than adding their constituents.
+When the built-in catalogue is reachable, unattended init validates the whole
+default set. Interactive init excludes unavailable recommendations and validates
+the final selection, so an unavailable default does not prevent choosing an
+available built-in or compatible declared custom evaluator. An unread catalogue
+is not treated as an empty successful response.
+Local names, scaffolding, and mock tests do not establish production evaluator
+availability or accepted IDs and initialization parameters; validate those
+against the target Foundry project and API.
 
 The example above grades rows that already hold an exchange. A `simulation:`
 block instead has the service hold the conversation first — a simulator model
@@ -675,11 +691,12 @@ The generation, simulation, and judge deployments are independent choices.
 Init never copies the generation or judge model into the simulation model.
 Generation declares artifacts only; it does not attach them to an existing eval
 or replace its configuration. If a generated rubric declares an incompatible
-evaluation level, the handoff warns and uses the built-in default instead; the
+evaluation level, the handoff warns and leaves `--evaluator` unset. Init offers
+its default composite selection, which the user can replace; the incompatible
 rubric remains in the catalogue.
 If any handoff value contains shell expansion syntax or cannot be portably quoted,
 including a dollar sign, backtick, double quote, percent sign, exclamation mark,
-backslash, or caret,
+backslash, caret, or any Unicode terminal control,
 generation displays the exact escaped values and manual initialization guidance
 instead of a copyable command. Quote that path for your shell when supplying
 `--path`; generation never substitutes a different path into a runnable handoff.
@@ -1044,19 +1061,21 @@ Human summaries, run details, and listings also distinguish unreported counters
 from explicit zeros. Partial counters are marked `not reported` rather than
 inventing a failure/error split or a pass rate without known operands.
 Waited summaries also show a complete set of explicitly reported zero counters;
-their pass rate is `-` because no rows were scored.
-Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
-between the total and reported result counts does not replace an explicit zero
-with inferred errors.
-When reported totals leave rows unaccounted for, a neutral warning names that
-gap and the scored denominator without assigning failed, errored, or skipped
-outcomes. A pass-rate gate requires reported `passed` and `failed` counts and
-does not require a total; `any-failure` requires reported `total` and `passed`
-counts because it counts every non-passing row against the run. Missing or null
+their pass rate is `-` because the reported total contains no test cases.
+Run-level display and `--fail-on pass-rate` both use `passed / total`: failed,
+errored, skipped, and unaccounted terminal rows all lower the rate. The separate
+outcome counters remain independent; a mismatch never invents a failure/error
+split or replaces an explicitly reported zero.
+When all outcome counts are reported but their sum is below the total, a neutral
+warning names the gap and confirms that the denominator still includes every
+row, without assigning failed, errored, or skipped outcomes.
+Both a pass-rate gate and `any-failure` require reported `total` and `passed`.
+Missing or null
 required counters make the gate indeterminate: the command returns an
 operational error (extension exit 1), never a quality verdict based on invented
-zeros. An explicitly reported zero total still breaches either gate, and a
-reported zero scored denominator still breaches a pass-rate gate. Determinate
+zeros. An explicitly reported zero total still breaches either gate.
+With a positive total, zero passes is a known zero rate, not an absent rate.
+Determinate
 quality breaches retain extension exit 2; the azd host exposes extension
 failures as exit 1.
 

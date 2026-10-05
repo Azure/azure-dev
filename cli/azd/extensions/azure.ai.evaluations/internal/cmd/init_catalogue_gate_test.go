@@ -118,29 +118,37 @@ func TestInitAcceptsABuiltinTheCatalogueOffers(t *testing.T) {
 	}
 }
 
-// The lookup authenticates and can wait out its own timeout, so `init` must not
-// make it when there is nothing for the catalogue to answer about. This is the
-// orchestration half of the gate; hasBuiltinRef's own tests cover the predicate.
-func TestInitDoesNotAskTheCatalogueWithoutABuiltinReference(t *testing.T) {
+// ADO 5653254: implicit defaults bypassed the catalogue gate, so adding a
+// default that had not reached a project yet produced a scaffold that failed
+// only at create time.
+func TestInitRefusesAnUnavailableCompositeDefaultBeforeWritingAnything(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"no --evaluator at all", "only custom references"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+	catalogue, asked := answeringCatalogue("builtin.output_quality")
+	dir := filepath.Join(t.TempDir(), "evals")
+	action, _ := initIn(t, dir, catalogue)
 
-			catalogue, asked := answeringCatalogue("builtin.coherence")
+	err := action.Run()
 
-			var refs []string
-			if name == "only custom references" {
-				refs = []string{"support-quality", "tone-check"}
-			}
-			action, _ := initIn(t, filepath.Join(t.TempDir(), "evals"), catalogue, refs...)
-			_ = action.Run()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "builtin.tool_use_quality")
+	assert.Equal(t, 1, *asked, "the default set is checked against the catalogue once")
+	assert.False(t, scaffoldedAnything(t, dir))
+}
 
-			assert.Zero(t, *asked,
-				"init opened a connection that could not have validated anything")
-		})
-	}
+// An explicit custom-only set replaces the built-in defaults, so the built-in
+// catalogue has nothing to validate and must not be opened.
+func TestInitDoesNotAskTheCatalogueForOnlyCustomReferences(t *testing.T) {
+	t.Parallel()
+
+	catalogue, asked := answeringCatalogue("builtin.output_quality")
+	action, _ := initIn(t, filepath.Join(t.TempDir(), "evals"),
+		catalogue, "support-quality", "tone-check")
+
+	_ = action.Run()
+
+	assert.Zero(t, *asked,
+		"init opened a connection that could not have validated anything")
 }
 
 func TestInitCatalogueCriteriaReachTheAuthoredConfig(t *testing.T) {
@@ -155,7 +163,7 @@ func TestInitCatalogueCriteriaReachTheAuthoredConfig(t *testing.T) {
 		{"outside picker", []string{"builtin.relevance"}, "builtin.relevance", false},
 		{"bare catalog spelling", []string{"relevance"}, "builtin.relevance", false},
 		{"unavailable catalog", nil, "builtin.unverified", false},
-		{"empty catalog", []string{}, "builtin.unverified", false},
+		{"empty catalog", []string{}, "builtin.unverified", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newInitHarness(t, nil)

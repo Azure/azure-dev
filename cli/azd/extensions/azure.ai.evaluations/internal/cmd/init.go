@@ -22,6 +22,7 @@ import (
 
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 	"azureaieval/internal/telemetry"
@@ -78,7 +79,11 @@ type initAction struct {
 	// knownBuiltins answers which built-in evaluators the project offers. Held
 	// per action rather than in a package variable so a test that substitutes
 	// it shares nothing with a test running beside it.
-	knownBuiltins func(context.Context) []string
+	knownBuiltins        func(context.Context) []string
+	listModelConnections func(context.Context) ([]eval_api.Connection, error)
+	connectionOnce       sync.Once
+	connections          []eval_api.Connection
+	connectionErr        error
 }
 
 // builtinCatalogue is the lookup a builtin. reference is checked against.
@@ -89,18 +94,38 @@ func (a *initAction) builtinCatalogue() func(context.Context) []string {
 	return readBuiltinEvaluatorCatalogue
 }
 
+func (a *initAction) modelConnectionCatalogue(ctx context.Context) ([]eval_api.Connection, error) {
+	a.connectionOnce.Do(func() {
+		list := a.listModelConnections
+		if list == nil {
+			list = readModelConnectionCatalogue
+		}
+		a.connections, a.connectionErr = list(ctx)
+	})
+	return slices.Clone(a.connections), a.connectionErr
+}
+
+type initCommandOptions struct {
+	listModelConnections func(context.Context) ([]eval_api.Connection, error)
+}
+
 func newInitCommand() *cobra.Command {
+	return newInitCommandWithOptions(initCommandOptions{})
+}
+
+func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold evaluation config for an agent or completed conversations. Works offline.",
+		Short: "Scaffold evaluation config for an agent or completed conversations.",
 		Long: "Scaffold evaluation config without invoking an agent. Existing entries are never replaced.\n\n" +
 			"Turn datasets invoke an agent when run. Conversation datasets can score completed " +
 			"messages (static), or simulate a user against an agent from scenario seeds (simulation).\n" +
 			"--conversation-mode implies --source dataset and --evaluation-level conversation when omitted. " +
 			"Simulation requires an independent connection-name/model-deployment. Init reuses qualified " +
-			"simulator references authored locally, or prompts for --simulation-model. " +
+			"simulator references authored locally and validates their Azure OpenAI project connection, " +
+			"or discovers eligible connections for --simulation-model. " +
 			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
 			"Init validates locally available datasets as non-empty JSONL objects before creating " +
 			"locks, directories or configuration. Simulation also validates the seed-row contract. " +
@@ -109,14 +134,15 @@ func newInitCommand() *cobra.Command {
 			"A local file cannot replace a different dataset already declared under its filename stem; " +
 			"use a unique filename to add it, or select the existing dataset by name. " +
 			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
-			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.\n\n" +
+			"Init works offline except for a bounded, best-effort lookup of selected built-in evaluators " +
+			"and the required Foundry project connection lookup for simulation.\n\n" +
 			"Output formats are default (human-readable) and json. Other formats are rejected before initialization.\n\n" +
 			"Dataset selections create catalog entries intended for publication. To evaluate local bytes without " +
 			"publishing a dataset, author a separate eval with source.type: local and source.file in the configuration.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&initAction{cmd: cmd, flags: flags}).Run()
+			return (&initAction{cmd: cmd, flags: flags, listModelConnections: options.listModelConnections}).Run()
 		},
 	}
 
@@ -146,8 +172,8 @@ func newInitCommand() *cobra.Command {
 		"Conversation dataset mode: static scores completed messages without a target; simulation uses scenario "+
 			"seeds and an agent target. Prompts for conversation datasets; defaults to static without prompts.")
 	cmd.Flags().StringVar(&flags.simulationModel, "simulation-model", "",
-		"Connection-name/model-deployment for the simulated user. Detects locally authored simulator references; "+
-			"independent of the generation and judge models.")
+		"Connection-name/model-deployment for the simulated user. Reuses qualified local bindings or discovers "+
+			"eligible Azure OpenAI project connections; independent of the generation and judge models.")
 	cmd.Flags().IntVar(&flags.numConversations, "num-conversations", project.DefaultNumConversations,
 		fmt.Sprintf("Conversations per seed in simulation mode (%d-%d).",
 			project.MinNumConversations, project.MaxNumConversations))
@@ -157,6 +183,7 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
 			"built-in, or a declared custom evaluator compatible with the selected level. "+
+			"Defaults to builtin.output_quality and builtin.tool_use_quality. "+
 			"Replaces the defaults; an explicitly empty selection is invalid.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected locally when omitted; prompts if unavailable.")
@@ -207,13 +234,15 @@ func (a *initAction) Run() error {
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
 	}
-	// Asked once, and only when there is a builtin. reference for the catalogue
-	// to answer about. A builtin. reference names something only the project can
-	// confirm, so it used to scaffold cleanly and fail at create. Unreachable
-	// projects answer nothing and leave the reference as written, so this adds a
-	// check offline rather than a requirement.
-	if hasBuiltinRef(a.flags.evaluators) {
-		known := a.builtinCatalogue()(a.cmd.Context())
+	knownBuiltins := sync.OnceValue(func() []string {
+		return a.builtinCatalogue()(a.cmd.Context())
+	})
+	evaluatorsToValidate := a.flags.evaluators
+	if len(evaluatorsToValidate) == 0 && noPrompt(a.cmd) {
+		evaluatorsToValidate = defaultEvaluators()
+	}
+	if hasBuiltinRef(evaluatorsToValidate) {
+		known := knownBuiltins()
 		// The lookup's own five-second bound is best effort, but the command's
 		// context being done is the reader interrupting, and that is not the
 		// catalogue being quiet. Collapsing the two carried on to fail several
@@ -221,7 +250,7 @@ func (a *initAction) Run() error {
 		if err := a.cmd.Context().Err(); err != nil {
 			return err
 		}
-		if err := refuseUnknownBuiltins(a.flags.evaluators, known); err != nil {
+		if err := refuseUnknownBuiltins(evaluatorsToValidate, known); err != nil {
 			return err
 		}
 	}
@@ -289,6 +318,7 @@ func (a *initAction) Run() error {
 		configExisted:    configExisted,
 		simulationModels: authored.SimulationModels(),
 		tracesWired:      tracesWired,
+		knownBuiltins:    knownBuiltins,
 	}
 
 	answers, err := a.ask(ctx)

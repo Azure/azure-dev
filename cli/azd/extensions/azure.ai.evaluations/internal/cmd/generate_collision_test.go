@@ -119,6 +119,25 @@ func TestNoProposalWhenEveryNumberedFormIsTaken(t *testing.T) {
 	assert.Empty(t, nextFreeArtifactName("quality", filepath.Join(dir, "quality.json"), 0))
 }
 
+func TestUnicodeCollisionProposalPreservesRuneLimit(t *testing.T) {
+	for _, name := range []string{"caf\u00e9", "\u6570\u636e\U0001f331"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, name+".jsonl")
+			for n := 2; n <= 9; n++ {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name+"-"+strconv.Itoa(n)+".jsonl"),
+					[]byte("{}\n"), 0o600))
+			}
+			limit := len([]rune(name)) + 3
+			assert.Equal(t, name+"-10", nextFreeArtifactName(name, path, limit))
+			assert.Empty(t, nextFreeArtifactName(name, path, limit-1),
+				"two-digit suffix must not exceed the rune limit")
+			assert.Equal(t, name+"-10", nextFreeArtifactName(name, path, 0),
+				"unbounded evaluator proposals preserve Unicode too")
+		})
+	}
+}
+
 func TestDatasetCollisionProposalRespectsGenerationNameLimit(t *testing.T) {
 	dir := t.TempDir()
 	name := strings.Repeat("a", 48)

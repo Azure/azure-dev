@@ -131,8 +131,10 @@ This permits reproducible builds with its released SDK pin, without a local
 replace, pseudo-version, duplicate schema, or conflicting global protobuf
 registration. Both SDK v1.34.0 and v1.35.0 lack these new project fields; upgrading
 to v1.35.0 alone would not make them available. Regeneration is part of `make proto`.
-The existing stable metadata/trailer transport remains for already-built
-clients only; evaluations init no longer sends or trusts it.
+Completion acknowledgments exist only on the typed beta API. The intermediate
+PR-only stable metadata/trailer convention was removed; no released client
+requires it. Stable callers receive ordinary errors and retain uncertain
+scaffolds for manual recovery, without trusting custom metadata or trailers.
 
 ## Deployment Preview
 

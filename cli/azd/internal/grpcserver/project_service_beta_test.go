@@ -103,8 +103,7 @@ func TestBetaProjectServiceAddServiceRejectsEmptyName(t *testing.T) {
 	require.Error(t, err)
 
 	// The empty-name rejection happens before the mutation lock in addService, so it must not
-	// be acknowledged even though operation_id was supplied -- matching the v1 behavior proven
-	// by TestProjectAddServicePreSaveRejectionRequiresOneValidToken's pre-lock guard.
+	// be acknowledged even though operation_id was supplied.
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	for _, detail := range st.Details() {

@@ -13,11 +13,9 @@ import (
 )
 
 // betaProjectServiceOverride implements the v1beta typed AddServiceAcknowledgment contract
-// (requested in PR review as a discoverable, generated-client-visible replacement for the v1
-// azd-project-add-service-operation gRPC metadata/trailer convention). It shares the same
-// mutation logic as the v1 handler (projectService.addService); only the operation-identifier
-// transport and the acknowledgment surface differ between channels. See the "Project service
-// save acknowledgment" section of docs/architecture/extension-framework.md.
+// and shares mutation logic with the stable v1 handler (projectService.addService).
+// Completion acknowledgments are beta-only; stable callers receive ordinary errors.
+// See "Project service save acknowledgment" in docs/architecture/extension-framework.md.
 type betaProjectServiceOverride struct {
 	service *projectService
 	custom  any

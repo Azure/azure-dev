@@ -183,6 +183,42 @@ func TestProducerCancellationOverAuthenticatedWire(t *testing.T) {
 	}
 }
 
+func TestStableAddServiceIgnoresHiddenCompletionMetadataOverAuthenticatedWire(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failed-%t", fail), func(t *testing.T) {
+			info, service, path := newProducerRegressionServer(t)
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			if fail {
+				service.saveProject = func(context.Context, *project.ProjectConfig, string) error {
+					return os.ErrPermission
+				}
+			}
+			client, ctx := dialProducerRegressionSDK(t, info)
+			ctx = metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", "intermediate-pr-client")
+			var trailers metadata.MD
+			_, err = client.Project().AddService(ctx, &azdext.AddServiceRequest{
+				Service: &azdext.ServiceConfig{Name: "api", Host: "containerapp", Language: "python"},
+			}, grpc.MaxRetryRPCBufferSize(0), grpc.Trailer(&trailers))
+			require.Empty(t, trailers.Get("azd-project-add-service-save-failed"))
+			require.Empty(t, status.Convert(err).Details())
+			cached, cacheErr := service.lazyProjectConfig.GetValue()
+			require.NoError(t, cacheErr)
+			after, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			if fail {
+				require.Error(t, err)
+				require.NotContains(t, cached.Services, "api")
+				require.Equal(t, before, after)
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, cached.Services, "api")
+				require.NotEqual(t, before, after)
+			}
+		})
+	}
+}
+
 func TestProducerPreservesRichErrorsOverAuthenticatedWire(t *testing.T) {
 	t.Parallel()
 

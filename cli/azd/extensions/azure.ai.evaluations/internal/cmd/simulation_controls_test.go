@@ -55,7 +55,7 @@ func TestInvalidAuthoredSimulationReferenceIsNotOfferedOrPrinted(t *testing.T) {
 			dir := filepath.Join(h.dir, "evals")
 			require.NoError(t, os.MkdirAll(dir, 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase),
-				[]byte(fmt.Sprintf("evals:\n  - name: prior\n    simulation: {model: %q}\n", model)), 0o600))
+				fmt.Appendf(nil, "evals:\n  - name: prior\n    simulation: {model: %q}\n", model), 0o600))
 			before := initFileSnapshot(t, h.dir)
 			calls := 0
 			text, err := executeConversationInitWithConnections(t,

@@ -527,6 +527,7 @@ func TestReconcileInitialFiles_PreservesAccountingAndErrors(t *testing.T) {
 			} else {
 				fw.fileChanges.Modified[path] = true
 			}
+
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			err = fw.reconcileInitialFiles(ctx, func(string) (os.FileInfo, error) {
@@ -548,6 +549,63 @@ func TestReconcileInitialFiles_PreservesAccountingAndErrors(t *testing.T) {
 			}
 			require.Equal(t, FileChanges{{Path: path, ChangeType: test.wantType}}, fw.GetFileChanges())
 			require.Equal(t, map[string]struct{}{path: {}}, fw.initialFiles)
+		})
+	}
+}
+
+func TestReconcileInitialFiles_SlowStatPreservesConcurrentEvents(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		samePath bool
+		remove   bool
+	}{
+		{name: "unrelated create"},
+		{name: "same path create", samePath: true},
+		{name: "same path remove after create", samePath: true, remove: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fw, _ := startupFixture(t)
+			path := filepath.Join(fw.root, "initial.txt")
+			fw.initialFiles[path] = struct{}{}
+			eventPath := path
+			if !test.samePath {
+				eventPath = filepath.Join(fw.root, "other.txt")
+			}
+			started := make(chan struct{})
+			release := make(chan struct{})
+			defer close(release)
+			result := make(chan error, 1)
+			go func() {
+				result <- fw.reconcileInitialFiles(t.Context(), func(string) (os.FileInfo, error) {
+					close(started)
+					<-release
+					return nil, os.ErrNotExist
+				})
+			}()
+			waitStartupExit(t, started)
+			eventDone := make(chan struct{})
+			go func() {
+				fw.mu.Lock()
+				fw.trackFileEventLocked(fsnotify.Event{Name: eventPath, Op: fsnotify.Create})
+				if test.remove {
+					fw.trackFileEventLocked(fsnotify.Event{Name: eventPath, Op: fsnotify.Remove})
+				}
+				fw.mu.Unlock()
+				close(eventDone)
+			}()
+			waitStartupExit(t, eventDone)
+			release <- struct{}{}
+			select {
+			case err := <-result:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("startup reconciliation did not finish")
+			}
+			fw.mu.Lock()
+			defer fw.mu.Unlock()
+			require.Equal(t, !test.remove, fw.fileChanges.Created[eventPath])
+			require.Equal(t, !test.samePath || test.remove, fw.fileChanges.Deleted[path])
+			require.Nil(t, fw.startupRevisions, "startup generations must not persist")
 		})
 	}
 }

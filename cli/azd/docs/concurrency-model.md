@@ -34,6 +34,10 @@ The accounting snapshot copies its maps under `fileWatcher.mu`, checks created
 paths outside that lock, and reclaims the live created-path map only when its
 revision is unchanged. A newer event cannot be pruned by an older filesystem
 result. Startup file provenance remains immutable after registration begins.
+Startup reconciliation also performs filesystem lookups outside the accounting
+lock. Temporary per-initial-path revisions prevent a stale missing-file lookup
+from replacing a newer event, without letting unrelated events suppress a
+deletion. These revisions are discarded when startup reconciliation ends.
 
 ---
 

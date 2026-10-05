@@ -38,10 +38,12 @@ type fileWatcher struct {
 	root            string
 	// initialFiles is fixed at startup, not extended by transient paths.
 	initialFiles map[string]struct{}
-	mu           sync.Mutex
-	revision     uint64
-	done         chan struct{}
-	flush        chan chan struct{}
+	// startupRevisions exists only while initial-file reconciliation runs.
+	startupRevisions map[string]startupRevision
+	mu               sync.Mutex
+	revision         uint64
+	done             chan struct{}
+	flush            chan chan struct{}
 }
 
 type watchBackend interface {
@@ -53,6 +55,11 @@ type fileChanges struct {
 	Created  map[string]bool
 	Modified map[string]bool
 	Deleted  map[string]bool
+}
+
+type startupRevision struct {
+	revision uint64
+	removed  bool
 }
 
 func NewWatcher(ctx context.Context) (Watcher, error) {
@@ -290,7 +297,13 @@ func (fw *fileWatcher) reconcileInitialFiles(
 	ctx context.Context, stat func(string) (os.FileInfo, error),
 ) error {
 	fw.mu.Lock()
-	defer fw.mu.Unlock()
+	fw.startupRevisions = make(map[string]startupRevision)
+	fw.mu.Unlock()
+	defer func() {
+		fw.mu.Lock()
+		fw.startupRevisions = nil
+		fw.mu.Unlock()
+	}()
 	for path := range fw.initialFiles {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -302,6 +315,9 @@ func (fw *fileWatcher) reconcileInitialFiles(
 		if fw.ignoreMatcher.IsIgnored(relPath, false) {
 			continue
 		}
+		fw.mu.Lock()
+		revision := fw.startupRevisions[path].revision
+		fw.mu.Unlock()
 		info, err := stat(path)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			if err != nil {
@@ -310,10 +326,17 @@ func (fw *fileWatcher) reconcileInitialFiles(
 			return ctxErr
 		}
 		if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
-			delete(fw.fileChanges.Created, path)
-			delete(fw.fileChanges.Modified, path)
-			fw.fileChanges.Deleted[path] = true
-			fw.revision++
+			fw.mu.Lock()
+			// Preserve a newer creation or write, but a newer Remove still
+			// confirms deletion of the original file after a brief recreation.
+			current := fw.startupRevisions[path]
+			if current.revision == revision || current.removed {
+				delete(fw.fileChanges.Created, path)
+				delete(fw.fileChanges.Modified, path)
+				fw.fileChanges.Deleted[path] = true
+				fw.revision++
+			}
+			fw.mu.Unlock()
 		} else if err != nil {
 			return fmt.Errorf("failed to reconcile initial file %s: %w", path, err)
 		}
@@ -326,6 +349,13 @@ func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
 	fw.revision++
 	name := event.Name
 	_, existed := fw.initialFiles[name]
+	if existed && fw.startupRevisions != nil {
+		current := fw.startupRevisions[name]
+		current.revision++
+		current.removed = event.Has(fsnotify.Remove) &&
+			!event.Has(fsnotify.Create) && !event.Has(fsnotify.Write) && !event.Has(fsnotify.Rename)
+		fw.startupRevisions[name] = current
+	}
 	switch {
 	case event.Has(fsnotify.Create):
 		fw.fileChanges.Created[name] = true

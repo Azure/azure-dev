@@ -38,9 +38,16 @@ func (o *betaProjectServiceOverride) GetAddServiceCapabilities(
 // logic. On an acknowledged failure it attaches an AddServiceAcknowledgment detail to the
 // returned gRPC status instead of a trailer, so the capability is discoverable from the v1beta
 // service definition and generated clients rather than relying on an undocumented header name.
+// Operation identifiers longer than 64 bytes are rejected before project mutation.
 func (o *betaProjectServiceOverride) AddService(
 	ctx context.Context, req *v1beta.AddServiceRequest,
 ) (*v1beta.EmptyResponse, error) {
+	if len(req.GetOperationId()) > maxAddServiceOperationIDBytes {
+		return nil, status.Errorf(
+			codes.InvalidArgument, "operation_id must not exceed %d bytes", maxAddServiceOperationIDBytes,
+		)
+	}
+
 	stableReq := new(azdext.AddServiceRequest)
 	if err := transcodeBetaRequest(req, stableReq); err != nil {
 		return nil, err
@@ -49,7 +56,7 @@ func (o *betaProjectServiceOverride) AddService(
 	acknowledged, err := o.service.addService(ctx, stableReq, req.GetOperationId())
 	if err != nil {
 		if acknowledged {
-			withDetails, detailErr := status.Convert(err).WithDetails(
+			withDetails, detailErr := status.Convert(mapHostError(err)).WithDetails(
 				&v1beta.AddServiceAcknowledgment{OperationId: req.GetOperationId()},
 			)
 			if detailErr == nil {

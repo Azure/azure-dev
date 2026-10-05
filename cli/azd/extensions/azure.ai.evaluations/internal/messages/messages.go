@@ -132,7 +132,7 @@ func GateOutlivedTheWait(runID string, budget time.Duration) error {
 	return fmt.Errorf(
 		"run %s outlived the %s wait, so --fail-on never got a result to judge. "+
 			"The run is still going: reattach with `azd ai eval run show %s "+
-			"--wait --fail-on <gate>`", runID, budget, shellArg(runID))
+			"--wait --fail-on <gate>`", terminalValue(runID), budget, shellArg(runID))
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
@@ -191,7 +191,7 @@ func WaitInterrupted(runID string, err error) error {
 	return fmt.Errorf(
 		"stopped waiting on run %s, which is still running: %w. "+
 			"Pick it back up with `azd ai eval run show %s`",
-		runID, err, shellArg(runID))
+		terminalValue(runID), err, shellArg(runID))
 }
 
 // WaitingForRun says a run has started and this command is now watching it.
@@ -353,7 +353,7 @@ func RunMustBeNamed(evalID string) error {
 		"name the run to act on: this environment has no run recorded for eval %s, "+
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
-		evalID, shellArg(evalID))
+		terminalValue(evalID), shellArg(evalID))
 }
 
 // ListedRunMissingID refuses to guess an identifier omitted by the service.
@@ -1546,13 +1546,13 @@ func ArtifactAppearedDuringGeneration(path, jobID string) error {
 		return fmt.Errorf(
 			"%s was created while the job was running; "+
 				"pass --force to overwrite it, or --output-dir to write elsewhere",
-			path)
+			terminalValue(path))
 	}
 	return fmt.Errorf(
 		"%s was created while the job was running, so it was left alone; "+
 			"the generated output is ready — collect it with "+
 			"`azd ai eval job show %s --force`, or to a different place with --output-dir",
-		path, shellArg(jobID))
+		terminalValue(path), shellArg(jobID))
 }
 
 // ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
@@ -2071,7 +2071,7 @@ func DatasetNotGeneratedYet(dataset, path string) error {
 			"If this entry came from a `$ref`, note that a relative `file:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- write the path relative to the configuration instead",
-		filepath.ToSlash(path), shellArg(dataset))
+		terminalValue(filepath.ToSlash(path)), shellArg(dataset))
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -2239,7 +2239,7 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 			"If this entry came from a `$ref`, note that a relative `source:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- carry the rubric under `definition:` instead",
-		filepath.ToSlash(path), shellArg(evaluator))
+		terminalValue(filepath.ToSlash(path)), shellArg(evaluator))
 }
 
 // RubricBelongsUnderDefinition reports a rubric written at evaluator entry
@@ -2366,7 +2366,7 @@ func EvaluatorDrifted(evaluator, remote, recorded string) error {
 			"behind, so read it with `azd ai eval evaluator show %s --version %s "+
 			"--output-file <path>` and bring it into the declared source before "+
 			"deploying again, or delete that version if it was a mistake",
-		evaluator, remote, recorded, shellArg(evaluator), shellArg(remote))
+		evaluator, terminalValue(remote), terminalValue(recorded), shellArg(evaluator), shellArg(remote))
 }
 
 // EvaluatorVersionNotAdvancing reports a publish the service kept answering with
@@ -4504,6 +4504,14 @@ func ShellArg(v string) string {
 // CanInlineShellArg reports whether ShellArg can preserve v without shell expansion or terminal control characters.
 func CanInlineShellArg(v string) bool {
 	return !strings.ContainsAny(v, "$`\"%!\\^") && strings.IndexFunc(v, unicode.IsControl) == -1
+}
+
+// terminalValue preserves ordinary display text and escapes embedded terminal controls.
+func terminalValue(v string) string {
+	if strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 // ConfirmDelete asks before removing something published.

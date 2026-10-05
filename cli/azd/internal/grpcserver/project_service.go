@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log"
@@ -27,6 +28,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+const maxAddServiceOperationIDBytes = 64
 
 type projectService struct {
 	azdext.UnimplementedProjectServiceServer
@@ -249,7 +252,7 @@ func (s *projectService) AddService(
 	incoming, _ := metadata.FromIncomingContext(ctx)
 	tokens := incoming.Get("azd-project-add-service-operation")
 	token := ""
-	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
+	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= maxAddServiceOperationIDBytes {
 		token = tokens[0]
 	}
 
@@ -275,8 +278,8 @@ func (s *projectService) AddService(
 //
 // acknowledged reports whether the mutation lock was acquired and any synchronous save/restore
 // work completed before the returned error -- the same point at which the documented
-// acknowledgment contract promises a signal to an opted-in caller. Success, panics, and errors
-// returned before the lock do not set acknowledged.
+// acknowledgment contract promises a signal to an opted-in caller. Success, panics, cancellation,
+// deadline expiration, and errors returned before the lock do not set acknowledged.
 // Completion and cache restoration happen under the lock. The caller serializes the
 // acknowledgment after this function returns and the lock has been released.
 func (s *projectService) addService(
@@ -293,7 +296,11 @@ func (s *projectService) addService(
 		// Runs after synchronous work and cache restoration, but before releasing the mutation lock.
 		// acknowledged stays false during a panic, which is not a confirmed completion.
 		defer func() {
-			if resultErr != nil {
+			code := status.Code(resultErr)
+			if resultErr != nil &&
+				!errors.Is(resultErr, context.Canceled) &&
+				!errors.Is(resultErr, context.DeadlineExceeded) &&
+				code != codes.Canceled && code != codes.DeadlineExceeded {
 				acknowledged = true
 			}
 		}()

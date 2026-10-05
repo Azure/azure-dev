@@ -74,11 +74,13 @@ func (x *GetProjectResponse) GetProject() *ProjectConfig {
 type AddServiceRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Service *ServiceConfig         `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
-	// Optional caller-supplied identifier for this operation. When set, a failed AddService that
+	// Optional caller-supplied identifier of at most 64 bytes for this operation.
+	// Longer identifiers are rejected before mutation. When set, a failed AddService that
 	// reached the project mutation lock returns this identifier via an AddServiceAcknowledgment
 	// detail on the returned gRPC status, confirming the host observed and completed (not
 	// necessarily succeeded) the operation before the error was returned. This is the v1beta
 	// typed replacement for the v1 azd-project-add-service-operation gRPC metadata convention;
+	// canceled or timed-out outcomes never carry an acknowledgment.
 	// see docs/architecture/extension-framework.md#project-service-save-acknowledgment.
 	OperationId   string `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -133,6 +135,7 @@ func (x *AddServiceRequest) GetOperationId() string {
 // operation named by AddServiceRequest.operation_id. It is attached as a google.rpc.Status
 // detail on a failed AddService call. It is never present on success, and never present when
 // the request did not supply operation_id.
+// Cancellation and deadline expiration never carry this detail.
 type AddServiceAcknowledgment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`

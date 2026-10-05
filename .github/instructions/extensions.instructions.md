@@ -22,9 +22,22 @@ applyTo:
   it — for example, `--inspector-port` with `--no-client`, or any agent-creation flag during a
   reuse flow, or init-only flags during a standalone-eject run — return a clear error that names the
   conflicting inputs. Automation scripts that pass explicit flags and receive a success exit code
-  must be able to trust that those flags were honored. In extensions that provide `internal/exterrors`,
+  must be able to trust that those flags were honored. Treat an explicitly empty value such as
+  `--environment=` or `--version=` as supplied input: validate and reject it rather than falling back
+  to an implicit default. In extensions that provide `internal/exterrors`,
   report flag conflicts with `exterrors.Validation(exterrors.CodeConflictingArguments, message,
   suggestion)`. Otherwise, follow the extension's established validation-error pattern.
+
+  _Source: #10106, #10140, #10181_
+
+- **Validate the complete input set before any observable side effect.** Run project-wide and
+  cross-field validation before authentication, prompts, filesystem writes, environment or local
+  state updates, service calls, or other mutations. Validation must fail closed: do not continue on
+  malformed, incomplete, unauthorized, or transiently unreadable input, and do not treat unknown
+  data as valid. Add regression coverage that asserts invalid input leaves files, environment state,
+  persisted state, and remote resources unchanged.
+
+  _Source: #10137, #10140, #10148_
 
 - **Redact credentials from URLs before printing to terminal, logs, or error messages.** URLs may
   carry credentials in the userinfo component (`user:pass@host`) or in the query string (SAS

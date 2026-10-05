@@ -272,6 +272,7 @@ func localRowValidator(
 		// Compiler errors can quote credential-bearing external references.
 		return nil, fmt.Errorf("eval %q: item_schema is invalid or contains unsupported external references", group.Name)
 	}
+	request := &eval_api.CreateOpenAIEvalRequest{TestingCriteria: criteria}
 	return func(row map[string]any, i int) error {
 		if err := schema.Validate(row); err != nil {
 			return fmt.Errorf("eval %q: local row %d does not match item_schema; check its columns and value types",
@@ -296,6 +297,14 @@ func localRowValidator(
 					}
 				}
 			}
+		}
+		columns, malformed := map[string]bool{}, map[string]bool{}
+		for column, value := range row {
+			columns[column] = true
+			malformed[column] = malformedTextValue(value)
+		}
+		if err := validateDatasetInteractions(group, request, columns, malformed); err != nil {
+			return fmt.Errorf("eval %q: local row %d: %w", group.Name, i+1, err)
 		}
 		return nil
 	}, nil

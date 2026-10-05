@@ -1300,7 +1300,7 @@ func (m *Manager) prepareUpgradeRecovery(installed *Extension) (func(context.Con
 				return fmt.Errorf("failed to remove unsuccessful replacement; backup retained at %q: %w", backupDir, err)
 			}
 			if hasFiles {
-				if err := os.Rename(backupPath, extensionDir); err != nil {
+				if err := osutil.Rename(ctx, backupPath, extensionDir); err != nil {
 					return fmt.Errorf("failed to restore installed files; backup retained at %q: %w", backupDir, err)
 				}
 			}

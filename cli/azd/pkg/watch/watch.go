@@ -226,7 +226,7 @@ func (fw *fileWatcher) start(
 
 		err := fw.watchRecursive(watchCtx, fw.root, watcher)
 		if err == nil {
-			err = fw.reconcileInitialFiles(watchCtx)
+			err = fw.reconcileInitialFiles(watchCtx, os.Lstat)
 		}
 		if err == nil {
 			err = watchCtx.Err()
@@ -254,9 +254,14 @@ func (fw *fileWatcher) start(
 	return nil
 }
 
-func (fw *fileWatcher) reconcileInitialFiles(ctx context.Context) error {
-	// A deletion between the inventory and parent registration has no backend
-	// event. Recheck only startup paths after all watches have been installed.
+// reconcileInitialFiles closes the inventory-to-registration deletion gap.
+// Unlike later transient creations, a missing initial file is always a deletion,
+// even if it was briefly recreated or its path is now a directory.
+func (fw *fileWatcher) reconcileInitialFiles(
+	ctx context.Context, stat func(string) (os.FileInfo, error),
+) error {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
 	for path := range fw.initialFiles {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -268,12 +273,20 @@ func (fw *fileWatcher) reconcileInitialFiles(ctx context.Context) error {
 		if fw.ignoreMatcher.IsIgnored(relPath, false) {
 			continue
 		}
-		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-			fw.mu.Lock()
-			fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Remove})
-			fw.mu.Unlock()
+		info, err := stat(path)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if err != nil {
+				return fmt.Errorf("failed to reconcile initial file %s: %w; watch context ended: %w", path, err, ctxErr)
+			}
+			return ctxErr
+		}
+		if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
+			delete(fw.fileChanges.Created, path)
+			delete(fw.fileChanges.Modified, path)
+			fw.fileChanges.Deleted[path] = true
+			fw.revision++
 		} else if err != nil {
-			return fmt.Errorf("failed to reconcile watched file %s: %w", path, err)
+			return fmt.Errorf("failed to reconcile initial file %s: %w", path, err)
 		}
 	}
 	return nil

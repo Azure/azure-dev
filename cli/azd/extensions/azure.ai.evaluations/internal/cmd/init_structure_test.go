@@ -56,6 +56,61 @@ func TestInitRefusesSymlinkConfigBeforeWriting(t *testing.T) {
 	assert.Equal(t, []string{"new-eval"}, cfg.Names(project.SectionEvals))
 }
 
+func TestInitRefusesSelectedDirectorySymlinkBeforeWriting(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		for _, selection := range []string{"plain", "trailing separator", "dot suffix", "normalized dots"} {
+			for _, format := range []string{"default", "json"} {
+				t.Run(fmt.Sprintf("existing=%t/%s/%s", existing, selection, format), func(t *testing.T) {
+					h := newInitHarness(t, nil)
+					target := t.TempDir()
+					configPath := filepath.Join(target, project.EvalConfigBase)
+					if existing {
+						require.NoError(t, os.WriteFile(configPath, []byte("# shared config\nevals: []\n"), 0o600))
+					}
+					beforeProject := initFileSnapshot(t, h.dir)
+					beforeTarget := initFileSnapshot(t, target)
+					link := filepath.Join(h.dir, "selected directory")
+					if err := os.Symlink(target, link); err != nil {
+						t.Skipf("creating test symlinks is unavailable: %v", err)
+					}
+					location := link
+					separator := string(filepath.Separator)
+					switch selection {
+					case "trailing separator":
+						location += separator
+					case "dot suffix":
+						location += separator + "."
+					case "normalized dots":
+						location = h.dir + separator + "." + separator + filepath.Base(link)
+					}
+					text, err := executeConversationInit(t, "--path", location, "--name", "new-eval",
+						"--conversation-mode", "static", "--dataset", h.seedRows, "--judge-model", "judge",
+						"--no-prompt", "--output", format)
+					assert.ErrorContains(t, err, "symbolic link")
+					assert.Empty(t, text)
+					assert.Zero(t, h.project.wiringAttempts())
+					assert.Empty(t, h.usage.reported())
+					assert.Equal(t, beforeTarget, initFileSnapshot(t, target))
+					got, err := os.Readlink(link)
+					require.NoError(t, err)
+					assert.Equal(t, target, got)
+					require.NoError(t, os.Remove(link))
+					assert.Equal(t, beforeProject, initFileSnapshot(t, h.dir))
+
+					_, err = executeConversationInit(t, "--path", target, "--name", "new-eval",
+						"--conversation-mode", "static", "--dataset", h.seedRows, "--judge-model", "judge",
+						"--no-prompt", "--output", format)
+					require.NoError(t, err, "selecting the real directory directly must still allow init")
+					assert.Equal(t, 1, h.project.wiringAttempts())
+					cfg, err := project.ReadAuthoredConfig(configPath)
+					require.NoError(t, err)
+					assert.Equal(t, []string{"new-eval"}, cfg.Names(project.SectionEvals))
+				})
+			}
+		}
+	}
+}
+
 func TestInitRefusesAmbiguousAuthoredDocumentsBeforeWriting(t *testing.T) {
 	for _, shape := range []string{
 		"single document", "second document", "explicit end then second", "duplicate datasets", "merged catalogs",

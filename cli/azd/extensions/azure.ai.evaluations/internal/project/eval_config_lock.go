@@ -71,11 +71,7 @@ const evalStateLockName = ".azure.eval.state.lock"
 // scaffold that fails says so and can be run again, while a lost update is two
 // commands reporting success and one author's entry quietly gone.
 func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
-	path, err := ResolveEvalConfigPath(evalDir)
-	if err != nil {
-		return nil, err
-	}
-	if err := checkConfigSymlink(path); err != nil {
+	if _, err := ResolveEvalConfigPathForWrite(evalDir); err != nil {
 		return nil, err
 	}
 	// Callers hold a location, which is the directory before anything is
@@ -83,7 +79,7 @@ func LockEvalConfig(ctx context.Context, evalDir string) (func(), error) {
 	// scaffolded project reads back the recorded path and hands over the file,
 	// and creating a directory named azure.eval.yaml then fails the command
 	// before it has done anything.
-	evalDir, err = ensureEvalDir(evalDir)
+	evalDir, err := ensureEvalDir(evalDir)
 	if err != nil {
 		return nil, err
 	}

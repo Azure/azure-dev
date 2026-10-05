@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -130,6 +131,72 @@ func TestConfigEditsRejectSymlinksWithoutChangingTarget(t *testing.T) {
 				}
 				assert.Len(t, entries, wantEntries, "no lock, ignore, or temporary files may be created")
 			})
+		}
+	}
+}
+
+func TestConfigEditsRejectSelectedDirectorySymlinksWithoutChangingTarget(t *testing.T) {
+	for _, operation := range []string{"scaffold", "scaffold with rollback", "catalog", "save", "lock"} {
+		for _, existing := range []bool{false, true} {
+			for _, trailingSeparator := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/existing=%t/trailing=%t", operation, existing, trailingSeparator), func(t *testing.T) {
+					dir := t.TempDir()
+					target := filepath.Join(dir, "target")
+					require.NoError(t, os.Mkdir(target, 0o700))
+					configPath := filepath.Join(target, EvalConfigBase)
+					original := []byte("# shared config\nevals: []\n")
+					if existing {
+						require.NoError(t, os.WriteFile(configPath, original, 0o600))
+					}
+					link := filepath.Join(dir, "selected directory")
+					if err := os.Symlink(target, link); err != nil {
+						t.Skipf("creating test symlinks is unavailable: %v", err)
+					}
+					location := link
+					if trailingSeparator {
+						location += string(filepath.Separator)
+					}
+					var err error
+					write := ScaffoldWrite{Evals: []Eval{{Name: "new"}}}
+					switch operation {
+					case "scaffold":
+						err = ApplyScaffold(location, write)
+					case "scaffold with rollback":
+						var undo func() error
+						undo, err = ApplyScaffoldWithRollback(location, write)
+						assert.Nil(t, undo, "rejection must not require rollback")
+					case "catalog":
+						_, _, err = UpsertCatalogEntry(location, "datasets", "new", "file", "./rows.jsonl")
+					case "save":
+						err = SaveEvalConfig(location, &EvalConfig{})
+					case "lock":
+						var unlock func()
+						unlock, err = LockEvalConfig(t.Context(), location)
+						if unlock != nil {
+							defer unlock()
+						}
+					}
+					assert.ErrorContains(t, err, "symbolic link")
+					assert.ErrorContains(t, err, "select the target file directly")
+					got, err := os.Readlink(link)
+					require.NoError(t, err)
+					assert.Equal(t, target, got)
+					if existing {
+						body, err := os.ReadFile(configPath)
+						require.NoError(t, err)
+						assert.Equal(t, original, body)
+					} else {
+						assert.NoFileExists(t, configPath)
+					}
+					entries, err := os.ReadDir(target)
+					require.NoError(t, err)
+					wantEntries := 0
+					if existing {
+						wantEntries = 1
+					}
+					assert.Len(t, entries, wantEntries, "no lock, ignore, or temporary files may be created")
+				})
+			}
 		}
 	}
 }

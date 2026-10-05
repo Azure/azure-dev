@@ -51,11 +51,8 @@ func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() erro
 	if write.Empty() {
 		return func() error { return nil }, nil
 	}
-	if err := checkOneConfig(evalDir); err != nil {
-		return nil, err
-	}
-	path := resolvedConfigPath(evalDir)
-	if err := checkConfigSymlink(path); err != nil {
+	path, err := ResolveEvalConfigPathForWrite(evalDir)
+	if err != nil {
 		return nil, err
 	}
 	if _, err := ensureEvalDir(evalDir); err != nil {
@@ -266,13 +263,13 @@ func UpsertCatalogFields(
 	evalDir, kind, name string,
 	fields []CatalogField,
 ) (changed bool, created bool, err error) {
-	if err := checkOneConfig(evalDir); err != nil {
+	path, err := ResolveEvalConfigPathForWrite(evalDir)
+	if err != nil {
 		return false, false, err
 	}
 	if _, err := ensureEvalDir(evalDir); err != nil {
 		return false, false, err
 	}
-	path := resolvedConfigPath(evalDir)
 
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		created = true

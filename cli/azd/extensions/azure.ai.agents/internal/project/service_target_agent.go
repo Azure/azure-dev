@@ -320,10 +320,10 @@ func (p *AgentServiceTargetProvider) agentDefinitionValidationServiceConfig() *a
 	}
 
 	validationConfig := *p.serviceConfig
+	fields := maps.Clone(p.serviceConfig.GetAdditionalProperties().GetFields())
+	fields[AgentDefinitionRefKey] = structpb.NewStringValue(p.agentDefinitionRef)
 	validationConfig.AdditionalProperties = &structpb.Struct{
-		Fields: map[string]*structpb.Value{
-			AgentDefinitionRefKey: structpb.NewStringValue(p.agentDefinitionRef),
-		},
+		Fields: fields,
 	}
 	return &validationConfig
 }

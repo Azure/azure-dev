@@ -4320,6 +4320,43 @@ func TestEndpoints_PromptRootRef_ValidatesConventionsBesideDefinition(t *testing
 	require.ErrorContains(t, err, "description")
 }
 
+func TestEndpoints_RootRefPreservesSiblingKindOverride(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("kind: hosted\nname: hosted-agent\n"),
+		0o600,
+	))
+
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"AZURE_SUBSCRIPTION_ID":    "subscription",
+		"AZURE_RESOURCE_GROUP":     "resource-group",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
+	})
+	service := &azdext.ServiceConfig{
+		Name: "prompt", Host: foundryAgentHost, RelativePath: ".",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"$ref":         "agent.yaml",
+			"kind":         "prompt",
+			"name":         "prompt-agent",
+			"model":        "gpt-5-mini",
+			"instructions": "Be helpful.",
+		}),
+	}
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	require.False(t, serviceConfigHasRef(service))
+
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"https://acct.services.ai.azure.com/api/projects/project/openai/v1/responses",
+	}, got)
+}
+
 func TestEndpointsRejectsAgentDefinitionPath(t *testing.T) {
 	projectRoot := t.TempDir()
 	overridePath := filepath.Join(projectRoot, "custom-voice.yaml")

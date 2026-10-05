@@ -67,7 +67,8 @@ func unsupportedAgentEndpointOperationError(
 	kind agent_yaml.AgentKind,
 	operation AgentEndpointOperation,
 ) error {
-	suggestion := "use `azd ai agent show` to inspect this agent; endpoint reporting supports hosted, prompt, and voice agents"
+	suggestion := "use `azd ai agent show` to inspect this agent; " +
+		"endpoint reporting supports hosted, prompt, and voice agents"
 	if operation == AgentEndpointOperationUpdate {
 		suggestion = "edit the agent definition in azure.yaml and run `azd deploy`; " +
 			"endpoint and card updates apply only to hosted agents"

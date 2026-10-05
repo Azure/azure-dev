@@ -312,12 +312,6 @@ func matchesVersionConstraint(expr, candidate string) bool {
 	return constraint.Check(parsedVersion)
 }
 
-// bestSatisfyingVersion returns the highest published version satisfying expr.
-// Empty or "latest" selects the latest version; non-semver tags use exact match.
-func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionVersion {
-	return bestSatisfyingVersionFromMetadata(expr, nil, versions)
-}
-
 func bestSatisfyingExtensionVersion(
 	expr string,
 	extension *ExtensionMetadata,
@@ -370,14 +364,6 @@ func bestSatisfyingVersionFromMetadata(
 		return nil
 	}
 	return &versions[bestIdx]
-}
-
-func bestSatisfyingVersionForAzd(
-	expr string,
-	versions []ExtensionVersion,
-	azdVersion *semver.Version,
-) *ExtensionVersion {
-	return bestSatisfyingVersionForAzdFromMetadata(expr, nil, versions, azdVersion)
 }
 
 func bestSatisfyingExtensionVersionForAzd(
@@ -1232,11 +1218,22 @@ func (m *Manager) upgradeInternal(
 	extension *ExtensionMetadata,
 	opts UpgradeOptions,
 	visited map[string]struct{},
-) (*ExtensionVersion, []UpgradeResult, error) {
-	asDependency := false
-	if installed, err := m.GetInstalled(FilterOptions{Id: extension.Id}); err == nil && installed != nil {
-		asDependency = installed.InstalledAsDependency && !opts.PromoteToExplicit
+) (version *ExtensionVersion, results []UpgradeResult, err error) {
+	installed, err := m.GetInstalled(FilterOptions{Id: extension.Id})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get installed extension: %w", err)
 	}
+	asDependency := installed.InstalledAsDependency && !opts.PromoteToExplicit
+
+	finish, err := m.prepareUpgradeRecovery(installed)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		err = errors.Join(err, finish(recoveryCtx, err != nil))
+	}()
 
 	if err := m.Uninstall(ctx, extension.Id); err != nil {
 		return nil, nil, fmt.Errorf("failed to uninstall extension: %w", err)
@@ -1265,6 +1262,67 @@ func (m *Manager) upgradeInternal(
 
 	depUpgrades := m.evaluateDependencyChanges(ctx, extension, extensionVersion, opts, visited)
 	return extensionVersion, depUpgrades, nil
+}
+
+// prepareUpgradeRecovery preserves the target's files and installed record
+// until its replacement succeeds. Completed dependency changes are retained.
+func (m *Manager) prepareUpgradeRecovery(installed *Extension) (func(context.Context, bool) error, error) {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user config directory: %w", err)
+	}
+	extensionRoot := filepath.Join(userConfigDir, "extensions")
+	extensionDir := filepath.Join(extensionRoot, installed.Id)
+	if installed.Id == "" || extensionDir == extensionRoot || !osutil.IsPathContained(extensionRoot, extensionDir) {
+		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
+	}
+	if err := os.MkdirAll(extensionRoot, osutil.PermissionDirectory); err != nil {
+		return nil, fmt.Errorf("failed to create extension directory: %w", err)
+	}
+	backupDir, err := os.MkdirTemp(extensionRoot, ".upgrade-backup-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create extension backup: %w", err)
+	}
+	backupPath := filepath.Join(backupDir, "installed")
+	hasFiles := false
+	if err := os.Rename(extensionDir, backupPath); err == nil {
+		hasFiles = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, errors.Join(
+			fmt.Errorf("failed to preserve installed extension files: %w", err),
+			os.Remove(backupDir),
+		)
+	}
+	previous := installed
+	return func(ctx context.Context, failed bool) error {
+		if failed {
+			if err := osutil.RemoveAll(ctx, extensionDir); err != nil {
+				return fmt.Errorf("failed to remove unsuccessful replacement; backup retained at %q: %w", backupDir, err)
+			}
+			if hasFiles {
+				if err := os.Rename(backupPath, extensionDir); err != nil {
+					return fmt.Errorf("failed to restore installed files; backup retained at %q: %w", backupDir, err)
+				}
+			}
+			records, err := m.ListInstalled()
+			if err != nil {
+				return fmt.Errorf("failed to load installed metadata during recovery: %w", err)
+			}
+			records = maps.Clone(records)
+			records[previous.Id] = previous
+			if err := m.userConfig.Set(installedConfigKey, records); err != nil {
+				return fmt.Errorf("failed to restore installed extension metadata: %w", err)
+			}
+			m.installed = nil
+			if err := m.configManager.Save(m.userConfig); err != nil {
+				return fmt.Errorf("failed to save restored installed extension metadata: %w", err)
+			}
+		}
+		if err := osutil.RemoveAll(ctx, backupDir); err != nil {
+			return fmt.Errorf("failed to clean up extension backup %q: %w", backupDir, err)
+		}
+		return nil
+	}, nil
 }
 
 // evaluateDependencyChanges returns dependency upgrade work needed after a parent upgrade.

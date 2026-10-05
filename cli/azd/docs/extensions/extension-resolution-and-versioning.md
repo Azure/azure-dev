@@ -172,6 +172,59 @@ Migration metadata does **not** change version constraint eligibility. Exact pin
 
 Registry validation requires `from` to have higher raw SemVer precedence than `to` and rejects malformed versions, duplicate `from` entries, unpublished `to` versions, self-migrations, and chained migrations. Use this mechanism only to repair an already-published ordering mistake; do not use it to avoid normal SemVer versioning.
 
+### Stage the Host Before Migrating Installed Extensions
+
+Migration metadata only takes effect in a host that implements `versionMigrations`.
+Accepting registry schema 1.1 does not prove that capability: azd 1.34.2 accepts the
+new minor schema, ignores the migration field, and skips an update from installed
+`1.0.47-beta` to `1.0.0-beta.1`, including an explicit update `--version` request.
+Its success exit code can therefore describe a skipped update, not a migration.
+An extension's `requiredAzdVersion` does not retrofit migration support into that host.
+
+Before publishing a migration-dependent registry change, release and verify a host
+containing the migration implementation. Record the actual containing host release,
+artifact checksum and installed-host acceptance; do not infer a minimum release from
+a local build, an SDK version or a schema number. Registry publication remains blocked
+until that containing host is available and the old-host recovery instructions are
+verified. This source implementation does not establish an official containing release.
+
+For an already-installed historical version:
+
+1. Record `azd version`, `azd extension list --installed --output json` and
+   `azd extension source list`. Preserve the existing user configuration, extension
+   files and project/evaluation history.
+2. Install the verified migration-capable host through the
+   [azd installation instructions](https://aka.ms/azd/install). Run `azd version`
+   again and verify the executable selected by your shell. Keep the same configuration
+   directory and registered source; do not uninstall the extension or reset its state.
+3. Use that host to update from the original source, then verify the installed version:
+
+   ```bash
+   azd extension update <extension-id> --source <registered-source> --no-prompt
+   azd extension list --installed --output json
+   ```
+
+The migration-capable host preserves the target's previous files and installed record
+while replacing it. If replacement fails, it attempts to restore both and reports the
+failure with a nonzero exit code. A failed recovery is reported explicitly, including
+the retained backup path when file restoration fails. Completed dependency updates are
+not rolled back. After correcting an unavailable artifact or checksum, retry the same
+update; do not use a state reset, alias, forced downgrade or modified SemVer comparator.
+This recovery is for handled command failures, not a guarantee against a process crash.
+
+An exact historical pin still requires its original registry entry and artifact.
+`versionMigrations` does not create either. Preserve immutable historical releases and
+checksums, including public builds 46 and 47; if a version was already absent from the
+registry before this change, report that absence separately rather than manufacturing
+history or claiming the migration makes that version installable again.
+
+`Test_CLI_Extension_MigrationHostStaging` runs the official azd 1.34.2 executable
+provided by `CLI_TEST_LEGACY_AZD_PATH` and the candidate host against one isolated
+configuration. It verifies the old-host skip, host staging without a reset, failed
+replacement recovery, successful retry and rejection of a missing historical pin.
+Its extension artifacts are local fixtures, not proof of public historical artifacts
+or official delivery of the candidate host.
+
 ## azd Version Compatibility
 
 ### `requiredAzdVersion` Field

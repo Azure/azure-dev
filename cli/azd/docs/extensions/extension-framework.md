@@ -1091,6 +1091,14 @@ If a historical release used an incorrect version scheme that SemVer ranks above
 historical `from` version and a corrected `to` version published by the same registry update. See
 [Correcting a Historical Version Scheme](./extension-resolution-and-versioning.md#correcting-a-historical-version-scheme).
 
+Stage and verify an actually released migration-capable host **before** publishing metadata that installed users
+need for this update. Older hosts, including azd 1.34.2, accept schema 1.1 but ignore `versionMigrations`; they
+can report a successful command while skipping the corrected release as a downgrade. A schema bump or extension
+minimum alone is not a host-delivery receipt. Preserve historical release artifacts, exact pins and installed state;
+follow [host staging and recovery](./extension-resolution-and-versioning.md#stage-the-host-before-migrating-installed-extensions)
+instead of uninstalling, resetting state or forcing a downgrade. A local candidate build proves source behavior,
+not official availability of a containing host release.
+
 Once PR has been merged the extension updates are now live in the official `azd` extension source registry.
 
 ### Extension Manifest
@@ -3377,7 +3385,7 @@ Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"
 | Scenario | Behavior |
 |----------|----------|
 | Missing `schemaVersion` | Treated as `"1.0"` for backward compatibility |
-| Same major, newer minor (e.g. `"1.1"`) | Accepted silently — minor bumps are backward compatible |
+| Same major, newer minor (e.g. `"1.1"`) | Accepted silently; unknown optional fields may be ignored |
 | Newer major (e.g. `"2.0"`) | Rejected with an error and update guidance |
 | `0.x` (e.g. `"0.1"`) | Accepted — pre-release schema versions are valid |
 | Malformed version string | Rejected with a descriptive parse error |
@@ -3401,5 +3409,7 @@ When publishing a third-party registry:
 1. **Include `schemaVersion`**: Add `"schemaVersion": "1.1"` at the top level of your registry JSON.
    Omitting it works but triggers a validation warning.
 2. **Use the JSON schema**: Reference `extensions/registry.schema.json` for the full format specification.
-3. **Minor version bumps** add optional fields that older azd versions can safely ignore.
+3. **Minor version bumps** add optional fields that older azd versions may ignore. Acceptance does not prove
+   support for a field's behavior. Stage a containing host first when installed users require that behavior,
+   such as exceptional version ordering through `versionMigrations`.
 4. **Major version bumps** indicate breaking changes that require a newer azd version.

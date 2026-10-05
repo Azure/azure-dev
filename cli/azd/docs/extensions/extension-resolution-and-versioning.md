@@ -249,12 +249,16 @@ Direct installation from an unregistered URL can fail under `--no-prompt`;
 explicit source registration avoids silently accepting a new source during install.
 Verify the resulting installed version, selected source and binary checksum.
 
-This route was demonstrated for an absent evaluations extension in an isolated
-configuration using official azd 1.34.2 and genuine immutable personal-feed metadata
-for `1.0.47-beta`; the installed binary matched the protected historical bytes.
-That is a source-specific exact-pin example, not evidence that Azure's canonical
-registry contains that version, that dataset installation was exercised, or that
-an existing installation was migrated.
+This route illustrates the command sequence for an absent evaluations extension using
+official azd 1.34.2; it is a procedural example, not a demonstrated migration backed
+by a preserved authoritative artifact. The historical `1.0.47-beta` identity referenced
+here is user-reported: no personal-feed registry record, artifact receipt, checksum
+set, or other preserved evidence for that version's bytes was retained or is available
+in this work, and official `1.0.0-beta.1` metadata is not a substitute for that missing
+historical evidence. Treat this as the command shape to use once an authoritative
+historical source is actually located, not as proof that Azure's canonical registry
+contains that version, that dataset installation was exercised, or that an existing
+installation was migrated.
 
 For an existing installation, preserve its configuration, files and history, and
 honor replacement and source-change confirmations or non-interactive errors.

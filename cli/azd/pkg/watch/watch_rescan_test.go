@@ -4,6 +4,7 @@
 package watch
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,112 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFinalSnapshot_JoinsQueuedAndInFlightSubtrees(t *testing.T) {
+	for _, print := range []bool{false, true} {
+		name := "GetFileChanges"
+		if print {
+			name = "PrintChangedFiles"
+		}
+		t.Run(name, func(t *testing.T) {
+			fw, backend := startupFixture(t)
+			marker := filepath.Join(fw.root, "initial.txt")
+			require.NoError(t, os.WriteFile(marker, []byte("x"), 0600))
+			entered := make(chan string, 2)
+			release := make(chan struct{}, 2)
+			backend.add = func(path string) error {
+				if path != fw.root {
+					entered <- path
+					<-release
+					// A blocked owner must not block the backend event consumer.
+					for range 51 {
+						backend.events <- fsnotify.Event{Name: marker, Op: fsnotify.Write}
+					}
+				}
+				return nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+			t.Cleanup(func() {
+				cancel()
+				// Rescue blocked Add callbacks if a test assertion fails.
+				close(release)
+				waitStartupExit(t, fw.done)
+			})
+			children := make([]string, 2)
+			for i := range 2 {
+				dir := filepath.Join(fw.root, fmt.Sprintf("new-%d", i))
+				require.NoError(t, os.Mkdir(dir, 0700))
+				children[i] = filepath.Join(dir, "child.txt")
+				require.NoError(t, os.WriteFile(children[i], []byte("x"), 0600))
+				backend.events <- fsnotify.Event{Name: dir, Op: fsnotify.Create}
+				if i == 0 {
+					select {
+					case path := <-entered:
+						require.Equal(t, dir, path)
+					case <-time.After(2 * time.Second):
+						t.Fatal("first subtree did not enter registration")
+					}
+				}
+			}
+			// The marker is ordered after the second directory on the event
+			// channel, proving that discovery is queued before the snapshot.
+			backend.events <- fsnotify.Event{Name: marker, Op: fsnotify.Write}
+			require.Eventually(t, func() bool {
+				fw.mu.Lock()
+				defer fw.mu.Unlock()
+				return fw.fileChanges.Modified[marker]
+			}, 2*time.Second, time.Millisecond)
+
+			snapshot := make(chan FileChanges, 1)
+			printed := make(chan string, 1)
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				if print {
+					var writer bytes.Buffer
+					fw.printChangedFiles(&writer)
+					printed <- writer.String()
+				} else {
+					snapshot <- fw.GetFileChanges()
+				}
+				cancel() // Match the agent's single final snapshot followed by cancellation.
+			}()
+			select {
+			case <-finished:
+				t.Fatal("snapshot returned before in-flight registration completed")
+			case <-time.After(50 * time.Millisecond):
+			}
+			release <- struct{}{}
+			select {
+			case <-entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("queued subtree was abandoned")
+			}
+			select {
+			case <-finished:
+				t.Fatal("snapshot returned before queued registration completed")
+			case <-time.After(50 * time.Millisecond):
+			}
+			release <- struct{}{}
+			waitStartupExit(t, finished)
+			waitStartupExit(t, fw.done)
+			if print {
+				text := <-printed
+				for _, child := range children {
+					require.Contains(t, text, filepath.Base(filepath.Dir(child))+string(filepath.Separator)+"child.txt")
+				}
+			} else {
+				require.Equal(t, FileChanges{
+					{Path: marker, ChangeType: FileModified},
+					{Path: children[0], ChangeType: FileCreated},
+					{Path: children[1], ChangeType: FileCreated},
+				}, <-snapshot)
+			}
+			require.NotContains(t, fw.initialFiles, children[0])
+		})
+	}
+}
 
 func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 	for _, duringAdd := range []bool{false, true} {

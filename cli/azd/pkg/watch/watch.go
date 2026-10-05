@@ -39,8 +39,9 @@ type fileWatcher struct {
 	// initialFiles is fixed at startup, not extended by transient paths.
 	initialFiles map[string]struct{}
 	// mu protects fileChanges. initialFiles is immutable once event consumption starts.
-	mu   sync.Mutex
-	done chan struct{}
+	mu    sync.Mutex
+	done  chan struct{}
+	flush chan chan struct{}
 }
 
 type watchBackend interface {
@@ -179,6 +180,7 @@ func (fw *fileWatcher) start(
 	backendDone := make(chan struct{})
 	consumerDone := make(chan struct{})
 	fw.done = make(chan struct{})
+	fw.flush = make(chan chan struct{})
 	go func() {
 		defer close(consumerDone)
 		defer cancel()
@@ -267,24 +269,30 @@ func (fw *fileWatcher) start(
 		if err != nil {
 			return
 		}
+		scanPending := func() {
+			for _, path := range directories.take() {
+				if watchCtx.Err() != nil {
+					return
+				}
+				if err := fw.watchRecursive(watchCtx, path, watcher); err != nil && watchCtx.Err() == nil {
+					if _, statErr := os.Lstat(path); errors.Is(err, os.ErrNotExist) &&
+						errors.Is(statErr, os.ErrNotExist) {
+						log.Printf("debug: directory disappeared before watch registration %s", path)
+					} else {
+						log.Printf("failed to update directory watches for %s: %v", path, err)
+					}
+				}
+			}
+		}
 		for {
 			select {
 			case <-watchCtx.Done():
 				return
 			case <-directories.ready:
-				for _, path := range directories.take() {
-					if watchCtx.Err() != nil {
-						return
-					}
-					if err := fw.watchRecursive(watchCtx, path, watcher); err != nil && watchCtx.Err() == nil {
-						if _, statErr := os.Lstat(path); errors.Is(err, os.ErrNotExist) &&
-							errors.Is(statErr, os.ErrNotExist) {
-							log.Printf("debug: directory disappeared before watch registration %s", path)
-						} else {
-							log.Printf("failed to update directory watches for %s: %v", path, err)
-						}
-					}
-				}
+				scanPending()
+			case barrier := <-fw.flush:
+				scanPending()
+				close(barrier)
 			}
 		}
 	}()
@@ -402,6 +410,7 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 }
 
 func (fw *fileWatcher) printChangedFiles(writer io.Writer) {
+	fw.flushDirectories()
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 	createdFiles := fw.existingCreatedFilesLocked()
@@ -444,6 +453,24 @@ func (fw *fileWatcher) printChangedFiles(writer io.Writer) {
 		for _, file := range slices.Sorted(maps.Keys(fw.fileChanges.Deleted)) {
 			fmt.Fprintln(writer, output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
+	}
+}
+
+// flushDirectories joins in-flight registration and discoveries already queued
+// when the owner accepts the barrier. No accounting lock is held while waiting;
+// the event consumer must remain able to drain backend Add replies.
+func (fw *fileWatcher) flushDirectories() {
+	if fw.flush == nil {
+		return
+	}
+	barrier := make(chan struct{})
+	select {
+	case fw.flush <- barrier:
+		select {
+		case <-barrier:
+		case <-fw.done:
+		}
+	case <-fw.done:
 	}
 }
 
@@ -547,6 +574,7 @@ func (fw *fileWatcher) existingCreatedFilesLocked() []string {
 // GetFileChanges returns tracked file changes, excluding missing created files,
 // sorted by path.
 func (fw *fileWatcher) GetFileChanges() FileChanges {
+	fw.flushDirectories()
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 	createdFiles := fw.existingCreatedFilesLocked()

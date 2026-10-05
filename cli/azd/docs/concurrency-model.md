@@ -275,6 +275,17 @@ the one-slot notification channel never blocks the consumer. The owner drains pe
 paths and registers them outside that lock. Established, unrelated trees are not
 walked again for a continuous stream of new directories.
 
+Both reporting methods send a barrier to the registration owner before taking
+the accounting mutex. The owner completes its in-flight batch and scans pending
+discoveries before acknowledging the barrier. The event consumer continues
+draining while snapshots wait; no queue or accounting lock spans registration
+or its filesystem traversal. This makes a final snapshot followed immediately
+by cancellation include children of already queued directories even when they
+have no individual backend events. Discoveries queued after the barrier drains
+the pending set belong to later work, not an atomic filesystem-wide snapshot.
+Shutdown releases waiting snapshots via `done`; callers needing a complete
+final snapshot must take it before canceling the watcher.
+
 `fileWatcher.mu` protects all reads and writes to `fileChanges`, including
 snapshot reconciliation. `initialFiles` is populated before event consumption
 and remains immutable: it stores startup file-path provenance, not transient

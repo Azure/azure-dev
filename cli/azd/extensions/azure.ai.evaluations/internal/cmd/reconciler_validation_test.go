@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
@@ -23,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -35,9 +40,10 @@ type validationService struct {
 	dataset             bool
 	eval                bool
 	failCreate          bool
+	createStatus        int
 	definition          string
-	evaluatorVersion    string
 	createCount         int
+	evaluatorVersion    string
 	createdRequests     []eval_api.CreateOpenAIEvalRequest
 	registeredRows      string
 	credentialStatus    int
@@ -131,6 +137,11 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
 			s.createdRequests = append(s.createdRequests, request)
 			s.createCount++
+			if s.createStatus != 0 {
+				w.WriteHeader(s.createStatus)
+				_, _ = w.Write([]byte(`{"error":{"code":"CreateRefused"}}`))
+				return
+			}
 			if s.failCreate {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
@@ -397,6 +408,268 @@ func TestCreateReportsRetainedDependenciesOnServiceFailure(t *testing.T) {
 	assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
 	assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
 	assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
+}
+
+func TestCreatePartialJSONPreservesRemediation(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			service.createStatus = status
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return (&evalCreateAction{cmd: cmd}).create(ec, cfg, &cfg.Evals[0], filepath.Join(dir, "azure.yaml"))
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+
+			err := cmd.RunE(cmd, nil)
+			require.Error(t, err)
+			require.Equal(t, 1, exitCode)
+			wantSuggestion := azdext.ErrorSuggestion(err)
+			if status == http.StatusForbidden {
+				require.NotEmpty(t, wantSuggestion)
+			} else {
+				require.Empty(t, wantSuggestion)
+			}
+			var result struct {
+				Status    string               `json:"status"`
+				Name      string               `json:"name"`
+				Artifacts []reconciledArtifact `json:"artifacts"`
+				Error     jsonErrorBody        `json:"error"`
+				Recovery  string               `json:"recovery_command"`
+			}
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			require.NoError(t, decoder.Decode(&result))
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "the partial result must remain the only JSON document")
+			assert.Equal(t, "failed", result.Status)
+			assert.Equal(t, cfg.Evals[0].Name, result.Name)
+			assert.Equal(t, []reconciledArtifact{{"dataset", "turn-tests", "1.0", true}}, result.Artifacts)
+			if status == http.StatusForbidden {
+				// This review's follow-up finding: the auth projection used
+				// to flatten SafeMessage/Code, so the JSON message still
+				// carried the full endpoint. It must now be sanitized the
+				// same way the non-auth branch below already is, while the
+				// auth code/suggestion and the full human/stderr diagnostic
+				// survive unchanged.
+				assert.Equal(t, jsonMessage(err), result.Error.Message)
+				assert.NotEqual(t, err.Error(), result.Error.Message)
+				assert.NotContains(t, result.Error.Message, "127.0.0.1")
+				assert.Contains(t, err.Error(), "127.0.0.1")
+				assert.Equal(t, exterrors.CodeAuthFailed, result.Error.Code)
+			} else {
+				// ADO 5572140: the JSON message strips the internal service
+				// endpoint a service refusal would otherwise carry; stderr
+				// (asserted below) keeps the full diagnostic for a human.
+				assert.Equal(t, jsonMessage(err), result.Error.Message)
+				assert.NotEqual(t, err.Error(), result.Error.Message)
+				assert.NotContains(t, result.Error.Message, "127.0.0.1")
+				assert.Contains(t, err.Error(), "127.0.0.1")
+				assert.Equal(t, "CreateRefused", result.Error.Code)
+			}
+			assert.Equal(t, wantSuggestion, result.Error.Suggestion)
+			assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
+			assert.Contains(t, stderr.String(), err.Error())
+			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
+			assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(out.Bytes(), &fields))
+			var errorFields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(fields["error"], &errorFields))
+			if wantSuggestion == "" {
+				assert.NotContains(t, errorFields, "suggestion")
+			}
+
+			service.createStatus = 0
+			require.NoError(t, cmd.RunE(cmd, nil))
+			require.NoError(t, cmd.RunE(cmd, nil))
+			uploads := 0
+			for _, request := range service.requests {
+				if strings.Contains(request, "startPendingUpload") {
+					uploads++
+				}
+				assert.NotContains(t, request, "DELETE ")
+			}
+			assert.Equal(t, 1, uploads, "a retained dependency must not be republished")
+			assert.Equal(t, 2, service.createCount, "one failed create and one successful create")
+		})
+	}
+}
+
+func TestPartialJSONMatchesOrdinaryRemediation(t *testing.T) {
+	for _, cause := range []error{
+		errors.New("plain failure"),
+		&azdext.LocalError{Message: "invalid input", Suggestion: "Correct the named input."},
+		fmt.Errorf("wrapped: %w", &azdext.LocalError{Message: "invalid input", Suggestion: "Correct the named input."}),
+		errors.Join(errors.New("other failure"),
+			&azdext.ServiceError{Message: "service refused", Suggestion: "Check project permissions."}),
+	} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			cmd := jsonCmd(t, "json")
+			var ordinary, partial bytes.Buffer
+			cmd.SetOut(&ordinary)
+			require.ErrorIs(t, failAs(cmd, cause), cause)
+			cmd.SetOut(&partial)
+			require.NoError(t, reportCreatePartial(cmd, &evalContext{}, "quality", "azure.eval.yaml",
+				[]reconciledArtifact{{"evaluator", "judge", "2", false}}, cause))
+			var ordinaryDoc, partialDoc jsonError
+			require.NoError(t, json.Unmarshal(ordinary.Bytes(), &ordinaryDoc))
+			require.NoError(t, json.Unmarshal(partial.Bytes(), &partialDoc))
+			assert.Equal(t, ordinaryDoc.Error, partialDoc.Error)
+
+			raw, err := json.Marshal(generationDocument([]generationOutcome{{
+				plan: generationPlan{Kind: generateKindEvaluator}, err: cause,
+				ref: &project.ArtifactRef{Name: "judge", Source: "judge.json", Version: "2"},
+			}}))
+			require.NoError(t, err)
+			var generated map[string]generationResult
+			require.NoError(t, json.Unmarshal(raw, &generated))
+			require.Contains(t, generated, "evaluator")
+			assert.Equal(t, "catalog_failed", generated["evaluator"].Status)
+			assert.Equal(t, ordinaryDoc.Error.Message, generated["evaluator"].Error)
+			assert.Equal(t, ordinaryDoc.Error.Suggestion, generated["evaluator"].Suggestion)
+			require.NotNil(t, generated["evaluator"].ArtifactRef)
+			assert.Equal(t, "2", generated["evaluator"].Version)
+		})
+	}
+}
+
+func TestPartialJSONSuggestionsDoNotDiscloseURLCredentials(t *testing.T) {
+	const suggestion = "Inspect https://fixture-user:fixture-password@example.test/remediation" +
+		"?sig=fixture-signature#fixture-fragment and retry."
+	const safeSuggestion = "Inspect https://example.test/remediation and retry."
+	checkPartialJSONErrorRedaction(t, "safe validation failure", "safe validation failure", suggestion, safeSuggestion)
+}
+
+func TestPartialJSONSuggestionsRedactWhitespaceSeparatedQueryValues(t *testing.T) {
+	for _, separator := range []string{" ", "\t", "\n", "\r\n"} {
+		t.Run(separator, func(t *testing.T) {
+			checkPartialJSONErrorRedaction(t, "safe validation failure", "safe validation failure",
+				"Inspect https://example.test/remediation?sig="+separator+"fixture-signature and retry.",
+				"Inspect <redacted-url> and retry.")
+		})
+	}
+}
+
+func TestPartialJSONMessagesDoNotDiscloseURLCredentials(t *testing.T) {
+	for _, tc := range []struct{ name, message, safeMessage string }{
+		{
+			"userinfo query fragment",
+			"Download https://fixture-user:fixture-password@example.test/artifact" +
+				"?sig=fixture-signature#fixture-fragment failed.",
+			"Download https://example.test/artifact failed.",
+		},
+		{
+			"malformed URL",
+			"Download https:/fixture-user:fixture-password@example.test/artifact?sig=fixture-signature failed.",
+			"Download <redacted-url> failed.",
+		},
+		{
+			"whitespace query",
+			"Download https://example.test/artifact?sig= \tfixture-signature failed.",
+			"Download <redacted-url> failed.",
+		},
+		{"plain message", "The service rejected the input.", "The service rejected the input."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const suggestion = "Check the project configuration and retry."
+			checkPartialJSONErrorRedaction(t, tc.message, tc.safeMessage, suggestion, suggestion)
+		})
+	}
+}
+
+func checkPartialJSONErrorRedaction(t *testing.T, message, safeMessage, suggestion, safeSuggestion string) {
+	t.Helper()
+	for _, surface := range []string{"create", "generation"} {
+		t.Run(surface, func(t *testing.T) {
+			original := &azdext.LocalError{Message: message, Suggestion: suggestion}
+			cause := fmt.Errorf("wrapped: %w", original)
+			wantMessage := "wrapped: " + safeMessage
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+				if surface == "create" {
+					if err := reportCreatePartial(cmd, &evalContext{}, "quality", "azure.eval.yaml",
+						[]reconciledArtifact{{"dataset", "retained", "2", true}}, cause); err != nil {
+						return err
+					}
+				} else {
+					if err := emitJSON(cmd.OutOrStdout(), generationDocument([]generationOutcome{
+						{
+							plan: generationPlan{Kind: generateKindDataset},
+							ref:  &project.ArtifactRef{Name: "retained", Source: "rows.jsonl", Version: "2"},
+						},
+						{
+							plan:     generationPlan{Kind: generateKindEvaluator},
+							err:      cause,
+							report:   generationReport{jobID: "evaluator-job"},
+							recovery: "azd ai eval job show evaluator-job --evaluator",
+						},
+					})); err != nil {
+						return err
+					}
+				}
+				return cause
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+			require.ErrorIs(t, cmd.RunE(cmd, nil), cause)
+			assert.Equal(t, 1, exitCode)
+			assert.Equal(t, message, original.Message, "redaction must not mutate the original error")
+			assert.Equal(t, suggestion, original.Suggestion, "redaction must not mutate the original error")
+
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			if surface == "create" {
+				var result struct {
+					Status    string               `json:"status"`
+					Artifacts []reconciledArtifact `json:"artifacts"`
+					Error     jsonErrorBody        `json:"error"`
+					Recovery  string               `json:"recovery_command"`
+				}
+				require.NoError(t, decoder.Decode(&result))
+				assert.Equal(t, "failed", result.Status)
+				assert.Equal(t, []reconciledArtifact{{"dataset", "retained", "2", true}}, result.Artifacts)
+				assert.Equal(t, wantMessage, result.Error.Message)
+				assert.Equal(t, safeSuggestion, result.Error.Suggestion)
+				assert.Contains(t, result.Recovery, "azd ai eval create quality --from-file")
+			} else {
+				var result map[string]generationResult
+				require.NoError(t, decoder.Decode(&result))
+				require.Contains(t, result, "dataset")
+				require.Contains(t, result, "evaluator")
+				assert.Equal(t, "succeeded", result["dataset"].Status)
+				require.NotNil(t, result["dataset"].ArtifactRef)
+				assert.Equal(t, "retained", result["dataset"].Name)
+				assert.Equal(t, "2", result["dataset"].Version)
+				assert.Equal(t, "failed", result["evaluator"].Status)
+				assert.Equal(t, wantMessage, result["evaluator"].Error)
+				assert.Equal(t, safeSuggestion, result["evaluator"].Suggestion)
+				assert.Equal(t, "evaluator-job", result["evaluator"].JobID)
+				assert.Equal(t, "azd ai eval job show evaluator-job --evaluator", result["evaluator"].Recovery)
+				assert.NotEmpty(t, result["evaluator"].RetryGuidance)
+			}
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "retain exactly one partial JSON document")
+			assert.Contains(t, stderr.String(), wantMessage)
+			for _, sensitive := range []string{
+				"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
+			} {
+				assert.NotContains(t, out.String(), sensitive)
+				assert.NotContains(t, stderr.String(), sensitive)
+			}
+		})
+	}
 }
 
 func TestReconciliationValidationHonorsCancellation(t *testing.T) {

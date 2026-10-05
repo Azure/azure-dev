@@ -151,23 +151,27 @@ func (a *evaluatorDownloadAction) destination(version string) (string, error) {
 }
 
 // evaluatorDocument uses the same editable rubric shape as generation.
-// Other evaluator kinds retain their complete document; invalid rubrics fail.
+// Other object-shaped evaluator kinds retain their complete document; invalid rubrics fail.
 func evaluatorDocument(raw json.RawMessage) ([]byte, error) {
-	var envelope struct {
+	var envelope *struct {
 		Definition json.RawMessage `json:"definition"`
 	}
-	if json.Unmarshal(raw, &envelope) == nil {
-		editable, err := editableRubric(envelope.Definition)
-		if err != nil {
-			return nil, err
-		}
-		if editable != nil {
-			return editable, nil
-		}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, notAnObject(raw, err)
+	}
+	if envelope == nil {
+		return nil, messages.DefinitionIsNull()
+	}
+	editable, err := editableRubric(envelope.Definition)
+	if err != nil {
+		return nil, err
+	}
+	if editable != nil {
+		return editable, nil
 	}
 	var indented bytes.Buffer
 	if err := json.Indent(&indented, raw, "", "  "); err != nil {
-		return raw, nil
+		return nil, messages.NotValidJSON(err)
 	}
 	return append(indented.Bytes(), '\n'), nil
 }

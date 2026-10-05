@@ -274,9 +274,18 @@ func TestEvaluatorUpdateCancellationDoesNotPublish(t *testing.T) {
 }
 
 func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
+	for _, scenario := range []struct {
+		caller    string
+		responses bool
+	}{
+		{"create", false}, {"up", false}, {"create", true}, {"up", true},
+	} {
+		caller, sourceType := scenario.caller, project.SourceTypeTraces
+		if scenario.responses {
+			sourceType = project.SourceTypeResponses
+		}
 		for _, override := range []string{"none", "catalog", "empty catalog lists", "document"} {
-			t.Run(caller+"/"+override, func(t *testing.T) {
+			t.Run(caller+"/"+sourceType+"/"+override, func(t *testing.T) {
 				ec, _, service, cfg, dir := newCatalogPinFixture(t)
 				service.latest = "3"
 				service.versions = map[string]json.RawMessage{
@@ -289,6 +298,11 @@ func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
 				require.NoError(t, action.download(t.Context(), ec))
 				cfg.Evaluators[0] = project.EvaluatorDecl{Name: "custom", Source: path}
 				cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+				if scenario.responses {
+					cfg.Evals[0].Source = &project.SourceDecl{
+						Type: project.SourceTypeResponses, ResponseIDs: []string{"resp_fixed"}, MaxTurns: 1,
+					}
+				}
 				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
 				require.Zero(t, service.publishes, "unchanged download must reuse the published version")
 
@@ -335,6 +349,12 @@ func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
 				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
 				assert.Equal(t, 1, service.publishes, "unchanged retry must not publish a fifth version")
 				assert.Len(t, service.created, 1, "metadata inheritance must not turn latest into an authored pin")
+				require.Len(t, service.evals[first].TestingCriteria, 1)
+				assert.Empty(t, service.evals[first].TestingCriteria[0].EvaluatorVersion)
+				if scenario.responses {
+					assert.Equal(t, map[string]any{"type": "azure_ai_source", "scenario": "responses"},
+						service.evals[first].DataSourceConfig)
+				}
 			})
 		}
 	}

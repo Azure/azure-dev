@@ -181,6 +181,10 @@
           "then": { "properties": { "source": false } }
         },
         {
+          "if": { "required": ["source"] },
+          "then": { "properties": { "max_samples": { "const": 0 } } }
+        },
+        {
           "$comment": "A simulation creates conversations from seeds; a source collects ones that already happened. Declaring both runs one and silently ignores the other. The level and target type are pinned to the only values a simulation can run with, so the editor refuses what the CLI would refuse. The target constraint narrows rather than requires: an omitted type already means agent, and a $ref carries no type at all, so both stay valid while type: model is refused.",
           "if": { "required": ["simulation"] },
           "then": {
@@ -270,7 +274,26 @@
           "type": "string",
           "description": "End of the window, RFC 3339."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "responses" } }, "required": ["type"] },
+          "then": {
+            "required": ["response_ids"],
+            "properties": {
+              "response_ids": {
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "$comment": "Match strings.TrimSpace, including Unicode whitespace.",
+                  "pattern": "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "EvaluatorRef": {
       "type": "object",

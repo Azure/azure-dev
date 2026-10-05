@@ -4279,6 +4279,47 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
 }
 
+func TestEndpoints_PromptRootRef_ValidatesConventionsBesideDefinition(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "src", "prompt")
+	definitionDir := filepath.Join(projectRoot, "definitions")
+	skillDir := filepath.Join(definitionDir, "skills", "invalid-skill")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.MkdirAll(skillDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(definitionDir, "agent.yaml"),
+		[]byte("kind: prompt\nname: my-prompt\ninstructions: Help the user.\n"),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: invalid-skill\n---\nMissing a description.\n"),
+		0o600,
+	))
+
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_PROMPT_NAME":        "my-prompt",
+		"AGENT_PROMPT_VERSION":     "1",
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+	service := &azdext.ServiceConfig{
+		Name: "prompt", Host: foundryAgentHost, RelativePath: "src/prompt",
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "definitions/agent.yaml"}),
+	}
+
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	require.False(t, serviceConfigHasRef(service))
+
+	_, err := provider.Endpoints(t.Context(), service, nil)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+	require.ErrorContains(t, err, "description")
+}
+
 func TestEndpointsRejectsAgentDefinitionPath(t *testing.T) {
 	projectRoot := t.TempDir()
 	overridePath := filepath.Join(projectRoot, "custom-voice.yaml")

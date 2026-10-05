@@ -1269,6 +1269,15 @@ func (m *Manager) upgradeInternal(
 func (m *Manager) prepareUpgradeRecovery(
 	ctx context.Context, installed *Extension,
 ) (func(context.Context, bool) error, error) {
+	// Snapshot persisted metadata without copying Extension's runtime locks.
+	data, err := json.Marshal(installed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to snapshot installed extension metadata: %w", err)
+	}
+	previous := new(Extension)
+	if err := json.Unmarshal(data, previous); err != nil {
+		return nil, fmt.Errorf("failed to snapshot installed extension metadata: %w", err)
+	}
 	userConfigDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user config directory: %w", err)
@@ -1295,7 +1304,6 @@ func (m *Manager) prepareUpgradeRecovery(
 			os.Remove(backupDir),
 		)
 	}
-	previous := installed
 	return func(ctx context.Context, failed bool) error {
 		if failed {
 			if err := osutil.RemoveAll(ctx, extensionDir); err != nil {

@@ -276,3 +276,45 @@ func TestNewWatcher_CancellationDrainsDynamicAddBeforeClose(t *testing.T) {
 	waitStartupExit(t, fw.done)
 	waitStartupExit(t, backend.closed)
 }
+
+func TestFileChanges_SlowStatDoesNotBlockOrPruneConcurrentEvents(t *testing.T) {
+	fw, _ := startupFixture(t)
+	file := filepath.Join(fw.root, "created.txt")
+	fw.mu.Lock()
+	fw.trackFileEventLocked(fsnotify.Event{Name: file, Op: fsnotify.Create})
+	fw.mu.Unlock()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	result := make(chan fileChanges, 1)
+	go func() {
+		result <- fw.snapshotFileChanges(func(string) (os.FileInfo, error) {
+			close(started)
+			<-release
+			return nil, os.ErrNotExist
+		})
+	}()
+	waitStartupExit(t, started)
+	eventDone := make(chan struct{})
+	go func() {
+		fw.mu.Lock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: file, Op: fsnotify.Create})
+		fw.mu.Unlock()
+		close(eventDone)
+	}()
+	waitStartupExit(t, eventDone)
+	release <- struct{}{}
+	select {
+	case snapshot := <-result:
+		require.Empty(t, snapshot.Created, "the earlier report excludes its missing path")
+	case <-time.After(2 * time.Second):
+		t.Fatal("snapshot did not finish after filesystem I/O completed")
+	}
+	fw.mu.Lock()
+	require.Contains(t, fw.fileChanges.Created, file, "a stale stat must not prune a newer Create")
+	fw.mu.Unlock()
+	require.Empty(t, fw.GetFileChanges())
+	fw.mu.Lock()
+	require.Empty(t, fw.fileChanges.Created, "a subsequent quiescent snapshot still reclaims missing paths")
+	fw.mu.Unlock()
+}

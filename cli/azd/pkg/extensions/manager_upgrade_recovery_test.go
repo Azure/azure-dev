@@ -42,6 +42,7 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		checksum         ExtensionChecksum
 		cancel           bool
 		cancelOnDownload bool
+		mutateInstalled  bool
 		failSave         int
 		version          string
 		wantError        string
@@ -57,6 +58,10 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		{name: "missing release", artifact: "replacement", version: "9.0.0", wantError: "was not found"},
 		{name: "cancellation", artifact: "cancel", cancel: true, wantError: "context canceled"},
 		{name: "download cancellation", artifact: "cancel", cancelOnDownload: true, wantError: "context canceled"},
+		{
+			name: "download mutation", artifact: "cancel", cancelOnDownload: true,
+			mutateInstalled: true, wantError: "context canceled",
+		},
 		{name: "uninstall save", artifact: "replacement", failSave: 1, wantError: "injected save failure"},
 		{name: "install save", artifact: "replacement", failSave: 2, wantError: "injected save failure"},
 	}
@@ -98,6 +103,9 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			installed, err := manager.GetInstalled(FilterOptions{Id: metadata.Id})
 			require.NoError(t, err)
 			installed.InstalledAsDependency = true
+			if test.mutateInstalled {
+				installed.Dependencies = []ExtensionDependency{{Id: "test.dependency", Version: "1.0.0"}}
+			}
 			require.NoError(t, manager.UpdateInstalled(installed))
 			before, err := json.Marshal(installed)
 			require.NoError(t, err)
@@ -139,6 +147,10 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 						require.ErrorIs(t, statErr, os.ErrNotExist)
 						cancel()
 						downloadCanceled = true
+						if test.mutateInstalled {
+							installed.Version = "9.0.0"
+							installed.Dependencies[0].Version = "9.0.0"
+						}
 					}
 					require.ErrorIs(t, request.Context().Err(), context.Canceled)
 					return nil, request.Context().Err()

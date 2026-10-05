@@ -209,7 +209,7 @@ RPC. Capable hosts receive a typed `operation_id`; rollback requires exactly one
 matching `AddServiceAcknowledgment` status detail. Missing, malformed, stale,
 wrong-type, or duplicate details retain the scaffold. Cancellation, authentication
 and transport errors never cause a mutating request to be replayed.
-An explicit unsupported response or an unavailable capability RPC selects the
+An explicit unsupported response or `Unimplemented` from the read-only capability RPC selects the
 older stable path. Other capability failures stop before the root mutation.
 Older azd hosts do not send this typed acknowledgment. On those hosts, init
 retains the scaffold and reports manual recovery instead of promising an

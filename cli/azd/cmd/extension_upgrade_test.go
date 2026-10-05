@@ -11,9 +11,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -914,77 +911,6 @@ func TestUpgradeOneExtension(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestUpgradeOneExtension_DeclaredVersionMigration(t *testing.T) {
-	configDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", configDir)
-	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
-	t.Setenv("NO_COLOR", "1")
-
-	const id = "test.migrated"
-	artifact, err := os.CreateTemp(t.TempDir(), "azd-version-migration-*.bin")
-	require.NoError(t, err)
-	_, err = artifact.WriteString("corrected release")
-	require.NoError(t, err)
-	require.NoError(t, artifact.Close())
-
-	entryPoint := filepath.Base(artifact.Name())
-	installedPath := filepath.Join("extensions", id, entryPoint)
-	require.NoError(t, os.MkdirAll(filepath.Join(configDir, "extensions", id), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, installedPath), []byte("legacy release"), 0o600))
-
-	mockCtx := mocks.NewMockContext(t.Context())
-	manager, sourceManager := createUpgradeTestManager(
-		t,
-		mockCtx,
-		map[string]*extensions.Extension{
-			id: {
-				Id:      id,
-				Version: "1.0.47-beta",
-				Source:  "test",
-				Path:    installedPath,
-			},
-		},
-		"https://test.example.com/version-migration-registry.json",
-		testRegistry(&extensions.ExtensionMetadata{
-			Id:     id,
-			Source: "test",
-			VersionMigrations: []extensions.ExtensionVersionMigration{{
-				From: "1.0.47-beta",
-				To:   "1.0.0-beta.1",
-			}},
-			Versions: []extensions.ExtensionVersion{{
-				Version:    "1.0.0-beta.1",
-				EntryPoint: entryPoint,
-				Artifacts: map[string]extensions.ExtensionArtifact{
-					runtime.GOOS: {URL: artifact.Name()},
-				},
-			}},
-		}),
-	)
-
-	action := &extensionUpgradeAction{
-		args: []string{id},
-		flags: &extensionUpgradeFlags{
-			global: &internal.GlobalCommandOptions{NoPrompt: true},
-		},
-		formatter:        &output.JsonFormatter{},
-		writer:           &bytes.Buffer{},
-		console:          mockinput.NewMockConsole(),
-		sourceManager:    sourceManager,
-		extensionManager: manager,
-	}
-
-	result := action.upgradeOneExtension(t.Context(), id, 0, true)
-
-	require.NoError(t, result.Error)
-	require.Equal(t, extensions.UpgradeStatusUpgraded, result.Status)
-	require.Equal(t, "1.0.47-beta", result.FromVersion)
-	require.Equal(t, "1.0.0-beta.1", result.ToVersion)
-	record, err := manager.GetInstalled(extensions.FilterOptions{Id: id})
-	require.NoError(t, err)
-	require.Equal(t, "1.0.0-beta.1", record.Version)
 }
 
 func TestExtensionLifecycleTelemetrySpans(t *testing.T) {

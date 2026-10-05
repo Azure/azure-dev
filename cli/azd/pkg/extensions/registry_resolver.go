@@ -6,6 +6,8 @@ package extensions
 import (
 	"slices"
 	"strings"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 const (
@@ -262,9 +264,19 @@ func shouldPromote(
 		return true
 	}
 
+	storedSemver, err := semver.NewVersion(storedLatest.Version)
+	if err != nil {
+		return true
+	}
+
+	mainSemver, err := semver.NewVersion(mainLatest.Version)
+	if err != nil {
+		return false
+	}
+
 	// Promote only if main version is strictly greater than stored version.
 	// Equal versions keep the extension on its stored source (source-sticky).
-	return IsExtensionVersionUpgrade(mainMatch, storedLatest.Version, mainLatest.Version)
+	return mainSemver.GreaterThan(storedSemver)
 }
 
 func versionForUpgradeCompare(
@@ -279,7 +291,7 @@ func versionForUpgradeCompare(
 			return selected
 		}
 	}
-	return LatestExtensionVersion(extension)
+	return LatestVersion(extension.Versions)
 }
 
 // findMatchBySource returns the first ExtensionMetadata matching the given source name.

@@ -9,33 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
 )
-
-func TestUpdateRegistryPreservesVersionMigrations(t *testing.T) {
-	migrations := []extensions.ExtensionVersionMigration{{
-		From: "1.0.47-beta",
-		To:   "1.0.0-beta.1",
-	}}
-	registry := &extensions.Registry{
-		Extensions: []*extensions.ExtensionMetadata{{
-			Id:                "test.extension",
-			VersionMigrations: migrations,
-			Versions: []extensions.ExtensionVersion{{
-				Version: "1.0.0-beta.1",
-			}},
-		}},
-	}
-
-	addOrUpdateExtension(registry, &models.ExtensionSchema{
-		Id:      "test.extension",
-		Version: "1.0.0-beta.1",
-	}, nil)
-
-	require.Equal(t, migrations, registry.Extensions[0].VersionMigrations)
-}
 
 func TestSaveRegistryDoesNotHTMLEscape(t *testing.T) {
 	registry := &extensions.Registry{

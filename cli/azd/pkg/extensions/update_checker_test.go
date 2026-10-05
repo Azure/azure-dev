@@ -31,7 +31,6 @@ func Test_UpdateChecker_CheckForUpdate(t *testing.T) {
 			},
 		},
 	}
-
 	err = cacheManager.Set(ctx, sourceName, extensions)
 	require.NoError(t, err)
 
@@ -62,35 +61,6 @@ func Test_UpdateChecker_CheckForUpdate(t *testing.T) {
 	result, err = updateChecker.CheckForUpdate(ctx, extension)
 	require.NoError(t, err)
 	require.False(t, result.HasUpdate)
-}
-
-func Test_UpdateChecker_CheckForUpdate_VersionMigration(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
-	const sourceName = "migration-source"
-	err = cacheManager.Set(t.Context(), sourceName, []*ExtensionMetadata{{
-		Id: "test.extension",
-		VersionMigrations: []ExtensionVersionMigration{{
-			From: "1.0.47-beta",
-			To:   "1.0.0-beta.1",
-		}},
-		Versions: []ExtensionVersion{{Version: "1.0.0-beta.1"}},
-	}})
-	require.NoError(t, err)
-
-	result, err := NewUpdateChecker(cacheManager).CheckForUpdate(t.Context(), &Extension{
-		Id:      "test.extension",
-		Version: "1.0.47-beta",
-		Source:  sourceName,
-	})
-
-	require.NoError(t, err)
-	require.True(t, result.HasUpdate)
-	require.Equal(t, "1.0.0-beta.1", result.LatestVersion)
 }
 
 func Test_UpdateChecker_CheckForUpdate_CacheMiss(t *testing.T) {

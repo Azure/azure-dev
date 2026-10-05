@@ -543,7 +543,7 @@ func sourceContractReconciler(
 	configure ...func(*eval_api.CreateOpenAIEvalRequest),
 ) (*evalReconciler, *testEnvServer, *[]eval_api.CreateOpenAIEvalRequest, *int) {
 	t.Helper()
-	contract := schema("builtin.coherence", nil, []string{"query", "response", "messages"},
+	contract := schema("builtin.coherence", nil, []string{"query", "response", "messages", "tool_calls"},
 		nil, nil, "turn", "conversation")
 	contract.Definition.DataSchema.Properties["response"] = map[string]any{"type": "string"}
 	schemas := map[string]*eval_api.EvaluatorSummary{contract.Name: contract}

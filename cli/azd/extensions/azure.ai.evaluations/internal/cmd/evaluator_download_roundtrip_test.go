@@ -135,7 +135,10 @@ func TestEvaluatorDownloadRoundTripWithDeclaration(t *testing.T) {
 	definition, ok := body["definition"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, 0.7, definition["pass_threshold"])
-	require.Len(t, definition, 3, "only authored rubric fields are published")
+	require.Len(t, definition, 4, "unknown authored fields survive publication")
+	require.Contains(t, string(service.published[0]), "9007199254740993")
+	require.NotContains(t, string(service.published[0]), "definition-secret")
+	require.NotContains(t, string(service.published[0]), "dimension-secret")
 
 	ec.state = nil
 	version, published, err = r.EnsureEvaluator(t.Context(), decl, path)
@@ -186,7 +189,10 @@ func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
 			definition, ok := published["definition"].(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, 0.7, definition["pass_threshold"])
-			require.Len(t, definition, 3, "only authored rubric fields are published")
+			require.Len(t, definition, 4, "unknown authored fields survive publication")
+			require.Contains(t, string(service.published[0]), "9007199254740993")
+			require.NotContains(t, string(service.published[0]), "definition-secret")
+			require.NotContains(t, string(service.published[0]), "dimension-secret")
 			require.True(t, json.Valid([]byte(out.String())), "update stdout remains one JSON document")
 		})
 	}
@@ -289,8 +295,12 @@ func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
 				assert.Equal(t, wantLevels, published["supported_evaluation_levels"])
 				assert.NotContains(t, published, "created_at")
 				assert.NotContains(t, published, "agent_metadata")
-				assert.NotContains(t, string(service.versions["4"]), "9007199254740993",
-					"unknown service metadata must not return through the editable file")
+				assert.Contains(t, string(service.versions["4"]), "9007199254740993",
+					"unknown authored fields retain exact numbers through the editable file")
+				for _, private := range []string{"internal_count", "definition-secret", "dimension-secret",
+					"service-only-definition-metadata", "service-only-agent-wiring"} {
+					assert.NotContains(t, string(service.versions["4"]), private)
+				}
 				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
 				assert.Equal(t, 1, service.publishes, "unchanged retry must not publish a fifth version")
 				assert.Len(t, service.created, 1, "metadata inheritance must not turn latest into an authored pin")

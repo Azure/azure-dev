@@ -155,14 +155,14 @@ const downloadedEvaluator = `{
 		"type":"rubric",
 		"dimensions":[{
 			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
-			"metadata":{"internal_count":9007199254740993}
+			"metadata":{"internal_count":9007199254740993,"credential":"dimension-secret"}
 		}],
 		"pass_threshold":0.6,
 		"future_option":{"count":9007199254740993},
 		"id":"service-definition-id",
 		"created_at":"2026-09-17T00:00:00Z",
 		"creator":{"name":"service-creator"},
-		"metadata":{"owner":"service-only-definition-metadata"},
+		"metadata":{"owner":"service-only-definition-metadata","credential":"definition-secret"},
 		"generation":{"job_id":"service-generation-job"},
 		"warnings":[{"message":"service-warning"}],
 		"init_parameters":{"model":"judge"},
@@ -178,7 +178,8 @@ const downloadedEvaluator = `{
 const editableDownloadedRubric = `{
 	"type":"rubric",
 	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false}],
-	"pass_threshold":0.6
+	"pass_threshold":0.6,
+	"future_option":{"count":9007199254740993}
 }`
 
 func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
@@ -194,8 +195,13 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.JSONEq(t, editableDownloadedRubric, string(raw), "the authored surface has exactly three root fields")
-	require.NotContains(t, string(raw), "9007199254740993", "unknown service metadata is not editable")
+	require.JSONEq(t, editableDownloadedRubric, string(raw), "unknown authored fields survive without service metadata")
+	require.Contains(t, string(raw), "9007199254740993", "unknown authored numbers retain exact precision")
+	for _, private := range []string{"internal_count", "dimension-secret", "definition-secret",
+		"service-only-definition-metadata", "service-creator", "service-generation-job", "service-warning"} {
+		require.NotContains(t, string(raw), private)
+		require.NotContains(t, output.String(), private)
+	}
 	require.NotContains(t, string(raw), "service-only-agent-wiring")
 	require.NotContains(t, output.String(), "service-only-agent-wiring")
 	encodedPath, err := json.Marshal(path)
@@ -219,18 +225,32 @@ func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 	}
 }
 
-func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
+func TestEvaluatorDownloadProjectsEmptyRubricWithoutLosingUnknownFields(t *testing.T) {
+	downloaded, err := evaluatorDocument(json.RawMessage(
+		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"rubric","dimensions":[],"future_option":9007199254740993}`, string(downloaded))
+	require.Contains(t, string(downloaded), "9007199254740993")
+}
+
+func TestEditableRubricPreservesUnknownFieldsAndNumericPrecision(t *testing.T) {
 	const threshold = "0.60000000000000001"
-	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {
+	for _, dimensions := range []string{
+		`[]`,
+		`[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`,
+		`[{"id":"renamed-dimension","future_option":{"count":9007199254740995,"threshold":0.60000000000000002}}]`,
+	} {
 		t.Run(dimensions, func(t *testing.T) {
 			raw := `{"name":"renamed-evaluator","definition":{"type":"rubric","dimensions":` + dimensions +
 				`,"pass_threshold":` + threshold + `,"future_option":{"count":9007199254740993},` +
 				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
 			downloaded, err := evaluatorDocument(json.RawMessage(raw))
 			require.NoError(t, err)
-			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+`}`,
+			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+
+				`,"future_option":{"count":9007199254740993}}`,
 				string(downloaded))
 			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")
+			require.Contains(t, string(downloaded), "9007199254740993")
 			require.NotContains(t, string(downloaded), "old-evaluator-name")
 		})
 	}

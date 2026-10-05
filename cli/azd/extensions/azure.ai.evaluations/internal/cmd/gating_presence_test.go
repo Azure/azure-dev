@@ -102,7 +102,7 @@ func TestRunGatesPreserveCountPresence(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_counts"):
+		case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_counts":
 			_, _ = io.WriteString(w, `{"id":"eval_counts","data_source_config":{"type":"custom"}}`)
 		case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):
 			_, _ = io.WriteString(w, response)

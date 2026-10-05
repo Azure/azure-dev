@@ -275,7 +275,7 @@ func TestRunJSONCallersPreserveInlineSourceNumbers(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
-				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_numbers"):
+				case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_numbers":
 					_, _ = w.Write([]byte(`{"id":"eval_numbers","data_source_config":{"type":"custom"}}`))
 				case strings.HasSuffix(r.URL.Path, "/runs/run_numbers"):
 					_, _ = w.Write([]byte(response))

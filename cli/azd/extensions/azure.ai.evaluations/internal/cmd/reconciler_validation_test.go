@@ -43,8 +43,8 @@ type validationService struct {
 	failCreate          bool
 	createStatus        int
 	definition          string
-	evaluatorVersion    string
 	createCount         int
+	evaluatorVersion    string
 	createdRequests     []eval_api.CreateOpenAIEvalRequest
 	registeredRows      string
 	credentialStatus    int

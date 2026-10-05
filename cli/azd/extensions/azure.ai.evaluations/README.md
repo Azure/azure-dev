@@ -502,6 +502,14 @@ than copied into the remaining diagnostic prose. This projection does not mutate
 or rewrite dataset/output content and unknown fields. Those other fields can
 still contain sensitive source data; keep exported files private.
 
+Every CLI-generated `-o json` failure is one document with `error.message` and
+a stable `error.code`, plus `error.suggestion` when remediation is available.
+Service failures retain the service's useful code and message but omit the
+backing endpoint. Human failures keep the endpoint's scheme, host, and path for
+diagnosis while removing user information, query strings, and fragments.
+Nested backend resource/error envelopes are reduced to their innermost message
+and code rather than printed as raw objects.
+
 `run output show <item>` uses the lookup ID from the listing in its human
 header. The service may return a result-version URI as the detail object's
 `id`; JSON keeps that returned identity rather than replacing it with the

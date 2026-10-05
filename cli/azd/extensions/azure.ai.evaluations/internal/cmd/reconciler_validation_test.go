@@ -394,6 +394,7 @@ func TestCreateReportsRetainedDependenciesOnServiceFailure(t *testing.T) {
 	require.Len(t, result.Artifacts, 1)
 	assert.Equal(t, reconciledArtifact{"dataset", "turn-tests", "1.0", true}, result.Artifacts[0])
 	assert.NotEmpty(t, result.Error.Message)
+	assert.Equal(t, "http_503", result.Error.Code)
 	assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
 	assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
 	assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))

@@ -30,7 +30,11 @@ func reportCreatePartial(
 	if isJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), map[string]any{
 			"status": "failed", "name": name, "artifacts": artifacts,
-			"error": jsonErrorBody{Message: cause.Error()}, "recovery_command": retry,
+			"error": jsonErrorBody{
+				Message: jsonMessage(cause),
+				Code:    errorCode(cause),
+			},
+			"recovery_command": retry,
 		})
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), messages.CreateDependenciesRetained(retry))

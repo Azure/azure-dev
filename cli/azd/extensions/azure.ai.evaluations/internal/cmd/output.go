@@ -155,7 +155,47 @@ type jsonError struct {
 
 type jsonErrorBody struct {
 	Message    string `json:"message"`
+	Code       string `json:"code"`
 	Suggestion string `json:"suggestion,omitempty"`
+}
+
+// safeJSONError supplies an endpoint-free projection of a service error.
+type safeJSONError interface {
+	error
+	SafeMessage() string
+	Code() string
+}
+
+// jsonMessage preserves outer operation context while replacing a service
+// error's human diagnostic with its safe machine-readable projection.
+func jsonMessage(err error) string {
+	if safe, ok := errors.AsType[safeJSONError](err); ok {
+		full := err.Error()
+		if unsafe := safe.Error(); unsafe != "" && strings.Contains(full, unsafe) {
+			full = strings.Replace(full, unsafe, safe.SafeMessage(), 1)
+		} else {
+			full = safe.SafeMessage()
+		}
+		return urlsafe.Text(full)
+	}
+	return urlsafe.Text(err.Error())
+}
+
+const unclassifiedErrorCode = "ext.run.failed"
+
+// errorCode extracts the same stable classification the extension error
+// transport reports, with a stable fallback for unclassified failures.
+func errorCode(err error) string {
+	if safe, ok := errors.AsType[safeJSONError](err); ok && safe.Code() != "" {
+		return safe.Code()
+	}
+	if local, ok := errors.AsType[*azdext.LocalError](err); ok && local.Code != "" {
+		return local.Code
+	}
+	if service, ok := errors.AsType[*azdext.ServiceError](err); ok && service.ErrorCode != "" {
+		return service.ErrorCode
+	}
+	return unclassifiedErrorCode
 }
 
 // exitProcess ends the process. Replaced in tests, which cannot survive a real
@@ -185,7 +225,8 @@ func failAs(cmd *cobra.Command, err error) error {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
-		Message:    urlsafe.Text(err.Error()),
+		Message:    jsonMessage(err),
+		Code:       errorCode(err),
 		Suggestion: urlsafe.Text(azdext.ErrorSuggestion(err)),
 	}})
 	exitProcess(1)

@@ -232,8 +232,9 @@ An evaluation migration does not authorize or implement a dataset migration. Und
 ordinary SemVer, dataset `1.0.0-beta.35` is newer than `1.0.0-beta.1`. Without a
 dataset migration, even a migration-capable host skips that replacement through
 `azd extension update`, including an exact `--version 1.0.0-beta.1` request.
-A same-source install over the existing version remains a downgrade: it asks for
-confirmation or skips in `--no-prompt` mode unless `--force` was requested.
+A same-source install over the existing version remains a downgrade and asks for
+confirmation. In `--no-prompt` mode, an explicit `--version` request fails instead
+of being ignored; without an explicit version it skips, unless `--force` was requested.
 Neither uninstall/reinstall nor forced replacement is the supported migration journey.
 
 A fresh install can select the corrected version when the registry publishes it

@@ -78,7 +78,20 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
-| [Foundry evaluation conversation authoring](../../cli/azd/extensions/azure.ai.evaluations/README.md#simulating-multi-turn-conversations) | Beta |
+
+## Foundry Extension Authoring
+
+The evaluations extension supports conversation dataset authoring in static
+mode (completed messages, no target invocation) and simulation mode (scenario
+seeds, an agent target, and an independent simulator model).
+Simulation validates eligible Azure OpenAI project connections before writing
+configuration and can reuse qualified locally authored bindings. See the
+[evaluation extension contract](../../cli/azd/extensions/azure.ai.evaluations/README.md).
+
+These are extension authoring capabilities, not a feature-stage graduation or
+proof of production connection APIs, evaluator availability, accepted request
+IDs, or deployed model readiness. Target-service acceptance remains separate
+from local configuration validation.
 
 ---
 

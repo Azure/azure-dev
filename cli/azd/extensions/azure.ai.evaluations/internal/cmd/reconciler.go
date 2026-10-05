@@ -216,7 +216,17 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 		if err != nil {
 			return evalDecision{}, err
 		}
-		if digest != legacyDigest && !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest) {
+		legacyUnchanged := !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest)
+		if !legacyUnchanged && prepared.declared.Source != nil {
+			legacy := prepared.declared
+			legacy.Source = nil
+			sourceStripped, err := project.FingerprintDefinition(legacy)
+			if err != nil {
+				return evalDecision{}, err
+			}
+			legacyUnchanged = prior == sourceStripped || prior == fingerprintEra+sourceStripped
+		}
+		if digest != legacyDigest && legacyUnchanged {
 			// Some earlier lifecycle builds sent catalog pins but omitted them
 			// from fingerprints. Older builds ignored catalog pins entirely;
 			// those unpinned criteria must be recreated to honor the pin.
@@ -230,6 +240,32 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 					recreate = !matchingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
 				}
 			}
+		}
+	}
+	if recreate && group.Source != nil {
+		// Older v2 baselines omitted the source mode. Recognize that exact
+		// baseline without treating an upgrade as an edit; the stored request
+		// must still pass the source-contract check before reuse or adoption.
+		legacy := group
+		legacy.Source = nil
+		legacyDefinition, err := project.FingerprintDefinition(legacy)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
+			recreate = false
+		}
+	}
+
+	if validated && group.IsLocalSource() {
+		// Reserve only after accounting for the immutable request prepared from
+		// local columns; an old name with a changed contract abandons its old ID.
+		current, err := localRequestFingerprint(prepared.request)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior := r.ec.scopedValue(ctx, localRequestKey(group.Name), r.scope); prior != "" && prior != current {
+			recreate = true
 		}
 	}
 
@@ -511,6 +547,18 @@ func inspectJSONL(
 func inspectJSONLContent(
 	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error,
 ) (map[string]bool, error) {
+	return inspectJSONLRows(ctx, source, content, validateRow, false)
+}
+
+func inspectJSONLReader(
+	ctx context.Context, path string, input io.Reader, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	return inspectJSONLRows(ctx, path, input, validateRow, true)
+}
+
+func inspectJSONLRows(
+	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error, precise bool,
+) (map[string]bool, error) {
 	scanner := bufio.NewScanner(content)
 	// A row carrying a whole conversation runs well past the 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -535,8 +583,15 @@ func inspectJSONLContent(
 			continue
 		}
 		var row map[string]any
-		if err := json.Unmarshal([]byte(text), &row); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(text))
+		if precise {
+			decoder.UseNumber()
+		}
+		if err := decoder.Decode(&row); err != nil {
 			return nil, messages.JSONLRowInvalid(source, line, err)
+		}
+		if strings.TrimSpace(text[decoder.InputOffset():]) != "" {
+			return nil, messages.JSONLRowInvalid(source, line, errors.New("expected one JSON object per line"))
 		}
 		if len(row) == 0 {
 			return nil, messages.JSONLRowEmpty(source, line)
@@ -722,6 +777,8 @@ func (r *evalReconciler) EnsureEvaluator(
 	if err != nil {
 		return "", false, err
 	}
+	// A catalog read before publication cannot describe the newly written contract.
+	r.ec.schemas = nil
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
 	r.ec.remember(ctx, digestKey, digest)
@@ -847,26 +904,59 @@ func (r *evalReconciler) EnsureEval(
 	if err := ctx.Err(); err != nil {
 		return "", false, err
 	}
+	var localRequest *eval_api.CreateOpenAIEvalRequest
+	if group.IsLocalSource() {
+		var req *eval_api.CreateOpenAIEvalRequest
+		var err error
+		if prepared, ok := r.prepared[group.Name]; ok {
+			group = prepared.group
+			req, err = r.preparedLocalRequest(ctx, &group, datasetPath, prepared)
+		} else {
+			_, req, err = r.ec.localEvalInput(ctx, &group, datasetPath, -1, "")
+		}
+		if err != nil {
+			return "", false, err
+		}
+		localRequest = req
+	}
 	if group.ID != "" {
 		// An explicit id skips every read below, so nothing here noticed when it
 		// named an eval that had been deleted or was simply mistyped: the deploy
 		// reported success and the first run against it answered 404. One point
 		// read settles it, and it is the same confirmation an external dataset
 		// or evaluator reference gets.
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
 			if eval_api.IsNotFound(err) {
 				return "", false, messages.EvalNotFound(group.ID)
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if !responseSchemaMatches(&group, remote) {
+			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
+		}
+		if prepared, validated := r.prepared[group.Name]; validated &&
+			conflictingSourceContract(prepared.group, remote, prepared.request) {
+			return "", false, incompatibleSourceContract(group.ID)
+		}
+		if localRequest != nil {
+			matches, err := localRequestMatchesRemote(localRequest, remote)
+			if err != nil {
+				return "", false, err
+			}
+			if !matches {
+				return "", false, fmt.Errorf(
+					"eval %q: selected id has a different immutable local source contract", group.Name)
+			}
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
 	}
 
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
-	// dataset, target, level — needs a new eval. Name and description are
+	// dataset, target, level, source mode — needs a new eval. Name and description are
 	// excluded from the digest and pushed in place instead, and so are
-	// max_samples and source:, which the run carries rather than the eval.
+	// max_samples and source filters, which the run carries rather than the eval.
 	digest, definition, recreate, err := r.evalDigests(ctx, group)
 	if err != nil {
 		return "", false, err
@@ -883,7 +973,9 @@ func (r *evalReconciler) EnsureEval(
 	if !validated {
 		columns = datasetColumnsFromPath(datasetPath)
 	}
-	if validated && len(prepared.localEvaluators) > 0 {
+	if localRequest != nil {
+		req = localRequest
+	} else if validated && len(prepared.localEvaluators) > 0 {
 		// Publishing a rubric can add a schema that the authored file does not
 		// carry. Refresh only these local, unpinned references; every other
 		// contract, including version pins, stays the one validated earlier.
@@ -893,13 +985,9 @@ func (r *evalReconciler) EnsureEval(
 			if version == "" {
 				return "", false, fmt.Errorf("evaluator %q has no reconciled version to read", name)
 			}
-			raw, err := r.ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
+			schema, err := r.ec.selectedEvaluatorContract(ctx, name, version)
 			if err != nil {
-				return "", false, messages.ReadingEvaluator(name, err)
-			}
-			schema, err := evaluatorContract(raw)
-			if err != nil {
-				return "", false, messages.EvaluatorProblem(name, err)
+				return "", false, err
 			}
 			schemas[name] = schema
 		}
@@ -917,8 +1005,21 @@ func (r *evalReconciler) EnsureEval(
 			return "", false, err
 		}
 	}
-	if err := validateDatasetInteractions(&group, req, columns); err != nil {
+	if err := validateDatasetInteractions(&group, req, columns, prepared.malformed); err != nil {
 		return "", false, err
+	}
+
+	var localFingerprint string
+	if localRequest != nil {
+		// The final contract can include constraints disclosed during publication,
+		// so recheck it even when reservation already compared the prepared request.
+		localFingerprint, err = localRequestFingerprint(localRequest)
+		if err != nil {
+			return "", false, err
+		}
+		if prior := r.ec.scopedValue(ctx, localRequestKey(group.Name), r.scope); prior != "" && prior != localFingerprint {
+			recreate = true
+		}
 	}
 
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
@@ -936,7 +1037,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest, req.TestingCriteria)
+		adopted, err := r.adoptRenamed(ctx, group, digest, req)
 		if err != nil {
 			return "", false, err
 		}
@@ -953,7 +1054,22 @@ func (r *evalReconciler) EnsureEval(
 			// this lookup exists to keep.
 			return "", false, err
 		}
-		if err == nil && (!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) {
+		if err == nil {
+			if localRequest != nil {
+				matches, err := localRequestMatchesRemote(localRequest, remote)
+				if err != nil {
+					return "", false, err
+				}
+				if !matches {
+					// Even a pre-fingerprint installation must not keep an incompatible
+					// immutable schema merely because the declaration stayed the same.
+					cached = ""
+				}
+			}
+		}
+		if err == nil && cached != "" &&
+			(!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) &&
+			responseSchemaMatches(&group, remote) && !conflictingSourceContract(group, remote, req) {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -967,6 +1083,9 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.remember(ctx, key, definition)
 			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
 			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
+			if localFingerprint != "" {
+				r.ec.rememberScoped(ctx, localRequestKey(group.Name), r.scope, localFingerprint)
+			}
 			r.claim(cached, group.Name)
 			return cached, false, nil
 		}
@@ -979,6 +1098,9 @@ func (r *evalReconciler) EnsureEval(
 	r.ec.remember(ctx, key, definition)
 	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
 	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
+	if localFingerprint != "" {
+		r.ec.rememberScoped(ctx, localRequestKey(group.Name), r.scope, localFingerprint)
+	}
 	r.claim(created.ID, group.Name)
 	return created.ID, true, nil
 }
@@ -998,6 +1120,85 @@ func conflictingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
 			if stored.Name == desired.Name && stored.EvaluatorName == desired.EvaluatorName &&
 				pin(stored.EvaluatorVersion) != pin(desired.EvaluatorVersion) {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+// conflictingSourceContract detects positive evidence that stored mappings read
+// a different source or disagree with authored bindings. Missing inferred
+// mappings and unrelated enrichment are not edits.
+func conflictingSourceContract(
+	group project.Eval, have *eval_api.OpenAIEval, want *eval_api.CreateOpenAIEvalRequest,
+) bool {
+	if have == nil || want == nil || want.DataSourceConfig == nil {
+		return false
+	}
+	if group.Source != nil {
+		switch have.DataSourceConfig["scenario"] {
+		case "responses":
+			if group.Source.Type == project.SourceTypeTraces {
+				return true
+			}
+		case "traces", "traces_preview":
+			if group.Source.Type == project.SourceTypeResponses {
+				return true
+			}
+		}
+	}
+	// Service-managed schemas can carry enrichment unrelated to custom sample opt-in.
+	if have.DataSourceConfig["type"] == "custom" && want.DataSourceConfig.Type == "custom" {
+		if sampled, known := have.DataSourceConfig["include_sample_schema"].(bool); known &&
+			sampled != want.DataSourceConfig.IncludeSampleSchema {
+			return true
+		}
+	}
+	namespace := func(binding string) string {
+		for _, prefix := range []string{"{{item.", "{{sample."} {
+			if strings.HasPrefix(binding, prefix) && strings.HasSuffix(binding, "}}") {
+				return prefix
+			}
+		}
+		return ""
+	}
+	for _, desired := range want.TestingCriteria {
+		matched := false
+		for _, stored := range have.TestingCriteria {
+			if stored.Name != desired.Name || stored.EvaluatorName != desired.EvaluatorName {
+				continue
+			}
+			matched = true
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() != desired.Name || ref.Evaluator != desired.EvaluatorName {
+					continue
+				}
+				for field, binding := range ref.DataMapping {
+					if held, present := stored.DataMapping[field]; !present || held != binding {
+						return true
+					}
+				}
+			}
+			for _, field := range []string{"query", "response", "messages", "tool_calls", "tool_definitions"} {
+				from, to := namespace(stored.DataMapping[field]), namespace(desired.DataMapping[field])
+				if from != "" && to != "" && from != to {
+					return true
+				}
+			}
+			if isResponsesEval(&group) {
+				outputs := []string{"{{sample.output_items}}", "{{sample.output_text}}"}
+				from, to := stored.DataMapping["response"], desired.DataMapping["response"]
+				if from != to && slices.Contains(outputs, from) && slices.Contains(outputs, to) {
+					return true
+				}
+			}
+		}
+		if !matched {
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() == desired.Name && ref.Evaluator == desired.EvaluatorName &&
+					len(ref.DataMapping) > 0 {
+					return true
+				}
 			}
 		}
 	}
@@ -1030,7 +1231,7 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
-	criteria []eval_api.TestingCriterion,
+	request *eval_api.CreateOpenAIEvalRequest,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
 	legacy := false
@@ -1064,9 +1265,19 @@ func (r *evalReconciler) adoptRenamed(
 		}
 		return "", err
 	}
-	if conflictingEvaluatorPins(remote.TestingCriteria, criteria) ||
-		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, criteria)) {
+	if conflictingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria)) ||
+		!responseSchemaMatches(&group, remote) || conflictingSourceContract(group, remote, request) {
 		return "", nil
+	}
+	if group.IsLocalSource() {
+		matches, err := localRequestMatchesRemote(request, remote)
+		if err != nil {
+			return "", err
+		}
+		if !matches {
+			return "", nil
+		}
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil

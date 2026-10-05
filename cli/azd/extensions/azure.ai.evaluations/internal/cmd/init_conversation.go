@@ -6,7 +6,8 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -47,10 +48,18 @@ func (a *initAction) validateConversationFlags(source, level, mode string) error
 		}
 	}
 	if mode == conversationModeStatic && a.cmd.Flags().Changed("target") {
+		if !a.cmd.Flags().Changed("conversation-mode") {
+			return messages.InitImpliedStaticTargetConflict(noPrompt(a.cmd))
+		}
 		return messages.InitFlagConflict("target", "cannot be used with --conversation-mode static; no agent is invoked")
 	}
 	if a.cmd.Flags().Changed("simulation-model") && strings.TrimSpace(a.flags.simulationModel) == "" {
 		return messages.SimulationModelRequired()
+	}
+	if a.cmd.Flags().Changed("simulation-model") {
+		if err := (&project.Simulation{Model: a.flags.simulationModel}).Validate(); err != nil {
+			return messages.InitFlagConflict("simulation-model", err.Error())
+		}
 	}
 	for _, bound := range []struct {
 		flag                string
@@ -101,8 +110,80 @@ func resolveConversationMode(cmd *cobra.Command, explicit string) (string, error
 	return modes[resp.GetValue()], nil
 }
 
-func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string) (string, error) {
+func resolveSimulationModel(cmd *cobra.Command, explicit string, authored []string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		return strings.TrimSpace(explicit), nil
+	}
+	var candidates []string
+	for _, model := range authored {
+		if err := (&project.Simulation{Model: model}).Validate(); err == nil {
+			candidates = append(candidates, model)
+		}
+	}
+	slices.Sort(candidates)
+	candidates = slices.Compact(candidates)
+	if len(candidates) == 1 {
+		if !isJSON(cmd) {
+			fmt.Fprint(cmd.OutOrStdout(), messages.DetectedSimulationModel(candidates[0]))
+		}
+		return candidates[0], nil
+	}
+	if noPrompt(cmd) {
+		if len(candidates) > 1 {
+			return "", messages.AmbiguousSimulationModel(candidates)
+		}
+		return "", messages.SimulationModelRequired()
+	}
+	if len(candidates) > 1 {
+		client, err := azdext.NewAzdClient()
+		if err != nil {
+			return "", messages.ConnectingToAzd(err)
+		}
+		defer client.Close()
+		choices := make([]*azdext.SelectChoice, 0, len(candidates)+1)
+		for _, model := range candidates {
+			choices = append(choices, &azdext.SelectChoice{Label: model, Value: model})
+		}
+		choices = append(choices, &azdext.SelectChoice{Label: messages.EnterAnotherSimulationModel()})
+		resp, err := client.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: messages.SelectSimulationModelPrompt(), Choices: choices,
+				EnableFiltering: filteringFor(len(choices)),
+			},
+		})
+		if err != nil {
+			return "", fmt.Errorf("selecting simulation model: %w", err)
+		}
+		if resp == nil || resp.Value == nil || resp.GetValue() < 0 || int(resp.GetValue()) >= len(choices) {
+			return "", messages.AmbiguousSimulationModel(candidates)
+		}
+		if index := int(resp.GetValue()); index < len(candidates) {
+			return candidates[index], nil
+		}
+	}
+	model, err := promptInitModel(cmd, messages.SimulationModelPrompt(), messages.SimulationModelHelp(),
+		messages.SimulationModelRequired())
+	if err != nil {
+		return "", err
+	}
+	if err := (&project.Simulation{Model: model}).Validate(); err != nil {
+		return "", messages.InitFlagConflict("simulation-model", err.Error())
+	}
+	fmt.Fprint(cmd.OutOrStdout(), messages.UnverifiedSimulationModel(model))
+	return model, nil
+}
+
+func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string, authored []string) (string, error) {
 	model := strings.TrimSpace(explicit)
+	if model == "" && slices.ContainsFunc(authored, func(value string) bool {
+		return (&project.Simulation{Model: value}).Validate() == nil
+	}) {
+		var err error
+		model, err = resolveSimulationModel(cmd, "", authored)
+		if err != nil {
+			return "", err
+		}
+	}
 	if model != "" {
 		if err := validateSimulationModel(model); err != nil {
 			return "", err
@@ -116,7 +197,6 @@ func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string)
 		}
 		return model, nil
 	}
-
 	if noPrompt(cmd) {
 		return "", messages.SimulationModelRequired()
 	}
@@ -132,12 +212,8 @@ func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string)
 	if err != nil {
 		return "", err
 	}
-	deployment, err := promptInitModel(
-		cmd,
-		messages.SimulationModelDeploymentPrompt(),
-		messages.SimulationModelDeploymentHelp(),
-		messages.SimulationModelDeploymentRequired(),
-	)
+	deployment, err := promptInitModel(cmd, messages.SimulationModelDeploymentPrompt(),
+		messages.SimulationModelDeploymentHelp(), messages.SimulationModelDeploymentRequired())
 	if err != nil {
 		return "", err
 	}
@@ -154,7 +230,6 @@ func readModelConnectionCatalogue(ctx context.Context) ([]eval_api.Connection, e
 		return nil, err
 	}
 	defer ec.Close()
-
 	catalogue, err := ec.evalClient.ListConnections(ctx, ProjectConnectionsAPIVersion)
 	if err != nil {
 		return nil, err
@@ -197,19 +272,12 @@ func eligibleSimulationModelConnections(connections []eval_api.Connection) []str
 		}
 		names[connection.Name] = struct{}{}
 	}
-	eligible := make([]string, 0, len(names))
-	for name := range names {
-		eligible = append(eligible, name)
-	}
-	sort.Strings(eligible)
-	return eligible
+	return slices.Sorted(maps.Keys(names))
 }
 
 func validSimulationConnectionName(name string) bool {
-	return name != "" &&
-		name == strings.TrimSpace(name) &&
-		!strings.Contains(name, "/") &&
-		!strings.ContainsFunc(name, unicode.IsSpace)
+	return name != "" && name == strings.TrimSpace(name) &&
+		!strings.Contains(name, "/") && !strings.ContainsFunc(name, unicode.IsSpace)
 }
 
 func selectSimulationModelConnection(cmd *cobra.Command, connections []string) (string, error) {
@@ -218,17 +286,14 @@ func selectSimulationModelConnection(cmd *cobra.Command, connections []string) (
 		return "", messages.ConnectingToAzd(err)
 	}
 	defer client.Close()
-
 	choices := make([]*azdext.SelectChoice, 0, len(connections))
 	for _, connection := range connections {
 		choices = append(choices, &azdext.SelectChoice{Label: connection, Value: connection})
 	}
 	resp, err := client.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:         messages.SimulationModelConnectionPrompt(),
-			Choices:         choices,
-			SelectedIndex:   preselect(0),
-			EnableFiltering: filteringFor(len(choices)),
+			Message: messages.SimulationModelConnectionPrompt(), Choices: choices,
+			SelectedIndex: preselect(0), EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {

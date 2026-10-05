@@ -6,9 +6,12 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"azureaieval/internal/project"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -146,4 +149,47 @@ func TestInitDoesNotAskTheCatalogueForOnlyCustomReferences(t *testing.T) {
 
 	assert.Zero(t, *asked,
 		"init opened a connection that could not have validated anything")
+}
+
+func TestInitCatalogueCriteriaReachTheAuthoredConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		known []string
+		ref   string
+		fail  bool
+	}{
+		{"authoritative unknown", []string{"builtin.coherence"}, "builtin.does_not_exist", true},
+		{"offered built-in", []string{"builtin.coherence"}, "builtin.coherence", false},
+		{"outside picker", []string{"builtin.relevance"}, "builtin.relevance", false},
+		{"bare catalog spelling", []string{"relevance"}, "builtin.relevance", false},
+		{"unavailable catalog", nil, "builtin.unverified", false},
+		{"empty catalog", []string{}, "builtin.unverified", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			before := initFileSnapshot(t, h.dir)
+			catalogue, asked := answeringCatalogue(tc.known...)
+			path := filepath.Join(h.dir, "team evals", "quality.yml")
+			action, out := initIn(t, path, catalogue, tc.ref)
+			action.flags.judgeModel = "judge"
+			action.cmd.Flags().String("output", "json", "")
+			err := action.Run()
+			assert.Equal(t, 1, *asked)
+			if tc.fail {
+				require.ErrorContains(t, err, tc.ref)
+				assert.Empty(t, out.String())
+				assert.Zero(t, h.project.wiringAttempts())
+				assert.Equal(t, before, initFileSnapshot(t, h.dir))
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, json.Valid(out.Bytes()))
+			cfg, err := project.OpenEvalConfig(path)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evals, 1)
+			require.Len(t, cfg.Evals[0].Evaluators, 1)
+			assert.Equal(t, tc.ref, cfg.Evals[0].Evaluators[0].Evaluator)
+			assert.Equal(t, 1, h.project.wiringAttempts())
+		})
+	}
 }

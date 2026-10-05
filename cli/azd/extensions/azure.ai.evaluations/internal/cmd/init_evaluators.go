@@ -21,15 +21,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// builtinEvaluators are the production composite evaluators `init` recommends.
-// They judge at either evaluation level, so Turn and Conversation share one
-// picker.
-//
-// The Foundry catalogue marks both as recommended composites. Keeping the
-// shortlist to the composites avoids grading the same dimension twice through
-// a composite and one of its constituent evaluators. Anything outside this set
-// is still reachable with --evaluator, and the catalogue lookup checks every
-// selected built-in when the project can be reached.
+// builtinEvaluators is the composite shortlist used by init. Selected names
+// are checked against the project catalog when reachable; this list does not
+// establish production availability or the service's accepted request contract.
 var builtinEvaluators = []string{
 	evalcore.BuiltinPrefix + "output_quality",
 	evalcore.BuiltinPrefix + "tool_use_quality",
@@ -106,8 +100,8 @@ func readBuiltinEvaluatorCatalogue(ctx context.Context) []string {
 
 // refuseUnknownBuiltins refuses a builtin.<name> the catalogue does not offer.
 //
-// A nil catalogue means the listing was not read. A non-nil empty catalogue is
-// authoritative and offers no built-ins.
+// A nil catalogue means the listing was not read; a non-nil empty list means
+// the project returned no built-in names.
 //
 // Names are matched with and without the prefix. The service returns them
 // prefixed today, and a reference that matches either spelling is a reference
@@ -140,16 +134,16 @@ func refuseUnknownBuiltins(refs []string, known []string) error {
 	return nil
 }
 
-// defaultEvaluators is the approved production composite set. The same set is
-// preselected in the interactive picker and used by unattended scaffolding.
+// defaultEvaluators is the composite shortlist proposed by init.
 func defaultEvaluators() []string {
 	return slices.Clone(builtinEvaluators)
 }
 
 // evaluatorChoices are the references `init` can offer.
 //
-// The picker is intentionally curated rather than being the service's full
-// built-in catalogue. It offers the approved composites and whatever this
+// The picker is built without a service call, so the service's full built-in
+// catalogue is not listed here; offering a hardcoded copy of it would drift.
+// What is knowable offline is the composite shortlist and whatever this
 // configuration already declares. Anything else is reachable with --evaluator,
 // which is checked against the catalogue when the project can be reached.
 func evaluatorChoices(cfg *project.EvalConfig, level string) []string {
@@ -193,33 +187,36 @@ func resolveEvaluators(
 	knownBuiltins []string,
 ) ([]string, bool, error) {
 	defaults := defaultEvaluators()
-	if err := refuseUnknownBuiltins(defaults, knownBuiltins); err != nil {
-		return nil, false, err
-	}
 	if noPrompt(cmd) {
+		if err := refuseUnknownBuiltins(defaults, knownBuiltins); err != nil {
+			return nil, false, err
+		}
 		return defaults, false, nil
 	}
-	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg, level), defaults)
+	choices := evaluatorChoices(cfg, level)
+	choices = slices.DeleteFunc(choices, func(ref string) bool {
+		return refuseUnknownBuiltins([]string{ref}, knownBuiltins) != nil
+	})
+	chosen, err := promptEvaluators(cmd, choices, defaults)
 	if err != nil {
 		return nil, false, err
 	}
 	if err := refuseUnknownBuiltins(chosen, knownBuiltins); err != nil {
 		return nil, false, err
 	}
+	if cfg != nil {
+		if err := validateInitEvaluatorLevels(cfg, chosen, level); err != nil {
+			return nil, false, err
+		}
+	}
 	return chosen, true, nil
 }
 
+// initEvaluatorSupportsLevel applies the same compatibility contract as
+// reconciliation: an empty list is unconstrained; a nonempty list must match.
 func initEvaluatorSupportsLevel(decl *project.EvaluatorDecl, level string) bool {
-	if len(decl.SupportedEvaluationLevels) == 0 || slices.Contains(decl.SupportedEvaluationLevels, level) {
-		return true
-	}
-	for _, supported := range decl.SupportedEvaluationLevels {
-		if !slices.Contains(evaluationLevels, supported) {
-			// Future or unfamiliar metadata is not proof of incompatibility.
-			return true
-		}
-	}
-	return false
+	schema := eval_api.EvaluatorSummary{SupportedEvaluationLevels: decl.SupportedEvaluationLevels}
+	return schema.SupportsLevel(level)
 }
 
 func validateInitEvaluatorLevels(cfg *project.EvalConfig, refs []string, level string) error {

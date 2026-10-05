@@ -4,6 +4,10 @@
 package project
 
 import (
+	"fmt"
+
+	"azureaieval/internal/messages"
+
 	"github.com/braydonk/yaml"
 )
 
@@ -28,6 +32,8 @@ type AuthoredEntry struct {
 	// SupportedEvaluationLevels is local evaluator metadata, not a resolved
 	// service schema. Absence or an unfamiliar shape leaves compatibility unknown.
 	SupportedEvaluationLevels []string
+	// SimulationModel is an inline simulator reference, without resolving includes.
+	SimulationModel string
 }
 
 // AuthoredConfig answers what a configuration already declares, as written.
@@ -53,6 +59,68 @@ func ReadAuthoredConfig(evalDir string) (*AuthoredConfig, error) {
 		return nil, err
 	}
 	return authoredFromDocument(doc), nil
+}
+
+// ReadAuthoredDataset reads only the named dataset's name and local file for
+// authoring preflight. Local includes use the normal resolver, including
+// ref-only entries when the name is not written here. Unrelated named entries
+// are not resolved, and unknown fields are not strictly decoded or rewritten.
+// Broken unnamed includes are reported only if no matching entry is found.
+// File is resolved against the configuration directory; nil means no match.
+func ReadAuthoredDataset(location, name string) (*DatasetDecl, error) {
+	path, err := ResolveEvalConfigPath(location)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := readConfigDocument(path)
+	if err != nil {
+		return nil, err
+	}
+	root, err := documentMapping(doc)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := mappingSequence(root, SectionDatasets)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []*yaml.Node
+	for _, item := range entries.Content {
+		declaredName := scalarUnder(item, "name")
+		if declaredName == name {
+			candidates = []*yaml.Node{item}
+			break
+		}
+		if declaredName == "" && nodeUnder(item, refDirective) != nil {
+			candidates = append(candidates, item)
+		}
+	}
+	var firstErr error
+	for _, item := range candidates {
+		var raw map[string]any
+		if err := item.Decode(&raw); err != nil {
+			if firstErr == nil {
+				firstErr = messages.ParsingEvalConfig(path, err)
+			}
+			continue
+		}
+		resolved, err := resolveEvalRefs(raw, EvalDirOf(path))
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if resolved["name"] != name {
+			continue
+		}
+		file, ok := resolved["file"].(string)
+		if value := resolved["file"]; value != nil && !ok {
+			return nil, messages.ParsingEvalConfig(path, fmt.Errorf("dataset %q file must be a string", name))
+		}
+		return &DatasetDecl{Name: name, File: ResolveSource(EvalDirOf(path), file)}, nil
+	}
+	return nil, firstErr
 }
 
 // authoredFromDocument reads the three catalogs in document order.
@@ -81,10 +149,36 @@ func authoredFromDocument(doc *yaml.Node) *AuthoredConfig {
 				HasDefinition:             nodeUnder(item, "definition") != nil,
 				Version:                   scalarUnder(item, "version"),
 				SupportedEvaluationLevels: authoredEvaluationLevels(item),
+				SimulationModel:           authoredSimulationModel(section, item),
 			})
 		}
 	}
 	return out
+}
+
+func authoredSimulationModel(section string, item *yaml.Node) string {
+	if section != SectionEvals {
+		return ""
+	}
+	model := nodeUnder(nodeUnder(item, "simulation"), "model")
+	if model == nil || model.Kind != yaml.ScalarNode || model.Tag != "!!str" {
+		return ""
+	}
+	return model.Value
+}
+
+// SimulationModels lists locally authored simulator references without opening includes.
+func (a *AuthoredConfig) SimulationModels() []string {
+	if a == nil {
+		return nil
+	}
+	var models []string
+	for _, entry := range a.sections[SectionEvals] {
+		if entry.SimulationModel != "" {
+			models = append(models, entry.SimulationModel)
+		}
+	}
+	return models
 }
 
 func authoredEvaluationLevels(item *yaml.Node) []string {

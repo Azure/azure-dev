@@ -41,6 +41,7 @@ type catalogPinService struct {
 	reads          []string
 	created        []eval_api.CreateOpenAIEvalRequest
 	evals          map[string]*eval_api.OpenAIEval
+	runs           []eval_api.CreateOpenAIEvalRunRequest
 }
 
 func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
@@ -122,11 +123,28 @@ func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
 			}
 			s.created = append(s.created, request)
 			id := fmt.Sprintf("eval_%d", len(s.created))
+			configJSON, err := json.Marshal(request.DataSourceConfig)
+			assert.NoError(t, err)
+			var dataSourceConfig map[string]any
+			assert.NoError(t, json.Unmarshal(configJSON, &dataSourceConfig))
 			eval := &eval_api.OpenAIEval{
 				ID: id, Name: request.Name, Metadata: request.Metadata, TestingCriteria: request.TestingCriteria,
+				DataSourceConfig: dataSourceConfig,
 			}
+			source, err := json.Marshal(request.DataSourceConfig)
+			assert.NoError(t, err)
+			assert.NoError(t, json.Unmarshal(source, &eval.DataSourceConfig))
 			s.evals[id] = eval
 			assert.NoError(t, json.NewEncoder(w).Encode(eval))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+			var request eval_api.CreateOpenAIEvalRunRequest
+			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			s.runs = append(s.runs, request)
+			_, err := w.Write([]byte(`{"id":"run_response","status":"queued"}`))
+			assert.NoError(t, err)
 		case strings.HasPrefix(r.URL.Path, "/openai/v1/evals/"):
 			id := strings.TrimPrefix(r.URL.Path, "/openai/v1/evals/")
 			eval, ok := s.evals[id]
@@ -274,25 +292,6 @@ func TestExplicitEvaluatorPinWinsAndUnpinnedLatestDoesNotRecreate(t *testing.T) 
 			assert.Empty(t, service.evals[unpinned].TestingCriteria[0].EvaluatorVersion)
 			assert.Len(t, service.created, 2, "a new remote latest version must not split eval history")
 		})
-	}
-
-}
-
-func TestExplicitEvaluatorPinIgnoresUnavailableCatalogDefault(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
-		for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
-			t.Run(fmt.Sprintf("%s/%d", caller, status), func(t *testing.T) {
-				ec, _, service, cfg, dir := newCatalogPinFixture(t)
-				cfg.Evaluators[0].Version = "2"
-				cfg.Evals[0].Evaluators[0].Version = "1"
-				service.deniedVersion, service.deniedStatus = "2", status
-				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
-				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
-				require.Len(t, service.created, 1)
-				assert.Equal(t, "1", service.created[0].TestingCriteria[0].EvaluatorVersion)
-				assert.NotContains(t, service.reads, "/evaluators/custom/versions/2")
-			})
-		}
 	}
 }
 
@@ -553,6 +552,24 @@ func TestLegacyCatalogPinRepairRequiresPositiveCriterionEvidence(t *testing.T) {
 				require.Len(t, service.evals[next].TestingCriteria, 1)
 				assert.Equal(t, "1", service.evals[next].TestingCriteria[0].EvaluatorVersion)
 				assert.Equal(t, next, reconcileCatalogPin(t, caller, ec, cfg, dir))
+			})
+		}
+	}
+}
+
+func TestExplicitEvaluatorPinIgnoresUnavailableCatalogDefault(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+			t.Run(fmt.Sprintf("%s/%d", caller, status), func(t *testing.T) {
+				ec, _, service, cfg, dir := newCatalogPinFixture(t)
+				cfg.Evaluators[0].Version = "2"
+				cfg.Evals[0].Evaluators[0].Version = "1"
+				service.deniedVersion, service.deniedStatus = "2", status
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
+				require.Len(t, service.created, 1)
+				assert.Equal(t, "1", service.created[0].TestingCriteria[0].EvaluatorVersion)
+				assert.NotContains(t, service.reads, "/evaluators/custom/versions/2")
 			})
 		}
 	}

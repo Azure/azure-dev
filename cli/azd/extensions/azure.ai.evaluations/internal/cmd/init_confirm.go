@@ -21,10 +21,11 @@ import (
 
 // initContext is what the prompt sequence reads and does not change.
 type initContext struct {
-	cfg        *project.EvalConfig
-	azdProject *azdext.ProjectConfig
-	evalDir    string
-	configPath string
+	cfg              *project.EvalConfig
+	azdProject       *azdext.ProjectConfig
+	evalDir          string
+	configPath       string
+	simulationModels []string
 	// configExisted distinguishes a file init is adding to from one it is
 	// about to create, which is what the reader is being told.
 	configExisted bool
@@ -132,7 +133,7 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 			return initAnswers{}, messages.InitFlagConflict("target",
 				"must name an agent for simulation, not a model service")
 		}
-		model, err := a.resolveSimulationModel(a.cmd, a.flags.simulationModel)
+		model, err := a.resolveSimulationModel(a.cmd, a.flags.simulationModel, ctx.simulationModels)
 		if err := collect(err); err != nil {
 			return initAnswers{}, err
 		}
@@ -167,10 +168,20 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	// someone gave is theirs, and a collision is refused rather than worked
 	// around -- in place, so answering it does not cost the answers already
 	// given.
+	nameTarget := answers.target
+	if answers.conversationMode == conversationModeStatic {
+		if agents := agentServices(ctx.azdProject); len(agents) == 1 {
+			nameTarget = agents[0]
+		}
+	}
 	answers.evalName, err = resolveEvalName(
 		a.cmd, ctx.cfg, ctx.configPath, a.flags.evalName,
-		uniqueEvalName(ctx.cfg, defaultEvalName(cmp.Or(answers.target, "conversation"), source)))
+		uniqueEvalName(ctx.cfg, defaultEvalName(
+			nameTarget, source, answers.evaluationLevel, answers.conversationMode)))
 	if err != nil {
+		return initAnswers{}, err
+	}
+	if err := resolveInitDataset(a.cmd, ctx.configPath, &answers, ctx.cfg); err != nil {
 		return initAnswers{}, err
 	}
 
@@ -180,8 +191,11 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	answers.evaluators = a.flags.evaluators
 	answers.evaluatorsChosen = len(answers.evaluators) > 0
 	if len(answers.evaluators) == 0 {
-		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(
-			a.cmd, ctx.cfg, answers.evaluationLevel, ctx.knownBuiltins())
+		var known []string
+		if ctx.knownBuiltins != nil {
+			known = ctx.knownBuiltins()
+		}
+		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(a.cmd, ctx.cfg, answers.evaluationLevel, known)
 		if err != nil {
 			return initAnswers{}, err
 		}
@@ -234,6 +248,7 @@ const (
 type scaffoldSummary struct {
 	answers    initAnswers
 	configPath string
+	rootConfig string
 	// wiring is what the azure.yaml edit will be, so the Files block states
 	// the change rather than implying it.
 	wiring    string
@@ -331,5 +346,5 @@ func writeScaffoldSummary(out io.Writer, s scaffoldSummary) {
 	fmt.Fprint(out, messages.ScaffoldSummaryLine(
 		"Config file", filepath.ToSlash(s.configPath)))
 	fmt.Fprint(out, messages.ScaffoldSummaryFiles(
-		filepath.ToSlash(s.configPath), rootConfigName, s.wiring == wiringAdded))
+		filepath.ToSlash(s.configPath), cmp.Or(s.rootConfig, rootConfigName), s.wiring == wiringAdded))
 }

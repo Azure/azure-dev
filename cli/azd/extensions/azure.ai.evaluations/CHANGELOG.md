@@ -47,10 +47,9 @@ First release of the Foundry evaluations extension.
   ```
 
 - Results are reported per evaluator and per test case: pass, fail, skip and
-  error counts, a run-level pass rate over all test cases, and, in
-  `run output show`, the reason behind every result. `--status` and
-  `--failed-only` narrow the view, and one predicate decides both the table and
-  `-o json` so the two cannot disagree.
+  error counts, a scored pass rate, and, in `run output show`, the reason
+  behind every result. `--status` and `--failed-only` narrow the view, and one
+  predicate decides both the table and `-o json` so the two cannot disagree.
 - Eval, run, run-output and generation-job listings are read a page at a time
   rather than walking the whole history: `--limit` bounds a page, `--after`
   continues from the cursor the previous page returned, and `--all` asks for

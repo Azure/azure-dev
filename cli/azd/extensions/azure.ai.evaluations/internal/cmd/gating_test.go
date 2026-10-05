@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/pkg/eval_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,10 +36,15 @@ func TestParseGate(t *testing.T) {
 		require.InDelta(t, 0.8, g.passRate, 1e-9)
 	})
 
+	// ADO 5572140: a --fail-on syntax refusal used to reach -o json with a
+	// message and no code at all.
 	for _, bad := range []string{"passrate=0.8", "pass-rate=abc", "pass-rate=1.5", "pass-rate=-1", "sometimes"} {
 		t.Run("refuses "+bad, func(t *testing.T) {
 			_, err := parseGate(bad)
 			require.Error(t, err)
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "a --fail-on refusal must carry a structured code")
+			assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 		})
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // The scaffold is only real once azure.yaml references it, so the usage report
@@ -67,6 +68,8 @@ type initProjectServer struct {
 
 	dir           string
 	addServiceErr error
+	onAddService  func(context.Context, *azdext.AddServiceRequest) error
+	ackSaveError  bool
 
 	mu         sync.Mutex
 	addCalls   int
@@ -84,19 +87,46 @@ func (s *initProjectServer) Get(
 }
 
 func (s *initProjectServer) AddService(
-	_ context.Context, request *azdext.AddServiceRequest,
+	ctx context.Context, request *azdext.AddServiceRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	s.addCalls++
 	if request.GetService() != nil {
 		s.addService = append(s.addService, request.GetService().GetName())
 	}
+	onAddService := s.onAddService
+	ackSaveError := s.ackSaveError
 	s.mu.Unlock()
 
-	if s.addServiceErr != nil {
-		return nil, s.addServiceErr
+	err := s.addServiceErr
+	if onAddService != nil {
+		err = onAddService(ctx, request)
+	}
+	if err != nil {
+		if ackSaveError {
+			incoming, _ := metadata.FromIncomingContext(ctx)
+			if tokens := incoming.Get("azd-project-add-service-operation"); len(tokens) == 1 {
+				if trailerErr := grpc.SetTrailer(ctx,
+					metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); trailerErr != nil {
+					return nil, errors.Join(err, trailerErr)
+				}
+			}
+		}
+		return nil, err
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *initProjectServer) setAddServiceHandler(handler func(context.Context, *azdext.AddServiceRequest) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onAddService = handler
+}
+
+func (s *initProjectServer) setSaveFailureAcknowledgement(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ackSaveError = enabled
 }
 
 func (s *initProjectServer) wiringAttempts() int {
@@ -128,7 +158,13 @@ type initHarness struct {
 // handed one the test built.
 func newInitHarness(t *testing.T, addServiceErr error, prompts ...azdext.PromptServiceServer) *initHarness {
 	t.Helper()
+	return newInitHarnessWithOptions(t, addServiceErr, nil, prompts...)
+}
 
+func newInitHarnessWithOptions(
+	t *testing.T, addServiceErr error, options []grpc.ServerOption, prompts ...azdext.PromptServiceServer,
+) *initHarness {
+	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "azure.yaml"), []byte(usageAzureYaml), 0o600))
@@ -140,11 +176,11 @@ func newInitHarness(t *testing.T, addServiceErr error, prompts ...azdext.PromptS
 	harness := &initHarness{
 		dir:      dir,
 		usage:    &usageRecorder{accepted: true},
-		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr},
+		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr, ackSaveError: true},
 		seedRows: seed,
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(options...)
 	azdext.RegisterProjectServiceServer(server, harness.project)
 	azdext.RegisterTelemetryServiceServer(server, harness.usage)
 	if len(prompts) > 0 {

@@ -54,12 +54,13 @@ func projectCancellationErrors() []struct {
 
 func projectCancellationSave(err error) func(context.Context, *project.ProjectConfig, string) error {
 	return func(ctx context.Context, _ *project.ProjectConfig, _ string) error {
-		switch err {
-		case context.Canceled:
+		// Keep wrapped fixtures unchanged so the host still exercises error-chain handling.
+		switch {
+		case errors.Is(err, context.Canceled) && errors.Unwrap(err) == nil:
 			ctx, cancel := context.WithCancel(ctx)
 			cancel()
 			return ctx.Err()
-		case context.DeadlineExceeded:
+		case errors.Is(err, context.DeadlineExceeded) && errors.Unwrap(err) == nil:
 			ctx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
 			defer cancel()
 			return ctx.Err()

@@ -495,8 +495,8 @@ func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
 	assert.Contains(t, bicep, "module workerFunctionStorage 'modules/function-storage.bicep'")
 	assert.Contains(t, bicep, "principalId: apiIdentity.outputs.principalId")
 	assert.Contains(t, bicep, "principalId: workerIdentity.outputs.principalId")
-	assert.Contains(t, bicep, "take('api', 32)")
-	assert.Contains(t, bicep, "take('worker', 32)")
+	assert.Contains(t, bicep, "containerName: 'app-package-api-${take(uniqueString('api'), 6)}")
+	assert.Contains(t, bicep, "containerName: 'app-package-worker-${take(uniqueString('worker'), 6)}")
 	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'api')")
 	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'worker')")
 }

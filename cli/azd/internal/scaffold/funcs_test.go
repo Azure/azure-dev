@@ -4,10 +4,32 @@
 package scaffold
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func Test_FunctionAppContainerName(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{"api", "app-package-api"},
+		{"my-api", "app-package-my-api"},
+		{"my--api", "app-package-my-api"},
+		{strings.Repeat("a", 31) + "-api", "app-package-" + strings.Repeat("a", 31)},
+		{strings.Repeat("a", 63), "app-package-" + strings.Repeat("a", 32)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := FunctionAppContainerName(tt.name)
+			assert.Equal(t, tt.want, prefix)
+			name := prefix + "-abcdef-1234567"
+			assert.LessOrEqual(t, len(name), 63)
+			assert.Regexp(t, `^[a-z0-9]+(-[a-z0-9]+)*$`, name)
+		})
+	}
+}
 
 func Test_containerAppName(t *testing.T) {
 	tests := []struct {

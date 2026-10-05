@@ -311,18 +311,27 @@ func validateFunctionCodeProject(prj *appdetect.Project) error {
 		return fmt.Errorf("host.json must be a file in Function App project %q", prj.Path)
 	}
 	if prj.Language == appdetect.DotNet {
-		files, err := filepath.Glob(filepath.Join(prj.Path, "*.csproj"))
+		files, err := os.ReadDir(prj.Path)
 		if err != nil {
 			return fmt.Errorf("finding .NET Function App project: %w", err)
 		}
 		for _, file := range files {
-			data, err := os.ReadFile(file)
+			if file.IsDir() {
+				continue
+			}
+			switch filepath.Ext(file.Name()) {
+			case ".csproj", ".fsproj", ".vbproj":
+			default:
+				continue
+			}
+			path := filepath.Join(prj.Path, file.Name())
+			data, err := os.ReadFile(path)
 			if err != nil {
-				return fmt.Errorf("reading .NET Function App project %q: %w", file, err)
+				return fmt.Errorf("reading .NET Function App project %q: %w", path, err)
 			}
 			if strings.Contains(strings.ToLower(string(data)), "microsoft.net.sdk.functions") {
 				return fmt.Errorf("Flex Consumption requires a .NET isolated Function App; %q uses in-process Functions",
-					file)
+					path)
 			}
 		}
 	}

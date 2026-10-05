@@ -27,18 +27,19 @@ const templateRoot = "scaffold/templates"
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
 	funcMap := template.FuncMap{
-		"bicepName":        BicepName,
-		"containerAppName": ContainerAppName,
-		"upper":            strings.ToUpper,
-		"lower":            strings.ToLower,
-		"alphaSnakeUpper":  AlphaSnakeUpper,
-		"formatParam":      FormatParameter,
-		"hasACA":           HasACA,
-		"hasAppService":    HasAppService,
-		"hasFunctionApp":   HasFunctionApp,
-		"isACA":            IsACA,
-		"isAppService":     IsAppService,
-		"isFunctionApp":    IsFunctionApp,
+		"bicepName":                BicepName,
+		"containerAppName":         ContainerAppName,
+		"functionAppContainerName": FunctionAppContainerName,
+		"upper":                    strings.ToUpper,
+		"lower":                    strings.ToLower,
+		"alphaSnakeUpper":          AlphaSnakeUpper,
+		"formatParam":              FormatParameter,
+		"hasACA":                   HasACA,
+		"hasAppService":            HasAppService,
+		"hasFunctionApp":           HasFunctionApp,
+		"isACA":                    IsACA,
+		"isAppService":             IsAppService,
+		"isFunctionApp":            IsFunctionApp,
 	}
 
 	t, err := template.New("templates").

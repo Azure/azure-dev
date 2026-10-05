@@ -195,6 +195,11 @@ func ContainerAppName(name string) string {
 	return containerAppName(name, containerAppNameMaxLen)
 }
 
+// FunctionAppContainerName returns a deployment-container name prefix, leaving room for the unique suffix.
+func FunctionAppContainerName(name string) string {
+	return "app-package-" + containerAppName(name, 32)
+}
+
 // ContainerAppSecretName returns a suitable name a container app secret name.
 //
 // The name is treated to only contain lowercase alphanumeric and dash characters, and must start and end with an

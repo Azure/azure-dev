@@ -275,6 +275,33 @@ func TestPromptCodeProject_GoFunctionApp(t *testing.T) {
 	require.Equal(t, appdetect.Go, prj.Language)
 }
 
+func TestValidateFunctionCodeProject_DotNetProjectTypes(t *testing.T) {
+	for _, extension := range []string{".csproj", ".fsproj", ".vbproj"} {
+		for _, inProcess := range []bool{false, true} {
+			name := extension + "/isolated"
+			packageName := "Microsoft.Azure.Functions.Worker"
+			if inProcess {
+				name = extension + "/in-process"
+				packageName = "Microsoft.NET.Sdk.Functions"
+			}
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte("{}"), 0o600))
+				content := `<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="` +
+					packageName + `" /></ItemGroup></Project>`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "func"+extension), []byte(content), 0o600))
+				err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: appdetect.DotNet})
+				if inProcess {
+					require.ErrorContains(t, err, "requires a .NET isolated Function App")
+					require.ErrorContains(t, err, "func"+extension)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
+}
+
 func TestPromptCodeProject_FallbackLanguageSelection(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()

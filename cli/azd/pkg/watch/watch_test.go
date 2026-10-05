@@ -5,12 +5,14 @@ package watch
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ignore"
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/require"
 )
@@ -332,8 +334,7 @@ func TestGetFileChanges_ReconcilesMissingCreatedFile(t *testing.T) {
 
 	changes := fw.GetFileChanges()
 	require.Empty(t, changes, "a missing file must be cleared entirely, not moved to Deleted")
-	require.Equal(t, map[string]bool{missing: true}, fw.fileChanges.Created,
-		"retain provenance for a queued Remove event")
+	require.Empty(t, fw.fileChanges.Created, "missing paths must be reclaimed")
 	require.Empty(t, fw.GetFileChanges(), "later snapshots must not restore the removed entry")
 }
 
@@ -378,6 +379,160 @@ func TestGetFileChanges_LateRemoveDoesNotResurrectDeletedFile(t *testing.T) {
 	require.Empty(t, fw.GetFileChanges(), "a late Remove must not resurrect an ephemeral file as Deleted")
 	require.Empty(t, fw.fileChanges.Created)
 	require.Empty(t, fw.fileChanges.Deleted)
+}
+
+func TestGetFileChanges_LiveNewFileRemainsTrackedAcrossSnapshots(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "live.txt")
+	fw := &fileWatcher{fileChanges: &fileChanges{
+		Created:  map[string]bool{},
+		Modified: map[string]bool{},
+		Deleted:  map[string]bool{},
+	}}
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0600))
+	for _, op := range []fsnotify.Op{fsnotify.Create, fsnotify.Write, fsnotify.Rename} {
+		fw.mu.Lock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: op})
+		fw.mu.Unlock()
+		for range 2 {
+			require.Equal(t, FileChanges{{Path: path, ChangeType: FileCreated}}, fw.GetFileChanges())
+		}
+	}
+	require.NoError(t, os.Remove(path))
+	require.Empty(t, fw.GetFileChanges())
+	fw.mu.Lock()
+	fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Remove})
+	fw.mu.Unlock()
+	require.Empty(t, fw.GetFileChanges())
+}
+
+func TestGetFileChanges_NewPopulatedDirectory(t *testing.T) {
+	root := t.TempDir()
+	initial := filepath.Join(root, "initial.txt")
+	require.NoError(t, os.WriteFile(initial, []byte("x"), 0600))
+	ignoreFile := filepath.Join(root, ".azdxignore")
+	require.NoError(t, os.WriteFile(ignoreFile, []byte("*.log\n"), 0600))
+	matcher, err := ignore.NewMatcher(root)
+	require.NoError(t, err)
+	backend, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backend.Close()) })
+	fw := &fileWatcher{
+		root:          root,
+		initialFiles:  map[string]struct{}{},
+		ignoreMatcher: matcher,
+		fileChanges: &fileChanges{
+			Created:  map[string]bool{},
+			Modified: map[string]bool{},
+			Deleted:  map[string]bool{},
+		},
+	}
+	require.NoError(t, fw.watchRecursive(root, backend, true))
+	require.Equal(t, map[string]struct{}{initial: {}, ignoreFile: {}}, fw.initialFiles,
+		"the initial inventory must contain files, not directories")
+	dir := filepath.Join(root, "new-directory")
+	require.NoError(t, os.Mkdir(dir, 0700))
+	child := filepath.Join(dir, "child.txt")
+	require.NoError(t, os.WriteFile(child, []byte("x"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ignored.log"), []byte("x"), 0600))
+
+	fw.mu.Lock()
+	err = fw.watchRecursive(dir, backend, false)
+	fw.mu.Unlock()
+	require.NoError(t, err)
+	require.Equal(t, map[string]struct{}{initial: {}, ignoreFile: {}}, fw.initialFiles,
+		"new children must not extend the fixed initial inventory")
+	require.Equal(t, FileChanges{{Path: child, ChangeType: FileCreated}}, fw.GetFileChanges())
+	for _, op := range []fsnotify.Op{fsnotify.Write, fsnotify.Rename} {
+		fw.mu.Lock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: child, Op: op})
+		fw.mu.Unlock()
+		require.Equal(t, FileChanges{{Path: child, ChangeType: FileCreated}}, fw.GetFileChanges())
+	}
+
+	require.NoError(t, os.Remove(child))
+	require.Empty(t, fw.GetFileChanges())
+	fw.mu.Lock()
+	fw.trackFileEventLocked(fsnotify.Event{Name: child, Op: fsnotify.Remove})
+	fw.mu.Unlock()
+	require.Empty(t, fw.GetFileChanges())
+}
+
+func TestGetFileChanges_DirectoryReplacementDoesNotAppearAsCreated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "replaced")
+	require.NoError(t, os.Mkdir(path, 0700))
+	fw := &fileWatcher{fileChanges: &fileChanges{
+		Created:  map[string]bool{path: true},
+		Modified: map[string]bool{},
+		Deleted:  map[string]bool{},
+	}}
+	require.Empty(t, fw.GetFileChanges())
+	require.Empty(t, fw.fileChanges.Created)
+	fw.mu.Lock()
+	fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Remove})
+	fw.mu.Unlock()
+	require.Empty(t, fw.GetFileChanges())
+}
+
+func TestGetFileChanges_FinalSnapshotAfterCancellation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	ctx, cancel := context.WithCancel(t.Context())
+	w, err := NewWatcher(ctx)
+	require.NoError(t, err)
+	cancel()
+	fw, ok := w.(*fileWatcher)
+	require.True(t, ok)
+	path := filepath.Join(dir, "gone.txt")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0600))
+	fw.mu.Lock()
+	fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Create})
+	fw.mu.Unlock()
+	require.NoError(t, os.Remove(path))
+	require.Empty(t, fw.GetFileChanges(), "a final snapshot must reclaim paths even after the event loop is canceled")
+	fw.mu.Lock()
+	retained := len(fw.fileChanges.Created)
+	fw.mu.Unlock()
+	require.Zero(t, retained)
+}
+
+func TestGetFileChanges_ReclaimsUniqueEphemeralPaths(t *testing.T) {
+	dir := t.TempDir()
+	initial := filepath.Join(dir, "initial.txt")
+	require.NoError(t, os.WriteFile(initial, []byte("x"), 0600))
+	fw := &fileWatcher{
+		initialFiles: map[string]struct{}{initial: {}},
+		fileChanges: &fileChanges{
+			Created:  map[string]bool{},
+			Modified: map[string]bool{},
+			Deleted:  map[string]bool{},
+		},
+	}
+	paths := make([]string, 512)
+	for i := range paths {
+		path := filepath.Join(dir, fmt.Sprintf("ephemeral-%d.txt", i))
+		paths[i] = path
+		require.NoError(t, os.WriteFile(path, []byte("x"), 0600))
+		fw.mu.Lock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Create})
+		fw.mu.Unlock()
+		require.NoError(t, os.Remove(path))
+	}
+
+	require.Empty(t, fw.GetFileChanges())
+	require.Zero(t, len(fw.fileChanges.Created), "quiescent missing paths must not accumulate indefinitely")
+	for _, path := range paths {
+		fw.mu.Lock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Write})
+		fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Rename})
+		fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Remove})
+		fw.mu.Unlock()
+	}
+	require.Empty(t, fw.GetFileChanges())
+	require.Empty(t, fw.fileChanges.Created)
+	require.Empty(t, fw.fileChanges.Modified)
+	require.Empty(t, fw.fileChanges.Deleted)
+	require.Equal(t, map[string]struct{}{initial: {}}, fw.initialFiles,
+		"session accounting must not retain historical ephemeral paths in another map")
 }
 
 func TestGetFileChanges_RecreatedFilePreservesCreatedAccounting(t *testing.T) {
@@ -426,11 +581,14 @@ func TestGetFileChanges_RecreatedFilePreservesCreatedAccounting(t *testing.T) {
 func TestGetFileChanges_PreExistingRemovalRemainsDeleted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "existing.txt")
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0600))
-	fw := &fileWatcher{fileChanges: &fileChanges{
-		Created:  map[string]bool{},
-		Modified: map[string]bool{},
-		Deleted:  map[string]bool{},
-	}}
+	fw := &fileWatcher{
+		initialFiles: map[string]struct{}{path: {}},
+		fileChanges: &fileChanges{
+			Created:  map[string]bool{},
+			Modified: map[string]bool{},
+			Deleted:  map[string]bool{},
+		},
+	}
 	applyEvent := func(op fsnotify.Op) {
 		fw.mu.Lock()
 		defer fw.mu.Unlock()
@@ -438,6 +596,8 @@ func TestGetFileChanges_PreExistingRemovalRemainsDeleted(t *testing.T) {
 	}
 
 	applyEvent(fsnotify.Write)
+	require.Equal(t, FileChanges{{Path: path, ChangeType: FileModified}}, fw.GetFileChanges())
+	applyEvent(fsnotify.Rename)
 	require.Equal(t, FileChanges{{Path: path, ChangeType: FileModified}}, fw.GetFileChanges())
 	require.NoError(t, os.Remove(path))
 	require.Equal(t, FileChanges{{Path: path, ChangeType: FileModified}}, fw.GetFileChanges())
@@ -471,7 +631,7 @@ func TestGetFileChanges_ReconciliationPreservesOtherChanges(t *testing.T) {
 				{Path: modified, ChangeType: FileModified},
 				{Path: deleted, ChangeType: FileDeleted},
 			}, fw.GetFileChanges())
-			require.Equal(t, map[string]bool{missing: true}, fw.fileChanges.Created)
+			require.Empty(t, fw.fileChanges.Created)
 			require.Equal(t, map[string]bool{modified: true}, fw.fileChanges.Modified)
 			require.Equal(t, map[string]bool{deleted: true}, fw.fileChanges.Deleted)
 		})

@@ -35,7 +35,9 @@ type fileWatcher struct {
 	globIgnorePaths []string
 	ignoreMatcher   *ignore.Matcher
 	root            string
-	mu              sync.Mutex
+	// initialFiles is fixed at startup, not extended by transient paths.
+	initialFiles map[string]struct{}
+	mu           sync.Mutex
 }
 
 type fileChanges struct {
@@ -88,6 +90,12 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		globIgnorePaths: globIgnorePaths,
 		ignoreMatcher:   ignoreMatcher,
 		root:            cwd,
+		initialFiles:    make(map[string]struct{}),
+	}
+
+	if err := fw.watchRecursive(cwd, watcher, true); err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("watcher failed: %w", err)
 	}
 
 	go func() {
@@ -135,7 +143,7 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 				if event.Has(fsnotify.Create) && isDir {
 					// New directory created - start watching it if not ignored
 					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-						if err := fw.watchRecursive(name, watcher); err != nil {
+						if err := fw.watchRecursive(name, watcher, false); err != nil {
 							log.Printf("failed to watch new directory %s: %v", name, err)
 						}
 					}
@@ -151,34 +159,31 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		}
 	}()
 
-	if err := fw.watchRecursive(cwd, watcher); err != nil {
-		return nil, fmt.Errorf("watcher failed: %w", err)
-	}
-
 	return fw, nil
 }
 
 // trackFileEventLocked updates file change accounting. The caller must hold fw.mu.
 func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
 	name := event.Name
+	_, existed := fw.initialFiles[name]
 	switch {
 	case event.Has(fsnotify.Create):
 		fw.fileChanges.Created[name] = true
 	case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
-		if !fw.fileChanges.Created[name] && !fw.fileChanges.Deleted[name] {
+		if existed && !fw.fileChanges.Created[name] && !fw.fileChanges.Deleted[name] {
 			fw.fileChanges.Modified[name] = true
 		}
 	case event.Has(fsnotify.Remove):
 		if fw.fileChanges.Created[name] {
 			delete(fw.fileChanges.Created, name)
-		} else {
+		} else if existed {
 			fw.fileChanges.Deleted[name] = true
 			delete(fw.fileChanges.Modified, name)
 		}
 	}
 }
 
-func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) error {
+func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher, initial bool) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -201,6 +206,16 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 			err = watcher.Add(path)
 			if err != nil {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)
+			}
+		} else if initial {
+			fw.initialFiles[path] = struct{}{}
+		} else {
+			// Children may predate registration of their newly created directory,
+			// so the backend need not deliver individual Create events for them.
+			if relPath, relErr := filepath.Rel(fw.root, path); relErr != nil {
+				return fmt.Errorf("failed to compute relative path for %s: %w", path, relErr)
+			} else if !fw.ignoreMatcher.IsIgnored(relPath, false) {
+				fw.fileChanges.Created[path] = true
 			}
 		}
 		return nil
@@ -326,14 +341,25 @@ func (fc FileChanges) String() string {
 // Some backends (notably Darwin kqueue) can miss Remove events when a file is
 // removed before its per-file watch is registered. Reconcile before reporting
 // changes, even if the final snapshot immediately precedes watcher cancellation.
-// Retain Created provenance until Remove is consumed: deleting it here would
-// cause a queued Remove to misclassify an ephemeral file as Deleted.
+// The fixed startup inventory distinguishes pre-existing files from late events
+// for reclaimed ephemeral paths, without retaining a tombstone for each path.
 func (fw *fileWatcher) existingCreatedFilesLocked() []string {
 	files := make([]string, 0, len(fw.fileChanges.Created))
 	for name := range fw.fileChanges.Created {
-		if _, err := os.Lstat(name); !errors.Is(err, os.ErrNotExist) {
+		if info, err := os.Lstat(name); errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
+			continue
+		} else {
 			files = append(files, name)
 		}
+	}
+	if len(files) != len(fw.fileChanges.Created) {
+		// Rebuild rather than just delete keys so peak transient map capacity
+		// can also be reclaimed after a burst of ephemeral files.
+		retained := make(map[string]bool, len(files))
+		for _, name := range files {
+			retained[name] = fw.fileChanges.Created[name]
+		}
+		fw.fileChanges.Created = retained
 	}
 	return files
 }

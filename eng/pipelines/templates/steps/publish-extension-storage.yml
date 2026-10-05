@@ -21,6 +21,23 @@ steps:
       # find a cached Az.Accounts on the hosted image. Observed on two independent agents
       # (azsdk-pool 11, azsdk-pool 286; image 60.0.0), so pre-seed it here; a no-op when
       # the image-provided copy is already present.
+      #
+      # Get-Module only searches the current PSModulePath, which on these Linux agents
+      # does not yet include the hosted image's own Az module cache (/usr/share/az_*) --
+      # AzurePowerShell@5 only adds that directory during its own later initialization.
+      # This deployment job does not check out the repo (no eng/common/scripts/Helpers/
+      # PSModule-Helpers.ps1 available), so mirror its Update-PSModulePathForCI discovery
+      # inline before probing, to avoid an unnecessary PSGallery install when the image
+      # already ships a usable cached copy.
+      if ($IsLinux) {
+        $azModuleCacheDirs = Get-ChildItem -Path '/usr/share/az_*' -Attributes Directory -ErrorAction SilentlyContinue |
+          Select-Object -ExpandProperty FullName
+        $existingModulePaths = $env:PSModulePath -split ':'
+        $newAzModuleCacheDirs = $azModuleCacheDirs | Where-Object { $existingModulePaths -notcontains $_ }
+        if ($newAzModuleCacheDirs) {
+          $env:PSModulePath = (@($newAzModuleCacheDirs) + $existingModulePaths) -join ':'
+        }
+      }
       if (-not (Get-Module -ListAvailable -Name Az.Accounts)) {
         Install-Module -Name Az.Accounts -Scope CurrentUser -Force -AllowClobber -Repository PSGallery
       }

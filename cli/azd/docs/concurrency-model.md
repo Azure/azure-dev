@@ -321,6 +321,14 @@ locks held by the parent's hook-launch path.
 
 ## Adding new concurrent state
 
+### Periodic service progress
+
+The service progress poller's stop function cancels pending channel delivery and
+joins its background goroutine. Call it before closing the progress channel or
+reporting the next operation's progress. `async.Progress.Done` remains owned by
+the operation and must only run after all producers have finished. Cancellable
+progress delivery does not make sending concurrently with `Done` safe.
+
 When you introduce a new field on one of the types above (or a new type that
 will be shared across graph steps), follow this checklist:
 

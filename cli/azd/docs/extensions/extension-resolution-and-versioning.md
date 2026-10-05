@@ -225,6 +225,32 @@ replacement recovery, successful retry and rejection of a missing historical pin
 Its extension artifacts are local fixtures, not proof of public historical artifacts
 or official delivery of the candidate host.
 
+### Check Each Extension's Normalization Contract
+
+Migration ordering is scoped to one extension and one exact historical version.
+An evaluation migration does not authorize or implement a dataset migration. Under
+ordinary SemVer, dataset `1.0.0-beta.35` is newer than `1.0.0-beta.1`. Without a
+dataset migration, even a migration-capable host skips that replacement through
+`azd extension update`, including an exact `--version 1.0.0-beta.1` request.
+A same-source install over the existing version remains a downgrade: it asks for
+confirmation or skips in `--no-prompt` mode unless `--force` was requested.
+Neither uninstall/reinstall nor forced replacement is the supported migration journey.
+
+A fresh install can select the corrected version when the registry publishes it
+and its host requirement is satisfied; that proves neither an installed-user
+upgrade nor historical pin availability. An exact historical pin still requires
+the original version entry and artifact. An approved migration changes update
+ordering, not raw SemVer pin or range eligibility, and cannot recover an absent
+historical release.
+
+Before preparing a registry update, bind each newly built artifact's host
+requirement to its actual manifest, rather than copying an older registry
+constraint. For example, `>=1.27.1` and `>=1.33.0` admit different hosts.
+Keep immutable historical metadata and artifacts unchanged. Independently approve
+any dataset normalization transition and stage the verified containing host before
+publishing migration-dependent metadata; neither manifest floor proves that host
+has been released.
+
 ## azd Version Compatibility
 
 ### `requiredAzdVersion` Field

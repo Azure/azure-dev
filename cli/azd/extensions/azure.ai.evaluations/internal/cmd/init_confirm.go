@@ -26,7 +26,8 @@ type initContext struct {
 	configExisted bool
 	// tracesWired is memoized by the caller, so asking it again inside a
 	// second pass costs nothing.
-	tracesWired func() bool
+	tracesWired   func() bool
+	knownBuiltins func() []string
 }
 
 // initAnswers is everything the prompt sequence settles.
@@ -118,7 +119,8 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	answers.evaluators = a.flags.evaluators
 	answers.evaluatorsChosen = len(answers.evaluators) > 0
 	if len(answers.evaluators) == 0 {
-		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(a.cmd, ctx.cfg)
+		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(
+			a.cmd, ctx.cfg, ctx.knownBuiltins())
 		if err != nil {
 			return initAnswers{}, err
 		}

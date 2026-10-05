@@ -19,18 +19,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// builtinEvaluators are the four `init` offers, and they judge at either
-// evaluation level, so Turn and Conversation share one picker.
+// builtinEvaluators are the production composite evaluators `init` recommends.
+// They judge at either evaluation level, so Turn and Conversation share one
+// picker.
 //
-// A hardcoded list drifts from the service's full catalogue, which is why this
-// is deliberately the offered set rather than a copy of it: anything outside
-// these four is still reachable with --evaluator, and the catalogue lookup is
-// what checks such a reference when the project can be reached.
+// The Foundry catalogue marks both as recommended composites. Keeping the
+// shortlist to the composites avoids grading the same dimension twice through
+// a composite and one of its constituent evaluators. Anything outside this set
+// is still reachable with --evaluator, and the catalogue lookup checks every
+// selected built-in when the project can be reached.
 var builtinEvaluators = []string{
-	evalcore.BuiltinPrefix + "task_completion",
-	evalcore.BuiltinPrefix + "customer_satisfaction",
-	evalcore.BuiltinPrefix + "coherence",
-	evalcore.BuiltinPrefix + "groundedness",
+	evalcore.BuiltinPrefix + "output_quality",
+	evalcore.BuiltinPrefix + "tool_use_quality",
 }
 
 // builtinCatalogueTimeout bounds the one listing init asks for.
@@ -104,14 +104,14 @@ func readBuiltinEvaluatorCatalogue(ctx context.Context) []string {
 
 // refuseUnknownBuiltins refuses a builtin.<name> the catalogue does not offer.
 //
-// An empty catalogue is not an empty answer: it means the listing was never
-// read, and refusing on it would turn every offline init into a failure.
+// A nil catalogue means the listing was not read. A non-nil empty catalogue is
+// authoritative and offers no built-ins.
 //
 // Names are matched with and without the prefix. The service returns them
 // prefixed today, and a reference that matches either spelling is a reference
 // to something real -- which is the question being asked.
 func refuseUnknownBuiltins(refs []string, known []string) error {
-	if len(known) == 0 {
+	if known == nil {
 		return nil
 	}
 
@@ -138,22 +138,16 @@ func refuseUnknownBuiltins(refs []string, known []string) error {
 	return nil
 }
 
-// defaultEvaluators is what `init` proposes: one built-in that judges whether
-// the agent did what was asked.
-//
-// It used to add a rubric generated from the agent's instructions, which meant
-// init declared an evaluator file nothing had produced. The eval then referred
-// to a rubric that did not exist until a separate generate ran, and `azd up`
-// failed on it. Generation is its own command; init writes only what is there.
+// defaultEvaluators is the approved production composite set. The same set is
+// preselected in the interactive picker and used by unattended scaffolding.
 func defaultEvaluators() []string {
-	return []string{builtinEvaluators[0]}
+	return slices.Clone(builtinEvaluators)
 }
 
 // evaluatorChoices are the references `init` can offer.
 //
-// The picker is built without a service call, so the service's full built-in
-// catalogue is not listed here; offering a hardcoded copy of it would drift.
-// What is knowable offline is the pair init proposes and whatever this
+// The picker is intentionally curated rather than being the service's full
+// built-in catalogue. It offers the approved composites and whatever this
 // configuration already declares. Anything else is reachable with --evaluator,
 // which is checked against the catalogue when the project can be reached.
 func evaluatorChoices(cfg *project.EvalConfig) []string {
@@ -191,13 +185,20 @@ func evaluatorChoices(cfg *project.EvalConfig) []string {
 func resolveEvaluators(
 	cmd *cobra.Command,
 	cfg *project.EvalConfig,
+	knownBuiltins []string,
 ) ([]string, bool, error) {
 	defaults := defaultEvaluators()
+	if err := refuseUnknownBuiltins(defaults, knownBuiltins); err != nil {
+		return nil, false, err
+	}
 	if noPrompt(cmd) {
 		return defaults, false, nil
 	}
 	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg), defaults)
 	if err != nil {
+		return nil, false, err
+	}
+	if err := refuseUnknownBuiltins(chosen, knownBuiltins); err != nil {
 		return nil, false, err
 	}
 	return chosen, true, nil

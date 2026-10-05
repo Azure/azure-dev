@@ -563,15 +563,20 @@ its temporary download files, even with `--force`.
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
 
-`init` offers a few common built-ins in its picker; that is a shortlist, not
-the catalogue. Any built-in the project publishes works with
-`--evaluator builtin.<name>`, including ones the picker never shows.
+`init` recommends the production composite evaluators
+`builtin.output_quality` and `builtin.tool_use_quality`. Both are preselected in
+the picker and both are used by `--no-prompt`, avoiding duplicate scoring by
+their standalone constituent evaluators. Passing one or more `--evaluator`
+flags replaces that default set and preserves the references exactly as given.
+The picker remains a shortlist, not the catalogue; any built-in the project
+publishes works with `--evaluator builtin.<name>`.
 
-`init` checks that reference against the project's catalogue when it can reach
-one, so a name that does not exist is refused there rather than at `create`.
-When no project is reachable — offline, unauthenticated, or outside an azd
-environment — the reference is left as written and `init` behaves as it always
-has. The check never turns a working offline `init` into a failure.
+`init` checks explicit selections and the implicit composite defaults against
+the project's catalogue when it can reach one, so an unavailable evaluator is
+refused there rather than at `create`. When no project is reachable — offline,
+unauthenticated, or outside an azd environment — the references are left as
+written and `init` behaves as it always has. The check never turns a working
+offline `init` into a failure.
 
 Evaluators do not share an input contract, so the CLI reads each one's
 published contract and shapes the request to match. An evaluator needing an

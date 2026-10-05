@@ -112,7 +112,8 @@ func newInitCommand() *cobra.Command {
 			"conversation for the whole multi-turn interaction. Defaults to turn.")
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
-			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
+			"built-in. Defaults to builtin.output_quality and builtin.tool_use_quality. "+
+			"Passing this replaces both defaults, so it also opts out of rubric generation.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected from the project when omitted.")
 	// No backticks around init: pflag reads the first back-quoted word in a
@@ -149,13 +150,19 @@ func (a *initAction) Run() error {
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
 	}
-	// Asked once, and only when there is a builtin. reference for the catalogue
-	// to answer about. A builtin. reference names something only the project can
-	// confirm, so it used to scaffold cleanly and fail at create. Unreachable
-	// projects answer nothing and leave the reference as written, so this adds a
-	// check offline rather than a requirement.
-	if hasBuiltinRef(a.flags.evaluators) {
-		known := a.builtinCatalogue()(a.cmd.Context())
+	// Asked at most once. A builtin. reference names something only the project
+	// can confirm, so an unavailable explicit selection or implicit default
+	// used to scaffold cleanly and fail at create. Unreachable projects answer
+	// nil and leave the reference as written, preserving offline init.
+	knownBuiltins := sync.OnceValue(func() []string {
+		return a.builtinCatalogue()(a.cmd.Context())
+	})
+	evaluatorsToValidate := a.flags.evaluators
+	if len(evaluatorsToValidate) == 0 {
+		evaluatorsToValidate = defaultEvaluators()
+	}
+	if hasBuiltinRef(evaluatorsToValidate) {
+		known := knownBuiltins()
 		// The lookup's own five-second bound is best effort, but the command's
 		// context being done is the reader interrupting, and that is not the
 		// catalogue being quiet. Collapsing the two carried on to fail several
@@ -163,7 +170,7 @@ func (a *initAction) Run() error {
 		if err := a.cmd.Context().Err(); err != nil {
 			return err
 		}
-		if err := refuseUnknownBuiltins(a.flags.evaluators, known); err != nil {
+		if err := refuseUnknownBuiltins(evaluatorsToValidate, known); err != nil {
 			return err
 		}
 	}
@@ -222,6 +229,7 @@ func (a *initAction) Run() error {
 		configPath:    configPath,
 		configExisted: configExisted,
 		tracesWired:   tracesWired,
+		knownBuiltins: knownBuiltins,
 	}
 
 	answers, err := a.ask(ctx)

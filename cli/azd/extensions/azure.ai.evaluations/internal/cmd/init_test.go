@@ -174,15 +174,18 @@ func TestScaffold_TraceCapIsOmittedWhenZero(t *testing.T) {
 	require.NotContains(t, string(body), "max_traces")
 }
 
-// The default set is one built-in. It used to add a rubric generated from the
-// agent's instructions, which declared an evaluator file nothing had produced.
+// The default set is the two recommended production composites. Selecting
+// their constituents too would duplicate scoring while increasing cost.
 func TestScaffold_DefaultEvaluators(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName: "support-agent-smoke", target: "support-agent", judgeModel: "gpt-5.6-luna",
 		dataset: "prod-golden",
 	})
 
-	require.Equal(t, []string{"builtin.task_completion"}, plan.evaluatorNames())
+	require.Equal(t, []string{
+		"builtin.output_quality",
+		"builtin.tool_use_quality",
+	}, plan.evaluatorNames())
 
 	// Every evaluator carries the judge deployment, because the judging
 	// built-ins declare it and an eval that leaves it off is rejected.
@@ -192,17 +195,17 @@ func TestScaffold_DefaultEvaluators(t *testing.T) {
 	}
 }
 
-// Passing --evaluator replaces the defaults.
+// Passing --evaluator replaces the composite defaults.
 func TestScaffold_ExplicitEvaluatorsReplaceTheDefault(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
 		target:     "support-agent",
 		dataset:    "prod-golden",
-		evaluators: []string{"builtin.task_adherence"},
+		evaluators: []string{"builtin.output_quality"},
 		judgeModel: "m",
 	})
 
-	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
+	require.Equal(t, []string{"builtin.output_quality"}, plan.evaluatorNames())
 }
 
 // `init` closes by naming the targeted create, and nothing else. It never names

@@ -32,12 +32,17 @@ HTTP_TRANSPORT = Path(__file__).with_name("http_transport.py")
 run_owned_process = scenario.proof_module.run_owned_process
 AGENT_CLI_MODE = "existing-agent-cli-evaluation"
 AGENT_EXTENSION = "azure.ai.agents"
+DEPENDENCY_COMMANDS = {
+    "azure.ai.inspector": "inspector", "azure.ai.projects": "project",
+    "azure.ai.connections": "connection", "azure.ai.toolboxes": "toolbox",
+}
 
 
 def required_extensions(plan):
     extensions = dict(scenario.EXTENSIONS)
     if plan["mode"] == AGENT_CLI_MODE:
         extensions[AGENT_EXTENSION] = "agent"
+        extensions.update(DEPENDENCY_COMMANDS)
     return extensions
 
 
@@ -107,6 +112,151 @@ def private_os_error_boundary():
     except OSError as error:
         # Normalize before the outer workspace context records the primary failure.
         raise RuntimeError(service_error_text(error)) from None
+
+
+def profile_version(value):
+    require(isinstance(value, str) and len(value) <= 128, "Profile versions must be bounded SemVer strings")
+    match = re.fullmatch(
+        r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+        r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", value)
+    require(match is not None, "Profile versions require complete major.minor.patch SemVer")
+    prerelease = tuple(match[4].split(".")) if match[4] else ()
+    require(all(not part.isdigit() or part == "0" or not part.startswith("0") for part in prerelease),
+            "Profile prerelease numbers must not have leading zeroes")
+    return tuple(int(match[index]) for index in (1, 2, 3)), prerelease
+
+
+def compare_profile_versions(left, right):
+    left_core, left_pre = left
+    right_core, right_pre = right
+    if left_core != right_core:
+        return 1 if left_core > right_core else -1
+    if not left_pre or not right_pre:
+        return (bool(right_pre) > bool(left_pre)) - (bool(right_pre) < bool(left_pre))
+    for first, second in zip(left_pre, right_pre):
+        if first == second:
+            continue
+        if first.isdigit() and second.isdigit():
+            return 1 if int(first) > int(second) else -1
+        if first.isdigit() != second.isdigit():
+            return -1 if first.isdigit() else 1
+        return 1 if first > second else -1
+    return (len(left_pre) > len(right_pre)) - (len(left_pre) < len(right_pre))
+
+
+def profile_constraint_matches(constraint, version):
+    require(isinstance(constraint, str), "Profile dependency/core constraints must be explicit")
+    match = re.fullmatch(r"(>=|~|=)?\s*([^\s]+)", constraint.strip())
+    require(match is not None, "Unsupported profile constraint; use an exact version, >=version or ~version")
+    bound = profile_version(match[2])
+    actual = profile_version(version)
+    # Match the core's Masterminds prerelease rule for this deliberately small grammar.
+    if actual[1] and not bound[1]:
+        return False
+    comparison = compare_profile_versions(actual, bound)
+    if match[1] == ">=":
+        return comparison >= 0
+    if match[1] == "~":
+        return comparison >= 0 and actual[0][:2] == bound[0][:2]
+    return comparison == 0
+
+
+def approved_extension_profile(plan):
+    """Read authority from the plan-pinned registry, never from installed configuration."""
+    profile = plan["extensionProfile"]
+    raw = Path(profile["registryFile"]).read_bytes()
+    require(scenario.sha256(raw) == profile["registrySha256"], "Extension registry differs from approved bytes")
+    registry = json.loads(raw, object_pairs_hook=unique_plan_object)
+    require(isinstance(registry, dict) and registry.get("schemaVersion") == "1.0"
+            and isinstance(registry.get("extensions"), list), "Unsupported approved extension registry")
+    commands = required_extensions(plan)
+    require(len(registry["extensions"]) == len(commands), "Approved registry must contain the complete supported closure")
+    require(scenario.proof_module.platform.machine().lower() in ("amd64", "x86_64")
+            and (os.name == "nt" or sys.platform == "linux"), "Profile admission requires Linux or Windows amd64")
+    platform = "windows/amd64" if os.name == "nt" else "linux/amd64"
+    entries, routes, provider_routes = {}, set(), set()
+    for metadata in registry["extensions"]:
+        require(isinstance(metadata, dict) and isinstance(metadata.get("id"), str)
+                and metadata["id"] in commands and metadata["id"] not in entries,
+                "Approved registry contains unknown or duplicate extension identities")
+        extension = metadata["id"]
+        namespace = metadata.get("namespace")
+        require(namespace == "ai." + commands[extension] and namespace not in routes,
+                "Approved extension namespace is unsupported or collides with another route")
+        routes.add(namespace)
+        versions = metadata.get("versions")
+        require(isinstance(versions, list) and len(versions) == 1 and isinstance(versions[0], dict),
+                "Approved registry must pin one version per extension")
+        version = versions[0]
+        require(version.get("version") == plan["versions"][extension],
+                "Registry version differs from the independently approved plan")
+        profile_version(version["version"])
+        require(profile_constraint_matches(version.get("requiredAzdVersion"), profile["coreVersion"]),
+                "Approved core version does not satisfy an extension requirement")
+        artifacts = version.get("artifacts")
+        require(isinstance(artifacts, dict) and isinstance(artifacts.get(platform), dict),
+                "Approved extension lacks an artifact for this platform")
+        artifact = artifacts[platform]
+        checksum = artifact.get("checksum")
+        require(isinstance(checksum, dict) and set(checksum) == {"algorithm", "value"}
+                and checksum["algorithm"] == "sha256" and isinstance(checksum["value"], str)
+                and scenario.HEX.fullmatch(checksum["value"]), "Every approved artifact requires an exact SHA256")
+        url = artifact.get("url")
+        require(isinstance(url, str) and re.fullmatch(
+            r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/releases/download/"
+            r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", url)
+            and all(part not in (".", "..") for part in url.split("/")[3:])
+            and url.split("/")[-2].lower() != "latest",
+            "Approved artifacts require credential-free fixed-tag GitHub release URLs")
+        entrypoint = artifact.get("entryPoint")
+        require(isinstance(entrypoint, str) and entrypoint not in (".", "..")
+                and re.fullmatch(r"[A-Za-z0-9._-]+", entrypoint)
+                and (os.name != "nt" or entrypoint.lower().endswith(".exe")),
+                "Approved artifact entry point must name a contained executable")
+        dependencies = version.get("dependencies", [])
+        require(isinstance(dependencies, list), "Approved dependency declarations must be an array")
+        edges = {}
+        for dependency in dependencies:
+            require(isinstance(dependency, dict) and set(dependency) == {"id", "version"}
+                    and isinstance(dependency["id"], str) and dependency["id"] in commands
+                    and dependency["id"] not in edges, "Unknown, duplicate or malformed approved dependency")
+            edges[dependency["id"]] = dependency["version"]
+            require(profile_constraint_matches(dependency["version"], plan["versions"][dependency["id"]]),
+                    "Approved dependency version does not satisfy its declared constraint")
+        capabilities = version.get("capabilities", [])
+        require(isinstance(capabilities, list) and all(isinstance(item, str) for item in capabilities)
+                and len(capabilities) == len(set(capabilities)), "Approved capabilities must be unique strings")
+        require("custom-commands" in capabilities,
+                "Every approved profile member requires custom-commands for its version route")
+        providers = version.get("providers", [])
+        require(isinstance(providers, list), "Approved provider routes must be an array")
+        for provider in providers:
+            require(isinstance(provider, dict) and isinstance(provider.get("name"), str)
+                    and re.fullmatch(r"[A-Za-z0-9_.-]+", provider["name"])
+                    and isinstance(provider.get("type"), str) and provider["type"],
+                    "Approved provider route is malformed")
+            route = (provider["type"], provider["name"].lower())
+            require(route not in provider_routes, "Approved provider routes collide")
+            provider_routes.add(route)
+        entries[extension] = {"namespace": namespace, "version": version, "artifact": artifact, "edges": edges}
+
+    visited, visiting = set(), set()
+
+    def visit(extension):
+        require(extension not in visiting, "Approved dependency graph contains a cycle")
+        if extension in visited:
+            return
+        require(extension in entries, "Approved dependency is absent from the registry")
+        visiting.add(extension)
+        for dependency in entries[extension]["edges"]:
+            visit(dependency)
+        visiting.remove(extension)
+        visited.add(extension)
+
+    for extension in (*scenario.EXTENSIONS, AGENT_EXTENSION):
+        visit(extension)
+    require(visited == set(entries) == set(commands), "Approved registry has missing or unreachable dependencies")
+    return entries
 
 
 def unique_plan_object(pairs):
@@ -186,7 +336,8 @@ def validate_plan(plan, digest, env):
         "durationSeconds", "ciIdentity",
     }
     if agent_cli:
-        allowed.update({"datasetFile", "agentName", "agentVersion", "agentInputField", "agentResponseField"})
+        allowed.update({"datasetFile", "agentName", "agentVersion", "agentInputField", "agentResponseField",
+                        "extensionProfile"})
     else:
         allowed.update({"datasetFile", "agentModel", "agentInstructions"} if owned_prompt else {"datasetName"})
     require(isinstance(plan, dict) and set(plan) == allowed,
@@ -214,6 +365,13 @@ def validate_plan(plan, digest, env):
     if owned_prompt:
         operations.update({"agent-version-create", "agent-version-delete", "dataset-create", "dataset-delete"})
     if agent_cli:
+        profile = plan["extensionProfile"]
+        require(isinstance(profile, dict) and set(profile) == {"coreVersion", "registryFile", "registrySha256"}
+                and isinstance(profile["registryFile"], str) and profile["registryFile"]
+                and isinstance(profile["registrySha256"], str) and scenario.HEX.fullmatch(profile["registrySha256"]),
+                "An independently approved registry file/hash and exact core version are required")
+        _, prerelease = profile_version(profile["coreVersion"])
+        require(not prerelease, "The approved core profile requires a stable release version")
         operations.update({"agent-session-create", "agent-invoke", "agent-session-delete",
                            "dataset-create", "dataset-delete"})
     require(isinstance(plan["authorizedOperations"], list)
@@ -280,7 +438,7 @@ def validate_plan(plan, digest, env):
     return provider
 
 
-def verify_install(plan, config):
+def verify_install(plan, config, report=None):
     config = config.resolve()
     executable = Path(plan["azdExecutable"]).resolve()
     expected = plan["binarySha256"]
@@ -290,6 +448,7 @@ def verify_install(plan, config):
             "All mode-specific installed binary digests are required")
     require(executable.is_file() and scenario.sha256(executable.read_bytes()) == expected["azd"],
             "Core executable does not match the approved bytes")
+    approved = approved_extension_profile(plan) if plan["mode"] == AGENT_CLI_MODE else None
     settings = json.loads((config / "config.json").read_text(encoding="utf-8-sig"),
                           object_pairs_hook=unique_plan_object)
     if plan["mode"] == AGENT_CLI_MODE:
@@ -300,12 +459,24 @@ def verify_install(plan, config):
     installed = extension_settings.get("installed", {}) if isinstance(extension_settings, dict) else {}
     require(isinstance(installed, dict) and set(installed) == set(extensions),
             "The isolated profile must contain exactly the mode-specific approved extensions")
+    resolved_paths = {os.path.normcase(str(executable))}
     for extension, command in extensions.items():
         record = installed[extension]
         require(isinstance(record, dict) and record.get("id") == extension
                 and record.get("namespace") == "ai." + command
                 and record.get("version") == plan["versions"][extension],
                 "Installed extension routing or version metadata differs from the approved plan")
+        if approved is not None:
+            version = approved[extension]["version"]
+            capabilities = record.get("capabilities", [])
+            require(isinstance(capabilities, list) and all(isinstance(item, str) for item in capabilities)
+                    and set(capabilities) == set(version.get("capabilities", []))
+                    and same_json_value(record.get("providers", []), version.get("providers", []))
+                    and same_json_value(record.get("mcp"), version.get("mcp")),
+                    "Installed capability/provider routing differs from the approved registry")
+            if "dependencies" in record:
+                require(same_json_value(record["dependencies"], version.get("dependencies", [])),
+                        "Installed dependency declarations differ from the approved registry")
         raw_path = record.get("path")
         require(isinstance(raw_path, str) and raw_path
                 and not Path(raw_path).is_absolute() and not PureWindowsPath(raw_path).drive
@@ -317,8 +488,24 @@ def verify_install(plan, config):
                 "Windows installed extension paths must name an explicit executable")
         binary = (config / raw_path).resolve()
         require(binary.is_relative_to(config), "Installed extension path escapes the isolated profile")
+        route = os.path.normcase(str(binary))
+        require(route not in resolved_paths, "Installed executable paths collide")
+        resolved_paths.add(route)
         require(binary.is_file() and scenario.sha256(binary.read_bytes()) == expected[extension],
                 "Installed extension does not match the approved bytes")
+    if approved is not None and report is not None:
+        report["extensionProfile"] = {
+            "registrySha256": plan["extensionProfile"]["registrySha256"],
+            "coreVersion": plan["extensionProfile"]["coreVersion"],
+            "coreBinarySha256": expected["azd"],
+            "extensions": {
+                extension: {"namespace": entry["namespace"], "version": entry["version"]["version"],
+                            "approvedEntryPoint": entry["artifact"]["entryPoint"],
+                            "approvedArchiveSha256": entry["artifact"]["checksum"]["value"],
+                            "verifiedBinarySha256": expected[extension]}
+                for extension, entry in approved.items()
+            },
+        }
     return executable
 
 
@@ -455,6 +642,11 @@ class Driver:
 
 
 def verify_identity(plan, driver):
+    if plan["mode"] == AGENT_CLI_MODE:
+        core = driver("verify approved core", ["version"], output_format=None)
+        version = re.escape(plan["extensionProfile"]["coreVersion"]).encode("utf-8")
+        require(isinstance(core, bytes) and re.match(rb"\Aazd version " + version + rb"(?:\s|$)", core),
+                "Core runtime version differs from the approved profile")
     auth = driver("verify existing service identity", ["auth", "status"])
     require(isinstance(auth, dict) and auth.get("status") == "authenticated"
             and auth.get("type") == "servicePrincipal" and isinstance(auth.get("clientId"), str)
@@ -857,7 +1049,7 @@ def execute(plan_path, output, env=None):
         config = Path(env.get("AZD_SCENARIO_LIVE_AUTH_CONFIG", "")).resolve()
         require(env.get("AZD_SCENARIO_LIVE_AUTH_CONFIG") and config.is_dir(),
                 "An existing isolated CI service-auth configuration must be provided; never copy devbox caches")
-        executable = verify_install(plan, config)
+        executable = verify_install(plan, config, report)
         report["status"], report["execution"] = "FAIL", "STARTED"
         with scenario.owned_workspace(workspace_state) as workspace, private_os_error_boundary():
             expires = datetime.fromisoformat(plan["expiresAt"].replace("Z", "+00:00"))

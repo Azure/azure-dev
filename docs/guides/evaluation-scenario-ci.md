@@ -366,12 +366,20 @@ owned v1 prompt-version mode above remains a distinct REST sequence, not
 agents-extension deployment proof.
 
 This mode requires an independently approved installed agents executable in
-addition to core, evaluation and dataset. The profile must contain exactly
-those three approved extension routes, versions and executable hashes; it must
-be exclusive to the job and have no existing `extensions.ai-agents` state.
-No moving registry or producer input authorizes those bytes. Staging compatible
-packages, their dependencies and native authentication is an activation
-prerequisite, not something this executor silently installs or waives.
+addition to core, evaluation and dataset. A real agents install pulls in its
+full transitive dependency closure (`azure.ai.inspector`, `azure.ai.projects`,
+`azure.ai.connections`, `azure.ai.toolboxes`); the profile must contain
+exactly those seven approved extension routes, versions and executable
+hashes, verified against an independently approved, hash-pinned registry
+snapshot (`extensionProfile`) rather than the installed configuration itself.
+The approved registry must resolve a complete, cycle-free dependency graph,
+pin one version per extension, require `custom-commands` on every member,
+and record collision-free namespaces, provider routes and installed
+executable paths. It must be exclusive to the job and have no existing
+`extensions.ai-agents` state. No moving registry or producer input authorizes
+those bytes. Staging compatible packages, their dependencies and native
+authentication is an activation prerequisite, not something this executor
+silently installs or waives.
 The separate agents owner's current local source
 `b185546784fa83ff4eb7b0934888dc843c244ddf` requires core `>=1.34.2`.
 Do not reuse the offline public43 core1.33.0 pin for that agents artifact.
@@ -379,10 +387,12 @@ That local agents build is not published or independently approved by this
 scenario contribution; a compatible core/agents/evaluation/dataset tuple
 must be explicitly selected and approved before activation.
 
-1. Verify the service identity, all installed bytes and all three runtime
-   extension versions. Agents `version` emits `Version`, `Commit` and `Build Date`
+1. Verify the service identity, all installed bytes and all seven runtime
+   extension versions, plus the exact approved core version. Agents `version`
+   emits `Version`, `Commit` and `Build Date`
    text, not JSON; validate its exact version without passing an output-format
-   flag. Evaluation and dataset version commands retain their JSON assertions.
+   flag. Evaluation, dataset and dependency version commands retain their JSON
+   assertions.
    Validate one approved manual query/ground-truth row.
 2. Create one uniquely named owned session on the approved existing hosted
    agent through `POST /agents/{name}/endpoint/sessions?api-version=v1`.

@@ -13,6 +13,50 @@ import test_owned_prompt
 import test_service
 
 
+DEPENDENCY_COMMANDS = {
+    "azure.ai.inspector": "inspector", "azure.ai.projects": "project",
+    "azure.ai.connections": "connection", "azure.ai.toolboxes": "toolbox",
+}
+DEPENDENCY_VERSIONS = {
+    "azure.ai.inspector": "1.0.0-beta.1", "azure.ai.projects": "1.0.0-beta.12",
+    "azure.ai.connections": "1.0.0-beta.7", "azure.ai.toolboxes": "1.0.0-beta.6",
+}
+PROFILE_CAPABILITIES = {
+    "azure.ai.evaluations": ["custom-commands", "service-target-provider", "metadata"],
+    "azure.ai.dataset": ["custom-commands", "metadata"],
+    "azure.ai.agents": ["custom-commands", "lifecycle-events", "mcp-server", "service-target-provider", "metadata"],
+    "azure.ai.inspector": ["custom-commands", "metadata"],
+    "azure.ai.projects": ["custom-commands", "lifecycle-events", "service-target-provider",
+                          "provisioning-provider", "validation-provider", "metadata"],
+    "azure.ai.connections": ["custom-commands", "service-target-provider", "metadata"],
+    "azure.ai.toolboxes": ["custom-commands", "service-target-provider", "metadata"],
+}
+PROFILE_PROVIDERS = {
+    "azure.ai.evaluations": [{
+        "name": "azure.ai.eval", "type": "service-target",
+        "description": "Deploys evaluation datasets, evaluators, and eval groups to Foundry",
+    }],
+    "azure.ai.agents": [{
+        "name": "azure.ai.agent", "type": "service-target",
+        "description": "Deploys agents to the Foundry Agent Service",
+    }],
+    "azure.ai.projects": [
+        {"name": "azure.ai.project", "type": "service-target",
+         "description": "Owns the azure.ai.project host so azd can walk the Foundry project service in azure.yaml"},
+        {"name": "microsoft.foundry", "type": "provisioning-provider",
+         "description": "Provisions Microsoft Foundry projects from azure.yaml"},
+    ],
+    "azure.ai.connections": [{
+        "name": "azure.ai.connection", "type": "service-target",
+        "description": "Upserts Foundry connections declared as azure.ai.connection services in azure.yaml",
+    }],
+    "azure.ai.toolboxes": [{
+        "name": "azure.ai.toolbox", "type": "service-target",
+        "description": "Upserts Foundry toolboxes declared as azure.ai.toolbox services in azure.yaml",
+    }],
+}
+
+
 def plan_for():
     plan = test_owned_prompt.plan_for()
     del plan["agentModel"], plan["agentInstructions"]
@@ -20,6 +64,11 @@ def plan_for():
                 agentInputField="query", agentResponseField="answer")
     plan["versions"][service.AGENT_EXTENSION] = "1.0.0-beta.16"
     plan["binarySha256"][service.AGENT_EXTENSION] = "d" * 64
+    plan["versions"].update(DEPENDENCY_VERSIONS)
+    plan["binarySha256"].update({extension: "f" * 64 for extension in DEPENDENCY_COMMANDS})
+    plan["extensionProfile"] = {
+        "coreVersion": "1.34.2", "registryFile": "not-read-in-lifecycle-tests", "registrySha256": "e" * 64,
+    }
     plan["authorizedOperations"] = [
         "agent-session-create", "agent-invoke", "agent-session-delete", "dataset-create", "dataset-delete",
         "dataset-download", "eval-create", "eval-run", "eval-export", "eval-delete",
@@ -44,6 +93,9 @@ class FakeCliDriver:
 
     def __call__(self, label, args, **kwargs):
         self.record(label, kwargs)
+        if label == "verify approved core":
+            self.case.assertIsNone(kwargs["output_format"])
+            return b"azd version 1.34.2 (commit fixture)\n"
         if label == "verify existing service identity":
             return {"status": "authenticated", "type": "servicePrincipal", "clientId": self.plan["clientId"]}
         if label == "verify native service token identity":
@@ -249,6 +301,43 @@ class AgentCliTests(unittest.TestCase):
             "id": service.AGENT_EXTENSION, "namespace": "ai.agent",
             "version": plan["versions"][service.AGENT_EXTENSION], "path": binary.name,
         }
+        for extension, command in DEPENDENCY_COMMANDS.items():
+            dependency = root / "extensions" / extension / (command + ".exe")
+            dependency.parent.mkdir(parents=True)
+            dependency.write_bytes(extension.encode())
+            plan["binarySha256"][extension] = service.scenario.sha256(dependency.read_bytes())
+            settings["extension"]["installed"][extension] = {
+                "id": extension, "namespace": "ai." + command, "version": plan["versions"][extension],
+                "path": str(dependency.relative_to(root)),
+            }
+        registry = {"schemaVersion": "1.0", "extensions": []}
+        platform = "windows/amd64" if service.os.name == "nt" else "linux/amd64"
+        for extension, record in settings["extension"]["installed"].items():
+            dependencies = []
+            if extension == service.AGENT_EXTENSION:
+                dependencies = [{"id": name, "version": "~" + version} for name, version in DEPENDENCY_VERSIONS.items()]
+            elif extension == "azure.ai.toolboxes":
+                dependencies = [{"id": "azure.ai.connections", "version": "~1.0.0-beta.6"}]
+            registry["extensions"].append({
+                "id": extension, "namespace": record["namespace"], "versions": [{
+                    "version": record["version"], "requiredAzdVersion": ">=1.34.2",
+                    "capabilities": PROFILE_CAPABILITIES[extension],
+                    "providers": PROFILE_PROVIDERS.get(extension, []),
+                    "dependencies": dependencies,
+                    "artifacts": {platform: {
+                        "url": f"https://github.com/fixture/feed/releases/download/approved-1/{extension}.zip",
+                        "entryPoint": Path(record["path"]).name,
+                        "checksum": {"algorithm": "sha256", "value": service.scenario.sha256(extension.encode())},
+                    }},
+                }],
+            })
+            record["dependencies"] = dependencies
+            record["capabilities"] = list(PROFILE_CAPABILITIES[extension])
+            record["providers"] = [dict(provider) for provider in PROFILE_PROVIDERS.get(extension, [])]
+        registry_path = root / "approved-registry.json"
+        registry_path.write_bytes(json.dumps(registry).encode())
+        plan["extensionProfile"].update(
+            registryFile=str(registry_path), registrySha256=service.scenario.sha256(registry_path.read_bytes()))
         (root / "config.json").write_text(json.dumps(settings))
         return plan, settings, binary
 
@@ -329,6 +418,8 @@ class AgentCliTests(unittest.TestCase):
             self.assertEqual(result["agentStateCleanup"]["status"], "PASS")
             self.assertTrue(result["executorImplemented"]["agentCliInvoke"])
             self.assertFalse(result["executorImplemented"]["agentInfrastructureDeploy"])
+            self.assertEqual(set(result["extensionProfile"]["extensions"]), set(plan["versions"]))
+            self.assertEqual(result["extensionProfile"]["coreVersion"], "1.34.2")
 
     def test_cleanup_removes_only_preflight_empty_agent_namespace_and_verifies_readback(self):
         with tempfile.TemporaryDirectory() as root:

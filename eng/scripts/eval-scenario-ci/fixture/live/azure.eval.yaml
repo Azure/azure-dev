@@ -1,0 +1,16 @@
+datasets:
+  - name: ci-golden
+    file: ./data/golden.jsonl
+
+evals:
+  - name: ci-f1-quality
+    dataset: ci-golden
+    evaluation_level: turn
+    evaluators:
+      - evaluator: builtin.f1_score
+        initialization_parameters:
+          threshold: 0.9
+        data_mapping:
+          query: "{{item.query}}"
+          response: "{{item.response}}"
+          ground_truth: "{{item.ground_truth}}"

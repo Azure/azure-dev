@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -538,57 +537,55 @@ func TestDeployTrackStatus_InitialStatusRequestTimeout(t *testing.T) {
 }
 
 func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		registerTrackedDeployMocks(mockContext)
+	mockContext := mocks.NewMockContext(t.Context())
+	registerTrackedDeployMocks(mockContext)
 
-		pollCount := 0
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet &&
-				strings.Contains(request.URL.Path, "/deploymentStatus/")
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			pollCount++
-			status := armappservice.DeploymentBuildStatusBuildInProgress
-			if pollCount > 1 {
-				status = armappservice.DeploymentBuildStatusRuntimeStarting
-			}
+	pollCount := 0
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, "/deploymentStatus/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		pollCount++
+		status := armappservice.DeploymentBuildStatusBuildInProgress
+		if pollCount > 1 {
+			status = armappservice.DeploymentBuildStatusRuntimeStarting
+		}
 
-			response, err := mocks.CreateHttpResponseWithBody(
-				request,
-				http.StatusAccepted,
-				map[string]any{
-					"status": "InProgress",
-					"properties": map[string]any{
-						"status":                      status,
-						"numberOfInstancesSuccessful": 0,
-						"numberOfInstancesFailed":     0,
-						"numberOfInstancesInProgress": 1,
-					},
+		response, err := mocks.CreateHttpResponseWithBody(
+			request,
+			http.StatusAccepted,
+			map[string]any{
+				"status": "InProgress",
+				"properties": map[string]any{
+					"status":                      status,
+					"numberOfInstancesSuccessful": 0,
+					"numberOfInstancesFailed":     0,
+					"numberOfInstancesInProgress": 1,
 				},
-			)
-			response.Header.Set("Azure-AsyncOperation", request.URL.String())
-			return response, err
-		})
-
-		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
-		require.NoError(t, err)
-
-		err = client.deployTrackStatus(
-			*mockContext.Context,
-			bytes.NewReader(nil),
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP_ID",
-			"APP_NAME",
-			40*time.Millisecond,
-			20*time.Millisecond,
-			func(string) {},
+			},
 		)
-
-		timeoutErr, ok := errors.AsType[*DeploymentStatusTimeoutError](err)
-		require.True(t, ok)
-		require.Equal(t, 40*time.Millisecond, timeoutErr.Timeout)
-		require.GreaterOrEqual(t, pollCount, 3)
+		response.Header.Set("Azure-AsyncOperation", request.URL.String())
+		return response, err
 	})
+
+	client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
+	require.NoError(t, err)
+
+	err = client.deployTrackStatus(
+		*mockContext.Context,
+		bytes.NewReader(nil),
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP_ID",
+		"APP_NAME",
+		40*time.Millisecond,
+		20*time.Millisecond,
+		func(string) {},
+	)
+
+	timeoutErr, ok := errors.AsType[*DeploymentStatusTimeoutError](err)
+	require.True(t, ok)
+	require.Equal(t, 40*time.Millisecond, timeoutErr.Timeout)
+	require.GreaterOrEqual(t, pollCount, 3)
 }
 
 func registerTrackedDeployMocks(mockContext *mocks.MockContext) {

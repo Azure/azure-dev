@@ -6,6 +6,8 @@ package extensions
 import (
 	"slices"
 	"strings"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 const (
@@ -260,6 +262,13 @@ func shouldPromote(
 	// If stored source has no parsable versions, promote to main (which has versions)
 	if storedLatest == nil {
 		return true
+	}
+
+	if _, err := semver.NewVersion(storedLatest.Version); err != nil {
+		return true
+	}
+	if _, err := semver.NewVersion(mainLatest.Version); err != nil {
+		return false
 	}
 
 	// Promote only if main version is strictly greater than stored version.

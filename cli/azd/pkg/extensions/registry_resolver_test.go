@@ -271,6 +271,18 @@ func TestShouldPromote(t *testing.T) {
 			want:        true,
 		},
 		{
+			name:        "stored non semver tag promotes to compatible main",
+			storedMatch: makeExt("dev", "nightly"),
+			mainMatch:   makeExt("azd", "1.0.0"),
+			want:        true,
+		},
+		{
+			name:        "malformed main does not replace valid stored version",
+			storedMatch: makeExt("dev", "1.0.0"),
+			mainMatch:   makeExt("azd", "nightly"),
+			want:        false,
+		},
+		{
 			name:        "versions equal stays on stored (source-sticky)",
 			storedMatch: makeExt("dev", "1.0.0"),
 			mainMatch:   makeExt("azd", "1.0.0"),
@@ -338,6 +350,33 @@ func TestShouldPromote(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestResolveUpgradeSourcePromotesTagOnlyStoredSource(t *testing.T) {
+	stored := &ExtensionMetadata{
+		Id: "test.extension", Source: "dev",
+		Versions: []ExtensionVersion{{Version: "nightly"}},
+	}
+	main := &ExtensionMetadata{
+		Id: "test.extension", Source: MainRegistryName,
+		Versions: []ExtensionVersion{{Version: "1.0.0"}, {Version: "2.0.0", RequiredAzdVersion: ">=99.0.0"}},
+	}
+	installed := &Extension{Id: stored.Id, Source: stored.Source, Version: "nightly"}
+	ordinary := ResolveUpgradeSource(installed, []*ExtensionMetadata{stored, main}, "")
+	require.NotNil(t, ordinary)
+	require.True(t, ordinary.IsPromotion)
+	require.Same(t, main, ordinary.Extension)
+
+	resolution := ClassifyInstallResolution(
+		[]*ExtensionMetadata{stored, main},
+		&InstallResolutionOptions{FilterOptions: FilterOptions{Id: installed.Id}},
+		semver.MustParse("1.36.0"),
+	)
+	require.Equal(t, "1.0.0", resolution.Candidate(main).Version.Version)
+	compatible := resolution.ResolveUpgradeSource(installed, "")
+	require.NotNil(t, compatible)
+	require.True(t, compatible.IsPromotion)
+	require.Same(t, main, compatible.Extension)
 }
 
 func TestFindMatchBySource(t *testing.T) {

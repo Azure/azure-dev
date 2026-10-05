@@ -65,6 +65,9 @@ func (c *UpdateChecker) CheckForUpdate(
 	// Get latest version from cache
 	metadata, err := c.cacheManager.GetExtension(ctx, extension.Source, extension.Id)
 	if err != nil {
+		if errors.Is(err, errInvalidVersionMigrations) {
+			return nil, fmt.Errorf("checking extension %q for updates: %w", extension.Id, err)
+		}
 		// Cache miss or extension not found - not an error, just no update info
 		log.Printf("could not get latest version for %s: %v", extension.Id, err)
 		return result, nil

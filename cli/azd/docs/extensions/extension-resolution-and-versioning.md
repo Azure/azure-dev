@@ -170,7 +170,7 @@ This places the exact `from` version immediately before `to` for latest-version,
 
 Migration metadata does **not** change version constraint eligibility. Exact pins still select the pinned version, and ranges still apply normal SemVer prerelease rules before migration ordering chooses among eligible releases. Extensions without `versionMigrations` retain strict SemVer behavior.
 
-Registry validation requires `from` to have higher raw SemVer precedence than `to` and rejects malformed versions, duplicate `from` entries, unpublished `to` versions, self-migrations, and chained migrations. Use this mechanism only to repair an already-published ordering mistake; do not use it to avoid normal SemVer versioning.
+Registry validation requires `from` to have higher raw SemVer precedence than `to` and rejects malformed versions, duplicate `from` entries, unpublished `to` versions, self-migrations, and chained migrations. Normal source loading and cache reads enforce these same migration invariants before version selection, reporting the source, extension and invalid mapping without rewriting its metadata. Use this mechanism only to repair an already-published ordering mistake; do not use it to avoid normal SemVer versioning.
 
 ### Stage the Host Before Migrating Installed Extensions
 

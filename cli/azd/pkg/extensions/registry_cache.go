@@ -140,6 +140,10 @@ func (m *RegistryCacheManager) Get(ctx context.Context, sourceName string) (*Reg
 		return nil, ErrCacheExpired
 	}
 
+	if err := validateSourceVersionMigrations(sourceName, cache.Extensions); err != nil {
+		return nil, err
+	}
+
 	return &cache, nil
 }
 

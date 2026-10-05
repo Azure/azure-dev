@@ -1761,6 +1761,9 @@ func (tm *Manager) createSourcesFromConfig(
 				schemaErrors = append(schemaErrors, schemaErr)
 				continue
 			}
+			if errors.Is(err, errInvalidVersionMigrations) {
+				return nil, fmt.Errorf("failed to create source %q: %w", config.Name, err)
+			}
 			log.Printf("failed to create source: %v", err)
 			continue
 		}

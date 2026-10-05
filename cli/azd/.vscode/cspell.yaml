@@ -545,12 +545,14 @@ overrides:
       - hostproject
   - filename: extensions/azure.ai.evaluations/internal/hostproject/*.go
     words:
-      - generateprojectclient
       - hostproject
       - descriptorpb
       - dynamicpb
       - protodesc
       - protoregistry
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/descriptors_generated.go
+    words:
+      - generateprojectclient
   - filename: extensions/azure.ai.evaluations/internal/cmd/init.go
     words:
       - hostproject

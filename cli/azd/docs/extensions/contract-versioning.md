@@ -19,6 +19,15 @@ therefore do not have stable `v1` generated types or facade aliases. The
 corresponding `AzdClient` convenience accessors return generated `v1beta`
 clients, and their request and response types come from `contracts/v1beta`.
 
+`AzdClient.ProjectBeta()` also returns a generated beta client. Its
+`AddServiceRequest.operation_id` opts into an `AddServiceAcknowledgment`
+status detail on completed failures. `Project()` retains the stable request
+shape and optional metadata/trailer acknowledgment. See
+[Project service save acknowledgment](../../../../docs/architecture/extension-framework.md#project-service-save-acknowledgment)
+for timing and conservative recovery rules. Use a published SDK containing
+these beta symbols and a host containing the focused override; the existence
+of a beta service route alone does not establish support for the new field.
+
 ## Channel policy
 
 `v1` is the compatibility-protected stable contract. Changes must be additive:

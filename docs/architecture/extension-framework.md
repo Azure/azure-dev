@@ -86,6 +86,37 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
 
+### Project service save acknowledgment
+
+`Project.AddService` accepts an optional, fresh
+`azd-project-add-service-operation` metadata value of at most 64 bytes.
+On a failure after acquiring the project mutation lock, the host echoes that
+value in the `azd-project-add-service-save-failed` trailer after synchronous
+work completes. This includes completed pre-save rejections and failed saves
+after restoring the previous cached service. Success, panics, and validation
+errors rejected before the lock do not carry the acknowledgment.
+
+For the preview channel, `AzdClient.ProjectBeta()` exposes the generated
+`v1beta.ProjectServiceClient`. Set `AddServiceRequest.operation_id` to a fresh
+per-call identifier. The host returns an `AddServiceAcknowledgment` with that
+identifier as a `google.rpc.Status` detail on the same completed failures,
+instead of a trailer. The stable protobuf shape is unchanged.
+
+Require exactly one matching acknowledgment before considering compensation
+of local edits. Missing, mismatched, duplicate, or lost acknowledgments remain
+uncertain outcomes. Cancellation or a transport error can reach the caller
+while host work is still running. Completion does not prove that no bytes were
+written before a failure: compare root-file bytes and check local ownership
+before compensation. This protocol is not a cross-file transaction.
+
+The beta API requires a published SDK containing the accessor, request field,
+and status-detail type, and a host containing the focused beta override.
+Earlier beta hosts can discard an unknown request field, so route availability
+alone does not prove completion-acknowledgment support. Pin a verified containing
+SDK and establish the compatible host requirement only after that release
+exists. Local builds, replacements, and source ancestry do not establish
+published availability.
+
 ## Deployment Preview
 
 `azd deploy --preview` calls an optional `Preview` on each selected service target

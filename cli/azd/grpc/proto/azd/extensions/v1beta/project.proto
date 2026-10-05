@@ -72,6 +72,22 @@ message GetProjectResponse {
 // AddServiceRequest message definition
 message AddServiceRequest {
   ServiceConfig service = 1;
+
+  // Optional caller-supplied identifier for this operation. When set, a failed AddService that
+  // reached the project mutation lock returns this identifier via an AddServiceAcknowledgment
+  // detail on the returned gRPC status, confirming the host observed and completed (not
+  // necessarily succeeded) the operation before the error was returned. This is the v1beta
+  // typed replacement for the v1 azd-project-add-service-operation gRPC metadata convention;
+  // see docs/architecture/extension-framework.md#project-service-save-acknowledgment.
+  string operation_id = 2;
+}
+
+// AddServiceAcknowledgment confirms AddService completed (not necessarily successfully) the
+// operation named by AddServiceRequest.operation_id. It is attached as a google.rpc.Status
+// detail on a failed AddService call. It is never present on success, and never present when
+// the request did not supply operation_id.
+message AddServiceAcknowledgment {
+  string operation_id = 1;
 }
 
 // GetResolvedServicesResponse message definition

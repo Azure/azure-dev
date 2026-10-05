@@ -39,6 +39,14 @@
                         "$ref": "#/definitions/Version"
                     }
                 },
+                "versionMigrations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Exceptional ordering for exact historical versions that used an incorrect version scheme. Constraint matching still uses each raw semantic version.",
+                    "items": {
+                        "$ref": "#/definitions/VersionMigration"
+                    }
+                },
                 "tags": {
                     "type": "array",
                     "description": "Tags categorizing the extension.",
@@ -55,6 +63,28 @@
                 "versions"
             ]
         },
+        "VersionMigration": {
+            "type": "object",
+            "title": "Version migration",
+            "description": "Places one exact historical version immediately before a published successor version for latest-version and update ordering.",
+            "additionalProperties": false,
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "description": "Exact semantic version written by the historical version scheme.",
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                },
+                "to": {
+                    "type": "string",
+                    "description": "First published semantic version in the corrected scheme. This version and later semantic versions are successors of 'from'.",
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                }
+            },
+            "required": [
+                "from",
+                "to"
+            ]
+        },
         "Version": {
             "type": "object",
             "title": "Version",
@@ -63,7 +93,7 @@
                 "version": {
                     "type": "string",
                     "description": "Version number following semantic versioning.",
-                    "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
                 },
                 "requiredAzdVersion": {
                     "type": "string",

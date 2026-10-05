@@ -313,7 +313,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		// Always show the true latest version
-		latestVersion := extensions.LatestVersion(extension.Versions).Version
+		latestVersion := extensions.LatestExtensionVersion(extension).Version
 
 		var installedVersion string
 		var updateAvailable bool
@@ -326,15 +326,15 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			// If either version string fails semver parsing (e.g., non-standard build tags),
 			// we silently fall back to showing "✓ Up to date" rather than erroring,
 			// since the list command should remain best-effort.
-			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
-			latestSemver, latestErr := semver.NewVersion(latestVersion)
-			if installedErr == nil && latestErr == nil {
-				updateAvailable = latestSemver.GreaterThan(installedSemver)
-			}
+			updateAvailable = extensions.IsExtensionVersionUpgrade(
+				extension,
+				installedExtension.Version,
+				latestVersion,
+			)
 
 			// Check if the update is incompatible with the current azd version
 			if updateAvailable && azdVersion != nil {
-				compatResult := extensions.FilterCompatibleVersions(extension.Versions, azdVersion)
+				compatResult := extensions.FilterCompatibleExtensionVersions(extension, azdVersion)
 				updateIncompatible = compatResult.HasNewerIncompatible
 			}
 		}
@@ -957,10 +957,10 @@ func (a *extensionShowAction) buildShowItem(
 		item.Namespace = registryExtension.Namespace
 		item.Tags = registryExtension.Tags
 
-		if latest := extensions.LatestVersion(registryExtension.Versions); latest != nil {
+		if latest := extensions.LatestExtensionVersion(registryExtension); latest != nil {
 			item.LatestVersion = latest.Version
 			item.RequiresAzd = latest.RequiredAzdVersion
-			item.OtherVersions = otherVersionsNewestFirst(registryExtension.Versions, latest.Version)
+			item.OtherVersions = otherVersionsNewestFirst(registryExtension, latest.Version)
 			item.Usage = latest.Usage
 			item.Examples = latest.Examples
 			item.Providers = latest.Providers
@@ -968,7 +968,7 @@ func (a *extensionShowAction) buildShowItem(
 			dependencies = latest.Dependencies
 
 			if azdVersion := a.extensionManager.AzdVersion(); azdVersion != nil {
-				compat := extensions.FilterCompatibleVersions(registryExtension.Versions, azdVersion)
+				compat := extensions.FilterCompatibleExtensionVersions(registryExtension, azdVersion)
 				item.azdVersion = azdVersion.String()
 				item.latestIncompatible = compat.HasNewerIncompatible
 				item.newerIncompatible = compat.HasNewerIncompatible
@@ -1000,7 +1000,7 @@ func (a *extensionShowAction) buildShowItem(
 		case !strings.EqualFold(installed.Source, registryExtension.Source):
 			item.InstalledSource = installed.Source
 		default:
-			applyShowUpdateState(item, installed.Version)
+			applyShowUpdateState(item, registryExtension, installed.Version)
 		}
 
 		// The installed snapshot governs uninstall behavior, so it is what show explains.
@@ -1041,47 +1041,55 @@ func (a *extensionShowAction) buildShowItem(
 
 // applyShowUpdateState derives the installed-row annotations for an extension installed from
 // the source being described. Non-semver tags have no ordering, so they report no update.
-func applyShowUpdateState(item *extensionShowItem, installedVersion string) {
-	installedSemver, err := semver.NewVersion(installedVersion)
-	if err != nil {
+func applyShowUpdateState(
+	item *extensionShowItem,
+	extension *extensions.ExtensionMetadata,
+	installedVersion string,
+) {
+	if _, err := semver.NewVersion(installedVersion); err != nil {
 		item.newerIncompatible = false
 		return
 	}
 
-	if candidate, err := semver.NewVersion(item.LatestCompatibleVersion); err == nil {
-		item.UpdateAvailable = candidate.GreaterThan(installedSemver)
+	if _, err := semver.NewVersion(item.LatestCompatibleVersion); err == nil {
+		item.UpdateAvailable = extensions.IsExtensionVersionUpgrade(
+			extension,
+			installedVersion,
+			item.LatestCompatibleVersion,
+		)
 	}
 
 	// The installed row only mentions an incompatible release that is newer than what is
 	// installed; the Requires azd row keeps reporting the latest release's compatibility.
 	if item.newerIncompatible {
-		latestSemver, err := semver.NewVersion(item.LatestVersion)
-		item.newerIncompatible = err == nil && latestSemver.GreaterThan(installedSemver)
+		_, err := semver.NewVersion(item.LatestVersion)
+		item.newerIncompatible = err == nil && extensions.IsExtensionVersionUpgrade(
+			extension,
+			installedVersion,
+			item.LatestVersion,
+		)
 	}
 }
 
 // otherVersionsNewestFirst lists every published version except latest, newest first. Tags
 // that do not parse as semver keep their published order after the semver releases.
-func otherVersionsNewestFirst(versions []extensions.ExtensionVersion, latest string) []string {
-	var releases []*semver.Version
+func otherVersionsNewestFirst(extension *extensions.ExtensionMetadata, latest string) []string {
+	releases := make([]string, 0, len(extension.Versions)-1)
 	var tags []string
-	for _, version := range versions {
+	for _, version := range extension.Versions {
 		if version.Version == latest {
 			continue
 		}
-		if release, err := semver.NewVersion(version.Version); err == nil {
-			releases = append(releases, release)
+		if _, err := semver.NewVersion(version.Version); err == nil {
+			releases = append(releases, version.Version)
 		} else {
 			tags = append(tags, version.Version)
 		}
 	}
-	slices.SortFunc(releases, func(a, b *semver.Version) int { return b.Compare(a) })
-
-	others := make([]string, 0, len(releases)+len(tags))
-	for _, release := range releases {
-		others = append(others, release.Original())
-	}
-	return append(others, tags...)
+	slices.SortStableFunc(releases, func(a, b string) int {
+		return -extensions.CompareExtensionVersions(extension, a, b)
+	})
+	return append(releases, tags...)
 }
 
 type extensionInstallFlags struct {
@@ -1337,14 +1345,16 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 					// Downgrades have no defined order for non-semver tags, so detect
 					// them only when both versions parse as semver.
-					installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
-					targetSemver, targetErr := semver.NewVersion(targetVersion)
-					if installedErr == nil && targetErr == nil && targetSemver.LessThan(installedSemver) {
+					if extensions.IsExtensionVersionDowngrade(
+						selectedExtension,
+						installedExtension.Version,
+						targetVersion,
+					) {
 						// Confirm before replacing a newer install with an older one.
 						question := fmt.Sprintf(
 							"%s %s is installed. %s?",
 							output.WithHighLightFormat(extensionId), installedExtension.Version,
-							versionTransitionVerb(installedExtension.Version, targetVersion),
+							versionTransitionVerb(selectedExtension, installedExtension.Version, targetVersion),
 						)
 						skipSuffix := fmt.Sprintf(
 							" (would downgrade from %s to %s, use --force to override)",
@@ -1363,7 +1373,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 					// Source is changing (e.g. bundle over registry build); confirm first.
 					proceed, err := a.confirmSourceChange(
 						ctx, stepMessage, extensionId, installedExtension,
-						selectedExtension.Source, targetVersion,
+						selectedExtension, targetVersion,
 					)
 					if err != nil {
 						return nil, err
@@ -1483,17 +1493,19 @@ func (a *extensionInstallAction) sourceDisplayLabelForInstalled(source string) s
 // from the installed version to the target version: "Reinstall" when they match,
 // "Update to <target>" / "Downgrade to <target>" when both parse as semver, and
 // a neutral "Replace with <target>" when ordering is undefined (non-semver tags).
-func versionTransitionVerb(installedVersion, targetVersion string) string {
+func versionTransitionVerb(
+	extension *extensions.ExtensionMetadata,
+	installedVersion,
+	targetVersion string,
+) string {
 	if installedVersion == targetVersion {
 		return "Reinstall"
 	}
 
-	installedSemver, installedErr := semver.NewVersion(installedVersion)
-	targetSemver, targetErr := semver.NewVersion(targetVersion)
 	switch {
-	case installedErr == nil && targetErr == nil && targetSemver.LessThan(installedSemver):
+	case extensions.IsExtensionVersionDowngrade(extension, installedVersion, targetVersion):
 		return fmt.Sprintf("Downgrade to %s", targetVersion)
-	case installedErr == nil && targetErr == nil && targetSemver.GreaterThan(installedSemver):
+	case extensions.IsExtensionVersionUpgrade(extension, installedVersion, targetVersion):
 		return fmt.Sprintf("Update to %s", targetVersion)
 	default:
 		return fmt.Sprintf("Replace with %s", targetVersion)
@@ -1510,16 +1522,16 @@ func (a *extensionInstallAction) confirmSourceChange(
 	stepMessage string,
 	extensionId string,
 	installed *extensions.Extension,
-	newSource string,
+	targetExtension *extensions.ExtensionMetadata,
 	targetVersion string,
 ) (bool, error) {
 	oldLabel := a.sourceDisplayLabelForInstalled(installed.Source)
-	newLabel := a.sourceDisplayLabel(newSource)
+	newLabel := a.sourceDisplayLabel(targetExtension.Source)
 
 	question := fmt.Sprintf(
 		"%s %s is already installed from %s. %s from %s?",
 		output.WithHighLightFormat(extensionId), installed.Version, oldLabel,
-		versionTransitionVerb(installed.Version, targetVersion), newLabel,
+		versionTransitionVerb(targetExtension, installed.Version, targetVersion), newLabel,
 	)
 	skipSuffix := fmt.Sprintf(
 		" (%s already installed from %s; use --force to install from %s)",
@@ -3113,10 +3125,8 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		targetVersionStr = candidate.Version.Version
 	}
 
-	// Parse versions for semantic comparison. Non-semver tags
-	// (e.g. "nightly", "dev") have no defined ordering, so when either
-	// side fails to parse we skip the "installed is newer" guard and
-	// proceed with the upgrade attempt.
+	// Parse versions for equality. Non-semver tags (e.g. "nightly", "dev")
+	// have no defined ordering, so migration-aware ordering also treats them as equal.
 	installedSemver, installedErr := semver.NewVersion(installed.Version)
 	targetSemver, targetErr := semver.NewVersion(targetVersionStr)
 
@@ -3124,7 +3134,7 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	baseResult.ToSourceCategory = selectedExt.SourceCategoryOrUnknown()
 
 	// Compare versions
-	if installedErr == nil && targetErr == nil && installedSemver.GreaterThan(targetSemver) {
+	if extensions.IsExtensionVersionDowngrade(selectedExt, installed.Version, targetVersionStr) {
 		baseResult.Status = extensions.UpgradeStatusSkipped
 		skipMessage := fmt.Sprintf(
 			"Installed version %s is newer than %s",

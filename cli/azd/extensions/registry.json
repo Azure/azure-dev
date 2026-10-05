@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1.1",
   "extensions": [
     {
       "id": "microsoft.azd.demo",
@@ -13041,6 +13042,12 @@
       "namespace": "ai.eval",
       "displayName": "Foundry evaluations (Beta)",
       "description": "Define and run Foundry evaluations from your terminal. (Beta)",
+      "versionMigrations": [
+        {
+          "from": "1.0.47-beta",
+          "to": "1.0.0-beta.1"
+        }
+      ],
       "versions": [
         {
           "version": "1.0.0-beta.1",

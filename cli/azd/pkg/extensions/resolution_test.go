@@ -443,6 +443,110 @@ func TestClassifyInstallResolution_SelectedCandidate(t *testing.T) {
 	require.True(t, candidate.HasNewerIncompatible)
 }
 
+func TestClassifyInstallResolution_VersionMigration(t *testing.T) {
+	t.Parallel()
+
+	migrated := &ExtensionMetadata{
+		Id: "test.migrated",
+		VersionMigrations: []ExtensionVersionMigration{{
+			From: "1.0.47-beta",
+			To:   "1.0.0-beta.1",
+		}},
+		Versions: []ExtensionVersion{
+			{Version: "1.0.47-beta"},
+			{Version: "1.0.0-beta.1"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		extension  *ExtensionMetadata
+		preference string
+		want       string
+	}{
+		{
+			name:      "latest selects declared successor",
+			extension: migrated,
+			want:      "1.0.0-beta.1",
+		},
+		{
+			name:       "latest keyword selects declared successor",
+			extension:  migrated,
+			preference: "latest",
+			want:       "1.0.0-beta.1",
+		},
+		{
+			name:       "explicit legacy pin remains exact",
+			extension:  migrated,
+			preference: "1.0.47-beta",
+			want:       "1.0.47-beta",
+		},
+		{
+			name:       "explicit corrected pin remains exact",
+			extension:  migrated,
+			preference: "1.0.0-beta.1",
+			want:       "1.0.0-beta.1",
+		},
+		{
+			name:       "raw semver range eligibility is not weakened",
+			extension:  migrated,
+			preference: ">=1.0.47-beta",
+			want:       "1.0.47-beta",
+		},
+		{
+			name: "ordinary extension retains strict semver",
+			extension: &ExtensionMetadata{
+				Id: "test.ordinary",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.47-beta"},
+					{Version: "1.0.0-beta.1"},
+				},
+			},
+			want: "1.0.47-beta",
+		},
+		{
+			name: "stable constraint excludes prerelease",
+			extension: &ExtensionMetadata{
+				Id: "test.stability",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0-beta.1"},
+					{Version: "1.0.0"},
+				},
+			},
+			preference: ">=1.0.0",
+			want:       "1.0.0",
+		},
+		{
+			name: "prerelease constraint selects prerelease",
+			extension: &ExtensionMetadata{
+				Id: "test.stability",
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0-beta.1"},
+					{Version: "1.0.0"},
+				},
+			},
+			preference: ">=1.0.0-beta.1, <1.0.0",
+			want:       "1.0.0-beta.1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := ClassifyInstallResolution(
+				[]*ExtensionMetadata{test.extension},
+				&InstallResolutionOptions{FilterOptions: FilterOptions{
+					Id:      test.extension.Id,
+					Version: test.preference,
+				}},
+				nil,
+			)
+
+			require.Len(t, result.Matches, 1)
+			require.Equal(t, test.want, result.Candidate(test.extension).Version.Version)
+		})
+	}
+}
+
 func TestClassifyInstallResolution_ProviderUsesSelectedRelease(t *testing.T) {
 	provisioningDemo := ExtensionVersion{
 		Version:      "2.0.0",

@@ -1086,6 +1086,11 @@ To share the forked registry with others just provide the raw github link to the
 1. Commit the changes to the local branch, `git commit -am "<description>"`
 1. Create PR for the changes within `azure/azure-dev` repo
 
+If a historical release used an incorrect version scheme that SemVer ranks above the corrected release line, add
+`versionMigrations` to that extension's registry entry in the publication PR. The migration must name the exact
+historical `from` version and a corrected `to` version published by the same registry update. See
+[Correcting a Historical Version Scheme](./extension-resolution-and-versioning.md#correcting-a-historical-version-scheme).
+
 Once PR has been merged the extension updates are now live in the official `azd` extension source registry.
 
 ### Extension Manifest
@@ -3362,7 +3367,7 @@ Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "extensions": [ ... ]
 }
 ```
@@ -3383,7 +3388,7 @@ When azd encounters a registry with a schema version it cannot support, it will
 display an error with a suggestion to update:
 
 ```
-ERROR: registry schema version 2.0 is not supported (max supported: 1.0)
+ERROR: registry schema version 2.0 is not supported (max supported: 1.1)
 
 Suggestion: Update azd to the latest version to use this registry
   https://aka.ms/azd/install
@@ -3393,7 +3398,7 @@ Suggestion: Update azd to the latest version to use this registry
 
 When publishing a third-party registry:
 
-1. **Include `schemaVersion`**: Add `"schemaVersion": "1.0"` at the top level of your registry JSON.
+1. **Include `schemaVersion`**: Add `"schemaVersion": "1.1"` at the top level of your registry JSON.
    Omitting it works but triggers a validation warning.
 2. **Use the JSON schema**: Reference `extensions/registry.schema.json` for the full format specification.
 3. **Minor version bumps** add optional fields that older azd versions can safely ignore.

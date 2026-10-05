@@ -213,12 +213,12 @@ func (m *Manager) resolveDependency(
 			continue
 		}
 
-		publishedVersion := bestSatisfyingVersion(dependency.Version, matches[0].Versions)
+		publishedVersion := bestSatisfyingExtensionVersion(dependency.Version, matches[0])
 		if publishedVersion == nil {
 			foundWithoutMatchingVersion = true
 			continue
 		}
-		if bestSatisfyingVersionForAzd(dependency.Version, matches[0].Versions, azdVersion) != nil {
+		if bestSatisfyingExtensionVersionForAzd(dependency.Version, matches[0], azdVersion) != nil {
 			return matches[0], nil
 		}
 		incompatibleVersion = publishedVersion
@@ -312,29 +312,33 @@ func matchesVersionConstraint(expr, candidate string) bool {
 	return constraint.Check(parsedVersion)
 }
 
-// isDowngrade reports whether moving from current to target is a version regression.
-// Returns false if either version is not valid semver.
-func isDowngrade(current, target string) bool {
-	currentSemver, err := semver.NewVersion(current)
-	if err != nil {
-		return false
-	}
-	targetSemver, err := semver.NewVersion(target)
-	if err != nil {
-		return false
-	}
-	return targetSemver.LessThan(currentSemver)
-}
-
 // bestSatisfyingVersion returns the highest published version satisfying expr.
 // Empty or "latest" selects the latest version; non-semver tags use exact match.
 func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionVersion {
+	return bestSatisfyingVersionFromMetadata(expr, nil, versions)
+}
+
+func bestSatisfyingExtensionVersion(
+	expr string,
+	extension *ExtensionMetadata,
+) *ExtensionVersion {
+	if extension == nil {
+		return nil
+	}
+	return bestSatisfyingVersionFromMetadata(expr, extension, extension.Versions)
+}
+
+func bestSatisfyingVersionFromMetadata(
+	expr string,
+	extension *ExtensionMetadata,
+	versions []ExtensionVersion,
+) *ExtensionVersion {
 	if len(versions) == 0 {
 		return nil
 	}
 
 	if expr == "" || strings.EqualFold(expr, "latest") {
-		return LatestVersion(versions)
+		return latestExtensionVersion(extension, versions)
 	}
 
 	constraint, err := semver.NewConstraint(expr)
@@ -348,8 +352,7 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionV
 		return nil
 	}
 
-	var best *semver.Version
-	var bestIdx int
+	bestIdx := -1
 	for i := range versions {
 		v, err := semver.NewVersion(versions[i].Version)
 		if err != nil {
@@ -358,12 +361,12 @@ func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionV
 		if !constraint.Check(v) {
 			continue
 		}
-		if best == nil || v.GreaterThan(best) {
-			best = v
+		if bestIdx == -1 ||
+			CompareExtensionVersions(extension, versions[i].Version, versions[bestIdx].Version) > 0 {
 			bestIdx = i
 		}
 	}
-	if best == nil {
+	if bestIdx == -1 {
 		return nil
 	}
 	return &versions[bestIdx]
@@ -374,8 +377,28 @@ func bestSatisfyingVersionForAzd(
 	versions []ExtensionVersion,
 	azdVersion *semver.Version,
 ) *ExtensionVersion {
+	return bestSatisfyingVersionForAzdFromMetadata(expr, nil, versions, azdVersion)
+}
+
+func bestSatisfyingExtensionVersionForAzd(
+	expr string,
+	extension *ExtensionMetadata,
+	azdVersion *semver.Version,
+) *ExtensionVersion {
+	if extension == nil {
+		return nil
+	}
+	return bestSatisfyingVersionForAzdFromMetadata(expr, extension, extension.Versions, azdVersion)
+}
+
+func bestSatisfyingVersionForAzdFromMetadata(
+	expr string,
+	extension *ExtensionMetadata,
+	versions []ExtensionVersion,
+	azdVersion *semver.Version,
+) *ExtensionVersion {
 	if azdVersion == nil {
-		return bestSatisfyingVersion(expr, versions)
+		return bestSatisfyingVersionFromMetadata(expr, extension, versions)
 	}
 
 	compatible := make([]ExtensionVersion, 0, len(versions))
@@ -385,7 +408,7 @@ func bestSatisfyingVersionForAzd(
 		}
 	}
 
-	return bestSatisfyingVersion(expr, compatible)
+	return bestSatisfyingVersionFromMetadata(expr, extension, compatible)
 }
 
 // ResolveExtensionVersion selects the highest release that matches versionPreference and azdVersion.
@@ -398,12 +421,12 @@ func ResolveExtensionVersion(
 		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	selected := bestSatisfyingVersionForAzd(versionPreference, extension.Versions, azdVersion)
+	selected := bestSatisfyingExtensionVersionForAzd(versionPreference, extension, azdVersion)
 	if selected != nil {
 		return selected, nil
 	}
 
-	published := bestSatisfyingVersion(versionPreference, extension.Versions)
+	published := bestSatisfyingExtensionVersion(versionPreference, extension)
 	if published != nil {
 		return nil, &ExtensionAzdVersionIncompatibleError{
 			ExtensionId: extension.Id,
@@ -1355,7 +1378,7 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, m.azdVersion)
+		bestVersion := bestSatisfyingExtensionVersionForAzd(dep.Version, childMetadata, m.azdVersion)
 		if bestVersion == nil {
 			// If no published version matches, keep a compatible installed version.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
@@ -1363,7 +1386,7 @@ func (m *Manager) evaluateDependencyChanges(
 			}
 			var resultErr error
 			var suggestion string
-			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
+			publishedVersion := bestSatisfyingExtensionVersion(dep.Version, childMetadata)
 			if publishedVersion == nil {
 				versionErr := &DependencyVersionNotFoundError{
 					DependencyId: dep.Id,
@@ -1401,7 +1424,7 @@ func (m *Manager) evaluateDependencyChanges(
 
 		// Refuse to silently downgrade: a user (or sibling pack) may have moved the dependency
 		// past this pack's declared range deliberately.
-		if isDowngrade(installed.Version, bestVersion.Version) {
+		if IsExtensionVersionDowngrade(childMetadata, installed.Version, bestVersion.Version) {
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				// Installed is newer but still satisfies the constraint — keep it, no-op.
 				continue

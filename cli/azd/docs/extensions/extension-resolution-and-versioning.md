@@ -145,6 +145,33 @@ requiredVersions:
 
 When multiple versions satisfy the constraint, `azd` selects the **highest** matching version. For example, if versions `1.0.0`, `1.1.0`, and `1.2.0` are available and the constraint is `^1.0.0`, version `1.2.0` is installed.
 
+### Correcting a Historical Version Scheme
+
+Registry schema 1.1 adds `versionMigrations` for the exceptional case where released versions used a semantic version that accidentally sorts above the corrected release line. The metadata is declared on the extension, not in `azd` code:
+
+```json
+{
+  "id": "example.extension",
+  "versionMigrations": [
+    {
+      "from": "1.0.47-beta",
+      "to": "1.0.0-beta.1"
+    }
+  ],
+  "versions": [
+    {
+      "version": "1.0.0-beta.1"
+    }
+  ]
+}
+```
+
+This places the exact `from` version immediately before `to` for latest-version, update, downgrade-guard, and source-promotion comparisons. `to` and later semantic versions are therefore valid successors even when raw SemVer would rank `from` higher. The `from` version may be historical and absent from the current registry; `to` must be published by the same extension.
+
+Migration metadata does **not** change version constraint eligibility. Exact pins still select the pinned version, and ranges still apply normal SemVer prerelease rules before migration ordering chooses among eligible releases. Extensions without `versionMigrations` retain strict SemVer behavior.
+
+Registry validation requires `from` to have higher raw SemVer precedence than `to` and rejects malformed versions, duplicate `from` entries, unpublished `to` versions, self-migrations, and chained migrations. Use this mechanism only to repair an already-published ordering mistake; do not use it to avoid normal SemVer versioning.
+
 ## azd Version Compatibility
 
 ### `requiredAzdVersion` Field
@@ -428,6 +455,8 @@ Use pre-release suffixes for testing before a stable release:
 ```
 
 When `latest` is specified (or the version is omitted), `azd` selects the **highest semantic version**, which can be a pre-release if it sorts higher than the latest stable version. For semver range constraints in `azure.yaml`, pre-release versions are generally excluded unless the constraint itself explicitly includes a pre-release identifier.
+
+If a published prerelease used an incorrect scheme that blocks its corrected successor, add a validated [`versionMigrations`](#correcting-a-historical-version-scheme) entry in the registry publication change. Do not renumber a corrected prerelease solely to outrank the mistake.
 
 ## Troubleshooting
 

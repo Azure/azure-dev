@@ -38,6 +38,9 @@ type ArtifactRef struct {
 	DisplayName               string   `json:"displayName,omitempty"`
 	Categories                []string `json:"categories,omitempty"`
 	SupportedEvaluationLevels []string `json:"supportedEvaluationLevels,omitempty"`
+	// PreserveCatalogMetadata keeps authored keys when collection leaves an
+	// existing local artifact untouched. Missing metadata can still be recovered.
+	PreserveCatalogMetadata bool `json:"-"`
 }
 
 // Sample-count bounds enforced by the generation service.

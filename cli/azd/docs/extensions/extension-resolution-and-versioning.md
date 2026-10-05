@@ -225,6 +225,47 @@ replacement recovery, successful retry and rejection of a missing historical pin
 Its extension artifacts are local fixtures, not proof of public historical artifacts
 or official delivery of the candidate host.
 
+### Resolve an Exact Historical Pin from Its Authoritative Source
+
+An exact pin resolves only when the selected source's `versions[]` contains that
+version and its unchanged artifact is available for the requested platform.
+`versionMigrations` changes ordering; it does not supply missing version entries,
+artifact URLs or historical bytes.
+
+If an authoritative historical source retains the original entry and artifact,
+verify its immutable registry URL, registry checksum and artifact checksum first.
+Use a URL pinned to an actual commit or immutable release, not a moving branch.
+For an absent extension, register that source before a non-interactive install:
+
+```bash
+# Replace the placeholders with verified historical metadata and an exact version.
+azd extension source add -n historical-source -t url -l "<immutable-registry-url>" --no-prompt
+azd extension install <extension-id> --source historical-source --version <exact-version> --no-prompt
+azd extension list --installed --output json
+```
+
+The URL is a placeholder, not an Azure canonical registry or an approved feed.
+Direct installation from an unregistered URL can fail under `--no-prompt`;
+explicit source registration avoids silently accepting a new source during install.
+Verify the resulting installed version, selected source and binary checksum.
+
+This route was demonstrated for an absent evaluations extension in an isolated
+configuration using official azd 1.34.2 and genuine immutable personal-feed metadata
+for `1.0.47-beta`; the installed binary matched the protected historical bytes.
+That is a source-specific exact-pin example, not evidence that Azure's canonical
+registry contains that version, that dataset installation was exercised, or that
+an existing installation was migrated.
+
+For an existing installation, preserve its configuration, files and history, and
+honor replacement and source-change confirmations or non-interactive errors.
+Do not add `--force`, uninstall or reset state to bypass those decisions.
+Canonical Azure historical pins still require authoritative metadata in the
+applicable canonical source or an explicit source-policy disposition. This guide
+does not authorize registry changes, dataset normalization, GA policy or a new feed
+identity, and does not resolve the historical-pin tracking requirement by itself.
+Keep the [containing-host staging requirement](#stage-the-host-before-migrating-installed-extensions)
+separate from this historical-source route.
+
 ### Check Each Extension's Normalization Contract
 
 Migration ordering is scoped to one extension and one exact historical version.

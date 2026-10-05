@@ -257,16 +257,29 @@ Direct installation from an unregistered URL can fail under `--no-prompt`;
 explicit source registration avoids silently accepting a new source during install.
 Verify the resulting installed version, selected source and binary checksum.
 
-The command sequence above is illustrative guidance, not evidence of a completed
-historical installation. The evaluations `1.0.47-beta` identity is user-reported;
-no authoritative personal-feed registry record, artifact receipt or checksum set
-was retained for it, as clarified in the source qualification on
-[#10307](https://github.com/Azure/azure-dev/pull/10307). The canonical Azure registry
-also lacks that historical entry. Official `1.0.0-beta.1` metadata and bytes cannot
-substitute for the missing historical evidence. Exact-pin restoration remains
-blocked pending an authoritative feed-owner record. Neither a historical binary
-identity nor an existing-installation migration or recovery journey is established
-by these examples.
+The command sequence above is illustrative guidance, separate from the verified
+personal-source metadata and artifacts below. The immutable personal-feed
+[registry at commit `55c6030`](https://github.com/m7md7sien/azd-foundry-feed/blob/55c603038d48d7a88193d17c8c1f7ed50b77dde2/registry.json)
+contains an evaluations `1.0.47-beta` entry and matches SHA-256
+`6276596740a5d976d48cc144df3a5afbe697ec02c44c4b2fac6868458e078cdc`.
+Its Windows archive was independently downloaded and checked without execution:
+the archive matches the declared SHA-256
+`d98e2b9d5808bfe6cd75f335b941ce377ec4386fe77e6a881f1e8f614ac062ca`,
+and its executable member matches
+`a0301e37af02ac40c069d73151d3cab21aa02b9210c0c96d35d43bd1e1269c26`.
+These establish the published personal-source record and artifact identity, not
+an independently replayed historical install or an existing-installation migration.
+
+The [author's retained-evidence report](https://github.com/Azure/azure-dev/pull/10315#discussion_r4187977872)
+also describes an isolated official azd 1.34.2 install and matching installed binary.
+That report is distinct from the read-only registry/archive verification above;
+it was not independently replayed here. Neither establishes canonical Azure
+history, binary-to-source correspondence, dataset installation, live acceptance
+or an existing-installation recovery journey. Executable VCS or linker source
+binding has not been established. The canonical Azure registry still
+lacks the historical `1.0.47-beta` entry; official `1.0.0-beta.1` metadata and bytes
+cannot substitute for it. Canonical exact-pin restoration remains blocked pending
+authoritative metadata in that source or an explicit source-policy disposition.
 
 For an existing installation, preserve its configuration, files and history, and
 honor replacement and source-change confirmations or non-interactive errors.

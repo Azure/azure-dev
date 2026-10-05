@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,10 +14,153 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewCommandConsole_FormatsFollowUpToChildStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := &cobra.Command{Use: "azd"}
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+
+	child := &cobra.Command{Use: "package"}
+	root.AddCommand(child)
+
+	// the child command uses JSON output, but the root does not...
+	output.AddOutputParam(child, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
+	require.NoError(t, child.Flags().Set("output", "json"))
+
+	formatter, err := output.GetCommandFormatter(child)
+	require.NoError(t, err)
+	console := newCommandConsole(
+		&internal.GlobalCommandOptions{NoPrompt: true}, formatter, output.NewJsonEventWriter(""), child)
+	const followUp = "Install the required extension to continue."
+	console.Message(t.Context(), followUp)
+
+	require.Empty(t, stdout)
+	var event struct {
+		Type string `json:"type"`
+		Data struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(stderr.Bytes(), &event))
+	require.Equal(t, "consoleMessage", event.Type)
+	require.Equal(t, followUp+"\n", event.Data.Message)
+}
+
+func TestExecuteWithAutoInstall_FormatsHostFollowUpToChildStderr(t *testing.T) {
+	t.Chdir(t.TempDir())
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("AZD_FORCE_TTY", "false")
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("CI", "1")
+
+	registryPath := filepath.Join(configDir, "registry.json")
+	registry := `{"extensions":[{"id":"test.host","displayName":"Test Host","versions":[{"version":"1.0.0",
+"capabilities":["service-target-provider"],"providers":[{"name":"unsupported-host","type":"service-target"}]}]}]}`
+	require.NoError(t, os.WriteFile(registryPath, []byte(registry), 0o600))
+	config, err := json.Marshal(map[string]any{
+		"extension": map[string]any{
+			"sources": map[string]any{
+				"test": map[string]string{"name": "test", "type": "file", "location": registryPath},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"), config, 0o600))
+
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	os.Args = []string{"azd", "probe-host", "--output", "json", "--no-prompt"}
+
+	rootContainer := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(rootContainer, t.Context())
+	globalOpts := &internal.GlobalCommandOptions{NoPrompt: true}
+	ioc.RegisterInstance(rootContainer, globalOpts)
+	root := NewRootCmd(false, nil, rootContainer)
+	probe := &cobra.Command{
+		Use: "probe-host",
+		RunE: func(*cobra.Command, []string) error {
+			return &project.UnsupportedServiceHostError{Host: "unsupported-host", ServiceName: "api"}
+		},
+	}
+	output.AddOutputParam(probe, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
+	root.AddCommand(probe)
+	root.SetArgs(os.Args[1:])
+	root.SilenceErrors = true
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+
+	result := executeWithAutoInstallCommand(t.Context(), rootContainer, root, globalOpts, &ExecuteResult{})
+	require.ErrorContains(t, result.Err, "required extension installation needs manual action")
+	require.Empty(t, stdout)
+
+	const followUp = "Your project requires support for host 'unsupported-host'. " +
+		"Install the required extension to continue.\n"
+	followUpFound := false
+	for line := range bytes.SplitSeq(stderr.Bytes(), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Type string `json:"type"`
+			Data struct {
+				Message string `json:"message"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(line, &event), "follow-up output must be JSONL")
+		if event.Type == "consoleMessage" && event.Data.Message == followUp {
+			followUpFound = true
+		}
+	}
+	require.True(t, followUpFound, "service-host auto-install must use the child command's JSON console")
+}
+
+func TestExecuteWithAutoInstall_InvalidChildOutputReturnsFormatterError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("NO_COLOR", "1")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
+
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	os.Args = []string{"azd", "probe-host", "--output", "yaml"}
+
+	rootContainer := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(rootContainer, t.Context())
+	globalOpts := &internal.GlobalCommandOptions{NoPrompt: true}
+	ioc.RegisterInstance(rootContainer, globalOpts)
+	root := NewRootCmd(false, nil, rootContainer)
+	probe := &cobra.Command{
+		Use: "probe-host",
+		RunE: func(*cobra.Command, []string) error {
+			return &project.UnsupportedServiceHostError{Host: "unsupported-host", ServiceName: "api"}
+		},
+	}
+	output.AddOutputParam(probe, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
+	root.AddCommand(probe)
+	root.SetArgs(os.Args[1:])
+	root.SilenceErrors = true
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+
+	result := executeWithAutoInstallCommand(t.Context(), rootContainer, root, globalOpts, &ExecuteResult{})
+	require.ErrorContains(t, result.Err, "unsupported format 'yaml' for --output")
+	require.ErrorContains(t, result.Err, "unsupported-host")
+}
 
 func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T) {
 	originalArgs := os.Args

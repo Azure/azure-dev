@@ -330,23 +330,23 @@ func TestResponsesRemoteLatency(t *testing.T) {
 		`{"response":{"id":"resp_latency","status":"completed"}}` + "\n\n"
 
 	for _, tt := range []struct {
-		name        string
-		enabled     bool
-		raw         bool
-		longRunning bool
-		noWait      bool
-		httpError   bool
-		noMetrics   bool
+		name          string
+		enabled       bool
+		raw           bool
+		longRunning   bool
+		noWait        bool
+		httpError     bool
+		returnMetrics bool
 	}{
-		{name: "foreground", enabled: true},
+		{name: "foreground", enabled: true, returnMetrics: true},
 		{name: "disabled"},
-		{name: "raw", enabled: true, raw: true},
-		{name: "raw disabled", raw: true},
-		{name: "background", enabled: true, longRunning: true},
-		{name: "background no wait", enabled: true, longRunning: true, noWait: true},
+		{name: "raw", enabled: true, raw: true, returnMetrics: true},
+		{name: "raw disabled preserves server metrics", raw: true, returnMetrics: true},
+		{name: "background", enabled: true, longRunning: true, returnMetrics: true},
+		{name: "background no wait", enabled: true, longRunning: true, noWait: true, returnMetrics: true},
 		{name: "background no wait disabled", longRunning: true, noWait: true},
 		{name: "HTTP error", enabled: true, httpError: true},
-		{name: "missing metrics", enabled: true, noMetrics: true},
+		{name: "missing metrics", enabled: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -354,7 +354,11 @@ func TestResponsesRemoteLatency(t *testing.T) {
 				calls.Add(1)
 				assert.Equal(t, http.MethodPost, r.Method)
 				assert.Equal(t, "/agents/agent/endpoint/protocols/openai/responses", r.URL.Path)
-				assert.Equal(t, tt.enabled, r.Header.Get(invokeLatencyHeaderPrefix+"enabled") == "true")
+				if tt.enabled {
+					assert.Equal(t, "true", r.Header.Get(invokeLatencyHeaderPrefix+"enabled"))
+				} else {
+					assert.Empty(t, r.Header.Get(invokeLatencyHeaderPrefix+"enabled"))
+				}
 				var body map[string]any
 				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
 					return
@@ -364,7 +368,7 @@ func TestResponsesRemoteLatency(t *testing.T) {
 				assert.Equal(t, "sess_test", body["agent_session_id"])
 				assert.Equal(t, map[string]any{"id": "conv_test"}, body["conversation"])
 				assert.Equal(t, tt.longRunning, body["background"] == true)
-				if tt.enabled && !tt.noMetrics {
+				if tt.returnMetrics {
 					w.Header().Set(invokeLatencyHeaderPrefix+"session-start-type", "warm")
 					w.Header().Set(invokeLatencyHeaderPrefix+"platform-preprocessing-ms", "10")
 					w.Header().Set(invokeLatencyHeaderPrefix+"container-response-ms", "190")
@@ -412,7 +416,7 @@ func TestResponsesRemoteLatency(t *testing.T) {
 			assert.Equal(t, tt.enabled && !tt.raw && !tt.httpError, strings.Contains(output, "Platform latency"))
 			if tt.enabled && !tt.raw && !tt.httpError {
 				switch {
-				case tt.noMetrics:
+				case !tt.returnMetrics:
 					assert.Contains(t, output, "Platform latency: not returned by the service.")
 				case tt.longRunning:
 					assert.Contains(t, output, "Platform latency (warm, async; platform overhead only)")
@@ -425,7 +429,9 @@ func TestResponsesRemoteLatency(t *testing.T) {
 			}
 			if tt.raw {
 				assert.Contains(t, output, stream)
-				assert.Equal(t, tt.enabled, strings.Contains(output, "X-Ms-Debug-Latency-"))
+				assert.Equal(t, tt.returnMetrics, strings.Contains(output, "X-Ms-Debug-Latency-"))
+				assert.NotContains(t, output, "Client elapsed:")
+				assert.NotContains(t, output, "Platform latency")
 			}
 		})
 	}

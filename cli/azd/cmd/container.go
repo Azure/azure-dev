@@ -115,6 +115,59 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 	return instance, nil
 }
 
+// newCommandConsole lets you create a new command console targeted at a given instance of cobra.Command.
+// Useful if you need to ensure you use the same streams and console formatting as a command, from the
+// outside.
+func newCommandConsole(
+	rootOptions *internal.GlobalCommandOptions,
+	formatter output.Formatter,
+	eventWriter *output.JsonEventWriter,
+	cmd *cobra.Command,
+) input.Console {
+	writer := cmd.OutOrStdout()
+	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
+	if formatter != nil && formatter.Kind() == output.JsonFormat {
+		writer = cmd.ErrOrStderr()
+	}
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
+
+	stdout := output.NewJsonEventStreamWriter(cmd.OutOrStdout(), eventWriter, "stdout")
+	stderr := output.NewJsonEventStreamWriter(cmd.ErrOrStderr(), eventWriter, "stderr")
+
+	// Check for external prompt configuration from environment variables
+	var externalPromptCfg *input.ExternalPromptConfiguration
+	if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
+		if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
+			externalPromptCfg = &input.ExternalPromptConfiguration{
+				Endpoint:       endpoint,
+				Key:            key,
+				Transporter:    http.DefaultClient,
+				NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
+			}
+		}
+	}
+
+	return input.NewConsoleWithJsonEventWriter(
+		rootOptions.NoPrompt,
+		isTerminal,
+		input.Writers{Output: writer},
+		input.ConsoleHandles{
+			Stdin:  cmd.InOrStdin(),
+			Stdout: stdout,
+			Stderr: stderr,
+		},
+		formatter,
+		externalPromptCfg,
+		eventWriter,
+	)
+}
+
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
@@ -125,54 +178,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterTransient(output.GetCommandFormatter)
 	container.MustRegisterSingleton(output.NewJsonEventWriterFromEnv)
 
-	container.MustRegisterScoped(func(
-		rootOptions *internal.GlobalCommandOptions,
-		formatter output.Formatter,
-		eventWriter *output.JsonEventWriter,
-		cmd *cobra.Command) input.Console {
-		writer := cmd.OutOrStdout()
-		// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-		if formatter != nil && formatter.Kind() == output.JsonFormat {
-			writer = cmd.ErrOrStderr()
-		}
-
-		if os.Getenv("NO_COLOR") != "" {
-			writer = colorable.NewNonColorable(writer)
-		}
-
-		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
-
-		stdout := output.NewJsonEventStreamWriter(cmd.OutOrStdout(), eventWriter, "stdout")
-		stderr := output.NewJsonEventStreamWriter(cmd.ErrOrStderr(), eventWriter, "stderr")
-
-		// Check for external prompt configuration from environment variables
-		var externalPromptCfg *input.ExternalPromptConfiguration
-		if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
-			if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
-				externalPromptCfg = &input.ExternalPromptConfiguration{
-					Endpoint:       endpoint,
-					Key:            key,
-					Transporter:    http.DefaultClient,
-					NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
-				}
-			}
-		}
-
-		return input.NewConsoleWithJsonEventWriter(
-			rootOptions.NoPrompt,
-			isTerminal,
-			input.Writers{Output: writer},
-			input.ConsoleHandles{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: stdout,
-				Stderr: stderr,
-			},
-			formatter,
-			externalPromptCfg,
-			eventWriter,
-		)
-	})
+	container.MustRegisterScoped(newCommandConsole)
 
 	container.MustRegisterSingleton(
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
@@ -250,10 +256,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	// Scoped registration is required since the value of the azd context can change through the lifetime of a command
-	// Example: Within extensions multiple workflows can be dispatched which can cause the azd context to be updated.
-	// A specific example is within AI builder. It invokes `init` command when project is not found.
-	container.MustRegisterScoped(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	//
+	// Using Transient for the scope here is important - the underlying container will cache
+	// a failed result (nil), preventing Lazy from retrying and basically _never_ being
+	// updatable. We have explicit flows where the project isn't defined until after some
+	// code has run, which means each time we inject the AzdContext it MUST run
+	// GetValue() _each_ time.
+	container.MustRegisterTransient(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})
 
@@ -332,16 +341,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(serviceLocator ioc.ServiceLocator,
 			azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
-				azdCtx, err := azdContext.GetValue()
-				if err != nil {
+				if _, err := azdContext.GetValue(); err != nil {
 					return nil, err
 				}
 
-				// Register the Azd context instance as a singleton in the container if now available
-				ioc.RegisterInstance(container, azdCtx)
-
 				var envManager environment.Manager
-				err = serviceLocator.Resolve(&envManager)
+				err := serviceLocator.Resolve(&envManager)
 				if err != nil {
 					return nil, err
 				}

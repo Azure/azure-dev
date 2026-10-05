@@ -144,7 +144,9 @@ var DeployMode = fields.AttributeKey{
 Declarations form a shared first-party field schema and are not exclusive to
 the extension that introduced them. Another first-party extension may reuse an
 existing key when its meaning, allowed values, classification, and purpose are
-identical. If any of those differ, declare a distinct key.
+identical. If any of those differ, declare a distinct key. Prefer feature-scoped
+key suffixes (for example, `agent.invoke.protocol`) over generic ones like
+`protocol`, since a different extension may use the latter for unrelated values.
 
 The extension still sends the suffix:
 

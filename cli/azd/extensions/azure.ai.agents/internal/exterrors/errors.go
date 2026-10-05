@@ -119,6 +119,7 @@ func InternalFromError(err error, code, contextMessage string) error {
 	if err == nil {
 		return nil
 	}
+
 	if structured := structuredError(err); structured != nil {
 		return structured
 	}
@@ -126,6 +127,18 @@ func InternalFromError(err error, code, contextMessage string) error {
 		return Cancelled(fmt.Sprintf("%s was cancelled", contextMessage))
 	}
 	return Internal(code, fmt.Sprintf("%s: %s", contextMessage, err))
+}
+
+// ValidationFromError preserves an existing structured error and classifies
+// only plain errors as validation failures.
+func ValidationFromError(err error, code, contextMessage, suggestion string) error {
+	if err == nil {
+		return nil
+	}
+	if structured := structuredError(err); structured != nil {
+		return structured
+	}
+	return Validation(code, fmt.Sprintf("%s: %s", contextMessage, err), suggestion)
 }
 
 // ---------------------------------------------------------------------------

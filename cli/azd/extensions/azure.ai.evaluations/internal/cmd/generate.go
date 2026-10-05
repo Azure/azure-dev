@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -347,16 +344,26 @@ func (ec *evalContext) collectRubric(
 	}
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
+	ref := &project.ArtifactRef{
+		Name:    name,
+		Source:  relativeSource(baseDir, path),
+		Version: version,
+		// Recovered declarations need the same metadata even when the rubric
+		// was already collected and must be preserved for local edits.
+		DisplayName:               completed.ResultString("display_name"),
+		Categories:                completed.ResultStringList("categories"),
+		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
+	}
 	// A rubric is meant to be edited -- that is what the local file is for -- and
 	// `job show` is documented as safe to re-run while polling. Collecting again
 	// over an edited file made those two claims contradict each other.
 	if !replaceExisting && artifactAlreadyCollected(path) {
+		if _, err := evaluatorDocument(completed.Result); err != nil {
+			return nil, err
+		}
 		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
-		return &project.ArtifactRef{
-			Name:    name,
-			Source:  relativeSource(baseDir, path),
-			Version: version,
-		}, nil
+		ref.PreserveCatalogMetadata = true
+		return ref, nil
 	}
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
@@ -364,18 +371,7 @@ func (ec *evalContext) collectRubric(
 	fmt.Fprint(out, messages.WroteArtifact(path))
 	writeJobWarnings(out, "evaluator", completed, path)
 
-	return &project.ArtifactRef{
-		Name:    name,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Catalog metadata, preserved exactly as the service returned it. The
-		// declaration is what `azd up` republishes from, and a version published
-		// without these arrives with a blank catalog name and narrower level
-		// compatibility than the one before it.
-		DisplayName:               completed.ResultString("display_name"),
-		Categories:                completed.ResultStringList("categories"),
-		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
-	}, nil
+	return ref, nil
 }
 
 // writeJobWarnings reports what the service said about a job it completed.
@@ -702,121 +698,97 @@ func (ec *evalContext) pollGeneration(
 // writeRubric persists the rubric so the developer can edit weights and
 // descriptions and publish a new version.
 //
-// The definition is written through as it arrived rather than re-marshalled
-// from a struct. Re-marshalling keeps only the fields the struct models, and
-// dropped pass_threshold: the file then differed from the version that had just
-// been published, so the next deploy republished it, silently without a
-// threshold. Anything the service adds later would have been lost the same way.
+// Known service fields are omitted; unknown fields are preserved for future
+// authoring contracts. Raw JSON keeps numeric values from being rounded.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
+	}
+	body := result
+	var envelope struct {
+		Definition json.RawMessage `json:"definition"`
+	}
+	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
+		editable, err := editableRubric(envelope.Definition)
+		if err != nil {
+			return err
+		}
+		if editable != nil {
+			body = editable
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return messages.Creating(filepath.Dir(path), err)
 	}
 
-	var envelope struct {
-		Definition json.RawMessage `json:"definition"`
-	}
-	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
-		if editable, ok := editableRubric(envelope.Definition); ok {
-			return writeFileAtomic(path, editable)
-		}
-	}
-
-	// Fall back to the raw payload rather than losing the result.
-	return writeFileAtomic(path, result)
+	return writeFileAtomic(path, body)
 }
 
-// rubricOwnedByTheService names the keys a reader cannot usefully edit.
+// editableRubric removes known service fields without discarding unknown
+// authored fields. Catalog metadata and runtime schemas stay on the registered resource.
 //
-// init_parameters, metrics and data_schema are the service's description of how
-// the evaluator is wired, and prompt_text on a rubric is generated from the
-// dimensions rather than authored. Left in the file they outnumbered the
-// dimensions several times over, so the one thing this artifact exists to be
-// edited for was the hardest part of it to find.
-var rubricOwnedByTheService = []string{
-	"init_parameters", "initParameters",
-	"metrics",
-	"data_schema", "dataSchema",
-	"prompt_text", "promptText",
-}
-
-// editableRubric reduces a returned rubric to the part worth editing.
-//
-// It reports false for anything that is not a rubric, so a payload this does
-// not understand is written whole rather than filtered down to nothing: losing
-// a generated artifact is far worse than a wide one.
-func editableRubric(definition json.RawMessage) ([]byte, bool) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(definition, &fields); err != nil {
-		return nil, false
+// A nil result identifies another evaluator kind. A recognized malformed rubric
+// is an error, never permission to export the service envelope.
+func editableRubric(definition json.RawMessage) ([]byte, error) {
+	var kind struct {
+		Type       json.RawMessage `json:"type"`
+		Dimensions json.RawMessage `json:"dimensions"`
 	}
-	var probe struct {
-		Dimensions []json.RawMessage `json:"dimensions"`
+	if json.Unmarshal(definition, &kind) != nil {
+		return nil, nil
 	}
-	if json.Unmarshal(definition, &probe) != nil || len(probe.Dimensions) == 0 {
-		return nil, false
-	}
-	for _, key := range rubricOwnedByTheService {
-		delete(fields, key)
-	}
-
-	// Ordered, because this file is committed and read in diffs: Go ranges maps
-	// at random, so marshalling the map directly rewrote the whole rubric on
-	// every regeneration whether or not anything about it had changed.
-	pretty, err := json.MarshalIndent(orderedJSON(fields), "", "  ")
+	definitionKind, err := evaluatorDefinitionKind(kind.Type)
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
-	return append(pretty, '\n'), true
-}
+	if (definitionKind != "" && definitionKind != rubricDefinitionType) ||
+		(definitionKind == "" && len(kind.Dimensions) == 0) {
+		return nil, nil
+	}
+	var rubric map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &rubric); err != nil {
+		return nil, fmt.Errorf("reading rubric definition: %w", err)
+	}
+	rubric["type"] = json.RawMessage(`"rubric"`)
+	typed, err := json.Marshal(rubric)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
+	}
+	if _, err := validateRubricDefinition(typed); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
+	}
+	var dimensions []map[string]json.RawMessage
+	if err := json.Unmarshal(rubric["dimensions"], &dimensions); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: reading dimensions: %w", err)
+	}
+	if dimensions == nil {
+		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
+	}
+	for _, key := range []string{
+		"metadata", "created_at", "createdAt", "creator", "generation", "warnings",
+		"init_parameters", "initParameters", "metrics", "data_schema", "dataSchema", "prompt_text", "promptText",
+	} {
+		delete(rubric, key)
+		for _, dimension := range dimensions {
+			delete(dimension, key)
+		}
+	}
+	for _, key := range []string{
+		"id", "name", "version", "display_name", "description", "categories",
+		"supported_evaluation_levels", "agent_metadata",
+	} {
+		delete(rubric, key)
+	}
+	rubric["dimensions"], err = json.Marshal(dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric dimensions: %w", err)
+	}
 
-// orderedJSON marshals a decoded object with its keys in a fixed order.
-//
-// The rubric's own three come first, in the order someone reads them, and
-// anything the service adds later follows in sorted order rather than being
-// dropped.
-type orderedJSON map[string]json.RawMessage
-
-func (o orderedJSON) MarshalJSON() ([]byte, error) {
-	leading := []string{"type", "dimensions", "pass_threshold", "passThreshold"}
-	rest := make([]string, 0, len(o))
-	for key := range o {
-		if !slices.Contains(leading, key) {
-			rest = append(rest, key)
-		}
+	pretty, err := json.MarshalIndent(rubric, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
-	sort.Strings(rest)
-
-	var b bytes.Buffer
-	b.WriteByte('{')
-	first := true
-	write := func(key string) {
-		raw, ok := o[key]
-		if !ok {
-			return
-		}
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		name, err := json.Marshal(key)
-		if err != nil {
-			return
-		}
-		b.Write(name)
-		b.WriteByte(':')
-		b.Write(raw)
-	}
-	for _, key := range leading {
-		write(key)
-	}
-	for _, key := range rest {
-		write(key)
-	}
-	b.WriteByte('}')
-	return b.Bytes(), nil
+	return append(pretty, '\n'), nil
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

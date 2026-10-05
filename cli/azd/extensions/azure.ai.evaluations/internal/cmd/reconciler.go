@@ -349,7 +349,8 @@ func (r *evalReconciler) evalDigests(
 	return decided.digest, decided.definition, decided.recreate, nil
 }
 
-// EnsureDataset registers a new version only when the local content changed.
+// EnsureDataset registers a new version when local content changed or the
+// previously registered, unpinned version disappeared.
 //
 // The dataset API exposes no content hash, so comparing against the service
 // would mean downloading the blob on every deploy. Instead the local file is
@@ -371,6 +372,8 @@ func (r *evalReconciler) EnsureDataset(
 			if err != nil {
 				return "", false, err
 			}
+		} else if _, err := r.datasetReference(ctx, project.DatasetDecl{Name: decl.Name, Version: version}); err != nil {
+			return "", false, err
 		}
 
 		// Recorded so a run reads the version reconciliation settled on. Without
@@ -405,6 +408,12 @@ func (r *evalReconciler) EnsureDataset(
 		if selected.digest != digest || selected.pin != decl.Version {
 			return "", false, fmt.Errorf("dataset %q changed after validation; retry the command", decl.Name)
 		}
+		if selected.version != "" && decl.Version == "" {
+			selected.version, err = r.reusableDatasetVersion(ctx, decl.Name, selected.version)
+			if err != nil {
+				return "", false, err
+			}
+		}
 	} else {
 		selected.version, err = r.localDatasetReuse(ctx, decl, digest)
 		if err != nil {
@@ -413,11 +422,6 @@ func (r *evalReconciler) EnsureDataset(
 	}
 	if selected.version != "" {
 		if decl.Version == "" {
-			if validated {
-				if err := r.checkDatasetDrift(ctx, decl.Name, selected.version); err != nil {
-					return "", false, err
-				}
-			}
 			if err := r.applyDatasetTags(ctx, decl, selected.version); err != nil {
 				return "", false, err
 			}
@@ -455,10 +459,20 @@ func (r *evalReconciler) EnsureDataset(
 		return ds.Version, true, nil
 	}
 
-	// UploadNextVersion discovers the currently registered version when none is
-	// declared, so the upload does not restart at 1.0 and collide.
+	// Preserve the recorded version as a floor even when remote deletion or a
+	// lagging listing hides it. Never restart an existing publication history.
+	currentVersion := r.ec.privateValue(ctx, versionKey("dataset", decl.Name))
+	if currentVersion != "" {
+		latest, err := r.latestDatasetVersion(ctx, decl.Name)
+		if err != nil {
+			return "", false, err
+		}
+		if dataset_api.VersionGreater(latest, currentVersion) {
+			currentVersion = latest
+		}
+	}
 	ds, err := r.ec.datasetClient.UploadNextVersionTagged(
-		ctx, decl.Name, decl.Version, dir, decl.Tags, ProjectEndpointAPIVersion,
+		ctx, decl.Name, currentVersion, dir, decl.Tags, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return "", false, err
@@ -633,21 +647,6 @@ func (r *evalReconciler) checkDatasetDrift(
 		// The whole point of this check is to catch a version published behind
 		// our back. A listing we could not read is not evidence there was none.
 		return err
-	}
-	if latest == "" {
-		// An empty listing is not proof the recorded version is gone: it is
-		// equally what a listing that has not caught up reports, and what a
-		// project the state does not belong to reports. The point read settles
-		// it: only a successful read establishes that the version is usable.
-		if _, getErr := r.ec.datasetClient.GetDataset(
-			ctx, name, recorded, ProjectEndpointAPIVersion,
-		); getErr != nil {
-			if dataset_api.IsNotFound(getErr) {
-				return messages.DatasetVersionNotFoundWithHint(name, recorded)
-			}
-			return messages.ReadingDatasetVersion(name, recorded, getErr)
-		}
-		return nil
 	}
 	if latest == recorded {
 		return nil

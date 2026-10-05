@@ -178,21 +178,23 @@ func ListingSimulationModelConnections(err error) error {
 		"listing Foundry project connections for --simulation-model"), err)
 }
 
-// SimulationModelPrompt asks for a qualified simulator reference without guessing.
-func SimulationModelPrompt() string { return "Simulation model (connection-name/model-deployment)" }
+// SimulationModelPrompt asks for a simulator reference without guessing a connection.
+func SimulationModelPrompt() string {
+	return "Simulation model (model or connection-name/model-deployment)"
+}
 
 // SimulationModelHelp explains why the generation or judge model is not a default.
 func SimulationModelHelp() string {
-	return "Enter connection-name/model-deployment for the simulated user, independently of the generation " +
-		"model and --judge-model. This value is unverified until service validation."
+	return "Enter a model name or connection-name/model-deployment for the simulated user, " +
+		"independently of the generation model and --judge-model. This value is unverified until service validation."
 }
 
 // AmbiguousSimulationModel names the local references that need an explicit choice.
 func AmbiguousSimulationModel(models []string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		fmt.Sprintf("--simulation-model is ambiguous: "+
-			"multiple previously configured qualified bindings are available: %v", models),
-		"Supply --simulation-model connection-name/model-deployment, or run interactively to choose one.")
+			"multiple previously configured simulator references are available: %v", models),
+		"Supply --simulation-model model or connection-name/model-deployment, or run interactively to choose one.")
 }
 
 // SelectSimulationModelPrompt asks which authored reference to reuse.

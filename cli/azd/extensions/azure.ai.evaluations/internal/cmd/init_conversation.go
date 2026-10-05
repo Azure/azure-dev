@@ -174,6 +174,9 @@ func resolveSimulationModel(cmd *cobra.Command, explicit string, authored []stri
 }
 
 func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string, authored []string) (string, error) {
+	if err := commandContext(cmd).Err(); err != nil {
+		return "", err
+	}
 	model := strings.TrimSpace(explicit)
 	if model == "" && slices.ContainsFunc(authored, func(value string) bool {
 		return (&project.Simulation{Model: value}).Validate() == nil
@@ -187,6 +190,9 @@ func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string,
 	if model != "" {
 		if err := validateSimulationModel(model); err != nil {
 			return "", err
+		}
+		if !strings.Contains(model, "/") {
+			return model, nil
 		}
 		connections, err := a.modelConnectionCatalogue(cmd.Context())
 		if err != nil {
@@ -240,7 +246,8 @@ func readModelConnectionCatalogue(ctx context.Context) ([]eval_api.Connection, e
 func validateSimulationModel(model string) error {
 	if err := (&project.Simulation{Model: model}).Validate(); err != nil {
 		return exterrors.Validation(exterrors.CodeInvalidParameter, fmt.Sprintf("--simulation-model: %v", err),
-			"Use connection-name/model-deployment for the simulated user, independently of the judge and generation models.")
+			"Use a model name or connection-name/model-deployment for the simulated user, "+
+				"independently of the judge and generation models.")
 	}
 	return nil
 }

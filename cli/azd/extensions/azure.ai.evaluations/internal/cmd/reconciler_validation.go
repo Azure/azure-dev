@@ -283,10 +283,7 @@ func (r *evalReconciler) localDatasetReuse(ctx context.Context, decl project.Dat
 		return "", nil
 	}
 	if decl.Version == "" {
-		if err := r.checkDatasetDrift(ctx, decl.Name, recorded); err != nil {
-			return "", err
-		}
-		return recorded, nil
+		return r.reusableDatasetVersion(ctx, decl.Name, recorded)
 	}
 	_, err := r.ec.datasetClient.GetDataset(ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion)
 	if err == nil {
@@ -299,6 +296,20 @@ func (r *evalReconciler) localDatasetReuse(ctx context.Context, decl project.Dat
 		return "", messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
 	}
 	return "", messages.ReadingDatasetVersion(decl.Name, decl.Version, err)
+}
+
+// reusableDatasetVersion confirms the recorded version independently of a lagging listing.
+func (r *evalReconciler) reusableDatasetVersion(ctx context.Context, name, recorded string) (string, error) {
+	if err := r.checkDatasetDrift(ctx, name, recorded); err != nil {
+		return "", err
+	}
+	if _, err := r.ec.datasetClient.GetDataset(ctx, name, recorded, ProjectEndpointAPIVersion); err != nil {
+		if dataset_api.IsNotFound(err) {
+			return "", nil
+		}
+		return "", messages.ReadingDatasetVersion(name, recorded, err)
+	}
+	return recorded, nil
 }
 
 // validateDatasetInteractions checks primary inputs in the final mappings, not

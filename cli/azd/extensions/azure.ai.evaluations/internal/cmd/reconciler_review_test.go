@@ -296,7 +296,7 @@ func TestEvaluatorDriftPreflightPreservesReuseAndUnrecordedPublication(t *testin
 
 func TestUnpinnedLocalDatasetRequiresSuccessfulFallbackRead(t *testing.T) {
 	for _, caller := range []string{"create", "up"} {
-		for _, status := range []int{http.StatusForbidden, http.StatusGatewayTimeout, http.StatusNotFound} {
+		for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusGatewayTimeout} {
 			t.Run(caller+"/"+http.StatusText(status), func(t *testing.T) {
 				ec, env, service, cfg, dir := validationFixture(t)
 				digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
@@ -310,11 +310,7 @@ func TestUnpinnedLocalDatasetRequiresSuccessfulFallbackRead(t *testing.T) {
 
 				err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
 				require.Error(t, err)
-				if status == http.StatusNotFound {
-					assert.Contains(t, err.Error(), `no dataset "turn-tests" at version "1.0"`)
-				} else {
-					assert.Contains(t, err.Error(), fmt.Sprint(status))
-				}
+				assert.Contains(t, err.Error(), fmt.Sprint(status))
 				assert.Equal(t, []string{
 					"GET /datasets/turn-tests/versions",
 					"GET /datasets/turn-tests/versions/1.0",

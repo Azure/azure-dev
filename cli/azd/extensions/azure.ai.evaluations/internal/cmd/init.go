@@ -123,8 +123,9 @@ func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 			"Turn datasets invoke an agent when run. Conversation datasets can score completed " +
 			"messages (static), or simulate a user against an agent from scenario seeds (simulation).\n" +
 			"--conversation-mode implies --source dataset and --evaluation-level conversation when omitted. " +
-			"Simulation requires an independent connection-name/model-deployment. Init reuses qualified " +
-			"simulator references authored locally and validates their Azure OpenAI project connection, " +
+			"Simulation requires an independent model name or connection-name/model-deployment. " +
+			"Init reuses simulator references authored locally. Plain names are passed unchanged; " +
+			"qualified references validate their Azure OpenAI project connection, " +
 			"or discovers eligible connections for --simulation-model. " +
 			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
 			"Init validates locally available datasets as non-empty JSONL objects before creating " +
@@ -135,7 +136,7 @@ func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 			"use a unique filename to add it, or select the existing dataset by name. " +
 			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
 			"Init works offline except for a bounded, best-effort lookup of selected built-in evaluators " +
-			"and the required Foundry project connection lookup for simulation.\n\n" +
+			"and the Foundry project connection lookup for qualified simulation references or connection discovery.\n\n" +
 			"Output formats are default (human-readable) and json. Other formats are rejected before initialization.\n\n" +
 			"Dataset selections create catalog entries intended for publication. To evaluate local bytes without " +
 			"publishing a dataset, author a separate eval with source.type: local and source.file in the configuration.",
@@ -172,8 +173,9 @@ func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 		"Conversation dataset mode: static scores completed messages without a target; simulation uses scenario "+
 			"seeds and an agent target. Prompts for conversation datasets; defaults to static without prompts.")
 	cmd.Flags().StringVar(&flags.simulationModel, "simulation-model", "",
-		"Connection-name/model-deployment for the simulated user. Reuses qualified local bindings or discovers "+
-			"eligible Azure OpenAI project connections; independent of the generation and judge models.")
+		"Model name or connection-name/model-deployment for the simulated user. Plain names need no connection lookup; "+
+			"qualified references use eligible Azure OpenAI project connections. "+
+			"Independent of generation and judge models.")
 	cmd.Flags().IntVar(&flags.numConversations, "num-conversations", project.DefaultNumConversations,
 		fmt.Sprintf("Conversations per seed in simulation mode (%d-%d).",
 			project.MinNumConversations, project.MaxNumConversations))

@@ -380,7 +380,8 @@ func TestInitConversationHelpExplainsModeAndBounds(t *testing.T) {
 	assert.Contains(t, cmd.Flags().Lookup("num-conversations").Usage, "1-5")
 	assert.Contains(t, cmd.Flags().Lookup("max-turns").Usage, "1-20")
 	assert.Contains(t, cmd.Flags().Lookup("max-turns").Usage, "service default")
-	assert.Contains(t, cmd.Flags().Lookup("simulation-model").Usage, "Connection-name/model-deployment")
+	assert.Contains(t, cmd.Flags().Lookup("simulation-model").Usage, "Model name or connection-name/model-deployment")
+	assert.Contains(t, cmd.Flags().Lookup("simulation-model").Usage, "Plain names need no connection lookup")
 	assert.Contains(t, cmd.Long, "--output json")
 	assert.Contains(t, cmd.Long, "best-effort")
 }
@@ -452,9 +453,9 @@ func TestInitSimulationRefusesKnownIncompatibleEvaluatorBeforeWriting(t *testing
 	}
 }
 
-func TestInitSimulationRejectsUnqualifiedModelBeforeWrites(t *testing.T) {
+func TestInitSimulationRejectsMalformedModelBeforeWrites(t *testing.T) {
 	for _, model := range []string{
-		"simulator", "/simulator", "connection/", "connection/model/extra", "connection/my model",
+		"/simulator", "connection/", "connection/model/extra", "connection/my model", "two words",
 	} {
 		t.Run(model, func(t *testing.T) {
 			h := newInitHarness(t, nil)

@@ -219,8 +219,8 @@
         "model": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^[^/\\s]+/[^/\\s]+$",
-          "description": "Connection-qualified deployment (connection-name/model-deployment) the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
+          "pattern": "^[^/\\s]+(?:/[^/\\s]+)?$",
+          "description": "Plain model name or connection-qualified deployment (connection-name/model-deployment) the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
         },
         "num_conversations": {
           "type": "integer",

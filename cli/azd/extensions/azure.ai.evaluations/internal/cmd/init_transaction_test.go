@@ -29,6 +29,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func (s *initProjectServer) setAddServiceHandler(handler func(context.Context, *azdext.AddServiceRequest) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onAddService = handler
+}
+
+func (s *initProjectServer) setSaveFailureAcknowledgement(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ackSaveError = enabled
+}
+
 func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 	for _, rootFilename := range []string{"azure.yaml", "azure.yml"} {
 		t.Run(rootFilename, func(t *testing.T) {

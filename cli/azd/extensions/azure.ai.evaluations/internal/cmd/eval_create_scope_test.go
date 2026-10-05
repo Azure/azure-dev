@@ -134,3 +134,39 @@ func TestEvalCreateHistoryIsImmutableAcrossConfigurations(t *testing.T) {
 	}
 	assert.Equal(t, 2, len(service.created), "no configuration ever forces a recreation of the other's eval")
 }
+
+// Two configurations that declare the same eval name but differ in an
+// ordinary immutable field (here, evaluation level, not the local file
+// content the two tests above exercise) must each keep their own identity
+// digest baseline. Scoping only the id and local-request fingerprint left the
+// definition baseline itself keyed unscoped: the second configuration's
+// create overwrote the first's recorded baseline, so redeploying the first
+// afterward read the second's baseline back, saw its own declaration as
+// "changed", and recreated an eval that never actually changed. ADO root
+// comment 4188353666.
+func TestEvalCreateDefinitionBaselineIsScopedAcrossConfigurations(t *testing.T) {
+	ec, env, service, cfgA, cfgB, pathA, pathB := twoConfigFixture(t)
+	// An ordinary immutable field, not excluded from the digest like name or
+	// description, so the two configurations' declarations hash differently.
+	cfgB.Evals[0].EvaluationLevel = project.EvaluationLevelTurn
+
+	idA := createLocal(t, ec, env, cfgA, pathA)
+	idB := createLocal(t, ec, env, cfgB, pathB)
+	require.NotEmpty(t, idA)
+	require.NotEmpty(t, idB)
+	assert.NotEqual(t, idA, idB)
+	require.Equal(t, 2, len(service.created))
+
+	// Redeploying either configuration afterward, alternating with the other,
+	// must stay a no-op against its own history: the other configuration's
+	// deploy must not have overwritten the definition baseline this one's
+	// `decide` compares its own declaration against.
+	for range 3 {
+		assert.Equal(t, idA, createLocal(t, ec, env, cfgA, pathA),
+			"configuration A's id and history must survive configuration B's deploys despite differing evaluation levels")
+		assert.Equal(t, idB, createLocal(t, ec, env, cfgB, pathB),
+			"configuration B's id and history must survive configuration A's deploys despite differing evaluation levels")
+	}
+	assert.Equal(t, 2, len(service.created),
+		"neither configuration's definition baseline is overwritten by the other's, so neither is ever recreated")
+}

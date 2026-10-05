@@ -79,6 +79,11 @@ func ValidateRunnable(eval *Eval) error {
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsResponseIDs()
 			}
+			for i, id := range eval.Source.ResponseIDs {
+				if strings.TrimSpace(id) == "" {
+					return messages.ResponsesSourceBlankResponseID(i)
+				}
+			}
 		case SourceTypeLocal:
 			if strings.TrimSpace(eval.Source.File) == "" || strings.Contains(eval.Source.File, "://") {
 				return messages.LocalSourceNeedsFile()

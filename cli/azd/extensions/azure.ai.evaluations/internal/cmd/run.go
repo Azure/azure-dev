@@ -110,8 +110,9 @@ type runStartFlags struct {
 
 // runStartAction starts a run and, unless asked not to, waits for its verdict.
 type runStartAction struct {
-	cmd   *cobra.Command
-	flags *runStartFlags
+	cmd        *cobra.Command
+	flags      *runStartFlags
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 func buildRunCommand(use, short string) *cobra.Command {
@@ -180,7 +181,11 @@ func (a *runStartAction) Run() error {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
 	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	newContext := a.newContext
+	if newContext == nil {
+		newContext = newEvalContext
+	}
+	ec, err := newContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -249,6 +254,24 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	}
 	if err != nil {
 		return err
+	}
+
+	if ref.Eval == nil || (ref.Eval.Source != nil && !ref.Eval.IsLocalSource()) {
+		// A bare-ID rerun carries no declaration of its own, so the remote
+		// eval's actual schema is the only contract available -- always
+		// reconciled, even when the reused source turns out to be a plain
+		// dataset, so a rerun never silently submits data the eval does not
+		// accept. A declared eval instead answers from what it says: a
+		// responses/traces Source needs reconciling against the remote eval
+		// (checked here on the declaration, not on the data source a dataset
+		// override may have reconstructed, since the override replaces what
+		// is submitted but not what the eval itself contractually expects).
+		// A local Source already got a full item_schema check from
+		// localRunValidator's own GetOpenAIEval, and a plain dataset eval
+		// (no Source at all) carries no responses/traces contract to check.
+		if err := ec.validateResponsesRun(ctx, evalID, dataSource, ref.Declared()); err != nil {
+			return err
+		}
 	}
 
 	// Local, so a default name is derived per invocation rather than
@@ -712,6 +735,9 @@ func (ec *evalContext) buildRunDataSource(
 		case project.SourceTypeTraces:
 			ds, err = tracesDataSource(group)
 		default:
+			if maxSamples > 0 {
+				return nil, "", messages.SourceSampleConflict(group.Name)
+			}
 			ds, err = responsesDataSource(group)
 		}
 		return ds, "", err
@@ -1141,8 +1167,8 @@ func resolveLevel(group *project.Eval) string {
 	return ""
 }
 
-// resolveMaxSamples prefers the flag, then the eval's own declaration, matching
-// how the evaluation level resolves.
+// resolveMaxSamples prefers a positive flag value, then the declared cap.
+// runMaxSamples separately handles an explicitly supplied zero.
 //
 // Without this, max_samples parsed and did nothing: an eval that caps its
 // sample count in config would send the whole dataset, and only a flag on every

@@ -24,9 +24,17 @@ import (
 )
 
 func TestPublishedEvaluatorContractUsesExactReconciledVersion(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
+	for _, mode := range []struct {
+		caller     string
+		sourceType string
+	}{
+		{"create", project.SourceTypeTraces},
+		{"up", project.SourceTypeTraces},
+		{"create", project.SourceTypeResponses},
+		{"up", project.SourceTypeResponses},
+	} {
 		for _, failure := range []string{"", "unavailable", "malformed"} {
-			t.Run(caller+"/"+failure, func(t *testing.T) {
+			t.Run(mode.caller+"/"+mode.sourceType+"/"+failure, func(t *testing.T) {
 				var mu sync.Mutex
 				version := "1"
 				publishes, pointReads, evalCreates := 0, 0, 0
@@ -67,6 +75,7 @@ func TestPublishedEvaluatorContractUsesExactReconciledVersion(t *testing.T) {
 							assert.NoError(t, err)
 						}
 					case r.Method == http.MethodPost && r.URL.Path == "/openai/v1/evals":
+						assert.GreaterOrEqual(t, pointReads, 2, "read the settled contract before eval creation")
 						evalCreates++
 						assert.NoError(t, json.NewDecoder(r.Body).Decode(&created))
 						assert.NoError(t, json.NewEncoder(w).Encode(eval_api.OpenAIEval{
@@ -92,19 +101,25 @@ func TestPublishedEvaluatorContractUsesExactReconciledVersion(t *testing.T) {
 				dir := t.TempDir()
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "custom.json"),
 					[]byte(`{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`), 0o600))
+				source := &project.SourceDecl{Type: mode.sourceType, AgentName: "agent"}
+				if mode.sourceType == project.SourceTypeResponses {
+					source = &project.SourceDecl{
+						Type: project.SourceTypeResponses, ResponseIDs: []string{"resp_fixed"}, MaxTurns: 1,
+					}
+				}
 				cfg := &project.EvalConfig{
 					Evaluators: []project.EvaluatorDecl{{
 						Name: "custom", Source: "custom.json", SupportedEvaluationLevels: []string{"conversation"},
 					}},
 					Evals: []project.Eval{{
-						Name: "quality", Source: &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent"},
+						Name: "quality", Source: source,
 						EvaluationLevel: project.EvaluationLevelConversation,
 						Evaluators: evalcore.EvaluatorList{{
 							Evaluator: "custom", InitializationParameters: map[string]any{"model": "judge"},
 						}},
 					}},
 				}
-				err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
+				err = reconcileArtifactConfig(t, mode.caller, ec, cfg, dir)
 				if failure == "" {
 					require.NoError(t, err)
 					require.Equal(t, 1, evalCreates)
@@ -112,6 +127,12 @@ func TestPublishedEvaluatorContractUsesExactReconciledVersion(t *testing.T) {
 					assert.Equal(t, "judge", created.TestingCriteria[0].InitializationParameters["model"])
 					assert.NotContains(t, created.TestingCriteria[0].InitializationParameters, "deployment_name")
 					assert.Empty(t, created.TestingCriteria[0].EvaluatorVersion, "resolved versions are not authored pins")
+					assert.Equal(t, "{{item.messages}}", created.TestingCriteria[0].DataMapping["messages"])
+					if mode.sourceType == project.SourceTypeResponses {
+						require.NotNil(t, created.DataSourceConfig)
+						assert.Equal(t, "azure_ai_source", created.DataSourceConfig.Type)
+						assert.Equal(t, "responses", created.DataSourceConfig.Scenario)
+					}
 				} else {
 					require.Error(t, err)
 					assert.Zero(t, evalCreates, "a failed exact-version read must not fall back to the stale contract")

@@ -181,6 +181,7 @@
           "then": { "properties": { "source": false } }
         },
         {
+          "$comment": "Positive caps are refused for explicit trace/response sources. A bare $ref is left alone here: it may resolve to a local source, which does allow a cap, and only the resolved runtime declaration can tell which one it is -- the schema flagging every $ref blind would reject valid local files it never opened.",
           "if": {
             "required": ["source"],
             "properties": {
@@ -301,6 +302,23 @@
             }
           },
           "else": { "properties": { "file": false } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "responses" } }, "required": ["type"] },
+          "then": {
+            "required": ["response_ids"],
+            "properties": {
+              "response_ids": {
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "$comment": "Match strings.TrimSpace, including Unicode whitespace.",
+                  "pattern": "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"
+                }
+              }
+            }
+          }
         }
       ]
     },

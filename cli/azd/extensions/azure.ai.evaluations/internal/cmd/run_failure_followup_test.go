@@ -147,6 +147,8 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
+						case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_resolved":
+							_, _ = io.WriteString(w, `{"id":"eval_resolved","data_source_config":{"type":"custom"}}`)
 						case strings.HasSuffix(r.URL.Path, "/output_items"):
 							outputRequests++
 							w.WriteHeader(http.StatusNotFound)
@@ -282,6 +284,8 @@ func TestCompletedConversationWithErroredRowOffersExplicitFilterAtCallSites(t *t
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					switch {
+					case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_resolved":
+						_, _ = io.WriteString(w, `{"id":"eval_resolved","data_source_config":{"type":"custom"}}`)
 					case strings.HasSuffix(r.URL.Path, "/output_items"):
 						_, _ = io.WriteString(w, `{"data":[{"id":"1","run_id":"run_completed","status":"completed",
 							"results":[{"name":"quality","status":"errored","score":null,"passed":null}]}]}`)

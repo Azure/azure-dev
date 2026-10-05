@@ -166,6 +166,28 @@ func TestTheScopeIsTheSameOnBothSidesOfThePath(t *testing.T) {
 	assert.Empty(t, project.EvalScope(root, ""), "nothing to identify")
 }
 
+// A relative `--path`/`--from-file` is taken as typed, not resolved against
+// the project root first -- so the path handed to EvalScope can be relative
+// while the root (normally reported absolute by azd) is not. filepath.Rel
+// refuses to mix an absolute base with a relative target and used to fall
+// through to the raw, uncanonicalized path: the same configuration then
+// scoped differently depending on whether it was named by a bare config name
+// (resolved to an absolute path upstream) or an explicit relative flag,
+// stranding ids recorded under one spelling from lookups under the other.
+func TestEvalScopeCanonicalizesARelativeConfigPathAgainstAnAbsoluteRoot(t *testing.T) {
+	root := t.TempDir()
+	absoluteConfig := filepath.Join(root, "evals", "azure.eval.yaml")
+
+	t.Chdir(root)
+	relativeConfig := filepath.Join("evals", "azure.eval.yaml")
+
+	require.Equal(t,
+		project.EvalScope(root, absoluteConfig),
+		project.EvalScope(root, relativeConfig),
+		"the same file must scope the same whether named absolutely or relatively")
+	assert.Equal(t, "evals/azure.eval.yaml", project.EvalScope(root, relativeConfig))
+}
+
 // Case is the filesystem's business. Folding it everywhere made two files on
 // Linux -- `evals/A/...` and `evals/a/...` -- one scope, so each would read and
 // overwrite the other's recorded ids: the collision this whole mechanism exists

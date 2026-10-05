@@ -448,11 +448,9 @@ func FingerprintGroup(group Eval) (string, error) {
 
 // FingerprintDefinition hashes only what the service stores.
 //
-// max_samples and source: are applied per run, not at creation --
-// CreateOpenAIEvalRequest carries neither and buildEvalRequest reads neither.
-// Recreating the eval when one of them changes points the declaration at a new
-// id and leaves every run taken before it reachable only through the old one,
-// for an edit the stored eval cannot even express.
+// max_samples and source filters are applied per run. The source type affects
+// the immutable mappings and data source configuration, so it remains part of
+// the definition while windows, response IDs and other filters do not.
 //
 // Kept separate from FingerprintGroup rather than folded into it, because that
 // digest also answers "which eval was this declaration before it was renamed".
@@ -466,7 +464,9 @@ func FingerprintGroup(group Eval) (string, error) {
 // conservative direction: the other way silently merges two.
 func FingerprintDefinition(group Eval) (string, error) {
 	group.MaxSamples = 0
-	group.Source = nil
+	if group.Source != nil {
+		group.Source = &SourceDecl{Type: group.Source.Type}
+	}
 	// Simulation settings are sent in the run's data source, not stored on the
 	// eval, so changing a model or a turn count would otherwise recreate an
 	// immutable eval and leave its earlier runs reachable only through the old

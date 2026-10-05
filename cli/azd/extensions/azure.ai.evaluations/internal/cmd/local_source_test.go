@@ -361,11 +361,12 @@ func TestExplicitLocalIDRerunUsesSnapshotNotFile(t *testing.T) {
 	out, err := startLocalSource(t, ec, dir, "eval_local", nil)
 	require.NoError(t, err)
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 2)
+	require.Len(t, recorded, 3, "a bare-ID rerun also reconciles the remote eval's schema before submitting")
 	assert.Equal(t, "/openai/v1/evals/eval_local/runs", recorded[0].path)
+	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[1].path)
 	var before, after eval_api.CreateOpenAIEvalRunRequest
 	require.NoError(t, json.Unmarshal(first[1].body, &before))
-	require.NoError(t, json.Unmarshal(recorded[1].body, &after))
+	require.NoError(t, json.Unmarshal(recorded[2].body, &after))
 	assert.Equal(t, before.DataSource, after.DataSource)
 	assert.NotContains(t, after.Metadata, metaDataset)
 	assert.NotContains(t, after.Metadata, metaDatasetVersion)
@@ -387,8 +388,8 @@ func TestExplicitLocalNumbersRetainPrecision(t *testing.T) {
 	_, err = startLocalSource(t, ec, dir, "eval_local", nil)
 	require.NoError(t, err)
 	recorded = recordedIdentityRequests(requests)
-	require.Len(t, recorded, 2)
-	assert.Contains(t, string(recorded[1].body), `"id":9007199254740993`)
+	require.Len(t, recorded, 3, "a bare-ID rerun also reconciles the remote eval's schema before submitting")
+	assert.Contains(t, string(recorded[2].body), `"id":9007199254740993`)
 }
 
 func TestExplicitLocalCreateUsesAllRowsAndNeverPublishesDataset(t *testing.T) {

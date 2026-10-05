@@ -231,12 +231,22 @@ jobs:
         env:
           AZD_CONFIG_DIR: ${{ runner.temp }}/azd-config
           AZURE_AI_PROJECT_ENDPOINT: ${{ secrets.AZURE_AI_PROJECT_ENDPOINT }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $false
 
-          if ([string]::IsNullOrWhiteSpace($env:AZURE_AI_PROJECT_ENDPOINT)) {
-            throw "The protected environment is missing AZURE_AI_PROJECT_ENDPOINT."
+          foreach ($name in @(
+            "AZURE_AI_PROJECT_ENDPOINT",
+            "AZURE_LOCATION",
+            "AZURE_RESOURCE_GROUP",
+            "AZURE_SUBSCRIPTION_ID"
+          )) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "The protected environment is missing required Azure configuration."
+            }
           }
 
           $project = Join-Path $env:RUNNER_TEMP "scenario-5-project"

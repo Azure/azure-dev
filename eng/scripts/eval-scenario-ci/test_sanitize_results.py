@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sanitize_results import EXPECTED_FIXTURE, EvidenceError, build_evidence, write_evidence
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
 
 def completed_summary(*, passed: int, failed: int, errored: int = 0) -> dict:
     return {
@@ -176,6 +178,54 @@ class WriteEvidenceTests(unittest.TestCase):
 
             with self.assertRaises(EvidenceError):
                 write_evidence(summary_path, export_path, fixture_path, output_path)
+
+
+class WorkflowContractTests(unittest.TestCase):
+    def test_live_job_passes_required_azd_environment_inputs(self) -> None:
+        workflow = (
+            REPOSITORY_ROOT / ".github" / "workflows" / "eval-scenario-ci.yml"
+        ).read_text(encoding="utf-8")
+
+        for expected in (
+            "AZURE_AI_PROJECT_ENDPOINT: ${{ secrets.AZURE_AI_PROJECT_ENDPOINT }}",
+            "AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}",
+            "AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}",
+            "AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+            '"AZURE_AI_PROJECT_ENDPOINT",',
+            '"AZURE_LOCATION",',
+            '"AZURE_RESOURCE_GROUP",',
+            '"AZURE_SUBSCRIPTION_ID"',
+        ):
+            self.assertIn(expected, workflow)
+
+    def test_fixture_contains_only_the_inert_reconciliation_marker(self) -> None:
+        marker = (
+            REPOSITORY_ROOT
+            / "eng"
+            / "scripts"
+            / "eval-scenario-ci"
+            / "fixture"
+            / "infra"
+            / "main.bicep"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(
+            marker,
+            """targetScope = 'resourceGroup'
+
+resource reconciliationMarker 'Microsoft.Resources/deployments@2022-09-01' = {
+  name: 'azd-eval-hero-reconciliation'
+  properties: {
+    mode: 'Incremental'
+    template: {
+      '$schema': 'https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#'
+      contentVersion: '1.0.0.0'
+      resources: []
+    }
+  }
+}
+""",
+        )
 
 
 if __name__ == "__main__":

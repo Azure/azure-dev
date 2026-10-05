@@ -189,6 +189,19 @@ func TestNewWatcher_CanceledContextReturnsNilWatcher(t *testing.T) {
 	require.Nil(t, watcher)
 }
 
+func TestNewWatcher_IgnoreLoadFailureClosesBackend(t *testing.T) {
+	fw, backend := startupFixture(t)
+	require.NoError(t, os.Mkdir(filepath.Join(fw.root, ".azdxignore"), 0700))
+	backend.add = func(string) error {
+		t.Error("ignore load failure must not register watches")
+		return nil
+	}
+	watcher, err := newFileWatcher(t.Context(), fw.root, backend, backend.events, backend.errors)
+	require.ErrorContains(t, err, "failed to load ignore patterns")
+	require.Nil(t, watcher)
+	waitStartupExit(t, backend.closed)
+}
+
 func TestNewWatcher_DiscoversFilesCreatedDuringRegistration(t *testing.T) {
 	fw, backend := startupFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())

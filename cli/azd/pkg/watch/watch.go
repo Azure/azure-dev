@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,15 +32,15 @@ type Watcher interface {
 
 type fileWatcher struct {
 	fileChanges     *fileChanges
-	watcher         watchBackend
 	ignoredFolders  map[string]struct{}
 	globIgnorePaths []string
 	ignoreMatcher   *ignore.Matcher
 	root            string
 	// initialFiles is fixed at startup, not extended by transient paths.
 	initialFiles map[string]struct{}
-	mu           sync.Mutex
-	done         chan struct{}
+	// mu protects fileChanges. initialFiles is immutable once event consumption starts.
+	mu   sync.Mutex
+	done chan struct{}
 }
 
 type watchBackend interface {
@@ -50,6 +52,45 @@ type fileChanges struct {
 	Created  map[string]bool
 	Modified map[string]bool
 	Deleted  map[string]bool
+}
+
+// directoryQueue retains only pending discoveries, coalescing overlapping subtrees.
+// It never blocks the event consumer on backend registration.
+type directoryQueue struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+	ready   chan struct{}
+}
+
+func pathWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func (q *directoryQueue) add(path string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for pending := range q.pending {
+		if pathWithin(pending, path) {
+			return
+		}
+		if pathWithin(path, pending) {
+			delete(q.pending, pending)
+		}
+	}
+	q.pending[path] = struct{}{}
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
+}
+
+func (q *directoryQueue) take() []string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	paths := slices.Sorted(maps.Keys(q.pending))
+	q.pending = make(map[string]struct{})
+	return paths
 }
 
 func NewWatcher(ctx context.Context) (Watcher, error) {
@@ -101,7 +142,6 @@ func newFileWatcher(
 
 	fw := &fileWatcher{
 		fileChanges:     fileChanges,
-		watcher:         watcher,
 		ignoredFolders:  ignoredFolders,
 		globIgnorePaths: globIgnorePaths,
 		ignoreMatcher:   ignoreMatcher,
@@ -134,7 +174,7 @@ func (fw *fileWatcher) start(
 	// A single registration owner serializes Add and Close. The consumer keeps
 	// draining until that owner finishes its pending Add and closes the backend:
 	// Windows Close can otherwise abandon an Add reply or race another Close.
-	rescan := make(chan struct{}, 1)
+	directories := &directoryQueue{pending: make(map[string]struct{}), ready: make(chan struct{}, 1)}
 	registered := make(chan error, 1)
 	backendDone := make(chan struct{})
 	consumerDone := make(chan struct{})
@@ -188,13 +228,10 @@ func (fw *fileWatcher) start(
 				}
 
 				if event.Has(fsnotify.Create) && isDir {
-					// Coalesce directory discoveries into one root rescan, not a
-					// per-path queue or synchronous Add on the event consumer.
+					// Register only the discovered subtree; unrelated established
+					// directories must not be traversed again.
 					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-						select {
-						case rescan <- struct{}{}:
-						default:
-						}
+						directories.add(name)
 					}
 				} else if !isDir {
 					fw.mu.Lock()
@@ -234,9 +271,19 @@ func (fw *fileWatcher) start(
 			select {
 			case <-watchCtx.Done():
 				return
-			case <-rescan:
-				if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil && watchCtx.Err() == nil {
-					log.Printf("failed to update directory watches for %s: %v", fw.root, err)
+			case <-directories.ready:
+				for _, path := range directories.take() {
+					if watchCtx.Err() != nil {
+						return
+					}
+					if err := fw.watchRecursive(watchCtx, path, watcher); err != nil && watchCtx.Err() == nil {
+						if _, statErr := os.Lstat(path); errors.Is(err, os.ErrNotExist) &&
+							errors.Is(statErr, os.ErrNotExist) {
+							log.Printf("debug: directory disappeared before watch registration %s", path)
+						} else {
+							log.Printf("failed to update directory watches for %s: %v", path, err)
+						}
+					}
 				}
 			}
 		}
@@ -262,6 +309,15 @@ func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
 		}
 	case event.Has(fsnotify.Remove):
 		if fw.fileChanges.Created[name] {
+			// A queued removal of an earlier generation must not clear a live
+			// replacement at the same path. Snapshot reconciliation uses the
+			// same current-path contract, not inode-level event attribution.
+			if info, err := os.Lstat(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Printf("debug: failed to verify removed file %s: %v", name, err)
+				return
+			} else if err == nil && !info.IsDir() {
+				return
+			}
 			delete(fw.fileChanges.Created, name)
 		} else if existed {
 			fw.fileChanges.Deleted[name] = true
@@ -342,6 +398,10 @@ func (fw *fileWatcher) watchRecursive(ctx context.Context, root string, watcher 
 }
 
 func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
+	fw.printChangedFiles(os.Stdout)
+}
+
+func (fw *fileWatcher) printChangedFiles(writer io.Writer) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 	createdFiles := fw.existingCreatedFilesLocked()
@@ -354,7 +414,7 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 		return
 	}
 
-	fmt.Println(output.WithGrayFormat("\n| Files changed:"))
+	fmt.Fprintln(writer, output.WithGrayFormat("\n| Files changed:"))
 
 	cwd, err := os.Getwd()
 	getDisplayPath := func(file string) string {
@@ -370,19 +430,19 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 
 	if createdFileLength > 0 {
 		for _, file := range createdFiles {
-			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created  "), getDisplayPath(file))
+			fmt.Fprintln(writer, output.WithGrayFormat("| "), color.GreenString("+ Created  "), getDisplayPath(file))
 		}
 	}
 
 	if modifiedFileLength > 0 {
-		for file := range fw.fileChanges.Modified {
-			fmt.Println(output.WithGrayFormat("| "), color.YellowString("± Modified "), getDisplayPath(file))
+		for _, file := range slices.Sorted(maps.Keys(fw.fileChanges.Modified)) {
+			fmt.Fprintln(writer, output.WithGrayFormat("| "), color.YellowString("± Modified "), getDisplayPath(file))
 		}
 	}
 
 	if deletedFileLength > 0 {
-		for file := range fw.fileChanges.Deleted {
-			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
+		for _, file := range slices.Sorted(maps.Keys(fw.fileChanges.Deleted)) {
+			fmt.Fprintln(writer, output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
 }
@@ -480,6 +540,7 @@ func (fw *fileWatcher) existingCreatedFilesLocked() []string {
 		}
 		fw.fileChanges.Created = retained
 	}
+	slices.Sort(files)
 	return files
 }
 

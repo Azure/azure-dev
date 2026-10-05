@@ -261,6 +261,44 @@ both attempt initialization; the lock ensures only one succeeds.
 
 ---
 
+## `pkg/watch.fileWatcher`
+
+The watcher has one backend-registration owner and one event consumer. Only the
+registration owner calls backend `Add` and `Close`. The consumer starts before
+initial registration and keeps draining events during cancellation until pending
+registration finishes and the owner closes the backend. This avoids abandoning
+native Windows backend replies or deadlocking on a full backend event buffer.
+
+Directory create events enqueue only the newly discovered subtree. Pending
+ancestor/descendant discoveries are deduplicated under `directoryQueue.mu`;
+the one-slot notification channel never blocks the consumer. The owner drains pending
+paths and registers them outside that lock. Established, unrelated trees are not
+walked again for a continuous stream of new directories.
+
+`fileWatcher.mu` protects all reads and writes to `fileChanges`, including
+snapshot reconciliation. `initialFiles` is populated before event consumption
+and remains immutable: it stores startup file-path provenance, not transient
+paths or per-file generation identifiers.
+
+**Snapshot contract**: Both reporting methods reconcile `Created` with `os.Lstat`.
+Missing paths and directory replacements are omitted and reclaimed from the
+internal map; other filesystem errors retain the entry. Rebuilding the map also
+releases its peak transient capacity. Snapshots are cumulative, not a reset of
+live changes, and reconciliation still works after cancellation. New files stay
+`Created` across snapshots and writes. Late writes/removals for reclaimed paths
+absent from the startup inventory cannot turn them into `Modified` or `Deleted`.
+Startup paths retain the existing modified/deleted event accounting.
+
+This is a current-path contract, not inode-level generation tracking: fsnotify
+events do not identify file generations. A recreated non-directory path remains
+`Created` once discovered, and a queued removal cannot clear a currently live
+replacement. A directory at that path is never reported as a created file.
+Deleted startup paths and modified entries are not reconciled by filesystem
+existence. `GetFileChanges` sorts by path; the deprecated printer retains
+created/modified/deleted grouping and sorts paths within each group.
+
+---
+
 ## Lock Acquisition Order
 
 Consistent lock ordering prevents deadlocks. The environment persistence path

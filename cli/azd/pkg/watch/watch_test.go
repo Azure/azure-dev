@@ -463,12 +463,15 @@ func TestGetFileChanges_NewPopulatedDirectory(t *testing.T) {
 
 func TestGetFileChanges_DirectoryReplacementDoesNotAppearAsCreated(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "replaced")
-	require.NoError(t, os.Mkdir(path, 0700))
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0600))
 	fw := &fileWatcher{fileChanges: &fileChanges{
 		Created:  map[string]bool{path: true},
 		Modified: map[string]bool{},
 		Deleted:  map[string]bool{},
 	}}
+	require.Equal(t, FileChanges{{Path: path, ChangeType: FileCreated}}, fw.GetFileChanges())
+	require.NoError(t, os.Remove(path))
+	require.NoError(t, os.Mkdir(path, 0700))
 	require.Empty(t, fw.GetFileChanges())
 	require.Empty(t, fw.fileChanges.Created)
 	fw.mu.Lock()
@@ -569,6 +572,9 @@ func TestGetFileChanges_RecreatedFilePreservesCreatedAccounting(t *testing.T) {
 				applyEvent(fsnotify.Remove)
 			}
 			applyEvent(fsnotify.Create)
+			if lateRemove {
+				applyEvent(fsnotify.Remove)
+			}
 			applyEvent(fsnotify.Write)
 			require.Equal(t, FileChanges{{Path: path, ChangeType: FileCreated}}, fw.GetFileChanges())
 			require.Empty(t, fw.fileChanges.Modified)

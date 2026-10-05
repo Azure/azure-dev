@@ -6,6 +6,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -24,17 +25,16 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			fw, backend := startupFixture(t)
-			transient := filepath.Join(fw.root, "a-transient")
-			require.NoError(t, os.Mkdir(transient, 0700))
 			newDir := filepath.Join(fw.root, "z-new")
-			child := filepath.Join(newDir, "a-child.txt")
+			transient := filepath.Join(newDir, "a-transient")
+			sibling := filepath.Join(newDir, "b-sibling")
+			child := filepath.Join(sibling, "a-child.txt")
 			marker := filepath.Join(newDir, "z-complete")
-			var rescan atomic.Bool
 			var registered atomic.Bool
 			completed := make(chan struct{}, 1)
 			backend.add = func(path string) error {
-				if rescan.Load() {
-					if !duringAdd && path == fw.root {
+				if pathWithin(newDir, path) {
+					if !duringAdd && path == newDir {
 						if err := os.Remove(transient); err != nil {
 							return err
 						}
@@ -45,7 +45,7 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 						return &os.PathError{Op: "Add", Path: path, Err: os.ErrNotExist}
 					}
 				}
-				if path == newDir {
+				if path == sibling {
 					registered.Store(true)
 				}
 				if path == marker {
@@ -60,10 +60,10 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 				cancel()
 				waitStartupExit(t, fw.done)
 			})
-			require.NoError(t, os.Mkdir(newDir, 0700))
+			require.NoError(t, os.MkdirAll(transient, 0700))
+			require.NoError(t, os.Mkdir(sibling, 0700))
 			require.NoError(t, os.WriteFile(child, []byte("x"), 0600))
 			require.NoError(t, os.Mkdir(marker, 0700))
-			rescan.Store(true)
 			backend.events <- fsnotify.Event{Name: newDir, Op: fsnotify.Create}
 			select {
 			case <-completed:
@@ -75,6 +75,67 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 			require.Empty(t, fw.initialFiles, "newly discovered files must not extend the fixed inventory")
 		})
 	}
+}
+
+func TestDirectoryQueue_DeduplicatesPendingSubtrees(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "new")
+	child := filepath.Join(parent, "child")
+	sibling := filepath.Join(root, "new-sibling")
+	for _, paths := range [][]string{
+		{parent, child, parent, sibling},
+		{child, parent, sibling, child},
+	} {
+		queue := &directoryQueue{pending: map[string]struct{}{}, ready: make(chan struct{}, 1)}
+		for _, path := range paths {
+			queue.add(path)
+		}
+		require.Len(t, queue.ready, 1, "wakeups must coalesce without blocking the event consumer")
+		<-queue.ready
+		require.Equal(t, []string{parent, sibling}, queue.take())
+		require.Empty(t, queue.pending, "completed discoveries must not accumulate")
+		queue.add(child)
+		require.Len(t, queue.ready, 1, "later generations must be scheduled again")
+		require.Equal(t, []string{child}, queue.take())
+	}
+}
+
+func TestNewWatcher_DirectoryStreamDoesNotRevisitEstablishedTree(t *testing.T) {
+	fw, backend := startupFixture(t)
+	for i := range 20 {
+		require.NoError(t, os.Mkdir(filepath.Join(fw.root, fmt.Sprintf("existing-%02d", i)), 0700))
+	}
+	var calls atomic.Int32
+	added := make(chan string, 64)
+	backend.add = func(path string) error {
+		calls.Add(1)
+		added <- path
+		return nil
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+	t.Cleanup(func() {
+		cancel()
+		waitStartupExit(t, fw.done)
+	})
+	require.EqualValues(t, 21, calls.Load())
+	for range 21 {
+		<-added
+	}
+	for i := range 20 {
+		dir := filepath.Join(fw.root, fmt.Sprintf("new-%02d", i))
+		require.NoError(t, os.Mkdir(dir, 0700))
+		backend.events <- fsnotify.Event{Name: dir, Op: fsnotify.Create}
+		select {
+		case path := <-added:
+			require.Equal(t, dir, path, "dynamic registration must start at the discovered directory, not root")
+		case <-time.After(2 * time.Second):
+			t.Fatal("new subtree was not registered")
+		}
+	}
+	cancel()
+	waitStartupExit(t, fw.done)
+	require.EqualValues(t, 41, calls.Load(), "continuous discoveries must not revisit established directories")
 }
 
 func TestWatchRecursive_PreservesNonTransientErrors(t *testing.T) {

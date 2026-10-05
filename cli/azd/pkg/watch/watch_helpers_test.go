@@ -4,12 +4,44 @@
 package watch
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestPrintChangedFiles_DeterministicOrder(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, name := range []string{"z-created.txt", "a-created.txt"} {
+		require.NoError(t, os.WriteFile(name, []byte("x"), 0600))
+	}
+	fw := &fileWatcher{fileChanges: &fileChanges{
+		Created:  map[string]bool{"z-created.txt": true, "a-created.txt": true, "missing.txt": true},
+		Modified: map[string]bool{"z-modified.txt": true, "a-modified.txt": true},
+		Deleted:  map[string]bool{"z-deleted.txt": true, "a-deleted.txt": true},
+	}}
+	var first string
+	for range 20 {
+		var writer bytes.Buffer
+		fw.printChangedFiles(&writer)
+		text := writer.String()
+		if first == "" {
+			first = text
+		}
+		require.Equal(t, first, text)
+		require.NotContains(t, text, "missing.txt")
+		previous := -1
+		for _, name := range []string{
+			"a-created.txt", "z-created.txt", "a-modified.txt", "z-modified.txt", "a-deleted.txt", "z-deleted.txt",
+		} {
+			index := strings.Index(text, name)
+			require.Greater(t, index, previous)
+			previous = index
+		}
+	}
+}
 
 func TestFileChange_String_Created(t *testing.T) {
 	fc := FileChange{

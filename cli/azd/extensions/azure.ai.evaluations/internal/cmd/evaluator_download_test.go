@@ -155,7 +155,7 @@ const downloadedEvaluator = `{
 		"type":"rubric",
 		"dimensions":[{
 			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
-			"metadata":{"internal_count":9007199254740993}
+			"metadata":{"internal_count":9007199254740991}
 		}],
 		"pass_threshold":0.6,
 		"future_option":{"count":9007199254740993},
@@ -175,10 +175,15 @@ const downloadedEvaluator = `{
 	}
 }`
 
+// editableDownloadedRubric keeps type, dimensions, pass_threshold, and the
+// unknown authored "future_option" field; everything known to be
+// service/catalog-owned (including the dimension's own "metadata") is
+// stripped.
 const editableDownloadedRubric = `{
 	"type":"rubric",
 	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false}],
-	"pass_threshold":0.6
+	"pass_threshold":0.6,
+	"future_option":{"count":9007199254740993}
 }`
 
 func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
@@ -194,8 +199,11 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.JSONEq(t, editableDownloadedRubric, string(raw), "the authored surface has exactly three root fields")
-	require.NotContains(t, string(raw), "9007199254740993", "unknown service metadata is not editable")
+	require.JSONEq(t, editableDownloadedRubric, string(raw),
+		"type, dimensions, pass_threshold, and unknown authored fields are retained")
+	require.NotContains(t, string(raw), "9007199254740991", "known dimension-level service metadata is not editable")
+	require.Contains(t, string(raw), "9007199254740993",
+		"an unknown authored field keeps its exact numeric precision")
 	require.NotContains(t, string(raw), "service-only-agent-wiring")
 	require.NotContains(t, output.String(), "service-only-agent-wiring")
 	encodedPath, err := json.Marshal(path)
@@ -219,7 +227,7 @@ func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
 	}
 }
 
-func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
+func TestEditableRubricPreservesPrecisionAndUnknownFields(t *testing.T) {
 	const threshold = "0.60000000000000001"
 	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {
 		t.Run(dimensions, func(t *testing.T) {
@@ -228,10 +236,13 @@ func TestEditableRubricPreservesOnlyAuthoredNumericPrecision(t *testing.T) {
 				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
 			downloaded, err := evaluatorDocument(json.RawMessage(raw))
 			require.NoError(t, err)
-			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+`}`,
-				string(downloaded))
+			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+
+				`,"future_option":{"count":9007199254740993}}`, string(downloaded),
+				"pass_threshold keeps exact precision and the unknown future_option field is retained")
 			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")
-			require.NotContains(t, string(downloaded), "old-evaluator-name")
+			require.Contains(t, string(downloaded), "9007199254740993",
+				"an unknown authored field keeps its exact numeric precision")
+			require.NotContains(t, string(downloaded), "old-evaluator-name", "known service metrics are stripped")
 		})
 	}
 }

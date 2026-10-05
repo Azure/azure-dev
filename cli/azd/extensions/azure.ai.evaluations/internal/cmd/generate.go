@@ -726,8 +726,11 @@ func writeRubric(path string, result json.RawMessage) error {
 	return writeFileAtomic(path, body)
 }
 
-// editableRubric projects the authored rubric contract, not arbitrary service
-// fields. Catalog metadata and runtime schemas stay on the registered resource.
+// editableRubric strips known catalog metadata, generated wiring, and runtime
+// schema fields from a rubric definition while preserving type, dimensions,
+// pass_threshold, and any unknown authored fields verbatim. Unknown fields are
+// kept on purpose: the authored surface is not limited to a fixed field list,
+// only the fields known to be service/catalog-owned are removed.
 //
 // A nil result identifies another evaluator kind. A recognized malformed rubric
 // is an error, never permission to export the service envelope.
@@ -747,35 +750,52 @@ func editableRubric(definition json.RawMessage) ([]byte, error) {
 		(definitionKind == "" && len(kind.Dimensions) == 0) {
 		return nil, nil
 	}
-	var rubric struct {
-		Type       string `json:"type"`
-		Dimensions []*struct {
-			ID               *string         `json:"id,omitempty"`
-			Description      *string         `json:"description,omitempty"`
-			Weight           json.RawMessage `json:"weight,omitempty"`
-			AlwaysApplicable *bool           `json:"always_applicable,omitempty"`
-		} `json:"dimensions"`
-		PassThreshold json.RawMessage `json:"pass_threshold,omitempty"`
-	}
+	var rubric map[string]json.RawMessage
 	if err := json.Unmarshal(definition, &rubric); err != nil {
+		return nil, fmt.Errorf("reading rubric definition: %w", err)
+	}
+	rubric["type"] = json.RawMessage(`"` + rubricDefinitionType + `"`)
+	typed, err := json.Marshal(rubric)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
+	}
+	if _, err := validateRubricDefinition(typed); err != nil {
 		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
-	if rubric.Dimensions == nil {
+	var dimensions []map[string]json.RawMessage
+	if err := json.Unmarshal(rubric["dimensions"], &dimensions); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: reading dimensions: %w", err)
+	}
+	if dimensions == nil {
 		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
 	}
-	for i, dimension := range rubric.Dimensions {
-		if dimension == nil {
-			return nil, fmt.Errorf("invalid rubric definition: dimensions[%d] must be an object", i)
+	// Strip known service/wiring metadata (catalog identity, runtime schema,
+	// and generated artifacts) while preserving any unknown authored fields
+	// verbatim, matching the canonical rubric contract.
+	for _, key := range []string{
+		"metadata", "created_at", "createdAt", "creator", "generation", "warnings",
+		"init_parameters", "initParameters", "metrics", "data_schema", "dataSchema",
+		"prompt_text", "promptText",
+	} {
+		delete(rubric, key)
+		for _, dimension := range dimensions {
+			delete(dimension, key)
 		}
 	}
-	rubric.Type = rubricDefinitionType
+	for _, key := range []string{
+		"id", "name", "version", "display_name", "description", "categories",
+		"supported_evaluation_levels", "agent_metadata",
+	} {
+		delete(rubric, key)
+	}
+	rubric["dimensions"], err = json.Marshal(dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric dimensions: %w", err)
+	}
 
 	pretty, err := json.MarshalIndent(rubric, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("formatting rubric definition: %w", err)
-	}
-	if _, err := validateRubricDefinition(pretty); err != nil {
-		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
 	return append(pretty, '\n'), nil
 }

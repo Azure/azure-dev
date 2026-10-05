@@ -77,10 +77,11 @@ func TestTheWrittenRubricIsOrdered(t *testing.T) {
 	assert.Equal(t, string(a), string(b), "two writes of one rubric are one file")
 
 	text := string(a)
-	assert.Less(t, strings.Index(text, `"type"`), strings.Index(text, `"dimensions"`))
+	assert.Less(t, strings.Index(text, `"alpha"`), strings.Index(text, `"dimensions"`))
 	assert.Less(t, strings.Index(text, `"dimensions"`), strings.Index(text, `"pass_threshold"`))
-	assert.NotContains(t, text, `"alpha"`, "unknown service fields are outside the authored contract")
-	assert.NotContains(t, text, `"zeta"`)
+	assert.Less(t, strings.Index(text, `"pass_threshold"`), strings.Index(text, `"type"`))
+	assert.Contains(t, text, `"alpha"`, "unknown fields are preserved for future authoring contracts")
+	assert.Contains(t, text, `"zeta"`)
 }
 
 // A payload this does not understand is written whole. Losing a generated

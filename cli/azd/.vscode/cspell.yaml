@@ -335,6 +335,10 @@ overrides:
       - Fatalf
       - CODEOWNERS
       - codeowners
+  - filename: docs/extensions/extension-resolution-and-versioning.md
+    words:
+      - sien
+      - checksummed
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall

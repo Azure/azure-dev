@@ -133,6 +133,22 @@ func ResolveEvalConfigPath(location string) (string, error) {
 	return resolvedConfigPath(location), nil
 }
 
+// ResolveEvalConfigPathForWrite resolves a location for authoring, rejecting a
+// selected symbolic link before directory classification can hide it.
+func ResolveEvalConfigPathForWrite(location string) (string, error) {
+	if err := checkConfigSymlink(location); err != nil {
+		return "", err
+	}
+	path, err := ResolveEvalConfigPath(location)
+	if err != nil {
+		return "", err
+	}
+	if err := checkConfigSymlink(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // resolvedConfigPath is the naming rule on its own, for the two functions that
 // have already applied the guard.
 func resolvedConfigPath(location string) string {
@@ -357,13 +373,14 @@ func DecodeEvalConfig(data []byte, name string) (*EvalConfig, error) {
 // a generate into an existing project updates the configuration it already
 // references rather than leaving an inert second one beside it.
 func SaveEvalConfig(evalDir string, cfg *EvalConfig) error {
-	if err := checkOneConfig(evalDir); err != nil {
+	path, err := ResolveEvalConfigPathForWrite(evalDir)
+	if err != nil {
 		return err
 	}
 	if _, err := ensureEvalDir(evalDir); err != nil {
 		return err
 	}
-	return SaveEvalConfigTo(resolvedConfigPath(evalDir), cfg)
+	return SaveEvalConfigTo(path, cfg)
 }
 
 // SaveEvalConfigTo writes cfg over an explicit path, for callers that already
@@ -384,7 +401,8 @@ func SaveEvalConfigTo(path string, cfg *EvalConfig) error {
 }
 
 func checkConfigSymlink(path string) error {
-	info, err := os.Lstat(path)
+	// A trailing separator or "." otherwise makes Lstat follow a directory link.
+	info, err := os.Lstat(filepath.Clean(path))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

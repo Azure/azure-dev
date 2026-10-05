@@ -185,9 +185,10 @@ Authored evaluation configuration must contain one YAML document with unique,
 literal string top-level keys. Init and catalog edits reject multiple documents,
 duplicate keys, and merge, alias or complex top-level keys rather than silently dropping
 or ambiguously updating content. Aliases in values remain supported.
-Authoring rejects a symbolic link selected as the config file before creating
-locks or editing configuration, leaving both the link and its target unchanged.
-Select the target config file directly to edit it.
+Authoring rejects a symbolic link selected as the config file or directory before
+creating locks or editing configuration, leaving both the link and its target
+unchanged. Trailing separators and normalized `.` components do not bypass this
+check. Select the target config file or real directory directly to edit it.
 If adding the root project service fails and the host acknowledges that
 the operation finished unsuccessfully, init rolls back its eval-config edit so the
 same command can be retried after restoring root write access.

@@ -163,6 +163,7 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.path, "path", "",
 		"Configuration file or directory to write into. Used verbatim, never re-rooted. "+
 			"New .yaml or .yml paths are files; existing directories remain directories. "+
+			"Selected symbolic links are rejected; select the target directly. "+
 			"Defaults to the directory an earlier init scaffolded, otherwise ./evals.")
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", Usage: "Output format: default (human-readable) or json.",
@@ -571,7 +572,7 @@ func (e *initWiringUncertainError) Unwrap() error {
 }
 
 func checkInitConfigDestination(location, expected string) error {
-	actual, err := project.ResolveEvalConfigPath(location)
+	actual, err := project.ResolveEvalConfigPathForWrite(location)
 	if err != nil {
 		return err
 	}

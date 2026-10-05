@@ -31,13 +31,14 @@ func TestInitSelectsCapabilityBeforeOneMutation(t *testing.T) {
 				}
 				path := filepath.Join(h.dir, "quality.yml")
 				h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
+					incoming, _ := metadata.FromIncomingContext(ctx)
+					assert.Empty(t, incoming.Get("azd-project-add-service-operation"),
+						"neither stable nor beta transport may send the obsolete operation header")
 					if !fails {
 						return nil
 					}
 					if mode != "capable" {
 						// Even an old host's custom trailer must not be treated as the typed capability.
-						incoming, _ := metadata.FromIncomingContext(ctx)
-						assert.Empty(t, incoming.Get("azd-project-add-service-operation"))
 						if err := grpc.SetTrailer(ctx, metadata.Pairs(
 							"azd-project-add-service-save-failed", "untrusted")); err != nil {
 							return err
@@ -57,6 +58,7 @@ func TestInitSelectsCapabilityBeforeOneMutation(t *testing.T) {
 				} else {
 					require.ErrorContains(t, err, "could not safely roll back")
 					assert.FileExists(t, path)
+					assert.Empty(t, h.usage.reported(), "uncertain stable failure must not report successful init")
 				}
 				assert.Equal(t, 1, h.project.wiringAttempts(), "no path may replay the mutation")
 				h.project.mu.Lock()

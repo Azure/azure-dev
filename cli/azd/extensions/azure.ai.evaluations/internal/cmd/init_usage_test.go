@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -102,7 +101,6 @@ func (s *initProjectServer) AddService(
 		s.addService = append(s.addService, request.GetService().GetName())
 	}
 	onAddService := s.onAddService
-	ackSaveError := s.ackSaveError
 	s.mu.Unlock()
 
 	err := s.addServiceErr
@@ -110,15 +108,6 @@ func (s *initProjectServer) AddService(
 		err = onAddService(ctx, request)
 	}
 	if err != nil {
-		if ackSaveError {
-			incoming, _ := metadata.FromIncomingContext(ctx)
-			if tokens := incoming.Get("azd-project-add-service-operation"); len(tokens) == 1 {
-				if trailerErr := grpc.SetTrailer(ctx,
-					metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); trailerErr != nil {
-					return nil, errors.Join(err, trailerErr)
-				}
-			}
-		}
 		return nil, err
 	}
 	return &azdext.EmptyResponse{}, nil

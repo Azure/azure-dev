@@ -2294,7 +2294,19 @@
                         "type": "string",
                         "title": "Secret value of the environment variable. Supports environment variable substitution."
                     }
-                }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "value"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "secret"
+                        ]
+                    }
+                ]
             }
         },
         "appServiceResource": {

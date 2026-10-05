@@ -295,6 +295,7 @@ func fillUses(
 				}
 			}
 		}
+		selectedUses = uniqueStrings(selectedUses)
 		if r.Type == project.ResourceTypeHostFunctionApp && countStorageUses(selectedUses, p.PrjConfig) > 1 {
 			return nil, fmt.Errorf("Function App %s can use only one storage resource; select at most one storage account",
 				r.Name)
@@ -345,6 +346,19 @@ func promptUsedBy(
 	}
 
 	return nil, nil
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		result = append(result, v)
+	}
+	return result
 }
 
 func countStorageUses(uses []string, prj *project.ProjectConfig) int {

@@ -79,7 +79,8 @@ func TestResourceEnvSchema(t *testing.T) {
 						map[string]any{"name": "SECRET", "secret": "secret"},
 					}))
 					for _, invalid := range []any{
-						map[string]any{"name": "SETTING"},
+						[]any{map[string]any{"name": "SETTING"}},
+						[]any{map[string]any{"name": "SETTING", "value": "v", "secret": "s"}},
 						[]any{map[string]any{"value": "missing name"}},
 						[]any{map[string]any{"name": "SETTING", "extra": "unknown"}},
 					} {

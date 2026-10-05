@@ -506,7 +506,11 @@ func mapFunctionApp(
 	case svcConfig.Language == ServiceLanguageGo:
 		expectedStack = "go"
 	}
-	if expectedStack == "" || props.Runtime.Stack != expectedStack {
+	if expectedStack == "" {
+		return fmt.Errorf("resources.%s: service language '%s' is not supported for Function Apps",
+			res.Name, svcConfig.Language)
+	}
+	if props.Runtime.Stack != expectedStack {
 		return fmt.Errorf("resources.%s.runtime.stack must match the service language (%s)", res.Name, expectedStack)
 	}
 	if !functionRuntimeVersion.MatchString(props.Runtime.Version) {

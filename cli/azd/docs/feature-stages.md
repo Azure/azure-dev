@@ -31,6 +31,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Client       | Visual Studio            | Alpha     |
 | Client       | Codespaces               | Beta      |
 | Client       | CloudShell               | Beta      |
+| Extension    | Extensions               | Stable    |
 | CI/CD        | GitHub Actions           | Stable    |
 | CI/CD        | Azure Pipelines          | Stable    |
 | IaC          | Bicep                    | Stable    |

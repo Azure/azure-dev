@@ -1022,15 +1022,6 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--manifest', '-m'],
-									description: 'Path or supported GitHub URI to a unified azure.yaml project document',
-									args: [
-										{
-											name: 'manifest',
-										},
-									],
-								},
-								{
 									name: ['--model'],
 									description: 'For hosted and prompt agents, name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.',
 									args: [
@@ -1100,6 +1091,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'src',
+										},
+									],
+								},
+								{
+									name: ['--template', '-t'],
+									description: 'Path or supported GitHub URI to a unified azure.yaml project document',
+									args: [
+										{
+											name: 'template',
 										},
 									],
 								},
@@ -1958,7 +1958,7 @@ const completionSpec: Fig.Spec = {
 							subcommands: [
 								{
 									name: ['list', 'ls'],
-									description: 'List available agent samples that can be used with `azd ai agent init -m`.',
+									description: 'List available agent samples that can be used with `azd ai agent init -t`.',
 									options: [
 										{
 											name: ['--featured-only'],

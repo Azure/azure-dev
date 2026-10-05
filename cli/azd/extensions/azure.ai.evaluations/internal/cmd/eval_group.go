@@ -140,7 +140,11 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 		datasetPath = eval.LocalSourcePath(baseDir)
 	}
 
-	reconciler := &evalReconciler{ec: ec}
+	// Same scope a deploy of this configuration would use (EvalScopeOfService),
+	// so a direct create and the eventual `azd up` agree on whose id/baseline
+	// this is. Without it, two configurations sharing an eval name would write
+	// the same unqualified keys and overwrite each other's identity.
+	reconciler := &evalReconciler{ec: ec, scope: ec.evalScopeOf(ctx, path)}
 	if err := reconciler.Validate(ctx, selected, baseDir); err != nil {
 		return err
 	}

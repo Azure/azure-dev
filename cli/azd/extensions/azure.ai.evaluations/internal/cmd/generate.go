@@ -93,8 +93,7 @@ func resolveInstruction(inline, path string) (string, error) {
 	if path == "" {
 		return inline, nil
 	}
-	// #nosec G304 -- path is the file the caller named on the command line.
-	raw, err := os.ReadFile(path)
+	raw, err := project.ReadFileNoBOM(path)
 	if err != nil {
 		return "", messages.ReadingInstructionFile(path, err)
 	}
@@ -192,15 +191,13 @@ func (ec *evalContext) resolveGenerationInstruction(
 	// service marked input_quality, so this is asked rather than shrugged at:
 	// the caller knows what the agent is for, and one sentence is the whole
 	// difference between a usable rubric and a billed job that grades noise.
-	fmt.Fprint(out, messages.InstructionsNotDetected())
+	if !quiet {
+		fmt.Fprint(out, messages.InstructionsNotDetected())
+	}
 	if noPrompt(cmd) {
 		return "", "", messages.InstructionsRequired()
 	}
-	typed, err := promptAgentInstruction(cmd)
-	if err != nil {
-		return "", "", err
-	}
-	return typed, messages.InstructionSourceTyped(), nil
+	return promptAgentInstruction(cmd)
 }
 
 // agentInstructionsFromProject reads the agent's instructions out of the azd
@@ -345,11 +342,9 @@ func (ec *evalContext) collectRubric(
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
 	ref := &project.ArtifactRef{
-		Name:    name,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Recovered declarations need the same metadata even when the rubric
-		// was already collected and must be preserved for local edits.
+		Name:                      name,
+		Source:                    relativeSource(baseDir, path),
+		Version:                   version,
 		DisplayName:               completed.ResultString("display_name"),
 		Categories:                completed.ResultStringList("categories"),
 		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
@@ -698,17 +693,24 @@ func (ec *evalContext) pollGeneration(
 // writeRubric persists the rubric so the developer can edit weights and
 // descriptions and publish a new version.
 //
-// Known service fields are omitted; unknown fields are preserved for future
-// authoring contracts. Raw JSON keeps numeric values from being rounded.
+// Results must be JSON objects. Only authored rubric fields are written.
+// Numeric values remain raw JSON so
+// projecting the service response cannot round the threshold or weights.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
 	}
 	body := result
-	var envelope struct {
+	var envelope *struct {
 		Definition json.RawMessage `json:"definition"`
 	}
-	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return notAnObject(result, err)
+	}
+	if envelope == nil {
+		return messages.DefinitionIsNull()
+	}
+	if len(envelope.Definition) > 0 {
 		editable, err := editableRubric(envelope.Definition)
 		if err != nil {
 			return err
@@ -724,8 +726,8 @@ func writeRubric(path string, result json.RawMessage) error {
 	return writeFileAtomic(path, body)
 }
 
-// editableRubric removes known service fields without discarding unknown
-// authored fields. Catalog metadata and runtime schemas stay on the registered resource.
+// editableRubric projects the authored rubric contract, not arbitrary service
+// fields. Catalog metadata and runtime schemas stay on the registered resource.
 //
 // A nil result identifies another evaluator kind. A recognized malformed rubric
 // is an error, never permission to export the service envelope.
@@ -745,48 +747,35 @@ func editableRubric(definition json.RawMessage) ([]byte, error) {
 		(definitionKind == "" && len(kind.Dimensions) == 0) {
 		return nil, nil
 	}
-	var rubric map[string]json.RawMessage
+	var rubric struct {
+		Type       string `json:"type"`
+		Dimensions []*struct {
+			ID               *string         `json:"id,omitempty"`
+			Description      *string         `json:"description,omitempty"`
+			Weight           json.RawMessage `json:"weight,omitempty"`
+			AlwaysApplicable *bool           `json:"always_applicable,omitempty"`
+		} `json:"dimensions"`
+		PassThreshold json.RawMessage `json:"pass_threshold,omitempty"`
+	}
 	if err := json.Unmarshal(definition, &rubric); err != nil {
-		return nil, fmt.Errorf("reading rubric definition: %w", err)
-	}
-	rubric["type"] = json.RawMessage(`"rubric"`)
-	typed, err := json.Marshal(rubric)
-	if err != nil {
-		return nil, fmt.Errorf("formatting rubric definition: %w", err)
-	}
-	if _, err := validateRubricDefinition(typed); err != nil {
 		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
-	var dimensions []map[string]json.RawMessage
-	if err := json.Unmarshal(rubric["dimensions"], &dimensions); err != nil {
-		return nil, fmt.Errorf("invalid rubric definition: reading dimensions: %w", err)
-	}
-	if dimensions == nil {
+	if rubric.Dimensions == nil {
 		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
 	}
-	for _, key := range []string{
-		"metadata", "created_at", "createdAt", "creator", "generation", "warnings",
-		"init_parameters", "initParameters", "metrics", "data_schema", "dataSchema", "prompt_text", "promptText",
-	} {
-		delete(rubric, key)
-		for _, dimension := range dimensions {
-			delete(dimension, key)
+	for i, dimension := range rubric.Dimensions {
+		if dimension == nil {
+			return nil, fmt.Errorf("invalid rubric definition: dimensions[%d] must be an object", i)
 		}
 	}
-	for _, key := range []string{
-		"id", "name", "version", "display_name", "description", "categories",
-		"supported_evaluation_levels", "agent_metadata",
-	} {
-		delete(rubric, key)
-	}
-	rubric["dimensions"], err = json.Marshal(dimensions)
-	if err != nil {
-		return nil, fmt.Errorf("formatting rubric dimensions: %w", err)
-	}
+	rubric.Type = rubricDefinitionType
 
 	pretty, err := json.MarshalIndent(rubric, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("formatting rubric definition: %w", err)
+	}
+	if _, err := validateRubricDefinition(pretty); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
 	return append(pretty, '\n'), nil
 }

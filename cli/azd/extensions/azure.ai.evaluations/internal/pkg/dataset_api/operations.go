@@ -494,11 +494,9 @@ func (c *DatasetClient) DownloadDatasetContent(
 // OpenDatasetContent resolves a published dataset the same way
 // DownloadDatasetContent does and hands back the body unread.
 //
-// For a caller that stops early: `run --max-samples N` parses N rows, and
-// reading the blob into memory first made the cap bound the parse and nothing
-// else, so a large registered dataset was transferred and held in full to score
-// a handful of rows. The caller closes it, and closing before the end is how
-// the transfer is cut short.
+// The caller closes the body. Callers inspecting a prefix can close before the
+// end to stop the transfer; registered evaluation runs validate the whole version
+// and submit its identity rather than a subset of these rows.
 func (c *DatasetClient) OpenDatasetContent(
 	ctx context.Context,
 	name string,
@@ -599,10 +597,8 @@ func (c *DatasetClient) DownloadDataset(ctx context.Context, downloadURL string)
 
 // openDataset starts the download and hands back the body unread.
 //
-// A caller that keeps only the first rows should not pay for the rest: reading
-// the whole blob first made --max-samples bound the parse and nothing else, so
-// a large registered dataset was transferred and held in memory in full to
-// score ten rows of it.
+// Callers inspecting a prefix can close the body early. Registered evaluation
+// runs read the whole version for validation and submit its identity, not a cap.
 func (c *DatasetClient) openDataset(ctx context.Context, downloadURL string) (io.ReadCloser, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, downloadURL)
 	if err != nil {

@@ -33,6 +33,8 @@ type Reconciler interface {
 	// Validate checks local artifacts and service references without publishing
 	// dependencies or changing reconciliation state.
 	Validate(ctx context.Context, cfg *EvalConfig, baseDir string) error
+	// PreflightLocalEval validates explicit local rows and mappings before any publication.
+	PreflightLocalEval(ctx context.Context, group Eval, path string) error
 	// EnsureDataset registers a new dataset version when the local content
 	// changed, returning the resolved version and whether anything was written.
 	EnsureDataset(ctx context.Context, decl DatasetDecl, localPath string) (version string, changed bool, err error)
@@ -41,7 +43,7 @@ type Reconciler interface {
 	EnsureEvaluator(ctx context.Context, decl EvaluatorDecl, localPath string) (version string, changed bool, err error)
 	// EnsureEval creates the group when it is absent or its resolved
 	// evaluators or options changed, returning its id. datasetPath is the local
-	// dataset backing the group, or empty when it is already registered; it lets
+	// dataset or explicit local source backing the group, or empty when registered; it lets
 	// the reconciler bind criteria to the columns that actually exist.
 	EnsureEval(ctx context.Context, group Eval, datasetPath string) (id string, created bool, err error)
 	// ReserveDeclared marks the evals these declarations already resolve to as
@@ -176,6 +178,8 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// dataset read as missing.
 	baseDir := projectRoot
 
+	// Use prospective authored contracts before dependency writes, not stale
+	// published schemas for evaluators this operation will replace.
 	if err := reconciler.Validate(ctx, cfg, baseDir); err != nil {
 		return nil, messages.EvalConfigInvalid(err)
 	}
@@ -225,7 +229,11 @@ func (p *EvalServiceTargetProvider) Deploy(
 	for i := range cfg.Evals {
 		eval := cfg.Evals[i]
 		report(progress, messages.ReconcilingEval(eval.Name))
-		id, created, err := reconciler.EnsureEval(ctx, eval, datasetPaths[eval.Dataset])
+		inputPath := datasetPaths[eval.Dataset]
+		if eval.IsLocalSource() {
+			inputPath = eval.LocalSourcePath(baseDir)
+		}
+		id, created, err := reconciler.EnsureEval(ctx, eval, inputPath)
 		if err != nil {
 			return nil, messages.EvalProblem(eval.Name, err)
 		}
@@ -444,11 +452,9 @@ func FingerprintGroup(group Eval) (string, error) {
 
 // FingerprintDefinition hashes only what the service stores.
 //
-// max_samples and source: are applied per run, not at creation --
-// CreateOpenAIEvalRequest carries neither and buildEvalRequest reads neither.
-// Recreating the eval when one of them changes points the declaration at a new
-// id and leaves every run taken before it reachable only through the old one,
-// for an edit the stored eval cannot even express.
+// max_samples and source filters are applied per run. The source type affects
+// the immutable mappings and data source configuration, so it remains part of
+// the definition while windows, response IDs and other filters do not.
 //
 // Kept separate from FingerprintGroup rather than folded into it, because that
 // digest also answers "which eval was this declaration before it was renamed".
@@ -462,7 +468,9 @@ func FingerprintGroup(group Eval) (string, error) {
 // conservative direction: the other way silently merges two.
 func FingerprintDefinition(group Eval) (string, error) {
 	group.MaxSamples = 0
-	group.Source = nil
+	if group.Source != nil {
+		group.Source = &SourceDecl{Type: group.Source.Type}
+	}
 	// Simulation settings are sent in the run's data source, not stored on the
 	// eval, so changing a model or a turn count would otherwise recreate an
 	// immutable eval and leave its earlier runs reachable only through the old

@@ -35,7 +35,7 @@ func resolveEvalName(
 ) (string, error) {
 	if noPrompt(cmd) || isJSON(cmd) {
 		if explicit == "" {
-			return suggested, nil
+			explicit = suggested
 		}
 		// Nobody to ask, so a name that cannot be used is the end of it.
 		if err := evalNameUsable(cfg, configPath, explicit); err != nil {

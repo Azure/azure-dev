@@ -200,6 +200,37 @@ func TestEvalDeleteKeepsSurvivingScopedLookupReachable(t *testing.T) {
 	assert.Empty(t, final.privateValue(t.Context(), digest+project.EvalScopeSuffix))
 }
 
+func TestEvalDeleteClearsScopedLocalRequestBaselineWithItsOwner(t *testing.T) {
+	base := project.FingerprintKey("eval", "quality")
+	suffix := "_" + project.EvalScopeTag(scopeB)
+	state := map[string]string{
+		base + "_ID":                           deletedEvalID,
+		base:                                   "shared-definition",
+		base + "_ID" + project.EvalScopeSuffix: scopeA,
+		base + project.EvalScopeSuffix:         scopeA,
+		base + "_ID" + suffix:                  "eval_survivor",
+		base + suffix:                          "surviving-definition",
+		base + "_LOCAL_REQUEST_V1" + project.EvalScopeSuffix: scopeA,
+		base + "_LOCAL_REQUEST_V1":                           "a-contract",
+		base + "_LOCAL_REQUEST_V1" + suffix:                  "b-contract",
+	}
+	ec, env, service := evalDeleteFixture(t, state)
+	_, _, err := runEvalDelete(t, ec, deletedEvalID)
+	require.NoError(t, err)
+	fresh := reader(t, env)
+	assert.Equal(t, "b-contract", fresh.scopedValue(t.Context(), base+"_LOCAL_REQUEST_V1", scopeB),
+		"a surviving configuration's scoped local contract must remain reachable")
+
+	service.deleteID = "eval_survivor"
+	_, _, err = runEvalDelete(t, ec, service.deleteID)
+	require.NoError(t, err)
+	final := reader(t, env)
+	assert.Empty(t, final.privateValue(t.Context(), base+"_LOCAL_REQUEST_V1"+suffix),
+		"the scoped local contract is cleared with the configuration that owned it")
+	assert.Empty(t, final.privateValue(t.Context(), base+"_LOCAL_REQUEST_V1"+project.EvalScopeSuffix),
+		"the shared local-request ownership marker is cleared once no scope survives")
+}
+
 func TestEvalDeleteFailureOrAmbiguousNamePreservesState(t *testing.T) {
 	for _, scenario := range []string{
 		"unauthorized", "forbidden", "conflict", "rate limited", "server failure", "not found", "duplicate names",

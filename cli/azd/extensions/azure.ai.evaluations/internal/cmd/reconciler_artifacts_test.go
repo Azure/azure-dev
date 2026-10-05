@@ -111,8 +111,8 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 			project.TargetTypeAgent, true, "simulation.max_turns is 5",
 		},
 		{
-			"later over cap",
-			"\uFEFF{\"test_case_description\":\"valid\",\"simulation_configuration\":{\"desired_num_turns\":5}}\n\n" +
+			"later over cap", "\uFEFF{\"test_case_description\":\"valid\"," +
+				"\"simulation_configuration\":{\"desired_num_turns\":5}}\n\n" +
 				`{"test_case_description":"invalid","simulation_configuration":{"desired_num_turns":6}}`,
 			project.TargetTypeAgent, true, "row 2 asks for 6 turns",
 		},
@@ -169,7 +169,10 @@ func TestReconciliationAcceptsUsableLocalDatasetModes(t *testing.T) {
 	}{
 		{"agent query", `{"query":"hello"}`, project.TargetTypeAgent, false},
 		{"model query", `{"query":"hello"}`, project.TargetTypeModel, false},
-		{"sparse target inputs", "{\"query\":\"hi\"}\n{\"response\":\"answer\"}", project.TargetTypeAgent, false},
+		{
+			"sparse optional target outputs", "{\"query\":\"hi\"}\n{\"query\":\"hello\",\"response\":\"answer\"}",
+			project.TargetTypeAgent, false,
+		},
 		{"static completed conversation", `{"messages":[{"role":"user","content":"hello"}]}`, "", false},
 		{"seed without optional turns", `{"test_case_description":"A delayed order."}`, project.TargetTypeAgent, true},
 		{
@@ -191,6 +194,8 @@ func TestReconciliationAcceptsUsableLocalDatasetModes(t *testing.T) {
 				group := &cfg.Evals[0]
 				if tt.target != "" {
 					group.Target = &project.Target{Name: "target", Type: tt.target}
+				} else {
+					group.EvaluationLevel = project.EvaluationLevelConversation
 				}
 				if tt.simulated {
 					group.EvaluationLevel = project.EvaluationLevelConversation
@@ -276,7 +281,7 @@ func TestCreateDoesNotValidateUnselectedDatasetModes(t *testing.T) {
 	assert.Empty(t, env.stored(t, idKey("eval", unrelated.Name)))
 }
 
-func TestReconciliationHonorsPerRowTurnOverride(t *testing.T) {
+func TestReconciliationDoesNotInventASeedTurnCap(t *testing.T) {
 	for _, caller := range []string{"create", "up"} {
 		t.Run(caller, func(t *testing.T) {
 			ec, _, service, cfg, dir := validationFixture(t)
@@ -286,7 +291,7 @@ func TestReconciliationHonorsPerRowTurnOverride(t *testing.T) {
 			group.Target = &project.Target{Type: project.TargetTypeAgent, Name: "target"}
 			group.Simulation = &project.Simulation{Model: "connection/simulator"}
 			rows := `{"test_case_description":"A longer scenario.",` +
-				`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`
+				`"simulation_configuration":{"max_num_turns":21,"desired_num_turns":21}}`
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
 			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
 			assert.Equal(t, 1, service.createCount)

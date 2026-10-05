@@ -95,6 +95,8 @@ func TestWaitedRunStartDistinguishesZeroAndUnreportedCounts(t *testing.T) {
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_zero"):
+							_, _ = io.WriteString(w, `{"id":"eval_zero","data_source_config":{"type":"custom"}}`)
 						case strings.HasSuffix(r.URL.Path, "/output_items"):
 							_, _ = io.WriteString(w, `{"data":[]}`)
 						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
@@ -155,6 +157,8 @@ func TestRunCallersRenderMissingCountMembersAsUnreported(t *testing.T) {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					switch {
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_partial"):
+						_, _ = io.WriteString(w, `{"id":"eval_partial","data_source_config":{"type":"custom"}}`)
 					case strings.HasSuffix(r.URL.Path, "/output_items"):
 						_, _ = io.WriteString(w, `{"data":[]}`)
 					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
@@ -304,6 +308,8 @@ func TestRunGateWithOnlyUnaccountedRowsStillFails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_counts"):
+			_, _ = io.WriteString(w, `{"id":"eval_counts","data_source_config":{"type":"custom"}}`)
 		case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):
 			_, _ = io.WriteString(w, response)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
@@ -357,6 +363,8 @@ func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_counts"):
+							_, _ = io.WriteString(w, `{"id":"eval_counts","data_source_config":{"type":"custom"}}`)
 						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
 							_, _ = io.WriteString(w, `{"id":"run_counts","status":"queued"}`)
 						case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):

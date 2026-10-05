@@ -108,4 +108,9 @@ func TestSimulationProductionDecoderRemainsStrict(t *testing.T) {
 	_, err = DecodeEvalConfig([]byte(strings.ReplaceAll(body, "max_turn: 2",
 		"<<: &defaults {max_turn: 2}")), "azure.eval.yaml")
 	require.ErrorContains(t, err, `unknown key "max_turn"`)
+
+	for _, field := range []string{"num_conversations", "max_turns"} {
+		_, err := DecodeEvalConfig([]byte(strings.ReplaceAll(body, "max_turn: 2", field+": null")), "azure.eval.yaml")
+		require.ErrorContains(t, err, "simulation."+field+" is 0")
+	}
 }

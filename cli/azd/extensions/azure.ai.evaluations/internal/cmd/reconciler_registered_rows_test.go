@@ -62,7 +62,8 @@ func TestRegisteredDatasetValidationKeepsTheSettledVersion(t *testing.T) {
 			ec, env, service, cfg, dir := validationFixture(t)
 			cfg.Datasets[0].File = ""
 			service.dataset = true
-			service.registeredRows = "{\"query\":\"first\"}\n{\"query\":\"second\"}\n"
+			service.registeredRows = "{\"query\":\"first\",\"response\":\"one\"}\n" +
+				"{\"query\":\"second\",\"response\":\"two\"}\n"
 			service.afterContentRead = func() { service.listedVersion = "2.0" }
 			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
 			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")),
@@ -81,7 +82,7 @@ func TestRegisteredDatasetValidBindingsRemainIdempotent(t *testing.T) {
 			cfg.Datasets[0].File = ""
 			cfg.Datasets[0].Version = "1.0"
 			service.dataset = true
-			service.registeredRows = "{\"query\":\"hi\",\"ground_truth\":\"yes\"}\n"
+			service.registeredRows = "{\"query\":\"hi\",\"response\":\"hello\",\"ground_truth\":\"yes\"}\n"
 			cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"query": "{{item.ground_truth}}"}
 			for range 2 {
 				require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
@@ -110,14 +111,21 @@ func TestRegisteredDatasetPreflightHonorsContentCancellation(t *testing.T) {
 	assert.Zero(t, service.createCount)
 }
 
-func TestRegisteredDatasetPreservesSparseTargetInputRules(t *testing.T) {
-	ec, _, service, cfg, dir := validationFixture(t)
+func TestRegisteredDatasetRejectsMissingMappedTargetInput(t *testing.T) {
+	ec, env, service, cfg, dir := validationFixture(t)
 	cfg.Datasets[0].File = ""
 	cfg.Datasets[0].Version = "1.0"
 	cfg.Evals[0].Target = &project.Target{Type: project.TargetTypeAgent, Name: "target"}
 	service.dataset = true
 	service.definition = `{"definition":{"data_schema":{"properties":{}}}}`
 	service.registeredRows = "{\"query\":\"first\"}\n{\"response\":\"second\"}"
-	require.NoError(t, reconcileArtifactConfig(t, "create", ec, cfg, dir))
-	assert.Equal(t, 1, service.createCount)
+	require.ErrorContains(t, reconcileArtifactConfig(t, "create", ec, cfg, dir), `"query"`)
+	for _, request := range service.requests {
+		assert.True(t, strings.HasPrefix(request, "GET ") ||
+			request == "POST /datasets/turn-tests/versions/1.0/credentials",
+			"unexpected publication: %s", request)
+	}
+	assert.Zero(t, service.createCount)
+	assert.Empty(t, env.config)
+	assert.Empty(t, env.values)
 }

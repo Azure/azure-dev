@@ -250,15 +250,24 @@ explicit source registration avoids silently accepting a new source during insta
 Verify the resulting installed version, selected source and binary checksum.
 
 This route illustrates the command sequence for an absent evaluations extension using
-official azd 1.34.2; it is a procedural example, not a demonstrated migration backed
-by a preserved authoritative artifact. The historical `1.0.47-beta` identity referenced
-here is user-reported: no personal-feed registry record, artifact receipt, checksum
-set, or other preserved evidence for that version's bytes was retained or is available
-in this work, and official `1.0.0-beta.1` metadata is not a substitute for that missing
-historical evidence. Treat this as the command shape to use once an authoritative
-historical source is actually located, not as proof that Azure's canonical registry
-contains that version, that dataset installation was exercised, or that an existing
-installation was migrated.
+official azd 1.34.2; it is a procedural example, not a demonstrated migration backed by
+a trusted installation source. A prior revision of this guide stated that no personal-
+feed registry record or artifact evidence for the historical `1.0.47-beta` identity was
+retained or available anywhere; that absolute statement has since been corrected. A
+read-only, independently reproducible check found a non-canonical personal GitHub feed
+(`m7md7sien/azd-foundry-feed`, commit `55c6030`) whose `registry.json` carries an
+`azure.ai.evaluations` `1.0.47-beta` entry, and whose published release asset digest for
+the Windows archive (`sha256:d98e2b9d...062ca`, confirmed against GitHub's own
+API-computed digest, not merely the registry's self-reported value) matches that entry.
+This is real, checksummed historical artifact evidence — it is not fabricated and not
+merely user-reported. It is still not Azure's canonical extension registry, not a
+Microsoft-owned or reviewed source, not evidence of binary-to-source provenance beyond
+the checksum match, and not proof that dataset installation, live acceptance or an
+existing-installation migration was exercised using it. Whether a personal feed of this
+kind is an acceptable exact-pin-compatible source is a trust-policy decision for the
+registry source route, not one this guide or this branch resolves; treat the command
+shape above as illustrative until that decision, or an equivalent authoritative
+canonical source, is in place.
 
 For an existing installation, preserve its configuration, files and history, and
 honor replacement and source-change confirmations or non-interactive errors.

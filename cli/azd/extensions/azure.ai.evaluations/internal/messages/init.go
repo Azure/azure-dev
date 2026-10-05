@@ -186,14 +186,15 @@ func SimulationModelPrompt() string {
 // SimulationModelHelp explains why the generation or judge model is not a default.
 func SimulationModelHelp() string {
 	return "Enter a model name or connection-name/model-deployment for the simulated user, " +
-		"independently of the generation model and --judge-model. This value is unverified until service validation."
+		"without whitespace or control characters, independently of the generation model and --judge-model. " +
+		"This value is unverified until service validation."
 }
 
 // AmbiguousSimulationModel names the local references that need an explicit choice.
 func AmbiguousSimulationModel(models []string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		fmt.Sprintf("--simulation-model is ambiguous: "+
-			"multiple previously configured simulator references are available: %v", models),
+			"multiple previously configured simulator references are available: %q", models),
 		"Supply --simulation-model model or connection-name/model-deployment, or run interactively to choose one.")
 }
 
@@ -207,12 +208,12 @@ func EnterAnotherSimulationModel() string { return "Enter another name" }
 
 // DetectedSimulationModel reports automatic selection without implying a live check.
 func DetectedSimulationModel(model string) string {
-	return fmt.Sprintf("  Simulation model: %s (locally authored, unverified until service validation)\n", model)
+	return fmt.Sprintf("  Simulation model: %q (locally authored, unverified until service validation)\n", model)
 }
 
 // UnverifiedSimulationModel labels a free-text choice before confirmation.
 func UnverifiedSimulationModel(model string) string {
-	return fmt.Sprintf("  Simulation model: %s (unverified until service validation)\n", model)
+	return fmt.Sprintf("  Simulation model: %q (unverified until service validation)\n", model)
 }
 
 // JudgeModelPrompt asks for a deployment when local configuration has none.

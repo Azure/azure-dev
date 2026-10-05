@@ -175,7 +175,7 @@ func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 	cmd.Flags().StringVar(&flags.simulationModel, "simulation-model", "",
 		"Model name or connection-name/model-deployment for the simulated user. Plain names need no connection lookup; "+
 			"qualified references use eligible Azure OpenAI project connections. "+
-			"Independent of generation and judge models.")
+			"No whitespace or control characters. Independent of generation and judge models.")
 	cmd.Flags().IntVar(&flags.numConversations, "num-conversations", project.DefaultNumConversations,
 		fmt.Sprintf("Conversations per seed in simulation mode (%d-%d).",
 			project.MinNumConversations, project.MaxNumConversations))

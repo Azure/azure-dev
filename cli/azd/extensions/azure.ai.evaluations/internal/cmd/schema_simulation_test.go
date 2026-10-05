@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"testing"
+	"unicode"
 
 	"azureaieval/internal/project"
 
@@ -15,6 +17,34 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSimulationSchemaRejectsAllUnicodeControlsAndWhitespace(t *testing.T) {
+	const resourceURI = "https://example.test/simulation-controls.schema.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(resourceURI, evalSchemaDocument(t)))
+	schema, err := compiler.Compile(resourceURI)
+	require.NoError(t, err)
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if !unicode.IsControl(r) && !unicode.IsSpace(r) {
+			continue
+		}
+		for i, model := range []string{"mo" + string(r) + "del", "c" + string(r) + "/model", "c/mo" + string(r)} {
+			t.Run(fmt.Sprintf("U%04X/shape%d", r, i), func(t *testing.T) {
+				instance := map[string]any{
+					"datasets": []any{map[string]any{"name": "seeds"}},
+					"evals": []any{map[string]any{
+						"name": "simulated", "dataset": "seeds", "evaluation_level": "conversation",
+						"target":     map[string]any{"type": "agent", "name": "agent"},
+						"simulation": map[string]any{"model": model},
+						"evaluators": []any{map[string]any{"evaluator": "builtin.task_completion"}},
+					}},
+				}
+				assert.Error(t, schema.Validate(instance))
+				assert.Error(t, (&project.Simulation{Model: model}).Validate())
+			})
+		}
+	}
+}
 
 // The schema is what an editor checks a configuration against before the CLI
 // ever sees it, so a rule the CLI enforces and the schema does not is a rule a
@@ -96,6 +126,16 @@ func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
 		{name: "null model", simulation: map[string]any{"model": nil}, wantErr: true, modelError: "is required"},
 		{name: "bare model", simulation: map[string]any{"model": "deployment"}},
 		{name: "Unicode model", simulation: map[string]any{"model": "mod\u00e8le"}},
+		{name: "Unicode qualified model", simulation: map[string]any{"model": "connexion/mod\u00e8le"}},
+		{name: "control", simulation: map[string]any{"model": "mo\x1bdel"}, wantErr: true, modelError: "format"},
+		{name: "delete", simulation: map[string]any{"model": "model\x7f"}, wantErr: true, modelError: "format"},
+		{name: "C1 control", simulation: map[string]any{"model": "mo\u009bdel"}, wantErr: true, modelError: "format"},
+		{name: "Unicode whitespace", simulation: map[string]any{"model": "mo\u00a0del"},
+			wantErr: true, modelError: "format"},
+		{name: "Unicode connection whitespace", simulation: map[string]any{"model": "con\u2003nection/model"},
+			wantErr: true, modelError: "format"},
+		{name: "Unicode deployment whitespace", simulation: map[string]any{"model": "connection/mo\u2028del"},
+			wantErr: true, modelError: "format"},
 		{name: "missing connection", simulation: map[string]any{"model": "/deployment"},
 			wantErr: true, modelError: "format"},
 		{name: "missing deployment", simulation: map[string]any{"model": "connection/"},
@@ -128,6 +168,14 @@ func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
 			require.NoError(t, json.Unmarshal(body, &instance))
 			schemaErr := schema.Validate(instance)
 			cfg, err := project.DecodeEvalConfig(body, "azure.eval.yaml")
+			if err != nil {
+				require.True(t, tc.wantErr, "valid model rejected while decoding: %v", err)
+				assert.Error(t, schemaErr)
+				model, ok := simulation["model"].(string)
+				require.True(t, ok)
+				assert.Error(t, (&project.Simulation{Model: model}).Validate())
+				return
+			}
 			require.NoError(t, err)
 			runtimeErr := cfg.Validate()
 			if tc.wantErr {

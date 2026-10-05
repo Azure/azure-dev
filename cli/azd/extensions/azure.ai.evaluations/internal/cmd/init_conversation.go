@@ -162,7 +162,7 @@ func resolveSimulationModel(cmd *cobra.Command, explicit string, authored []stri
 		}
 	}
 	model, err := promptInitModel(cmd, messages.SimulationModelPrompt(), messages.SimulationModelHelp(),
-		messages.SimulationModelRequired())
+		messages.SimulationModelRequired(), validateSimulationModel)
 	if err != nil {
 		return "", err
 	}
@@ -219,7 +219,7 @@ func (a *initAction) resolveSimulationModel(cmd *cobra.Command, explicit string,
 		return "", err
 	}
 	deployment, err := promptInitModel(cmd, messages.SimulationModelDeploymentPrompt(),
-		messages.SimulationModelDeploymentHelp(), messages.SimulationModelDeploymentRequired())
+		messages.SimulationModelDeploymentHelp(), messages.SimulationModelDeploymentRequired(), validateSimulationModel)
 	if err != nil {
 		return "", err
 	}
@@ -284,7 +284,9 @@ func eligibleSimulationModelConnections(connections []eval_api.Connection) []str
 
 func validSimulationConnectionName(name string) bool {
 	return name != "" && name == strings.TrimSpace(name) &&
-		!strings.Contains(name, "/") && !strings.ContainsFunc(name, unicode.IsSpace)
+		!strings.Contains(name, "/") && !strings.ContainsFunc(name, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	})
 }
 
 func selectSimulationModelConnection(cmd *cobra.Command, connections []string) (string, error) {

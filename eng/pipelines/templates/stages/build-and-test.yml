@@ -202,7 +202,12 @@ stages:
             inputs:
               versionSpec: 3.x
 
-          - pwsh: pip install jsonschema2md==1.5.2
+          # Invoke pip as a module of the just-activated toolcache interpreter rather than
+          # relying on an unversioned `pip` shim, which can resolve to the Linux image's
+          # system Python (with its own apt-owned, non-writable site-packages) instead of
+          # the UsePythonVersion@0 toolcache install, causing a permission-denied failure
+          # when reinstalling a dependency the system copy already provides (PyYAML).
+          - pwsh: python -m pip install jsonschema2md==1.5.2
             displayName: Install jsonschema2md
 
           - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json $(Pipeline.Workspace)/docs/azure.yaml.schema.md

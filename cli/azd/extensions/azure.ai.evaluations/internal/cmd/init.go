@@ -1549,8 +1549,9 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	// Optional host capability; literals are shared with the core handler so
-	// extensions using the released SDK do not need a new protocol dependency.
+	// Optional capability requiring a separate host implementation, not an
+	// extension update. Missing or mismatched acknowledgment retains the scaffold;
+	// the released SDK carries the metadata without a new protocol dependency.
 	token := rand.Text()
 	callCtx := metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", token)
 	var trailers metadata.MD

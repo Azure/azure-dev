@@ -497,14 +497,16 @@ is removed. Dataset files, artifact directories, lock files, and existing
 the host's save outcome is uncertain after cancellation or a connection failure,
 or rollback fails, init reports that recovery is incomplete and leaves an
 explicit inspection instruction rather than overwriting concurrent edits.
-Older azd hosts do not send this optional acknowledgment. On those hosts, init
-retains the scaffold and reports manual recovery instead of promising an
-automatic retry. Inspect the retained eval and its root service reference;
+Acknowledgment requires a separate host implementation; installing this extension
+does not enable it. Without a matching acknowledgment, even an explicit root-save
+or permission error has an uncertain outcome: init retains the scaffold and
+reports manual recovery instead of promising an automatic retry.
+Inspect the retained eval and its root service reference;
 do not delete preexisting evaluations. This does not require a newer SDK or
 change the minimum supported host version.
-Host builds with completed-operation acknowledgment also cover rejection before
-a save, including unsupported layered projects. Older installed hosts do not
-gain that behavior from an extension update. Completion is not proof that the
+For automatic rollback after rejection before a save, including unsupported
+layered projects, the host must also acknowledge that operation's unsuccessful
+completion. Completion is not proof that the
 root file stayed unchanged; byte comparisons and ownership checks still apply.
 For every dataset mode, init checks locally available files for non-empty JSONL
 object rows before creating locks, ignore files, artifact directories, or

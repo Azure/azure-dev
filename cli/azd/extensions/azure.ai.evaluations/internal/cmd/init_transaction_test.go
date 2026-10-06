@@ -41,7 +41,9 @@ func (s *initProjectServer) setSaveFailureAcknowledgement(enabled bool) {
 	s.ackSaveError = enabled
 }
 
-func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
+// The fixture acknowledges an unsaved completion; a host without that capability
+// instead retains the scaffold, as TestInitRootSaveRequiresMatchingCompletionAcknowledgement covers.
+func TestInitAcknowledgedRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 	for _, rootFilename := range []string{"azure.yaml", "azure.yml"} {
 		t.Run(rootFilename, func(t *testing.T) {
 			for _, filename := range []string{project.EvalConfigBase, project.LegacyEvalConfigBase, "custom quality.yml"} {
@@ -53,6 +55,7 @@ func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 						}
 						t.Run(name, func(t *testing.T) {
 							h := newInitHarness(t, nil)
+							h.project.setSaveFailureAcknowledgement(true)
 							if rootFilename != "azure.yaml" {
 								require.NoError(t, os.Rename(
 									filepath.Join(h.dir, "azure.yaml"), filepath.Join(h.dir, rootFilename)))
@@ -309,6 +312,8 @@ func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
 	assert.FileExists(t, configPath)
 }
 
+// The missing/Unknown case models a host returning a save error without acknowledgment:
+// init must retain the scaffold even when the root file was not changed.
 func TestInitRootSaveRequiresMatchingCompletionAcknowledgement(t *testing.T) {
 	for _, ack := range []string{"missing", "wrong", "duplicate", "content-type only"} {
 		for _, code := range []codes.Code{codes.Unknown, codes.Internal, codes.PermissionDenied} {

@@ -519,6 +519,7 @@ func TestInitSupportedOutputFormats(t *testing.T) {
 	for _, format := range []string{"", "default", "DEFAULT", "json", "JSON"} {
 		t.Run(format, func(t *testing.T) {
 			h := newInitHarness(t, nil)
+			require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 			text, err := executeConversationInit(t, "--name", "quality", "--conversation-mode", "static",
 				"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt", "--output", format)
 			require.NoError(t, err)

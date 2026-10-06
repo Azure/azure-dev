@@ -53,6 +53,7 @@ func TestInitNextStepPreservesLeadingDashNameAndPath(t *testing.T) {
 		for _, path := range []string{"", "team evals/custom quality.yml"} {
 			t.Run(name+"/"+path, func(t *testing.T) {
 				h := newInitHarness(t, nil)
+				require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 				args := []string{"--name=" + name, "--conversation-mode", "static", "--dataset", h.seedRows,
 					"--judge-model", "judge", "--no-prompt"}
 				if path != "" {
@@ -111,6 +112,7 @@ func TestTargetedCreateQuotesLiteralNamesAndRefusesUnsafeNames(t *testing.T) {
 
 func TestInitNextStepPreservesHostConsumedNameAsManualData(t *testing.T) {
 	h := newInitHarness(t, nil)
+	require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 	path := filepath.Join("team evals", "custom.yml")
 	text, err := executeConversationInit(t, "--path", path, "--name=-Cquality", "--conversation-mode", "static",
 		"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt")
@@ -136,6 +138,7 @@ func TestInitNextStepResolvesTheExactAuthoredConfiguration(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				h := newInitHarness(t, nil)
+				require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 				path := filepath.FromSlash(location)
 				if absolute && path != "" {
 					path = filepath.Join(h.dir, path)
@@ -185,6 +188,7 @@ func TestInitNextStepPreservesUnsafeFilenameAsManualData(t *testing.T) {
 	for _, name := range []string{"nightly$team.yaml", "nightly`team.yml", "%TEMP%.yaml", "nightly^team.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			h := newInitHarness(t, nil)
+			require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 			path := filepath.Join("team evals", name)
 			text, err := executeConversationInit(t, "--path", path, "--name", "quality", "--conversation-mode", "static",
 				"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt")

@@ -17,6 +17,7 @@ import (
 
 func TestInitRefusesSymlinkConfigBeforeWriting(t *testing.T) {
 	h := newInitHarness(t, nil)
+	require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 	dir := filepath.Join(h.dir, project.DefaultEvalDir)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	target := filepath.Join(h.dir, "shared.yml")
@@ -62,6 +63,7 @@ func TestInitRefusesSelectedDirectorySymlinkBeforeWriting(t *testing.T) {
 			for _, format := range []string{"default", "json"} {
 				t.Run(fmt.Sprintf("existing=%t/%s/%s", existing, selection, format), func(t *testing.T) {
 					h := newInitHarness(t, nil)
+					require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 					target := t.TempDir()
 					configPath := filepath.Join(target, project.EvalConfigBase)
 					if existing {
@@ -117,6 +119,9 @@ func TestInitRefusesAmbiguousAuthoredDocumentsBeforeWriting(t *testing.T) {
 	} {
 		t.Run(shape, func(t *testing.T) {
 			h := newInitHarness(t, nil)
+			if shape == "single document" {
+				require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
+			}
 			dir := filepath.Join(h.dir, project.DefaultEvalDir)
 			require.NoError(t, os.MkdirAll(dir, 0o700))
 			configPath := filepath.Join(dir, project.EvalConfigBase)

@@ -248,6 +248,10 @@ func TestInitDatasetNameReusesRefOnlyDeclaration(t *testing.T) {
 				t.Setenv("AZD_NO_PROMPT", "false")
 				prompts := &seedCorrectionPromptServer{}
 				h := initIdentityFixture(t, initIdentityDeclarations["ref only"], prompts)
+				if mode == "static" {
+					require.NoError(t, os.WriteFile(filepath.Join("original", "seeds.jsonl"),
+						[]byte("{\"messages\":[]}\n"), 0o600))
+				}
 				dataset := "seeds"
 				if correction {
 					dataset = "./replacement/seeds.jsonl"

@@ -4482,6 +4482,11 @@ func shellArgFor(goos, v string) string {
 	if strings.ContainsFunc(v, func(r rune) bool { return unicode.IsControl(r) && r != '\t' && r != '\n' }) {
 		return shellArgNeedsQuoting
 	}
+	// PowerShell reads these typographic quotes as quotes on every operating
+	// system, so they end a quoted value early whichever way it is wrapped.
+	if strings.ContainsAny(v, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
+		return shellArgNeedsQuoting
+	}
 	// The three that cannot survive being wrapped in double quotes: two expand,
 	// one breaks the quoting itself.
 	if strings.ContainsAny(v, "$`\"") {
@@ -4498,9 +4503,8 @@ func shellArgFor(goos, v string) string {
 // Single quotes are literal in bash, zsh, fish and PowerShell, but only the
 // quote characters themselves are escaped differently in each, so a value that
 // carries one is named instead of inlined wherever no single escape is read the
-// same way by every shell that could be pasting it:
-//   - PowerShell also reads U+2018, U+2019, U+201A and U+201B as single quotes,
-//     on every operating system, and doubling does not cover them.
+// same way by every shell that could be pasting it (shellArgFor has already
+// named the typographic quotes PowerShell reads as quotes):
 //   - cmd.exe does not read single quotes at all, so on Windows a value cmd would
 //     itself act on (& | < > ^ %, a line break) is named, and so is a double
 //     quote, which flips cmd's own quoting for the arguments after it.
@@ -4513,9 +4517,6 @@ func shellArgFor(goos, v string) string {
 // noticing gets a command that fails on the name rather than one that runs
 // something the configuration chose.
 func literalArg(goos, v string) string {
-	if strings.ContainsAny(v, "\u2018\u2019\u201a\u201b") {
-		return shellArgNeedsQuoting
-	}
 	if goos == "windows" {
 		if strings.ContainsAny(v, "&|<>^%\"\n") {
 			return shellArgNeedsQuoting

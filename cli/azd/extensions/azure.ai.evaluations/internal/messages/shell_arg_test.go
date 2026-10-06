@@ -57,7 +57,10 @@ func TestShellArgStillRefusesWhatNoQuotingMakesSafe(t *testing.T) {
 				"%q has no single escape every POSIX shell and PowerShell read alike on %s", v, goos)
 		}
 	}
-	for _, v := range []string{"a$x\u2019; calc; \u2018b", "\u2018$x", "$x\u201a", "$x\u201b"} {
+	for _, v := range []string{
+		"a$x\u2019; calc; \u2018b", "\u2018$x", "$x\u201a", "$x\u201b",
+		"a\u201d; calc; \u201cb c", "my \u201cevals\u201d", "$x\u201e", "plain\u201fname",
+	} {
 		for _, goos := range []string{"linux", "darwin", "windows"} {
 			assert.Equal(t, "VALUE_NEEDS_QUOTING", shellArgFor(goos, v),
 				"%q holds a character PowerShell reads as a single quote on %s", v, goos)

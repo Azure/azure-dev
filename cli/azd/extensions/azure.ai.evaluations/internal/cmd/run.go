@@ -54,9 +54,9 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 		return nil
 	}
 	// The line a pipeline logs is often the only one it keeps, so it carries the
-	// reason when the run has one.
+	// reason when the run has one, and the details that name what was rejected.
 	if reason := failureText(runFailureMessage(run)); reason != "" {
-		return messages.RunFinishedWithReason(run.ID, run.Status, reason)
+		return messages.RunFinishedWithReason(run.ID, run.Status, failureReasonLine(reason, run.Error))
 	}
 	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
@@ -1376,6 +1376,7 @@ func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
 func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	if why := runFailureMessage(run); why != "" {
 		fmt.Fprintf(out, "\n%s\n", urlsafe.Text(why))
+		renderFailureDetails(out, run.Error)
 	}
 }
 

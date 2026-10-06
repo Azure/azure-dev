@@ -21,6 +21,9 @@ const maxErrorDepth = 4
 type errorMembers struct {
 	Code    json.RawMessage `json:"code"`
 	Message json.RawMessage `json:"message"`
+	// Target names what a detail is about, such as the request member that was
+	// rejected. Only a detail entry carries one that matters.
+	Target json.RawMessage `json:"target"`
 	// The members below carry a further explanation when the message is empty:
 	// the Azure error contract's `details` array and `innererror`, its
 	// snake_case spelling, and an OpenAI-style `error` wrapper.
@@ -28,6 +31,18 @@ type errorMembers struct {
 	InnerError json.RawMessage `json:"innererror"`
 	InnerSnake json.RawMessage `json:"inner_error"`
 	Error      json.RawMessage `json:"error"`
+}
+
+// maxCollectedDetails bounds how many entries of a details array are kept. The
+// human views print far fewer; the cap only keeps a hostile payload cheap.
+const maxCollectedDetails = 50
+
+// ErrorDetail is one entry of an error's details array: the specific thing the
+// service found wrong, which the error's own message often only summarizes.
+type ErrorDetail struct {
+	Code    string
+	Message string
+	Target  string
 }
 
 func (m errorMembers) nested() []json.RawMessage {
@@ -63,6 +78,7 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 	}
 	e.Code = codeText(members.Code)
 	e.Message = errorText(members.Message, 0)
+	e.details = readDetails(members.Details)
 	if !blank(e.Message) {
 		return nil
 	}
@@ -89,6 +105,55 @@ func (e *JobError) Reason() string {
 
 func blank(text string) bool {
 	return strings.TrimSpace(text) == ""
+}
+
+// Details are the entries of the error's details array that say something: a
+// message, or failing that a code. An entry that is a bare string is a message.
+//
+// They are read for display only. They are not part of the wire shape this type
+// re-emits, so -o json keeps the service's own object.
+func (e *JobError) Details() []ErrorDetail {
+	if e == nil || len(e.details) == 0 {
+		return nil
+	}
+	return append([]ErrorDetail(nil), e.details...)
+}
+
+func readDetails(raw json.RawMessage) []ErrorDetail {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '[' {
+		return nil
+	}
+	var entries []json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil {
+		return nil
+	}
+	var details []ErrorDetail
+	for _, entry := range entries {
+		if len(details) == maxCollectedDetails {
+			break
+		}
+		entry = bytes.TrimSpace(entry)
+		if len(entry) == 0 {
+			continue
+		}
+		var detail ErrorDetail
+		if entry[0] == '{' {
+			var members errorMembers
+			if json.Unmarshal(entry, &members) != nil {
+				continue
+			}
+			detail.Message = strings.TrimSpace(errorText(entry, 0))
+			detail.Code = strings.TrimSpace(codeText(members.Code))
+			detail.Target = strings.TrimSpace(codeText(members.Target))
+		} else {
+			detail.Message = strings.TrimSpace(errorText(entry, 0))
+		}
+		if detail.Message != "" || detail.Code != "" {
+			details = append(details, detail)
+		}
+	}
+	return details
 }
 
 // codeText reads an error code, which is a string. A numeric or structured code

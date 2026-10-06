@@ -577,8 +577,14 @@ message when one was returned, removing URL credentials, query strings, and
 fragments from the human message. The message is read from `error.message`,
 otherwise from the first nested explanation (`error.details`,
 `error.innererror`, or `error.inner_error`); an `error` sent as a bare string is
-read as the message. The error line a failed `--wait` or `--fail-on` run exits
-with repeats the reason on one line, redacted and limited to 300 characters.
+read as the message. When the error has its own message and also a `details`
+array (the specific findings behind a summary such as "Evaluation validation
+failed"), the summary and `run show` list those detail messages under it, each
+with its `target` when the service sent one, skipping any that only repeat the
+message (and name no target) or read exactly like an earlier detail, and showing up
+to five followed by a count of the rest. `job show` lists them the same way. The error line a failed `--wait` or
+`--fail-on` run exits with repeats the reason on one line, with up to three
+details appended in parentheses, redacted and limited to 300 characters each.
 When rows errored, the `run start --wait` summary also lists up to three
 distinct evaluator errors, most common first, with the number of rows each
 affected; `run show` makes no extra requests, so use the follow-up commands to

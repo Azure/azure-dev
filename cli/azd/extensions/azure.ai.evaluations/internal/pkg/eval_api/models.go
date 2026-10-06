@@ -235,6 +235,8 @@ type JobError struct {
 	// detail is the first nested explanation found when message is empty. It is
 	// not part of the wire shape, so it is never re-emitted.
 	detail string
+	// details are the entries of the error's details array, kept for display.
+	details []ErrorDetail
 }
 
 // ResolvedNameVersion extracts the name and version from the generation job result.

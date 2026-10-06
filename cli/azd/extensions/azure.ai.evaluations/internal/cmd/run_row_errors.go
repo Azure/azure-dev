@@ -97,6 +97,7 @@ func writeJobFailure(out io.Writer, job *eval_api.GenerationJob) {
 	}
 	if reason := job.Error.Reason(); reason != "" {
 		fmt.Fprint(out, messages.JobErrorLine(urlsafe.Text(reason)))
+		renderFailureDetails(out, job.Error)
 	}
 }
 

@@ -3,13 +3,44 @@
 
 package messages
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // RunFinishedWithReason reports a run that ended in something other than
 // completed and says why, so the line a pipeline logs carries the reason and
 // not only the status.
 func RunFinishedWithReason(runID, status, reason string) error {
 	return fmt.Errorf("run %s finished with status %s: %s", runID, status, reason)
+}
+
+// FailureDetailWithTarget names what a failure detail is about.
+func FailureDetailWithTarget(detail, target string) string {
+	return fmt.Sprintf("%s (target: %s)", detail, target)
+}
+
+// FailureDetail is one specific finding listed under a failure's headline.
+func FailureDetail(detail string) string {
+	return fmt.Sprintf("  - %s\n", detail)
+}
+
+// FailureDetailsMore says how many further findings were left out.
+func FailureDetailsMore(hidden int) string {
+	return fmt.Sprintf("  ... and %d more not shown\n", hidden)
+}
+
+// FailureReasonWithDetails appends a failure's findings to its headline for a
+// single-line report.
+func FailureReasonWithDetails(headline string, details []string, hidden int) string {
+	if len(details) == 0 {
+		return headline
+	}
+	list := strings.Join(details, "; ")
+	if hidden > 0 {
+		list += fmt.Sprintf("; and %d more", hidden)
+	}
+	return fmt.Sprintf("%s (details: %s)", headline, list)
 }
 
 // RunRowErrorsHeading introduces the distinct reasons evaluators gave for

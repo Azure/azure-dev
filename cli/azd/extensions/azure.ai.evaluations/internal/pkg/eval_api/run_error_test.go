@@ -168,3 +168,62 @@ func TestGenerationJobFailureDoesNotDiscloseACredentialInTheReason(t *testing.T)
 		})
 	}
 }
+
+func TestJobErrorKeepsTheDetailsWithTheirCodeAndTarget(t *testing.T) {
+	var decoded JobError
+	require.NoError(t, json.Unmarshal([]byte(`{"code":"validation_failed","message":"Evaluation validation failed.",`+
+		`"details":[`+
+		`{"code":"model_not_found","message":" Model 'm' was not found. ","target":"run.data_source.model"},`+
+		`{"message":"no target"},`+
+		`{"code":"OnlyACode"},`+
+		`"a bare string",`+
+		`{"message":{"message":"object message"},"target":7},`+
+		`{},null,42,true]}`), &decoded))
+
+	assert.Equal(t, "Evaluation validation failed.", decoded.Reason(), "the message is still the headline")
+	assert.Equal(t, []ErrorDetail{
+		{Code: "model_not_found", Message: "Model 'm' was not found.", Target: "run.data_source.model"},
+		{Message: "no target"},
+		{Code: "OnlyACode"},
+		{Message: "a bare string"},
+		{Message: "object message"},
+		{Message: "42"},
+	}, decoded.Details())
+
+	var none *JobError
+	assert.Empty(t, none.Details())
+	assert.Empty(t, (&JobError{Message: "m"}).Details())
+}
+
+func TestJobErrorDetailsAreBoundedAndCopied(t *testing.T) {
+	var body strings.Builder
+	body.WriteString(`{"message":"m","details":[`)
+	for i := range 3 * maxCollectedDetails {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		body.WriteString(`{"message":"detail"}`)
+	}
+	body.WriteString(`]}`)
+	var decoded JobError
+	require.NoError(t, json.Unmarshal([]byte(body.String()), &decoded))
+	got := decoded.Details()
+	require.Len(t, got, maxCollectedDetails)
+
+	got[0].Message = "changed"
+	assert.Equal(t, "detail", decoded.Details()[0].Message, "a caller cannot rewrite what the error holds")
+}
+
+// Reading the details must not change what -o json emits for an error that has
+// both a message and details.
+func TestRunJSONKeepsTheDetailsOfAnErrorWithAMessage(t *testing.T) {
+	const body = `{"id":"run_1","status":"failed","error":{"code":"validation_failed",` +
+		`"message":"Evaluation validation failed: model resource is not found.",` +
+		`"details":[{"code":"model_not_found","message":"Model 'm' was not found.","target":"t"}]}}`
+	var run OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(body), &run))
+	require.Len(t, run.Error.Details(), 1)
+	out, err := json.Marshal(&run)
+	require.NoError(t, err)
+	assert.JSONEq(t, body, string(out))
+}

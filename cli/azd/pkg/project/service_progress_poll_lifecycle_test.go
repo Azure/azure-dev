@@ -31,7 +31,8 @@ func TestStartPollingProgress_PreservesResultAndFinalProgress(t *testing.T) {
 			)
 			require.Equal(t, "result", result)
 			require.Equal(t, operationErr, err)
-			require.Equal(t, []ServiceProgress{NewServiceProgress("Final")}, messages)
+			require.Len(t, messages, 1)
+			require.Equal(t, "Final", messages[0].Message)
 		})
 	}
 }

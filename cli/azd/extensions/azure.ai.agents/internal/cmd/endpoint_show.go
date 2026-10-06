@@ -100,7 +100,7 @@ func runEndpointShow(
 	case agent_yaml.AgentKindHosted:
 		return runHostedEndpointShow(ctx, validation.Name, flags.output)
 	case agent_yaml.AgentKindPrompt:
-		return runPromptEndpointShow(ctx, azdClient, svc, proj.Path, validation, flags.output)
+		return runPromptEndpointShow(ctx, azdClient, svc, validation, flags.output)
 	case agent_yaml.AgentKindPromptVoice, agent_yaml.AgentKindVoice:
 		return runVoiceEndpointShow(ctx, azdClient, svc, validation, flags.output)
 	default:
@@ -140,32 +140,19 @@ func runPromptEndpointShow(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
-	projectRoot string,
 	validation project.AgentDefinitionValidation,
 	outputFormat string,
 ) error {
-	prompt, found, err := project.PromptAgentFromResolvedService(svc, projectRoot)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return exterrors.Internal(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("validated prompt agent service %q has no prompt definition", svc.GetName()),
-		)
-	}
-
 	envValues, err := promptEnvValues(ctx, azdClient)
 	if err != nil {
 		return fmt.Errorf("reading the azd environment: %w", err)
 	}
-	settings, err := project.ResolvePromptAgentSettings(envValues)
+	endpoint, err := project.PromptAgentDeploymentEndpoint(envValues, svc.GetName())
 	if err != nil {
 		return err
 	}
 
 	agentName := deployedAgentName(envValues, svc.GetName(), validation.Name)
-	endpoint := project.PromptAgentResponsesEndpoint(settings, agentName, prompt.HarnessType() != "")
 	result := endpointShowResult{
 		Name:      agentName,
 		Kind:      validation.Kind,

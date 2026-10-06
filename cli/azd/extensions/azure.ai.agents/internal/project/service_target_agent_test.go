@@ -551,10 +551,8 @@ func TestClassifyActivityBotErrorPreservesBotServiceFailures(t *testing.T) {
 	require.Equal(t, "ensure_activity_bot.InvalidBotConfiguration", serviceErr.ErrorCode)
 }
 
-func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
+func TestAgentServiceKey_NormalizesServiceNames(t *testing.T) {
 	t.Parallel()
-
-	p := &AgentServiceTargetProvider{}
 
 	tests := []struct {
 		name     string
@@ -570,9 +568,9 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := p.getServiceKey(tt.input)
+			got := agentServiceKey(tt.input)
 			if got != tt.expected {
-				t.Errorf("getServiceKey(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("agentServiceKey(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -4331,9 +4329,8 @@ func TestEndpoints_RootRefPreservesSiblingKindOverride(t *testing.T) {
 	))
 
 	client := newEndpointsTestClient(t, projectRoot, map[string]string{
-		"AZURE_SUBSCRIPTION_ID":    "subscription",
-		"AZURE_RESOURCE_GROUP":     "resource-group",
-		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
+		"AGENT_PROMPT_ENDPOINT": "https://deployed.example/responses",
+		"AGENT_PROMPT_VERSION":  "1",
 	})
 	service := &azdext.ServiceConfig{
 		Name: "prompt", Host: foundryAgentHost, RelativePath: ".",
@@ -4352,9 +4349,7 @@ func TestEndpoints_RootRefPreservesSiblingKindOverride(t *testing.T) {
 
 	got, err := provider.Endpoints(t.Context(), service, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		"https://acct.services.ai.azure.com/api/projects/project/openai/v1/responses",
-	}, got)
+	require.Equal(t, []string{"https://deployed.example/responses"}, got)
 }
 
 func TestEndpointsRejectsAgentDefinitionPath(t *testing.T) {
@@ -4421,21 +4416,20 @@ func TestEndpoints_HostedMissingVersion_StillErrors(t *testing.T) {
 	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
 }
 
-func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
+func TestEndpoints_PromptUsesPersistedEndpointDespiteDefinitionChanges(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
 	client, projectServer := newEndpointsTestClientWithProjectServer(t, projectRoot, map[string]string{
-		"AZURE_SUBSCRIPTION_ID":    "subscription",
-		"AZURE_RESOURCE_GROUP":     "resource-group",
-		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
+		"AGENT_RAI_AGENT_NAME":     "deployed-agent",
+		"AGENT_RAI_AGENT_ENDPOINT": "https://deployed.example/agents/deployed-agent/responses",
+		"AGENT_RAI_AGENT_VERSION":  "3",
 	})
 	service := inlineAgentService(t, map[string]any{
 		"kind":         "prompt",
-		"name":         "managed-agent",
+		"name":         "locally-edited-agent",
 		"model":        "gpt-5-mini",
 		"instructions": "Be helpful.",
-		"harness":      map[string]any{"type": "github_copilot_preview"},
 	})
 	provider := &AgentServiceTargetProvider{azdClient: client}
 	require.NoError(t, provider.Initialize(t.Context(), service))
@@ -4444,12 +4438,56 @@ func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
 
 	got, err := provider.Endpoints(t.Context(), service, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		"https://acct.services.ai.azure.com/api/projects/project/agents/managed-agent/" +
-			"endpoint/protocols/openai/responses?api-version=v1",
-	}, got)
+	require.Equal(t, []string{"https://deployed.example/agents/deployed-agent/responses"}, got)
 	require.Equal(t, projectRoot, provider.projectPath)
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
+}
+
+func TestEndpoints_PromptRequiresCompleteDeployment(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]string
+		missing string
+	}{
+		{
+			name: "missing endpoint",
+			values: map[string]string{
+				"AGENT_RAI_AGENT_VERSION": "3",
+			},
+			missing: "AGENT_RAI_AGENT_ENDPOINT",
+		},
+		{
+			name: "missing version",
+			values: map[string]string{
+				"AGENT_RAI_AGENT_ENDPOINT": "https://deployed.example/responses",
+			},
+			missing: "AGENT_RAI_AGENT_VERSION",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectRoot := t.TempDir()
+			client := newEndpointsTestClient(t, projectRoot, test.values)
+			service := inlineAgentService(t, map[string]any{
+				"kind":         "prompt",
+				"name":         "prompt-agent",
+				"model":        "gpt-5-mini",
+				"instructions": "Be helpful.",
+			})
+			provider := &AgentServiceTargetProvider{azdClient: client}
+
+			_, err := provider.Endpoints(t.Context(), service, nil)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+			require.Contains(t, localErr.Message, test.missing)
+			require.Contains(t, localErr.Suggestion, "azd deploy")
+		})
+	}
 }
 
 func TestEndpoints_VoiceDoesNotRequireHostedEnvironmentValues(t *testing.T) {

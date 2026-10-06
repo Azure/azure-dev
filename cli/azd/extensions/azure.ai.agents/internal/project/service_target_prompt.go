@@ -257,28 +257,6 @@ func declaresRaiPolicy(managed *agent_yaml.PromptAgent) bool {
 	return false
 }
 
-// resolvedPromptAgentSettings returns the prompt-agent settings with the same
-// azd environment-derived target resolution deployPromptAgent applies. Read-only
-// callers (Endpoints, GetTargetResource) must use this rather than
-// promptAgentSettings: only the azd environment knows the provisioned Foundry
-// target, so environment overlay must be applied before returning it.
-func (p *AgentServiceTargetProvider) resolvedPromptAgentSettings(
-	ctx context.Context,
-) (*PromptAgentSettings, error) {
-	env, err := p.azdEnvValues(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("reading the azd environment: %w", err)
-	}
-	settings, err := p.promptAgentSettings(env)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := ResolvePromptTargetFromEnv(settings, env); err != nil {
-		return nil, err
-	}
-	return settings, nil
-}
-
 // loadPromptAgentDefinition returns the service's prompt-agent definition.
 //
 // The effective definition comes from the resolved azure.yaml service entry.
@@ -672,7 +650,7 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 		return fmt.Errorf("agent version is empty; cannot register environment variables")
 	}
 
-	serviceKey := p.getServiceKey(serviceConfig.Name)
+	serviceKey := agentServiceKey(serviceConfig.Name)
 	endpoint := PromptAgentResponsesEndpoint(settings, agentName, harnessed)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	envVars := []azdext.SetEnvRequest{
@@ -719,6 +697,39 @@ func PromptAgentResponsesEndpoint(
 		return strings.TrimRight(pe, "/") + "/openai/v1/responses"
 	}
 	return ""
+}
+
+// PromptAgentDeploymentEndpoint returns the Responses endpoint persisted by the
+// last completed deployment. VERSION is written last and acts as the readiness
+// marker for the endpoint snapshot.
+func PromptAgentDeploymentEndpoint(
+	envValues map[string]string,
+	serviceName string,
+) (string, error) {
+	serviceKey := agentServiceKey(serviceName)
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+
+	var missing []string
+	endpoint := strings.TrimSpace(envValues[endpointKey])
+	if endpoint == "" {
+		missing = append(missing, endpointKey)
+	}
+	if strings.TrimSpace(envValues[versionKey]) == "" {
+		missing = append(missing, versionKey)
+	}
+	if len(missing) > 0 {
+		noun := "environment variable is"
+		if len(missing) > 1 {
+			noun = "environment variables are"
+		}
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("%s %s required", strings.Join(missing, " and "), noun),
+			"run `azd deploy` to deploy the prompt agent and set its callable endpoint",
+		)
+	}
+	return endpoint, nil
 }
 
 // azdEnvValues returns the current azd environment as a key/value map. Used to

@@ -142,13 +142,12 @@ func TestPrintEndpointJSON(t *testing.T) {
 	t.Logf("=== endpoint show --output json ===\n%s", output)
 }
 
-func TestRunPromptEndpointShowUsesKindSpecificEndpoint(t *testing.T) {
+func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"kind":         "prompt",
-		"name":         "authored-name",
+		"name":         "locally-edited-name",
 		"model":        "gpt-5-mini",
 		"instructions": "Help.",
-		"harness":      map[string]any{"type": "github_copilot_preview"},
 	})
 	require.NoError(t, err)
 	svc := &azdext.ServiceConfig{
@@ -159,10 +158,9 @@ func TestRunPromptEndpointShowUsesKindSpecificEndpoint(t *testing.T) {
 	env := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "dev"},
 		values: map[string]map[string]string{"dev": {
-			"AZURE_SUBSCRIPTION_ID":    "subscription",
-			"AZURE_RESOURCE_GROUP":     "resource-group",
-			"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
 			"AGENT_ASSISTANT_NAME":     "deployed-name",
+			"AGENT_ASSISTANT_ENDPOINT": "https://deployed.example/responses",
+			"AGENT_ASSISTANT_VERSION":  "3",
 		}},
 	}
 	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
@@ -172,8 +170,7 @@ func TestRunPromptEndpointShowUsesKindSpecificEndpoint(t *testing.T) {
 			t.Context(),
 			client,
 			svc,
-			t.TempDir(),
-			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "authored-name"},
+			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "locally-edited-name"},
 			"json",
 		)
 	})
@@ -183,52 +180,56 @@ func TestRunPromptEndpointShowUsesKindSpecificEndpoint(t *testing.T) {
 	assert.Contains(
 		t,
 		output,
-		`"responses": "https://acct.services.ai.azure.com/api/projects/project/agents/deployed-name/`+
-			`endpoint/protocols/openai/responses?api-version=v1"`,
+		`"responses": "https://deployed.example/responses"`,
 	)
 	assert.NotContains(t, output, `"agent_endpoint"`)
 }
 
-func TestRunPromptEndpointShowUsesProjectResponsesEndpoint(t *testing.T) {
-	props, err := structpb.NewStruct(map[string]any{
-		"kind":         "prompt",
-		"name":         "prompt-agent",
-		"model":        "gpt-5-mini",
-		"instructions": "Help.",
-	})
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "assistant",
-		Host:                 AiAgentHost,
-		AdditionalProperties: props,
+func TestRunPromptEndpointShowRequiresCompleteDeployment(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]string
+		missing string
+	}{
+		{
+			name: "missing endpoint",
+			values: map[string]string{
+				"AGENT_ASSISTANT_VERSION": "3",
+			},
+			missing: "AGENT_ASSISTANT_ENDPOINT",
+		},
+		{
+			name: "missing version",
+			values: map[string]string{
+				"AGENT_ASSISTANT_ENDPOINT": "https://deployed.example/responses",
+			},
+			missing: "AGENT_ASSISTANT_VERSION",
+		},
 	}
-	env := &testEnvironmentServiceServer{
-		current: &azdext.Environment{Name: "dev"},
-		values: map[string]map[string]string{"dev": {
-			"AZURE_SUBSCRIPTION_ID":    "subscription",
-			"AZURE_RESOURCE_GROUP":     "resource-group",
-			"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
-		}},
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values:  map[string]map[string]string{"dev": test.values},
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+
+			err := runPromptEndpointShow(
+				t.Context(),
+				client,
+				&azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost},
+				project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "prompt-agent"},
+				"json",
+			)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+			require.Contains(t, localErr.Message, test.missing)
+			require.Contains(t, localErr.Suggestion, "azd deploy")
+		})
 	}
-	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
-
-	output := captureEndpointOutput(t, func() error {
-		return runPromptEndpointShow(
-			t.Context(),
-			client,
-			svc,
-			t.TempDir(),
-			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "prompt-agent"},
-			"json",
-		)
-	})
-
-	assert.Contains(
-		t,
-		output,
-		`"responses": "https://acct.services.ai.azure.com/api/projects/project/openai/v1/responses"`,
-	)
-	assert.NotContains(t, output, "/agents/")
 }
 
 func TestRunVoiceEndpointShowUsesDeployedVoiceEndpoint(t *testing.T) {

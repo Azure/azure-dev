@@ -156,7 +156,7 @@ const downloadedEvaluator = `{
 		"type":"rubric",
 		"dimensions":[{
 			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
-			"metadata":{"internal_count":9007199254740993,"url":"https://dimension-user:dimension-password@example.test"}
+			"metadata":{"internal_count":9007199254740991,"url":"https://dimension-user:dimension-password@example.test"}
 		}],
 		"pass_threshold":0.6,
 		"future_option":{"count":9007199254740993},
@@ -197,6 +197,7 @@ func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.JSONEq(t, editableDownloadedRubric, string(raw), "unknown authored fields remain editable")
+	require.NotContains(t, string(raw), "9007199254740991", "known dimension-level service metadata is not editable")
 	require.Contains(t, string(raw), "9007199254740993", "unknown authored numeric values retain their precision")
 	require.NotContains(t, string(raw), "service-only-agent-wiring")
 	require.NotContains(t, output.String(), "service-only-agent-wiring")

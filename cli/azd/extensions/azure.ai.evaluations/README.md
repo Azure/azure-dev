@@ -529,9 +529,10 @@ When the effective turn cap is too low, init names a valid `--max-turns` value
 to use on a new invocation, or asks you to lower the row's desired turns.
 Correcting the dataset never silently changes the selected cap.
 Local files derive their dataset name from the filename without its extension.
-That name must be non-empty, cannot be `.` or `..`, and must satisfy the existing
-dataset lookup-name rules: at most 255 bytes, with no path separators or
-control characters.
+For a new declaration, that name must use only letters, digits, dashes, and
+underscores, up to 255 bytes. Reusing an existing authored or registered
+dataset keeps the broader lookup-name rules: the name must be non-empty, cannot
+be `.` or `..`, and cannot contain path separators or control characters.
 If that name is already declared for a different file (or has no local file),
 init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique

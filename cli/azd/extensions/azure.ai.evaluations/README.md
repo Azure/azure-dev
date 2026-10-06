@@ -1244,10 +1244,6 @@ dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
 values during preflight, before uploading or tagging datasets or publishing
 evaluators. Validation preserves authored bytes for digest and drift decisions.
 
-Download and generation results must be JSON objects: null, arrays, strings,
-numbers, and booleans are rejected before writing files or catalog entries.
-Unknown object-shaped evaluator documents remain supported without dropping fields.
-
 Standalone `evaluator update` preserves the existing display name, description,
 categories, and supported evaluation levels. A full input document can explicitly
 replace those fields. The download does not modify configuration or attach the

@@ -3571,9 +3571,8 @@ func (p *AgentServiceTargetProvider) projectDeclaresEvaluationService() bool {
 //
 //   - When the resolved block contains a "see <relPath>/README.md"
 //     suggestion (i.e. a local README exists at the service path), the
-//     aka.ms line is replaced entirely — the block already points the
-//     user at the more-detailed local doc, so the canned link is
-//     redundant.
+//     aka.ms paragraph is replaced — the block points at the more-detailed
+//     local doc. Independent guidance in subsequent paragraphs is retained.
 //   - Otherwise the aka.ms line is preserved and the "Next:" block is
 //     appended below, separated by a single blank line — aka.ms remains
 //     the fallback doc pointer when no local README is present. The block
@@ -3633,7 +3632,11 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 	}
 
 	if suggestionsIncludeReadme(suggestions) {
+		_, additional, _ := strings.Cut(target.Metadata["note"], "\n\n")
 		target.Metadata["note"] = block
+		if additional != "" {
+			target.Metadata["note"] += "\n\n" + additional
+		}
 		return
 	}
 	existing := target.Metadata["note"]

@@ -395,11 +395,10 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 		},
 		{
 			// Double quotes do not stop $ expanding in POSIX shells or
-			// PowerShell, so wrapping it would print a step that runs whatever
-			// the directory name says. Named instead of inlined.
+			// PowerShell, so the value is single-quoted, which is literal in both.
 			name:    "a character the shell would expand",
 			evalDir: "./eval$dir",
-			want:    "--path VALUE_NEEDS_QUOTING",
+			want:    "--path './eval$dir'",
 		},
 		{
 			name:    "a character that would end the command",

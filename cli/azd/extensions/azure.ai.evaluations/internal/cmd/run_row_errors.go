@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 
+	"azureaieval/internal/failuretext"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/urlsafe"
@@ -22,7 +22,7 @@ const (
 	maxRowErrorGroups = 3
 	// maxFailureTextRunes bounds one reason so a service body pasted into an error
 	// cannot bury the summary.
-	maxFailureTextRunes = 300
+	maxFailureTextRunes = failuretext.MaxRunes
 )
 
 // rowErrorGroup is one distinct reason an evaluator gave for scoring no verdict
@@ -104,10 +104,5 @@ func writeJobFailure(out io.Writer, job *eval_api.GenerationJob) {
 // failureText makes a service-supplied reason safe to print on one line: URL
 // credentials are redacted, whitespace is collapsed, and length is bounded.
 func failureText(text string) string {
-	collapsed := strings.Join(strings.Fields(urlsafe.Text(text)), " ")
-	runes := []rune(collapsed)
-	if len(runes) <= maxFailureTextRunes {
-		return collapsed
-	}
-	return string(runes[:maxFailureTextRunes]) + "..."
+	return failuretext.Text(text)
 }

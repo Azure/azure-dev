@@ -15,11 +15,6 @@ func RunFinishedWithReason(runID, status, reason string) error {
 	return fmt.Errorf("run %s finished with status %s: %s", runID, status, reason)
 }
 
-// FailureDetailWithTarget names what a failure detail is about.
-func FailureDetailWithTarget(detail, target string) string {
-	return fmt.Sprintf("%s (target: %s)", detail, target)
-}
-
 // FailureDetail is one specific finding listed under a failure's headline.
 func FailureDetail(detail string) string {
 	return fmt.Sprintf("  - %s\n", detail)

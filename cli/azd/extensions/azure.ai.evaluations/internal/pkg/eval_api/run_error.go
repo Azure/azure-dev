@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+
+	"azureaieval/internal/failuretext"
 )
 
 // maxErrorDepth bounds how far a nested error is followed. Real error bodies
@@ -40,11 +42,7 @@ const maxCollectedDetails = 50
 
 // ErrorDetail is one entry of an error's details array: the specific thing the
 // service found wrong, which the error's own message often only summarizes.
-type ErrorDetail struct {
-	Code    string
-	Message string
-	Target  string
-}
+type ErrorDetail = failuretext.Detail
 
 func (m errorMembers) nested() []json.RawMessage {
 	return []json.RawMessage{m.Details, m.InnerError, m.InnerSnake, m.Error}

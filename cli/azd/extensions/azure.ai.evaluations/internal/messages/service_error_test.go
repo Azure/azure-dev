@@ -4,6 +4,8 @@
 package messages
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -105,3 +107,70 @@ func TestANonServiceErrorIsLeftAlone(t *testing.T) {
 type assertAnError struct{}
 
 func (assertAnError) Error() string { return "a local problem" }
+
+// The live shape of a create refused for a judge model the project does not
+// have: the message only says the request was invalid, and the one place that
+// names the model, with the part of the request it is about, is details[0].
+const missingJudgeBody = `{"error":{"code":"invalid_request","message":"The request is invalid.",
+	"details":[{"code":"model_not_found",
+	"message":"Model 'mh-missing-judge' was not found. Verify the name and version are correct.",
+	"target":"testing_criteria[0].initialization_parameters.model"}]}}`
+
+func TestARefusalNamesWhatTheDetailsSay(t *testing.T) {
+	got := ServiceRefused(400, refusalFrom(t, 400, "https://proj.example/openai/v1/evals", missingJudgeBody))
+
+	require.Error(t, got)
+	text := got.Error()
+	assert.Contains(t, text, "The request is invalid.")
+	assert.Contains(t, text, "Model 'mh-missing-judge' was not found. Verify the name and version are correct.")
+	assert.Contains(t, text, "(target: testing_criteria[0].initialization_parameters.model)")
+	assert.NotContains(t, text, "\n", "one line")
+
+	svc, ok := errors.AsType[*serviceError](got)
+	require.True(t, ok)
+	assert.NotContains(t, svc.SafeMessage(), "mh-missing-judge",
+		"-o json is unchanged: the safe sentence is the one it always was")
+	assert.Equal(t, "The request is invalid. (HTTP 400 InvalidRequest)", svc.SafeMessage())
+}
+
+func TestRefusalDetailsAreDeduplicatedOrderedCappedAndCounted(t *testing.T) {
+	var details []string
+	details = append(details, `{"message":"the request is invalid"}`) // restates the sentence
+	for i := range 12 {
+		details = append(details, fmt.Sprintf(`{"message":"problem %d"}`, i))
+	}
+	details = append(details, `{"message":"problem 0"}`) // a repeat
+	body := `{"error":{"message":"The request is invalid.","details":[` + strings.Join(details, ",") + `]}}`
+
+	text := ServiceRefused(400, refusalFrom(t, 400, "https://p.example/x", body)).Error()
+	assert.Contains(t, text, "(details: problem 0; problem 1; problem 2; and 9 more)")
+	assert.NotContains(t, text, "the request is invalid;")
+}
+
+func TestRefusalDetailsAreRedactedAndOnOneLine(t *testing.T) {
+	body := `{"error":{"message":"Bad.","details":[{"message":"could not read ` +
+		`https://fixture-user:fixture-password@storage.example/rows.jsonl?sig=fixture-signature\nsecond line ` +
+		strings.Repeat("x", 600) + `","target":"https://storage.example/rows.jsonl?sig=fixture-signature"}]}}`
+
+	text := ServiceRefused(400, refusalFrom(t, 400, "https://p.example/x", body)).Error()
+	for _, secret := range []string{"fixture-user", "fixture-password", "fixture-signature", "sig="} {
+		assert.NotContains(t, text, secret)
+	}
+	assert.NotContains(t, text, "\n")
+	assert.Contains(t, text, "...", "a detail that was cut says so")
+	assert.Less(t, len([]rune(text)), 900, "bounded")
+}
+
+func TestRefusalDetailsReadBareStringsAndNestedLevels(t *testing.T) {
+	body := `{"error":{"message":"Bad.","innererror":{"details":["inner one",{"code":"OnlyACode"}]},` +
+		`"details":["outer one"]}}`
+	text := ServiceRefused(400, refusalFrom(t, 400, "https://p.example/x", body)).Error()
+	assert.Contains(t, text, "(details: outer one; inner one; OnlyACode)")
+}
+
+func TestARefusalWithoutDetailsReadsAsItAlwaysDid(t *testing.T) {
+	body := `{"error":{"code":"InvalidRequest","message":"dataset 'golden' has no version 3.0"}}`
+	text := ServiceRefused(400, refusalFrom(t, 400, "https://proj.example/datasets/golden", body)).Error()
+	assert.Equal(t,
+		"dataset 'golden' has no version 3.0 (HTTP 400 InvalidRequest) from https://proj.example/datasets/golden", text)
+}

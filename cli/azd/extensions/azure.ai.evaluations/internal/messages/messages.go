@@ -29,10 +29,12 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -4457,26 +4459,55 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // Double quotes are what cmd, PowerShell, bash and zsh all read the same way.
 // What they do not do is make the value literal: $, $(...) and backticks still
 // expand inside them in POSIX shells and PowerShell, and \" does not escape a
-// quote in PowerShell at all. There is no wrapping that is literal in all four.
+// quote in PowerShell at all. There is no double-quote wrapping that is literal
+// in all four, so a value carrying one of those is single-quoted instead (see
+// literalArg), which is literal in POSIX shells and in PowerShell.
 //
 // These values come out of the configuration file, so a printed command that
-// carried one of those characters would run it when pasted. They are named
-// rather than inlined: the command stops being copy-and-run for that argument,
-// which is the honest outcome, because it cannot be made both runnable and
-// safe here. Backslashes are left alone, so a Windows path comes back as itself.
+// carried one of those characters would run it when pasted if it were not
+// quoted literally. Backslashes are left alone, so a Windows path comes back as
+// itself.
 func shellArg(v string) string {
+	return shellArgFor(runtime.GOOS, v)
+}
+
+// shellArgFor is shellArg for a named operating system, so both rules can be
+// tested wherever the tests run.
+func shellArgFor(goos, v string) string {
 	if v == "" {
 		return `""`
 	}
-	// The three that cannot survive being wrapped: two expand, one breaks the
-	// quoting itself.
-	if strings.ContainsAny(v, "$`\"") {
+	// A control character other than a tab or a line break has no quoting.
+	if strings.ContainsFunc(v, func(r rune) bool { return unicode.IsControl(r) && r != '\t' && r != '\n' }) {
 		return shellArgNeedsQuoting
+	}
+	// The three that cannot survive being wrapped in double quotes: two expand,
+	// one breaks the quoting itself.
+	if strings.ContainsAny(v, "$`\"") {
+		return literalArg(goos, v)
 	}
 	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
 		return v
 	}
 	return `"` + v + `"`
+}
+
+// literalArg single-quotes a value so nothing in it is expanded.
+//
+// Single quotes are literal in bash, zsh, fish and PowerShell. cmd.exe does not
+// read them as quotes at all, so on Windows a value cmd would itself act on
+// (& | < > ^ %, or a line break) cannot be both runnable and safe there, and is
+// named instead of inlined: the placeholder is deliberately inert, so a reader
+// who pastes it without noticing gets a command that fails on the name rather
+// than one that runs something the configuration chose.
+func literalArg(goos, v string) string {
+	if goos == "windows" {
+		if strings.ContainsAny(v, "&|<>^%\n") {
+			return shellArgNeedsQuoting
+		}
+		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
 }
 
 // shellArgNeedsQuoting stands in for a value no portable quoting makes literal.

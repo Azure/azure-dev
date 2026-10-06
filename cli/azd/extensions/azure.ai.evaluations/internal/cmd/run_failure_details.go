@@ -6,9 +6,9 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 
+	"azureaieval/internal/failuretext"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 )
@@ -31,49 +31,14 @@ const (
 // its first nested reason, which is what the headline prints, so repeating the
 // details would only echo it.
 //
-// Every entry is redacted and bounded like the headline, one that restates the
-// headline or repeats an earlier entry is dropped, and what does not fit under
-// limit is counted rather than silently lost.
+// The shaping (redaction, one line, bounds, dedupe, count) is failuretext.Lines,
+// shared with every other place a service explains a failure.
 func failureDetails(failure *eval_api.JobError, limit int) (lines []string, more int) {
 	if failure == nil || strings.TrimSpace(failure.Message) == "" {
 		return nil, 0
 	}
-	headline := failureKey(failureText(failure.Message))
-	var seen []string
-	for _, detail := range failure.Details() {
-		text := failureText(detail.Message)
-		if text == "" {
-			text = failureText(detail.Code)
-		}
-		if text == "" {
-			continue
-		}
-		target := failureText(detail.Target)
-		if target != "" {
-			text = messages.FailureDetailWithTarget(text, target)
-		}
-		// A detail that sits inside the headline adds nothing, unless it names a
-		// target the headline does not. An earlier entry is a repeat only when
-		// it reads exactly the same: containment would lose "gpt-4o" after
-		// "gpt-4o-mini".
-		key := failureKey(text)
-		if slices.Contains(seen, key) || target == "" && strings.Contains(headline, key) {
-			continue
-		}
-		seen = append(seen, key)
-		if len(lines) == limit {
-			more++
-			continue
-		}
-		lines = append(lines, text)
-	}
+	lines, more = failuretext.Lines(failure.Message, failure.Details(), limit)
 	return lines, more + failure.OmittedDetails()
-}
-
-// failureKey is the text two reasons are compared on: the same words in any
-// case, spacing or trailing punctuation are one reason.
-func failureKey(text string) string {
-	return strings.TrimRight(strings.ToLower(strings.Join(strings.Fields(text), " ")), ".")
 }
 
 // renderFailureDetails prints the failure's detail messages under its headline.

@@ -27,6 +27,9 @@ func invalidExactRubrics() []struct{ name, definition, field string } {
 		{"null type", `{"type":null,"dimensions":[]}`, "definition.type"},
 		{"null type null dimensions", `{"type":null,"dimensions":null}`, "definition.type"},
 		{"empty type", `{"type":"","dimensions":[]}`, "definition.type"},
+		{"space type", `{"type":"   ","dimensions":[]}`, "definition.type"},
+		{"escaped whitespace type", `{"type":" \t\r\n ","dimensions":[]}`, "definition.type"},
+		{"unicode whitespace type", `{"type":"\u00a0\u2003","dimensions":[]}`, "definition.type"},
 		{"number type", `{"type":42,"dimensions":[]}`, "definition.type"},
 		{"threshold above one", `{"type":"rubric","dimensions":[],"pass_threshold":1.0000000000000001}`, "pass_threshold"},
 		{"negative tiny threshold", `{"type":"rubric","dimensions":[],"pass_threshold":-1e-400}`, "pass_threshold"},
@@ -36,6 +39,21 @@ func invalidExactRubrics() []struct{ name, definition, field string } {
 		{"scientific fraction", `{"dimensions":[{"weight":10000000000000001e-16}]}`, ".weight"},
 		{"scientific below one", `{"dimensions":[{"weight":99999999999999999e-17}]}`, ".weight"},
 		{"quoted numeric weight", `{"dimensions":[{"weight":"1"}]}`, ".weight"},
+	}
+}
+
+func TestEvaluatorDefinitionKindPreservesNamedTypes(t *testing.T) {
+	kind, err := evaluatorDefinitionKind(nil)
+	require.NoError(t, err)
+	assert.Empty(t, kind, "absence retains compatibility defaulting")
+	for _, original := range []string{"rubric", "prompt", "custom_kind", " custom_kind ", " rubric "} {
+		t.Run(original, func(t *testing.T) {
+			raw, err := json.Marshal(original)
+			require.NoError(t, err)
+			kind, err := evaluatorDefinitionKind(raw)
+			require.NoError(t, err)
+			assert.Equal(t, original, kind, "validation must not trim or reclassify a nonblank named kind")
+		})
 	}
 }
 

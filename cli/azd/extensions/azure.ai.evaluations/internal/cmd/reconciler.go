@@ -207,6 +207,17 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
 	recreate := substanceChanged(prior, definition, digest)
+	if recreate && group.Source != nil {
+		legacy := group
+		legacy.Source = nil
+		legacyDefinition, err := project.FingerprintDefinition(legacy)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
+			recreate = false
+		}
+	}
 	if recreate && validated {
 		legacyDigest, err := project.FingerprintGroup(prepared.declared)
 		if err != nil {
@@ -216,7 +227,17 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 		if err != nil {
 			return evalDecision{}, err
 		}
-		if digest != legacyDigest && !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest) {
+		legacyUnchanged := !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest)
+		if !legacyUnchanged && prepared.declared.Source != nil {
+			legacy := prepared.declared
+			legacy.Source = nil
+			sourceStripped, err := project.FingerprintDefinition(legacy)
+			if err != nil {
+				return evalDecision{}, err
+			}
+			legacyUnchanged = prior == sourceStripped || prior == fingerprintEra+sourceStripped
+		}
+		if digest != legacyDigest && legacyUnchanged {
 			// Some earlier lifecycle builds sent catalog pins but omitted them
 			// from fingerprints. Older builds ignored catalog pins entirely;
 			// those unpinned criteria must be recreated to honor the pin.
@@ -853,20 +874,28 @@ func (r *evalReconciler) EnsureEval(
 		// reported success and the first run against it answered 404. One point
 		// read settles it, and it is the same confirmation an external dataset
 		// or evaluator reference gets.
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
 			if eval_api.IsNotFound(err) {
 				return "", false, messages.EvalNotFound(group.ID)
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if !responseSchemaMatches(&group, remote) {
+			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
+		}
+		if prepared, validated := r.prepared[group.Name]; validated &&
+			conflictingSourceContract(prepared.group, remote, prepared.request) {
+			return "", false, incompatibleSourceContract(group.ID)
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
 	}
 
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
-	// dataset, target, level — needs a new eval. Name and description are
+	// dataset, target, level, source mode — needs a new eval. Name and description are
 	// excluded from the digest and pushed in place instead, and so are
-	// max_samples and source:, which the run carries rather than the eval.
+	// max_samples and source filters, which the run carries rather than the eval.
 	digest, definition, recreate, err := r.evalDigests(ctx, group)
 	if err != nil {
 		return "", false, err
@@ -936,7 +965,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest, req.TestingCriteria)
+		adopted, err := r.adoptRenamed(ctx, group, digest, req)
 		if err != nil {
 			return "", false, err
 		}
@@ -953,7 +982,9 @@ func (r *evalReconciler) EnsureEval(
 			// this lookup exists to keep.
 			return "", false, err
 		}
-		if err == nil && (!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) {
+		if err == nil &&
+			(!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) &&
+			responseSchemaMatches(&group, remote) && !conflictingSourceContract(group, remote, req) {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -1021,6 +1052,86 @@ func matchingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
 	return true
 }
 
+// conflictingSourceContract detects positive evidence that stored mappings read
+// a different source or disagree with authored bindings. Missing inferred
+// mappings and unrelated enrichment are not edits.
+func conflictingSourceContract(
+	group project.Eval, have *eval_api.OpenAIEval, want *eval_api.CreateOpenAIEvalRequest,
+) bool {
+	if group.Source == nil || have == nil || want == nil || want.DataSourceConfig == nil {
+		return false
+	}
+	if group.Source.Type != project.SourceTypeTraces && group.Source.Type != project.SourceTypeResponses {
+		return false
+	}
+	switch have.DataSourceConfig["scenario"] {
+	case "responses":
+		if group.Source.Type == project.SourceTypeTraces {
+			return true
+		}
+	case "traces", "traces_preview":
+		if group.Source.Type == project.SourceTypeResponses {
+			return true
+		}
+	}
+	// Service-defined scenarios omit this field; enrichment is not a custom contract.
+	if want.DataSourceConfig.Type == "custom" && have.DataSourceConfig["type"] == "custom" {
+		if sampled, known := have.DataSourceConfig["include_sample_schema"].(bool); known &&
+			sampled != want.DataSourceConfig.IncludeSampleSchema {
+			return true
+		}
+	}
+	namespace := func(binding string) string {
+		for _, prefix := range []string{"{{item.", "{{sample."} {
+			if strings.HasPrefix(binding, prefix) && strings.HasSuffix(binding, "}}") {
+				return prefix
+			}
+		}
+		return ""
+	}
+	for _, desired := range want.TestingCriteria {
+		matched := false
+		for _, stored := range have.TestingCriteria {
+			if stored.Name != desired.Name || stored.EvaluatorName != desired.EvaluatorName {
+				continue
+			}
+			matched = true
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() != desired.Name || ref.Evaluator != desired.EvaluatorName {
+					continue
+				}
+				for field, binding := range ref.DataMapping {
+					if held, present := stored.DataMapping[field]; !present || held != binding {
+						return true
+					}
+				}
+			}
+			for _, field := range []string{"query", "response", "messages", "tool_calls", "tool_definitions"} {
+				from, to := namespace(stored.DataMapping[field]), namespace(desired.DataMapping[field])
+				if from != "" && to != "" && from != to {
+					return true
+				}
+			}
+			if group.Source.Type == project.SourceTypeResponses {
+				outputs := []string{"{{sample.output_items}}", "{{sample.output_text}}"}
+				from, to := stored.DataMapping["response"], desired.DataMapping["response"]
+				if from != to && slices.Contains(outputs, from) && slices.Contains(outputs, to) {
+					return true
+				}
+			}
+		}
+		if !matched {
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() == desired.Name && ref.Evaluator == desired.EvaluatorName &&
+					len(ref.DataMapping) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // adoptRenamed reclaims the eval this declaration used to be called, so a
 // rename keeps the id and every run under it rather than forking the history.
 //
@@ -1030,7 +1141,7 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
-	criteria []eval_api.TestingCriterion,
+	request *eval_api.CreateOpenAIEvalRequest,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
 	legacy := false
@@ -1064,8 +1175,9 @@ func (r *evalReconciler) adoptRenamed(
 		}
 		return "", err
 	}
-	if conflictingEvaluatorPins(remote.TestingCriteria, criteria) ||
-		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, criteria)) {
+	if conflictingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria)) ||
+		!responseSchemaMatches(&group, remote) || conflictingSourceContract(group, remote, request) {
 		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)

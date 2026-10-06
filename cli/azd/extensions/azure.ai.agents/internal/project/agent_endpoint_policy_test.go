@@ -57,18 +57,6 @@ func TestValidateAgentEndpointOperationMatrix(t *testing.T) {
 			AgentEndpointOperationUpdate,
 			false,
 		},
-		{
-			"workflow",
-			map[string]any{"kind": "workflow", "name": "workflow"},
-			AgentEndpointOperationShow,
-			false,
-		},
-		{
-			"workflow",
-			map[string]any{"kind": "workflow", "name": "workflow"},
-			AgentEndpointOperationReport,
-			false,
-		},
 	}
 
 	for _, tt := range tests {

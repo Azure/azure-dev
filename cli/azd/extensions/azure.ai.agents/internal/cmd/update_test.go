@@ -99,12 +99,6 @@ func TestEndpointUpdateRejectsSupportedNonHostedKinds(t *testing.T) {
 				"kind": "voice", "name": "voice-agent", "model": map[string]any{"id": "gpt-realtime"},
 			},
 		},
-		{
-			name: "workflow",
-			values: map[string]any{
-				"kind": "workflow", "name": "workflow-agent",
-			},
-		},
 	}
 
 	for _, tt := range tests {

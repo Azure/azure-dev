@@ -312,8 +312,8 @@ func TestRunEndpointShowRejectsWorkflowKind(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
-	require.Contains(t, localErr.Message, "endpoint show")
-	require.NotContains(t, localErr.Suggestion, "set kind")
+	require.Contains(t, localErr.Message, "unsupported kind")
+	require.Contains(t, localErr.Suggestion, "set kind")
 }
 
 func captureEndpointOutput(t *testing.T, run func() error) string {

@@ -117,7 +117,7 @@ func declaredEvaluator() project.EvaluatorDecl {
 	}
 }
 
-// ADO 5530209: editing a rubric and running `azd up` published a version with
+// Editing a rubric and running `azd up` published a version with
 // a blank display name, no categories, and support narrowed from
 // [turn, conversation] to [turn] -- so an evaluator valid for conversation
 // evals looked incompatible afterwards.

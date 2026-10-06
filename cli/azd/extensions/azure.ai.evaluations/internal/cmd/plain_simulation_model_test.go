@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAprilBareSimulationModelNeedsNoConnection(t *testing.T) {
+func TestPlainSimulationModelNeedsNoConnection(t *testing.T) {
 	for _, authored := range []bool{false, true} {
 		t.Run(map[bool]string{false: "explicit", true: "authored"}[authored], func(t *testing.T) {
 			h := newInitHarness(t, nil)
@@ -50,7 +50,7 @@ func TestAprilBareSimulationModelNeedsNoConnection(t *testing.T) {
 	}
 }
 
-func TestAprilSimulationModelPreservesExplicitPriority(t *testing.T) {
+func TestSimulationModelPreservesExplicitPriority(t *testing.T) {
 	cmd := noPromptCmd(t, true)
 	cmd.SetContext(t.Context())
 	calls := 0
@@ -74,7 +74,7 @@ func TestAprilSimulationModelPreservesExplicitPriority(t *testing.T) {
 	}
 }
 
-func TestAprilSimulationModelCancellationMakesNoConnectionRequest(t *testing.T) {
+func TestSimulationModelCancellationMakesNoConnectionRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	cmd := noPromptCmd(t, true)
@@ -90,7 +90,7 @@ func TestAprilSimulationModelCancellationMakesNoConnectionRequest(t *testing.T) 
 	assert.Zero(t, calls)
 }
 
-func TestAprilSimulationProducerPreservesModelAndCounts(t *testing.T) {
+func TestSimulationProducerPreservesModelAndCounts(t *testing.T) {
 	for _, model := range []string{"plain-model", "connection/model"} {
 		source := eval_api.NewSimulationDataSource("agent", model, 3, 7)
 		require.NotNil(t, source.ModelConfiguration)

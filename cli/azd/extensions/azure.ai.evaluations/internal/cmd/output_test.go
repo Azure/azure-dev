@@ -37,7 +37,7 @@ func TestEmitJSONList_NilBecomesEmptyArray(t *testing.T) {
 	assert.Equal(t, "[]\n", buf.String())
 }
 
-// ADO 5572140: every -o json failure must carry a "code", not only the
+// Every -o json failure must carry a "code", not only the
 // handful of structured errors this extension classifies directly. An
 // untyped error reaching failAs used to leave the field empty entirely.
 func TestFailAsAlwaysReportsACode(t *testing.T) {

@@ -21,7 +21,7 @@ import (
 
 // A named run that does not exist under a verified evaluation is still a
 // service refusal, and ReadingRun wraps it rather than replacing it the way
-// jobLookupError's not-found branch does. ADO 5572140: the wrapped message
+// jobLookupError's not-found branch does. The wrapped message
 // used to carry the full internal service endpoint into -o json. Existing
 // human diagnostics still name which service answered; only the JSON
 // projection drops it.
@@ -59,8 +59,8 @@ func TestMissingRunKeepsContextButOmitsTheEndpointFromJSON(t *testing.T) {
 }
 
 // A terminal generation-job delete conflict goes through jobLookupError's
-// other branch, JobActionFailed, which also wraps rather than replaces. ADO
-// 5572140. No x-ms-error-code header here, covering the stable http_<status>
+// other branch, JobActionFailed, which also wraps rather than replaces.
+// No x-ms-error-code header here, covering the stable http_<status>
 // fallback when the service supplies no code of its own.
 func TestJobDeleteConflictKeepsContextButOmitsTheEndpointFromJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

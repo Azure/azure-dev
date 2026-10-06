@@ -13,7 +13,7 @@ import (
 
 // A registered dataset is referenced, not copied. Inline rows lose the version
 // binding and lineage, and the portal reports "Inline data" for a run the
-// author pointed at a catalog dataset. ADO 5631468.
+// author pointed at a catalog dataset.
 func TestSetFileID_ReferencesTheRegisteredDataset(t *testing.T) {
 	t.Parallel()
 

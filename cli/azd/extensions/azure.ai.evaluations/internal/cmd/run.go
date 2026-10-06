@@ -53,6 +53,11 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 	case "completed", "":
 		return nil
 	}
+	// The line a pipeline logs is often the only one it keeps, so it carries the
+	// reason when the run has one.
+	if reason := failureText(runFailureMessage(run)); reason != "" {
+		return messages.RunFinishedWithReason(run.ID, run.Status, reason)
+	}
 	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
 
@@ -1235,6 +1240,8 @@ func timestampString(value any) string {
 type runOutputSummary struct {
 	means         map[string]float64
 	conversations *conversationOutputSummary
+	// rowErrors are the distinct reasons evaluators gave for scoring no verdict.
+	rowErrors []rowErrorGroup
 }
 
 // runOutputSummary uses a complete row listing for mean scores and observed
@@ -1261,7 +1268,7 @@ func (ec *evalContext) runOutputSummary(
 		}
 		return nil
 	}
-	summary := &runOutputSummary{means: criteriaMeans(items.Data)}
+	summary := &runOutputSummary{means: criteriaMeans(items.Data), rowErrors: summarizeRowErrors(items.Data)}
 	if isSimulationRun(run) {
 		summary.conversations = summarizeConversationOutput(items.Data)
 	}
@@ -1326,6 +1333,9 @@ func renderRun(
 		fmt.Fprint(out, messages.TestCaseResults(
 			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
 			passRateText(rate, scored)))
+	}
+	if rows != nil {
+		renderRowErrors(out, rows.rowErrors)
 	}
 
 	var means map[string]float64

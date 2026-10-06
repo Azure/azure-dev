@@ -357,9 +357,7 @@ func (a *jobShowAction) Run() error {
 	out := a.cmd.OutOrStdout()
 	if !isJSON(a.cmd) {
 		fmt.Fprint(out, messages.JobLine(job.ID, job.Status))
-		if job.Error != nil && job.Error.Message != "" {
-			fmt.Fprint(out, messages.JobErrorLine(job.Error.Message))
-		}
+		writeJobFailure(out, job)
 	}
 
 	// The half `generate --no-wait` could not do. Only a job that has finished

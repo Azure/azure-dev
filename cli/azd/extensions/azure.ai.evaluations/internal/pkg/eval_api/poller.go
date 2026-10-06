@@ -87,8 +87,10 @@ type JobFailedError struct {
 }
 
 func (e *JobFailedError) Error() string {
-	if e.Job != nil && e.Job.Error != nil && e.Job.Error.Message != "" {
-		return messages.JobFailedWithReason(string(e.Status), e.Job.Error.Message)
+	if e.Job != nil {
+		if reason := e.Job.Error.Reason(); reason != "" {
+			return messages.JobFailedWithReason(string(e.Status), reason)
+		}
 	}
 	return messages.JobFailed(string(e.Status))
 }

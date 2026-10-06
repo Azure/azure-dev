@@ -224,10 +224,17 @@ func (j *GenerationJob) resultWarnings() []JobWarning {
 	return found
 }
 
-// JobError captures error details from a failed generation job.
+// JobError captures error details from a failed generation job or run.
+//
+// Services report the reason in more than one place, so decoding goes through
+// UnmarshalJSON (see run_error.go) and Reason answers for all of them.
 type JobError struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
+
+	// detail is the first nested explanation found when message is empty. It is
+	// not part of the wire shape, so it is never re-emitted.
+	detail string
 }
 
 // ResolvedNameVersion extracts the name and version from the generation job result.
@@ -789,7 +796,7 @@ func (r *OpenAIEvalRun) Failure() string {
 	if r == nil || r.Error == nil {
 		return ""
 	}
-	return strings.TrimSpace(r.Error.Message)
+	return r.Error.Reason()
 }
 
 // EvalRunResultCounts holds pass/fail/error/skip counts for a run.

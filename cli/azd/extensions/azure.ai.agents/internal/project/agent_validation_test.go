@@ -75,14 +75,6 @@ func TestValidateAgentServiceDefinitionSupportedKinds(t *testing.T) {
 				"model": map[string]any{"id": "gpt-realtime"},
 			},
 		},
-		{
-			name: "workflow",
-			kind: agent_yaml.AgentKindWorkflow,
-			values: map[string]any{
-				"kind": "workflow",
-				"name": "workflow-agent",
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -230,15 +222,6 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 			want:     "outputModalities[0] must not be blank",
 		},
 		{
-			name: "workflow",
-			values: map[string]any{
-				"kind": "workflow",
-				"name": "invalid_name",
-			},
-			wantCode: exterrors.CodeInvalidAgentManifest,
-			want:     "name not in valid format",
-		},
-		{
 			name: "missing kind",
 			values: map[string]any{
 				"name": "missing-kind",
@@ -280,6 +263,30 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 				require.Equal(t, tt.wantCode, localErr.Code)
 			})
 		}
+	}
+}
+
+func TestValidateAgentServiceDefinitionRejectsWorkflow(t *testing.T) {
+	values := map[string]any{
+		"kind": "workflow",
+		"name": "workflow-agent",
+	}
+
+	for _, source := range []string{"inline", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			root := t.TempDir()
+			svc := validationTestService(t, root, source, values)
+
+			_, err := ValidateAgentServiceDefinition(svc, root)
+
+			require.ErrorContains(t, err, `declares unsupported kind "workflow"`)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected LocalError, got %T: %v", err, err)
+			require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
+			require.Equal(t,
+				"set kind to one of: hosted, prompt, prompt-voice, voice",
+				localErr.Suggestion)
+		})
 	}
 }
 

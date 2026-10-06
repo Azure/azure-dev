@@ -71,10 +71,6 @@ func ValidateAgentServiceDefinition(
 		if err := validateVoiceAgentServiceDefinition(svc, projectRoot); err != nil {
 			return AgentDefinitionValidation{}, err
 		}
-	case agent_yaml.AgentKindWorkflow:
-		if err := validateDirectAgentDefinition(resolved.AsMap()); err != nil {
-			return AgentDefinitionValidation{}, err
-		}
 	default:
 		return AgentDefinitionValidation{}, unsupportedAgentKindError(svc, kind)
 	}
@@ -229,7 +225,6 @@ func validAgentKindsText() string {
 		agent_yaml.AgentKindPrompt,
 		agent_yaml.AgentKindPromptVoice,
 		agent_yaml.AgentKindVoice,
-		agent_yaml.AgentKindWorkflow,
 	}
 	values := make([]string, len(kinds))
 	for i, kind := range kinds {

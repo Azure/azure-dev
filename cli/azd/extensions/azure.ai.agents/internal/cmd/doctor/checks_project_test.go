@@ -961,6 +961,11 @@ func TestCheckAgentDefinitionValid_AggregatesKindAwareFailures(t *testing.T) {
 		"outputModalities": []any{""},
 	})
 	require.NoError(t, err)
+	unsupportedWorkflow, err := structpb.NewStruct(map[string]any{
+		"kind": "workflow",
+		"name": "workflow-agent",
+	})
+	require.NoError(t, err)
 
 	got := runAgentDefinitionCheck(t, t.TempDir(), map[string]*azdext.ServiceConfig{
 		"hosted-agent": {
@@ -978,18 +983,25 @@ func TestCheckAgentDefinitionValid_AggregatesKindAwareFailures(t *testing.T) {
 			Host:                 agentHost,
 			AdditionalProperties: invalidVoice,
 		},
+		"workflow-agent": {
+			Name:                 "workflow-agent",
+			Host:                 agentHost,
+			AdditionalProperties: unsupportedWorkflow,
+		},
 	})
 
 	require.Equal(t, StatusFail, got.Status)
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
-	require.Len(t, failures, 2)
+	require.Len(t, failures, 3)
 	require.Contains(t, failures[0], "prompt-agent: prompt agent requires a non-empty model")
 	require.Contains(t, failures[1], "voice-agent: agent service definition is not valid")
+	require.Contains(t, failures[2], `workflow-agent: agent service "workflow-agent" declares unsupported kind "workflow"`)
 	require.Equal(t, []string{"hosted-agent"}, got.Details["validatedServices"])
 	require.Equal(t, map[string]string{
-		"prompt-agent": exterrors.CodeInvalidAgentManifest,
-		"voice-agent":  exterrors.CodeInvalidAgentManifest,
+		"prompt-agent":   exterrors.CodeInvalidAgentManifest,
+		"voice-agent":    exterrors.CodeInvalidAgentManifest,
+		"workflow-agent": exterrors.CodeUnsupportedAgentKind,
 	}, got.Details["failureCodes"])
 }
 

@@ -37,8 +37,8 @@ func newEvaluatorDownloadCommand() *cobra.Command {
 		Use:   "download <name>",
 		Short: "Download an editable evaluator rubric.",
 		Long: "Download an editable evaluator rubric.\n\n" +
-			"Rubrics contain only type, dimensions (id, description, weight, always_applicable), and pass_threshold.\n" +
-			"Catalog metadata, generated wiring, and prompt_text are omitted from rubric files.\n" +
+			"Rubrics preserve unknown authored definition and dimension fields, including numeric precision.\n" +
+			"Known service-envelope and catalog metadata, generated wiring, and prompt fields are omitted.\n" +
 			"Other evaluator kinds retain their complete document.\n" +
 			"Use evaluator show -o json for the full service response.\n" +
 			"Publishing with evaluator update preserves existing catalog metadata unless the input explicitly replaces it.",

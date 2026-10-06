@@ -566,8 +566,11 @@ compatibility checked when the eval is created.
 Omitting `--evaluator` keeps the default selection or opens the interactive
 picker. An explicitly empty `--evaluator` is rejected rather than silently
 restoring the default.
-The default shortlist is `builtin.output_quality` and `builtin.tool_use_quality`;
-an explicit selection replaces both rather than adding their constituents.
+The picker shortlist is `builtin.task_completion`, `builtin.customer_satisfaction`,
+`builtin.coherence`, and `builtin.groundedness`, with only `builtin.task_completion`
+selected by default. Composites such as `builtin.output_quality` and
+`builtin.tool_use_quality` require explicit `--evaluator` selection; an explicit
+selection replaces the default rather than adding evaluator constituents.
 When the built-in catalogue is reachable, unattended init validates the whole
 default set. Interactive init excludes unavailable recommendations and validates
 the final selection, so an unavailable default does not prevent choosing an
@@ -693,7 +696,7 @@ Init never copies the generation or judge model into the simulation model.
 Generation declares artifacts only; it does not attach them to an existing eval
 or replace its configuration. If a generated rubric declares an incompatible
 evaluation level, the handoff warns and leaves `--evaluator` unset. Init offers
-its default composite selection, which the user can replace; the incompatible
+its `builtin.task_completion` default, which the user can replace; the incompatible
 rubric remains in the catalogue.
 If any handoff value contains shell expansion syntax or cannot be portably quoted,
 including a dollar sign, backtick, double quote, percent sign, exclamation mark,
@@ -1171,9 +1174,14 @@ its temporary download files, even with `--force`.
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
 
-`init` offers a few common built-ins in its picker; that is a shortlist, not
-the catalogue. Any built-in the project publishes works with
-`--evaluator builtin.<name>`, including ones the picker never shows.
+`init` offers `builtin.task_completion`, `builtin.customer_satisfaction`,
+`builtin.coherence`, and `builtin.groundedness` in its picker, with only
+`builtin.task_completion` preselected or used under `--no-prompt`. This is a
+shortlist, not the catalogue. Any built-in the project publishes works with
+`--evaluator builtin.<name>`, including ones the picker never shows. Composites
+such as `builtin.output_quality` and `builtin.tool_use_quality` require explicit
+selection; they are not init defaults. Explicit selections replace the default,
+and existing evaluator references, parameters, and mappings remain unchanged.
 
 `init` checks that reference against the project's catalogue when it can reach
 one, so a name that does not exist is refused there rather than at `create`.

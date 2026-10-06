@@ -1068,22 +1068,22 @@ Human summaries, run details, and listings also distinguish unreported counters
 from explicit zeros. Partial counters are marked `not reported` rather than
 inventing a failure/error split or a pass rate without known operands.
 Waited summaries also show a complete set of explicitly reported zero counters;
-their pass rate is `-` because the reported total contains no test cases.
-Run-level display and `--fail-on pass-rate` both use `passed / total`: failed,
-errored, skipped, and unaccounted terminal rows all lower the rate. The separate
-outcome counters remain independent; a mismatch never invents a failure/error
-split or replaces an explicitly reported zero.
-When all outcome counts are reported but their sum is below the total, a neutral
-warning names the gap and confirms that the denominator still includes every
-row, without assigning failed, errored, or skipped outcomes.
-Both a pass-rate gate and `any-failure` require reported `total` and `passed`.
-Missing or null
-required counters make the gate indeterminate: the command returns an
-operational error (extension exit 1), never a quality verdict based on invented
-zeros. An explicitly reported zero total still breaches either gate.
-With a positive total, zero passes is a known zero rate, not an absent rate.
-Determinate
-quality breaches retain extension exit 2; the azd host exposes extension
+their pass rate is `-` because the total is zero.
+Displayed run pass rates and `--fail-on pass-rate=<0..1>` use `passed / total`
+test cases. Failed, errored, skipped, and otherwise unaccounted rows count
+against the run. Per-evaluator criterion rates use only rows with a passed or
+failed verdict.
+
+Both pass-rate and `any-failure` gates require reported `total` and `passed`
+counts; neither requires a reported `failed` count. Missing or null required
+counters make the gate indeterminate: the command returns an operational error
+(extension exit 1), never a quality verdict based on invented zeros. An
+explicitly reported zero total breaches either gate even if `passed` is absent.
+For a pass-rate gate, when all outcome counts are reported but their sum leaves
+rows unaccounted for, a neutral warning names that gap without assigning failed,
+errored, or skipped outcomes. The pass-rate denominator still includes all reported test cases;
+explicit zero error/skip counts are preserved. Determinate quality breaches
+retain extension exit 2; the azd host exposes extension
 failures as exit 1.
 
 An operationally failed run can have no result counts or output rows. Its

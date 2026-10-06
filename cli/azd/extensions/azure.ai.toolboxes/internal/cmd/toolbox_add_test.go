@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -57,14 +58,24 @@ func TestRunLocalConnectionAddUpdatesDefinition(t *testing.T) {
 		localConnectionAddFlags{
 			localAddFlags: localAddFlags{file: path},
 			index:         "tickets",
+			instanceName:  "docs-config",
 		},
 		toolboxFlags{output: "json"},
 	)
 	require.NoError(t, err)
 
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "instanceName: docs-config")
+	assert.NotContains(t, string(content), "instance_name")
+
 	got, err := definition.Load(path)
 	require.NoError(t, err)
-	require.Equal(t, []definition.ConnectionReference{{Name: "search", Index: "tickets"}}, got.Connections)
+	require.Equal(
+		t,
+		[]definition.ConnectionReference{{Name: "search", Index: "tickets", InstanceName: "docs-config"}},
+		got.Connections,
+	)
 }
 
 func TestRunLocalAddRejectsDuplicates(t *testing.T) {
@@ -116,4 +127,20 @@ func TestRunLocalAddMissingDefinition(t *testing.T) {
 
 	localErr := requireLocalError(t, err, exterrors.CodeInvalidParameter)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+}
+
+func TestLoadLocalToolboxDefinitionRejectsLegacySnakeCaseWithReplacement(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), definition.DefaultPath)
+	require.NoError(t, os.WriteFile(path, []byte(`
+connections:
+  - name: search
+    instance_name: docs-config
+`), 0o600))
+
+	_, err := loadLocalToolboxDefinition(path)
+	localErr := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+	assert.Contains(t, localErr.Message, "instance_name")
+	assert.Contains(t, localErr.Suggestion, "instanceName")
 }

@@ -44,7 +44,7 @@ func evalContextRememberingRun(
 	return &evalContext{
 		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
 		azdClient:  newTestAzdClient(t, env),
-		envName:    "test-env",
+		envName:    "bugbash",
 	}
 }
 
@@ -116,7 +116,7 @@ func TestAMutatingCommandStillUsesTheRunThisEnvironmentStarted(t *testing.T) {
 	ec := &evalContext{
 		evalClient: eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
 		azdClient:  newTestAzdClient(t, env),
-		envName:    "test-env",
+		envName:    "bugbash",
 	}
 
 	var out, errOut bytes.Buffer

@@ -15,7 +15,9 @@ import (
 func TestSummarizeCounts(t *testing.T) {
 	require.Equal(t, "", summarizeCounts(nil))
 	require.Equal(t, "3 passed, 1 failed, 0 errored",
-		summarizeCounts(&eval_api.EvalRunResultCounts{Total: 4, Passed: 3, Failed: 1}))
+		summarizeCounts(&eval_api.OpenAIEvalRun{
+			ResultCounts: &eval_api.EvalRunResultCounts{Total: 4, Passed: 3, Failed: 1},
+		}))
 }
 
 // Cancelling a finished run is rejected locally. The service reports success

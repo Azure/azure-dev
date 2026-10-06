@@ -623,6 +623,7 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
+	IsHosted                    bool                               // populated only when hosted classification is requested
 	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
 	EnvironmentName             string                             // environment used for deployed metadata, when available
@@ -1115,9 +1116,16 @@ type agentServiceResolutionOptions struct {
 	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
 	includeVoiceKind               bool
+	includeHostedKind              bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func withHostedKind() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.includeHostedKind = true
+	}
+}
 
 // withAgentEnvironment resolves deployment metadata from an explicitly selected environment.
 // Environment.GetCurrent returns the project default, not the SDK's --environment override.
@@ -1255,6 +1263,14 @@ func resolveAgentServiceFromProject(
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
+	if resolutionOptions.includeHostedKind && os.Getenv("AGENT_DEFINITION_PATH") == "" {
+		// Telemetry classification must never change whether invocation proceeds.
+		// Use the deploy path's definition loader so an invalid or non-hosted
+		// project service cannot be counted as a hosted invoke.
+		if _, hosted, _, err := projectpkg.LoadAgentDefinition(svc, projectConfig.Path); err == nil {
+			info.IsHosted = hosted
+		}
+	}
 	if resolutionOptions.includeVoiceKind {
 		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path)
 		if err != nil {

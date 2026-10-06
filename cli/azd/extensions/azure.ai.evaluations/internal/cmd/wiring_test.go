@@ -15,15 +15,15 @@ import (
 // unit test that calls ReserveDeclared itself proves only the method. Read from
 // the source because reaching either call site needs a project and a service.
 func TestBothCommandsReserveBeforeTheyReconcile(t *testing.T) {
-	for _, file := range []string{
-		"eval_group.go",
-		"../project/service_target_eval.go",
+	for file, call := range map[string]string{
+		"eval_group.go":                     "ReserveDeclared(ctx, declared)",
+		"../project/service_target_eval.go": "ReserveDeclared(ctx, cfg.Evals)",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile(file)
 			require.NoError(t, err)
 
-			assert.Contains(t, string(body), "ReserveDeclared(ctx, cfg.Evals)",
+			assert.Contains(t, string(body), call,
 				"an eval another declaration owns must not be adopted here")
 		})
 	}

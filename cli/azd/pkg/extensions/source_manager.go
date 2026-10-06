@@ -129,6 +129,14 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 		return fmt.Errorf("checking extension source '%s': %w", name, err)
 	}
 
+	if source.Type == SourceKindFile {
+		location, err := getAbsolutePath(source.Location)
+		if err != nil {
+			return fmt.Errorf("resolving extension source '%s' location: %w", name, err)
+		}
+		source.Location = location
+	}
+
 	return sm.addInternal(source)
 }
 

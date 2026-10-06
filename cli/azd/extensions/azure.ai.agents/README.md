@@ -24,7 +24,8 @@ connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
-[Agent context telemetry](#agent-context-telemetry) and
+[Agent context telemetry](#agent-context-telemetry),
+[Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
 ### Agent context telemetry
@@ -48,6 +49,26 @@ both azd-created and existing ACR destinations. Ambiguous legacy or invalid
 hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
 are reported as `unknown`. The event never includes agent names, service keys,
 registry connections, image references, paths, URLs, prompts, or other customer content.
+
+### Remote invoke adoption telemetry
+
+`agent.invoke.selected` reports the selected mode once a remote invoke has
+resolved its protocol and target. For project-backed routes, only hosted-agent
+services are counted; an explicit `--agent-endpoint` has no project service kind
+to verify. The event runs before the invoke request, not necessarily before
+authentication: protocol or target resolution can check whether a brownfield
+agent exists in Foundry. Failures before resolution are not counted, while
+later request failures do not prevent the usage report. Local and non-hosted
+project routes (prompt, voice, workflow) are excluded.
+
+| Attribute | Values | Description |
+|---|---|---|
+| `ext.agent.invoke.protocol` | `responses`, `invocations`, `a2a` (currently) | Resolved invocable protocol. |
+| `ext.agent.invoke.long_running` | `true`, `false` | String-encoded choice of `--long-running`; supported for remote Responses only. |
+| `ext.agent.invoke.no_wait` | `true`, `false` | String-encoded choice of `--no-wait`; requires `--long-running`. |
+
+This records command-path adoption, not whether the service accepted or
+completed work. No prompt, agent name, endpoint, or service response is sent.
 
 ## Non-interactive automation
 

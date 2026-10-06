@@ -6,6 +6,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1256,6 +1257,93 @@ func TestLogout_NotLoggedIn(t *testing.T) {
 
 // --- CleanAllAuthCache ---
 
+func TestCleanAllAuthCache_ResetsActiveCaches(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		primeMemory bool
+	}{
+		{name: "disk"},
+		{name: "disk_and_memory", primeMemory: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", root)
+			m, err := NewManager(
+				newMemoryConfigManager(), newMemoryUserConfigManager(), cloud.AzurePublic(),
+				http.DefaultClient, nil, ExternalAuthConfiguration{}, az.AzCli{}, "test-agent",
+			)
+			require.NoError(t, err)
+
+			cacheRoot := filepath.Join(root, "auth", "msal")
+			seed := []byte(`{
+				"Account": {
+					"user.home-login.microsoftonline.com-home": {
+						"home_account_id": "user.home",
+						"environment": "login.microsoftonline.com",
+						"realm": "home",
+						"local_account_id": "user",
+						"username": "fixture@example.invalid",
+						"authority_type": "MSSTS"
+					}
+				},
+				"RefreshToken": {
+					"user.home-login.microsoftonline.com-refreshtoken-client--": {
+						"home_account_id": "user.home",
+						"environment": "login.microsoftonline.com",
+						"credential_type": "RefreshToken",
+						"client_id": "client",
+						"secret": "synthetic-stale-refresh-token"
+					}
+				}
+			}`)
+			if tt.primeMemory {
+				require.NoError(t, m.msalCacheTracer.cache.Set(currentUserCacheKey, seed))
+			} else {
+				require.NoError(t, newMsalCacheStore(cacheRoot).Set(currentUserCacheKey, seed))
+			}
+			require.NoError(t, m.credentialCache.Set("fixture", []byte("synthetic-secret")))
+
+			// LogInDetails loads the old contract into MSAL before re-login cleanup.
+			accounts, err := m.publicClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Len(t, accounts, 1)
+
+			require.NoError(t, m.CleanAllAuthCache())
+			accounts, err = m.publicClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, accounts)
+			_, err = m.credentialCache.Read("fixture")
+			require.ErrorIs(t, err, errCacheKeyNotFound)
+
+			// Tenant-specific clients reuse these options and must also start empty.
+			tenantClient, err := public.New(azdClientID, m.publicClientOptions...)
+			require.NoError(t, err)
+			accounts, err = tenantClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, accounts)
+
+			// Removing an unrelated account triggers a real MSAL cache export.
+			require.NoError(t, m.publicClient.RemoveAccount(t.Context(), public.Account{
+				HomeAccountID: "unrelated.home",
+				Environment:   "login.microsoftonline.com",
+			}))
+			raw, err := newMsalCacheStore(cacheRoot).Read(currentUserCacheKey)
+			require.NoError(t, err)
+			var persisted rawMsalCacheContract
+			require.NoError(t, json.Unmarshal(raw, &persisted))
+			require.Empty(t, persisted.Account)
+			require.Empty(t, persisted.RefreshToken)
+
+			// A separate invocation must not reload the pre-cleanup account.
+			freshClient, err := public.New(azdClientID, public.WithCache(newCache(cacheRoot)))
+			require.NoError(t, err)
+			accounts, err = freshClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, accounts)
+		})
+	}
+}
+
 func TestCleanAllAuthCache(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
@@ -1281,7 +1369,7 @@ func TestCleanAllAuthCache(t *testing.T) {
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tempDir, "auth.claims"), []byte(`claims-data`), osutil.PermissionFileOwnerOnly))
 
-	m := &Manager{}
+	m := &Manager{cloud: cloud.AzurePublic(), httpClient: http.DefaultClient}
 	err := m.CleanAllAuthCache()
 	require.NoError(t, err)
 
@@ -1311,7 +1399,7 @@ func TestCleanAllAuthCache_NoExistingFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	m := &Manager{}
+	m := &Manager{cloud: cloud.AzurePublic(), httpClient: http.DefaultClient}
 	err := m.CleanAllAuthCache()
 	require.NoError(t, err, "should succeed even when no auth files exist")
 

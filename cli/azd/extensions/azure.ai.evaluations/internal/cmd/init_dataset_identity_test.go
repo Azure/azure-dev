@@ -154,18 +154,44 @@ func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
 	assert.Equal(t, []int{0}, prompts.selectCounts, "correct the name before confirmation")
 }
 
-func TestInitDatasetDerivedNameUsesLookupRules(t *testing.T) {
+func TestInitDatasetDerivedNameUsesCreateRules(t *testing.T) {
 	for _, name := range []string{"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1)} {
 		t.Run("invalid/"+name, func(t *testing.T) {
 			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
 			require.ErrorContains(t, err, "invalid catalog name")
+			validation, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
 		})
 	}
-	for _, name := range []string{"seeds", ".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+		t.Run("invalid create/"+name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, name+".jsonl")
+			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+			_, err := resolveInitLocalDataset(dir, path, &project.EvalConfig{})
+			require.ErrorContains(t, err, "invalid catalog name")
+			validation, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+		})
+	}
+	for _, name := range []string{"seeds", "seeds_v2", "seeds-v2", "123"} {
 		t.Run("valid/"+name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name+".jsonl")
 			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
 			in := localDatasetScaffold(t, path)
+			plan, err := planScaffold(in)
+			require.NoError(t, err)
+			assert.Equal(t, name, plan.datasetName)
+		})
+	}
+}
+
+func TestInitDatasetRegisteredNameUsesLookupRules(t *testing.T) {
+	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+		t.Run(name, func(t *testing.T) {
+			in := localDatasetScaffold(t, name)
 			plan, err := planScaffold(in)
 			require.NoError(t, err)
 			assert.Equal(t, name, plan.datasetName)

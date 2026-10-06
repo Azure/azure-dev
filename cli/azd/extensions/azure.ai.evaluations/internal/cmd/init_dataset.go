@@ -164,6 +164,9 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 		}
 	}
 	if existing == nil {
+		if !validAssetName(requested.Name) {
+			return project.DatasetDecl{}, messages.InitDatasetNameInvalid(filepath.ToSlash(path), requested.Name)
+		}
 		return requested, nil
 	}
 	if existing.File != "" {

@@ -37,15 +37,34 @@ func redactExportRunError(raw json.RawMessage) (json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &run); err != nil {
 		return nil, fmt.Errorf("reading exported run diagnostics: %w", err)
 	}
-	errorJSON, exists := run["error"]
-	if !exists || bytes.Equal(bytes.TrimSpace(errorJSON), []byte("null")) {
+	changed := false
+	// The run decodes `error` without regard to case, so every spelling of it is
+	// redacted, not only the exact one.
+	for runKey, errorJSON := range run {
+		if !strings.EqualFold(runKey, "error") || bytes.Equal(bytes.TrimSpace(errorJSON), []byte("null")) {
+			continue
+		}
+		redacted, errorChanged, err := redactExportError(errorJSON)
+		if err != nil {
+			return nil, err
+		}
+		if errorChanged {
+			run[runKey] = redacted
+			changed = true
+		}
+	}
+	if !changed {
 		return raw, nil
 	}
+	return json.Marshal(run)
+}
+
+// redactExportError redacts the code and message of one exported error object.
+func redactExportError(errorJSON json.RawMessage) (redacted json.RawMessage, changed bool, err error) {
 	var diagnostic map[string]json.RawMessage
 	if err := json.Unmarshal(errorJSON, &diagnostic); err != nil {
-		return nil, fmt.Errorf("reading exported run error: %w", err)
+		return nil, false, fmt.Errorf("reading exported run error: %w", err)
 	}
-	changed := false
 	// The service's key spelling is kept, and matched without regard to case the
 	// way the run decodes it, so `Message` is redacted as `message` is.
 	for key := range diagnostic {
@@ -58,24 +77,20 @@ func redactExportRunError(raw json.RawMessage) (json.RawMessage, error) {
 		}
 		var text string
 		if err := json.Unmarshal(value, &text); err != nil {
-			return nil, fmt.Errorf("reading exported run error %s: %w", key, err)
+			return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
 		}
 		if safe := urlsafe.Text(text); safe != text {
 			encoded, err := json.Marshal(safe)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			diagnostic[key] = encoded
 			changed = true
 		}
 	}
 	if !changed {
-		return raw, nil
+		return errorJSON, false, nil
 	}
-	encoded, err := json.Marshal(diagnostic)
-	if err != nil {
-		return nil, err
-	}
-	run["error"] = encoded
-	return json.Marshal(run)
+	redacted, err = json.Marshal(diagnostic)
+	return redacted, err == nil, err
 }

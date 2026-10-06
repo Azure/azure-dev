@@ -112,6 +112,15 @@ func TestRunJSONDropsEveryCaseVariantOfARedactedKey(t *testing.T) {
 	}
 	assert.Equal(t, 1, spellings, "one spelling of the field is kept")
 	assert.Contains(t, string(raw), "Failed ")
+
+	const topLevel = `{"id":"run_dup","status":"failed","error":{"message":"Failed https://host/a?sig=SIGONE"},` +
+		`"Error":{"message":"Failed https://host/b?sig=SIGTWO"}}`
+	var spelled eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(topLevel), &spelled))
+	raw, err = json.Marshal(runForJSON(&spelled))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "SIGONE")
+	assert.NotContains(t, string(raw), "SIGTWO")
 }
 
 func TestReportingJSONCallersPreserveNestedResultPresence(t *testing.T) {
@@ -276,6 +285,25 @@ func TestExportRedactsOnlyKnownRunErrorFields(t *testing.T) {
 			require.NoError(t, json.Compact(&compact, decoded.Items[0]))
 			assert.Equal(t, item, compact.String())
 			assert.Equal(t, original, string(doc.Run), "copy-on-output must not mutate stored raw export data")
+		})
+	}
+}
+
+// The run decodes `error` without regard to case, so an export spelled `Error`, or
+// carrying both spellings, is redacted under every one of them.
+func TestExportRedactsEverySpellingOfTheRunError(t *testing.T) {
+	const diagnostic = `"Failed https://host/file?sig=%s"`
+	for name, response := range map[string]string{
+		"capitalized": `{"id":"run","Error":{"Message":` + strings.Replace(diagnostic, "%s", "SIGONE", 1) + `}}`,
+		"both": `{"id":"run","error":{"message":` + strings.Replace(diagnostic, "%s", "SIGONE", 1) +
+			`},"ERROR":{"code":` + strings.Replace(diagnostic, "%s", "SIGTWO", 1) + `}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			redacted, err := redactExportRunError(json.RawMessage(response))
+			require.NoError(t, err)
+			assert.NotContains(t, string(redacted), "SIGONE")
+			assert.NotContains(t, string(redacted), "SIGTWO")
+			assert.Contains(t, string(redacted), "Failed ")
 		})
 	}
 }

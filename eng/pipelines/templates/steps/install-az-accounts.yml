@@ -1,0 +1,22 @@
+steps:
+  - pwsh: |
+      $ErrorActionPreference = 'Stop'
+      $requiredVersion = '5.5.3'
+
+      Install-Module `
+        -Name Az.Accounts `
+        -RequiredVersion $requiredVersion `
+        -Repository PSGallery `
+        -Scope CurrentUser `
+        -Force `
+        -AllowClobber
+
+      $module = Get-Module -Name Az.Accounts -ListAvailable |
+        Where-Object Version -eq $requiredVersion |
+        Select-Object -First 1
+      if (-not $module) {
+        throw "Az.Accounts $requiredVersion was not available after installation."
+      }
+
+      Write-Host "Installed Az.Accounts $($module.Version) at $($module.ModuleBase)"
+    displayName: Install Az.Accounts

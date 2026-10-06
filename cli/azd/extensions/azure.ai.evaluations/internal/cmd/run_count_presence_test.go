@@ -78,6 +78,39 @@ func TestHumanRunViewsKeepExplicitZeroCounts(t *testing.T) {
 	assert.Contains(t, out.String(), "0 test cases: 0 passed, 0 failed, 0 errored, 0 skipped")
 }
 
+func TestPartialZeroRunCountsDoNotRenderAPassRate(t *testing.T) {
+	var run eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"run_partial","status":"completed",
+		"result_counts":{"total":0,"passed":0}}`), &run))
+	for _, render := range []struct {
+		name string
+		call func(io.Writer) error
+	}{
+		{"counts", func(out io.Writer) error {
+			renderReportedRunCounts(out, "RESULTS", run.ReportedResultCounts())
+			return nil
+		}},
+		{"summary", func(out io.Writer) error { return renderRun(out, &run, nil) }},
+		{"output", func(out io.Writer) error {
+			return renderResults(out, "eval_partial", &run, nil, resultListView{})
+		}},
+		{"simulation", func(out io.Writer) error {
+			renderConversationResults(out, &run)
+			return nil
+		}},
+	} {
+		t.Run(render.name, func(t *testing.T) {
+			var out bytes.Buffer
+			require.NoError(t, render.call(&out))
+			assert.Contains(t, out.String(), "Pass rate  not reported")
+			assert.NotContains(t, out.String(), "0 passed / 0 total")
+		})
+	}
+	var out bytes.Buffer
+	renderReportedRunCounts(&out, "RESULTS", map[string]int{"total": 2, "passed": 0})
+	assert.Contains(t, out.String(), "0.0% (0 passed / 2 total test cases)")
+}
+
 func TestWaitedRunStartDistinguishesZeroAndUnreportedCounts(t *testing.T) {
 	for _, counts := range []struct {
 		name string

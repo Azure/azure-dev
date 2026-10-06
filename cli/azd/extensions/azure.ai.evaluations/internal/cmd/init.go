@@ -387,15 +387,6 @@ func (a *initAction) Run() error {
 	declaredEvaluators := len(cfg.Evaluators)
 	declaredEvals := len(cfg.Evals)
 
-	// The location may be the file azure.yaml names rather than the
-	// directory holding it, and artifacts sit beside the configuration.
-	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
-		return messages.CreatingDatasetsDir(err)
-	}
-	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
-		return messages.CreatingEvaluatorsDir(err)
-	}
-
 	// --target names the azure.yaml service, which is a local label. The eval's
 	// target has to be the name the agent is published under, or the run grades
 	// a different agent -- or none. Resolved here, once, so the written config
@@ -451,6 +442,15 @@ func (a *initAction) Run() error {
 		if _, err := resolveInitDatasetLocalPath(configPath, datasetRef, cfg); err != nil {
 			return err
 		}
+	}
+	// The location may be the file azure.yaml names rather than the
+	// directory holding it, and artifacts sit beside the configuration.
+	// Create these only after every planning and path check has succeeded.
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
+		return messages.CreatingDatasetsDir(err)
+	}
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
+		return messages.CreatingEvaluatorsDir(err)
 	}
 	rollback, err := project.ApplyScaffoldWithRollback(configPath, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],

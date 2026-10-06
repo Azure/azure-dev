@@ -142,11 +142,11 @@ func defaultEvaluators() []string {
 
 // evaluatorChoices are the references `init` can offer.
 //
-// The picker is built without a service call, so the service's full built-in
-// catalogue is not listed here; offering a hardcoded copy of it would drift.
-// What is knowable offline is the picker shortlist and whatever this
-// configuration already declares. Anything else is reachable with --evaluator,
-// which is checked against the catalogue when the project can be reached.
+// Initial choices use the offline shortlist and this configuration's declarations,
+// not an enumeration of the service's full built-in catalogue.
+// resolveEvaluators filters these choices against the catalogue when it was read.
+// Other built-ins remain reachable with --evaluator, which is checked against the
+// catalogue when the project can be reached.
 func evaluatorChoices(cfg *project.EvalConfig, level string) []string {
 	seen := map[string]bool{}
 	var out []string

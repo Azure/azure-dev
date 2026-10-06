@@ -26,7 +26,7 @@ func decodeBody(t *testing.T, body json.RawMessage) map[string]any {
 // alone arrived with a blank catalog name and whatever compatibility the
 // service inferred. Losing conversation support is the part that bites: an
 // evaluator valid for conversation evals looks incompatible after an ordinary
-// rubric edit. ADO 5530209.
+// rubric edit.
 func TestWithCatalogMetadata_CarriesTheDeclarationsCatalogFields(t *testing.T) {
 	t.Parallel()
 

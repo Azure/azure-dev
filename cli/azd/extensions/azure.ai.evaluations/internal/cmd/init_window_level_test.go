@@ -37,7 +37,7 @@ func TestResolveEvaluationLevel_UnknownIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "turn")
 	assert.Contains(t, err.Error(), "conversation",
 		"a refusal has to name what it would have accepted")
-	// ADO 5572140: this refusal used to reach -o json with a message and no
+	// This refusal used to reach -o json with a message and no
 	// code at all.
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "an unknown --evaluation-level must carry a structured code")

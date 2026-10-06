@@ -36,7 +36,7 @@ func TestParseGate(t *testing.T) {
 		require.InDelta(t, 0.8, g.passRate, 1e-9)
 	})
 
-	// ADO 5572140: a --fail-on syntax refusal used to reach -o json with a
+	// A --fail-on syntax refusal used to reach -o json with a
 	// message and no code at all.
 	for _, bad := range []string{"passrate=0.8", "pass-rate=abc", "pass-rate=1.5", "pass-rate=-1", "sometimes"} {
 		t.Run("refuses "+bad, func(t *testing.T) {

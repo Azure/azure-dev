@@ -12,7 +12,7 @@ import (
 
 // The authored-default bounds come from the CLI feature specification, so an
 // out-of-range value is refused before a run is created rather than after one
-// is billed. ADO 5631478.
+// is billed.
 func TestSimulationValidate_Bounds(t *testing.T) {
 	t.Parallel()
 

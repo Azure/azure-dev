@@ -13,7 +13,7 @@ import (
 
 // The request shape the service reads. A simulation run is not target
 // completions, and it carries no {{item.query}}: a seed row describes a
-// conversation to have, not a question to ask. ADO 5631478.
+// conversation to have, not a question to ask.
 func TestNewSimulationDataSource_WireShape(t *testing.T) {
 	t.Parallel()
 

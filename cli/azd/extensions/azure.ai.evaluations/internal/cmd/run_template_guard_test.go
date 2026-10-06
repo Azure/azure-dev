@@ -23,7 +23,7 @@ const seedRows = `{"test_case_description":"A delayed order.","simulation_config
 // Invoking an agent target over seed rows sent an empty {{item.query}}: the
 // agent was asked nothing, and the evaluator then scored the seeded text rather
 // than the target's answer. The scores looked ordinary, which is what made it
-// worth refusing rather than warning. ADO 5631335.
+// worth refusing rather than warning.
 func TestBuildRunDataSource_RefusesAnAgentTargetOverRowsWithoutQuery(t *testing.T) {
 	configPath := writeDataset(t, seedRows)
 	ec := unregisteredRunContext(t)

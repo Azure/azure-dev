@@ -15,7 +15,7 @@ const testProjectResourceID = "/subscriptions/00000000-0000-0000-0000-0000000000
 	"/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
 
 // `eval create` reported the id and stopped, so the one thing a reader wanted
-// next -- somewhere to look at it -- was missing. ADO 5571804.
+// next -- somewhere to look at it -- was missing.
 func TestEvalURL_PointsAtTheEval(t *testing.T) {
 	t.Parallel()
 

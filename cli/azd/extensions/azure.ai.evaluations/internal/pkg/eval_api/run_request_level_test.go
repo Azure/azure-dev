@@ -13,7 +13,7 @@ import (
 
 // The service reads the level from the top of the run request. Carrying it only
 // under metadata left it opaque, so the service built turn rows for every run
-// and a conversation evaluator was handed rows it cannot score. ADO 5631281.
+// and a conversation evaluator was handed rows it cannot score.
 func TestCreateOpenAIEvalRunRequest_SendsEvaluationLevelAtTheTopLevel(t *testing.T) {
 	t.Parallel()
 

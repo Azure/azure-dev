@@ -60,7 +60,7 @@ func TestDataGenerationType_MapsLevelToSeedType(t *testing.T) {
 
 // `--evaluation-level conversation` was recorded locally but never reached the
 // wire, so the service answered every request with simple_qna rows and a
-// conversation eval had nothing it could grade. ADO 5631329.
+// conversation eval had nothing it could grade.
 func TestGenerateDataset_ConversationLevelAsksForSeedRows(t *testing.T) {
 	var submitted []byte
 	ec := capturingGenerationServer(t, &submitted)

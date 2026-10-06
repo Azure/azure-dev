@@ -46,7 +46,7 @@ func TestKnownCommandFlagValidationEmitsOneJSONError(t *testing.T) {
 			var doc jsonError
 			require.NoError(t, json.Unmarshal(out.Bytes(), &doc), "exactly one JSON document, not prose or empty stdout")
 			assert.Contains(t, doc.Error.Message, tc.want)
-			// ADO 5572140: Cobra's own Args/flag validation errors carry no
+			// Cobra's own Args/flag validation errors carry no
 			// structured type, so the JSON "code" field used to be silently
 			// omitted. Every failure must still report the established
 			// unclassified fallback rather than an absent or guessed code.
@@ -129,7 +129,7 @@ func TestFlagValidationPrecedesHooksAndPreservesValidBehavior(t *testing.T) {
 					var doc jsonError
 					require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
 					assert.NotEmpty(t, doc.Error.Message)
-					// ADO 5572140: Cobra's required/together/exclusive/
+					// Cobra's required/together/exclusive/
 					// one-required flag-group failures carry no structured
 					// type either, so this must still fall back rather than
 					// omit "code".

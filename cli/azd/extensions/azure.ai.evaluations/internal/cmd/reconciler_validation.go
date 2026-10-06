@@ -173,9 +173,15 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		var remote *eval_api.OpenAIEval
 		if group.ID != "" {
-			if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+			var err error
+			remote, err = r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+			if err != nil {
 				return messages.ReadingEval(group.ID, err)
+			}
+			if !responseSchemaMatches(&group, remote) {
+				return incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
 			}
 		}
 		declared := group
@@ -210,6 +216,9 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		}
 		if err := validateDatasetInteractions(&group, request, columns[group.Dataset]); err != nil {
 			return messages.EvalProblem(group.Name, err)
+		}
+		if group.ID != "" && conflictingSourceContract(group, remote, request) {
+			return incompatibleSourceContract(group.ID)
 		}
 		prepared[group.Name] = preparedEval{
 			declared: declared, group: group, request: request, schemas: schemas,

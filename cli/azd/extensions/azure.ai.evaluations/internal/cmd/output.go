@@ -155,7 +155,65 @@ type jsonError struct {
 
 type jsonErrorBody struct {
 	Message    string `json:"message"`
+	Code       string `json:"code,omitempty"`
 	Suggestion string `json:"suggestion,omitempty"`
+}
+
+// safeJSONError is implemented by an error whose human message may carry
+// detail -o json must not disclose, such as the backing service's full
+// internal endpoint. Only this extension's service-refusal errors implement
+// it today; every other error falls back to its ordinary Error() text.
+type safeJSONError interface {
+	error
+	SafeMessage() string
+	Code() string
+}
+
+// jsonMessage is the message a -o json document reports for err.
+//
+// When err carries a safeJSONError, the unsafe fragment that node
+// contributed to err.Error() is replaced with its safe equivalent rather than
+// discarding the whole message: a job-delete failure wraps its cause with
+// "deleting dataset generation job <id>: ...", and that context has to
+// survive even though the service refusal underneath it does not.
+func jsonMessage(err error) string {
+	if safe, ok := errors.AsType[safeJSONError](err); ok {
+		full := err.Error()
+		if unsafe := safe.Error(); unsafe != "" && strings.Contains(full, unsafe) {
+			full = strings.Replace(full, unsafe, safe.SafeMessage(), 1)
+		} else {
+			full = safe.SafeMessage()
+		}
+		return urlsafe.Text(full)
+	}
+	return urlsafe.Text(err.Error())
+}
+
+// unclassifiedErrorCode is read when no structured classification applies. It
+// reuses azd's own telemetry fallback for an error an extension did not
+// classify (see the Unclassified row of the telemetry table in
+// docs/extensions/extensions-style-guide.md) rather than inventing a new
+// value or guessing one from the error's message text. This keeps the JSON
+// "code" field populated for every failure, including Cobra's own Args/flag
+// validation errors, which never carry a structured type.
+const unclassifiedErrorCode = "ext.run.failed"
+
+// errorCode extracts a stable, machine-readable code from a structured
+// extension error, mirroring azdext.ErrorSuggestion's precedence so a JSON
+// consumer checking "code" sees the same classification azd's own telemetry
+// does. Falls back to unclassifiedErrorCode so the field is never silently
+// omitted.
+func errorCode(err error) string {
+	if safe, ok := errors.AsType[safeJSONError](err); ok && safe.Code() != "" {
+		return safe.Code()
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok && localErr.Code != "" {
+		return localErr.Code
+	}
+	if svcErr, ok := errors.AsType[*azdext.ServiceError](err); ok && svcErr.ErrorCode != "" {
+		return svcErr.ErrorCode
+	}
+	return unclassifiedErrorCode
 }
 
 // exitProcess ends the process. Replaced in tests, which cannot survive a real
@@ -185,7 +243,8 @@ func failAs(cmd *cobra.Command, err error) error {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
-		Message:    urlsafe.Text(err.Error()),
+		Message:    jsonMessage(err),
+		Code:       errorCode(err),
 		Suggestion: urlsafe.Text(azdext.ErrorSuggestion(err)),
 	}})
 	exitProcess(1)

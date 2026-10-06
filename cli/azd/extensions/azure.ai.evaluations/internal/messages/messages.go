@@ -590,6 +590,13 @@ func GateUnaccountedRows(unaccounted, total int) error {
 		unaccounted, total, total)
 }
 
+// GateCountsInvalid reports inconsistent operands without a quality verdict.
+func GateCountsInvalid() error {
+	return fmt.Errorf(
+		"evaluation gate is indeterminate: result_counts must satisfy 0 <= passed <= total; " +
+			"inspect the run with `azd ai eval run show` and retry when valid counts are available")
+}
+
 // GateCountsUnavailable reports an indeterminate gate without a quality verdict.
 func GateCountsUnavailable(missing []string) error {
 	return fmt.Errorf(

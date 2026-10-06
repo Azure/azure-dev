@@ -172,7 +172,7 @@ func TestInitLocalJSONLRejectionPrecedesAllAuthoringWrites(t *testing.T) {
 	for _, tc := range []struct {
 		name, rows, want string
 	}{
-		{"malformed", "{\"query\":\"valid\"}\nnot-json\n", "line 2 is not valid JSON"},
+		{"malformed", "{\"query\":\"valid\",\"messages\":[]}\nnot-json\n", "line 2 is not valid JSON"},
 		{"empty", "", "no rows"},
 		{"array", "[\"query\",\"response\"]\n", "line 1 is not valid JSON"},
 		{"scalar", "\"text\"\n", "line 1 is not valid JSON"},
@@ -252,7 +252,11 @@ func TestInitLocalJSONLCorrectionPrecedesConfirmation(t *testing.T) {
 				h := newInitHarness(t, nil, prompts)
 				require.NoError(t, os.WriteFile(h.seedRows, []byte("{}\n"), 0o600))
 				if !cancel {
-					require.NoError(t, os.WriteFile("corrected.jsonl", []byte("{\"query\":\"valid\"}\n"), 0o600))
+					rows := "{\"query\":\"valid\"}\n"
+					if mode == "static" {
+						rows = "{\"messages\":[]}\n"
+					}
+					require.NoError(t, os.WriteFile("corrected.jsonl", []byte(rows), 0o600))
 					prompts.datasets = []string{"./corrected.jsonl"}
 				}
 				before := initFileSnapshot(t, h.dir)
@@ -288,4 +292,140 @@ func TestInitLocalJSONLCorrectionPrecedesConfirmation(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestValidateInitStaticConversationRequiresMessagesEveryRow(t *testing.T) {
+	for _, tc := range []struct {
+		name, rows, want string
+	}{
+		{"turn row", `{"query":"q","response":"a"}`, `row 1 has no "messages"`},
+		{"seed row", `{"test_case_description":"help"}`, `row 1 has no "messages"`},
+		{"mixed later turn", "{\"messages\":[]}\n{\"query\":\"q\",\"response\":\"a\"}", `row 2 has no "messages"`},
+		{"mixed first turn", "{\"query\":\"q\",\"response\":\"a\"}\n{\"messages\":[]}", `row 1 has no "messages"`},
+		{"blank line before turn", "{\"messages\":[]}\n\n{\"query\":\"q\"}", `row 2 has no "messages"`},
+		{"empty messages", `{"messages":[]}`, ""},
+		{"completed messages", `{"messages":[{"role":"user","content":"hi"}]}`, ""},
+		{"mixed optional fields", "{\"messages\":[],\"category\":\"a\"}\n{\"messages\":[]}", ""},
+		{"BOM and blank lines", "\uFEFF{\"messages\":[]}\n\n{\"messages\":[]}", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeLocalDataset(t, "completed.jsonl", tc.rows)
+			err := validateInitDataset(t.Context(), filepath.Join(filepath.Dir(path), project.EvalConfigBase),
+				initAnswers{source: initSourceDataset, datasetRef: path,
+					evaluationLevel: project.EvaluationLevelConversation, conversationMode: conversationModeStatic},
+				&project.EvalConfig{})
+			if tc.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.want)
+				local, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
+				assert.Contains(t, local.Suggestion, "--evaluation-level turn")
+			}
+		})
+	}
+}
+
+func TestInitStaticConversationMissingMessagesPrecedesWrites(t *testing.T) {
+	for _, rows := range []string{
+		`{"query":"q","response":"a"}`,
+		"{\"messages\":[]}\n{\"query\":\"q\",\"response\":\"a\"}",
+	} {
+		for _, datasetKind := range []string{"path", "named", "ref-only"} {
+			for _, format := range []string{"default", "json"} {
+				t.Run(rows+"/"+datasetKind+"/"+format, func(t *testing.T) {
+					h := newInitHarness(t, nil)
+					require.NoError(t, os.WriteFile(h.seedRows, []byte(rows), 0o600))
+					dataset := h.seedRows
+					config := filepath.Join(h.dir, project.DefaultEvalDir, project.EvalConfigBase)
+					if datasetKind != "path" {
+						require.NoError(t, os.MkdirAll(filepath.Dir(config), 0o700))
+						body := "# preserve authored content\ndatasets:\n  - name: completed\n    file: ../seed.jsonl\n"
+						if datasetKind == "ref-only" {
+							require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(config), "completed.yaml"),
+								[]byte("name: completed\nfile: ../seed.jsonl\n"), 0o600))
+							body = "# preserve authored content\ndatasets:\n  - $ref: completed.yaml\n"
+						}
+						require.NoError(t, os.WriteFile(config, []byte(body), 0o600))
+						dataset = "completed"
+					}
+					before := initFileSnapshot(t, h.dir)
+					root := NewRootCommand()
+					root.SetContext(t.Context())
+					root.SilenceErrors, root.SilenceUsage = true, true
+					var out bytes.Buffer
+					root.SetOut(&out)
+					root.SetErr(&bytes.Buffer{})
+					// An omitted mode must also validate the implicit static choice.
+					root.SetArgs([]string{"init", "--name", "quality", "--source", "dataset",
+						"--evaluation-level", "conversation", "--dataset", dataset,
+						"--judge-model", "judge", "--no-prompt", "--output", format})
+					require.ErrorContains(t, root.Execute(), `"messages"`)
+					if format == "json" {
+						var doc jsonError
+						require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+						assert.Contains(t, doc.Error.Message, `"messages"`)
+						assert.Equal(t, exterrors.CodeInvalidParameter, doc.Error.Code)
+					} else {
+						assert.Empty(t, out.String())
+					}
+					assert.Equal(t, before, initFileSnapshot(t, h.dir))
+					assert.Zero(t, h.project.wiringAttempts())
+					assert.Empty(t, h.usage.reported())
+				})
+			}
+		}
+	}
+}
+
+func TestInitStaticDatasetValidationPreservesOtherSources(t *testing.T) {
+	for _, tc := range []struct {
+		name, dataset, rows, level string
+		simulation                 *project.Simulation
+	}{
+		{"turn", "", `{"query":"q","response":"a"}`, project.EvaluationLevelTurn, nil},
+		{"simulation", "", `{"test_case_description":"help"}`, project.EvaluationLevelConversation,
+			&project.Simulation{Model: "connection/model"}},
+		{"registered static", "published-conversations", "", project.EvaluationLevelConversation, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			location := filepath.Join(t.TempDir(), project.EvalConfigBase)
+			dataset := tc.dataset
+			if dataset == "" {
+				dataset = writeLocalDataset(t, "rows.jsonl", tc.rows)
+			}
+			require.NoError(t, validateInitDataset(t.Context(), location, initAnswers{
+				source: initSourceDataset, datasetRef: dataset, evaluationLevel: tc.level, simulation: tc.simulation,
+			}, &project.EvalConfig{}))
+		})
+	}
+}
+
+func TestInitStaticConversationRevalidatesBeforeScaffold(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &conversationPromptServer{}
+	h := newInitHarness(t, nil, prompts)
+	require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
+	config := filepath.Join(h.dir, project.DefaultEvalDir, project.EvalConfigBase)
+	unlock, err := project.LockEvalConfig(t.Context(), config)
+	require.NoError(t, err)
+	unlock()
+	want := initFileSnapshot(t, h.dir)
+	changed := "{\"query\":\"q\",\"response\":\"a\"}\n"
+	relative, err := filepath.Rel(h.dir, h.seedRows)
+	require.NoError(t, err)
+	want[relative] = changed
+	prompts.onConfirm = func() error {
+		return os.WriteFile(h.seedRows, []byte(changed), 0o600)
+	}
+	_, err = executeConversationInit(t, "--name", "quality", "--conversation-mode", "static",
+		"--dataset", h.seedRows, "--judge-model", "judge", "--evaluator", "builtin.task_completion")
+	require.ErrorContains(t, err, `row 1 has no "messages"`)
+	assert.Equal(t, want, initFileSnapshot(t, h.dir), "only the concurrent dataset edit survives")
+	assert.Zero(t, h.project.wiringAttempts())
+	assert.Empty(t, h.usage.reported())
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	require.Len(t, prompts.messages, 1, "the dataset changes at the actual confirmation prompt")
 }

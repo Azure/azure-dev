@@ -41,6 +41,10 @@ func TestRunGatesPreserveCountPresence(t *testing.T) {
 			{"absent passed", `{"total":1,"failed":0}`, "indeterminate", "indeterminate"},
 			{"null passed", `{"total":1,"passed":null,"failed":0}`, "indeterminate", "indeterminate"},
 			{"zero total", `{"total":0}`, "breach", "breach"},
+			{"passed exceeds total", `{"total":1,"passed":2}`, "indeterminate", "indeterminate"},
+			{"passed with zero total", `{"total":0,"passed":1}`, "indeterminate", "indeterminate"},
+			{"negative passed", `{"total":1,"passed":-1}`, "indeterminate", "indeterminate"},
+			{"negative passed zero total", `{"total":0,"passed":-1}`, "indeterminate", "indeterminate"},
 			{"zero outcomes unknown total", `{"passed":0,"failed":0}`, "indeterminate", "indeterminate"},
 			{"known failure unknown total", `{"passed":0,"failed":1}`, "indeterminate", "indeterminate"},
 			{"all passed", `{"total":1,"passed":1,"failed":0}`, "pass", "pass"},
@@ -63,11 +67,18 @@ func TestRunGatesPreserveCountPresence(t *testing.T) {
 								response += `,"result_counts":` + tc.counts
 							}
 							response += `}`
+							diagnostic := "result_counts did not report"
+							switch tc.name {
+							case "passed exceeds total", "passed with zero total",
+								"negative passed", "negative passed zero total":
+								diagnostic = "result_counts must satisfy 0 <= passed <= total"
+							}
 							child := exec.CommandContext(t.Context(), binary,
 								"-test.run=^TestRunGatesPreserveCountPresence$")
 							child.Env = append(os.Environ(), helper+"="+dir, "NO_COLOR=1",
 								"AZD_TEST_GATE_RESPONSE="+response, "AZD_TEST_GATE_SPEC="+spec,
 								"AZD_TEST_GATE_OUTCOME="+outcome,
+								"AZD_TEST_GATE_DIAGNOSTIC="+diagnostic,
 								"AZD_TEST_GATE_CALLER="+caller, "AZD_TEST_GATE_FORMAT="+format)
 							output, err := child.CombinedOutput()
 							if outcome == "breach" {
@@ -143,7 +154,7 @@ func TestRunGatesPreserveCountPresence(t *testing.T) {
 	switch os.Getenv("AZD_TEST_GATE_OUTCOME") {
 	case "indeterminate":
 		require.ErrorContains(t, err, "evaluation gate is indeterminate")
-		assert.Contains(t, err.Error(), "result_counts did not report")
+		assert.Contains(t, err.Error(), os.Getenv("AZD_TEST_GATE_DIAGNOSTIC"))
 	case "pass":
 		require.NoError(t, err)
 	default:

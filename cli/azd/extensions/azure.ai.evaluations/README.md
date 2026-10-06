@@ -291,8 +291,8 @@ generation state keep precedence over the registered tag. A metadata lookup
 failure is reported as a collection error; an untagged version stays unspecified.
 Within registered metadata, an explicit `evaluation_level` wins over a recognized
 `data_generation_type`, followed by the portal's `scenario: conversation_simulation`.
-This recovers older service/portal seed datasets without guessing from unknown tags.
-Echoed generation inputs remain internal to level recovery and are omitted from
+Unrecognized metadata tags do not establish an evaluation level.
+Echoed generation inputs are used internally to resolve the level and are omitted from
 job JSON output, including source prompts and instructions.
 
 ### Explicit local files without dataset publication
@@ -622,14 +622,15 @@ loaders.
 The authored `simulation:` block accepts 1 to 5 conversations per seed and
 1 to 20 turns when those defaults are explicitly set. These are azd's current
 authoring limits from the CLI feature specification, not maxima imposed by the
-Foundry preview service. They remain unchanged here; per-case settings follow
+Foundry preview service. Per-case settings follow
 the override rules below.
 
-`simulation.model` accepts either a plain model name or an explicit
-`connection-name/model-deployment` reference. Plain names are forwarded unchanged,
-without guessing a connection or copying the judge model. Qualified references
-retain connection discovery and eligibility checks during init. Local contract
-fixtures cover both request shapes; they are not a new live backend acceptance run.
+`simulation.model` accepts a plain model name or a
+`connection-name/model-deployment` reference, without Unicode whitespace or
+control characters. Plain names are sent unchanged without guessing a connection
+or reusing the judge model. During init, qualified references validate the selected
+Azure OpenAI project connection; interactive discovery offers eligible connections.
+Local validation does not establish model deployment readiness or service acceptance.
 
 The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:
@@ -721,9 +722,9 @@ dataset name and version and distinguish **requested configuration** from
 The CLI has no verified service counters for generated conversations, completed
 conversations, or actual turns. These are shown as **not
 reported**, never calculated by multiplying seeds and repetitions or treating
-evaluation totals as successful generation. Older runs without recorded
+evaluation totals as successful generation. Runs without recorded
 settings also show **not reported** for those settings. Static conversation
-and turn-level runs keep their existing output.
+and turn-level runs report evaluation results.
 
 When a waited `run start` successfully reads all output rows for its mean-score
 summary, it also shows **observed conversation output**. This block counts
@@ -746,10 +747,9 @@ values remain distinct; changed typed values and reported score normalization
 are still reflected in JSON. It does not add
 estimated conversation or turn counts. Numbers in echoed inline datasets,
 including nested source content, retain their exact precision in run JSON.
-Newly submitted
-simulation runs record configuration under `metadata.azd_simulation_*`, with
-`metadata.azd_run_mode` identifying the simulation mode. The JSON handoff from
-`run start --no-wait` is unchanged; read `run show -o json` for the run object.
+Simulation runs record configuration under `metadata.azd_simulation_*`, with
+`metadata.azd_run_mode` identifying the simulation mode.
+Read `run show -o json` for the run object.
 
 ### Repeated deploys do not create redundant versions
 
@@ -802,20 +802,18 @@ the service's latest version without recreating the eval on each new version.
 Whole-service deployment rejects identical effective eval definitions, including
 when equivalent pins are spelled in different places. Targeted create still
 validates only its selected declaration and reserves the other evals' IDs.
-Migrating older pin fingerprints, including during a rename, can reuse the prior
-eval only when its complete stored criterion identities and effective pins match
-and no other declared eval owns it. Missing or conflicting evidence creates a new
-eval rather than associating the old history with a different policy.
-When upgrading from a version that ignored catalog pins, the first reconciliation
-creates a new eval if its stored criteria were unpinned or used a different pin.
-Earlier runs remain on the old eval; they are not deleted or moved. Builds that
-already sent the correct pin but omitted it from their fingerprint can retain
-the existing eval only when its stored criterion identities and pins match.
+Renamed declarations can reuse an eval only when its stored criteria confirm
+the same effective pins and no other declared eval owns it. A stored criterion
+with a different effective pin requires a separate eval. Matching criterion
+identities and pins permit reuse when a recorded fingerprint omits pin information.
+Creating a separate eval preserves the original eval and its runs.
+Reuse requires complete stored criterion identities and effective pins;
+missing or conflicting evidence requires a separate eval.
 
 After a local rubric is reconciled, its evaluator contract is read from that
 exact service version rather than a potentially stale discovery listing.
 This contract read does not add an authored version pin. An unavailable or
-malformed contract is an error, not permission to reuse an older schema.
+malformed contract is an error, not permission to use a different schema.
 Preflight uses the same digest-aware reuse decision: when the rubric will not
 be republished, its existing service contract wins over authored metadata
 overrides. A genuine edit that will publish a new version keeps authored
@@ -844,14 +842,15 @@ a service response supplies that optional field.
 When an unchanged local dataset file is repinned to another registered version,
 preflight reads that selected version's content. The original file-to-published-
 version baseline is retained; denied metadata or content reads stop reconciliation.
-For unchanged, unpinned local datasets, every reuse requires a successful point
-read of the recorded version, even if the listing reports that version or only
-older versions. A missing recorded version is republished from the unchanged
-local file, with its recorded version retained as the publication floor rather
-than restarting history. A denied or failed read stops reconciliation without
-publication; a successful read tolerates listing delays. Explicit pins are not
-silently repaired or moved: a missing previously published pin remains a clear
-failure. Preflight-selected versions are checked again before reuse.
+For unchanged, unpinned local datasets, reuse requires a successful point read
+of the recorded version, including when the version listing is empty or delayed.
+A confirmed missing version is republished from the local file, retaining the
+recorded version as the publication floor. Denied or failed reads stop
+reconciliation before publication. Explicit pins are not repaired or moved:
+a missing pinned version is an error. Preflight-selected versions are checked
+again before reuse.
+The point read is required even when the listing reports the recorded version
+or only older versions.
 
 Eval groups are immutable, so a change to a group's evaluators, target,
 evaluation level, or source type creates a new group and a new id. Per-run sampling,
@@ -863,13 +862,12 @@ in `azd env get-values`, which shows only what you put there.
 Stored-response evaluations (`source.type: responses`) use Foundry's
 `azure_ai_source` schema with `scenario: responses`. Human `azd ai eval show <eval>`
 output displays `Data Source` and `Scenario` for non-custom definitions so a
-response eval can be distinguished from a legacy custom-schema eval. JSON output
+response eval can be distinguished from a custom-schema eval. JSON output
 retains the complete `data_source_config`.
-A deployment replaces an
-older custom-schema response eval with a compatible eval once, even when the
-declaration is unchanged. The old eval and its runs are retained; subsequent
-unchanged deployments reuse the new ID. Other evaluation modes retain compatible
-custom schemas without recreating their histories. Trace declarations also accept
+A deployment creates a compatible eval when a stored response eval uses a custom
+schema. The original eval and its runs are retained; unchanged compatible
+deployments reuse the same ID. Other evaluation modes retain compatible
+custom schemas and their runs. Trace declarations also accept
 existing SDK-created `azure_ai_source` definitions with `scenario: traces` or
 `traces_preview`; declarations do not assume unknown schema types are compatible. Switching a declaration from stored
 responses to another source also creates an eval with the required custom schema.
@@ -880,29 +878,29 @@ a string uses `{{sample.output_text}}`; structured or unspecified response types
 retain `{{sample.output_items}}`. Conversation mappings retain `{{item.messages}}`,
 and explicit `data_mapping` values take precedence.
 
-Managed response evals with positively identified stale item/sample bindings or
-incompatible text/items response bindings are replaced once, retaining the original
-eval and its run history. Missing inferred mappings and unrelated service enrichment do not
-trigger blanket migration. An explicit `id:` with conflicting response or trace
+Managed response evals with conflicting item/sample bindings or incompatible
+text/items response bindings require a compatible eval, retaining the original
+eval and its runs. Missing inferred mappings and unrelated service enrichment do not
+require replacement. An explicit `id:` with conflicting response or trace
 source contracts is refused before dependency publication; remove the `id:` and deploy the
-declaration to migrate. Each explicitly authored `data_mapping` field must match the
+declaration to create a compatible eval. Each explicitly authored `data_mapping` field must match the
 stored criterion exactly, including the column name, not just the item/sample namespace.
 Missing authored bindings or a missing/renamed stored criterion for those bindings
 are also conflicts; inferred defaults retain the narrower source-compatibility checks.
 These checks apply to both built-in and custom evaluator references.
 
 A trace target names an agent filter, not a new invocation. Managed trace evals
-with positively identified legacy sample bindings or conflicting custom sample-schema
-settings migrate to completed-item bindings once, including when the agent filter
-is declared with `target.name`. The old eval and its runs are retained. Explicit
+with positively identified conflicting sample bindings or custom sample-schema
+settings require completed-item bindings, including when the agent filter
+is declared with `target.name`. The original eval and its runs are retained. Explicit
 `data_mapping` values still win, and compatible SDK trace scenarios ignore unrelated
-sample-schema enrichment. Missing or unknown evidence does not trigger this migration;
+sample-schema enrichment. Missing or unknown evidence does not require replacement;
 unrelated optional/default mapping changes require a deliberate criterion change.
 
 An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
 schema. An incompatible response eval fails before starting a run. Remove the
 explicit `id:`, deploy the response-source declaration, then run it by name.
-Legacy rerun sources with bare response-ID rows are also rejected; running the
+Rerun sources with bare response-ID rows are also rejected; running the
 declaration by name builds the required `item` envelopes without invoking an
 agent or changing the selected response IDs. Stored-response runs reject
 `--max-samples` (including explicit zero) and configured row caps; select
@@ -1062,7 +1060,7 @@ guidance when the service reports failed verdicts, not a replacement for the
 unfiltered listing. Errored rows get a separate `--status errored` command;
 they are not included by `--failed-only`.
 
-For older responses without a status, reported counters still provide useful
+For responses without a status, reported counters provide useful
 available-result guidance, including all-passed and explicit-zero counts,
 without asserting that the run has completed. If a run lookup omits its `id`,
 follow-up requests retain the explicit or remembered lookup ID separately;
@@ -1148,8 +1146,7 @@ interrupts the prompt and exits nonzero, without reporting a successful
 cancellation. Under `--no-prompt` or `-o json`, no picker is shown; an ambiguous
 eval still produces an error, and no cancellation prose is written to stdout.
 
-`azd ai eval create` closes with a link to the eval in the Portal, for a
-newly created eval and for one that already existed unchanged.
+`azd ai eval create` closes with a Portal link for both created and reused evals.
 
 ### Downloading a dataset
 
@@ -1188,8 +1185,7 @@ and existing evaluator references, parameters, and mappings remain unchanged.
 `init` checks that reference against the project's catalogue when it can reach
 one, so a name that does not exist is refused there rather than at `create`.
 When no project is reachable — offline, unauthenticated, or outside an azd
-environment — the reference is left as written and `init` behaves as it always
-has. The check never turns a working offline `init` into a failure.
+environment — the reference is preserved without catalogue validation.
 
 Evaluators do not share an input contract, so the CLI reads each one's
 published contract and shapes the request to match. An evaluator needing an
@@ -1280,9 +1276,8 @@ The project endpoint is resolved in this order:
 2. `FOUNDRY_PROJECT_ENDPOINT` in the active azd environment, then
    `AZURE_AI_PROJECT_ENDPOINT` there
 3. `extensions.ai-projects.context.endpoint` in azd's global config, which
-   `azd ai project` writes and this extension only reads. A config that has not
-   been migrated yet falls back to `extensions.ai-agents.project.context.endpoint`,
-   the key `azure.ai.agents` used before `azd ai project show` moved it.
+   `azd ai project` writes and this extension only reads. If that key is absent,
+   the fallback is `extensions.ai-agents.project.context.endpoint`.
 4. `FOUNDRY_PROJECT_ENDPOINT` in the host environment, then
    `AZURE_AI_PROJECT_ENDPOINT`
 
@@ -1333,9 +1328,8 @@ export AZURE_AI_EVAL_AGENT=<agent-name>       # optional, enables the run phase
 go test -tags live ./internal/cmd/ ./tests/live/ ./tests/cli/
 ```
 
-`./tests/cli/` drives the built binary rather than the packages, so it is the
-half that catches a command wired up wrongly. Omitting it is how a live suite
-that could never have compiled sat green in review.
+`./tests/cli/` drives the built binary and checks command wiring as well as
+package behavior.
 
 The hero walkthrough is behind its own tag, because it scaffolds a project
 end to end:
@@ -1374,21 +1368,14 @@ project endpoints, model deployments, or anything else a user typed. Failures
 and their structured error codes are already reported separately by the
 extension SDK; this event records usage only.
 
-## TODO before release
+## Installation and release prerequisites
 
-The first two are files the azd extensions team owns, so they are not changed
-here. The last two are not files at all — YAML alone does not provision a
-pipeline, and no evaluations release check runs on this PR because of it.
+Registry installation resolves `azure.ai.evaluations` through its entry in
+`cli/azd/extensions/registry.json`. A `microsoft.foundry/extension.yaml`
+dependency requires that registry entry to resolve. Local installation uses
+`azd x pack`, `azd x publish`, and the local extension source.
 
-- [ ] **`cli/azd/extensions/registry.json`** — add the `azure.ai.evaluations`
-  entry. Until it exists `azd extension install azure.ai.evaluations` cannot
-  resolve, so the extension is only reachable through `azd x pack` +
-  `azd x publish` into the local source registry.
-- [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
-  after the registry entry lands. Declaring a dependency that cannot resolve
-  breaks installing the bundle.
-- [ ] **Register the release YAML as an Azure DevOps pipeline** under
-  `azure-dev/extensions`, with access to the shared release infrastructure.
-  Checking the file in does not create the pipeline, so nothing runs it.
-- [ ] **Create the `ext-azure.ai.evaluations` issue label**, which is how
-  issues are routed to this extension.
+Release execution requires a registered Azure DevOps pipeline under
+`azure-dev/extensions` with access to the shared release infrastructure;
+a YAML file alone does not register a pipeline.
+The `ext-azure.ai.evaluations` issue label routes extension issues.

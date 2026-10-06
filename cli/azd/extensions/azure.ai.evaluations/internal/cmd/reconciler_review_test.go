@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
@@ -292,6 +293,41 @@ func TestEvaluatorDriftPreflightPreservesReuseAndUnrecordedPublication(t *testin
 			assert.Empty(t, env.config)
 		})
 	}
+}
+
+func TestStoredSourceConflictRequiresRecognizedSourceType(t *testing.T) {
+	have := &eval_api.OpenAIEval{
+		DataSourceConfig: map[string]any{"type": "custom", "include_sample_schema": false},
+		TestingCriteria: []eval_api.TestingCriterion{{
+			Name: "coherence", EvaluatorName: "builtin.coherence",
+			DataMapping: map[string]string{"response": "{{item.response}}"},
+		}},
+	}
+	want := &eval_api.CreateOpenAIEvalRequest{
+		DataSourceConfig: &eval_api.DataSourceConfig{Type: "custom", IncludeSampleSchema: true},
+		TestingCriteria: []eval_api.TestingCriterion{{
+			Name: "coherence", EvaluatorName: "builtin.coherence",
+			DataMapping: map[string]string{"response": "{{sample.output_text}}"},
+		}},
+	}
+	for _, sourceType := range []string{
+		"", "future-source", project.SourceTypeTraces, project.SourceTypeResponses, project.SourceTypeLocal,
+	} {
+		t.Run(sourceType, func(t *testing.T) {
+			group := project.Eval{Source: &project.SourceDecl{Type: sourceType}}
+			known := sourceType == project.SourceTypeTraces ||
+				sourceType == project.SourceTypeResponses || sourceType == project.SourceTypeLocal
+			assert.Equal(t, known, conflictingSourceContract(group, have, want),
+				"unknown source types cannot establish a conflicting stored contract")
+			have.DataSourceConfig["scenario"] = "responses"
+			assert.Equal(t, known, conflictingSourceContract(group, have, want))
+			have.DataSourceConfig["scenario"] = "traces"
+			assert.Equal(t, known, conflictingSourceContract(group, have, want))
+			delete(have.DataSourceConfig, "scenario")
+		})
+	}
+	assert.True(t, conflictingSourceContract(project.Eval{}, have, want),
+		"ordinary target-based custom contracts retain their existing conflict evidence")
 }
 
 func TestUnpinnedLocalDatasetRequiresSuccessfulFallbackRead(t *testing.T) {

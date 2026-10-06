@@ -1549,9 +1549,8 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	// Optional capability requiring a separate host implementation, not an
-	// extension update. Missing or mismatched acknowledgment retains the scaffold;
-	// the released SDK carries the metadata without a new protocol dependency.
+	// Optional host capability. Missing or mismatched acknowledgment retains
+	// the scaffold; the released SDK carries the operation metadata.
 	token := rand.Text()
 	callCtx := metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", token)
 	var trailers metadata.MD

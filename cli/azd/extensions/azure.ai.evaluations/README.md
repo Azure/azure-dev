@@ -120,10 +120,10 @@ Trace- and response-backed runs reject positive configured `max_samples:` and ex
 `source.response_ids` explicitly. Reruns selected by eval ID also reject an
 explicit `--max-samples`, including zero, because they repeat the previous source.
 
-Reruns retain a previous registered `file_id` unchanged. A legacy run with inline
-rows attributed to a now-registered dataset must instead be started from its
-declared eval by name: replacing those possibly capped rows with a whole version
-would silently change what gets scored.
+Reruns repeat the stored registered `file_id`. If the stored source contains inline
+rows attributed to a registered dataset, start the declared eval by name instead:
+replacing those possibly capped rows with a whole version would change what gets
+scored.
 
 The JSON handoff from `run start --no-wait -o json` retains the submitted dataset
 name and registered version even when the create response omits that metadata.
@@ -177,9 +177,9 @@ Foundry service and evaluation billing.
 `source.file` is a filesystem path, not a URL. It resolves relative to the
 configuration that contains it, including a nested `$ref` declaration. The local
 source is exclusive with `dataset`, `simulation`, trace/response fields, and any
-explicit `--dataset` flag. `init --dataset <file>` still scaffolds a publishable
-catalog entry; it does not opt into local-only behavior. No new init flag is needed:
-edit the configuration to declare the separate local eval.
+explicit `--dataset` flag. `init --dataset <file>` scaffolds a publishable catalog
+entry; it does not opt into local-only behavior. Declare the separate local eval
+in the configuration.
 
 All rows must be non-empty JSON objects and satisfy the target and evaluator
 mappings, even rows beyond a cap. An evaluator reference's explicit version wins
@@ -194,7 +194,7 @@ rows. Invalid run input causes no submission or dataset/state mutation.
 For `create` and `azd up`, preflight checks every local row against the prospective
 authored contracts of custom evaluators this operation will publish, as well as
 the selected contracts of already-published evaluators, before dependency writes.
-Available authored schemas take precedence over an older service catalog.
+Available authored schemas take precedence over the published service catalog.
 **Service-added constraints that are absent from both the authored and existing
 published contract cannot be known before publication.** The CLI reads the exact
 new evaluator version and checks local rows again before creating the eval. If a
@@ -209,7 +209,7 @@ invented as a string type. Evaluator publication invalidates earlier catalog
 snapshots before subsequent eval creation.
 On local-source evals, positive `max_samples` limits submitted rows and
 `--max-samples 0` overrides a configured cap. Trace/response caps, registered
-dataset pins and fail-closed empty-list behavior are unchanged.
+dataset pins, and indeterminate registry listings follow the constraints above.
 
 Validation streams the entire file, including rows beyond a cap, while retaining
 only the rows a capped run can submit. Create/deploy preflight retains no row set.

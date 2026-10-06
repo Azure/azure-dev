@@ -683,3 +683,59 @@ func TestReconcileInitialFiles_RenameDuringLookup(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileInitialFiles_RenameAfterSuccessfulLookup(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		next         fsnotify.Op
+		want         FileChangeType
+		alsoModified bool
+	}{
+		{name: "pure rename", want: FileDeleted},
+		{name: "rename then create", next: fsnotify.Create, want: FileCreated, alsoModified: true},
+		{name: "rename then write", next: fsnotify.Write, want: FileModified},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fw, _ := startupFixture(t)
+			path := filepath.Join(fw.root, "initial.txt")
+			require.NoError(t, os.WriteFile(path, []byte("original"), 0600))
+			fw.initialFiles[path] = struct{}{}
+			lookedUp, release := make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+			result := make(chan error, 1)
+			go func() {
+				result <- fw.reconcileInitialFiles(t.Context(), func(name string) (os.FileInfo, error) {
+					info, err := os.Lstat(name)
+					close(lookedUp)
+					<-release
+					return info, err
+				})
+			}()
+			waitStartupExit(t, lookedUp)
+			require.NoError(t, os.Rename(path, filepath.Join(fw.root, "renamed.txt")))
+			if test.next != 0 {
+				require.NoError(t, os.WriteFile(path, []byte("replacement"), 0600))
+			}
+			fw.mu.Lock()
+			fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: fsnotify.Rename})
+			if test.next != 0 {
+				fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: test.next})
+			}
+			fw.mu.Unlock()
+			releaseOnce.Do(func() { close(release) })
+			select {
+			case err := <-result:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("rename reconciliation did not finish")
+			}
+			expected := FileChanges{{Path: path, ChangeType: test.want}}
+			if test.alsoModified {
+				expected = append(expected, FileChange{Path: path, ChangeType: FileModified})
+			}
+			require.Equal(t, expected, fw.GetFileChanges())
+			require.Nil(t, fw.startupRevisions)
+		})
+	}
+}

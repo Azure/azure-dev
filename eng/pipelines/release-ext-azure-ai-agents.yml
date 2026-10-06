@@ -1,34 +1,49 @@
-trigger: none
-pr: none
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - cli/azd/extensions/azure.ai.agents
+      - /eng/pipelines/templates/stages/release-azd-extension.yml
+      - /eng/pipelines/templates/stages/publish-extension-pr.yml
+      - /eng/scripts/Set-ExtensionVersionVariable.ps1
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
+
+pr:
+  paths:
+    include:
+      - cli/azd/extensions/azure.ai.agents
+      - eng/pipelines/release-ext-azure-ai-agents.yml
+      - /eng/pipelines/templates/stages/release-azd-extension.yml
+      - /eng/pipelines/templates/stages/publish-extension-pr.yml
+      - /eng/scripts/Set-ExtensionVersionVariable.ps1
+      - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
+
+parameters:
+  - name: PublishToRegistry
+    displayName: Publish to registry
+    type: string
+    # Scheduled (nightly) runs override this in the shared templates; the runtime
+    # parameter default must be a literal because it renders before variables exist.
+    default: stable
+    values:
+      - stable
+      - dev
+      - nightly
 
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
     stages:
-      - stage: DiagnoseAzPowerShell
-        displayName: Diagnose Az PowerShell bootstrap
-        jobs:
-          - job: Authenticate
-            displayName: Bootstrap modules and authenticate
-            pool:
-              name: azsdk-pool
-              image: ubuntu-22.04
-              os: linux
-            steps:
-              - template: /eng/pipelines/templates/steps/ensure-az-powershell.yml
-
-              - task: AzurePowerShell@5
-                displayName: Authenticate with bootstrapped Az modules
-                inputs:
-                  azureSubscription: Azure SDK Artifacts
-                  azurePowerShellVersion: LatestVersion
-                  pwsh: true
-                  ScriptType: InlineScript
-                  Inline: |
-                    Write-Host "Authenticated Az.Accounts modules:"
-                    Get-Module -Name Az.Accounts |
-                      Select-Object Name, Version, Path |
-                      Format-Table -AutoSize
-                    $context = Get-AzContext
-                    Write-Host "Authenticated account type: $($context.Account.Type)"
-                    Write-Host "Authenticated environment: $($context.Environment.Name)"
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
+        parameters: 
+          AzdExtensionId: azure.ai.agents
+          SanitizedExtensionId: azure-ai-agents
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.agents
+          PublishToRegistry: ${{ parameters.PublishToRegistry }}

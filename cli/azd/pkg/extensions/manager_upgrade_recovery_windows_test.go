@@ -47,7 +47,9 @@ func TestPrepareUpgradeRecoveryWindowsTransientLock(t *testing.T) {
 	manager := &Manager{}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	finish, err := manager.prepareUpgradeRecovery(ctx, &Extension{Id: "test.lock", Version: "1.0.0"})
+	finish, err := manager.prepareUpgradeRecovery(
+		ctx, &Extension{Id: "test.lock", Version: "1.0.0"}, "test.lock",
+	)
 	require.NoError(t, err)
 	backups, err := filepath.Glob(filepath.Join(configDir, "extensions", ".upgrade-backup-*"))
 	require.NoError(t, err)
@@ -93,7 +95,7 @@ func TestPrepareUpgradeRecoveryWindowsCancellation(t *testing.T) {
 			before, err := json.Marshal(installed)
 			require.NoError(t, err)
 			manager := &Manager{}
-			finish, err := manager.prepareUpgradeRecovery(ctx, installed)
+			finish, err := manager.prepareUpgradeRecovery(ctx, installed, installed.Id)
 			require.ErrorIs(t, err, wantError)
 			require.Nil(t, finish)
 			after, err := json.Marshal(installed)

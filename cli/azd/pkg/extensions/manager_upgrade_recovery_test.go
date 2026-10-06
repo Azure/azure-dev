@@ -47,7 +47,9 @@ func TestPrepareUpgradeRecoveryRejectsUnsafeInstalledIDs(t *testing.T) {
 				return err
 			}))
 			manager := &Manager{}
-			finish, err := manager.prepareUpgradeRecovery(t.Context(), &Extension{Id: id, Version: "1.0.0"})
+			finish, err := manager.prepareUpgradeRecovery(
+				t.Context(), &Extension{Id: id, Version: "1.0.0"}, id,
+			)
 			require.ErrorContains(t, err, "invalid installed extension directory")
 			require.Nil(t, finish)
 			after := []string{}
@@ -65,6 +67,18 @@ func TestPrepareUpgradeRecoveryRejectsUnsafeInstalledIDs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPrepareUpgradeRecoveryRejectsMismatchedReplacementID(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	manager := &Manager{}
+	finish, err := manager.prepareUpgradeRecovery(
+		t.Context(), &Extension{Id: "test.installed", Version: "1.0.0"}, "test.replacement",
+	)
+	require.ErrorContains(t, err, "invalid replacement extension directory")
+	require.Nil(t, finish)
+	require.NoDirExists(t, filepath.Join(configDir, "extensions"))
 }
 
 func (m *recoveryConfigManager) Save(cfg config.Config, path string) error {
@@ -85,6 +99,9 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		cancelOnDownload bool
 		mutateInstalled  bool
 		failSave         int
+		installedID      string
+		replacementID    string
+		recoverySaveFail bool
 		version          string
 		wantError        string
 	}{
@@ -105,12 +122,30 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		},
 		{name: "uninstall save", artifact: "replacement", failSave: 1, wantError: "injected save failure"},
 		{name: "install save", artifact: "replacement", failSave: 2, wantError: "injected save failure"},
+		{
+			name: "case variant archive", artifact: "invalid.zip",
+			installedID: "Test.Recovery", replacementID: "test.recovery",
+			wantError: "failed to extract zip",
+		},
+		{
+			name: "recovery save", artifact: "invalid.zip", failSave: 2,
+			recoverySaveFail: true, wantError: "injected save failure",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockCtx := mocks.NewMockContext(t.Context())
 			configDir := t.TempDir()
 			t.Setenv("AZD_CONFIG_DIR", configDir)
+			if test.installedID != "" && test.replacementID != "" {
+				probe := filepath.Join(configDir, "CaseSensitiveProbe")
+				require.NoError(t, os.Mkdir(probe, 0o700))
+				if _, err := os.Stat(filepath.Join(configDir, "casesensitiveprobe")); err == nil {
+					t.Skip("case-variant recovery requires a case-sensitive filesystem")
+				} else {
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
+			}
 			configManager := &recoveryConfigManager{
 				FileConfigManager: mockCtx.ConfigManager,
 				saveError:         errors.New("injected save failure"),
@@ -131,8 +166,12 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, oldFile.Close())
 			platform := runtime.GOOS + "/" + runtime.GOARCH
+			installedID := test.installedID
+			if installedID == "" {
+				installedID = "test.recovery"
+			}
 			metadata := &ExtensionMetadata{
-				Id: "test.recovery", Source: "test",
+				Id: installedID, Source: "test",
 				Versions: []ExtensionVersion{{
 					Version: "1.0.0", EntryPoint: filepath.Base(oldPath),
 					Artifacts: map[string]ExtensionArtifact{platform: {URL: oldPath}},
@@ -168,6 +207,9 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 				Version: "1.1.0", EntryPoint: entry,
 				Artifacts: map[string]ExtensionArtifact{platform: {URL: newPath, Checksum: test.checksum}},
 			}}
+			if test.replacementID != "" {
+				metadata.Id = test.replacementID
+			}
 			ctx := t.Context()
 			configManager.saveCalls = 0
 			configManager.failAt = test.failSave
@@ -207,6 +249,23 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			if test.failSave != 0 {
 				require.ErrorIs(t, err, configManager.saveError)
 			}
+			if test.recoverySaveFail {
+				backups, globErr := filepath.Glob(filepath.Join(configDir, "extensions", ".upgrade-backup-*"))
+				require.NoError(t, globErr)
+				require.Len(t, backups, 1)
+				metadataPath := filepath.Join(backups[0], "installed.json")
+				require.ErrorContains(t, err, fmt.Sprintf("%q", metadataPath))
+				data, readErr := os.ReadFile(metadataPath)
+				require.NoError(t, readErr)
+				require.JSONEq(t, string(before), string(data))
+				content, readErr := os.ReadFile(installedPath)
+				require.NoError(t, readErr)
+				require.Equal(t, "installed bytes", string(content))
+				content, readErr = os.ReadFile(historyPath)
+				require.NoError(t, readErr)
+				require.Equal(t, "preserved history", string(content))
+				return
+			}
 			require.NoError(t, manager.ReloadUserConfig())
 			restored, err := manager.GetInstalled(FilterOptions{Id: metadata.Id})
 			require.NoError(t, err)
@@ -222,6 +281,9 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			backups, err := filepath.Glob(filepath.Join(configDir, "extensions", ".upgrade-backup-*"))
 			require.NoError(t, err)
 			require.Empty(t, backups)
+			if test.replacementID != "" {
+				require.NoDirExists(t, filepath.Join(configDir, "extensions", test.replacementID))
+			}
 		})
 	}
 }

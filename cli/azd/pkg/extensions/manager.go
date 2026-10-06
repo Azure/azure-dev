@@ -1216,7 +1216,7 @@ func (m *Manager) upgradeInternal(
 	}
 	asDependency := installed.InstalledAsDependency && !opts.PromoteToExplicit
 
-	finish, err := m.prepareUpgradeRecovery(ctx, installed)
+	finish, err := m.prepareUpgradeRecovery(ctx, installed, extension.Id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1258,11 +1258,16 @@ func (m *Manager) upgradeInternal(
 // prepareUpgradeRecovery preserves the target's files and installed record
 // until its replacement succeeds. Completed dependency changes are retained.
 func (m *Manager) prepareUpgradeRecovery(
-	ctx context.Context, installed *Extension,
+	ctx context.Context, installed *Extension, replacementId string,
 ) (func(context.Context, bool) error, error) {
 	if installed.Id == "" || installed.Id == "." || installed.Id == ".." ||
 		strings.ContainsAny(installed.Id, `/\`) {
 		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
+	}
+	if !strings.EqualFold(installed.Id, replacementId) ||
+		replacementId == "" || replacementId == "." || replacementId == ".." ||
+		strings.ContainsAny(replacementId, `/\`) {
+		return nil, fmt.Errorf("invalid replacement extension directory for %q", replacementId)
 	}
 	// Snapshot persisted metadata without copying Extension's runtime locks.
 	data, err := json.Marshal(installed)
@@ -1282,12 +1287,23 @@ func (m *Manager) prepareUpgradeRecovery(
 	if installed.Id == "" || extensionDir == extensionRoot || !osutil.IsPathContained(extensionRoot, extensionDir) {
 		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
 	}
+	replacementDir := filepath.Join(extensionRoot, replacementId)
+	if replacementDir == extensionRoot || !osutil.IsPathContained(extensionRoot, replacementDir) {
+		return nil, fmt.Errorf("invalid replacement extension directory for %q", replacementId)
+	}
 	if err := os.MkdirAll(extensionRoot, osutil.PermissionDirectory); err != nil {
 		return nil, fmt.Errorf("failed to create extension directory: %w", err)
 	}
 	backupDir, err := os.MkdirTemp(extensionRoot, ".upgrade-backup-")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create extension backup: %w", err)
+	}
+	metadataPath := filepath.Join(backupDir, "installed.json")
+	if err := os.WriteFile(metadataPath, data, osutil.PermissionFileOwnerOnly); err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("failed to preserve installed extension metadata: %w", err),
+			os.RemoveAll(backupDir),
+		)
 	}
 	backupPath := filepath.Join(backupDir, "installed")
 	hasFiles := false
@@ -1296,12 +1312,12 @@ func (m *Manager) prepareUpgradeRecovery(
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, errors.Join(
 			fmt.Errorf("failed to preserve installed extension files: %w", err),
-			os.Remove(backupDir),
+			os.RemoveAll(backupDir),
 		)
 	}
 	return func(ctx context.Context, failed bool) error {
 		if failed {
-			if err := osutil.RemoveAll(ctx, extensionDir); err != nil {
+			if err := osutil.RemoveAll(ctx, replacementDir); err != nil {
 				return fmt.Errorf("failed to remove unsuccessful replacement; backup retained at %q: %w", backupDir, err)
 			}
 			if hasFiles {
@@ -1311,16 +1327,25 @@ func (m *Manager) prepareUpgradeRecovery(
 			}
 			records, err := m.ListInstalled()
 			if err != nil {
-				return fmt.Errorf("failed to load installed metadata during recovery: %w", err)
+				return fmt.Errorf(
+					"failed to load installed metadata during recovery; metadata retained at %q: %w",
+					metadataPath, err,
+				)
 			}
 			records = maps.Clone(records)
 			records[previous.Id] = previous
 			if err := m.userConfig.Set(installedConfigKey, records); err != nil {
-				return fmt.Errorf("failed to restore installed extension metadata: %w", err)
+				return fmt.Errorf(
+					"failed to restore installed extension metadata; metadata retained at %q: %w",
+					metadataPath, err,
+				)
 			}
 			m.installed = nil
 			if err := m.configManager.Save(m.userConfig); err != nil {
-				return fmt.Errorf("failed to save restored installed extension metadata: %w", err)
+				return fmt.Errorf(
+					"failed to save restored installed extension metadata; metadata retained at %q: %w",
+					metadataPath, err,
+				)
 			}
 		}
 		if err := osutil.RemoveAll(ctx, backupDir); err != nil {

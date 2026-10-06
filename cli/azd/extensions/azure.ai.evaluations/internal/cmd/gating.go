@@ -74,13 +74,17 @@ func parseGate(spec string) (gate, error) {
 // the run, including failed, errored, skipped, and future outcomes represented
 // by the service total. Display and gating use this same calculation.
 //
-// ok is false when no test cases were reported: a rate over no rows is absent,
-// and callers must say so rather than divide by zero.
+// ok is false for inconsistent counts or no test cases: callers must not
+// display a rate from invalid operands or divide by zero.
 func runPassRateValue(counts *eval_api.EvalRunResultCounts) (rate float64, total int, ok bool) {
-	if counts == nil || counts.Total <= 0 {
+	if !validRunPassRateCounts(counts) || counts.Total == 0 {
 		return 0, 0, false
 	}
 	return float64(counts.Passed) / float64(counts.Total), counts.Total, true
+}
+
+func validRunPassRateCounts(counts *eval_api.EvalRunResultCounts) bool {
+	return counts != nil && counts.Total >= 0 && counts.Passed >= 0 && counts.Passed <= counts.Total
 }
 
 // evaluate checks count presence before deciding whether the quality gate was
@@ -92,6 +96,9 @@ func (g gate) evaluate(run *eval_api.OpenAIEvalRun) (string, error) {
 	var counts map[string]int
 	if run != nil {
 		counts = run.ReportedResultCounts()
+	}
+	if _, totalKnown := counts["total"]; totalKnown && !validRunPassRateCounts(run.ResultCounts) {
+		return "", messages.GateCountsInvalid()
 	}
 	if total, reported := counts["total"]; reported && total == 0 {
 		return messages.GateNoTestCases(), nil

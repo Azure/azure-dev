@@ -30,7 +30,7 @@ func writeLocalDataset(t *testing.T, name, contents string) string {
 // init exits 0 and writes dataset and eval declarations for local JSONL it
 // cannot turn into evaluation rows. The file is in its hand and it makes no
 // service call, so the failure was deferred to a deploy that had nothing to
-// work with.
+// work with. ADO 5631311.
 func TestInitScaffold_RefusesLocalDatasetFilesItCannotUse(t *testing.T) {
 	t.Parallel()
 
@@ -88,7 +88,7 @@ func TestInitScaffold_RefusesLocalDatasetFilesItCannotUse(t *testing.T) {
 	}
 }
 
-// A malformed or empty JSONL row used to reach -o json with a
+// ADO 5572140: a malformed or empty JSONL row used to reach -o json with a
 // message and no code at all.
 func TestInitScaffold_LocalDatasetValidationCarriesAStableCode(t *testing.T) {
 	for _, tt := range []struct{ name, contents, wantErr string }{

@@ -13,7 +13,7 @@ import (
 )
 
 // Adding an eval to a configuration a reader maintains must leave their notes
-// alone.
+// alone. This is the claim the bug bash instructions lead with.
 func TestApplyScaffoldKeepsComments(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, EvalConfigBase)

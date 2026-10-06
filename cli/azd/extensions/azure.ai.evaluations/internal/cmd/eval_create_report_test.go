@@ -41,7 +41,7 @@ func testPortalPrefix(t *testing.T) *eval_api.PortalPrefix {
 }
 
 // `eval create` printed the id and stopped, so the reader was left holding an
-// identifier and no way to look at what it named.
+// identifier and no way to look at what it named. ADO 5571804.
 func TestReportEvalCreated_LinksToThePortalForACreatedEval(t *testing.T) {
 	t.Parallel()
 

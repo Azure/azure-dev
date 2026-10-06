@@ -16,6 +16,7 @@ import (
 
 // The catalogue is the only thing that can say whether a builtin. reference
 // names something real. init used to accept any of them and fail at create.
+// ADO 5631310.
 func TestRefuseUnknownBuiltins_RefusesANameTheCatalogueDoesNotOffer(t *testing.T) {
 	t.Parallel()
 

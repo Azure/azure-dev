@@ -66,7 +66,7 @@ func TestEvaluatorRefsRejectWhatCannotNameAnEvaluator(t *testing.T) {
 	err := validateEvaluatorRefs([]string{"builtin.relevance", ""})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--evaluator")
-	// This refusal used to reach -o json with a message and no
+	// ADO 5572140: this refusal used to reach -o json with a message and no
 	// code at all.
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "an empty --evaluator reference must carry a structured code")

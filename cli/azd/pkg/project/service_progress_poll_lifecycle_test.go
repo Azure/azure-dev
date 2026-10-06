@@ -46,7 +46,7 @@ func TestStartPollingProgress_StopJoinsBlockedSender(t *testing.T) {
 	blocked := false
 	for time.Now().Before(deadline) {
 		n := runtime.Stack(stack, true)
-		for _, goroutine := range strings.Split(string(stack[:n]), "\n\n") {
+		for goroutine := range strings.SplitSeq(string(stack[:n]), "\n\n") {
 			if strings.Contains(goroutine, "startPollingProgress.func1") &&
 				(strings.Contains(goroutine, "[chan send]") ||
 					strings.Contains(goroutine, "SetProgressWithContext")) {

@@ -897,9 +897,9 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 }
 
 // TestDocSchemaInvocationsModerationSelectors pins the schema-side guard on stream selectors.
-// agent_yaml's validator rejects a "$."-prefixed textField too, but the JSON Schema is a
-// separate protection — editors apply it before azd ever runs — so it needs its own coverage.
-// Without this, the pattern could be dropped from the schema and only the Go check would fail.
+// agent_yaml's validator rejects invalid textField values too, but the JSON Schema is a separate
+// protection — editors apply it before azd ever runs — so it needs its own coverage. Without this,
+// the pattern could be dropped from the schema and only the Go check would fail.
 func TestDocSchemaInvocationsModerationSelectors(t *testing.T) {
 	t.Parallel()
 
@@ -930,16 +930,14 @@ func TestDocSchemaInvocationsModerationSelectors(t *testing.T) {
 		"eventType": "response.output_text.delta",
 	})))
 
-	// The bug this guard exists for: a selector expression names no field on the payload, so
-	// the frame contributes no text and output screening is silently skipped.
-	require.Error(t, schema.validate(agent(map[string]any{
-		"eventType": "response.output_text.delta",
-		"textField": "$.delta",
-	})))
-	require.Error(t, schema.validate(agent(map[string]any{
-		"eventType": "response.output_text.delta",
-		"textField": "$",
-	})))
+	// These values name no field on the payload, so the frame contributes no text and output
+	// screening is silently skipped.
+	for _, textField := range []string{"$.delta", "$", " delta", "delta ", "   "} {
+		require.Error(t, schema.validate(agent(map[string]any{
+			"eventType": "response.output_text.delta",
+			"textField": textField,
+		})), "textField=%q", textField)
+	}
 
 	// eventType must be present and non-blank.
 	require.Error(t, schema.validate(agent(map[string]any{"textField": "delta"})))

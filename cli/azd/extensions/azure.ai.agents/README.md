@@ -248,9 +248,9 @@ Fields:
 the document root, dotted members, array indexes, and `[*]` wildcards — for
 example `$.messages[*].content`. They are not a full JSONPath implementation.
 
-`textField` is **not** a selector: it is the plain **name of a field** on the
-matched event payload. Write `delta`, not `$.delta`. It defaults to `delta` when
-omitted.
+`textField` is **not** a selector: it is the exact **name of a field** on the
+matched event payload, with no surrounding whitespace. Write `delta`, not
+`$.delta` or `" delta"`. It defaults to `delta` when omitted.
 
 `eventType` is matched against the value of the `type` field *inside* the event's
 `data:` payload, not against the SSE `event:` line. So for a frame like
@@ -262,9 +262,9 @@ data: {"type": "response.output_text.delta", "delta": "Hi"}
 the selector is `eventType: response.output_text.delta` with `textField: delta`.
 
 > **Why this matters:** a `textField` that names no field on the payload yields no
-> text, so that event contributes nothing to moderation. A `$.`-prefixed value
-> therefore silently disables screening for every frame it applies to. azd rejects
-> `$`-prefixed values for this reason.
+> text, so that event contributes nothing to moderation. A `$.`-prefixed or
+> whitespace-padded value therefore silently disables screening for every frame it
+> applies to. azd rejects those values for this reason.
 
 `invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
 includes `invocations`. Declaring it elsewhere — on another agent kind, or on an

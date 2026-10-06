@@ -358,6 +358,54 @@ func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
 			},
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
 		},
+		{
+			name:      "stream selector textField rejects leading whitespace",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{
+						"eventType": "response.output_text.delta",
+						"textField": " delta",
+					},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name:      "stream selector textField rejects trailing whitespace",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{
+						"eventType": "response.output_text.delta",
+						"textField": "delta ",
+					},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name:      "stream selector textField rejects whitespace-only value",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{
+						"eventType": "response.output_text.delta",
+						"textField": "   ",
+					},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
 	}
 
 	for _, test := range tests {

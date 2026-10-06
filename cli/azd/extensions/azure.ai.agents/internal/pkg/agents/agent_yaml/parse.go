@@ -778,13 +778,18 @@ func validateInvocationsModeration(
 		}
 
 		// textField names a field on the event payload; it is not a selector expression.
-		// A '$'-prefixed value matches no field, which yields no text and silently disables
-		// moderation for every frame the selector covers, so reject it rather than deploy it.
-		if strings.HasPrefix(strings.TrimSpace(selector.TextField), "$") {
+		// The mapper preserves this value exactly, so surrounding whitespace or a '$'-prefix
+		// can make the literal lookup find no field and silently disable moderation.
+		textField := selector.TextField
+		if textField != strings.TrimSpace(textField) {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].textField must not have leading or trailing whitespace",
+				prefix, i))
+		} else if strings.HasPrefix(textField, "$") {
 			errors = append(errors, fmt.Sprintf(
 				"%s.streamSelectors[%d].textField must be a field name such as 'delta', "+
 					"not a selector expression like '%s'",
-				prefix, i, strings.TrimSpace(selector.TextField)))
+				prefix, i, textField))
 		}
 	}
 

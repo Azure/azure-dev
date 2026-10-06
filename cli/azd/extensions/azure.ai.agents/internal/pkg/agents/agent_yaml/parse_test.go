@@ -1335,6 +1335,39 @@ policies:
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
 		},
 		{
+			name: "stream selector text_field rejects leading whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: " delta"
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector text_field rejects trailing whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: "delta "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector text_field rejects whitespace-only value",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: "   "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
 			name: "rejected on an agent that does not expose the invocations protocol",
 			yaml: `kind: hosted
 name: rai-agent

@@ -11,14 +11,20 @@ steps:
       artifactName: ${{ parameters.ArtifactName }}
       path: ${{ parameters.ArtifactDownloadPath }}
 
-  - task: AzurePowerShell@5
+  - task: AzureCLI@2
     displayName: Upload shield JSON info
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
-      azurePowerShellVersion: LatestVersion
-      pwsh: true
-      ScriptType: InlineScript
-      Inline: |
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        $tenantId = az account show --query tenantId --output tsv
+        if ($LASTEXITCODE -ne 0 -or -not $tenantId) {
+          Write-Error "Failed to resolve the Azure CLI tenant ID"
+          exit 1
+        }
+        $env:AZCOPY_TENANT_ID = $tenantId
+
         azcopy copy "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/${{ parameters.PublishDestination }}/shield.json" --overwrite=true
     env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+      AZCOPY_AUTO_LOGIN_TYPE: 'AZCLI'

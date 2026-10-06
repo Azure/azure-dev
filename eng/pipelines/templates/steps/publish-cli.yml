@@ -126,14 +126,20 @@ steps:
         Copy-Item installer/uninstall-azd.ps1 release/
       displayName: Copy install scripts to release (PR only)
 
-  - task: AzurePowerShell@5
+  - task: AzureCLI@2
     displayName: Upload release to storage account
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
-      azurePowerShellVersion: LatestVersion
-      pwsh: true
-      ScriptType: InlineScript
-      Inline: |
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        $tenantId = az account show --query tenantId --output tsv
+        if ($LASTEXITCODE -ne 0 -or -not $tenantId) {
+          Write-Error "Failed to resolve the Azure CLI tenant ID"
+          exit 1
+        }
+        $env:AZCOPY_TENANT_ID = $tenantId
+
         $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
 
         Get-ChildItem release/
@@ -146,4 +152,4 @@ steps:
             }
         }
     env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+      AZCOPY_AUTO_LOGIN_TYPE: 'AZCLI'

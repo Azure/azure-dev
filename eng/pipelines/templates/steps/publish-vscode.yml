@@ -45,21 +45,27 @@ steps:
       Get-ChildItem release/
     displayName: Copy signed vsix to release location
 
-  - task: AzurePowerShell@5
+  - task: AzureCLI@2
     displayName: Publish files to storage locations
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
-      azurePowerShellVersion: LatestVersion
-      pwsh: true
-      ScriptType: InlineScript
-      Inline: |
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        $tenantId = az account show --query tenantId --output tsv
+        if ($LASTEXITCODE -ne 0 -or -not $tenantId) {
+          Write-Error "Failed to resolve the Azure CLI tenant ID"
+          exit 1
+        }
+        $env:AZCOPY_TENANT_ID = $tenantId
+
         $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
         foreach ($location in $publishLocations) {
           Write-Host "Publishing to $location"
           azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location" --overwrite=true
         }
     env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+      AZCOPY_AUTO_LOGIN_TYPE: 'AZCLI'
 
   - ${{ if eq('true', parameters.TagRepository) }}:
     - pwsh: |

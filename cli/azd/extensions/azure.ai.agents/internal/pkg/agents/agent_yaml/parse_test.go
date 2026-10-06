@@ -1244,6 +1244,14 @@ policies:
 `),
 		},
 		{
+			name: "valid streaming json with default text field",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+`),
+		},
+		{
 			name: "valid both requires output_paths and stream_selectors",
 			yaml: invocationsAgent(`      response_mode: both
       input_paths: ["$.input"]
@@ -1325,6 +1333,26 @@ policies:
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType is required",
 		},
 		{
+			name: "stream selector event_type rejects leading whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: " response.output_text.delta"
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector event_type rejects trailing whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: "response.output_text.delta "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType must not have " +
+				"leading or trailing whitespace",
+		},
+		{
 			name: "stream selector text_field rejects a selector expression",
 			yaml: invocationsAgent(`      response_mode: streaming
       input_paths: ["$.input"]
@@ -1333,6 +1361,17 @@ policies:
           text_field: $.delta
 `),
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
+		},
+		{
+			name: "stream selector text_field rejects explicit empty value",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: ""
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be non-empty " +
+				"when specified",
 		},
 		{
 			name: "stream selector text_field rejects leading whitespace",

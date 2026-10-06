@@ -381,14 +381,13 @@ const InvocationsProtocol = "invocations"
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is matched against the value of the "type" field inside the frame's `data:`
-	// payload, not against the SSE `event:` line. Required.
+	// EventType is matched exactly against the value of the "type" field inside the frame's
+	// `data:` payload, not against the SSE `event:` line. Required.
 	EventType string `json:"eventType" yaml:"event_type"`
 	// TextField is the name of a field on the frame payload that holds the text, for example
-	// "delta". It is a field name, not a selector expression: a "$."-prefixed value matches no
-	// field, so the frame contributes no text and moderation is silently skipped for it.
-	// Defaults to "delta" when omitted.
-	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
+	// "delta". When provided, it must be non-empty, have no surrounding whitespace, and not be
+	// a selector expression. Defaults to "delta" when omitted.
+	TextField *string `json:"textField,omitempty" yaml:"text_field,omitempty"`
 }
 
 // InvocationsModeration configures how the content-safety proxy extracts the text it submits

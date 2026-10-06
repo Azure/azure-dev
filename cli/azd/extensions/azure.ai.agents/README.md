@@ -248,12 +248,14 @@ Fields:
 the document root, dotted members, array indexes, and `[*]` wildcards — for
 example `$.messages[*].content`. They are not a full JSONPath implementation.
 
-`textField` is **not** a selector: it is the exact **name of a field** on the
-matched event payload, with no surrounding whitespace. Write `delta`, not
-`$.delta` or `" delta"`. It defaults to `delta` when omitted.
+`textField` is **not** a selector: when provided, it is the non-empty, exact
+**name of a field** on the matched event payload, with no surrounding whitespace.
+Write `delta`, not `$.delta`, `""`, or `" delta"`. It defaults to `delta` when
+omitted.
 
-`eventType` is matched against the value of the `type` field *inside* the event's
-`data:` payload, not against the SSE `event:` line. So for a frame like
+`eventType` is matched exactly, with no surrounding whitespace, against the value
+of the `type` field *inside* the event's `data:` payload, not against the SSE
+`event:` line. So for a frame like
 
 ```text
 data: {"type": "response.output_text.delta", "delta": "Hi"}

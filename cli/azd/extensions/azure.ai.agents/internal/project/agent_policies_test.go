@@ -210,7 +210,7 @@ func sampleInvocationsModeration() *agent_yaml.InvocationsModeration {
 		InputPaths:        []string{"$.input"},
 		OutputPaths:       []string{"$.output"},
 		StreamSelectors: []agent_yaml.SseTextSelector{
-			{EventType: "response.output_text.delta", TextField: "delta"},
+			{EventType: "response.output_text.delta", TextField: new("delta")},
 		},
 	}
 }
@@ -341,6 +341,32 @@ func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
 			wantErrSubst: "streamSelectors is required",
 		},
 		{
+			name:      "stream selector eventType rejects leading whitespace",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{"eventType": " response.output_text.delta"},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name:      "stream selector eventType rejects trailing whitespace",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{"eventType": "response.output_text.delta "},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType must not have " +
+				"leading or trailing whitespace",
+		},
+		{
 			// The camelCase inline shape is the one users actually author in azure.yaml, and it
 			// reaches the validator through a different decode path than the snake_case
 			// agent.yaml file. Cover the textField guard here too so the two can't regress apart.
@@ -357,6 +383,22 @@ func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
 				},
 			},
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
+		},
+		{
+			name:      "stream selector textField rejects explicit empty value",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{
+						"eventType": "response.output_text.delta",
+						"textField": "",
+					},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be non-empty " +
+				"when specified",
 		},
 		{
 			name:      "stream selector textField rejects leading whitespace",

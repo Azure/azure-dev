@@ -116,13 +116,12 @@ const (
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is matched against the value of the "type" field inside the frame's `data:`
-	// payload, not against the SSE `event:` line.
+	// EventType is matched exactly against the value of the "type" field inside the frame's
+	// `data:` payload, not against the SSE `event:` line.
 	EventType string `json:"event_type"`
 	// TextField is the name of a field on the frame payload that holds the text, for example
-	// "delta". It is a field name, not a selector expression: a "$."-prefixed value matches no
-	// field, so the frame contributes no text and moderation is silently skipped for it.
-	// Defaults to "delta" when omitted.
+	// "delta". It is an exact field name, not a selector expression. Defaults to "delta" when
+	// omitted.
 	TextField string `json:"text_field,omitempty"`
 }
 

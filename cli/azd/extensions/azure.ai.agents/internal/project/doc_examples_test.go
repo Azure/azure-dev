@@ -932,19 +932,21 @@ func TestDocSchemaInvocationsModerationSelectors(t *testing.T) {
 
 	// These values name no field on the payload, so the frame contributes no text and output
 	// screening is silently skipped.
-	for _, textField := range []string{"$.delta", "$", " delta", "delta ", "   "} {
+	for _, textField := range []string{"", "$.delta", "$", " delta", "delta ", "   "} {
 		require.Error(t, schema.validate(agent(map[string]any{
 			"eventType": "response.output_text.delta",
 			"textField": textField,
 		})), "textField=%q", textField)
 	}
 
-	// eventType must be present and non-blank.
+	// eventType must be present, non-blank, and have no surrounding whitespace.
 	require.Error(t, schema.validate(agent(map[string]any{"textField": "delta"})))
-	require.Error(t, schema.validate(agent(map[string]any{
-		"eventType": "   ",
-		"textField": "delta",
-	})))
+	for _, eventType := range []string{"   ", " response.output_text.delta", "response.output_text.delta "} {
+		require.Error(t, schema.validate(agent(map[string]any{
+			"eventType": eventType,
+			"textField": "delta",
+		})), "eventType=%q", eventType)
+	}
 }
 
 func TestActiveDocAgentConfig(t *testing.T) {

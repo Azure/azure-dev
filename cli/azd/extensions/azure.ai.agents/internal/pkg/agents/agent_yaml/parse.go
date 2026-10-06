@@ -772,16 +772,29 @@ func validateInvocationsModeration(
 	}
 
 	for i, selector := range moderation.StreamSelectors {
-		if strings.TrimSpace(selector.EventType) == "" {
+		eventType := selector.EventType
+		if strings.TrimSpace(eventType) == "" {
 			errors = append(errors, fmt.Sprintf(
 				"%s.streamSelectors[%d].eventType is required and must be non-empty", prefix, i))
+		} else if eventType != strings.TrimSpace(eventType) {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].eventType must not have leading or trailing whitespace",
+				prefix, i))
 		}
 
 		// textField names a field on the event payload; it is not a selector expression.
 		// The mapper preserves this value exactly, so surrounding whitespace or a '$'-prefix
 		// can make the literal lookup find no field and silently disable moderation.
-		textField := selector.TextField
-		if textField != strings.TrimSpace(textField) {
+		if selector.TextField == nil {
+			continue
+		}
+
+		textField := *selector.TextField
+		if textField == "" {
+			errors = append(errors, fmt.Sprintf(
+				"%s.streamSelectors[%d].textField must be non-empty when specified",
+				prefix, i))
+		} else if textField != strings.TrimSpace(textField) {
 			errors = append(errors, fmt.Sprintf(
 				"%s.streamSelectors[%d].textField must not have leading or trailing whitespace",
 				prefix, i))

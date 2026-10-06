@@ -1,0 +1,134 @@
+parameters:
+  - name: AzVersion
+    type: string
+    default: 15.6.1
+
+steps:
+  - pwsh: |
+      $ErrorActionPreference = 'Stop'
+      $ProgressPreference = 'SilentlyContinue'
+      $azVersion = '${{ parameters.AzVersion }}'
+      $galleryUrl = 'https://www.powershellgallery.com/api/v2'
+
+      function Write-AzModuleDiagnostics {
+        param([string] $Label)
+
+        Write-Host "=== Az PowerShell diagnostics: $Label ==="
+        Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
+        Write-Host "Executable: $((Get-Process -Id $PID).Path)"
+        Write-Host "HOME: $HOME"
+        Write-Host "PSModulePath:"
+        $env:PSModulePath -split [IO.Path]::PathSeparator | ForEach-Object {
+          Write-Host "  $_ (exists: $(Test-Path -LiteralPath $_))"
+        }
+
+        Write-Host "Registered PowerShell repositories:"
+        $repositories = @(Get-PSRepository -ErrorAction SilentlyContinue)
+        if ($repositories.Count -eq 0) {
+          Write-Host '  <none>'
+        } else {
+          $repositories |
+            Select-Object Name, SourceLocation, InstallationPolicy |
+            Format-Table -AutoSize |
+            Out-String |
+            Write-Host
+        }
+
+        Write-Host 'Hosted Az bundle directories:'
+        $hostedBundles = @(Get-ChildItem -Path '/usr/share/az_*' -Directory -ErrorAction SilentlyContinue)
+        if ($hostedBundles.Count -eq 0) {
+          Write-Host '  <none>'
+        } else {
+          foreach ($bundle in $hostedBundles) {
+            $azManifests = @(Get-ChildItem -Path (Join-Path $bundle.FullName 'Az/*/Az.psd1') -ErrorAction SilentlyContinue)
+            $accountManifests = @(
+              Get-ChildItem -Path (Join-Path $bundle.FullName 'Az.Accounts/*/Az.Accounts.psd1') `
+                -ErrorAction SilentlyContinue
+            )
+            Write-Host "  $($bundle.FullName)"
+            Write-Host "    Az manifests: $($azManifests.FullName -join ', ')"
+            Write-Host "    Az.Accounts manifests: $($accountManifests.FullName -join ', ')"
+          }
+        }
+
+        Write-Host 'Discoverable Az modules:'
+        $modules = @(Get-Module -ListAvailable -Name Az, Az.Accounts |
+          Sort-Object Name, Version -Descending |
+          Select-Object Name, Version, Path)
+        if ($modules.Count -eq 0) {
+          Write-Host '  <none>'
+        } else {
+          $modules | Format-Table -AutoSize | Out-String | Write-Host
+        }
+      }
+
+      Write-AzModuleDiagnostics -Label 'before bootstrap'
+
+      $azModule = Get-Module -ListAvailable -Name Az |
+        Where-Object Version -EQ ([version]$azVersion) |
+        Select-Object -First 1
+      $azAccountsModule = Get-Module -ListAvailable -Name Az.Accounts |
+        Sort-Object Version -Descending |
+        Select-Object -First 1
+
+      if ($azModule -and $azAccountsModule) {
+        Write-Host "Az $azVersion and Az.Accounts $($azAccountsModule.Version) are already discoverable."
+        exit 0
+      }
+
+      $createdRepository = $false
+      $originalInstallationPolicy = $null
+      $repository = @(Get-PSRepository -ErrorAction SilentlyContinue |
+        Where-Object { $_.SourceLocation.TrimEnd('/') -eq $galleryUrl.TrimEnd('/') } |
+        Select-Object -First 1)
+
+      try {
+        if ($repository.Count -eq 0) {
+          $repositoryName = 'azure-dev-powershell-gallery'
+          Write-Host "Registering $galleryUrl as $repositoryName."
+          Register-PSRepository `
+            -Name $repositoryName `
+            -SourceLocation $galleryUrl `
+            -InstallationPolicy Trusted
+          $createdRepository = $true
+          $repository = @(Get-PSRepository -Name $repositoryName)
+        } else {
+          $originalInstallationPolicy = $repository[0].InstallationPolicy
+          if ($originalInstallationPolicy -ne 'Trusted') {
+            Write-Host "Temporarily trusting PowerShell repository $($repository[0].Name)."
+            Set-PSRepository -Name $repository[0].Name -InstallationPolicy Trusted
+          }
+        }
+
+        Write-Host "Installing the complete Az $azVersion module bundle for the current user."
+        Install-Module `
+          -Name Az `
+          -RequiredVersion $azVersion `
+          -Repository $repository[0].Name `
+          -Scope CurrentUser `
+          -Force `
+          -AllowClobber
+      } finally {
+        if ($createdRepository) {
+          Unregister-PSRepository -Name $repository[0].Name -ErrorAction SilentlyContinue
+        } elseif ($originalInstallationPolicy -and $originalInstallationPolicy -ne 'Trusted') {
+          Set-PSRepository `
+            -Name $repository[0].Name `
+            -InstallationPolicy $originalInstallationPolicy `
+            -ErrorAction SilentlyContinue
+        }
+      }
+
+      Write-AzModuleDiagnostics -Label 'after bootstrap'
+
+      $azModule = Get-Module -ListAvailable -Name Az |
+        Where-Object Version -EQ ([version]$azVersion) |
+        Select-Object -First 1
+      $azAccountsModule = Get-Module -ListAvailable -Name Az.Accounts |
+        Sort-Object Version -Descending |
+        Select-Object -First 1
+      if (-not $azModule -or -not $azAccountsModule) {
+        throw "Az $azVersion and Az.Accounts were not discoverable after installation."
+      }
+    displayName: Ensure Az PowerShell modules are available
+

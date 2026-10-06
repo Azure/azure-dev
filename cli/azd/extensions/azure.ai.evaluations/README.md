@@ -477,9 +477,6 @@ or ambiguously updating content. Aliases in values remain supported.
 Authoring rejects a symbolic link selected as the config file before creating
 locks or editing configuration, leaving both the link and its target unchanged.
 Select the target config file directly to edit it.
-If adding the root project service fails and the host acknowledges that
-the operation finished unsuccessfully, init rolls back its eval-config edit so the
-same command can be retried after restoring root write access.
 The root snapshot uses the host's `azure.yaml`, then `azure.yml` filename
 preference. A missing or changed root filename is an uncertain snapshot and
 requires retaining the scaffold for inspection.
@@ -487,19 +484,11 @@ The initially selected root filename is retained across confirmation; if the
 selection changes before writing, init refuses instead of following a new file
 that the running host did not select. This includes a root appearing after
 initially being absent.
-Existing config bytes are restored; only a new config written by that attempt
-is removed. Dataset files, artifact directories, lock files, and existing
-`.gitignore` rules are retained. If either configuration changes during wiring,
-the host's save outcome is uncertain after cancellation or a connection failure,
-or rollback fails, init reports that recovery is incomplete and leaves an
-explicit inspection instruction rather than overwriting concurrent edits.
-When the azd host does not send this optional acknowledgment, init
-retains the scaffold and reports manual recovery instead of promising an
-automatic retry. Inspect the retained eval and its root service reference;
-do not delete preexisting evaluations.
-Completed-operation acknowledgment covers rejection before a save, including
-unsupported layered projects, only when the host provides it. Completion is not proof that the
-root file stayed unchanged; byte comparisons and ownership checks still apply.
+If adding the root project service fails, the host's save outcome is uncertain.
+Init retains the scaffold and reports manual recovery instead of retrying the
+mutation or removing a configuration the root project may already reference.
+Inspect the retained eval and its root service reference; do not delete
+preexisting evaluations.
 For every dataset mode, init checks locally available files for non-empty JSONL
 object rows before creating locks, ignore files, artifact directories, or
 configuration. Malformed JSON, empty datasets, arrays, scalars, and empty objects

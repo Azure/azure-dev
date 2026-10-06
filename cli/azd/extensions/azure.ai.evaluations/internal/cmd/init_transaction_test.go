@@ -6,30 +6,25 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
+func TestInitRootSaveFailureRetainsScaffoldWithoutRetry(t *testing.T) {
 	for _, rootFilename := range []string{"azure.yaml", "azure.yml"} {
 		t.Run(rootFilename, func(t *testing.T) {
 			for _, filename := range []string{project.EvalConfigBase, project.LegacyEvalConfigBase, "custom quality.yml"} {
@@ -63,43 +58,22 @@ func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 								"{\"role\":\"assistant\",\"content\":\"world\"}]}\n")
 							require.NoError(t, os.WriteFile(h.seedRows, rows, 0o600))
 
-							var denySave atomic.Bool
-							denySave.Store(true)
-							var sawScaffold atomic.Bool
 							h.project.setAddServiceHandler(func(_ context.Context, request *azdext.AddServiceRequest) error {
 								body, err := os.ReadFile(configPath)
 								if err != nil {
 									return err
 								}
-								sawScaffold.Store(strings.Contains(string(body), "name: retry-quality"))
-								if denySave.Load() {
-									return &os.PathError{Op: "save", Path: rootPath, Err: os.ErrPermission}
-								}
-								var root map[string]any
-								if err := yaml.Unmarshal(rootBefore, &root); err != nil {
-									return err
-								}
-								services := map[string]any{
-									"agent": map[string]any{"host": "containerapp", "project": "./agent"},
-									request.Service.Name: map[string]any{
-										"host": request.Service.Host,
-										"$ref": request.Service.AdditionalProperties.AsMap()["$ref"],
-									},
-								}
-								root["services"] = services
-								body, err = yaml.Marshal(root)
-								if err != nil {
-									return err
-								}
-								return os.WriteFile(rootPath, body, 0o600)
+								assert.Contains(t, string(body), "name: retry-quality")
+								assert.NotNil(t, request.Service)
+								return &os.PathError{Op: "save", Path: rootPath, Err: os.ErrPermission}
 							})
 							args := []string{"--path", configPath, "--name", "retry-quality",
 								"--conversation-mode", "static",
 								"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt", "--output", format}
 							text, err := executeConversationInit(t, args...)
 							require.ErrorContains(t, err, "permission denied")
-							assert.ErrorContains(t, err, "was rolled back")
-							assert.True(t, sawScaffold.Load(), "the injected failure must follow the scaffold write")
+							assert.ErrorContains(t, err, "could not safely roll back")
+							assert.ErrorContains(t, err, "host may still finish")
 							assert.Empty(t, text)
 							assert.Empty(t, h.usage.reported())
 							rootAfter, err := os.ReadFile(rootPath)
@@ -108,9 +82,9 @@ func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 							if existing {
 								body, err := os.ReadFile(configPath)
 								require.NoError(t, err)
-								assert.Equal(t, original, body)
+								assert.Contains(t, string(body), "name: retry-quality")
 							} else {
-								assert.NoFileExists(t, configPath)
+								assert.FileExists(t, configPath)
 							}
 							ignore, err := os.ReadFile(ignorePath)
 							require.NoError(t, err)
@@ -118,30 +92,7 @@ func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 							actualRows, err := os.ReadFile(h.seedRows)
 							require.NoError(t, err)
 							assert.Equal(t, rows, actualRows)
-
-							denySave.Store(false)
-							text, err = executeConversationInit(t, args...)
-							require.NoError(t, err, "the identical command must recover after root writeability is restored")
-							assert.Equal(t, format == "json", json.Valid([]byte(text)))
-							if format == "default" {
-								assert.Contains(t, text, rootFilename)
-							}
-							authored, err := project.ReadAuthoredConfig(configPath)
-							require.NoError(t, err)
-							cfg := declaredSoFar(authored)
-							wantEvals := 1
-							if existing {
-								wantEvals++
-							}
-							require.Len(t, cfg.Evals, wantEvals)
-							assert.Equal(t, "retry-quality", cfg.Evals[len(cfg.Evals)-1].Name)
-							assert.Equal(t, 2, h.project.wiringAttempts())
-							assertOneInitCompleted(t, h, "dataset")
-							body, err := os.ReadFile(rootPath)
-							require.NoError(t, err)
-							assert.Contains(t, string(body), "conversation-evals:")
-							assert.Contains(t, string(body),
-								"$ref: ./"+filepath.ToSlash(filepath.Join("quality files", filename)))
+							assert.Equal(t, 1, h.project.wiringAttempts())
 						})
 					}
 				}
@@ -155,9 +106,6 @@ func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
 		"cancelled", "deadline", "unavailable"} {
 		t.Run(change, func(t *testing.T) {
 			h := newInitHarness(t, nil)
-			if change == "cancelled" || change == "deadline" || change == "unavailable" {
-				h.project.setSaveFailureAcknowledgement(false)
-			}
 			configPath := filepath.Join(h.dir, "quality.yml")
 			rootPath := filepath.Join(h.dir, "azure.yaml")
 			var mu sync.Mutex
@@ -297,80 +245,6 @@ func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
 	assert.FileExists(t, configPath)
 }
 
-func TestInitRootSaveRequiresMatchingCompletionAcknowledgement(t *testing.T) {
-	for _, ack := range []string{"missing", "wrong", "duplicate", "content-type only"} {
-		for _, code := range []codes.Code{codes.Unknown, codes.Internal, codes.PermissionDenied} {
-			t.Run(ack+"/"+code.String(), func(t *testing.T) {
-				h := newInitHarness(t, nil)
-				h.project.setSaveFailureAcknowledgement(false)
-				configPath := filepath.Join(h.dir, "quality.yml")
-				h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-					incoming, _ := metadata.FromIncomingContext(ctx)
-					tokens := incoming.Get("azd-project-add-service-operation")
-					if len(tokens) != 1 || tokens[0] == "" {
-						return status.Error(codes.Internal, "missing operation token")
-					}
-					var trailer metadata.MD
-					switch ack {
-					case "wrong":
-						trailer = metadata.Pairs("azd-project-add-service-save-failed", "another-operation")
-					case "duplicate":
-						trailer = metadata.Pairs("azd-project-add-service-save-failed", tokens[0],
-							"azd-project-add-service-save-failed", tokens[0])
-					case "content-type only":
-						trailer = metadata.Pairs("content-type", "application/grpc")
-					}
-					if err := grpc.SetTrailer(ctx, trailer); err != nil {
-						return err
-					}
-					return status.Error(code, "save outcome unavailable")
-				})
-				text, err := executeConversationInit(t, "--path", configPath, "--name", "quality",
-					"--source", "traces", "--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
-				require.ErrorContains(t, err, "could not safely roll back")
-				assert.ErrorContains(t, err, "host may still finish")
-				assert.Empty(t, text)
-				assert.FileExists(t, configPath)
-				assert.Empty(t, h.usage.reported())
-			})
-		}
-	}
-}
-
-func TestInitRootSaveDoesNotReuseAcknowledgementAcrossRetries(t *testing.T) {
-	h := newInitHarness(t, nil)
-	h.project.setSaveFailureAcknowledgement(false)
-	configPath := filepath.Join(h.dir, "quality.yml")
-	var mu sync.Mutex
-	var tokens []string
-	h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-		incoming, _ := metadata.FromIncomingContext(ctx)
-		current := incoming.Get("azd-project-add-service-operation")
-		if len(current) != 1 {
-			return status.Error(codes.Internal, "missing operation token")
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		tokens = append(tokens, current[0])
-		if err := grpc.SetTrailer(ctx, metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); err != nil {
-			return err
-		}
-		return os.ErrPermission
-	})
-	args := []string{"--path", configPath, "--name", "quality", "--source", "traces",
-		"--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json"}
-	_, err := executeConversationInit(t, args...)
-	require.ErrorContains(t, err, "was rolled back")
-	assert.NoFileExists(t, configPath)
-	_, err = executeConversationInit(t, args...)
-	require.ErrorContains(t, err, "could not safely roll back")
-	assert.FileExists(t, configPath)
-	mu.Lock()
-	defer mu.Unlock()
-	require.Len(t, tokens, 2)
-	assert.NotEqual(t, tokens[0], tokens[1], "every invocation must use a fresh operation token")
-}
-
 type malformedSaveResponseCodec struct{}
 
 func (malformedSaveResponseCodec) Name() string { return "proto" }
@@ -415,7 +289,7 @@ func TestInitMalformedRootSaveResponseRetainsScaffold(t *testing.T) {
 	assert.Empty(t, h.usage.reported())
 }
 
-func TestInitAcknowledgedPreSaveRejectionRollsBack(t *testing.T) {
+func TestInitPreSaveRejectionRetainsScaffold(t *testing.T) {
 	for _, rejection := range []struct {
 		name string
 		err  error
@@ -431,10 +305,11 @@ func TestInitAcknowledgedPreSaveRejectionRollsBack(t *testing.T) {
 			require.NoError(t, err)
 			text, err := executeConversationInit(t, "--path", path, "--name", "quality",
 				"--source", "traces", "--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
-			require.ErrorContains(t, err, "was rolled back")
+			require.ErrorContains(t, err, "could not safely roll back")
+			assert.ErrorContains(t, err, "host may still finish")
 			assert.ErrorContains(t, err, rejection.err.Error())
 			assert.Empty(t, text)
-			assert.NoFileExists(t, path)
+			assert.FileExists(t, path)
 			after, err := os.ReadFile(filepath.Join(h.dir, "azure.yaml"))
 			require.NoError(t, err)
 			assert.Equal(t, before, after)
@@ -466,7 +341,7 @@ func TestInitRetainsScaffoldWithoutStableRootSnapshot(t *testing.T) {
 			text, err := executeConversationInit(t, "--path", path, "--name", "quality",
 				"--source", "traces", "--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
 			require.ErrorContains(t, err, "could not safely roll back")
-			assert.ErrorContains(t, err, "path was unavailable or changed")
+			assert.ErrorContains(t, err, "host may still finish")
 			assert.Empty(t, text)
 			assert.FileExists(t, path)
 			assert.Equal(t, 1, h.project.wiringAttempts())

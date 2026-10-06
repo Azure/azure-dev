@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -30,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -1516,25 +1514,16 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	// Optional host capability; literals are shared with the core handler so
-	// extensions using the released SDK do not need a new protocol dependency.
-	token := rand.Text()
-	callCtx := metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", token)
-	var trailers metadata.MD
-	_, err = azdClient.Project().AddService(callCtx, &azdext.AddServiceRequest{
+	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
 			Name:                 name,
 			Host:                 project.EvalHost,
 			Uses:                 evalServiceUses(resp.GetProject(), target),
 			AdditionalProperties: props,
 		},
-	}, grpc.Trailer(&trailers), grpc.MaxRetryRPCBufferSize(0))
+	}, grpc.MaxRetryRPCBufferSize(0))
 	if err != nil {
-		ack := trailers.Get("azd-project-add-service-save-failed")
-		if len(ack) != 1 || ack[0] != token {
-			err = &initWiringUncertainError{error: err}
-		}
-		return "", "", messages.AddingServiceTo(rootFilename, err)
+		return "", "", messages.AddingServiceTo(rootFilename, &initWiringUncertainError{error: err})
 	}
 	return wiringAdded, name, nil
 }

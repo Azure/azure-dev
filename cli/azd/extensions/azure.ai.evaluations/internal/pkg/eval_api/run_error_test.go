@@ -5,6 +5,7 @@ package eval_api
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -202,16 +203,17 @@ func TestJobErrorDetailsAreBoundedAndCopied(t *testing.T) {
 		if i > 0 {
 			body.WriteString(",")
 		}
-		body.WriteString(`{"message":"detail"}`)
+		fmt.Fprintf(&body, `{"message":"detail %d"}`, i)
 	}
 	body.WriteString(`]}`)
 	var decoded JobError
 	require.NoError(t, json.Unmarshal([]byte(body.String()), &decoded))
 	got := decoded.Details()
 	require.Len(t, got, maxCollectedDetails)
+	assert.Equal(t, 2*maxCollectedDetails, decoded.OmittedDetails())
 
 	got[0].Message = "changed"
-	assert.Equal(t, "detail", decoded.Details()[0].Message, "a caller cannot rewrite what the error holds")
+	assert.Equal(t, "detail 0", decoded.Details()[0].Message, "a caller cannot rewrite what the error holds")
 }
 
 // Reading the details must not change what -o json emits for an error that has
@@ -262,4 +264,31 @@ func TestOutputItemJSONKeepsCaseSensitiveDatasetColumns(t *testing.T) {
 		require.NoError(t, decoder.Decode(&document))
 		assert.Equal(t, map[string]json.Number{"ID": "1", "id": "2"}, document.Row)
 	}
+}
+
+func TestJobErrorDropsRepeatedDetailsBeforeCappingThem(t *testing.T) {
+	var repeats []string
+	for range 80 {
+		repeats = append(repeats, `{"message":"The request is invalid."}`)
+	}
+	raw := `{"message":"The request is invalid.","details":[` + strings.Join(repeats, ",") +
+		`,{"message":"Model 'gpt-9' was not found.","target":"model"}]}`
+	var jobError JobError
+	require.NoError(t, json.Unmarshal([]byte(raw), &jobError))
+
+	details := jobError.Details()
+	require.Len(t, details, 2, "the repeated entry once, then the entry that names the cause")
+	assert.Equal(t, "Model 'gpt-9' was not found.", details[1].Message)
+	assert.Zero(t, jobError.OmittedDetails())
+}
+
+func TestAPolledJobFailureIsOneBoundedLine(t *testing.T) {
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"id":"j","status":"failed","error":{"message":"first line\nsecond line `+strings.Repeat("x", 600)+`"}}`), &job))
+
+	text := (&JobFailedError{Job: &job, Status: "failed"}).Error()
+	assert.NotContains(t, text, "\n")
+	assert.Contains(t, text, "first line second line")
+	assert.Less(t, len([]rune(text)), 400)
 }

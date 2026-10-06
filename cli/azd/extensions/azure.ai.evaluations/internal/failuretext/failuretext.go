@@ -49,16 +49,9 @@ func Lines(headline string, details []Detail, limit int) (lines []string, more i
 	head := key(Text(headline))
 	var seen []string
 	for _, detail := range details {
-		text := Text(detail.Message)
-		if text == "" {
-			text = Text(detail.Code)
-		}
+		text, target := render(detail)
 		if text == "" {
 			continue
-		}
-		target := Text(detail.Target)
-		if target != "" {
-			text += " (target: " + target + ")"
 		}
 		k := key(text)
 		if slices.Contains(seen, k) || target == "" && strings.Contains(head, k) {
@@ -72,6 +65,32 @@ func Lines(headline string, details []Detail, limit int) (lines []string, more i
 		lines = append(lines, text)
 	}
 	return lines, more
+}
+
+// render is what a detail prints: its message, else its code, followed by the part
+// of the request it was about. It also returns the target on its own.
+func render(detail Detail) (text, target string) {
+	text = Text(detail.Message)
+	if text == "" {
+		text = Text(detail.Code)
+	}
+	if text == "" {
+		return "", ""
+	}
+	target = Text(detail.Target)
+	if target != "" {
+		text += " (target: " + target + ")"
+	}
+	return text, target
+}
+
+// Key identifies a detail by what it would print, so entries that read the same
+// are one finding whatever their case, spacing or trailing punctuation. Callers
+// that bound how many details they keep use it to drop repeats first, so a run of
+// repeats cannot crowd out the entry that names the cause.
+func Key(detail Detail) string {
+	text, _ := render(detail)
+	return key(text)
 }
 
 // key is the text two reasons are compared on: the same words in any case,

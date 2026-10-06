@@ -12,7 +12,6 @@ import (
 	"azureaieval/internal/failuretext"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/urlsafe"
 )
 
 const (
@@ -96,7 +95,7 @@ func writeJobFailure(out io.Writer, job *eval_api.GenerationJob) {
 		return
 	}
 	if reason := job.Error.Reason(); reason != "" {
-		fmt.Fprint(out, messages.JobErrorLine(urlsafe.Text(reason)))
+		fmt.Fprint(out, messages.JobErrorLine(failureText(reason)))
 		renderFailureDetails(out, job.Error)
 	}
 }

@@ -138,6 +138,9 @@ func readDetails(raw json.RawMessage) ([]ErrorDetail, int) {
 	}
 	var details []ErrorDetail
 	omitted := 0
+	// Repeats are dropped before the cap is applied, so a run of identical entries
+	// cannot fill the room and hide the one that names the cause.
+	seen := map[string]bool{}
 	for _, entry := range entries {
 		entry = bytes.TrimSpace(entry)
 		if len(entry) == 0 {
@@ -158,6 +161,11 @@ func readDetails(raw json.RawMessage) ([]ErrorDetail, int) {
 		if detail.Message == "" && detail.Code == "" {
 			continue
 		}
+		key := failuretext.Key(failuretext.Detail{Code: detail.Code, Message: detail.Message, Target: detail.Target})
+		if key != "" && seen[key] {
+			continue
+		}
+		seen[key] = true
 		if len(details) == maxCollectedDetails {
 			omitted++
 			continue

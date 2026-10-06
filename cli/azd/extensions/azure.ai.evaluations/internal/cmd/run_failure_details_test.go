@@ -311,3 +311,17 @@ func TestDetailsBeyondTheStoredCapAreStillCounted(t *testing.T) {
 	assert.Len(t, inline, maxFailureDetailsInline)
 	assert.Equal(t, 60-maxFailureDetailsInline, hidden)
 }
+
+func TestAJobFailureReasonPrintsAsOneBoundedLine(t *testing.T) {
+	var job eval_api.GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"id":"j","status":"failed","error":{"message":"first line\nsecond line `+strings.Repeat("x", 600)+`"}}`), &job))
+
+	var out bytes.Buffer
+	writeJobFailure(&out, &job)
+
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	assert.Len(t, lines, 1)
+	assert.Contains(t, out.String(), "first line second line")
+	assert.Less(t, len([]rune(out.String())), 400)
+}

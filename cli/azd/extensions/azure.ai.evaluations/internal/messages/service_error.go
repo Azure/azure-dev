@@ -161,13 +161,17 @@ func serviceFailureFrom(respErr *azcore.ResponseError) (message string, details 
 		return "", nil, 0
 	}
 	omittedCount := 0
-	collectServiceDetails(envelope, 0, &details, &omittedCount)
+	collectServiceDetails(envelope, 0, &details, &omittedCount, map[string]bool{})
 	return failuretext.Text(deepestMessage(envelope, 0)), details, omittedCount
 }
 
 // collectServiceDetails gathers the details arrays at every level the sentence
 // can be nested at, outermost first, in the order the service listed them.
-func collectServiceDetails(envelope map[string]json.RawMessage, depth int, out *[]failuretext.Detail, omitted *int) {
+// Repeats are dropped before the read cap applies, so a run of identical entries
+// cannot fill the room and hide the one that names the cause.
+func collectServiceDetails(
+	envelope map[string]json.RawMessage, depth int, out *[]failuretext.Detail, omitted *int, seen map[string]bool,
+) {
 	if depth > 8 {
 		return
 	}
@@ -178,6 +182,12 @@ func collectServiceDetails(envelope map[string]json.RawMessage, depth int, out *
 				detail, ok := serviceDetailFrom(entry)
 				if !ok {
 					continue
+				}
+				if key := failuretext.Key(detail); key != "" {
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
 				}
 				if len(*out) == maxServiceDetailsRead {
 					*omitted++
@@ -190,7 +200,7 @@ func collectServiceDetails(envelope map[string]json.RawMessage, depth int, out *
 	for _, key := range []string{"error", "innererror", "innerError"} {
 		var nested map[string]json.RawMessage
 		if raw, ok := envelope[key]; ok && json.Unmarshal(raw, &nested) == nil {
-			collectServiceDetails(nested, depth+1, out, omitted)
+			collectServiceDetails(nested, depth+1, out, omitted, seen)
 		}
 	}
 }

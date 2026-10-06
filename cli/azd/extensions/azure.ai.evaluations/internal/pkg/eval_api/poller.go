@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"azureaieval/internal/failuretext"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
-	"azureaieval/internal/urlsafe"
 )
 
 // ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ func (e *JobFailedError) Error() string {
 	if e.Job != nil {
 		// The service's own words reach the terminal and CI logs, and can quote a
 		// URL that carries a SAS token or userinfo.
-		if reason := urlsafe.Text(e.Job.Error.Reason()); reason != "" {
+		if reason := failuretext.Text(e.Job.Error.Reason()); reason != "" {
 			return messages.JobFailedWithReason(string(e.Status), reason)
 		}
 	}

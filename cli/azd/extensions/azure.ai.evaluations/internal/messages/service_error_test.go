@@ -214,3 +214,19 @@ func TestARefusalWithoutDetailsReadsAsItAlwaysDid(t *testing.T) {
 	assert.Equal(t,
 		"dataset 'golden' has no version 3.0 (HTTP 400 InvalidRequest) from https://proj.example/datasets/golden", text)
 }
+
+// Repeats are dropped before the read cap applies, so sixty restatements of the
+// headline cannot hide the one entry that names the cause, nor inflate the count.
+func TestARunOfRepeatedDetailsDoesNotHideTheCause(t *testing.T) {
+	var repeats []string
+	for range 60 {
+		repeats = append(repeats, `{"message":"The request is invalid."}`)
+	}
+	body := `{"error":{"message":"The request is invalid.","details":[` + strings.Join(repeats, ",") +
+		`,{"message":"Model 'gpt-9' was not found.","target":"model"}]}}`
+	got := ServiceRefused(400, refusalFrom(t, 400, "https://p.example/x", body))
+
+	text := got.Error()
+	assert.Contains(t, text, "Model 'gpt-9' was not found. (target: model)")
+	assert.NotContains(t, text, "more", "no repeat is counted as a further finding")
+}

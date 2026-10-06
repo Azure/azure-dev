@@ -696,7 +696,7 @@ Init never copies the generation or judge model into the simulation model.
 Generation declares artifacts only; it does not attach them to an existing eval
 or replace its configuration. If a generated rubric declares an incompatible
 evaluation level, the handoff warns and leaves `--evaluator` unset. Init offers
-its default composite selection, which the user can replace; the incompatible
+its `builtin.task_completion` default, which the user can replace; the incompatible
 rubric remains in the catalogue.
 If any handoff value contains shell expansion syntax or cannot be portably quoted,
 including a dollar sign, backtick, double quote, percent sign, exclamation mark,

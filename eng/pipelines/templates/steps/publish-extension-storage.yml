@@ -14,55 +14,7 @@ steps:
       Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
     displayName: Remove _manifest folder
 
-  - pwsh: |
-      # Defensive pre-install: the AzurePowerShell@5 task's own InitializeAz.ps1 (which
-      # runs before this task's Inline script, in its own separate process) throws 'Could
-      # not find the module Az.Accounts with given version' when azurePowerShellVersion:
-      # LatestVersion can't find a cached Az.Accounts on the hosted image. Observed on two
-      # independent agents (azsdk-pool 11, azsdk-pool 286; image 60.0.0), so pre-seed it
-      # here; a no-op when the image-provided copy is already present.
-      #
-      # Because this step and the later AzurePowerShell@5 task run in separate processes,
-      # any $env:PSModulePath edit made here is local to this step only -- it cannot change
-      # what InitializeAz.ps1 itself searches. Its Update-PSModulePathForHostedAgentLinux
-      # (github.com/microsoft/azure-pipelines-tasks .../AzurePowerShellV5/Utility.ps1,
-      # Get-LatestModuleLinux) independently selects exactly one /usr/share/az_<version>
-      # directory: the highest-numbered one whose name matches ^az_[0-9]+\.[0-9]+\.[0-9]+$
-      # AND that contains a valid Az/<version>/Az.psm1 file. Older/invalid-looking matches
-      # are skipped even if they happen to hold a usable Az.Accounts copy.
-      #
-      # This probe must therefore mirror that exact selection -- not merge every /usr/share
-      # az_* directory indiscriminately -- so an Az.Accounts found only in some older or
-      # otherwise-unselected cache does not cause this step to skip the install while
-      # InitializeAz.ps1 still fails looking at the one cache it actually picks. This
-      # deployment job does not check out the repo (no
-      # eng/common/scripts/Helpers/PSModule-Helpers.ps1 available), so the selection is
-      # reimplemented inline rather than dot-sourced.
-      if ($IsLinux) {
-        $azVersionPattern = '^az_(?<version>[0-9]+\.[0-9]+\.[0-9]+)$'
-        $selectedCachePath = $null
-        $selectedVersion = [version]'0.0.0'
-        Get-ChildItem -Path '/usr/share' -Attributes Directory -ErrorAction SilentlyContinue | ForEach-Object {
-          if ($_.Name -match $azVersionPattern) {
-            $candidateVersion = [version]$Matches['version']
-            $azManifestPath = Join-Path $_.FullName "Az/$candidateVersion/Az.psm1"
-            if (($candidateVersion -gt $selectedVersion) -and (Test-Path -LiteralPath $azManifestPath -PathType Leaf)) {
-              $selectedVersion = $candidateVersion
-              $selectedCachePath = $_.FullName
-            }
-          }
-        }
-        if ($selectedCachePath) {
-          $existingModulePaths = $env:PSModulePath -split ':'
-          if ($existingModulePaths -notcontains $selectedCachePath) {
-            $env:PSModulePath = "${selectedCachePath}:$env:PSModulePath"
-          }
-        }
-      }
-      if (-not (Get-Module -ListAvailable -Name Az.Accounts)) {
-        Install-Module -Name Az.Accounts -Scope CurrentUser -Force -AllowClobber -Repository PSGallery
-      }
-    displayName: Ensure Az.Accounts module is available
+  - template: /eng/pipelines/templates/steps/ensure-az-accounts-module.yml
 
   - task: AzurePowerShell@5
     displayName: Upload release to storage account

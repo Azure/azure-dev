@@ -25,6 +25,7 @@ type recoveryConfigManager struct {
 	saveCalls int
 	failAt    int
 	saveError error
+	partial   bool
 }
 
 func TestPrepareUpgradeRecoveryRejectsUnsafeInstalledIDs(t *testing.T) {
@@ -48,7 +49,7 @@ func TestPrepareUpgradeRecoveryRejectsUnsafeInstalledIDs(t *testing.T) {
 			}))
 			manager := &Manager{}
 			finish, err := manager.prepareUpgradeRecovery(
-				t.Context(), &Extension{Id: id, Version: "1.0.0"}, id,
+				t.Context(), &Extension{Id: id, Version: "1.0.0"}, "test.replacement",
 			)
 			require.ErrorContains(t, err, "invalid installed extension directory")
 			require.Nil(t, finish)
@@ -84,9 +85,38 @@ func TestPrepareUpgradeRecoveryRejectsMismatchedReplacementID(t *testing.T) {
 func (m *recoveryConfigManager) Save(cfg config.Config, path string) error {
 	m.saveCalls++
 	if m.saveCalls == m.failAt {
+		if m.partial {
+			if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+				return errors.Join(m.saveError, err)
+			}
+		}
 		return m.saveError
 	}
 	return m.FileConfigManager.Save(cfg, path)
+}
+
+func TestPrepareUpgradeRecoveryRejectsUnsafeReplacementIDs(t *testing.T) {
+	for _, id := range []string{"", ".", "..", "../other", "nested/other", `nested\other`} {
+		t.Run(fmt.Sprintf("%q", id), func(t *testing.T) {
+			configDir := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", configDir)
+			extensionRoot := filepath.Join(configDir, "extensions")
+			extensionDir := filepath.Join(extensionRoot, "test.recovery")
+			require.NoError(t, os.MkdirAll(extensionDir, 0o700))
+			installedPath := filepath.Join(extensionDir, "installed")
+			require.NoError(t, os.WriteFile(installedPath, []byte("installed bytes"), 0o600))
+			manager := &Manager{}
+			finish, err := manager.prepareUpgradeRecovery(t.Context(), &Extension{Id: "test.recovery"}, id)
+			require.ErrorContains(t, err, "invalid replacement extension directory")
+			require.Nil(t, finish)
+			content, err := os.ReadFile(installedPath)
+			require.NoError(t, err)
+			require.Equal(t, "installed bytes", string(content))
+			entries, err := os.ReadDir(extensionRoot)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "validation must precede backup staging")
+		})
+	}
 }
 
 func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
@@ -99,11 +129,11 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		cancelOnDownload bool
 		mutateInstalled  bool
 		failSave         int
-		installedID      string
-		replacementID    string
-		recoverySaveFail bool
 		version          string
 		wantError        string
+		replacementID    string
+		recoverySave     bool
+		partialSave      bool
 	}{
 		{name: "missing artifact", artifact: "missing", wantError: "failed to download artifact"},
 		{
@@ -123,13 +153,16 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		{name: "uninstall save", artifact: "replacement", failSave: 1, wantError: "injected save failure"},
 		{name: "install save", artifact: "replacement", failSave: 2, wantError: "injected save failure"},
 		{
-			name: "case variant archive", artifact: "invalid.zip",
-			installedID: "Test.Recovery", replacementID: "test.recovery",
-			wantError: "failed to extract zip",
+			name: "case variant install save", artifact: "replacement", failSave: 2,
+			replacementID: "TEST.RECOVERY", wantError: "injected save failure",
 		},
 		{
-			name: "recovery save", artifact: "invalid.zip", failSave: 2,
-			recoverySaveFail: true, wantError: "injected save failure",
+			name: "recovery save", artifact: "missing", failSave: 2, recoverySave: true,
+			wantError: "failed to save restored installed extension metadata",
+		},
+		{
+			name: "partial recovery save", artifact: "missing", failSave: 2, recoverySave: true, partialSave: true,
+			wantError: "failed to save restored installed extension metadata",
 		},
 	}
 	for _, test := range tests {
@@ -137,18 +170,10 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			mockCtx := mocks.NewMockContext(t.Context())
 			configDir := t.TempDir()
 			t.Setenv("AZD_CONFIG_DIR", configDir)
-			if test.installedID != "" && test.replacementID != "" {
-				probe := filepath.Join(configDir, "CaseSensitiveProbe")
-				require.NoError(t, os.Mkdir(probe, 0o700))
-				if _, err := os.Stat(filepath.Join(configDir, "casesensitiveprobe")); err == nil {
-					t.Skip("case-variant recovery requires a case-sensitive filesystem")
-				} else {
-					require.ErrorIs(t, err, os.ErrNotExist)
-				}
-			}
 			configManager := &recoveryConfigManager{
-				FileConfigManager: mockCtx.ConfigManager,
+				FileConfigManager: config.NewFileConfigManager(config.NewManager()),
 				saveError:         errors.New("injected save failure"),
+				partial:           test.partialSave,
 			}
 			userConfig := config.NewUserConfigManager(configManager)
 			sourceManager := NewSourceManager(mockCtx.Container, userConfig, mockCtx.HttpClient)
@@ -166,12 +191,8 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, oldFile.Close())
 			platform := runtime.GOOS + "/" + runtime.GOARCH
-			installedID := test.installedID
-			if installedID == "" {
-				installedID = "test.recovery"
-			}
 			metadata := &ExtensionMetadata{
-				Id: installedID, Source: "test",
+				Id: "test.recovery", Source: "test",
 				Versions: []ExtensionVersion{{
 					Version: "1.0.0", EntryPoint: filepath.Base(oldPath),
 					Artifacts: map[string]ExtensionArtifact{platform: {URL: oldPath}},
@@ -239,6 +260,7 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 				})
 			}
 			_, _, err = manager.Upgrade(ctx, metadata, DefaultUpgradeOptions(test.version))
+			upgradeErr := err
 			require.ErrorContains(t, err, test.wantError)
 			if test.cancel || test.cancelOnDownload {
 				require.ErrorIs(t, err, context.Canceled)
@@ -249,29 +271,6 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			if test.failSave != 0 {
 				require.ErrorIs(t, err, configManager.saveError)
 			}
-			if test.recoverySaveFail {
-				backups, globErr := filepath.Glob(filepath.Join(configDir, "extensions", ".upgrade-backup-*"))
-				require.NoError(t, globErr)
-				require.Len(t, backups, 1)
-				metadataPath := filepath.Join(backups[0], "installed.json")
-				require.ErrorContains(t, err, fmt.Sprintf("%q", metadataPath))
-				data, readErr := os.ReadFile(metadataPath)
-				require.NoError(t, readErr)
-				require.JSONEq(t, string(before), string(data))
-				content, readErr := os.ReadFile(installedPath)
-				require.NoError(t, readErr)
-				require.Equal(t, "installed bytes", string(content))
-				content, readErr = os.ReadFile(historyPath)
-				require.NoError(t, readErr)
-				require.Equal(t, "preserved history", string(content))
-				return
-			}
-			require.NoError(t, manager.ReloadUserConfig())
-			restored, err := manager.GetInstalled(FilterOptions{Id: metadata.Id})
-			require.NoError(t, err)
-			after, err := json.Marshal(restored)
-			require.NoError(t, err)
-			require.JSONEq(t, string(before), string(after))
 			content, err := os.ReadFile(installedPath)
 			require.NoError(t, err)
 			require.Equal(t, "installed bytes", string(content))
@@ -280,9 +279,56 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			require.Equal(t, "preserved history", string(content))
 			backups, err := filepath.Glob(filepath.Join(configDir, "extensions", ".upgrade-backup-*"))
 			require.NoError(t, err)
-			require.Empty(t, backups)
+			if test.recoverySave {
+				require.Len(t, backups, 1)
+				require.ErrorContains(t, upgradeErr, fmt.Sprintf("%q", backups[0]))
+				require.ErrorContains(t, upgradeErr, fmt.Sprintf("%q", filepath.Dir(installedPath)))
+				configPath, err := config.GetUserConfigFilePath()
+				require.NoError(t, err)
+				persisted, err := os.ReadFile(configPath)
+				require.NoError(t, err)
+				if test.partialSave {
+					require.Equal(t, "{", string(persisted), "simulate an interrupted metadata write")
+				} else {
+					require.NotContains(t, string(persisted), installed.Id, "the removed record needs manual recovery")
+				}
+				metadataPath := filepath.Join(backups[0], "metadata.json")
+				content, err := os.ReadFile(metadataPath)
+				require.NoError(t, err)
+				require.JSONEq(t, string(before), string(content))
+				if runtime.GOOS != "windows" {
+					info, err := os.Stat(metadataPath)
+					require.NoError(t, err)
+					require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+					info, err = os.Stat(backups[0])
+					require.NoError(t, err)
+					require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+				}
+				// Recover from the on-disk snapshot rather than the manager's in-memory record.
+				previous := new(Extension)
+				require.NoError(t, json.Unmarshal(content, previous))
+				require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{previous.Id: previous}))
+				configManager.failAt = 0
+				require.NoError(t, manager.configManager.Save(manager.userConfig))
+			} else {
+				require.Empty(t, backups)
+			}
+			require.NoError(t, manager.ReloadUserConfig())
+			restored, err := manager.GetInstalled(FilterOptions{Id: metadata.Id})
+			require.NoError(t, err)
+			after, err := json.Marshal(restored)
+			require.NoError(t, err)
+			require.JSONEq(t, string(before), string(after))
+			records, err := manager.ListInstalled()
+			require.NoError(t, err)
+			require.Len(t, records, 1)
+			require.Contains(t, records, installed.Id)
 			if test.replacementID != "" {
-				require.NoDirExists(t, filepath.Join(configDir, "extensions", test.replacementID))
+				entries, err := os.ReadDir(filepath.Join(configDir, "extensions"))
+				require.NoError(t, err)
+				for _, entry := range entries {
+					require.NotEqual(t, test.replacementID, entry.Name(), "failed replacement tree must be removed")
+				}
 			}
 		})
 	}

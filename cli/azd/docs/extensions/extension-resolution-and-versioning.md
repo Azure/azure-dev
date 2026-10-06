@@ -190,7 +190,13 @@ until replacement succeeds. On Windows, backup staging retries transient file
 locks using the update's context; cancellation stops those retries before
 uninstall. A handled replacement failure attempts to restore files and metadata
 and reports a nonzero exit code. Recovery failures are reported explicitly,
-including a retained backup path when file restoration fails. Completed
+including a retained backup path when file or metadata restoration fails. The
+owner-only backup contains `metadata.json`, a snapshot of the previous installed
+record written before any files are moved. If saving restored metadata fails,
+the error identifies both this backup and the restored installed-file directory;
+the snapshot remains available for manual recovery. An unsuccessful replacement
+is removed using its registry ID, including when its casing differs from the
+previous installed ID. Completed
 dependency updates are not rolled back. This does not guarantee recovery from a
 process crash.
 

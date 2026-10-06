@@ -676,8 +676,9 @@ func (p *AgentServiceTargetProvider) dependencyEnvValue(name string) string {
 	return os.Getenv(name)
 }
 
-// getServiceKey converts a service name into a standardized environment variable key format
-func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
+// agentServiceKey converts a service name into the environment key segment
+// shared by agent deployment state.
+func agentServiceKey(serviceName string) string {
 	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
 	serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
 	return strings.ToUpper(serviceKey)
@@ -705,34 +706,20 @@ func (p *AgentServiceTargetProvider) Endpoints(
 		return nil, err
 	}
 
-	// Prompt agents expose a single workspace-rooted Responses endpoint on the
-	// harness. Build it from the service config, resolved against the azd
-	// environment so `azd show` reports the same target deploy published.
-	if validation.Kind == agent_yaml.AgentKindPrompt {
-		settings, err := p.resolvedPromptAgentSettings(ctx)
-		if err != nil {
-			return nil, err
-		}
-		managed, err := p.loadPromptAgentDefinition()
-		if err != nil {
-			return nil, err
-		}
-		if managed.HarnessType() != "" {
-			name := strings.TrimSpace(managed.Name)
-			if name == "" {
-				name = serviceConfig.GetName()
-			}
-			return []string{PromptAgentResponsesEndpoint(settings, name, true)}, nil
-		}
-		return []string{PromptAgentResponsesEndpoint(settings, managed.Name, false)}, nil
-	}
-
 	azdEnv, err := p.endpointEnvironmentValues(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	serviceKey := p.getServiceKey(serviceConfig.Name)
+	if validation.Kind == agent_yaml.AgentKindPrompt {
+		endpoint, err := PromptAgentDeploymentEndpoint(azdEnv, serviceConfig.Name)
+		if err != nil {
+			return nil, err
+		}
+		return []string{endpoint}, nil
+	}
+
+	serviceKey := agentServiceKey(serviceConfig.Name)
 	agentNameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
@@ -2651,7 +2638,7 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 	agentObject *agent_api.AgentObject,
 	hostedTarget *hostedVoiceTarget,
 ) error {
-	serviceKey := p.getServiceKey(serviceConfig.Name)
+	serviceKey := agentServiceKey(serviceConfig.Name)
 	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 
@@ -4046,7 +4033,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		return fmt.Errorf("agent version is empty; cannot register environment variables")
 	}
 
-	serviceKey := p.getServiceKey(serviceConfig.Name)
+	serviceKey := agentServiceKey(serviceConfig.Name)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	identityClientID := ""
 	identityPrincipalID := ""

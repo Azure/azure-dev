@@ -119,21 +119,19 @@ The authentication/authorization exclusions above are a consumer recovery
 policy, not additional host acknowledgment suppression.
 
 An explicit false capability response or `Unimplemented` from the read-only
-RPC selects the older stable host path. Other capability errors stop before
+RPC selects the stable host path. Other capability errors stop before
 mutation; errors from the subsequent mutation never trigger a fallback replay.
-Older hosts can still succeed normally, but failed saves retain the scaffold
-with manual recovery guidance. This backward-compatibility path must be removed
-after the SDK/core release and a minimum-host-version update.
+Stable calls can succeed normally, but failed saves retain the scaffold
+with manual inspection guidance.
 
-The evaluations extension currently uses a private dynamic descriptor registry
+The evaluations extension uses a private dynamic descriptor registry
 generated from the canonical beta schema by `grpc/generateprojectclient`.
 This permits reproducible builds with its released SDK pin, without a local
 replace, pseudo-version, duplicate schema, or conflicting global protobuf
-registration. Both SDK v1.34.0 and v1.35.0 lack these new project fields; upgrading
-to v1.35.0 alone would not make them available. Regeneration is part of `make proto`.
-Completion acknowledgments exist only on the typed beta API. The intermediate
-PR-only stable metadata/trailer convention was removed; no released client
-requires it. Stable callers receive ordinary errors and retain uncertain
+registration. Its private client supplies the project fields absent from its
+released SDK pin. Regeneration is part of `make proto`.
+Completion acknowledgments exist only on the typed beta API.
+Stable callers receive ordinary errors and retain uncertain
 scaffolds for manual recovery, without trusting custom metadata or trailers.
 
 ## Deployment Preview

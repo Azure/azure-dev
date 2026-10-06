@@ -107,9 +107,9 @@ For `Project.AddService`, use the optional
 [save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),
 the read-only beta `GetAddServiceCapabilities` RPC, a fresh typed operation ID,
 and local ownership checks before compensating local edits. Only an explicit
-unsupported response or `Unimplemented` from the capability RPC selects an older
-host path. Never retry a failed mutating RPC on another channel. Older hosts
-require retention and explicit recovery guidance rather than status-code-based
+unsupported response or `Unimplemented` from the capability RPC selects the stable
+host path. Never retry a failed mutating RPC on another channel. Unacknowledged failures
+require retention and explicit inspection guidance rather than status-code-based
 rollback; do not trust custom metadata/trailers as a substitute for the typed API.
 The acknowledgment covers completed pre-save rejections only on host builds
 that implement that behavior. It proves that the operation cannot write later;

@@ -662,8 +662,8 @@ type PromptMemory struct {
 	// ChatModel and EmbeddingModel are the model deployment names the store
 	// uses to summarize conversations and to embed memories. Both are required
 	// to create a store; they are ignored when the store already exists.
-	ChatModel      string `json:"chat_model,omitempty" yaml:"chat_model,omitempty"`
-	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+	ChatModel      string `json:"chatModel,omitempty" yaml:"chatModel,omitempty"`
+	EmbeddingModel string `json:"embeddingModel,omitempty" yaml:"embeddingModel,omitempty"`
 
 	// Scope namespaces memories so they are isolated per user (or per tenant,
 	// session, etc.). Defaults to DefaultMemoryScope, which resolves the caller's
@@ -673,11 +673,11 @@ type PromptMemory struct {
 	// UpdateDelay is how many seconds of conversation inactivity to wait before
 	// extracting memories. Nil leaves the service default (300s) in place. Set
 	// it low only for demos — a short delay extracts on nearly every turn.
-	UpdateDelay *int `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
+	UpdateDelay *int `json:"updateDelay,omitempty" yaml:"updateDelay,omitempty"`
 
 	// MaxMemories caps how many memories a single search returns. Nil leaves
 	// the service default in place.
-	MaxMemories *int `json:"max_memories,omitempty" yaml:"max_memories,omitempty"`
+	MaxMemories *int `json:"maxMemories,omitempty" yaml:"maxMemories,omitempty"`
 
 	// Options toggles which memory kinds the store extracts.
 	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
@@ -710,11 +710,11 @@ func (m *PromptMemory) UnmarshalYAML(value *yaml.Node) error {
 // fields are pointers so an unset toggle leaves the service default rather than
 // forcing false.
 type PromptMemoryOptions struct {
-	ChatSummaryEnabled      *bool  `json:"chat_summary_enabled,omitempty" yaml:"chat_summary_enabled,omitempty"`
-	UserProfileEnabled      *bool  `json:"user_profile_enabled,omitempty" yaml:"user_profile_enabled,omitempty"`
-	ProceduralMemoryEnabled *bool  `json:"procedural_memory_enabled,omitempty" yaml:"procedural_memory_enabled,omitempty"`
-	DefaultTTLSeconds       *int   `json:"default_ttl_seconds,omitempty" yaml:"default_ttl_seconds,omitempty"`
-	UserProfileDetails      string `json:"user_profile_details,omitempty" yaml:"user_profile_details,omitempty"`
+	ChatSummaryEnabled      *bool  `json:"chatSummaryEnabled,omitempty" yaml:"chatSummaryEnabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"userProfileEnabled,omitempty" yaml:"userProfileEnabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"proceduralMemoryEnabled,omitempty" yaml:"proceduralMemoryEnabled,omitempty"`
+	DefaultTTLSeconds       *int   `json:"defaultTtlSeconds,omitempty" yaml:"defaultTtlSeconds,omitempty"`
+	UserProfileDetails      string `json:"userProfileDetails,omitempty" yaml:"userProfileDetails,omitempty"`
 }
 
 // DefaultMemoryScope isolates memories per calling user. Foundry substitutes

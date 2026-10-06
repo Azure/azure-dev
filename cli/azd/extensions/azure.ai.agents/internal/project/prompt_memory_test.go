@@ -73,12 +73,12 @@ func TestMemoryNode_Validate(t *testing.T) {
 		{
 			name:    "missing chat model",
 			memory:  agent_yaml.PromptMemory{Store: "s", EmbeddingModel: "e"},
-			wantErr: "memory.chat_model",
+			wantErr: "memory.chatModel",
 		},
 		{
 			name:    "missing embedding model",
 			memory:  agent_yaml.PromptMemory{Store: "s", ChatModel: "c"},
-			wantErr: "memory.embedding_model",
+			wantErr: "memory.embeddingModel",
 		},
 		{
 			name:   "complete",

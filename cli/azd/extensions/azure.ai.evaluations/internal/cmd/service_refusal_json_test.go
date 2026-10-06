@@ -241,7 +241,7 @@ func TestMissingRunProducesConciseHumanAndStableJSONErrors(t *testing.T) {
 	assertNoEndpointSecrets(t, out.String())
 }
 
-func TestBuild47MissingRunResourceEnvelopeIsReduced(t *testing.T) {
+func TestMissingRunResourceEnvelopeIsReduced(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("x-ms-error-code", "UserError")

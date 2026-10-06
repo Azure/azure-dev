@@ -482,6 +482,7 @@ Feature-specific docs are in `docs/` — refer to them as needed. Some key docs 
 When creating or modifying GitHub Actions workflows:
 
 - **Always declare `permissions:`** explicitly with least-privilege (e.g., `contents: read`). All workflows in the repo should have this block for consistency
+- **Keep workflows readable**: Prefer separate scripts for substantial logic so it can be edited and tested directly. For `pull_request_target`, execute only trusted repository code, never code from the PR.
 - **Don't overwrite `PATH`** using `${{ env.PATH }}` — it's not defined in GitHub Actions expressions and will wipe the real PATH. Use `echo "$DIR" >> $GITHUB_PATH` instead
 - **Cross-workflow artifacts**: `actions/download-artifact@v4` without `run-id` only downloads artifacts from the *current* workflow run. Cross-workflow artifact sharing requires `run-id` and `repository` parameters
 - **Prefer Azure DevOps pipelines** for jobs that need secrets or Azure credentials — the team uses internal ADO pipelines for authenticated workloads in this public repo

@@ -119,20 +119,20 @@ func (p *PromptAgent) ValidateTools() error {
 }
 
 func validateGitHubCopilotToolset(tool map[string]any) error {
-	if err := rejectUnknownToolFields(tool, "type", "default_config", "configs"); err != nil {
+	if err := rejectUnknownToolFields(tool, "type", "defaultConfig", "configs"); err != nil {
 		return err
 	}
-	if raw, ok := tool["default_config"]; ok {
+	if raw, ok := tool["defaultConfig"]; ok {
 		config, ok := raw.(map[string]any)
 		if !ok {
-			return fmt.Errorf("default_config must be a mapping, got %T", raw)
+			return fmt.Errorf("defaultConfig must be a mapping, got %T", raw)
 		}
 		if err := rejectUnknownToolFields(config, "enabled"); err != nil {
-			return fmt.Errorf("default_config: %w", err)
+			return fmt.Errorf("defaultConfig: %w", err)
 		}
 		if enabled, ok := config["enabled"]; ok {
 			if _, valid := enabled.(bool); !valid {
-				return fmt.Errorf("default_config.enabled must be a boolean, got %T", enabled)
+				return fmt.Errorf("defaultConfig.enabled must be a boolean, got %T", enabled)
 			}
 		}
 	}
@@ -175,6 +175,27 @@ func validateGitHubCopilotToolset(tool map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// promptToolsForAPI translates extension-owned authoring keys while preserving
+// every API-owned tool payload verbatim.
+func promptToolsForAPI(tools []any) []any {
+	mapped := make([]any, len(tools))
+	for i, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok || tool["type"] != githubCopilotToolsetPreview {
+			mapped[i] = raw
+			continue
+		}
+
+		tool = maps.Clone(tool)
+		if defaultConfig, ok := tool["defaultConfig"]; ok {
+			tool["default_config"] = defaultConfig
+			delete(tool, "defaultConfig")
+		}
+		mapped[i] = tool
+	}
+	return mapped
 }
 
 func rejectUnknownToolFields(value map[string]any, allowed ...string) error {

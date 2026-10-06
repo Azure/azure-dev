@@ -15,7 +15,7 @@ import (
 
 // The generation-job listings answer with the same has_more/last_id cursor the
 // OpenAI listings use, but GenerationJobList did not carry those fields, so
-// both read one page and stopped. Against the shared bug bash project that meant
+// both read one page and stopped. Against a shared test project that meant
 // `job list` reported the first twenty jobs of many, with nothing to say so.
 func TestGenerationJobListingsFollowTheCursor(t *testing.T) {
 	for _, tc := range []struct {

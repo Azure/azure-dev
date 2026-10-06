@@ -4,10 +4,8 @@
 package cmd
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -31,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -470,14 +467,6 @@ func (a *initAction) Run() error {
 	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
 		return err
 	}
-	var rootBefore []byte
-	if rootPath != "" {
-		// #nosec G304 -- snapshot the current azd project's root before wiring it.
-		rootBefore, err = os.ReadFile(rootPath)
-		if err != nil {
-			return messages.ReadingPath(rootPath, err)
-		}
-	}
 	// Recheck resolution and identity, then write the same exact filename the user confirmed.
 	if err := checkInitConfigDestination(path, configPath); err != nil {
 		return err
@@ -487,7 +476,7 @@ func (a *initAction) Run() error {
 			return err
 		}
 	}
-	rollback, err := project.ApplyScaffoldWithRollback(configPath, project.ScaffoldWrite{
+	err = project.ApplyScaffold(configPath, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],
 		Evaluators: cfg.Evaluators[declaredEvaluators:],
 		Evals:      cfg.Evals[declaredEvals:],
@@ -501,34 +490,7 @@ func (a *initAction) Run() error {
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
 	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath, rootFilename)
 	if err != nil {
-		if _, uncertain := errors.AsType[*initWiringUncertainError](err); uncertain {
-			return messages.InitWiringRollbackFailed(configPath, err,
-				errors.New("the host may still finish saving the project configuration; the scaffold was retained"))
-		}
-		currentRoot, rootErr := initRootConfigPath(azdProject.GetPath())
-		if rootErr != nil {
-			return messages.InitWiringRollbackFailed(configPath, err, rootErr)
-		}
-		if rootPath == "" || currentRoot != rootPath {
-			return messages.InitWiringRollbackFailed(configPath, err,
-				errors.New("the project configuration path was unavailable or changed during wiring; "+
-					"the scaffold was retained"))
-		}
-		// A lost RPC response can follow a successful root save. Do not remove
-		// a scaffold the root may already reference, or overwrite another edit.
-		// #nosec G304 -- re-read the same project root to determine whether rollback is safe.
-		rootAfter, readErr := os.ReadFile(rootPath)
-		if readErr != nil {
-			return messages.InitWiringRollbackFailed(configPath, err, readErr)
-		}
-		if !bytes.Equal(rootBefore, rootAfter) {
-			return messages.InitWiringRollbackFailed(configPath, err,
-				fmt.Errorf("%s changed during wiring; the scaffold was retained", filepath.Base(rootPath)))
-		}
-		if rollbackErr := rollback(); rollbackErr != nil {
-			return messages.InitWiringRollbackFailed(configPath, err, rollbackErr)
-		}
-		return messages.InitWiringRolledBack(configPath, err)
+		return messages.InitWiringUncertain(configPath, err)
 	}
 
 	// Reported here rather than from the prompt sequence, which a confirmation
@@ -598,12 +560,6 @@ func (a *initAction) Run() error {
 		fmt.Fprint(out, messages.WholeProjectAlternative(deployCmd))
 	}
 	return nil
-}
-
-type initWiringUncertainError struct{ error }
-
-func (e *initWiringUncertainError) Unwrap() error {
-	return e.error
 }
 
 func checkInitConfigDestination(location, expected string) error {
@@ -1549,24 +1505,15 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	// Optional host capability uses literals shared with the core handler
-	// and metadata carried by the released SDK.
-	token := rand.Text()
-	callCtx := metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", token)
-	var trailers metadata.MD
-	_, err = azdClient.Project().AddService(callCtx, &azdext.AddServiceRequest{
+	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
 			Name:                 name,
 			Host:                 project.EvalHost,
 			Uses:                 evalServiceUses(resp.GetProject(), target),
 			AdditionalProperties: props,
 		},
-	}, grpc.Trailer(&trailers), grpc.MaxRetryRPCBufferSize(0))
+	}, grpc.MaxRetryRPCBufferSize(0))
 	if err != nil {
-		ack := trailers.Get("azd-project-add-service-save-failed")
-		if len(ack) != 1 || ack[0] != token {
-			err = &initWiringUncertainError{error: err}
-		}
 		return "", "", messages.AddingServiceTo(rootFilename, err)
 	}
 	return wiringAdded, name, nil

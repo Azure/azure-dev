@@ -39,7 +39,7 @@ var (
 		{
 			Name:       "env2",
 			IsDefault:  false,
-			DotEnvPath: ".azure/env1/.env",
+			DotEnvPath: ".azure/env2/.env",
 		},
 	}
 	remoteEnvList []*contracts.EnvListEnvironment = []*contracts.EnvListEnvironment{
@@ -202,6 +202,19 @@ func Test_EnvManager_RejectsInvalidDefaultBeforeDataStoreAccess(t *testing.T) {
 	require.Empty(t, remote.Calls)
 }
 
+func Test_EnvManager_ListWithoutProject(t *testing.T) {
+	local := &MockDataStore{}
+	remote := &MockDataStore{}
+	manager := newManagerForTest(nil, nil, local, remote)
+
+	envs, err := manager.List(t.Context())
+
+	require.ErrorIs(t, err, azdcontext.ErrNoProject)
+	require.Nil(t, envs)
+	require.Empty(t, local.Calls)
+	require.Empty(t, remote.Calls)
+}
+
 func Test_EnvManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
@@ -295,7 +308,7 @@ func Test_EnvManager_ListSkipsInvalidRemoteNames(t *testing.T) {
 			}, invalidEnvs...),
 			expected: []*Description{
 				{Name: "env1", HasLocal: true, HasRemote: true, DotEnvPath: ".azure/env1/.env"},
-				{Name: "env2", HasLocal: true, DotEnvPath: ".azure/env1/.env"},
+				{Name: "env2", HasLocal: true, DotEnvPath: ".azure/env2/.env"},
 				{Name: "env3", HasRemote: true},
 			},
 		},

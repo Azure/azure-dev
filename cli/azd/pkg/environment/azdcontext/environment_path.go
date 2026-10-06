@@ -11,7 +11,7 @@ import (
 )
 
 // ErrUnsafeEnvironmentPath identifies an unsupported filesystem entry or a path outside the local state boundary.
-var ErrUnsafeEnvironmentPath = errors.New("unsafe environment path")
+var ErrUnsafeEnvironmentPath = errors.New("invalid environment path")
 
 // resolveExistingPath resolves the nearest existing ancestor without treating dangling
 // links or permission errors as missing directories. This also supports first-time creation.

@@ -311,6 +311,8 @@ func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
 	switch {
 	case event.Has(fsnotify.Create):
 		fw.fileChanges.Created[name] = true
+		delete(fw.fileChanges.Modified, name)
+		delete(fw.fileChanges.Deleted, name)
 	case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
 		if existed && !fw.fileChanges.Created[name] && !fw.fileChanges.Deleted[name] {
 			fw.fileChanges.Modified[name] = true

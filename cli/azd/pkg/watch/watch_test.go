@@ -616,6 +616,33 @@ func TestGetFileChanges_PreExistingRemovalRemainsDeleted(t *testing.T) {
 	require.Empty(t, fw.fileChanges.Modified)
 }
 
+func TestGetFileChanges_RecreatedInitialFileIsCreated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "existing.txt")
+	fw := &fileWatcher{
+		initialFiles: map[string]struct{}{path: {}},
+		fileChanges: &fileChanges{
+			Created:  map[string]bool{},
+			Modified: map[string]bool{},
+			Deleted:  map[string]bool{},
+		},
+	}
+	applyEvent := func(op fsnotify.Op) {
+		fw.mu.Lock()
+		defer fw.mu.Unlock()
+		fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: op})
+	}
+
+	applyEvent(fsnotify.Write)
+	applyEvent(fsnotify.Remove)
+	require.Equal(t, FileChanges{{Path: path, ChangeType: FileDeleted}}, fw.GetFileChanges())
+
+	require.NoError(t, os.WriteFile(path, []byte("replacement"), 0600))
+	applyEvent(fsnotify.Create)
+	require.Equal(t, FileChanges{{Path: path, ChangeType: FileCreated}}, fw.GetFileChanges())
+	require.Empty(t, fw.fileChanges.Modified)
+	require.Empty(t, fw.fileChanges.Deleted)
+}
+
 func TestGetFileChanges_ReconciliationPreservesOtherChanges(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "a-created.txt")

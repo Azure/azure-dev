@@ -136,6 +136,7 @@ func runLinkedPathOperation(t *testing.T, store LocalDataStore, operation string
 func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 	for _, entryKind := range []string{
 		"invalid-name", "directory-link", "dangling-link", "lock-directory-link",
+		"env-directory", "config-directory", "lock-directory",
 		DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock",
 	} {
 		t.Run(entryKind, func(t *testing.T) {
@@ -159,6 +160,14 @@ func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 				ostest.DirectoryLink(t, target, filepath.Join(root, DotEnvFileName+".lock"))
 				target = filepath.Join(target, "marker")
 				require.NoError(t, os.WriteFile(target, []byte("unchanged"), 0600))
+			case "env-directory", "config-directory", "lock-directory":
+				fileName := DotEnvFileName
+				if entryKind == "config-directory" {
+					fileName = ConfigFileName
+				} else if entryKind == "lock-directory" {
+					fileName += ".lock"
+				}
+				require.NoError(t, os.MkdirAll(filepath.Join(ctx.EnvironmentDirectory(), "invalid", fileName), 0700))
 			default:
 				root := filepath.Join(ctx.EnvironmentDirectory(), "linked")
 				require.NoError(t, os.Mkdir(root, 0700))

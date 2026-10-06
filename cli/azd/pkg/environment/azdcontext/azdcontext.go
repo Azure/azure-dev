@@ -65,7 +65,7 @@ func (c *AzdContext) EnvironmentRoot(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return resolveEnvironmentChild(base, name)
+	return resolveEnvironmentChild(base, name, true)
 }
 
 // EnvironmentDirectoryPath returns the canonical environment directory, rejecting filesystem links at .azure.
@@ -74,7 +74,7 @@ func (c *AzdContext) EnvironmentDirectoryPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving project directory: %w", err)
 	}
-	return resolveEnvironmentChild(projectRoot, EnvironmentDirectoryName)
+	return resolveEnvironmentChild(projectRoot, EnvironmentDirectoryName, true)
 }
 
 // EnvironmentFilePath returns a contained path to a file in an environment, rejecting filesystem links.
@@ -83,7 +83,7 @@ func (c *AzdContext) EnvironmentFilePath(name, fileName string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return resolveEnvironmentChild(root, fileName)
+	return resolveEnvironmentChild(root, fileName, false)
 }
 
 // ProjectStateFilePath returns a contained path to a file directly in .azure, rejecting filesystem links.
@@ -92,7 +92,7 @@ func (c *AzdContext) ProjectStateFilePath(fileName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return resolveEnvironmentChild(base, fileName)
+	return resolveEnvironmentChild(base, fileName, false)
 }
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) (string, error) {
@@ -100,7 +100,7 @@ func (c *AzdContext) GetEnvironmentWorkDirectory(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return resolveEnvironmentChild(root, "wd")
+	return resolveEnvironmentChild(root, "wd", true)
 }
 
 // GetDefaultEnvironmentName returns the name of the default environment. Returns

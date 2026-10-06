@@ -44,7 +44,7 @@ func resolveExistingPath(path string) (string, error) {
 	return filepath.Join(resolvedParent, filepath.Base(path)), nil
 }
 
-func resolveEnvironmentChild(base, name string) (string, error) {
+func resolveEnvironmentChild(base, name string, directory bool) (string, error) {
 	if !filepath.IsLocal(name) || name == "." || filepath.Base(name) != name {
 		return "", fmt.Errorf("invalid environment file name %q", name)
 	}
@@ -54,8 +54,11 @@ func resolveEnvironmentChild(base, name string) (string, error) {
 		if isEnvironmentLink(info) {
 			return "", fmt.Errorf("%w: %q must not be a symbolic link or reparse point", ErrUnsafeEnvironmentPath, path)
 		}
-		if !info.Mode().IsRegular() && !info.IsDir() {
-			return "", fmt.Errorf("%w: %q must be a regular file or directory", ErrUnsafeEnvironmentPath, path)
+		if directory && !info.IsDir() {
+			return "", fmt.Errorf("%w: %q must be a directory", ErrUnsafeEnvironmentPath, path)
+		}
+		if !directory && !info.Mode().IsRegular() {
+			return "", fmt.Errorf("%w: %q must be a regular file", ErrUnsafeEnvironmentPath, path)
 		}
 		path, err = filepath.EvalSymlinks(path)
 		if err != nil {

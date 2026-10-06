@@ -38,7 +38,7 @@ func TestFailOnWithNoWaitIsRefused(t *testing.T) {
 		assert.Contains(t, err.Error(), "--no-wait")
 		assert.Containsf(t, err.Error(), "run show",
 			"the refusal has to name the way to gate a run started with --no-wait")
-		// This refusal used to reach -o json with a message and
+		// ADO 5572140: this refusal used to reach -o json with a message and
 		// no code at all.
 		local, ok := errors.AsType[*azdext.LocalError](err)
 		require.True(t, ok, "the refusal must carry a structured code")
@@ -65,7 +65,7 @@ func TestFailOnAloneIsStillAccepted(t *testing.T) {
 
 // A negative --max-samples reads as "no cap" everywhere else, so it was
 // silently sending the whole dataset to a billed run. Refused up front,
-// before any network work. This refusal used to reach -o json
+// before any network work. ADO 5572140: this refusal used to reach -o json
 // with a message and no code at all.
 func TestNegativeMaxSamplesFlagIsRefusedBeforeAnyNetworkWork(t *testing.T) {
 	root := NewRootCommand()

@@ -133,7 +133,7 @@ func agentOnlyPlan(agent string) generationPlan {
 // `init` writes the azure.yaml service key as the eval target. The agent is
 // published under whatever the service declares, so generation seeded with the
 // unresolved key is attributed to an agent the service does not know -- the run
-// path has always resolved it, and generate did not.
+// path has always resolved it, and generate did not. ADO 5631288.
 func TestGenerateDataset_SendsThePublishedAgentNameNotTheServiceKey(t *testing.T) {
 	var submitted []byte
 	ec := capturingGenerationServer(t, &submitted)

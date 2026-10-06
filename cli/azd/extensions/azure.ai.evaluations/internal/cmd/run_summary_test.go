@@ -150,7 +150,7 @@ func TestRenderRunPointsAtTheFailingSamples(t *testing.T) {
 
 // A run whose rows errored closed with the word "failed" and a count, and
 // nothing saying where to look. Errored rows are not offered --failed-only,
-// because that filter holds back exactly the rows nothing scored.
+// because that filter holds back exactly the rows nothing scored. ADO 5595070.
 func TestRenderRunPointsSomewhereUsefulWhenRowsErrored(t *testing.T) {
 	run := finishedRun()
 	run.ResultCounts = &eval_api.EvalRunResultCounts{Total: 10, Passed: 4, Failed: 0, Errored: 6}

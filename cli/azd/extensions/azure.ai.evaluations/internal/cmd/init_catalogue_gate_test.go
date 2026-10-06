@@ -68,7 +68,7 @@ func scaffoldedAnything(t *testing.T, dir string) bool {
 	return len(entries) > 0
 }
 
-// `init --evaluator builtin.does_not_exist` wrote an eval that
+// ADO 5631310: `init --evaluator builtin.does_not_exist` wrote an eval that
 // create and run could not resolve.
 //
 // This drives the orchestration in `initAction.Run`, not the pieces. The gate,
@@ -118,7 +118,7 @@ func TestInitAcceptsABuiltinTheCatalogueOffers(t *testing.T) {
 	}
 }
 
-// Implicit defaults bypassed the catalogue gate, so adding a
+// ADO 5653254: implicit defaults bypassed the catalogue gate, so adding a
 // default that had not reached a project yet produced a scaffold that failed
 // only at create time.
 func TestInitRefusesAnUnavailableDefaultBeforeWritingAnything(t *testing.T) {

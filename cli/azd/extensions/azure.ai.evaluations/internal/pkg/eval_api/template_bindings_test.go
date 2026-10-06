@@ -68,7 +68,7 @@ func TestTemplateItemFields_HandlesSpacingAndMultipleBindings(t *testing.T) {
 
 // A conversation seed row carries test_case_description and no query at all.
 // Invoking a target against it sends an empty question, and the score that
-// comes back describes the seeded text rather than the target.
+// comes back describes the seeded text rather than the target. ADO 5631335.
 func TestMissingTemplateFields_CatchesRowsWithoutTheBoundColumn(t *testing.T) {
 	t.Parallel()
 

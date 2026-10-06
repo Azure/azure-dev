@@ -224,8 +224,8 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 
 // reportEvalCreated says what `eval create` settled on, and where to look at it.
 //
-// Split out of Run because reporting the Portal link
-// can be tested without a project behind it: reporting is the
+// Split out of Run because the Portal link is the whole of ADO 5571804 and Run
+// cannot be driven from a test without a project behind it: reporting is the
 // part with behavior worth pinning, and it now has none of Run's prerequisites.
 //
 // A nil prefix is a project whose resource id could not be read. The link is an

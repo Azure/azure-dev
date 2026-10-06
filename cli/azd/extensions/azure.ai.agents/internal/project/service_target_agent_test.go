@@ -4474,7 +4474,7 @@ func TestEndpoints_VoiceDoesNotRequireHostedEnvironmentValues(t *testing.T) {
 	require.NotContains(t, localErr.Message, "VERSION")
 }
 
-func TestEndpoints_WorkflowDoesNotFallThroughToHostedEnvironmentValues(t *testing.T) {
+func TestEndpoints_RejectsWorkflowDefinition(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -4490,8 +4490,8 @@ func TestEndpoints_WorkflowDoesNotFallThroughToHostedEnvironmentValues(t *testin
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
-	require.Contains(t, localErr.Message, "endpoint report")
-	require.NotContains(t, localErr.Suggestion, "set kind")
+	require.Contains(t, localErr.Message, "unsupported kind")
+	require.Contains(t, localErr.Suggestion, "set kind")
 	require.NotContains(t, localErr.Message, "FOUNDRY_PROJECT_ENDPOINT")
 	require.NotContains(t, localErr.Message, "VERSION")
 }

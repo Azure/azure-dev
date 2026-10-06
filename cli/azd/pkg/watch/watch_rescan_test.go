@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -115,9 +116,8 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			fw, backend := startupFixture(t)
-			transient := filepath.Join(fw.root, "a-transient")
-			require.NoError(t, os.Mkdir(transient, 0700))
 			newDir := filepath.Join(fw.root, "z-new")
+			transient := filepath.Join(newDir, "a-transient")
 			child := filepath.Join(newDir, "a-child.txt")
 			marker := filepath.Join(newDir, "z-complete")
 			var rescan atomic.Bool
@@ -125,7 +125,7 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 			completed := make(chan struct{}, 1)
 			backend.add = func(path string) error {
 				if rescan.Load() {
-					if !duringAdd && path == fw.root {
+					if !duringAdd && path == newDir {
 						if err := os.Remove(transient); err != nil {
 							return err
 						}
@@ -152,6 +152,7 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 				waitStartupExit(t, fw.done)
 			})
 			require.NoError(t, os.Mkdir(newDir, 0700))
+			require.NoError(t, os.Mkdir(transient, 0700))
 			require.NoError(t, os.WriteFile(child, []byte("x"), 0600))
 			require.NoError(t, os.Mkdir(marker, 0700))
 			rescan.Store(true)
@@ -161,6 +162,7 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				t.Fatal("a vanished earlier sibling prevented registration of the new directory")
 			}
+
 			require.True(t, registered.Load())
 			require.Equal(t, FileChanges{{Path: child, ChangeType: FileCreated}}, fw.GetFileChanges())
 			require.Empty(t, fw.initialFiles, "newly discovered files must not extend the fixed inventory")
@@ -168,6 +170,111 @@ func TestNewWatcher_RescanContinuesPastDisappearingSibling(t *testing.T) {
 	}
 }
 
+func TestNewWatcher_DirectoryDiscoveryScansOnlyCreatedSubtrees(t *testing.T) {
+	fw, backend := startupFixture(t)
+	for i := range 24 {
+		dir := filepath.Join(fw.root, fmt.Sprintf("existing-%d", i))
+		require.NoError(t, os.Mkdir(dir, 0700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "initial.txt"), []byte("x"), 0600))
+	}
+	for i := range 3 {
+		marker := filepath.Join(fw.root, fmt.Sprintf("marker-%d.txt", i))
+		require.NoError(t, os.WriteFile(marker, []byte("x"), 0600))
+	}
+	var mu sync.Mutex
+	adds := make(map[string]int)
+	backend.add = func(path string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		adds[path]++
+		return nil
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+	t.Cleanup(func() {
+		cancel()
+		waitStartupExit(t, fw.done)
+	})
+	for i := range 3 {
+		marker := filepath.Join(fw.root, fmt.Sprintf("marker-%d.txt", i))
+		dir := filepath.Join(fw.root, fmt.Sprintf("new-%d", i))
+		child := filepath.Join(dir, "child.txt")
+		require.NoError(t, os.Mkdir(dir, 0700))
+		require.NoError(t, os.WriteFile(child, []byte("x"), 0600))
+		backend.events <- fsnotify.Event{Name: dir, Op: fsnotify.Create}
+		backend.events <- fsnotify.Event{Name: marker, Op: fsnotify.Write}
+		require.Eventually(t, func() bool {
+			fw.mu.Lock()
+			defer fw.mu.Unlock()
+			return fw.fileChanges.Modified[marker]
+		}, 2*time.Second, time.Millisecond)
+		require.Contains(t, fw.GetFileChanges(), FileChange{Path: child, ChangeType: FileCreated})
+		mu.Lock()
+		require.Equal(t, 1, adds[fw.root], "sequential creates must not re-register the root")
+		for path, count := range adds {
+			require.Equal(t, 1, count, "directory registered more than once: %s", path)
+		}
+		mu.Unlock()
+	}
+}
+
+func TestNewWatcher_DirectoryDiscoveryCoalescesQueuedAncestors(t *testing.T) {
+	for _, parentFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parent first %v", parentFirst), func(t *testing.T) {
+			fw, backend := startupFixture(t)
+			marker := filepath.Join(fw.root, "marker.txt")
+			require.NoError(t, os.WriteFile(marker, []byte("x"), 0600))
+			blocked := filepath.Join(fw.root, "blocked")
+			entered, release := make(chan struct{}), make(chan struct{})
+			var enterOnce, releaseOnce sync.Once
+			var mu sync.Mutex
+			adds := make(map[string]int)
+			backend.add = func(path string) error {
+				mu.Lock()
+				adds[path]++
+				mu.Unlock()
+				if path == blocked {
+					enterOnce.Do(func() { close(entered) })
+					<-release
+				}
+				return nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			require.NoError(t, fw.start(ctx, backend, backend.events, backend.errors))
+			t.Cleanup(func() {
+				cancel()
+				releaseOnce.Do(func() { close(release) })
+				waitStartupExit(t, fw.done)
+			})
+			require.NoError(t, os.Mkdir(blocked, 0700))
+			backend.events <- fsnotify.Event{Name: blocked, Op: fsnotify.Create}
+			waitStartupExit(t, entered)
+			parent := filepath.Join(fw.root, "parent")
+			child := filepath.Join(parent, "child")
+			require.NoError(t, os.MkdirAll(child, 0700))
+			file := filepath.Join(child, "created.txt")
+			require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
+			paths := []string{child, parent, child}
+			if parentFirst {
+				paths = []string{parent, child, parent}
+			}
+			for _, path := range paths {
+				backend.events <- fsnotify.Event{Name: path, Op: fsnotify.Create}
+			}
+			backend.events <- fsnotify.Event{Name: marker, Op: fsnotify.Write}
+			require.Eventually(t, func() bool {
+				fw.mu.Lock()
+				defer fw.mu.Unlock()
+				return fw.fileChanges.Modified[marker]
+			}, 2*time.Second, time.Millisecond, "consumer must process queued subtrees during blocked Add")
+			releaseOnce.Do(func() { close(release) })
+			require.Contains(t, fw.GetFileChanges(), FileChange{Path: file, ChangeType: FileCreated})
+			mu.Lock()
+			defer mu.Unlock()
+			require.Equal(t, map[string]int{fw.root: 1, blocked: 1, parent: 1, child: 1}, adds)
+		})
+	}
+}
 func TestWatchRecursive_PreservesNonTransientErrors(t *testing.T) {
 	for _, test := range []struct {
 		name   string

@@ -571,6 +571,7 @@ func TestReconcileInitialFiles_SlowStatPreservesConcurrentEvents(t *testing.T) {
 			if !test.samePath {
 				eventPath = filepath.Join(fw.root, "other.txt")
 			}
+
 			started := make(chan struct{})
 			release := make(chan struct{})
 			defer close(release)
@@ -606,6 +607,79 @@ func TestReconcileInitialFiles_SlowStatPreservesConcurrentEvents(t *testing.T) {
 			require.Equal(t, !test.remove, fw.fileChanges.Created[eventPath])
 			require.Equal(t, !test.samePath || test.remove, fw.fileChanges.Deleted[path])
 			require.Nil(t, fw.startupRevisions, "startup generations must not persist")
+		})
+	}
+}
+
+func TestReconcileInitialFiles_RenameDuringLookup(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		op           fsnotify.Op
+		next         fsnotify.Op
+		want         FileChangeType
+		alsoModified bool
+	}{
+		{name: "pure rename", op: fsnotify.Rename, want: FileDeleted},
+		{name: "rename and remove", op: fsnotify.Rename | fsnotify.Remove, want: FileDeleted},
+		{name: "rename and create", op: fsnotify.Rename | fsnotify.Create, want: FileCreated},
+		{name: "rename and write", op: fsnotify.Rename | fsnotify.Write, want: FileModified},
+		{name: "rename then create", op: fsnotify.Rename, next: fsnotify.Create, want: FileCreated, alsoModified: true},
+		{name: "rename then write", op: fsnotify.Rename, next: fsnotify.Write, want: FileModified},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fw, _ := startupFixture(t)
+			path := filepath.Join(fw.root, "initial.txt")
+			require.NoError(t, os.WriteFile(path, []byte("original"), 0600))
+			fw.initialFiles[path] = struct{}{}
+			started, lookup, lookedUp, release := make(chan struct{}), make(chan struct{}),
+				make(chan struct{}), make(chan struct{})
+			var lookupOnce, releaseOnce sync.Once
+			t.Cleanup(func() {
+				lookupOnce.Do(func() { close(lookup) })
+				releaseOnce.Do(func() { close(release) })
+			})
+			result := make(chan error, 1)
+			go func() {
+				result <- fw.reconcileInitialFiles(t.Context(), func(name string) (os.FileInfo, error) {
+					close(started)
+					<-lookup
+					info, err := os.Lstat(name)
+					close(lookedUp)
+					<-release
+					return info, err
+				})
+			}()
+			waitStartupExit(t, started)
+			require.NoError(t, os.Rename(path, filepath.Join(fw.root, "renamed.txt")))
+			lookupOnce.Do(func() { close(lookup) })
+			waitStartupExit(t, lookedUp)
+			if test.want != FileDeleted {
+				require.NoError(t, os.WriteFile(path, []byte("replacement"), 0600))
+			}
+			eventDone := make(chan struct{})
+			go func() {
+				fw.mu.Lock()
+				fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: test.op})
+				if test.next != 0 {
+					fw.trackFileEventLocked(fsnotify.Event{Name: path, Op: test.next})
+				}
+				fw.mu.Unlock()
+				close(eventDone)
+			}()
+			waitStartupExit(t, eventDone)
+			releaseOnce.Do(func() { close(release) })
+			select {
+			case err := <-result:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("rename reconciliation did not finish")
+			}
+			expected := FileChanges{{Path: path, ChangeType: test.want}}
+			if test.alsoModified {
+				expected = append(expected, FileChange{Path: path, ChangeType: FileModified})
+			}
+			require.Equal(t, expected, fw.GetFileChanges())
+			require.Nil(t, fw.startupRevisions)
 		})
 	}
 }

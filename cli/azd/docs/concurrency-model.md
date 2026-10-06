@@ -22,11 +22,12 @@ it protects are co-located by convention.
 ## Watcher reporting snapshots
 
 `fileWatcher` has one registration owner and an independent event consumer.
-Directory discovery queues a coalesced root rescan. Both reporting methods join
-in-flight registration and a rescan already queued when the owner accepts their
+Directory discovery queues created subtrees, coalescing overlapping ancestors
+without walking unrelated directories. Both reporting methods join
+in-flight registration and subtrees already queued when the owner accepts their
 barrier before capturing file-change accounting. The consumer continues draining
 backend events while reporting waits; no accounting mutex spans that wait.
-Discoveries arriving after the barrier drains its pending notification are later
+Discoveries arriving after the barrier captures its pending subtrees are later
 work, not part of an atomic filesystem-wide snapshot. Shutdown releases waiters
 through `done`; obtain a complete final snapshot before canceling the watcher.
 
@@ -37,7 +38,9 @@ result. Startup file provenance remains immutable after registration begins.
 Startup reconciliation also performs filesystem lookups outside the accounting
 lock. Temporary per-initial-path revisions prevent a stale missing-file lookup
 from replacing a newer event, without letting unrelated events suppress a
-deletion. These revisions are discarded when startup reconciliation ends.
+deletion. A pure Remove or Rename confirms deletion of the original path; a later
+Create or Write prevents the stale lookup from replacing that newer accounting.
+These revisions are discarded when startup reconciliation ends.
 
 ---
 

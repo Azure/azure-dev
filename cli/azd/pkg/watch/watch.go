@@ -145,6 +145,27 @@ func (fw *fileWatcher) start(
 	// draining until that owner finishes its pending Add and closes the backend:
 	// Windows Close can otherwise abandon an Add reply or race another Close.
 	rescan := make(chan struct{}, 1)
+	var discoveryMu sync.Mutex
+	pendingDirectories := make(map[string]struct{})
+	queueDirectory := func(path string) {
+		path = filepath.Clean(path)
+		discoveryMu.Lock()
+		for pending := range pendingDirectories {
+			if path == pending || strings.HasPrefix(path, pending+string(os.PathSeparator)) {
+				discoveryMu.Unlock()
+				return
+			}
+			if strings.HasPrefix(pending, path+string(os.PathSeparator)) {
+				delete(pendingDirectories, pending)
+			}
+		}
+		pendingDirectories[path] = struct{}{}
+		discoveryMu.Unlock()
+		select {
+		case rescan <- struct{}{}:
+		default:
+		}
+	}
 	registered := make(chan error, 1)
 	backendDone := make(chan struct{})
 	consumerDone := make(chan struct{})
@@ -199,13 +220,9 @@ func (fw *fileWatcher) start(
 				}
 
 				if event.Has(fsnotify.Create) && isDir {
-					// Coalesce directory discoveries into one root rescan, not a
-					// per-path queue or synchronous Add on the event consumer.
+					// Queue only created subtrees; registration stays off the consumer.
 					if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
-						select {
-						case rescan <- struct{}{}:
-						default:
-						}
+						queueDirectory(name)
 					}
 				} else if !isDir {
 					fw.mu.Lock()
@@ -245,8 +262,14 @@ func (fw *fileWatcher) start(
 			return
 		}
 		scan := func() {
-			if err := fw.watchRecursive(watchCtx, fw.root, watcher); err != nil && watchCtx.Err() == nil {
-				log.Printf("failed to update directory watches for %s: %v", fw.root, err)
+			discoveryMu.Lock()
+			directories := pendingDirectories
+			pendingDirectories = make(map[string]struct{})
+			discoveryMu.Unlock()
+			for path := range directories {
+				if err := fw.watchRecursive(watchCtx, path, watcher); err != nil && watchCtx.Err() == nil {
+					log.Printf("failed to update directory watches for %s: %v", path, err)
+				}
 			}
 		}
 		for {
@@ -256,11 +279,7 @@ func (fw *fileWatcher) start(
 			case <-rescan:
 				scan()
 			case barrier := <-fw.flush:
-				select {
-				case <-rescan:
-					scan()
-				default:
-				}
+				scan()
 				close(barrier)
 			}
 		}
@@ -273,7 +292,7 @@ func (fw *fileWatcher) start(
 	return nil
 }
 
-// flushDirectories joins in-flight registration and a rescan already queued when
+// flushDirectories joins in-flight registration and subtrees already queued when
 // the owner accepts the barrier, without blocking event accounting or consumption.
 func (fw *fileWatcher) flushDirectories() {
 	if fw.flush == nil {
@@ -327,7 +346,7 @@ func (fw *fileWatcher) reconcileInitialFiles(
 		}
 		if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
 			fw.mu.Lock()
-			// Preserve a newer creation or write, but a newer Remove still
+			// Preserve a newer creation or write, but a newer Remove or Rename still
 			// confirms deletion of the original file after a brief recreation.
 			current := fw.startupRevisions[path]
 			if current.revision == revision || current.removed {
@@ -352,8 +371,8 @@ func (fw *fileWatcher) trackFileEventLocked(event fsnotify.Event) {
 	if existed && fw.startupRevisions != nil {
 		current := fw.startupRevisions[name]
 		current.revision++
-		current.removed = event.Has(fsnotify.Remove) &&
-			!event.Has(fsnotify.Create) && !event.Has(fsnotify.Write) && !event.Has(fsnotify.Rename)
+		current.removed = (event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename)) &&
+			!event.Has(fsnotify.Create) && !event.Has(fsnotify.Write)
 		fw.startupRevisions[name] = current
 	}
 	switch {

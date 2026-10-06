@@ -44,7 +44,7 @@ func EvalScope(projectRoot, configPath string) string {
 		// resolving one against the current directory. A `--path`/
 		// `--from-file` flag is taken as typed, so a relative one next to
 		// the (normally absolute) project root hit exactly that error and
-		// fell through to the raw, uncanonicalized configPath below: the
+		// fell through to the raw configPath below: the
 		// scope then read as whatever the caller happened to spell, not
 		// the configuration it names, so the same file scoped differently
 		// from a bare name than from an explicit relative flag.

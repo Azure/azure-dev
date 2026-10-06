@@ -26,7 +26,7 @@ import (
 // details[0].
 const refusedJudgeModelBody = `{"error":{"code":"invalid_request","message":"The request is invalid.",
 	"details":[{"code":"model_not_found",
-	"message":"Model 'mh-missing-judge' was not found. Verify the name and version are correct.",
+	"message":"Model 'missing-judge' was not found. Verify the name and version are correct.",
 	"target":"testing_criteria[0].initialization_parameters.model"}]}}`
 
 func refusingEvalServer(t *testing.T) *httptest.Server {
@@ -55,7 +55,7 @@ func TestARefusedCreateNamesTheMissingJudgeModelFromTheDetails(t *testing.T) {
 	require.Error(t, err)
 	text := err.Error()
 	assert.Contains(t, text, "The request is invalid.")
-	assert.Contains(t, text, "Model 'mh-missing-judge' was not found. Verify the name and version are correct.")
+	assert.Contains(t, text, "Model 'missing-judge' was not found. Verify the name and version are correct.")
 	assert.Contains(t, text, "(target: testing_criteria[0].initialization_parameters.model)")
 	assert.NotContains(t, text, "\n", "one line")
 }
@@ -88,7 +88,7 @@ func TestARefusedCreateKeepsItsJSONErrorUnchanged(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(out.Bytes(), &document))
 	assert.Equal(t, message, document.Error.Message)
-	assert.NotContains(t, out.String(), "mh-missing-judge")
+	assert.NotContains(t, out.String(), "missing-judge")
 }
 
 // The retry command a partial create prints has to run as printed: the real,

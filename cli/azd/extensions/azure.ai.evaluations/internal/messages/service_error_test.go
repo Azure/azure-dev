@@ -153,7 +153,7 @@ func (assertAnError) Error() string { return "a local problem" }
 // names the model, with the part of the request it is about, is details[0].
 const missingJudgeBody = `{"error":{"code":"invalid_request","message":"The request is invalid.",
 	"details":[{"code":"model_not_found",
-	"message":"Model 'mh-missing-judge' was not found. Verify the name and version are correct.",
+	"message":"Model 'missing-judge' was not found. Verify the name and version are correct.",
 	"target":"testing_criteria[0].initialization_parameters.model"}]}}`
 
 func TestARefusalNamesWhatTheDetailsSay(t *testing.T) {
@@ -162,13 +162,13 @@ func TestARefusalNamesWhatTheDetailsSay(t *testing.T) {
 	require.Error(t, got)
 	text := got.Error()
 	assert.Contains(t, text, "The request is invalid.")
-	assert.Contains(t, text, "Model 'mh-missing-judge' was not found. Verify the name and version are correct.")
+	assert.Contains(t, text, "Model 'missing-judge' was not found. Verify the name and version are correct.")
 	assert.Contains(t, text, "(target: testing_criteria[0].initialization_parameters.model)")
 	assert.NotContains(t, text, "\n", "one line")
 
 	svc, ok := errors.AsType[*serviceError](got)
 	require.True(t, ok)
-	assert.NotContains(t, svc.SafeMessage(), "mh-missing-judge",
+	assert.NotContains(t, svc.SafeMessage(), "missing-judge",
 		"-o json is unchanged: the safe sentence is the one it always was")
 	assert.Equal(t, "The request is invalid. (HTTP 400 InvalidRequest)", svc.SafeMessage())
 }

@@ -24,7 +24,7 @@ import (
 // missing model is named is the detail, with the request member it is about.
 const (
 	liveTopMessage    = "Evaluation validation failed: model resource is not found."
-	liveDetailMessage = "Model 'mh-b49-missing-model' was not found. Verify the name and version are correct."
+	liveDetailMessage = "Model 'missing-model' was not found. Verify the name and version are correct."
 	liveDetailTarget  = "run.data_source.model_configuration.model"
 	liveErrorBody     = `{"code":"validation_failed","message":"` + liveTopMessage + `","details":[` +
 		`{"code":"model_not_found","message":"` + liveDetailMessage + `","target":"` + liveDetailTarget + `"}]}`

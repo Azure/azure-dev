@@ -220,7 +220,7 @@ func TestAnUnmarkedFingerprintFollowsTheOwnerOfItsID(t *testing.T) {
 		id:                           "evalgroup_a",
 		id + project.EvalScopeSuffix: scopeA,
 	}}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	assert.Equal(t, "v2:baseline-a", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
 	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB),

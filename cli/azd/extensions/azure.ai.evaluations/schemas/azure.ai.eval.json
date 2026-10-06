@@ -122,8 +122,8 @@
         },
         "supportedEvaluationLevels": {
           "type": "array",
-          "items": { "type": "string", "enum": ["turn", "conversation"] },
-          "description": "The evaluation levels the service says this evaluator supports, recorded so a later version keeps them."
+          "items": { "type": "string" },
+          "description": "The evaluation levels the service says this evaluator supports, as it returned them, recorded so a later version keeps them."
         }
       },
       "allOf": [

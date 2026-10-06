@@ -91,7 +91,7 @@ func createLocal(t *testing.T, ec *evalContext, env *testEnvServer, cfg *project
 // must settle on two different evals: a direct local-source `eval create`
 // used to build the reconciler with an empty scope, so the second
 // configuration's create overwrote the first's recorded id and local-request
-// baseline outright. ADO root comment 4186518098.
+// baseline outright.
 func TestEvalCreateScopesLocalSourceByConfigurationPath(t *testing.T) {
 	ec, env, service, cfgA, cfgB, pathA, pathB := twoConfigFixture(t)
 
@@ -116,7 +116,7 @@ func TestEvalCreateScopesLocalSourceByConfigurationPath(t *testing.T) {
 
 // Recreating either configuration afterward must be a no-op against its own
 // history, and must not be disturbed by the other configuration's deploys in
-// between -- the "immutable histories" half of ADO root comment 4186518098.
+// between: each configuration keeps its own immutable history.
 func TestEvalCreateHistoryIsImmutableAcrossConfigurations(t *testing.T) {
 	ec, env, service, cfgA, cfgB, pathA, pathB := twoConfigFixture(t)
 
@@ -142,8 +142,7 @@ func TestEvalCreateHistoryIsImmutableAcrossConfigurations(t *testing.T) {
 // definition baseline itself keyed unscoped: the second configuration's
 // create overwrote the first's recorded baseline, so redeploying the first
 // afterward read the second's baseline back, saw its own declaration as
-// "changed", and recreated an eval that never actually changed. ADO root
-// comment 4188353666.
+// "changed", and recreated an eval that never actually changed.
 func TestEvalCreateDefinitionBaselineIsScopedAcrossConfigurations(t *testing.T) {
 	ec, env, service, cfgA, cfgB, pathA, pathB := twoConfigFixture(t)
 	// An ordinary immutable field, not excluded from the digest like name or

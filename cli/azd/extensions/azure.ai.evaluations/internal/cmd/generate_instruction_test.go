@@ -35,7 +35,7 @@ func boolText(v bool) string {
 // it inferred. That is a billed job, so the absence has to stop it.
 //
 // It used to report "not detected" and carry on, which read as a note rather
-// than a problem -- and the evaluator that came back was the one April found.
+// than a problem -- and the evaluator that came back was built from nothing.
 func TestGenerationRefusesToRunOnNoInstructionsUnderNoPrompt(t *testing.T) {
 	ec := &evalContext{}
 	var out bytes.Buffer

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A lookback beside an end_time used to be measured from now, which made the
+// A lookback beside an endTime used to be measured from now, which made the
 // same file valid today and invalid tomorrow with nothing edited: once now
 // minus the lookback drifted past the end, the window was empty for good.
 // Measuring back from where the window closes takes the clock out of it.
@@ -89,7 +89,7 @@ func TestValidateSource_ReportsTheUnreadableValueFirst(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "which is not a time")
-	assert.NotContains(t, err.Error(), "lookback_hours")
+	assert.NotContains(t, err.Error(), "lookbackHours")
 }
 
 // Fields the declared type never reads are refused rather than ignored: a
@@ -101,23 +101,23 @@ func TestValidateSource_RefusesFieldsTheTypeDoesNotRead(t *testing.T) {
 	})
 	require.Error(t, err)
 	// Named, because a reader with several set should not have to bisect.
-	assert.Contains(t, err.Error(), "lookback_hours, agent_name")
+	assert.Contains(t, err.Error(), "lookbackHours, agentName")
 
 	_, _, err = ValidateSource(&SourceDecl{
 		Type: SourceTypeTraces, AgentName: "a", MaxTurns: 3,
 	})
 	require.Error(t, err)
 	// One field reads "remove it", not "remove them".
-	assert.Contains(t, err.Error(), "source declares max_turns")
+	assert.Contains(t, err.Error(), "source declares maxTurns")
 	assert.Contains(t, err.Error(), "remove it")
 
-	// max_traces is refused for its sign wherever it appears; max_turns is the
+	// maxTraces is refused for its sign wherever it appears; maxTurns is the
 	// same kind of value and was going out unchecked.
 	_, _, err = ValidateSource(&SourceDecl{
 		Type: SourceTypeResponses, ResponseIDs: []string{"resp_1"}, MaxTurns: -3,
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "source.max_turns is -3")
+	assert.Contains(t, err.Error(), "source.maxTurns is -3")
 }
 
 // Every rule, at the boundary rather than well past it, so a bound that is
@@ -131,12 +131,12 @@ func TestValidateSource_Refuses(t *testing.T) {
 		{
 			name:    "start that is not a time",
 			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", StartTime: "yesterday"},
-			wantErr: "source.start_time is \"yesterday\", which is not a time",
+			wantErr: "source.startTime is \"yesterday\", which is not a time",
 		},
 		{
 			name:    "end that is not a time",
 			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", EndTime: "tomorrow"},
-			wantErr: "source.end_time is \"tomorrow\", which is not a time",
+			wantErr: "source.endTime is \"tomorrow\", which is not a time",
 		},
 		{
 			name:    "start at year one",
@@ -163,7 +163,7 @@ func TestValidateSource_Refuses(t *testing.T) {
 		{
 			name:    "negative cap",
 			source:  SourceDecl{Type: SourceTypeTraces, AgentName: "a", MaxTraces: -1},
-			wantErr: "source.max_traces is -1",
+			wantErr: "source.maxTraces is -1",
 		},
 		{
 			name:    "window declared twice over",

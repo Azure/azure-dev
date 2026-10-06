@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 func unregisteredRunContext(t *testing.T) *evalContext {
@@ -231,7 +232,7 @@ func TestRegisteredRunRejectsEffectiveCaps(t *testing.T) {
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
-			assert.Contains(t, local.Message, "max_samples")
+			assert.Contains(t, local.Message, "maxSamples")
 			assert.Contains(t, local.Suggestion, "publish a smaller dataset")
 			assert.Empty(t, recordedIdentityRequests(requests), "do not download or submit an unsupported cap")
 		}
@@ -346,7 +347,7 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 		for _, cap := range []string{"", "0", "1"} {
 			t.Run(sourceType+"/"+cap, func(t *testing.T) {
 				reads, posts, schemaReads := 0, 0, 0
-				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
+				source := map[string]any{"type": sourceType, "agentName": "agent", "lookbackHours": 24}
 				if sourceType == "azure_ai_trace_data_source_preview" {
 					source = map[string]any{
 						"type": sourceType,
@@ -445,14 +446,13 @@ func TestRunStartSampleCapContracts(t *testing.T) {
 					group.Name, group.Dataset, group.MaxSamples = "quality", "golden", tc.cap
 					service.rows = seedRows
 				}
-				eval := struct {
-					project.Eval
-					MaxSamples int `json:"max_samples"`
-				}{group, tc.cap}
-				body, err := json.Marshal(map[string]any{
-					"datasets": []project.DatasetDecl{{Name: "golden", Version: "1"}},
-					"evals":    []any{eval},
+				values := authoredValues(t, &project.EvalConfig{
+					Datasets: []project.DatasetDecl{{Name: "golden", Version: "1"}},
+					Evals:    []project.Eval{group},
 				})
+				// An explicit zero is written out, which is what the case is about.
+				values["evals"].([]any)[0].(map[string]any)["maxSamples"] = tc.cap
+				body, err := yaml.Marshal(values)
 				require.NoError(t, err)
 				dir := t.TempDir()
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
@@ -541,7 +541,7 @@ func TestRunDatasetOverrideCanHonorExplicitCap(t *testing.T) {
 			Name: "quality", Source: &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent"},
 		}},
 	}
-	body, err := json.Marshal(cfg)
+	body, err := yaml.Marshal(authoredValues(t, &cfg))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(oneRow+oneRow), 0o600))

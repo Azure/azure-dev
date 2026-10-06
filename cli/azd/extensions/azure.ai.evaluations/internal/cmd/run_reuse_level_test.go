@@ -15,7 +15,7 @@ import (
 
 // A rerun repeats the level the previous run was taken at. That level was read
 // only from metadata this extension writes, so a run created by the portal or
-// an SDK -- which carries the service's own evaluation_level and none of this
+// an SDK -- which carries the service's own evaluationLevel and none of this
 // extension's metadata -- was rerun turn-shaped whatever it had been, silently
 // regrading a conversation run one turn at a time.
 func TestReusedEvaluationLevelPrefersTheServiceField(t *testing.T) {

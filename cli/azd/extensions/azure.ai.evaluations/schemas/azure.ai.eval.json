@@ -110,6 +110,20 @@
         "version": {
           "type": "string",
           "description": "Pin to an already-registered version. Omit to publish and track the newest."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "What the catalog shows for this evaluator. Recorded when an evaluator is generated, so a later version keeps it."
+        },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Catalog categories the service returned for this evaluator, recorded so a later version keeps them."
+        },
+        "supportedEvaluationLevels": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["turn", "conversation"] },
+          "description": "The evaluation levels the service says this evaluator supports, recorded so a later version keeps them."
         }
       },
       "allOf": [
@@ -148,12 +162,12 @@
           "oneOf": [{ "$ref": "#/definitions/SourceDecl" }, { "$ref": "#/definitions/FileRef" }],
           "description": "Where rows come from when they are not a catalog dataset. Mutually exclusive with dataset."
         },
-        "evaluation_level": {
+        "evaluationLevel": {
           "type": "string",
           "enum": ["turn", "conversation"],
           "description": "Whether each row is graded as a single turn or a whole conversation. The service default is turn."
         },
-        "max_samples": {
+        "maxSamples": {
           "type": "integer",
           "minimum": 0,
           "description": "Cap on local, unregistered dataset rows graded per run. Positive caps are unsupported for registered dataset versions."
@@ -171,7 +185,7 @@
         },
         "simulation": {
           "$ref": "#/definitions/Simulation",
-          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluation_level must be conversation, and target must be an agent. Mutually exclusive with source and positive max_samples caps; max_samples: 0 means uncapped."
+          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluationLevel must be conversation, and target must be an agent. Mutually exclusive with source and positive maxSamples caps; maxSamples: 0 means uncapped."
         }
       },
       "allOf": [
@@ -182,7 +196,7 @@
         },
         {
           "if": { "required": ["source"] },
-          "then": { "properties": { "max_samples": { "const": 0 } } }
+          "then": { "properties": { "maxSamples": { "const": 0 } } }
         },
         {
           "$comment": "A simulation creates conversations from seeds; a source collects ones that already happened. Declaring both runs one and silently ignores the other. The level and target type are pinned to the only values a simulation can run with, so the editor refuses what the CLI would refuse. The target constraint narrows rather than requires: an omitted type already means agent, and a $ref carries no type at all, so both stay valid while type: model is refused.",
@@ -190,13 +204,13 @@
           "then": {
             "properties": {
               "source": false,
-              "max_samples": { "const": 0 },
-              "evaluation_level": { "const": "conversation" },
+              "maxSamples": { "const": 0 },
+              "evaluationLevel": { "const": "conversation" },
               "target": {
                 "properties": { "type": { "const": "agent" } }
               }
             },
-            "required": ["dataset", "target", "evaluation_level"]
+            "required": ["dataset", "target", "evaluationLevel"]
           }
         }
       ]
@@ -213,13 +227,13 @@
           "pattern": "^[^/\\s]+/[^/\\s]+$",
           "description": "Connection-qualified deployment (connection-name/model-deployment) the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
         },
-        "num_conversations": {
+        "numConversations": {
           "type": "integer",
           "minimum": 1,
           "maximum": 5,
           "description": "Conversations to create per scenario seed. Defaults to 1."
         },
-        "max_turns": {
+        "maxTurns": {
           "type": "integer",
           "minimum": 1,
           "maximum": 20,
@@ -237,40 +251,40 @@
           "enum": ["traces", "responses"],
           "description": "traces reads recorded spans from the project's Application Insights; responses reads named response ids."
         },
-        "lookback_hours": {
+        "lookbackHours": {
           "type": "integer",
           "minimum": 0,
           "maximum": 87600,
           "description": "How far back the trace window reaches from its end, capped at ten years (project.MaxLookbackHours). Zero means unset. Only for type: traces."
         },
-        "max_traces": {
+        "maxTraces": {
           "type": "integer",
           "minimum": 0,
           "description": "Cap on traces read. Only for type: traces. Removing it restores the service default."
         },
-        "agent_name": {
+        "agentName": {
           "type": "string",
           "description": "Name of the agent whose traces are read. Only for type: traces."
         },
-        "agent_version": {
+        "agentVersion": {
           "type": "string",
           "description": "Pin the traces to one agent version."
         },
-        "response_ids": {
+        "responseIds": {
           "type": "array",
           "items": { "type": "string" },
           "description": "Explicit response ids to grade. Only for type: responses."
         },
-        "max_turns": {
+        "maxTurns": {
           "type": "integer",
           "minimum": 0,
           "description": "Cap on turns taken from each conversation."
         },
-        "start_time": {
+        "startTime": {
           "type": "string",
-          "description": "Start of the window, RFC 3339. With end_time this pins an absolute window instead of a lookback."
+          "description": "Start of the window, RFC 3339. With endTime this pins an absolute window instead of a lookback."
         },
-        "end_time": {
+        "endTime": {
           "type": "string",
           "description": "End of the window, RFC 3339."
         }
@@ -279,9 +293,9 @@
         {
           "if": { "properties": { "type": { "const": "responses" } }, "required": ["type"] },
           "then": {
-            "required": ["response_ids"],
+            "required": ["responseIds"],
             "properties": {
-              "response_ids": {
+              "responseIds": {
                 "minItems": 1,
                 "items": {
                   "type": "string",
@@ -312,12 +326,12 @@
           "type": "string",
           "description": "Pin this eval to one evaluator version, so a later publish does not change what it grades."
         },
-        "initialization_parameters": {
+        "initializationParameters": {
           "type": "object",
           "additionalProperties": true,
           "description": "Passed to the evaluator when the run starts; model names the judge deployment."
         },
-        "data_mapping": {
+        "dataMapping": {
           "type": "object",
           "additionalProperties": { "type": "string" },
           "description": "Binds the evaluator's required inputs to dataset columns, for inputs beyond the agent shape such as ground_truth or context."

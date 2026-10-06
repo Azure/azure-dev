@@ -45,9 +45,9 @@ func TestValidateAgentServiceDefinitionSupportedKinds(t *testing.T) {
 					"type": "github_copilot_preview",
 				},
 				"memory": map[string]any{
-					"store":           "conversation-memory",
-					"chat_model":      "gpt-4.1-mini",
-					"embedding_model": "text-embedding-3-small",
+					"store":          "conversation-memory",
+					"chatModel":      "gpt-4.1-mini",
+					"embeddingModel": "text-embedding-3-small",
 				},
 				"tools": []any{map[string]any{
 					"type": "file_search",
@@ -147,7 +147,7 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 				"memory":       map[string]any{"store": "memory"},
 			},
 			wantCode: exterrors.CodeInvalidAgentManifest,
-			want:     "memory.chat_model",
+			want:     "memory.chatModel",
 		},
 		{
 			name: "prompt tools",

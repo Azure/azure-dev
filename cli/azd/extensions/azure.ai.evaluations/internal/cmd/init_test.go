@@ -174,8 +174,7 @@ func TestScaffold_TraceCapIsOmittedWhenZero(t *testing.T) {
 	require.NotContains(t, string(body), "max_traces")
 }
 
-// The default set is the two recommended production composites. Selecting
-// their constituents too would duplicate scoring while increasing cost.
+// Init keeps the task-completion default until a different set is selected.
 func TestScaffold_DefaultEvaluators(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName: "support-agent-smoke", target: "support-agent", judgeModel: "gpt-5.6-luna",
@@ -183,8 +182,7 @@ func TestScaffold_DefaultEvaluators(t *testing.T) {
 	})
 
 	require.Equal(t, []string{
-		"builtin.output_quality",
-		"builtin.tool_use_quality",
+		"builtin.task_completion",
 	}, plan.evaluatorNames())
 
 	// Every evaluator carries the judge deployment, because the judging
@@ -195,17 +193,18 @@ func TestScaffold_DefaultEvaluators(t *testing.T) {
 	}
 }
 
-// Passing --evaluator replaces the composite defaults.
+// Passing --evaluator replaces the default without restricting the shortlist.
 func TestScaffold_ExplicitEvaluatorsReplaceTheDefault(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
 		target:     "support-agent",
 		dataset:    "prod-golden",
-		evaluators: []string{"builtin.output_quality"},
+		evaluators: []string{"builtin.output_quality", "builtin.tool_use_quality", "builtin.coherence"},
 		judgeModel: "m",
 	})
 
-	require.Equal(t, []string{"builtin.output_quality"}, plan.evaluatorNames())
+	require.Equal(t, []string{"builtin.output_quality", "builtin.tool_use_quality", "builtin.coherence"},
+		plan.evaluatorNames())
 }
 
 // `init` closes by naming the targeted create, and nothing else. It never names

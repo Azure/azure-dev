@@ -655,9 +655,14 @@ its temporary download files, even with `--force`.
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
 
-`init` offers a few common built-ins in its picker; that is a shortlist, not
-the catalogue. Any built-in the project publishes works with
-`--evaluator builtin.<name>`, including ones the picker never shows.
+`init` offers `builtin.task_completion`, `builtin.customer_satisfaction`,
+`builtin.coherence`, and `builtin.groundedness` in its picker, with only
+`builtin.task_completion` preselected or used under `--no-prompt`. This is a
+shortlist, not the catalogue. Any built-in the project publishes works with
+`--evaluator builtin.<name>`, including ones the picker never shows. Composites
+such as `builtin.output_quality` and `builtin.tool_use_quality` require explicit
+selection; they are not init defaults. Explicit selections replace the default,
+and existing evaluator references, parameters, and mappings remain unchanged.
 
 `init` checks that reference against the project's catalogue when it can reach
 one, so a name that does not exist is refused there rather than at `create`.

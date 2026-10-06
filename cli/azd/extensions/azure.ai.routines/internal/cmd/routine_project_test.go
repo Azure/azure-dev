@@ -368,10 +368,10 @@ func routineManifestFixture(t *testing.T, agentName string) (string, string, *ro
 	require.NoError(t, os.WriteFile(manifestPath, []byte(`triggers:
   default:
     type: schedule
-    cron_expression: "0 2 * * *"
+	    cronExpression: "0 2 * * *"
 action:
   type: invoke_agent_responses_api
-  agent_name: `+agentName+"\n"), 0o600))
+	  agentName: `+agentName+"\n"), 0o600))
 	return projectRoot, manifestPath, &routines.Routine{
 		Name: "nightly-summary",
 		Triggers: map[string]routines.RoutineTrigger{

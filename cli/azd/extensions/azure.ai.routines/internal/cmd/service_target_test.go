@@ -29,9 +29,9 @@ func TestParseRoutineServiceConfig_ServiceLevel(t *testing.T) {
 		"description": "nightly summary",
 		"enabled":     true,
 		"triggers": map[string]any{
-			"default": map[string]any{"type": "recurring", "cron_expression": "0 9 * * *"},
+			"default": map[string]any{"type": "recurring", "cronExpression": "0 9 * * *"},
 		},
-		"action": map[string]any{"type": "invoke_agent_responses_api", "agent_name": "summarizer"},
+		"action": map[string]any{"type": "invoke_agent_responses_api", "agentName": "summarizer"},
 	})
 	require.NoError(t, err)
 
@@ -91,10 +91,10 @@ func TestParseRoutineServiceConfig_FileRef(t *testing.T) {
 			"triggers:\n"+
 			"  default:\n"+
 			"    type: schedule\n"+
-			"    cron_expression: \"0 2 * * *\"\n"+
+			"    cronExpression: \"0 2 * * *\"\n"+
 			"action:\n"+
 			"  type: invoke_agent_responses_api\n"+
-			"  agent_name: summarizer\n"+
+			"  agentName: summarizer\n"+
 			"  input:\n"+
 			"    $ref: literal-payload-reference\n"+
 			"    project: literal-project-value\n"+
@@ -145,6 +145,63 @@ func TestParseRoutineServiceConfig_FileRefOverlay(t *testing.T) {
 	assert.Equal(t, "inline override", body.Description)
 	require.NotNil(t, body.Enabled)
 	assert.True(t, *body.Enabled)
+}
+
+func TestParseRoutineServiceConfig_RejectsSnakeCaseInline(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name: "nightly",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"triggers": map[string]any{
+				"default": map[string]any{"type": "schedule", "time_zone": "UTC"},
+			},
+		}),
+	}, "")
+	require.ErrorContains(t, err, "time_zone")
+	require.ErrorContains(t, err, "timeZone")
+}
+
+func TestParseRoutineServiceConfig_RejectsSnakeCaseFileRef(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "routine.yaml"),
+		[]byte("action:\n  type: invoke_agent_responses_api\n  agent_name: agent\n"),
+		0o600,
+	))
+
+	_, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name:                 "nightly",
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./routine.yaml"}),
+	}, root)
+	require.ErrorContains(t, err, "agent_name")
+	require.ErrorContains(t, err, "agentName")
+}
+
+func TestParseRoutineServiceConfig_RejectsSnakeCaseOverlay(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "routine.yaml"),
+		[]byte("description: referenced\n"),
+		0o600,
+	))
+
+	_, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name: "nightly",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"$ref": "./routine.yaml",
+			"action": map[string]any{
+				"type":       "invoke_agent_invocations_api",
+				"session_id": "session",
+			},
+		}),
+	}, root)
+	require.ErrorContains(t, err, "session_id")
+	require.ErrorContains(t, err, "sessionId")
 }
 
 func TestResolveRoutineServiceRef_AbsolutePath(t *testing.T) {

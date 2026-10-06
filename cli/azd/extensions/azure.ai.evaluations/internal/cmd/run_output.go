@@ -962,7 +962,7 @@ func renderResults(
 	}
 	if c := run.ResultCounts; c != nil && !isSimulationRun(run) {
 		counts := run.ReportedResultCounts()
-		if len(counts) == 5 {
+		if len(counts) == 5 && validRunPassRateCounts(c) {
 			fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
 			fmt.Fprint(w, messages.RunPassRateLine(c.Passed, c.Total))
 		} else {

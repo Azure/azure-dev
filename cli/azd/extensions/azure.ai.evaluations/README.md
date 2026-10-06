@@ -560,8 +560,10 @@ failed verdict.
 Both pass-rate and `any-failure` gates require reported `total` and `passed`
 counts; neither requires a reported `failed` count. Missing or null required
 counters make the gate indeterminate: the command returns an operational error
-(extension exit 1), never a quality verdict based on invented zeros. An
-explicitly reported zero total breaches either gate even if `passed` is absent.
+(extension exit 1), never a quality verdict based on invented zeros.
+A reported zero total breaches either gate when `passed` is absent or zero.
+Inconsistent counts outside `0 <= passed <= total` make either gate indeterminate
+and display the run pass rate as `not reported`, without changing service JSON.
 For a pass-rate gate, when all outcome counts are reported but their sum leaves
 rows unaccounted for, a neutral warning names that gap without assigning failed,
 errored, or skipped outcomes. The pass-rate denominator still includes all reported test cases;

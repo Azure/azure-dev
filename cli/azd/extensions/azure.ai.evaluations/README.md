@@ -211,15 +211,14 @@ See the Foundry documentation for
 [target response bindings](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-targets#set-up-evaluators-and-data-mappings),
 and [conversation mappings](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-conversations#define-the-data-schema-and-evaluators).
 
-#### Updating an existing evaluation
+#### Immutable evaluation definitions
 
-Stored evaluation mappings are immutable. Installing a newer extension or
-running `azd ai eval create` on an unchanged declaration does not replace every
-old default. Switching between trace and stored-response source modes creates a
+Stored evaluation mappings are immutable. Switching between trace and
+stored-response source modes creates a
 new definition when their stored input contracts differ; changing only filters,
 time windows, response IDs, or row caps keeps the existing history.
-Known item-versus-generated-output conflicts are also corrected for model and
-agent targets, even without a `source:` block. Missing stored contract details
+Known item-versus-generated-output conflicts require a compatible definition for
+model and agent targets, even without a `source:` block. Missing stored contract details
 do not trigger a speculative replacement. Explicit ID pins are never silently
 replaced; known incompatible response mappings are refused.
 
@@ -227,9 +226,9 @@ To deliberately apply the current mappings to an existing managed evaluation:
 
 1. Record its current ID and inspect its mappings with `azd ai eval show <eval-id> -o json`.
 2. If the declaration has an explicit `id:`, remove that pin from the declaration
-   you intend to migrate, or create a separate unpinned managed declaration.
+   you intend to update, or create a separate unpinned managed declaration.
    An explicit ID cannot change that existing definition; known incompatible
-   response mappings are refused. Retain the old ID to inspect its history.
+   response mappings are refused. Retain the recorded ID to inspect its history.
 3. Set the intended explicit `data_mapping` entries and change one evaluator
    reference's criterion `name`, for example `name: groundedness_mapped`. This
    changes the immutable definition. Changing only the eval group's name can
@@ -237,8 +236,8 @@ To deliberately apply the current mappings to an existing managed evaluation:
 4. Run `azd ai eval create <eval-name>` for that unpinned declaration, or `azd up`.
    Confirm the new ID and mappings with `show` before starting another run.
 
-The previous evaluation and its runs are not deleted. Keep the recorded old ID
-to inspect that history. This migration updates the client request definition;
+The recorded evaluation and its runs are retained. Use its ID to inspect
+that history. These commands define the client request;
 it does not establish a successful hosted groundedness result.
 
 ### Registered dataset identity
@@ -273,10 +272,10 @@ Trace- and response-backed runs reject positive configured `max_samples:` and ex
 `source.response_ids` explicitly. Reruns selected by eval ID also reject an
 explicit `--max-samples`, including zero, because they repeat the previous source.
 
-Reruns retain a previous registered `file_id` unchanged. A legacy run with inline
-rows attributed to a now-registered dataset must instead be started from its
-declared eval by name: replacing those possibly capped rows with a whole version
-would silently change what gets scored.
+Reruns repeat the stored registered `file_id`. If the stored source contains inline
+rows attributed to a registered dataset, start the declared eval by name instead:
+replacing those possibly capped rows with a whole version would change what gets
+scored.
 
 The JSON handoff from `run start --no-wait -o json` retains the submitted dataset
 name and registered version even when the create response omits that metadata.
@@ -330,9 +329,9 @@ Foundry service and evaluation billing.
 `source.file` is a filesystem path, not a URL. It resolves relative to the
 configuration that contains it, including a nested `$ref` declaration. The local
 source is exclusive with `dataset`, `simulation`, trace/response fields, and any
-explicit `--dataset` flag. `init --dataset <file>` still scaffolds a publishable
-catalog entry; it does not opt into local-only behavior. No new init flag is needed:
-edit the configuration to declare the separate local eval.
+explicit `--dataset` flag. `init --dataset <file>` scaffolds a publishable catalog
+entry; it does not opt into local-only behavior. Declare the separate local eval
+in the configuration.
 
 All rows must be non-empty JSON objects and satisfy the target and evaluator
 mappings, even rows beyond a cap. An evaluator reference's explicit version wins
@@ -347,7 +346,7 @@ rows. Invalid run input causes no submission or dataset/state mutation.
 For `create` and `azd up`, preflight checks every local row against the prospective
 authored contracts of custom evaluators this operation will publish, as well as
 the selected contracts of already-published evaluators, before dependency writes.
-Available authored schemas take precedence over an older service catalog.
+Available authored schemas take precedence over the published service catalog.
 **Service-added constraints that are absent from both the authored and existing
 published contract cannot be known before publication.** The CLI reads the exact
 new evaluator version and checks local rows again before creating the eval. If a
@@ -363,7 +362,7 @@ for mapping construction and local type validation. Evaluator publication invali
 snapshots before subsequent eval creation.
 On local-source evals, positive `max_samples` limits submitted rows and
 `--max-samples 0` overrides a configured cap. Trace/response caps, registered
-dataset pins and fail-closed empty-list behavior are unchanged.
+dataset pins, and indeterminate registry listings follow the constraints above.
 
 Validation streams the entire file, including rows beyond a cap, while retaining
 only the rows a capped run can submit. Create/deploy preflight retains no row set.
@@ -497,13 +496,12 @@ is removed. Dataset files, artifact directories, lock files, and existing
 the host's save outcome is uncertain after cancellation or a connection failure,
 or rollback fails, init reports that recovery is incomplete and leaves an
 explicit inspection instruction rather than overwriting concurrent edits.
-Acknowledgment requires a separate host implementation; installing this extension
-does not enable it. Without a matching acknowledgment, even an explicit root-save
+Automatic rollback requires the host to return a matching operation acknowledgment.
+Without that acknowledgment, even an explicit root-save
 or permission error has an uncertain outcome: init retains the scaffold and
-reports manual recovery instead of promising an automatic retry.
+reports manual inspection instead of an automatic retry.
 Inspect the retained eval and its root service reference;
-do not delete preexisting evaluations. This does not require a newer SDK or
-change the minimum supported host version.
+do not delete preexisting evaluations.
 For automatic rollback after rejection before a save, including unsupported
 layered projects, the host must also acknowledge that operation's unsuccessful
 completion. Completion is not proof that the
@@ -919,7 +917,7 @@ Bare-ID reruns retain other source/schema pairs from their previous run unless
 there is a known response/trace scenario mismatch. The schema read is required:
 an unreadable definition does not establish compatibility.
 Editor validation and create/deploy preflight reject positive `max_samples`
-for source-backed declarations, including sources loaded through `$ref`.
+for trace- and response-backed declarations, including sources loaded through `$ref`.
 
 ### Recovering partial generation
 
@@ -976,20 +974,20 @@ explicitly for registered datasets. Remove the cap, pass `--max-samples 0` to
 override a configured cap, or deliberately publish and select a smaller dataset.
 The CLI does not publish temporary subset datasets automatically.
 
-Inline rows and row caps remain available for genuinely unregistered local files,
-after the service confirms the dataset is absent. A complete, valid empty version
-listing (or a not-found response) is checked with first-version lookups. Only
-not-found responses to those lookups permit inline rows; malformed listings,
-incomplete pagination, and authorization or service failures stop the run.
-`--max-samples` is also rejected for source-backed runs
+Unregistered local files support inline rows and row caps only after a typed
+not-found version listing and not-found first-version probes confirm absence.
+A successful empty listing is indeterminate and does not permit inline fallback.
+Malformed listings, incomplete pagination, and authorization or service failures
+stop the run.
+`--max-samples` is also rejected for trace- and response-backed runs
 and reruns selected by eval ID, where it cannot change the repeated source.
-Source-backed runs reject configured `max_samples:` too; use `source.max_traces`
+Trace- and response-backed runs reject positive configured `max_samples:` too; use `source.max_traces`
 for trace limits or select `source.response_ids` explicitly.
 
-Reruns retain a previous registered `file_id` unchanged. A legacy run with inline
-rows attributed to a registered version must instead be started from its declared
-eval by name: replacing those possibly capped rows with a whole version would
-silently change what gets scored.
+Reruns repeat the stored registered `file_id`. If the stored source contains inline
+rows attributed to a registered dataset, start the declared eval by name instead:
+replacing those possibly capped rows with a whole version would change what gets
+scored.
 
 | Group | Commands |
 |---|---|

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -53,7 +54,18 @@ func validateInitDataset(
 		return err
 	}
 	if answers.simulation == nil {
-		_, err := inspectJSONL(ctx, path, nil)
+		_, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
+			if answers.evaluationLevel == project.EvaluationLevelConversation {
+				if _, present := row[conversationField]; !present {
+					return exterrors.Validation(exterrors.CodeInvalidParameter,
+						fmt.Sprintf("%s row %d has no %q column for static conversation evaluation",
+							filepath.ToSlash(path), index+1, conversationField),
+						"Supply completed conversation rows with a messages column, "+
+							"or select --evaluation-level turn for query/response rows.")
+				}
+			}
+			return nil
+		})
 		return err
 	}
 	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}

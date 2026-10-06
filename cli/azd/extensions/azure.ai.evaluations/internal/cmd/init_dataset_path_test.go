@@ -81,6 +81,7 @@ func TestInitConfigurationFileOrDirectoryLocation(t *testing.T) {
 			}
 			t.Run(location.name+"/"+form, func(t *testing.T) {
 				h := newInitHarness(t, nil)
+				require.NoError(t, os.WriteFile(h.seedRows, []byte("{\"messages\":[]}\n"), 0o600))
 				path := filepath.Join("custom config", location.basename)
 				if absolute {
 					path = filepath.Join(h.dir, path)

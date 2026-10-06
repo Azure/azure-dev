@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,13 @@ const recoveryEvalConfig = `evals:
 
 func generationRecoveryFixture(
 	t *testing.T, jobs ...*eval_api.GenerationJob,
+) (*evalContext, []generationPlan, string, *[]string) {
+	t.Helper()
+	return generationRecoveryFixtureWithDatasetStatus(t, 0, jobs...)
+}
+
+func generationRecoveryFixtureWithDatasetStatus(
+	t *testing.T, datasetStatus int, jobs ...*eval_api.GenerationJob,
 ) (*evalContext, []generationPlan, string, *[]string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -65,6 +73,15 @@ func generationRecoveryFixture(
 			}
 			assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "running"}))
 		} else if dataset {
+			if datasetStatus != 0 {
+				w.WriteHeader(datasetStatus)
+				_, _ = w.Write([]byte(`{"error":{"code":"GenerationReadRefused"}}`))
+				return
+			}
+			if len(jobs) > 1 {
+				assert.NoError(t, json.NewEncoder(w).Encode(jobs[1]))
+				return
+			}
 			_, _ = w.Write([]byte(`{"id":"dataset-job","status":"failed","error":{"message":"dataset service failure"}}`))
 		} else {
 			assert.NoError(t, json.NewEncoder(w).Encode(completed))
@@ -160,6 +177,184 @@ func TestGenerationPartialOutcomePreservesSuccessfulArtifacts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerationPartialJSONPreservesRemediation(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			ec, plans, dir, requests := generationRecoveryFixtureWithDatasetStatus(t, status)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return ec.runGenerations(cmd, plans, generateFlags{path: dir})
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+			err := cmd.RunE(cmd, nil)
+			require.Error(t, err)
+			assert.Equal(t, 1, exitCode)
+			wantSuggestion := azdext.ErrorSuggestion(err)
+			if status == http.StatusForbidden {
+				require.NotEmpty(t, wantSuggestion)
+			} else {
+				require.Empty(t, wantSuggestion)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			var doc map[string]map[string]any
+			require.NoError(t, decoder.Decode(&doc))
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF)
+			require.Contains(t, doc, "dataset")
+			require.Contains(t, doc, "evaluator")
+			failed, kept := doc["dataset"], doc["evaluator"]
+			assert.Equal(t, "failed", failed["status"])
+			assert.Equal(t, "dataset-job", failed["job_id"])
+			message, ok := failed["error"].(string)
+			require.True(t, ok, "the existing generation error string is a compatibility contract")
+			if status == http.StatusForbidden {
+				assert.Contains(t, message, "GenerationReadRefused")
+			} else {
+				assert.Contains(t, message, "did not complete within 2 attempts")
+			}
+			if wantSuggestion == "" {
+				assert.NotContains(t, failed, "suggestion")
+			} else {
+				assert.Equal(t, wantSuggestion, failed["suggestion"])
+			}
+			assert.Contains(t, failed["recovery_command"], "job show dataset-job --dataset")
+			assert.Contains(t, failed["retry_guidance"], "--dataset only")
+			assert.Equal(t, "succeeded", kept["status"])
+			assert.Equal(t, "quality", kept["name"])
+			assert.Equal(t, "1", kept["version"])
+			assert.Equal(t, "evaluator-job", kept["job_id"])
+			assert.NotContains(t, kept, "error")
+			assert.NotContains(t, kept, "suggestion")
+			require.FileExists(t, filepath.Join(dir, "evaluators", "quality.json"))
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evaluators, 1)
+			assert.Empty(t, cfg.Datasets)
+			posts := 0
+			for _, request := range *requests {
+				if strings.HasPrefix(request, "POST ") {
+					posts++
+				}
+				assert.NotContains(t, request, "DELETE ")
+			}
+			assert.Equal(t, 2, posts, "one job per artifact, no regeneration or rollback")
+			assert.NotEmpty(t, stderr.String())
+		})
+	}
+}
+
+func TestGenerationPartialJSONRedactsJobFailureMessage(t *testing.T) {
+	for _, tc := range []struct{ name, message, safeMessage string }{
+		{
+			"userinfo query fragment",
+			"Download https://fixture-user:fixture-password@example.test/rows.jsonl" +
+				"?sig=fixture-signature#fixture-fragment failed.",
+			"Download https://example.test/rows.jsonl failed.",
+		},
+		{
+			"whitespace query",
+			"Download https://example.test/rows.jsonl?sig= \tfixture-signature failed.",
+			"Download <redacted-url> failed.",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failedJob := &eval_api.GenerationJob{
+				ID: "dataset-job", Status: "failed", Error: &eval_api.JobError{Message: tc.message},
+			}
+			ec, plans, dir, requests := generationRecoveryFixture(t, recoveryRubricJob(), failedJob)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			var out, stderr bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return ec.runGenerations(cmd, plans, generateFlags{path: dir})
+			}
+			priorExit := exitProcess
+			exitCode := 0
+			exitProcess = func(code int) { exitCode = code }
+			t.Cleanup(func() { exitProcess = priorExit })
+			reportFailuresAsJSON(cmd)
+			err := cmd.RunE(cmd, nil)
+			require.ErrorContains(t, err, tc.message, "the returned error remains unmodified")
+			assert.Equal(t, tc.message, failedJob.Error.Message)
+			assert.Equal(t, 1, exitCode)
+
+			var result map[string]generationResult
+			decoder := json.NewDecoder(bytes.NewReader(out.Bytes()))
+			require.NoError(t, decoder.Decode(&result))
+			require.ErrorIs(t, decoder.Decode(new(any)), io.EOF)
+			assert.Equal(t, "failed", result["dataset"].Status)
+			assert.Equal(t, "dataset-job", result["dataset"].JobID)
+			assert.Nil(t, result["dataset"].ArtifactRef)
+			assert.Contains(t, result["dataset"].Error, tc.safeMessage)
+			assert.Contains(t, result["dataset"].Recovery, "job show dataset-job --dataset")
+			assert.Contains(t, result["dataset"].RetryGuidance, "--dataset only")
+			assert.Equal(t, "succeeded", result["evaluator"].Status)
+			require.NotNil(t, result["evaluator"].ArtifactRef)
+			assert.Equal(t, "quality", result["evaluator"].Name)
+			assert.Equal(t, "1", result["evaluator"].Version)
+			require.FileExists(t, filepath.Join(dir, "evaluators", "quality.json"))
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evaluators, 1)
+			assert.Equal(t, "quality", cfg.Evaluators[0].Name)
+			assert.Empty(t, cfg.Datasets)
+			assert.Contains(t, stderr.String(), tc.safeMessage)
+			for _, sensitive := range []string{
+				"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
+			} {
+				assert.NotContains(t, out.String(), sensitive)
+				assert.NotContains(t, stderr.String(), sensitive)
+			}
+			assert.Len(t, *requests, 4, "one submit and one completed-job read per artifact")
+			for _, request := range *requests {
+				assert.NotContains(t, request, "DELETE")
+			}
+		})
+	}
+}
+
+// generationDocument's entry.Error used to bypass jsonMessage, so a service
+// refusal reaching generation's own partial-result document still disclosed
+// the internal service endpoint even after the ordinary -o json envelope was
+// fixed. A failed outcome must also carry the same stable code every other
+// failure reports.
+func TestGenerationDocumentOmitsTheServiceEndpointAndCarriesACode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	ec := evalContextFor(srv)
+
+	_, err := ec.evalClient.GetDataGenerationJob(t.Context(), "job_1", "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "127.0.0.1",
+		"the synthetic cause must actually carry an endpoint to redact")
+
+	doc := generationDocument([]generationOutcome{{plan: generationPlan{Kind: generateKindDataset}, err: err}})
+	raw, marshalErr := json.Marshal(doc)
+	require.NoError(t, marshalErr)
+
+	var decoded map[string]generationResult
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	entry := decoded["dataset"]
+	assert.Equal(t, "failed", entry.Status)
+	assert.Equal(t, jsonMessage(err), entry.Error)
+	assert.NotContains(t, entry.Error, "127.0.0.1",
+		"the JSON document must not disclose the internal service endpoint")
+	assert.Equal(t, errorCode(err), entry.Code)
+	assert.NotEmpty(t, entry.Code, "a failed outcome must carry the same stable code every other failure reports")
 }
 
 func TestGenerationCatalogFailureCanRecoverWithoutRegeneration(t *testing.T) {

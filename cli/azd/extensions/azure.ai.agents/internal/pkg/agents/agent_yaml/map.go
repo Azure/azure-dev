@@ -649,9 +649,9 @@ func CreatePromptAgentAPIRequest(
 	}
 
 	// Tools and the camelCase authored fields toolChoice and structuredInputs are
-	// passed through to their snake_case Foundry API fields.
+	// translated to their snake_case Foundry API fields.
 	if len(promptAgent.Tools) > 0 {
-		promptDef.Tools = promptAgent.Tools
+		promptDef.Tools = promptToolsForAPI(promptAgent.Tools)
 	}
 	if promptAgent.ToolChoice != nil {
 		promptDef.ToolChoice = promptAgent.ToolChoice

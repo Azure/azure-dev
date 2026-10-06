@@ -698,17 +698,23 @@ func (ec *evalContext) pollGeneration(
 // writeRubric persists the rubric so the developer can edit weights and
 // descriptions and publish a new version.
 //
-// Known service fields are omitted; unknown fields are preserved for future
-// authoring contracts. Raw JSON keeps numeric values from being rounded.
+// Results must be JSON objects. Known service fields are omitted; unknown fields
+// are preserved for future authoring contracts. Raw JSON keeps numeric values exact.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
 	}
 	body := result
-	var envelope struct {
+	var envelope *struct {
 		Definition json.RawMessage `json:"definition"`
 	}
-	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return notAnObject(result, err)
+	}
+	if envelope == nil {
+		return messages.DefinitionIsNull()
+	}
+	if len(envelope.Definition) > 0 {
 		editable, err := editableRubric(envelope.Definition)
 		if err != nil {
 			return err

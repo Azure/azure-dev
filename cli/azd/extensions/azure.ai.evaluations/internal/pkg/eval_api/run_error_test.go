@@ -227,3 +227,39 @@ func TestRunJSONKeepsTheDetailsOfAnErrorWithAMessage(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, body, string(out))
 }
+
+// Keys of a map the service keyed by user data are case-sensitive: `Env` and
+// `env` are two entries, and folding them as one spelling of a modeled field would
+// drop or overwrite one. The result must not depend on map iteration order.
+func TestRunJSONKeepsCaseSensitiveUserDataKeys(t *testing.T) {
+	const response = `{"id":"run_case","status":"completed",` +
+		`"metadata":{"Env":"a","env":"b","ENV":"c"}}`
+	for range 50 {
+		var run OpenAIEvalRun
+		require.NoError(t, json.Unmarshal([]byte(response), &run))
+		raw, err := json.Marshal(&run)
+		require.NoError(t, err)
+		var document struct {
+			Metadata map[string]string `json:"metadata"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &document))
+		assert.Equal(t, map[string]string{"Env": "a", "env": "b", "ENV": "c"}, document.Metadata)
+	}
+}
+
+func TestOutputItemJSONKeepsCaseSensitiveDatasetColumns(t *testing.T) {
+	const response = `{"id":"item_case","status":"pass","datasource_item":{"ID":1,"id":2}}`
+	for range 50 {
+		var item OutputItem
+		require.NoError(t, json.Unmarshal([]byte(response), &item))
+		raw, err := json.Marshal(&item)
+		require.NoError(t, err)
+		var document struct {
+			Row map[string]json.Number `json:"datasource_item"`
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(raw)))
+		decoder.UseNumber()
+		require.NoError(t, decoder.Decode(&document))
+		assert.Equal(t, map[string]json.Number{"ID": "1", "id": "2"}, document.Row)
+	}
+}

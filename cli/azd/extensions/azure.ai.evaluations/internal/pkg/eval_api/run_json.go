@@ -117,14 +117,26 @@ func mergeServiceJSON(original, updated, initial json.RawMessage) (json.RawMessa
 		// spells one modeled key several ways keeps one spelling (the exact one if
 		// present, else the first in sorted order) and drops the rest, so no
 		// variant carries a value the typed projection did not sanitize.
+		//
+		// Only a level whose typed keys are all distinct once case is ignored is
+		// folded, which is every struct-shaped level. A map the service keyed by
+		// user data (metadata, a dataset row) is case-sensitive, so `Env` and `env`
+		// are two entries there and each keeps its own value.
 		spellings := make(map[string][]string, len(oldObject))
 		for key := range oldObject {
 			lower := strings.ToLower(key)
 			spellings[lower] = append(spellings[lower], key)
 		}
+		typedSpellings := make(map[string]int, len(newObject))
+		for key := range newObject {
+			typedSpellings[strings.ToLower(key)]++
+		}
 		for key, value := range newObject {
 			target := key
-			variants := spellings[strings.ToLower(key)]
+			var variants []string
+			if typedSpellings[strings.ToLower(key)] == 1 {
+				variants = spellings[strings.ToLower(key)]
+			}
 			if _, exact := oldObject[key]; !exact && len(variants) > 0 {
 				target = slices.Min(variants)
 			}

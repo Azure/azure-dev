@@ -161,7 +161,7 @@ Generated and retrieved responses have distinct output sources:
 | --- | --- |
 | Model target | `query: "{{item.query}}"`, `response: "{{sample.output_text}}"` |
 | Agent target or stored response IDs | `response: "{{sample.output_items}}"` for structured responses; `response: "{{sample.output_text}}"` when the evaluator declares a string-only response |
-| Simulated conversations | `messages: "{{item.messages}}"`, `tool_definitions: "{{item.tool_definitions}}"` |
+| Simulated conversations | `messages: "{{item.messages}}"` |
 
 Agent-generated tool inputs use `sample.tool_calls` and
 `sample.tool_definitions`. A target name used to filter traces does not invoke

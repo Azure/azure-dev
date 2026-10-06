@@ -347,7 +347,7 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 		for _, cap := range []string{"", "0", "1"} {
 			t.Run(sourceType+"/"+cap, func(t *testing.T) {
 				reads, posts, schemaReads := 0, 0, 0
-				source := map[string]any{"type": sourceType, "agentName": "agent", "lookbackHours": 24}
+				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
 				if sourceType == "azure_ai_trace_data_source_preview" {
 					source = map[string]any{
 						"type": sourceType,

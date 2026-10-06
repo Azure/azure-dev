@@ -42,6 +42,12 @@
       "type": "object",
       "required": ["$ref"],
       "additionalProperties": true,
+      "propertyNames": {
+        "anyOf": [
+          { "const": "$ref" },
+          { "pattern": "^[a-z][A-Za-z0-9]*$" }
+        ]
+      },
       "description": "Replace an inline definition with a reference to an external YAML or JSON file. Sibling properties on the same object act as overlay overrides on top of the loaded file. Cloned rather than referenced across extensions, following azure.ai.projects.",
       "properties": {
         "$ref": {

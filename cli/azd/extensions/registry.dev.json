@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.1",
+  "schemaVersion": "1.0",
   "extensions": [
     {
       "id": "azure.ai.training",

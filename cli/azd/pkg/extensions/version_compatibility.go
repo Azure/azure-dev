@@ -74,111 +74,26 @@ type VersionCompatibilityResult struct {
 	HasNewerIncompatible bool
 }
 
-// CompareExtensionVersions compares two versions using semantic versioning and any declared
-// version migration. A migrated From version sorts immediately before its To version, so To
-// and all later semantic versions are considered successors.
-func CompareExtensionVersions(extension *ExtensionMetadata, left, right string) int {
-	if left == right {
-		return 0
-	}
-
-	leftVersion, leftErr := semver.NewVersion(left)
-	rightVersion, rightErr := semver.NewVersion(right)
-	if leftErr != nil || rightErr != nil {
-		return 0
-	}
-
-	leftFloor := versionMigrationFloor(extension, left)
-	rightFloor := versionMigrationFloor(extension, right)
-	switch {
-	case leftFloor != nil && rightFloor != nil:
-		if comparison := leftFloor.Compare(rightFloor); comparison != 0 {
-			return comparison
-		}
-		return leftVersion.Compare(rightVersion)
-	case leftFloor != nil:
-		if rightVersion.LessThan(leftFloor) {
-			return 1
-		}
-		return -1
-	case rightFloor != nil:
-		if leftVersion.LessThan(rightFloor) {
-			return -1
-		}
-		return 1
-	default:
-		return leftVersion.Compare(rightVersion)
-	}
-}
-
-func versionMigrationFloor(extension *ExtensionMetadata, version string) *semver.Version {
-	if extension == nil {
-		return nil
-	}
-	for _, migration := range extension.VersionMigrations {
-		if migration.From != version {
-			continue
-		}
-		from, err := semver.StrictNewVersion(migration.From)
-		if err != nil {
-			return nil
-		}
-		floor, err := semver.StrictNewVersion(migration.To)
-		if err == nil && from.GreaterThan(floor) {
-			return floor
-		}
-		return nil
-	}
-	return nil
-}
-
-// IsExtensionVersionUpgrade reports whether target is newer than current after applying
-// the extension's explicitly declared migration ordering.
-func IsExtensionVersionUpgrade(extension *ExtensionMetadata, current, target string) bool {
-	return CompareExtensionVersions(extension, target, current) > 0
-}
-
-// IsExtensionVersionDowngrade reports whether target is older than current after applying
-// the extension's explicitly declared migration ordering.
-func IsExtensionVersionDowngrade(extension *ExtensionMetadata, current, target string) bool {
-	return CompareExtensionVersions(extension, target, current) < 0
-}
-
 // LatestVersion returns the ExtensionVersion with the highest semantic version from the provided slice.
-// It compares all elements using strict semver ordering so the result is correct regardless of slice ordering.
+// It compares all elements using semver so the result is correct regardless of slice ordering.
 // Returns nil if the slice is empty.
 func LatestVersion(versions []ExtensionVersion) *ExtensionVersion {
-	return latestExtensionVersion(nil, versions)
-}
-
-// LatestExtensionVersion returns the highest version after applying the extension's declared
-// migration ordering.
-func LatestExtensionVersion(extension *ExtensionMetadata) *ExtensionVersion {
-	if extension == nil {
-		return nil
-	}
-	return latestExtensionVersion(extension, extension.Versions)
-}
-
-func latestExtensionVersion(
-	extension *ExtensionMetadata,
-	versions []ExtensionVersion,
-) *ExtensionVersion {
 	if len(versions) == 0 {
 		return nil
 	}
 
 	var latest *ExtensionVersion
+	var latestSemver *semver.Version
 
 	for i := range versions {
-		_, err := semver.NewVersion(versions[i].Version)
+		v, err := semver.NewVersion(versions[i].Version)
 		if err != nil {
 			log.Printf("Warning: failed to parse extension version '%s': %v", versions[i].Version, err)
 			continue
 		}
-		if latest == nil ||
-			CompareExtensionVersions(extension, versions[i].Version, latest.Version) > 0 {
+		if latestSemver == nil || v.GreaterThan(latestSemver) {
 			latest = &versions[i]
+			latestSemver = v
 		}
 	}
 
@@ -196,26 +111,6 @@ func FilterCompatibleVersions(
 	versions []ExtensionVersion,
 	azdVersion *semver.Version,
 ) *VersionCompatibilityResult {
-	return filterCompatibleVersions(nil, versions, azdVersion)
-}
-
-// FilterCompatibleExtensionVersions applies azd compatibility and declared migration ordering
-// to an extension's published versions.
-func FilterCompatibleExtensionVersions(
-	extension *ExtensionMetadata,
-	azdVersion *semver.Version,
-) *VersionCompatibilityResult {
-	if extension == nil {
-		return &VersionCompatibilityResult{}
-	}
-	return filterCompatibleVersions(extension, extension.Versions, azdVersion)
-}
-
-func filterCompatibleVersions(
-	extension *ExtensionMetadata,
-	versions []ExtensionVersion,
-	azdVersion *semver.Version,
-) *VersionCompatibilityResult {
 	result := &VersionCompatibilityResult{}
 
 	if len(versions) == 0 {
@@ -224,7 +119,7 @@ func filterCompatibleVersions(
 
 	// Find the latest overall version using semver comparison (order-independent).
 	// Store a copy so the result doesn't alias the caller's slice.
-	latestOverall := *latestExtensionVersion(extension, versions) // safe: len(versions) > 0 checked above
+	latestOverall := *LatestVersion(versions) // safe: len(versions) > 0 checked above
 	result.LatestOverall = &latestOverall
 
 	for i := range versions {
@@ -234,16 +129,16 @@ func filterCompatibleVersions(
 	}
 
 	if len(result.Compatible) > 0 {
-		result.LatestCompatible = latestExtensionVersion(extension, result.Compatible)
+		result.LatestCompatible = LatestVersion(result.Compatible)
 	}
 
 	// Check if there's a newer incompatible version
 	if result.LatestCompatible != nil && result.LatestOverall != nil {
-		result.HasNewerIncompatible = CompareExtensionVersions(
-			extension,
-			result.LatestOverall.Version,
-			result.LatestCompatible.Version,
-		) > 0
+		latestCompatibleSemver, err1 := semver.NewVersion(result.LatestCompatible.Version)
+		latestOverallSemver, err2 := semver.NewVersion(result.LatestOverall.Version)
+		if err1 == nil && err2 == nil {
+			result.HasNewerIncompatible = latestOverallSemver.GreaterThan(latestCompatibleSemver)
+		}
 	} else if result.LatestCompatible == nil && result.LatestOverall != nil {
 		result.HasNewerIncompatible = true
 	}

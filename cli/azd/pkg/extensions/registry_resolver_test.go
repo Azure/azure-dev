@@ -317,20 +317,6 @@ func TestShouldPromote(t *testing.T) {
 			want:        true,
 		},
 		{
-			name:        "declared successor promotes despite lower raw semver",
-			storedMatch: makeExt("dev", "1.0.47-beta"),
-			mainMatch: &ExtensionMetadata{
-				Id:     "test-ext",
-				Source: MainRegistryName,
-				VersionMigrations: []ExtensionVersionMigration{{
-					From: "1.0.47-beta",
-					To:   "1.0.0-beta.1",
-				}},
-				Versions: []ExtensionVersion{{Version: "1.0.0-beta.1"}},
-			},
-			want: true,
-		},
-		{
 			name:        "incompatible newer main release does not promote",
 			storedMatch: makeExt("dev", "1.5.0"),
 			mainMatch:   makeExt("azd", "1.2.0", "3.0.0"),

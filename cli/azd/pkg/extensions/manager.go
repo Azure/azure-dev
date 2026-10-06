@@ -213,12 +213,12 @@ func (m *Manager) resolveDependency(
 			continue
 		}
 
-		publishedVersion := bestSatisfyingExtensionVersion(dependency.Version, matches[0])
+		publishedVersion := bestSatisfyingVersion(dependency.Version, matches[0].Versions)
 		if publishedVersion == nil {
 			foundWithoutMatchingVersion = true
 			continue
 		}
-		if bestSatisfyingExtensionVersionForAzd(dependency.Version, matches[0], azdVersion) != nil {
+		if bestSatisfyingVersionForAzd(dependency.Version, matches[0].Versions, azdVersion) != nil {
 			return matches[0], nil
 		}
 		incompatibleVersion = publishedVersion
@@ -312,27 +312,29 @@ func matchesVersionConstraint(expr, candidate string) bool {
 	return constraint.Check(parsedVersion)
 }
 
-func bestSatisfyingExtensionVersion(
-	expr string,
-	extension *ExtensionMetadata,
-) *ExtensionVersion {
-	if extension == nil {
-		return nil
+// isDowngrade reports whether moving from current to target is a version regression.
+// Returns false if either version is not valid semver.
+func isDowngrade(current, target string) bool {
+	currentSemver, err := semver.NewVersion(current)
+	if err != nil {
+		return false
 	}
-	return bestSatisfyingVersionFromMetadata(expr, extension, extension.Versions)
+	targetSemver, err := semver.NewVersion(target)
+	if err != nil {
+		return false
+	}
+	return targetSemver.LessThan(currentSemver)
 }
 
-func bestSatisfyingVersionFromMetadata(
-	expr string,
-	extension *ExtensionMetadata,
-	versions []ExtensionVersion,
-) *ExtensionVersion {
+// bestSatisfyingVersion returns the highest published version satisfying expr.
+// Empty or "latest" selects the latest version; non-semver tags use exact match.
+func bestSatisfyingVersion(expr string, versions []ExtensionVersion) *ExtensionVersion {
 	if len(versions) == 0 {
 		return nil
 	}
 
 	if expr == "" || strings.EqualFold(expr, "latest") {
-		return latestExtensionVersion(extension, versions)
+		return LatestVersion(versions)
 	}
 
 	constraint, err := semver.NewConstraint(expr)
@@ -346,7 +348,8 @@ func bestSatisfyingVersionFromMetadata(
 		return nil
 	}
 
-	bestIdx := -1
+	var best *semver.Version
+	var bestIdx int
 	for i := range versions {
 		v, err := semver.NewVersion(versions[i].Version)
 		if err != nil {
@@ -355,36 +358,24 @@ func bestSatisfyingVersionFromMetadata(
 		if !constraint.Check(v) {
 			continue
 		}
-		if bestIdx == -1 ||
-			CompareExtensionVersions(extension, versions[i].Version, versions[bestIdx].Version) > 0 {
+		if best == nil || v.GreaterThan(best) {
+			best = v
 			bestIdx = i
 		}
 	}
-	if bestIdx == -1 {
+	if best == nil {
 		return nil
 	}
 	return &versions[bestIdx]
 }
 
-func bestSatisfyingExtensionVersionForAzd(
+func bestSatisfyingVersionForAzd(
 	expr string,
-	extension *ExtensionMetadata,
-	azdVersion *semver.Version,
-) *ExtensionVersion {
-	if extension == nil {
-		return nil
-	}
-	return bestSatisfyingVersionForAzdFromMetadata(expr, extension, extension.Versions, azdVersion)
-}
-
-func bestSatisfyingVersionForAzdFromMetadata(
-	expr string,
-	extension *ExtensionMetadata,
 	versions []ExtensionVersion,
 	azdVersion *semver.Version,
 ) *ExtensionVersion {
 	if azdVersion == nil {
-		return bestSatisfyingVersionFromMetadata(expr, extension, versions)
+		return bestSatisfyingVersion(expr, versions)
 	}
 
 	compatible := make([]ExtensionVersion, 0, len(versions))
@@ -394,7 +385,7 @@ func bestSatisfyingVersionForAzdFromMetadata(
 		}
 	}
 
-	return bestSatisfyingVersionFromMetadata(expr, extension, compatible)
+	return bestSatisfyingVersion(expr, compatible)
 }
 
 // ResolveExtensionVersion selects the highest release that matches versionPreference and azdVersion.
@@ -407,12 +398,12 @@ func ResolveExtensionVersion(
 		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	selected := bestSatisfyingExtensionVersionForAzd(versionPreference, extension, azdVersion)
+	selected := bestSatisfyingVersionForAzd(versionPreference, extension.Versions, azdVersion)
 	if selected != nil {
 		return selected, nil
 	}
 
-	published := bestSatisfyingExtensionVersion(versionPreference, extension)
+	published := bestSatisfyingVersion(versionPreference, extension.Versions)
 	if published != nil {
 		return nil, &ExtensionAzdVersionIncompatibleError{
 			ExtensionId: extension.Id,
@@ -1269,6 +1260,10 @@ func (m *Manager) upgradeInternal(
 func (m *Manager) prepareUpgradeRecovery(
 	ctx context.Context, installed *Extension,
 ) (func(context.Context, bool) error, error) {
+	if installed.Id == "" || installed.Id == "." || installed.Id == ".." ||
+		strings.ContainsAny(installed.Id, `/\`) {
+		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
+	}
 	// Snapshot persisted metadata without copying Extension's runtime locks.
 	data, err := json.Marshal(installed)
 	if err != nil {
@@ -1446,7 +1441,7 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		bestVersion := bestSatisfyingExtensionVersionForAzd(dep.Version, childMetadata, m.azdVersion)
+		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, m.azdVersion)
 		if bestVersion == nil {
 			// If no published version matches, keep a compatible installed version.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
@@ -1454,7 +1449,7 @@ func (m *Manager) evaluateDependencyChanges(
 			}
 			var resultErr error
 			var suggestion string
-			publishedVersion := bestSatisfyingExtensionVersion(dep.Version, childMetadata)
+			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
 			if publishedVersion == nil {
 				versionErr := &DependencyVersionNotFoundError{
 					DependencyId: dep.Id,
@@ -1492,7 +1487,7 @@ func (m *Manager) evaluateDependencyChanges(
 
 		// Refuse to silently downgrade: a user (or sibling pack) may have moved the dependency
 		// past this pack's declared range deliberately.
-		if IsExtensionVersionDowngrade(childMetadata, installed.Version, bestVersion.Version) {
+		if isDowngrade(installed.Version, bestVersion.Version) {
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				// Installed is newer but still satisfies the constraint — keep it, no-op.
 				continue
@@ -1770,9 +1765,6 @@ func (tm *Manager) createSourcesFromConfig(
 				)
 				schemaErrors = append(schemaErrors, schemaErr)
 				continue
-			}
-			if errors.Is(err, errInvalidVersionMigrations) {
-				return nil, fmt.Errorf("failed to create source %q: %w", config.Name, err)
 			}
 			log.Printf("failed to create source: %v", err)
 			continue

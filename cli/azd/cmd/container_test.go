@@ -195,9 +195,12 @@ func Test_LocalDataStore_ResolutionAfterInit(t *testing.T) {
 			lazyContext.SetValue(azdContext)
 
 			require.NoError(t, container.Resolve(&dataStore))
-			require.Equal(t, filepath.Join(azdContext.EnvironmentRoot("test"), environment.DotEnvFileName),
-				dataStore.EnvPath(environment.New("test")))
-			_, err := dataStore.Get(t.Context(), "test")
+			envRoot, err := azdContext.EnvironmentRoot("test")
+			require.NoError(t, err)
+			envPath, err := dataStore.EnvPath(environment.New("test"))
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(envRoot, environment.DotEnvFileName), envPath)
+			_, err = dataStore.Get(t.Context(), "test")
 			require.ErrorIs(t, err, environment.ErrNotFound)
 		})
 	}
@@ -262,8 +265,11 @@ func Test_EnvironmentRegistrations_InitLifecycle(t *testing.T) {
 				env.DotenvSet("LIFECYCLE_TEST", "unsaved")
 				require.NoError(t, manager.Reload(t.Context(), env))
 				require.Equal(t, "saved", env.Getenv("LIFECYCLE_TEST"))
-				require.Equal(t, filepath.Join(azdContext.EnvironmentRoot("dev"), environment.DotEnvFileName),
-					manager.EnvPath(env))
+				envRoot, err := azdContext.EnvironmentRoot("dev")
+				require.NoError(t, err)
+				envPath, err := manager.EnvPath(env)
+				require.NoError(t, err)
+				require.Equal(t, filepath.Join(envRoot, environment.DotEnvFileName), envPath)
 
 				var resolvedManager environment.Manager
 				require.NoError(t, container.Resolve(&resolvedManager))

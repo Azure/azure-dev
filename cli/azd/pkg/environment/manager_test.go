@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -275,6 +276,39 @@ func Test_EnvManager_List(t *testing.T) {
 		require.Equal(t, true, envList[0].HasRemote)
 		require.Equal(t, ".azure/env1/.env", envList[0].DotEnvPath)
 	})
+}
+
+func Test_EnvManager_ListSkipsInvalidLocalRemoteDestination(t *testing.T) {
+	for _, entry := range []string{"root-link", ".env", "config.json", ".env.lock"} {
+		t.Run(entry, func(t *testing.T) {
+			ctx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			root := filepath.Join(ctx.EnvironmentDirectory(), "prod")
+			require.NoError(t, os.MkdirAll(ctx.EnvironmentDirectory(), 0700))
+			if entry == "root-link" {
+				ostest.DirectoryLink(t, t.TempDir(), root)
+			} else {
+				require.NoError(t, os.MkdirAll(filepath.Join(root, entry), 0700))
+			}
+			local := NewLocalFileDataStore(ctx, config.NewFileConfigManager(config.NewManager()))
+			require.NoError(t, local.Save(t.Context(), New("valid"), nil))
+			remote := &MockDataStore{}
+			remote.On("List", t.Context()).Return([]*contracts.EnvListEnvironment{
+				{Name: "prod"}, {Name: "valid"}, {Name: "new"},
+			}, nil).Once()
+			manager := newManagerForTest(ctx, nil, local, remote)
+
+			envs, err := manager.List(t.Context())
+			require.NoError(t, err)
+			require.Len(t, envs, 2)
+			require.Equal(t, "new", envs[0].Name)
+			require.True(t, envs[0].HasRemote)
+			require.False(t, envs[0].HasLocal)
+			require.Equal(t, "valid", envs[1].Name)
+			require.True(t, envs[1].HasRemote)
+			require.True(t, envs[1].HasLocal)
+			remote.AssertExpectations(t)
+		})
+	}
 }
 
 func Test_EnvManager_ListSkipsInvalidRemoteNames(t *testing.T) {

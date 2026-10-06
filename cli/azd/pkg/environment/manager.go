@@ -396,6 +396,7 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 			return nil, fmt.Errorf("retrieving remote environments, %w", err)
 		}
 
+	remoteEnvironments:
 		for _, env := range remoteEnvs {
 			if !IsValidEnvironmentName(env.Name) {
 				log.Printf("skipping remote environment entry %q: %v", env.Name, InvalidEnvironmentNameError(env.Name))
@@ -403,10 +404,17 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 			}
 			existing, has := envMap[env.Name]
 			if !has {
-				existing = &Description{
-					Name:      env.Name,
-					HasRemote: true,
+				// Remote-only environments must be able to hydrate into their local state paths.
+				for _, name := range []string{DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock"} {
+					if _, err := m.azdContext.EnvironmentFilePath(env.Name, name); err != nil {
+						if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
+							log.Printf("skipping remote environment entry %q: %v", env.Name, err)
+							continue remoteEnvironments
+						}
+						return nil, fmt.Errorf("checking local destination for remote environment %q: %w", env.Name, err)
+					}
 				}
+				existing = &Description{Name: env.Name, HasRemote: true}
 			} else {
 				existing.HasRemote = true
 			}

@@ -13,6 +13,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEnvironmentPaths_RejectWrongEntryType(t *testing.T) {
+	for _, entry := range []struct {
+		name      string
+		directory bool
+		resolve   func(*AzdContext) (string, error)
+	}{
+		{".azure", true, (*AzdContext).EnvironmentDirectoryPath},
+		{".azure/prod", true, func(c *AzdContext) (string, error) { return c.EnvironmentRoot("prod") }},
+		{".azure/prod/wd", true, func(c *AzdContext) (string, error) { return c.GetEnvironmentWorkDirectory("prod") }},
+		{".azure/prod/.env", false, func(c *AzdContext) (string, error) {
+			return c.EnvironmentFilePath("prod", ".env")
+		}},
+		{".azure/config.json", false, func(c *AzdContext) (string, error) {
+			return c.ProjectStateFilePath("config.json")
+		}},
+	} {
+		t.Run(entry.name, func(t *testing.T) {
+			ctx := NewAzdContextWithDirectory(t.TempDir())
+			path := filepath.Join(ctx.ProjectDirectory(), entry.name)
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+			if entry.directory {
+				require.NoError(t, os.WriteFile(path, []byte("unchanged"), 0600))
+			} else {
+				require.NoError(t, os.Mkdir(path, 0700))
+			}
+			resolved, err := entry.resolve(ctx)
+			require.ErrorIs(t, err, ErrUnsafeEnvironmentPath)
+			require.Empty(t, resolved)
+		})
+	}
+}
+
 func TestEnvironmentRoot_LinkedDirectories(t *testing.T) {
 	for _, targetKind := range []string{"outside", "inside", "dangling"} {
 		t.Run(targetKind, func(t *testing.T) {

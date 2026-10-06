@@ -448,8 +448,6 @@ stages:
           name: azsdk-pool
           image: ubuntu-22.04
           os: linux
-          demands:
-            - ImageVersionOverride -equals 51.0.0
 
         templateContext:
           type: releaseJob

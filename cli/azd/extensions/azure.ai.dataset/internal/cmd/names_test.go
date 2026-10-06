@@ -23,7 +23,7 @@ func TestValidAssetName(t *testing.T) {
 		{"support_golden", true, "underscores are allowed"},
 		{"golden123", true, "digits are allowed"},
 		{"a", true, "one character is enough"},
-		{"bugbash space 035200", false, "spaces are what a developer types first"},
+		{"sample dataset", false, "spaces are what a developer types first"},
 		{"golden.jsonl", false, "dots read like a filename but are refused"},
 		{"golden/v2", false, "a slash would change which resource is addressed"},
 		{"golden%20", false, "an escape sequence typed by hand is not a name"},

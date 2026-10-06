@@ -234,7 +234,7 @@ func TestGenerateDataset_RefusesWhenTwoServicesClaimTheSameAgent(t *testing.T) {
 }
 
 func TestGenerationDefaultNamesUseCanonicalDeployedAgent(t *testing.T) {
-	const local, deployed = "travel-planner", "aprilk-b43-hands-on-travel"
+	const local, deployed = "travel-planner", "contoso-hands-on-travel"
 	for _, target := range []string{"", local, deployed} {
 		for _, unattended := range []bool{false, true} {
 			for _, level := range []string{"turn", "conversation"} {
@@ -298,7 +298,7 @@ func TestGenerationDefaultNamesUseCanonicalDeployedAgent(t *testing.T) {
 }
 
 func TestGenerationNameLookupFailureDoesNotFallBackToLocalKey(t *testing.T) {
-	const local, deployed = "travel-planner", "aprilk-b43-hands-on-travel"
+	const local, deployed = "travel-planner", "contoso-hands-on-travel"
 	ec := &evalContext{azdClient: projectServingClient(t, publishingProject(t, local, deployed), assert.AnError)}
 	name, err := ec.generationNameTarget(t.Context(), local)
 	require.ErrorContains(t, err, "resolving the deployed agent name")

@@ -13,10 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The generation-job listings answer with the same has_more/last_id cursor the
-// OpenAI listings use, but GenerationJobList did not carry those fields, so
-// both read one page and stopped. Against the shared bug bash project that meant
-// `job list` reported the first twenty jobs of many, with nothing to say so.
+// Generation-job listings use the OpenAI has_more/last_id cursor. Dataset and
+// evaluator listings must follow that cursor so job list includes every page.
 func TestGenerationJobListingsFollowTheCursor(t *testing.T) {
 	for _, tc := range []struct {
 		name string

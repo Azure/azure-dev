@@ -12,8 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Adding an eval to a configuration a reader maintains must leave their notes
-// alone. This is the claim the bug bash instructions lead with.
+// Adding an eval to a hand-maintained configuration preserves existing comments.
 func TestApplyScaffoldKeepsComments(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, EvalConfigBase)

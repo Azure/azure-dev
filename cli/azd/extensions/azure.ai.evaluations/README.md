@@ -564,8 +564,11 @@ compatibility checked when the eval is created.
 Omitting `--evaluator` keeps the default selection or opens the interactive
 picker. An explicitly empty `--evaluator` is rejected rather than silently
 restoring the default.
-The default shortlist is `builtin.output_quality` and `builtin.tool_use_quality`;
-an explicit selection replaces both rather than adding their constituents.
+The picker shortlist is `builtin.task_completion`, `builtin.customer_satisfaction`,
+`builtin.coherence`, and `builtin.groundedness`, with only `builtin.task_completion`
+preselected or used under `--no-prompt`. An explicit selection replaces that default;
+composites such as `builtin.output_quality` and `builtin.tool_use_quality` remain
+available through explicit `--evaluator` references, not as init defaults.
 When the built-in catalogue is reachable, unattended init validates the whole
 default set. Interactive init excludes unavailable recommendations and validates
 the final selection, so an unavailable default does not prevent choosing an
@@ -911,7 +914,7 @@ Bare-ID reruns retain other source/schema pairs from their previous run unless
 there is a known response/trace scenario mismatch. The schema read is required:
 an unreadable definition does not establish compatibility.
 Editor validation and create/deploy preflight reject positive `max_samples`
-for source-backed declarations, including sources loaded through `$ref`.
+for trace/response-backed declarations, including sources loaded through `$ref`.
 
 ### Recovering partial generation
 
@@ -973,9 +976,9 @@ after the service confirms the dataset is absent. A complete, valid empty versio
 listing (or a not-found response) is checked with first-version lookups. Only
 not-found responses to those lookups permit inline rows; malformed listings,
 incomplete pagination, and authorization or service failures stop the run.
-`--max-samples` is also rejected for source-backed runs
+`--max-samples` is also rejected for trace/response-backed runs
 and reruns selected by eval ID, where it cannot change the repeated source.
-Source-backed runs reject configured `max_samples:` too; use `source.max_traces`
+Trace/response-backed runs reject configured `max_samples:` too; use `source.max_traces`
 for trace limits or select `source.response_ids` explicitly.
 
 Reruns retain a previous registered `file_id` unchanged. A legacy run with inline
@@ -1166,9 +1169,14 @@ its temporary download files, even with `--force`.
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
 
-`init` offers a few common built-ins in its picker; that is a shortlist, not
-the catalogue. Any built-in the project publishes works with
-`--evaluator builtin.<name>`, including ones the picker never shows.
+`init` offers `builtin.task_completion`, `builtin.customer_satisfaction`,
+`builtin.coherence`, and `builtin.groundedness` in its picker, with only
+`builtin.task_completion` preselected or used under `--no-prompt`. This is a
+shortlist, not the catalogue. Any built-in the project publishes works with
+`--evaluator builtin.<name>`, including ones the picker never shows. Composites
+such as `builtin.output_quality` and `builtin.tool_use_quality` require explicit
+selection; they are not init defaults. Explicit selections replace the default,
+and existing evaluator references, parameters, and mappings remain unchanged.
 
 `init` checks that reference against the project's catalogue when it can reach
 one, so a name that does not exist is refused there rather than at `create`.

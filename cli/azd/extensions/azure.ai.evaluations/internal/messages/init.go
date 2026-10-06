@@ -223,7 +223,7 @@ func JudgeModelHelp() string { return "Name a deployed model for the evaluators 
 func HandoffEvaluatorIncompatible(name string) string {
 	return fmt.Sprintf("  warning: evaluator %q does not support the generated dataset's evaluation level. "+
 		"It remains in the catalogue; the init command leaves --evaluator unset so init offers its "+
-		"default composite selection, which you can replace.\n", name)
+		"builtin.task_completion default, which you can replace.\n", name)
 }
 
 // InitHandoffGuidance names missing resource and model inputs for the next command.

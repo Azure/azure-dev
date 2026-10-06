@@ -86,9 +86,8 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 			assert.NotEmpty(t, doc.EvaluationLevel, "the selected level must be present in machine-readable output")
 			require.NoError(t, project.ValidateRunnable(&eval))
 			assert.Equal(t, "judge", eval.Evaluators[0].InitializationParameters["model"])
-			require.Len(t, eval.Evaluators, 2)
-			assert.Equal(t, "builtin.output_quality", eval.Evaluators[0].Evaluator)
-			assert.Equal(t, "builtin.tool_use_quality", eval.Evaluators[1].Evaluator)
+			require.Len(t, eval.Evaluators, 1)
+			assert.Equal(t, "builtin.task_completion", eval.Evaluators[0].Evaluator)
 			assert.Equal(t, 1, h.project.wiringAttempts())
 			if tc.target {
 				require.NotNil(t, eval.Target)

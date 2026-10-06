@@ -183,7 +183,7 @@ func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
 			"built-in, or a declared custom evaluator compatible with the selected level. "+
-			"Defaults to builtin.output_quality and builtin.tool_use_quality. "+
+			"Defaults to builtin.task_completion. "+
 			"Replaces the defaults; an explicitly empty selection is invalid.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected locally when omitted; prompts if unavailable.")

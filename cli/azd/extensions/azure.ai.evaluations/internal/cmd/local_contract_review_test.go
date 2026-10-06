@@ -270,3 +270,42 @@ func TestExplicitLocalAuthoredContractPrecedesPublication(t *testing.T) {
 		}
 	}
 }
+
+// A catalog entry that names the evaluator but carries no definition cannot
+// validate rows. It has to be point-read like a missing entry rather than used.
+func TestLocalSchemasPointReadACatalogEntryWithoutADefinition(t *testing.T) {
+	ec, _ := localSelectedContractContext(t, 0)
+	ec.schemas = map[string]*eval_api.EvaluatorSummary{
+		evaluatorSchemaKey("custom.valid", ""): {Name: "custom.valid", Version: "7"},
+	}
+	group := localDefinitionlessGroup(t)
+
+	index, err := ec.localEvaluatorSchemas(t.Context(), group, nil)
+
+	require.NoError(t, err)
+	schema := index[evaluatorSchemaKey("custom.valid", "")]
+	require.NotNil(t, schema)
+	require.NotNil(t, schema.Definition, "the point read replaces the definition-less entry")
+}
+
+func TestLocalSchemasFailClosedWhenNoDefinitionCanBeRead(t *testing.T) {
+	ec, _ := localSelectedContractContext(t, http.StatusNotFound)
+	ec.schemas = map[string]*eval_api.EvaluatorSummary{
+		evaluatorSchemaKey("custom.valid", ""): {Name: "custom.valid", Version: "7"},
+	}
+	group := localDefinitionlessGroup(t)
+
+	_, err := ec.localEvaluatorSchemas(t.Context(), group, nil)
+
+	require.Error(t, err)
+}
+
+func localDefinitionlessGroup(t *testing.T) *project.Eval {
+	t.Helper()
+	cfg, err := project.OpenEvalConfig(localSourceConfig(t, "{\"count\":1}\n", 0))
+	require.NoError(t, err)
+	group := cfg.Evals[0]
+	group.Evaluators[0].Evaluator = "custom.valid"
+	group.Evaluators[0].Version = ""
+	return &group
+}

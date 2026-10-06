@@ -210,7 +210,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				}
 			}
 			key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
-			if schemas[key] != nil {
+			if readableContract(schemas[key]) {
 				continue
 			}
 			body, err := r.ec.evalClient.GetEvaluatorRaw(ctx, ref.Evaluator, ref.Version, ProjectEndpointAPIVersion)

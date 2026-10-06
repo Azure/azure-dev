@@ -14,8 +14,6 @@ steps:
       Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
     displayName: Remove _manifest folder
 
-  - template: /eng/pipelines/templates/steps/ensure-az-accounts-module.yml
-
   - task: AzurePowerShell@5
     displayName: Upload release to storage account
     inputs:

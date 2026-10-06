@@ -126,8 +126,6 @@ steps:
         Copy-Item installer/uninstall-azd.ps1 release/
       displayName: Copy install scripts to release (PR only)
 
-  - template: /eng/pipelines/templates/steps/ensure-az-accounts-module.yml
-
   - task: AzurePowerShell@5
     displayName: Upload release to storage account
     inputs:

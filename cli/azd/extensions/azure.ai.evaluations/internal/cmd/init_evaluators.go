@@ -21,12 +21,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// builtinEvaluators is the composite shortlist used by init. Selected names
-// are checked against the project catalog when reachable; this list does not
-// establish production availability or the service's accepted request contract.
+// builtinEvaluators is the offline picker shortlist, not a catalog allowlist.
+// Other built-ins remain available through explicit --evaluator references.
 var builtinEvaluators = []string{
-	evalcore.BuiltinPrefix + "output_quality",
-	evalcore.BuiltinPrefix + "tool_use_quality",
+	evalcore.BuiltinPrefix + "task_completion",
+	evalcore.BuiltinPrefix + "customer_satisfaction",
+	evalcore.BuiltinPrefix + "coherence",
+	evalcore.BuiltinPrefix + "groundedness",
 }
 
 // builtinCatalogueTimeout bounds the one listing init asks for.
@@ -134,16 +135,16 @@ func refuseUnknownBuiltins(refs []string, known []string) error {
 	return nil
 }
 
-// defaultEvaluators is the composite shortlist proposed by init.
+// defaultEvaluators proposes the existing task-completion default.
 func defaultEvaluators() []string {
-	return slices.Clone(builtinEvaluators)
+	return []string{builtinEvaluators[0]}
 }
 
 // evaluatorChoices are the references `init` can offer.
 //
 // The picker is built without a service call, so the service's full built-in
 // catalogue is not listed here; offering a hardcoded copy of it would drift.
-// What is knowable offline is the composite shortlist and whatever this
+// What is knowable offline is the picker shortlist and whatever this
 // configuration already declares. Anything else is reachable with --evaluator,
 // which is checked against the catalogue when the project can be reached.
 func evaluatorChoices(cfg *project.EvalConfig, level string) []string {

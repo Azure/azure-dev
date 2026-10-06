@@ -51,8 +51,8 @@ func TestRefuseUnknownBuiltins_EmptyReadCatalogueRefusesEverything(t *testing.T)
 	assert.Contains(t, err.Error(), "builtin.output_quality")
 }
 
-// A builtin the picker never offers is still valid -- the recommended
-// composites are a subset of the catalogue, which is the whole reason a local
+// A builtin the picker never offers is still valid -- the picker
+// choices are a subset of the catalogue, which is the whole reason a local
 // list cannot be the check.
 func TestRefuseUnknownBuiltins_AcceptsBuiltinsOutsideTheRecommendations(t *testing.T) {
 	t.Parallel()

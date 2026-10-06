@@ -12,17 +12,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// InitWiringRolledBack reports a failed root edit whose scaffold was undone.
-func InitWiringRolledBack(configPath string, err error) error {
-	return fmt.Errorf("%w; the initialization edit to %q was rolled back. "+
-		"Fix the root configuration write error, then retry the same init command", err, configPath)
-}
-
-// InitWiringRollbackFailed preserves both errors and calls for manual recovery.
-func InitWiringRollbackFailed(configPath string, err, rollbackErr error) error {
-	return fmt.Errorf("%w; could not safely roll back %q: %w. "+
+// InitWiringUncertain retains the scaffold when the host's project-save outcome is unknown.
+func InitWiringUncertain(configPath string, err error) error {
+	return fmt.Errorf("%w; the project-save outcome is uncertain, so %q was retained. "+
 		"Inspect the eval configuration and its azure.yaml service reference before retrying; "+
-		"do not delete existing evaluations", err, configPath, rollbackErr)
+		"do not delete existing evaluations", err, configPath)
 }
 
 // InitFlagConflict reports explicit inputs that cannot be honored together.

@@ -14,12 +14,12 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 // The scaffold is only real once azure.yaml references it, so the usage report
@@ -69,7 +69,6 @@ type initProjectServer struct {
 	dir           string
 	addServiceErr error
 	onAddService  func(context.Context, *azdext.AddServiceRequest) error
-	ackSaveError  bool
 
 	mu         sync.Mutex
 	addCalls   int
@@ -95,7 +94,6 @@ func (s *initProjectServer) AddService(
 		s.addService = append(s.addService, request.GetService().GetName())
 	}
 	onAddService := s.onAddService
-	ackSaveError := s.ackSaveError
 	s.mu.Unlock()
 
 	err := s.addServiceErr
@@ -103,15 +101,6 @@ func (s *initProjectServer) AddService(
 		err = onAddService(ctx, request)
 	}
 	if err != nil {
-		if ackSaveError {
-			incoming, _ := metadata.FromIncomingContext(ctx)
-			if tokens := incoming.Get("azd-project-add-service-operation"); len(tokens) == 1 {
-				if trailerErr := grpc.SetTrailer(ctx,
-					metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); trailerErr != nil {
-					return nil, errors.Join(err, trailerErr)
-				}
-			}
-		}
 		return nil, err
 	}
 	return &azdext.EmptyResponse{}, nil
@@ -164,7 +153,7 @@ func newInitHarnessWithOptions(
 	harness := &initHarness{
 		dir:      dir,
 		usage:    &usageRecorder{accepted: true},
-		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr, ackSaveError: true},
+		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr},
 		seedRows: seed,
 	}
 
@@ -246,22 +235,25 @@ func TestInitReportsADatasetScaffold(t *testing.T) {
 	assertOneInitCompleted(t, h, "dataset")
 }
 
-// The report follows the wiring, so a scaffold azd never accepted is not an
-// init that completed.
+// The report follows the wiring, so an uncertain project-save outcome is not
+// an init that completed.
 //
 // This is the placement guard: move the call above ensureRootEvalService and
 // this is the test that notices, because the files are on disk by then and
-// only the wiring failed.
-func TestInitReportsNothingWhenTheWiringFails(t *testing.T) {
+// only the wiring outcome is unknown.
+func TestInitReportsNothingWhenTheWiringOutcomeIsUncertain(t *testing.T) {
 	h := newInitHarness(t, errors.New("azure.yaml is read-only"))
 
 	err := h.runInit(t,
 		"--name", "unwired", "--target", "agent", "--source", "traces",
 		"--judge-model", "gpt-4.1-nano")
 
-	require.Error(t, err, "a scaffold azd cannot see is a failure")
+	require.Error(t, err, "an uncertain project save is a failure")
+	assert.ErrorContains(t, err, "project-save outcome is uncertain")
+	assert.ErrorContains(t, err, "was retained")
 	assert.Positive(t, h.project.wiringAttempts(),
 		"the test is worthless if the command never got as far as wiring")
+	assert.FileExists(t, filepath.Join(h.dir, project.DefaultEvalDir, project.EvalConfigBase))
 	assert.Empty(t, h.usage.reported(),
 		"nothing completed, so nothing is reported")
 }

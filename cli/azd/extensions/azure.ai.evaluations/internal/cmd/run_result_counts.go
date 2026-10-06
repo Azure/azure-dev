@@ -49,7 +49,8 @@ func renderReportedRunCounts(out io.Writer, heading string, counts map[string]in
 	}
 	passed, passedKnown := counts["passed"]
 	total, totalKnown := counts["total"]
-	if passedKnown && totalKnown && validRunPassRateCounts(&eval_api.EvalRunResultCounts{Total: total, Passed: passed}) {
+	if passedKnown && totalKnown && total > 0 &&
+		validRunPassRateCounts(&eval_api.EvalRunResultCounts{Total: total, Passed: passed}) {
 		fmt.Fprintf(out, "%-10s %s (%d passed / %d total test cases)\n",
 			"Pass rate", formatRate(passed, total), passed, total)
 	} else {

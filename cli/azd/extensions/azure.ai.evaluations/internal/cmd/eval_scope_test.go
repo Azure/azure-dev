@@ -207,3 +207,30 @@ func TestCaseIsFoldedOnlyWhereTheFilesystemFoldsIt(t *testing.T) {
 	assert.NotEqual(t, lower, upper,
 		"two files are two configurations, and must not share recorded ids")
 }
+
+// A fingerprint recorded before it was scoped has no owner marker, but the id
+// beside it may already belong to one configuration. The unmarked fingerprint
+// is that configuration's baseline: another configuration must not read it, and
+// must not overwrite it.
+func TestAnUnmarkedFingerprintFollowsTheOwnerOfItsID(t *testing.T) {
+	fingerprint := project.FingerprintKey("eval", "quality")
+	id := idKey("eval", "quality")
+	env := &testEnvServer{state: map[string]string{
+		fingerprint:                  "v2:baseline-a",
+		id:                           "evalgroup_a",
+		id + project.EvalScopeSuffix: scopeA,
+	}}
+	ctx := context.Background()
+
+	assert.Equal(t, "v2:baseline-a", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB),
+		"another configuration's baseline is not this one's")
+
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:baseline-b")
+
+	after := reader(t, env)
+	assert.Equal(t, "v2:baseline-a", after.privateValue(ctx, fingerprint),
+		"the owner's baseline is left where it was")
+	assert.Equal(t, "v2:baseline-a", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
+	assert.Equal(t, "v2:baseline-b", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+}

@@ -208,7 +208,8 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	// declare the same eval name must not read or overwrite each other's
 	// definition baseline, or an edit to one config is misread as an edit to
 	// the other's (or masks a real edit entirely).
-	prior := r.ec.scopedValue(ctx, project.FingerprintKey("eval", group.Name), r.scope)
+	prior := r.ec.scopedValueOwnedBy(ctx,
+		project.FingerprintKey("eval", group.Name), idKey("eval", group.Name), r.scope)
 
 	recreate := substanceChanged(prior, definition, digest)
 	if recreate && group.Source != nil {
@@ -1093,7 +1094,7 @@ func (r *evalReconciler) EnsureEval(
 			// second configuration declaring the same eval name overwrites this
 			// one's baseline and alternating deploys between them would read a
 			// real edit as none, or an unrelated config's edit as this one's.
-			r.ec.rememberScoped(ctx, key, r.scope, definition)
+			r.ec.rememberScopedOwnedBy(ctx, key, idKey("eval", group.Name), r.scope, definition)
 			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
 			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
 			if localFingerprint != "" {
@@ -1108,7 +1109,7 @@ func (r *evalReconciler) EnsureEval(
 	if err != nil {
 		return "", false, err
 	}
-	r.ec.rememberScoped(ctx, key, r.scope, definition)
+	r.ec.rememberScopedOwnedBy(ctx, key, idKey("eval", group.Name), r.scope, definition)
 	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
 	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
 	if localFingerprint != "" {

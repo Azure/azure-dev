@@ -252,13 +252,15 @@ func validate(t *testing.T, schema *jsonschema.Schema, body string) error {
 func TestTheSchemaDescribesTheCamelCaseKeysAndOnlyThose(t *testing.T) {
 	schema := compileEvalSchema(t)
 	require.NoError(t, validate(t, schema, canonicalDoc))
+	require.NoError(t, validate(t, schema, "evals:\n  - $ref: ./eval.yaml\n    evaluationLevel: turn\n"))
 	for name, body := range map[string]string{
-		"evaluation_level": "evals:\n  - name: e\n    evaluation_level: turn\n",
-		"max_samples":      "evals:\n  - name: e\n    max_samples: 1\n",
-		"source key":       "evals:\n  - name: e\n    source:\n      type: traces\n      max_traces: 1\n",
-		"simulation key":   "evals:\n  - name: e\n    simulation:\n      model: c/m\n      max_turns: 1\n",
-		"reference key":    "evals:\n  - name: e\n    evaluators:\n      - evaluator: x\n        data_mapping: {}\n",
-		"catalog key":      "evaluators:\n  - name: e\n    display_name: A\n",
+		"evaluation_level":  "evals:\n  - name: e\n    evaluation_level: turn\n",
+		"max_samples":       "evals:\n  - name: e\n    max_samples: 1\n",
+		"source key":        "evals:\n  - name: e\n    source:\n      type: traces\n      max_traces: 1\n",
+		"simulation key":    "evals:\n  - name: e\n    simulation:\n      model: c/m\n      max_turns: 1\n",
+		"reference key":     "evals:\n  - name: e\n    evaluators:\n      - evaluator: x\n        data_mapping: {}\n",
+		"reference overlay": "evals:\n  - $ref: ./eval.yaml\n    evaluation_level: turn\n",
+		"catalog key":       "evaluators:\n  - name: e\n    display_name: A\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert.Error(t, validate(t, schema, body), "the CLI refuses it, so the editor has to as well")

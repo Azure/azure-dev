@@ -320,6 +320,14 @@ func (fw *fileWatcher) reconcileInitialFiles(
 	fw.mu.Unlock()
 	defer func() {
 		fw.mu.Lock()
+		for path, current := range fw.startupRevisions {
+			if current.removed && !fw.fileChanges.Deleted[path] {
+				delete(fw.fileChanges.Created, path)
+				delete(fw.fileChanges.Modified, path)
+				fw.fileChanges.Deleted[path] = true
+				fw.revision++
+			}
+		}
 		fw.startupRevisions = nil
 		fw.mu.Unlock()
 	}()

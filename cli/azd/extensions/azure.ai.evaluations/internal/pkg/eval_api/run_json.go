@@ -6,6 +6,7 @@ package eval_api
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 )
 
 // UnmarshalJSON retains fields not yet modeled by the CLI, including nested
@@ -109,8 +110,21 @@ func mergeServiceJSON(original, updated, initial json.RawMessage) (json.RawMessa
 				return nil, err
 			}
 		}
+		// The service's own spelling of a key wins: a typed value for `message`
+		// replaces a `Message` the service sent, rather than sitting beside it and
+		// leaving the original, unprojected value in the output.
+		folded := make(map[string]string, len(oldObject))
+		for key := range oldObject {
+			folded[strings.ToLower(key)] = key
+		}
 		for key, value := range newObject {
-			if previous, ok := oldObject[key]; ok {
+			target := key
+			if _, exact := oldObject[key]; !exact {
+				if actual, ok := folded[strings.ToLower(key)]; ok {
+					target = actual
+				}
+			}
+			if previous, ok := oldObject[target]; ok {
 				merged, err := mergeServiceJSON(previous, value, initialObject[key])
 				if err != nil {
 					return nil, err
@@ -119,7 +133,7 @@ func mergeServiceJSON(original, updated, initial json.RawMessage) (json.RawMessa
 			} else if bytes.Equal(value, initialObject[key]) {
 				continue
 			}
-			oldObject[key] = value
+			oldObject[target] = value
 		}
 		return json.Marshal(oldObject)
 	}

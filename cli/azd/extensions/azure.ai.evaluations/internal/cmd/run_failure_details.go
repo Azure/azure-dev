@@ -67,7 +67,7 @@ func failureDetails(failure *eval_api.JobError, limit int) (lines []string, more
 		}
 		lines = append(lines, text)
 	}
-	return lines, more
+	return lines, more + failure.OmittedDetails()
 }
 
 // failureKey is the text two reasons are compared on: the same words in any

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/urlsafe"
@@ -45,9 +46,14 @@ func redactExportRunError(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, fmt.Errorf("reading exported run error: %w", err)
 	}
 	changed := false
-	for _, key := range []string{"code", "message"} {
-		value, exists := diagnostic[key]
-		if !exists || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+	// The service's key spelling is kept, and matched without regard to case the
+	// way the run decodes it, so `Message` is redacted as `message` is.
+	for key := range diagnostic {
+		if !strings.EqualFold(key, "code") && !strings.EqualFold(key, "message") {
+			continue
+		}
+		value := diagnostic[key]
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			continue
 		}
 		var text string

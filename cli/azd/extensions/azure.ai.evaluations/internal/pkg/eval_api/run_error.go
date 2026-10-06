@@ -34,7 +34,8 @@ type errorMembers struct {
 }
 
 // maxCollectedDetails bounds how many entries of a details array are kept. The
-// human views print far fewer; the cap only keeps a hostile payload cheap.
+// human views print far fewer; the cap only keeps a hostile payload cheap, and
+// the entries beyond it are counted so a view can still say how many it left out.
 const maxCollectedDetails = 50
 
 // ErrorDetail is one entry of an error's details array: the specific thing the
@@ -78,7 +79,7 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 	}
 	e.Code = codeText(members.Code)
 	e.Message = errorText(members.Message, 0)
-	e.details = readDetails(members.Details)
+	e.details, e.omittedDetails = readDetails(members.Details)
 	if !blank(e.Message) {
 		return nil
 	}
@@ -119,20 +120,27 @@ func (e *JobError) Details() []ErrorDetail {
 	return append([]ErrorDetail(nil), e.details...)
 }
 
-func readDetails(raw json.RawMessage) []ErrorDetail {
+// OmittedDetails is how many further entries the details array held beyond
+// those Details returns.
+func (e *JobError) OmittedDetails() int {
+	if e == nil {
+		return 0
+	}
+	return e.omittedDetails
+}
+
+func readDetails(raw json.RawMessage) ([]ErrorDetail, int) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || raw[0] != '[' {
-		return nil
+		return nil, 0
 	}
 	var entries []json.RawMessage
 	if json.Unmarshal(raw, &entries) != nil {
-		return nil
+		return nil, 0
 	}
 	var details []ErrorDetail
+	omitted := 0
 	for _, entry := range entries {
-		if len(details) == maxCollectedDetails {
-			break
-		}
 		entry = bytes.TrimSpace(entry)
 		if len(entry) == 0 {
 			continue
@@ -149,11 +157,16 @@ func readDetails(raw json.RawMessage) []ErrorDetail {
 		} else {
 			detail.Message = strings.TrimSpace(errorText(entry, 0))
 		}
-		if detail.Message != "" || detail.Code != "" {
-			details = append(details, detail)
+		if detail.Message == "" && detail.Code == "" {
+			continue
 		}
+		if len(details) == maxCollectedDetails {
+			omitted++
+			continue
+		}
+		details = append(details, detail)
 	}
-	return details
+	return details, omitted
 }
 
 // codeText reads an error code, which is a string. A numeric or structured code

@@ -22,7 +22,6 @@ import (
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
-	"azureaieval/internal/urlsafe"
 
 	"github.com/spf13/cobra"
 )
@@ -1374,8 +1373,10 @@ func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
 }
 
 func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
-	if why := runFailureMessage(run); why != "" {
-		fmt.Fprintf(out, "\n%s\n", urlsafe.Text(why))
+	// The same one-line, bounded text every other path prints: a service reason
+	// can carry newlines or an arbitrarily long body.
+	if why := failureText(runFailureMessage(run)); why != "" {
+		fmt.Fprintf(out, "\n%s\n", why)
 		renderFailureDetails(out, run.Error)
 	}
 }

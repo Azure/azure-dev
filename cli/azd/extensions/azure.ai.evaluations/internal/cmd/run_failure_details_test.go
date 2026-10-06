@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -246,4 +247,67 @@ func TestFailureDetailTargetsAreBounded(t *testing.T) {
 	require.Len(t, lines, 1)
 	assert.LessOrEqual(t, len([]rune(lines[0])), 2*maxFailureTextRunes+len(" (target: ...)"))
 	assert.Contains(t, lines[0], "...", "a target that was cut says so")
+}
+
+// A service reason is data: it can carry newlines or a body of any size, and the
+// headline of a failed run is printed from it like every other reason is.
+func TestTheRunFailureHeadlineIsOneBoundedLine(t *testing.T) {
+	var run eval_api.OpenAIEvalRun
+	body := `{"id":"r","status":"failed","error":{"message":"first line\nsecond line\n` + strings.Repeat("x", 1000) + `"}}`
+	require.NoError(t, json.Unmarshal([]byte(body), &run))
+
+	var out bytes.Buffer
+	renderRunFailure(&out, &run)
+	text := strings.TrimPrefix(out.String(), "\n")
+	assert.Equal(t, 1, strings.Count(text, "\n"), "one line, then the newline that ends it")
+	assert.Contains(t, text, "first line second line xxx")
+	assert.LessOrEqual(t, len([]rune(strings.TrimSpace(text))), maxFailureTextRunes+3)
+	assert.True(t, strings.HasSuffix(strings.TrimSpace(text), "..."), "a reason that was cut says so")
+}
+
+// -o json keeps the service's own spelling of a key, so a diagnostic written as
+// `Message` is the one that is redacted, not left beside a redacted `message`.
+func TestJSONRedactsADiagnosticWhateverCaseTheServiceSpelledItIn(t *testing.T) {
+	const secret = "fixture-signature"
+	for _, key := range []string{"message", "Message", "MESSAGE"} {
+		t.Run(key, func(t *testing.T) {
+			raw := `{"id":"run_1","status":"failed","error":{"code":"E","` + key + `":"could not read ` +
+				`https://storage.example/rows.jsonl?sig=` + secret + `"}}`
+			var run eval_api.OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(raw), &run))
+
+			out, err := json.Marshal(runForJSON(&run))
+			require.NoError(t, err)
+			assert.NotContains(t, string(out), secret)
+			var decoded struct {
+				Error map[string]any `json:"error"`
+			}
+			require.NoError(t, json.Unmarshal(out, &decoded))
+			assert.Contains(t, decoded.Error, key, "the service's spelling is kept")
+			assert.Len(t, decoded.Error, 2, "and nothing is added beside it: code and the message")
+
+			exported, err := redactExportRunError(json.RawMessage(raw))
+			require.NoError(t, err)
+			assert.NotContains(t, string(exported), secret)
+			assert.Contains(t, string(exported), `"`+key+`"`)
+		})
+	}
+}
+
+func TestDetailsBeyondTheStoredCapAreStillCounted(t *testing.T) {
+	var details []string
+	for i := range 60 {
+		details = append(details, fmt.Sprintf(`{"message":"detail %d"}`, i))
+	}
+	failure := failureWithDetails(t,
+		`{"message":"Evaluation validation failed.","details":[`+strings.Join(details, ",")+`]}`)
+
+	lines, more := failureDetails(failure, maxFailureDetails)
+	assert.Len(t, lines, maxFailureDetails)
+	assert.Equal(t, 60-maxFailureDetails, more, "every entry that is not shown is counted, stored or not")
+	assert.Equal(t, 10, failure.OmittedDetails(), "ten entries were beyond the fifty kept")
+
+	inline, hidden := failureDetails(failure, maxFailureDetailsInline)
+	assert.Len(t, inline, maxFailureDetailsInline)
+	assert.Equal(t, 60-maxFailureDetailsInline, hidden)
 }

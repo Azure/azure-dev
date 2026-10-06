@@ -137,8 +137,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
 		"Limit the rows read from a local dataset file that has no registered version. "+
-			"A registered dataset version, a trace or response source, and a rerun selected by eval ID "+
-			"cannot be capped. Use 0 to clear an ordinary dataset eval's configured cap.")
+			"Use 0 to clear an ordinary dataset eval's configured cap. A registered dataset version "+
+			"rejects a positive value; a trace or response source and a rerun selected by eval ID "+
+			"reject any value, including 0.")
 	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
 	addFailOnFlag(cmd, &flags.failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.

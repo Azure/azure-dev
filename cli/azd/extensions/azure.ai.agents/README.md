@@ -432,7 +432,7 @@ services:
         version: "2"
     tools:
       - type: github_copilot_toolset_preview
-        default_config:
+        defaultConfig:
           enabled: false
         configs:
           - name: web
@@ -440,7 +440,7 @@ services:
 ```
 
 Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
-and `subagents`. `default_config.enabled` applies to every built-in; entries in
+and `subagents`. `defaultConfig.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
 
@@ -472,6 +472,34 @@ structuredInputs:
 
 Nested tool definitions remain API-owned and use the field names documented by
 the corresponding Foundry tool contract.
+
+## Prompt agent memory
+
+Prompt agents can declare one memory store for azd to provision and attach
+through a memory-search tool. Prompt memory properties use camelCase:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: my-agent
+    model: gpt-5-mini
+    instructions: Remember useful details from earlier conversations.
+    memory:
+      store: conversation-memory
+      chatModel: gpt-5-mini
+      embeddingModel: text-embedding-3-small
+      scope: "{{$userId}}"
+      updateDelay: 300
+      maxMemories: 5
+      options:
+        chatSummaryEnabled: true
+        userProfileEnabled: true
+        proceduralMemoryEnabled: false
+        defaultTtlSeconds: 2592000
+        userProfileDetails: Remember stable preferences.
+```
 
 ## Content safety policies
 

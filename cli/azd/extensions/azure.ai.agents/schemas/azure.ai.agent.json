@@ -503,11 +503,11 @@
       "properties": {
         "store": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "description": { "type": "string" },
-        "chat_model": { "type": "string", "minLength": 1 },
-        "embedding_model": { "type": "string", "minLength": 1 },
+        "chatModel": { "type": "string", "minLength": 1 },
+        "embeddingModel": { "type": "string", "minLength": 1 },
         "scope": { "type": "string", "minLength": 1 },
-        "update_delay": { "type": "integer", "minimum": 0 },
-        "max_memories": { "type": "integer", "minimum": 1 },
+        "updateDelay": { "type": "integer", "minimum": 0 },
+        "maxMemories": { "type": "integer", "minimum": 1 },
         "options": { "$ref": "#/definitions/PromptMemoryOptions" }
       },
       "required": ["store"],
@@ -516,11 +516,11 @@
     "PromptMemoryOptions": {
       "type": "object",
       "properties": {
-        "chat_summary_enabled": { "type": "boolean" },
-        "user_profile_enabled": { "type": "boolean" },
-        "procedural_memory_enabled": { "type": "boolean" },
-        "default_ttl_seconds": { "type": "integer", "minimum": 0 },
-        "user_profile_details": { "type": "string" }
+        "chatSummaryEnabled": { "type": "boolean" },
+        "userProfileEnabled": { "type": "boolean" },
+        "proceduralMemoryEnabled": { "type": "boolean" },
+        "defaultTtlSeconds": { "type": "integer", "minimum": 0 },
+        "userProfileDetails": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -529,7 +529,7 @@
       "description": "Enablement configuration for GitHub Copilot built-in tools.",
       "properties": {
         "type": { "const": "github_copilot_toolset_preview" },
-        "default_config": {
+        "defaultConfig": {
           "type": "object",
           "properties": {
             "enabled": { "type": "boolean", "default": true }

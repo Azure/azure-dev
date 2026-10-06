@@ -265,3 +265,97 @@ func TestTheSchemaDescribesTheCamelCaseKeysAndOnlyThose(t *testing.T) {
 		})
 	}
 }
+
+func TestTheSchemaChecksFileReferenceOverlays(t *testing.T) {
+	schema := compileEvalSchema(t)
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{name: "dataset", body: `datasets: [{$ref: ./dataset.yaml, name: golden, version: "2"}]`},
+		{name: "eval", body: `evals: [{$ref: ./eval.yaml, maxSamples: 5}]`},
+		{name: "eval name", body: `evals: [{$ref: ./eval.yaml, name: quality}]`},
+		{name: "simulation eval overlay", body: `evals: [{$ref: ./eval.yaml, simulation: {model: c/m}}]`},
+		{name: "source", body: `evals: [{name: quality, source: {$ref: ./source.yaml, lookbackHours: 24}}]`},
+		{name: "response source", body: `evals: [{name: quality, source: {$ref: ./source.yaml, type: responses}}]`},
+		{name: "target", body: `evals: [{name: quality, target: {$ref: ./target.yaml, type: agent}}]`},
+		{name: "evaluator catalog", body: `evaluators: [{$ref: ./evaluator.yaml, displayName: Quality}]`},
+		{name: "evaluator reference",
+			body: `evals: [{name: quality, evaluators: [{$ref: ./reference.yaml, initializationParameters: {model: m}}]}]`},
+		{name: "rubric service keys",
+			body: `evaluators: [{name: quality, definition: {$ref: ./rubric.json, service_owned_key: true}}]`},
+		{name: "snake eval", body: `evals: [{$ref: ./eval.yaml, max_samples: 5}]`, wantErr: true},
+		{name: "snake source",
+			body: `evals: [{name: quality, source: {$ref: ./source.yaml, lookback_hours: 24}}]`, wantErr: true},
+		{name: "snake catalog",
+			body: `evaluators: [{$ref: ./evaluator.yaml, display_name: Quality}]`, wantErr: true},
+		{name: "snake evaluator reference",
+			body: `evals: [{name: quality, evaluators: [{$ref: ./reference.yaml, data_mapping: {}}]}]`, wantErr: true},
+		{name: "unknown dataset", body: `datasets: [{$ref: ./dataset.yaml, typo: true}]`, wantErr: true},
+		{name: "unknown target",
+			body: `evals: [{name: quality, target: {$ref: ./target.yaml, typo: true}}]`, wantErr: true},
+		{name: "invalid cap type", body: `evals: [{$ref: ./eval.yaml, maxSamples: five}]`, wantErr: true},
+		{name: "invalid source type",
+			body: `evals: [{name: quality, source: {$ref: ./source.yaml, type: unsupported}}]`, wantErr: true},
+		{name: "missing inline name", body: `evals: [{maxSamples: 5}]`, wantErr: true},
+		{name: "missing inline source type",
+			body: `evals: [{name: quality, source: {lookbackHours: 24}}]`, wantErr: true},
+		{name: "missing inline response IDs",
+			body: `evals: [{name: quality, source: {type: responses}}]`, wantErr: true},
+		{name: "missing inline evaluator", body: `evals: [{name: quality, evaluators: [{}]}]`, wantErr: true},
+		{name: "invalid reference type", body: `evals: [{$ref: 1}]`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validate(t, schema, tc.body)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestFileReferenceOverlayKeysAgreeWithRuntime(t *testing.T) {
+	schema := compileEvalSchema(t)
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{name: "eval cap", body: `evals: [{$ref: ./quality.yaml, maxSamples: 5}]`},
+		{name: "source window",
+			body: `evals: [{name: quality, source: {$ref: ./source.yaml, lookbackHours: 48}}]`},
+		{name: "snake eval", body: `evals: [{$ref: ./quality.yaml, max_samples: 5}]`, wantErr: true},
+		{name: "snake source",
+			body: `evals: [{name: quality, source: {$ref: ./source.yaml, lookback_hours: 48}}]`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "quality.yaml"),
+				[]byte("name: quality\ndataset: golden\nmaxSamples: 2\n"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "source.yaml"),
+				[]byte("type: traces\nagentName: support-agent\nlookbackHours: 24\n"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, EvalConfigBase), []byte(tc.body), 0o600))
+			schemaErr := validate(t, schema, tc.body)
+			cfg, runtimeErr := OpenEvalConfig(dir)
+			if tc.wantErr {
+				assert.Error(t, schemaErr)
+				require.Error(t, runtimeErr)
+				assert.Contains(t, runtimeErr.Error(), "unknown key")
+				return
+			}
+			require.NoError(t, schemaErr)
+			require.NoError(t, runtimeErr)
+			require.Len(t, cfg.Evals, 1)
+			if cfg.Evals[0].Source != nil {
+				assert.Equal(t, 48, cfg.Evals[0].Source.LookbackHours)
+				assert.Equal(t, "support-agent", cfg.Evals[0].Source.AgentName)
+			} else {
+				assert.Equal(t, 5, cfg.Evals[0].MaxSamples)
+				assert.Equal(t, "golden", cfg.Evals[0].Dataset)
+			}
+		})
+	}
+}

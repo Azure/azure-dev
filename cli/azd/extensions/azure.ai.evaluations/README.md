@@ -73,6 +73,13 @@ registered as this extension's path keys, so a relative `source:` written inside
 `evals/evaluators/quality.yaml` means `evals/evaluators/quality.json` — beside
 the file it was written in, wherever that file is pulled in from.
 
+Properties beside a `$ref` override the referenced definition and use the same
+camelCase keys and value types as its inline configuration shape. For example,
+`$ref: ./quality.yaml` with `maxSamples: 5` overrides an eval's cap;
+`max_samples` is rejected by both the editor schema and the CLI. Required fields
+may come from the referenced file and are checked after resolution. Rubric
+`definition:` overlays retain the evaluator service's own vocabulary instead.
+
 A rubric kept in its own file is named by `source:`, which is what `generate`
 writes:
 

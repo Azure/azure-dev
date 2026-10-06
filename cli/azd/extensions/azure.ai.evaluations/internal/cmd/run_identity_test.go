@@ -347,7 +347,7 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 		for _, cap := range []string{"", "0", "1"} {
 			t.Run(sourceType+"/"+cap, func(t *testing.T) {
 				reads, posts, schemaReads := 0, 0, 0
-				source := map[string]any{"type": sourceType, "agentName": "agent", "lookbackHours": 24}
+				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
 				if sourceType == "azure_ai_trace_data_source_preview" {
 					source = map[string]any{
 						"type": sourceType,
@@ -370,6 +370,16 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 						}}))
 					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/eval_trace/runs"):
 						posts++
+						var request eval_api.CreateOpenAIEvalRunRequest
+						assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+						if assert.NotNil(t, request.DataSource) && sourceType == "azure_ai_traces" {
+							assert.Equal(t, eval_api.EvalRunDataSourceTypeTracePreview, request.DataSource.Type)
+							if assert.NotNil(t, request.DataSource.TraceSource) {
+								assert.Equal(t, "agent", request.DataSource.TraceSource.AgentName)
+								assert.Equal(t, int64(24*60*60),
+									request.DataSource.TraceSource.EndTime-request.DataSource.TraceSource.StartTime)
+							}
+						}
 						_, err := io.WriteString(w, `{"id":"run_trace","status":"queued"}`)
 						assert.NoError(t, err)
 					default:

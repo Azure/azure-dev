@@ -63,7 +63,9 @@ func TestTheSchemaRefusesWhatValidateSimulationRefuses(t *testing.T) {
 	assert.Equal(t, map[string]any{"const": float64(0)}, properties["maxSamples"],
 		"positive caps are refused, but zero means uncapped")
 
-	required, ok := then["required"].([]any)
+	inline, ok := then["then"].(map[string]any)
+	require.True(t, ok, "the simulation conditional does not distinguish inline definitions from overlays")
+	required, ok := inline["required"].([]any)
 	require.True(t, ok, "the simulation conditional requires nothing")
 	for _, key := range []string{"dataset", "target", "evaluationLevel"} {
 		assert.Contains(t, required, key, "a simulation cannot run without %s:", key)

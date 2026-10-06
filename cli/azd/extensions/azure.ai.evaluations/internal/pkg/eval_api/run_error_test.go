@@ -148,3 +148,23 @@ func TestGenerationJobFailureNamesANestedReason(t *testing.T) {
 	assert.Contains(t, empty.Error(), "failed", "a failure with no reason still says something")
 	assert.NotContains(t, empty.Error(), ": ")
 }
+
+// A reason the service quotes can carry a credential in a URL; the polled-job
+// error is returned to the terminal and CI logs as-is, so it is redacted here.
+func TestGenerationJobFailureDoesNotDiscloseACredentialInTheReason(t *testing.T) {
+	//nolint:gosec // Synthetic URL credentials verify non-disclosure; this fixture contains no real secret.
+	for name, body := range map[string]string{
+		"top level message": `{"message":"could not read https://acct.blob.core.windows.net/c/f.jsonl?sv=1&sig=SECRETSIG"}`,
+		"nested detail":     `{"details":[{"message":"fetch https://user:hunter2@host.example/x failed"}]}`,
+		"bare string":       `"see https://acct.blob.core.windows.net/c?sig=SECRETSIG"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var job GenerationJob
+			require.NoError(t, json.Unmarshal([]byte(`{"id":"j","status":"failed","error":`+body+`}`), &job))
+			text := (&JobFailedError{Job: &job, Status: JobStatusFailed}).Error()
+			assert.NotContains(t, text, "SECRETSIG")
+			assert.NotContains(t, text, "hunter2")
+			assert.NotContains(t, text, "sig=")
+		})
+	}
+}

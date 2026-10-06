@@ -77,6 +77,23 @@ func TestARefusalNeverEchoesTheCredential(t *testing.T) {
 		"the path stays, because it names what was refused")
 }
 
+// A 401 or 403 carries the same details as any other refusal: they name which
+// field the service objected to, and they travel through the same path, so the
+// credential in the URL stays out of them too.
+func TestARefusedAuthCallNamesItsDetailsWithoutTheCredential(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		body := `{"error":{"message":"Access denied.","details":[` +
+			`{"message":"role 'Contributor' is required",` +
+			`"target":"https://acct.blob.core.windows.net/c/rows.jsonl?sig=SECRETSIGNATURE"}]}}`
+		got := ServiceRefused(status, refusalFrom(t, status,
+			"https://acct.blob.core.windows.net/c/rows.jsonl?sig=SECRETSIGNATURE", body))
+
+		text := got.Error()
+		assert.Contains(t, text, "role 'Contributor' is required", "status %d", status)
+		assert.NotContains(t, text, "SECRETSIGNATURE", "status %d", status)
+	}
+}
+
 // The status checks read the chain, not the text. Replacing the azcore error
 // rather than wrapping it made a 404 stop reading as absence, and an unknown
 // dataset became a failed command.

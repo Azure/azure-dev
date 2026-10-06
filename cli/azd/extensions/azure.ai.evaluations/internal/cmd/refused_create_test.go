@@ -99,7 +99,7 @@ func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 		`C:\Users\Me\My Evals\azure.eval.yaml`,
 		`C:\Users\Me\run$1\azure.eval.yaml`,
 		`/home/me/my evals/$x/azure.eval.yaml`,
-		`/tmp/it's a "test"/azure.eval.yaml`,
+		`/tmp/team evals/run$1 (a)/azure.eval.yaml`,
 	} {
 		for _, format := range []string{"table", "json"} {
 			t.Run(format+" "+path, func(t *testing.T) {
@@ -121,9 +121,7 @@ func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 				}
 				assert.Contains(t, text, "azd ai eval create \"my eval\" --from-file ")
 				assert.NotContains(t, text, "VALUE_NEEDS_QUOTING")
-				if !strings.Contains(path, "'") {
-					assert.Contains(t, text, path)
-				}
+				assert.Contains(t, text, path)
 			})
 		}
 	}

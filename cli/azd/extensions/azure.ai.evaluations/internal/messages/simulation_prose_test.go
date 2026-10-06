@@ -34,3 +34,12 @@ func TestSimulationModelProseEscapesUntrustedReferences(t *testing.T) {
 		assert.Contains(t, UnverifiedSimulationModel(model), model)
 	}
 }
+
+func TestSimulationModelSelectionDescribesCurrentAuthoredState(t *testing.T) {
+	assert.Equal(t, "Simulation model (locally authored, unverified)", SelectSimulationModelPrompt())
+	message := AmbiguousSimulationModel([]string{"plain-model", "connection/model"}).Error()
+	assert.Contains(t, message, "multiple locally authored simulator references")
+	assert.Contains(t, message, "plain-model")
+	assert.Contains(t, message, "connection/model")
+	assert.NotContains(t, message, "previously")
+}

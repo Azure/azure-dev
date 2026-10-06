@@ -379,11 +379,14 @@ func buildEvalRequest(
 		}
 	}
 	targetBindings := sampleBindingsFor(targetType)
+	retrievedResponses := group.Source != nil && group.Source.Type == project.SourceTypeResponses
 	traced := group.Source != nil && group.Source.Type == project.SourceTypeTraces
-	if isResponsesEval(group) {
-		// Retrieval supplies sample output without invoking a target.
+	if retrievedResponses {
+		// Retrieved responses expose generated sample output too, even though
+		// this run does not invoke a target.
 		targetBindings = sampleBindings
 	} else if traced {
+		// Target names can filter recorded traces; they do not invoke an agent.
 		targetBindings = nil
 	}
 
@@ -506,7 +509,7 @@ func buildEvalRequest(
 
 	req.DataSourceConfig = &eval_api.DataSourceConfig{
 		Type:                "custom",
-		IncludeSampleSchema: hasTarget && !simulated && !traced,
+		IncludeSampleSchema: (hasTarget || retrievedResponses) && !simulated && !traced,
 		ItemSchema:          itemSchema(itemFields),
 	}
 	properties := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)

@@ -194,13 +194,13 @@ func SimulationModelHelp() string {
 func AmbiguousSimulationModel(models []string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		fmt.Sprintf("--simulation-model is ambiguous: "+
-			"multiple previously configured simulator references are available: %q", models),
+			"multiple locally authored simulator references are available: %q", models),
 		"Supply --simulation-model model or connection-name/model-deployment, or run interactively to choose one.")
 }
 
 // SelectSimulationModelPrompt asks which authored reference to reuse.
 func SelectSimulationModelPrompt() string {
-	return "Simulation model (previously configured, unverified)"
+	return "Simulation model (locally authored, unverified)"
 }
 
 // EnterAnotherSimulationModel preserves free-text selection beside local references.

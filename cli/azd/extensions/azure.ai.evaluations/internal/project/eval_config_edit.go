@@ -126,7 +126,7 @@ func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() erro
 			return messages.ReadingEvalConfig(path, err)
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("configuration %q is no longer a regular file; leaving it unchanged", path)
+			return fmt.Errorf("configuration %q is not a regular file; leaving it unchanged", path)
 		}
 		// #nosec G304 -- compare this edit's destination before rolling it back.
 		current, err := os.ReadFile(path)

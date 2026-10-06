@@ -1,175 +1,41 @@
-parameters:
-  - name: DoPublish
-    displayName: Check to run a release build
-    type: boolean
-    default: false
-  - name: AzureRecordMode
-    displayName: Azure Record Mode
-    type: string
-    default: live
-    values:
-      - playback
-      - live
+trigger: none
+pr: none
 
-# Continuous deployment trigger
-trigger:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - cli/azd/go.mod
-      - cli/
-      - eng/pipelines/release-cli.yml
-      - eng/pipelines/templates/stages/build-and-test.yml
-      - /eng/pipelines/templates/jobs/build-cli.yml
-      - /eng/pipelines/templates/jobs/cross-build-cli.yml
-      - /eng/pipelines/templates/variables/image.yml
-    exclude:
-      - cli/azd/extensions/**
-      - cli/azd/cmd/testdata/TestFigSpec.ts
-
-pr:
-  paths:
-    include:
-      - cli/azd/go.mod
-      - cli/
-      - eng/pipelines/release-cli.yml
-      - eng/pipelines/templates/stages/build-and-test.yml
-      - /eng/pipelines/templates/jobs/build-cli.yml
-      - eng/pipelines/templates/steps/publish-cli.yml
-    exclude:
-      - cli/azd/docs/**
-      - cli/azd/extensions/**
-      - cli/azd/.vscode/cspell.yaml
-      - cli/azd/.vscode/cspell-azd-dictionary.txt
-      - cli/azd/AGENTS.md
-      - cli/azd/cmd/testdata/TestFigSpec.ts
-
-extends: 
+extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
     stages:
-    - ${{ if eq(parameters.DoPublish, true) }}:
-      - stage: ValidateReleaseMetadata
-        displayName: Validate release metadata
-        variables:
-          - template: /eng/pipelines/templates/variables/image.yml
+      - stage: DiagnoseAzPowerShell
+        displayName: Diagnose Az PowerShell bootstrap
         jobs:
-          - job: ValidateReleaseMetadata
-            displayName: Validate release metadata
+          - deployment: Authenticate
+            displayName: Bootstrap modules and authenticate
+            environment: none
             pool:
-              name: $(LINUXPOOL)
-              image: $(LINUXVMIMAGE)
+              name: azsdk-pool
+              image: ubuntu-22.04
               os: linux
-            steps:
-              - checkout: self
-                fetchDepth: 1
-                fetchTags: false
+            templateContext:
+              type: releaseJob
+              isProduction: false
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - template: /eng/pipelines/templates/steps/ensure-az-powershell.yml
 
-              - task: PowerShell@2
-                displayName: Validate CLI release readiness
-                inputs:
-                  pwsh: true
-                  targetType: filePath
-                  filePath: eng/scripts/Test-CliReleaseReadiness.ps1
-
-    - template: /eng/pipelines/templates/stages/build-and-test.yml
-      parameters:
-        # Scheduled and manual runs use 'live' mode by default for validation against real Azure resources.
-        # CI runs (push/PR) use 'playback' mode. Manual runs can override via the AzureRecordMode parameter.
-        ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'PullRequest') }}:
-          AzureRecordMode: playback
-        ${{ else }}:
-          AzureRecordMode: ${{ parameters.AzureRecordMode }}
-        BuildMatrix:
-          Windows:
-            Pool: $(WINDOWSPOOL)
-            OSVmImage: $(WINDOWSVMIMAGE)
-            OS: windows
-            ImageKey: image
-            UploadArtifact: true
-            Variables:
-              BuildTarget: azd-windows-amd64.exe
-              BuildOutputName: azd.exe
-              BuildTestMsi: true
-              AZURE_DEV_CI_OS: win
-              Codeql.Enabled: true
-              Codeql.SkipTaskAutoInjection: false
-              Codeql.BuildIdentifier: cli_windows
-          Linux:
-            Pool: $(LINUXPOOL)
-            OSVmImage: $(LINUXVMIMAGE)
-            OS: linux
-            ImageKey: image
-            UploadArtifact: true
-            Variables:
-              BuildTarget: azd-linux-amd64
-              BuildOutputName: azd
-              SetExecutableBit: true
-              SetShieldInfo: true
-              BuildLinuxPackages: true
-              AZURE_DEV_CI_OS: lin
-              Codeql.Enabled: true
-              Codeql.SkipTaskAutoInjection: false
-              Codeql.BuildIdentifier: cli_linux
-              # Disable cgo in the x64 Linux build. This will also statically
-              # link the resulting binary which increases backwards 
-              # compatibility with older verisons of Linux.
-              CGO_ENABLED: 0
-              # Set special temp/cache directory overrides to avoid out of space 
-              # issues on hosted agents
-              DOCKER_TMPDIR: $(Agent.TempDirectory)
-              TMPDIR: $(Agent.TempDirectory)
-              NUGET_PACKAGES: $(Agent.TempDirectory)/nuget
-              GOCACHE: $(Agent.TempDirectory)/go-cache
-          Mac:
-            Pool: Azure Pipelines
-            OSVmImage: $(MACVMIMAGE)
-            OS: macOS
-            ImageKey: vmImage
-            UploadArtifact: true
-            Variables:
-              BuildTarget: azd-darwin-amd64
-              BuildOutputName: azd
-              MacLocalSign: false
-              SetExecutableBit: true
-              AZURE_DEV_CI_OS: mac
-              # CodeQL on macOS not supported by the Azure DevOps task as-of current.
-              # Codeql.BuildIdentifier: cli_darwin
-
-          ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-            # Only run this build during scheduled pipeline executions
-            MacAppleSilicon:
-              Pool: Azure Pipelines
-              OSVmImage: $(MACVMIMAGEM1)
-              OS: macOS
-              ImageKey: vmImage
-              UploadArtifact: false
-              Variables:
-                BuildTarget: azd-darwin-amd64
-                BuildOutputName: azd
-                MacLocalSign: false
-                SetExecutableBit: true
-                AZURE_DEV_CI_OS: mac-arm64
-
-    - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
-      parameters:
-        DownloadArtifacts:
-          - cover-win
-          - cover-lin
-          - cover-mac
-          - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-            - cover-mac-arm64
-
-    - ${{ if ne(variables['Build.Reason'], 'PullRequest') }}:
-      - template: /eng/pipelines/templates/stages/verify-installers.yml
-
-    - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
-      - template: /eng/pipelines/templates/stages/sign.yml
-
-    # Do not publish on scheduled builds, only release from Azure/azure-dev
-    - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-      # Only publish if build is manually triggered & DoPublish is true, or if it's a CI build (push to main)
-      - ${{ if or(and(eq('Manual', variables['Build.Reason']), eq('true', parameters.DoPublish)), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'PullRequest')) }}:
-        - template: /eng/pipelines/templates/stages/publish.yml
+                    - task: AzurePowerShell@5
+                      displayName: Authenticate with bootstrapped Az modules
+                      inputs:
+                        azureSubscription: Azure SDK Artifacts
+                        azurePowerShellVersion: LatestVersion
+                        pwsh: true
+                        ScriptType: InlineScript
+                        Inline: |
+                          Write-Host "Authenticated Az.Accounts modules:"
+                          Get-Module -Name Az.Accounts |
+                            Select-Object Name, Version, Path |
+                            Format-Table -AutoSize
+                          $context = Get-AzContext
+                          Write-Host "Authenticated account type: $($context.Account.Type)"
+                          Write-Host "Authenticated environment: $($context.Environment.Name)"

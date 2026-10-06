@@ -30,6 +30,8 @@ func TestEnvironmentRoot_LinkedDirectories(t *testing.T) {
 
 			root, err := ctx.EnvironmentRoot("prod")
 			require.ErrorContains(t, err, "must not be a symbolic link or reparse point")
+			require.ErrorContains(t, err, "invalid environment path")
+			require.ErrorIs(t, err, ErrUnsafeEnvironmentPath)
 			require.Empty(t, root)
 			if targetKind == "dangling" {
 				require.NoDirExists(t, target)

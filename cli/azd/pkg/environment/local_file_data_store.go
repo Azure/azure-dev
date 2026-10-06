@@ -52,6 +52,7 @@ func (fs *LocalFileDataStore) lockPath(env *Environment) (string, error) {
 // concurrent holders can always discover it — flock semantics coordinate
 // via the underlying inode, not via file presence.
 func (fs *LocalFileDataStore) newEnvLock(env *Environment) (*flock.Flock, error) {
+	// Resolve both state paths to validate them before creating directories or acquiring the lock.
 	if _, err := fs.EnvPath(env); err != nil {
 		return nil, err
 	}

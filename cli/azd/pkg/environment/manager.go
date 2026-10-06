@@ -368,6 +368,9 @@ func (m *manager) EnvPath(env *Environment) (string, error) {
 
 // List returns a list of all environments within the data store
 func (m *manager) List(ctx context.Context) ([]*Description, error) {
+	if m.azdContext == nil {
+		return nil, azdcontext.ErrNoProject
+	}
 	envMap := map[string]*Description{}
 	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
 	if err != nil {

@@ -5,6 +5,7 @@ package devcenter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,9 +54,9 @@ func (s *EnvironmentStore) EnvPath(env *environment.Environment) (string, error)
 	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name()), nil
 }
 
-// ConfigPath returns the path for the environment configuration
+// ConfigPath returns errors.ErrUnsupported because Dev Center does not expose a configuration file path.
 func (s *EnvironmentStore) ConfigPath(env *environment.Environment) (string, error) {
-	return "", nil
+	return "", fmt.Errorf("Dev Center does not expose an environment configuration file path: %w", errors.ErrUnsupported)
 }
 
 // List returns a list of environments for the devcenter configuration

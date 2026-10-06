@@ -31,7 +31,7 @@ const (
 // its first nested reason, which is what the headline prints, so repeating the
 // details would only echo it.
 //
-// The shaping (redaction, one line, bounds, dedupe, count) is failuretext.Lines,
+// The shaping (redaction, one line, bounds, deduplication, count) is failuretext.Lines,
 // shared with every other place a service explains a failure.
 func failureDetails(failure *eval_api.JobError, limit int) (lines []string, more int) {
 	if failure == nil || strings.TrimSpace(failure.Message) == "" {

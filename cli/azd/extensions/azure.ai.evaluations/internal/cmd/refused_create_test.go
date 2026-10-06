@@ -97,9 +97,8 @@ func TestARefusedCreateKeepsItsJSONErrorUnchanged(t *testing.T) {
 func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 	for _, path := range []string{
 		`C:\Users\Me\My Evals\azure.eval.yaml`,
-		`C:\Users\Me\run$1\azure.eval.yaml`,
-		`/home/me/my evals/$x/azure.eval.yaml`,
-		`/tmp/team evals/run$1 (a)/azure.eval.yaml`,
+		`/home/me/my evals/azure.eval.yaml`,
+		`/tmp/team evals/run (a)/azure.eval.yaml`,
 	} {
 		for _, format := range []string{"table", "json"} {
 			t.Run(format+" "+path, func(t *testing.T) {

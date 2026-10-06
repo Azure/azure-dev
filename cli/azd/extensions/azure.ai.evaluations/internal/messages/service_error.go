@@ -162,7 +162,7 @@ func serviceFailureFrom(respErr *azcore.ResponseError) (message string, details 
 	}
 	omittedCount := 0
 	collectServiceDetails(envelope, 0, &details, &omittedCount)
-	return deepestMessage(envelope, 0), details, omittedCount
+	return failuretext.Text(deepestMessage(envelope, 0)), details, omittedCount
 }
 
 // collectServiceDetails gathers the details arrays at every level the sentence

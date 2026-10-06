@@ -4487,6 +4487,12 @@ func shellArgFor(goos, v string) string {
 	if strings.ContainsAny(v, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
 		return shellArgNeedsQuoting
 	}
+	// cmd.exe expands %NAME% even inside double quotes, reads an unquoted ^ as
+	// an escape, and ends the command at a line break, and nothing printed can
+	// say which of cmd.exe and PowerShell is pasting it.
+	if goos == "windows" && strings.ContainsAny(v, "%^\n") {
+		return shellArgNeedsQuoting
+	}
 	// The three that cannot survive being wrapped in double quotes: two expand,
 	// one breaks the quoting itself.
 	if strings.ContainsAny(v, "$`\"") {
@@ -4498,16 +4504,13 @@ func shellArgFor(goos, v string) string {
 	return `"` + v + `"`
 }
 
-// literalArg single-quotes a value so nothing in it is expanded.
-//
-// Single quotes are literal in bash, zsh, fish and PowerShell, but only the
-// quote characters themselves are escaped differently in each, so a value that
-// carries one is named instead of inlined wherever no single escape is read the
-// same way by every shell that could be pasting it (shellArgFor has already
-// named the typographic quotes PowerShell reads as quotes):
-//   - cmd.exe does not read single quotes at all, so on Windows a value cmd would
-//     itself act on (& | < > ^ %, a line break) is named, and so is a double
-//     quote, which flips cmd's own quoting for the arguments after it.
+// literalArg single-quotes a value so nothing in it is expanded, where single
+// quotes are literal in every shell that could be pasting it, and names it
+// otherwise:
+//   - On Windows nothing printed says whether cmd.exe or PowerShell is pasting
+//     it. Single quotes are literal in PowerShell but ordinary characters in
+//     cmd.exe, which splits a quoted value at its spaces, so no single-quoted
+//     form runs as printed in both.
 //   - Off Windows an ASCII single quote has no escape that bash, zsh and PowerShell
 //     agree on (bash and zsh close the quote, escape it and reopen it; PowerShell
 //     does not read that), and fish reads a backslash before a quote or another
@@ -4517,13 +4520,7 @@ func shellArgFor(goos, v string) string {
 // noticing gets a command that fails on the name rather than one that runs
 // something the configuration chose.
 func literalArg(goos, v string) string {
-	if goos == "windows" {
-		if strings.ContainsAny(v, "&|<>^%\"\n") {
-			return shellArgNeedsQuoting
-		}
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'"
-	}
-	if strings.ContainsAny(v, `'\`) {
+	if goos == "windows" || strings.ContainsAny(v, `'\`) {
 		return shellArgNeedsQuoting
 	}
 	return "'" + v + "'"

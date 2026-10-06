@@ -77,6 +77,29 @@ func TestARefusalNeverEchoesTheCredential(t *testing.T) {
 		"the path stays, because it names what was refused")
 }
 
+// The headline is shaped like every detail: a service that puts a credential-
+// bearing URL, a line break or a very long body in its message does not get any of
+// them printed, in the human line or in the sentence `-o json` reads.
+func TestTheRefusalHeadlineIsRedactedOneLineAndBounded(t *testing.T) {
+	body := `{"error":{"message":"Cannot read https://acct.blob.core.windows.net/c/rows.jsonl?sig=SECRETSIGNATURE\n` +
+		`second line ` + strings.Repeat("x", 600) + `"}}`
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized} {
+		got := ServiceRefused(status, refusalFrom(t, status, "https://p.example/x", body))
+
+		text := got.Error()
+		assert.NotContains(t, text, "SECRETSIGNATURE", "status %d", status)
+		assert.NotContains(t, text, "\n", "status %d", status)
+		assert.Contains(t, text, "Cannot read", "status %d", status)
+		assert.Less(t, len([]rune(text)), 500, "status %d", status)
+
+		var safe interface{ SafeMessage() string }
+		if errors.As(got, &safe) {
+			assert.NotContains(t, safe.SafeMessage(), "SECRETSIGNATURE", "status %d", status)
+			assert.NotContains(t, safe.SafeMessage(), "\n", "status %d", status)
+		}
+	}
+}
+
 // A 401 or 403 carries the same details as any other refusal: they name which
 // field the service objected to, and they travel through the same path, so the
 // credential in the URL stays out of them too.

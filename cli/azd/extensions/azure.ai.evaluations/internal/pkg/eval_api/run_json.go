@@ -6,6 +6,7 @@ package eval_api
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 )
 
@@ -112,16 +113,24 @@ func mergeServiceJSON(original, updated, initial json.RawMessage) (json.RawMessa
 		}
 		// The service's own spelling of a key wins: a typed value for `message`
 		// replaces a `Message` the service sent, rather than sitting beside it and
-		// leaving the original, unprojected value in the output.
-		folded := make(map[string]string, len(oldObject))
+		// leaving the original, unsanitized value in the output. A payload that
+		// spells one modeled key several ways keeps one spelling (the exact one if
+		// present, else the first in sorted order) and drops the rest, so no
+		// variant carries a value the typed projection did not sanitize.
+		spellings := make(map[string][]string, len(oldObject))
 		for key := range oldObject {
-			folded[strings.ToLower(key)] = key
+			lower := strings.ToLower(key)
+			spellings[lower] = append(spellings[lower], key)
 		}
 		for key, value := range newObject {
 			target := key
-			if _, exact := oldObject[key]; !exact {
-				if actual, ok := folded[strings.ToLower(key)]; ok {
-					target = actual
+			variants := spellings[strings.ToLower(key)]
+			if _, exact := oldObject[key]; !exact && len(variants) > 0 {
+				target = slices.Min(variants)
+			}
+			for _, variant := range variants {
+				if variant != target {
+					delete(oldObject, variant)
 				}
 			}
 			if previous, ok := oldObject[target]; ok {

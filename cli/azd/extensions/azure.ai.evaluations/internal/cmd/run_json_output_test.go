@@ -85,6 +85,35 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 	}
 }
 
+// A payload may spell one modeled key several ways, and every spelling is read as
+// the same field, so none of them may reach the output with a value the typed
+// projection did not sanitize.
+func TestRunJSONDropsEveryCaseVariantOfARedactedKey(t *testing.T) {
+	const response = `{"id":"run_dup","status":"failed","error":{"code":"failed",` +
+		`"message":"Failed https://host/a?sig=SIGONE","Message":"Failed https://host/b?sig=SIGTWO",` +
+		`"MESSAGE":"Failed https://host/c?sig=SIGTHREE"}}`
+	var run eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(response), &run))
+
+	raw, err := json.Marshal(runForJSON(&run))
+	require.NoError(t, err)
+	for _, secret := range []string{"SIGONE", "SIGTWO", "SIGTHREE"} {
+		assert.NotContains(t, string(raw), secret)
+	}
+	var document struct {
+		Error map[string]json.RawMessage `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &document))
+	spellings := 0
+	for key := range document.Error {
+		if strings.EqualFold(key, "message") {
+			spellings++
+		}
+	}
+	assert.Equal(t, 1, spellings, "one spelling of the field is kept")
+	assert.Contains(t, string(raw), "Failed ")
+}
+
 func TestReportingJSONCallersPreserveNestedResultPresence(t *testing.T) {
 	const runResponse = `{"id":"run_presence","status":"completed","per_testing_criteria_results":[
 		{"testing_criteria":"quality","passed":1,"failed":null,"unknown":9007199254740993},

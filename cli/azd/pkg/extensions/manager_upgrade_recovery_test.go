@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +25,46 @@ type recoveryConfigManager struct {
 	saveCalls int
 	failAt    int
 	saveError error
+}
+
+func TestPrepareUpgradeRecoveryRejectsUnsafeInstalledIDs(t *testing.T) {
+	for _, id := range []string{"", ".", "..", "foo/../bar", "nested/bar", `nested\bar`, `foo\..\bar`} {
+		t.Run(fmt.Sprintf("%q", id), func(t *testing.T) {
+			configDir := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", configDir)
+			root := filepath.Join(configDir, "extensions")
+			neighbor := filepath.Join(root, "bar", "installed.exe")
+			nested := filepath.Join(root, "nested", "bar", "installed.exe")
+			for _, path := range []string{neighbor, nested} {
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+				require.NoError(t, os.WriteFile(path, []byte("unchanged"), 0o600))
+			}
+			before := []string{}
+			require.NoError(t, filepath.WalkDir(configDir, func(path string, entry os.DirEntry, err error) error {
+				if err == nil {
+					before = append(before, path)
+				}
+				return err
+			}))
+			manager := &Manager{}
+			finish, err := manager.prepareUpgradeRecovery(t.Context(), &Extension{Id: id, Version: "1.0.0"})
+			require.ErrorContains(t, err, "invalid installed extension directory")
+			require.Nil(t, finish)
+			after := []string{}
+			require.NoError(t, filepath.WalkDir(configDir, func(path string, entry os.DirEntry, err error) error {
+				if err == nil {
+					after = append(after, path)
+				}
+				return err
+			}))
+			require.Equal(t, before, after, "validation must precede backup staging or directory mutation")
+			for _, path := range []string{neighbor, nested} {
+				data, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, "unchanged", string(data))
+			}
+		})
+	}
 }
 
 func (m *recoveryConfigManager) Save(cfg config.Config, path string) error {

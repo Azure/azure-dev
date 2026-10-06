@@ -1260,6 +1260,10 @@ func (m *Manager) upgradeInternal(
 func (m *Manager) prepareUpgradeRecovery(
 	ctx context.Context, installed *Extension,
 ) (func(context.Context, bool) error, error) {
+	if installed.Id == "" || installed.Id == "." || installed.Id == ".." ||
+		strings.ContainsAny(installed.Id, `/\`) {
+		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
+	}
 	// Snapshot persisted metadata without copying Extension's runtime locks.
 	data, err := json.Marshal(installed)
 	if err != nil {

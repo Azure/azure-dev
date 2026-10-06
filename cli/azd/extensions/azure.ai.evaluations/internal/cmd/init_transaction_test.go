@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -35,15 +34,7 @@ func (s *initProjectServer) setAddServiceHandler(handler func(context.Context, *
 	s.onAddService = handler
 }
 
-func (s *initProjectServer) setSaveFailureAcknowledgement(enabled bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ackSaveError = enabled
-}
-
-// The fixture acknowledges an unsaved completion; a host without that capability
-// instead retains the scaffold, as TestInitRootSaveRequiresMatchingCompletionAcknowledgement covers.
-func TestInitAcknowledgedRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
+func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 	for _, rootFilename := range []string{"azure.yaml", "azure.yml"} {
 		t.Run(rootFilename, func(t *testing.T) {
 			for _, filename := range []string{project.EvalConfigBase, project.LegacyEvalConfigBase, "custom quality.yml"} {
@@ -55,7 +46,6 @@ func TestInitAcknowledgedRootSaveFailureRestoresConfigAndAllowsExactRetry(t *tes
 						}
 						t.Run(name, func(t *testing.T) {
 							h := newInitHarness(t, nil)
-							h.project.setSaveFailureAcknowledgement(true)
 							if rootFilename != "azure.yaml" {
 								require.NoError(t, os.Rename(
 									filepath.Join(h.dir, "azure.yaml"), filepath.Join(h.dir, rootFilename)))
@@ -170,9 +160,6 @@ func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
 		"cancelled", "deadline", "unavailable"} {
 		t.Run(change, func(t *testing.T) {
 			h := newInitHarness(t, nil)
-			if change == "cancelled" || change == "deadline" || change == "unavailable" {
-				h.project.setSaveFailureAcknowledgement(false)
-			}
 			configPath := filepath.Join(h.dir, "quality.yml")
 			rootPath := filepath.Join(h.dir, "azure.yaml")
 			var mu sync.Mutex
@@ -312,82 +299,6 @@ func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
 	assert.FileExists(t, configPath)
 }
 
-// The missing/Unknown case models a host returning a save error without acknowledgment:
-// init must retain the scaffold even when the root file was not changed.
-func TestInitRootSaveRequiresMatchingCompletionAcknowledgement(t *testing.T) {
-	for _, ack := range []string{"missing", "wrong", "duplicate", "content-type only"} {
-		for _, code := range []codes.Code{codes.Unknown, codes.Internal, codes.PermissionDenied} {
-			t.Run(ack+"/"+code.String(), func(t *testing.T) {
-				h := newInitHarness(t, nil)
-				h.project.setSaveFailureAcknowledgement(false)
-				configPath := filepath.Join(h.dir, "quality.yml")
-				h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-					incoming, _ := metadata.FromIncomingContext(ctx)
-					tokens := incoming.Get("azd-project-add-service-operation")
-					if len(tokens) != 1 || tokens[0] == "" {
-						return status.Error(codes.Internal, "missing operation token")
-					}
-					var trailer metadata.MD
-					switch ack {
-					case "wrong":
-						trailer = metadata.Pairs("azd-project-add-service-save-failed", "another-operation")
-					case "duplicate":
-						trailer = metadata.Pairs("azd-project-add-service-save-failed", tokens[0],
-							"azd-project-add-service-save-failed", tokens[0])
-					case "content-type only":
-						trailer = metadata.Pairs("content-type", "application/grpc")
-					}
-					if err := grpc.SetTrailer(ctx, trailer); err != nil {
-						return err
-					}
-					return status.Error(code, "save outcome unavailable")
-				})
-				text, err := executeConversationInit(t, "--path", configPath, "--name", "quality",
-					"--source", "traces", "--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
-				require.ErrorContains(t, err, "could not safely roll back")
-				assert.ErrorContains(t, err, "host may still finish")
-				assert.Empty(t, text)
-				assert.FileExists(t, configPath)
-				assert.Empty(t, h.usage.reported())
-			})
-		}
-	}
-}
-
-func TestInitRootSaveDoesNotReuseAcknowledgementAcrossRetries(t *testing.T) {
-	h := newInitHarness(t, nil)
-	h.project.setSaveFailureAcknowledgement(false)
-	configPath := filepath.Join(h.dir, "quality.yml")
-	var mu sync.Mutex
-	var tokens []string
-	h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-		incoming, _ := metadata.FromIncomingContext(ctx)
-		current := incoming.Get("azd-project-add-service-operation")
-		if len(current) != 1 {
-			return status.Error(codes.Internal, "missing operation token")
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		tokens = append(tokens, current[0])
-		if err := grpc.SetTrailer(ctx, metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); err != nil {
-			return err
-		}
-		return os.ErrPermission
-	})
-	args := []string{"--path", configPath, "--name", "quality", "--source", "traces",
-		"--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json"}
-	_, err := executeConversationInit(t, args...)
-	require.ErrorContains(t, err, "was rolled back")
-	assert.NoFileExists(t, configPath)
-	_, err = executeConversationInit(t, args...)
-	require.ErrorContains(t, err, "could not safely roll back")
-	assert.FileExists(t, configPath)
-	mu.Lock()
-	defer mu.Unlock()
-	require.Len(t, tokens, 2)
-	assert.NotEqual(t, tokens[0], tokens[1], "every invocation must use a fresh operation token")
-}
-
 type malformedSaveResponseCodec struct{}
 
 func (malformedSaveResponseCodec) Name() string { return "proto" }
@@ -432,7 +343,7 @@ func TestInitMalformedRootSaveResponseRetainsScaffold(t *testing.T) {
 	assert.Empty(t, h.usage.reported())
 }
 
-func TestInitAcknowledgedPreSaveRejectionRollsBack(t *testing.T) {
+func TestInitPreSaveRejectionRollsBack(t *testing.T) {
 	for _, rejection := range []struct {
 		name string
 		err  error

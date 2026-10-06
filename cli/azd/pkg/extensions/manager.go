@@ -1264,7 +1264,8 @@ func (m *Manager) prepareUpgradeRecovery(
 		strings.ContainsAny(installed.Id, `/\`) {
 		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
 	}
-	if replacementID == "" || replacementID == "." || replacementID == ".." ||
+	if !strings.EqualFold(installed.Id, replacementID) ||
+		replacementID == "" || replacementID == "." || replacementID == ".." ||
 		strings.ContainsAny(replacementID, `/\`) {
 		return nil, fmt.Errorf("invalid replacement extension directory for %q", replacementID)
 	}
@@ -1286,6 +1287,10 @@ func (m *Manager) prepareUpgradeRecovery(
 	if installed.Id == "" || extensionDir == extensionRoot || !osutil.IsPathContained(extensionRoot, extensionDir) {
 		return nil, fmt.Errorf("invalid installed extension directory for %q", installed.Id)
 	}
+	replacementDir := filepath.Join(extensionRoot, replacementID)
+	if replacementDir == extensionRoot || !osutil.IsPathContained(extensionRoot, replacementDir) {
+		return nil, fmt.Errorf("invalid replacement extension directory for %q", replacementID)
+	}
 	if err := os.MkdirAll(extensionRoot, osutil.PermissionDirectory); err != nil {
 		return nil, fmt.Errorf("failed to create extension directory: %w", err)
 	}
@@ -1301,7 +1306,6 @@ func (m *Manager) prepareUpgradeRecovery(
 			os.RemoveAll(backupDir),
 		)
 	}
-	replacementDir := filepath.Join(extensionRoot, replacementID)
 	hasFiles := false
 	if err := osutil.Rename(ctx, extensionDir, backupPath); err == nil {
 		hasFiles = true

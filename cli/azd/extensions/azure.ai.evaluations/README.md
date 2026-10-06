@@ -917,7 +917,9 @@ Bare-ID reruns retain other source/schema pairs from their previous run unless
 there is a known response/trace scenario mismatch. The schema read is required:
 an unreadable definition does not establish compatibility.
 Editor validation and create/deploy preflight reject positive `max_samples`
-for trace- and response-backed declarations, including sources loaded through `$ref`.
+for trace- and response-source declarations, including sources loaded through
+`$ref`. Explicit local sources support positive `max_samples` caps; zero means
+uncapped.
 
 ### Recovering partial generation
 

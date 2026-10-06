@@ -70,6 +70,18 @@ func TestPrepareUpgradeRecoveryRejectsUnsafeInstalledIDs(t *testing.T) {
 	}
 }
 
+func TestPrepareUpgradeRecoveryRejectsMismatchedReplacementID(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	manager := &Manager{}
+	finish, err := manager.prepareUpgradeRecovery(
+		t.Context(), &Extension{Id: "test.installed", Version: "1.0.0"}, "test.replacement",
+	)
+	require.ErrorContains(t, err, "invalid replacement extension directory")
+	require.Nil(t, finish)
+	require.NoDirExists(t, filepath.Join(configDir, "extensions"))
+}
+
 func (m *recoveryConfigManager) Save(cfg config.Config, path string) error {
 	m.saveCalls++
 	if m.saveCalls == m.failAt {

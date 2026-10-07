@@ -872,7 +872,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 

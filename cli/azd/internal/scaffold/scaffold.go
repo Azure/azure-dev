@@ -30,6 +30,8 @@ func Load() (*template.Template, error) {
 		"bicepName":                BicepName,
 		"containerAppName":         ContainerAppName,
 		"functionAppContainerName": FunctionAppContainerName,
+		"functionAppName":          FunctionAppName,
+		"bicepPropertyKey":         BicepPropertyKey,
 		"upper":                    strings.ToUpper,
 		"lower":                    strings.ToLower,
 		"alphaSnakeUpper":          AlphaSnakeUpper,

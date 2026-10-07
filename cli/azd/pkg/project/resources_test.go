@@ -493,6 +493,10 @@ func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
 	assert.Contains(t, bicep, "module apiFunctionStorage 'modules/function-storage.bicep'")
 	assert.Contains(t, bicep, "module workerFunctionStorage 'modules/function-storage.bicep'")
+	assert.Contains(t, bicep, "module apiPlan 'br/public:avm/res/web/serverfarm:0.7.0'")
+	assert.Contains(t, bicep, "module workerPlan 'br/public:avm/res/web/serverfarm:0.7.0'")
+	assert.Contains(t, bicep, "serverFarmResourceId: apiPlan.outputs.resourceId")
+	assert.Contains(t, bicep, "serverFarmResourceId: workerPlan.outputs.resourceId")
 	assert.Contains(t, bicep, "principalId: apiIdentity.outputs.principalId")
 	assert.Contains(t, bicep, "principalId: workerIdentity.outputs.principalId")
 	assert.Contains(t, bicep, "containerName: 'app-package-api-${take(uniqueString('api'), 6)}")
@@ -662,7 +666,7 @@ func Test_infraSpec_FunctionAppUsesResources(t *testing.T) {
 	content, err := fs.ReadFile(files, "resources.bicep")
 	require.NoError(t, err)
 	for _, setting := range []string{
-		"GREETING: 'hello'",
+		"'GREETING': 'hello'",
 		"AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name",
 		"AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint",
 		"AZURE_AI_SEARCH_ENDPOINT: search.outputs.endpoint",

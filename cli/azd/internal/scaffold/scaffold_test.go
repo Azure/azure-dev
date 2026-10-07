@@ -97,6 +97,7 @@ func TestExecInfra(t *testing.T) {
 						Type: "python", Version: "3.12",
 					},
 					FunctionStorage: &FunctionStorage{},
+					Env:             map[string]string{"MY-SETTING": "'v'", "Logging.Level": "'Info'"},
 				}},
 			},
 		},
@@ -342,6 +343,8 @@ func TestExecInfra(t *testing.T) {
 					assert.Contains(t, string(bicep),
 						"keyVaultAccessIdentityResourceId: "+BicepName(service.Name)+"Identity.outputs.resourceId")
 					if tt.name == "Function App with implicit storage" {
+						assert.Contains(t, string(bicep), "'MY-SETTING': 'v'")
+						assert.Contains(t, string(bicep), "'Logging.Level': 'Info'")
 						assert.Regexp(t, `networkAcls:\s*\{\s*defaultAction: 'Allow'\s*\}`, string(bicep))
 					}
 					module, err := os.ReadFile(filepath.Join(dir, "modules", "function-storage.bicep"))

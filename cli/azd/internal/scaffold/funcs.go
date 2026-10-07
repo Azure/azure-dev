@@ -4,6 +4,8 @@
 package scaffold
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -198,6 +200,28 @@ func ContainerAppName(name string) string {
 // FunctionAppContainerName returns a deployment-container name prefix, leaving room for the unique suffix.
 func FunctionAppContainerName(name string) string {
 	return "app-package-" + containerAppName(name, 32)
+}
+
+// functionAppNameMaxLen is the longest service name segment that keeps the 'func-<name>-<token>' site name within the
+// 60 character Microsoft.Web/sites limit, and the derived module deployment names within the 64 character limit.
+const functionAppNameMaxLen = 41
+
+// FunctionAppName bounds a service name for use in Function App resource and deployment names. Names that already fit
+// are returned unchanged; longer names are truncated and suffixed with a hash of the full name to stay unique.
+func FunctionAppName(name string) string {
+	if len(name) <= functionAppNameMaxLen {
+		return name
+	}
+
+	sum := sha256.Sum256([]byte(name))
+	return strings.TrimRight(name[:functionAppNameMaxLen-9], "-_") + "-" + hex.EncodeToString(sum[:])[:8]
+}
+
+// BicepPropertyKey returns key as a quoted, escaped Bicep property name.
+func BicepPropertyKey(key string) string {
+	escaper := strings.NewReplacer(
+		`\`, `\\`, `'`, `\'`, "$", `\$`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
+	return "'" + escaper.Replace(key) + "'"
 }
 
 // ContainerAppSecretName returns a suitable name a container app secret name.

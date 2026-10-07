@@ -94,20 +94,6 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.4.1' = {
   }
 }
 {{- end}}
-
-{{- if hasFunctionApp .Services}}
-module functionAppPlan 'br/public:avm/res/web/serverfarm:0.7.0' = {
-  name: 'function-app-plan'
-  params: {
-    name: '${abbrs.webServerFarms}func-${resourceToken}'
-    location: location
-    tags: tags
-    kind: 'functionApp'
-    skuName: 'FC1'
-    reserved: true
-  }
-}
-{{- end}}
 {{- end}}
 
 {{- if .DbCosmosMongo}}
@@ -912,8 +898,20 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
 {{- end}}
 
 {{- if isFunctionApp .Host}}
+module {{bicepName .Name}}Plan 'br/public:avm/res/web/serverfarm:0.7.0' = {
+  name: '{{functionAppName (bicepName .Name)}}-plan'
+  params: {
+    name: '${abbrs.webServerFarms}func-${take(uniqueString('{{.Name}}'), 6)}-${resourceToken}'
+    location: location
+    tags: tags
+    kind: 'functionApp'
+    skuName: 'FC1'
+    reserved: true
+  }
+}
+
 module {{bicepName .Name}}FunctionStorage 'modules/function-storage.bicep' = {
-  name: '{{bicepName .Name}}-function-storage'
+  name: '{{functionAppName (bicepName .Name)}}-function-storage'
   {{- if .FunctionStorage.ExistingName}}
   scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
   {{- end}}
@@ -930,13 +928,13 @@ module {{bicepName .Name}}FunctionStorage 'modules/function-storage.bicep' = {
 }
 
 module {{bicepName .Name}} 'br/public:avm/res/web/site:0.24.0' = {
-  name: 'function-app-{{bicepName .Name}}'
+  name: 'function-app-{{functionAppName (bicepName .Name)}}'
   params: {
-    name: '${abbrs.webSitesFunctions}{{.Name}}-${resourceToken}'
+    name: '${abbrs.webSitesFunctions}{{functionAppName .Name}}-${resourceToken}'
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
     kind: 'functionapp,linux'
-    serverFarmResourceId: functionAppPlan.outputs.resourceId
+    serverFarmResourceId: {{bicepName .Name}}Plan.outputs.resourceId
     keyVaultAccessIdentityResourceId: {{bicepName .Name}}Identity.outputs.resourceId
     managedIdentities: {
       systemAssigned: true
@@ -1040,7 +1038,7 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.24.0' = {
         AZURE_AI_PROJECT_ENDPOINT: aiFoundryProjectEndpoint
         {{- end}}
         {{- range $key, $value := .Env}}
-        {{ $key }}: {{ $value }}
+        {{ bicepPropertyKey $key }}: {{ $value }}
         {{- end}}
       }
     }]

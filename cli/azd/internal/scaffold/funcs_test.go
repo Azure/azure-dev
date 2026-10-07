@@ -10,6 +10,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func Test_FunctionAppName(t *testing.T) {
+	assert.Equal(t, "my-api", FunctionAppName("my-api"))
+	short := strings.Repeat("a", functionAppNameMaxLen)
+	assert.Equal(t, short, FunctionAppName(short))
+
+	a := FunctionAppName(strings.Repeat("a", 60))
+	b := FunctionAppName(strings.Repeat("a", 59) + "b")
+	assert.LessOrEqual(t, len(a), functionAppNameMaxLen)
+	assert.NotEqual(t, a, b)
+
+	trimmed := FunctionAppName(strings.Repeat("a", 31) + "-" + strings.Repeat("b", 30))
+	assert.LessOrEqual(t, len(trimmed), functionAppNameMaxLen)
+	assert.NotContains(t, trimmed, "--")
+}
+
+func Test_BicepPropertyKey(t *testing.T) {
+	assert.Equal(t, "'MY-SETTING'", BicepPropertyKey("MY-SETTING"))
+	assert.Equal(t, "'Logging.Level'", BicepPropertyKey("Logging.Level"))
+	assert.Equal(t, `'it\'s'`, BicepPropertyKey("it's"))
+	assert.Equal(t, `'a\${b}'`, BicepPropertyKey("a${b}"))
+}
+
 func Test_FunctionAppContainerName(t *testing.T) {
 	for _, tt := range []struct {
 		name string

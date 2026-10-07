@@ -56,12 +56,24 @@ func validateInitDataset(
 	if answers.simulation == nil {
 		_, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
 			if answers.evaluationLevel == project.EvaluationLevelConversation {
-				if _, present := row[conversationField]; !present {
+				transcript, present := row[conversationField]
+				if !present {
 					return exterrors.Validation(exterrors.CodeInvalidParameter,
 						fmt.Sprintf("%s row %d has no %q column for static conversation evaluation",
 							filepath.ToSlash(path), index+1, conversationField),
 						"Supply completed conversation rows with a messages column, "+
 							"or select --evaluation-level turn for query/response rows.")
+				}
+				turns, ok := transcript.([]any)
+				if !ok {
+					return invalidStaticConversationMessages(path, index,
+						fmt.Sprintf("%q must be an array of message objects", conversationField))
+				}
+				for turnIndex, turn := range turns {
+					if _, ok := turn.(map[string]any); !ok {
+						return invalidStaticConversationMessages(path, index,
+							fmt.Sprintf("%q element %d must be an object", conversationField, turnIndex+1))
+					}
 				}
 			}
 			return nil
@@ -73,6 +85,14 @@ func validateInitDataset(
 		return refuseUnusableSeedRow(group, row, index, true)
 	})
 	return err
+}
+
+func invalidStaticConversationMessages(path string, rowIndex int, problem string) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s row %d %s for static conversation evaluation",
+			filepath.ToSlash(path), rowIndex+1, problem),
+		"Supply completed conversation rows with a messages array of objects, "+
+			"or select --evaluation-level turn for query/response rows.")
 }
 
 func resolveInitDatasetLocalPath(location, datasetRef string, cfg *project.EvalConfig) (string, error) {

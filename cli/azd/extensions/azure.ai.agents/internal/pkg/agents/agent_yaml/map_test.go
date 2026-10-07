@@ -1767,7 +1767,8 @@ func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
 			InputPaths:        []string{"$.input"},
 			OutputPaths:       []string{"$.output"},
 			StreamSelectors: []SseTextSelector{
-				{EventType: "response.output_text.delta", TextField: "$.delta"},
+				{EventType: "response.output_text.delta", TextField: new("delta")},
+				{EventType: "response.completed"},
 			},
 		},
 	}})
@@ -1796,16 +1797,31 @@ func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
 	if !slices.Equal(moderation.OutputPaths, []string{"$.output"}) {
 		t.Errorf("OutputPaths = %v, want [$.output]", moderation.OutputPaths)
 	}
-	if len(moderation.StreamSelectors) != 1 {
-		t.Fatalf("len(StreamSelectors) = %d, want 1", len(moderation.StreamSelectors))
+	if len(moderation.StreamSelectors) != 2 {
+		t.Fatalf("len(StreamSelectors) = %d, want 2", len(moderation.StreamSelectors))
 	}
 	if moderation.StreamSelectors[0].EventType != "response.output_text.delta" {
 		t.Errorf("StreamSelectors[0].EventType = %q, want response.output_text.delta",
 			moderation.StreamSelectors[0].EventType)
 	}
-	if moderation.StreamSelectors[0].TextField != "$.delta" {
-		t.Errorf("StreamSelectors[0].TextField = %q, want $.delta",
+	if moderation.StreamSelectors[0].TextField != "delta" {
+		t.Errorf("StreamSelectors[0].TextField = %q, want delta",
 			moderation.StreamSelectors[0].TextField)
+	}
+	if moderation.StreamSelectors[1].EventType != "response.completed" {
+		t.Errorf("StreamSelectors[1].EventType = %q, want response.completed",
+			moderation.StreamSelectors[1].EventType)
+	}
+	if moderation.StreamSelectors[1].TextField != "" {
+		t.Errorf("StreamSelectors[1].TextField = %q, want omitted", moderation.StreamSelectors[1].TextField)
+	}
+
+	data, err := json.Marshal(moderation.StreamSelectors[1])
+	if err != nil {
+		t.Fatalf("json.Marshal(StreamSelectors[1]) returned error: %v", err)
+	}
+	if strings.Contains(string(data), "text_field") {
+		t.Errorf("json.Marshal(StreamSelectors[1]) = %s, want text_field omitted", data)
 	}
 }
 

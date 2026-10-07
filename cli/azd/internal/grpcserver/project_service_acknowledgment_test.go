@@ -95,13 +95,10 @@ func TestProjectAddServiceCancellationDoesNotAcknowledge(t *testing.T) {
 				} else {
 					stream := &projectSaveTransport{}
 					ctx := grpc.NewContextWithServerTransportStream(t.Context(), stream)
-					ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(
-						"azd-project-add-service-operation", "canceled-attempt",
-					))
 					_, resultErr = service.AddService(ctx, &azdext.AddServiceRequest{
 						Service: &azdext.ServiceConfig{Name: "api", Host: "containerapp", Language: "python"},
 					})
-					assert.Empty(t, stream.savedFailure())
+					assert.Empty(t, stream.trailers)
 				}
 				require.Error(t, resultErr)
 				if errors.Is(test.err, context.Canceled) || errors.Is(test.err, context.DeadlineExceeded) {
@@ -142,9 +139,6 @@ func TestServerE2E_ProjectAddServiceCancellationDoesNotAcknowledge(t *testing.T)
 						OperationId: "canceled-attempt",
 					}, grpc.MaxRetryRPCBufferSize(0), grpc.Trailer(&trailers))
 				} else {
-					ctx = metadata.AppendToOutgoingContext(ctx,
-						"azd-project-add-service-operation", "canceled-attempt",
-					)
 					_, resultErr = client.Project().AddService(ctx, &azdext.AddServiceRequest{
 						Service: &azdext.ServiceConfig{Name: "api", Host: "containerapp", Language: "python"},
 					}, grpc.Trailer(&trailers))

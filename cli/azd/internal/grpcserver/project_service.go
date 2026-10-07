@@ -22,9 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -240,41 +238,23 @@ func (s *projectService) envResolver() mapper.Resolver {
 // The service name from req.Service.Name is used as the key in the services map.
 // If the services map doesn't exist, it will be initialized.
 //
-// This is the v1 entry point. It reads the caller's operation identifier from the
-// azd-project-add-service-operation gRPC metadata convention and, on an acknowledged failure,
-// echoes it back via the azd-project-add-service-save-failed trailer. The v1beta entry point
-// (BetaProjectServiceAddServiceOverride, see project_service_beta.go) reads the same identifier
-// from a typed AddServiceRequest.operation_id field instead and reports the acknowledgment as a
-// typed AddServiceAcknowledgment gRPC status detail. Both entry points share addService below.
+// This stable entry point does not provide completion acknowledgments. The v1beta
+// entry point accepts a typed operation_id and reports completion through a typed
+// AddServiceAcknowledgment status detail. Both entry points share addService below.
 func (s *projectService) AddService(
 	ctx context.Context, req *azdext.AddServiceRequest,
 ) (*azdext.EmptyResponse, error) {
-	incoming, _ := metadata.FromIncomingContext(ctx)
-	tokens := incoming.Get("azd-project-add-service-operation")
-	token := ""
-	if len(tokens) == 1 && len(tokens[0]) > 0 && len(tokens[0]) <= maxAddServiceOperationIDBytes {
-		token = tokens[0]
-	}
-
-	acknowledged, err := s.addService(ctx, req, token)
+	_, err := s.addService(ctx, req, "")
 	if err != nil {
-		if acknowledged {
-			if trailerErr := grpc.SetTrailer(
-				ctx, metadata.Pairs("azd-project-add-service-save-failed", token),
-			); trailerErr != nil {
-				err = fmt.Errorf("%w; acknowledging completed operation failure: %w", err, trailerErr)
-			}
-		}
 		return nil, err
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-// addService performs the AddService mutation shared by the v1 gRPC metadata/trailer
-// acknowledgment convention and the v1beta typed AddServiceAcknowledgment contract.
-// operationToken is the caller-supplied operation identifier from whichever transport the
-// caller used, or empty when the caller did not opt in.
+// addService performs the mutation shared by stable v1 and the v1beta typed
+// AddServiceAcknowledgment contract. operationToken is the beta operation identifier,
+// or empty for stable calls and beta callers that did not opt in.
 //
 // acknowledged reports whether the mutation lock was acquired and any synchronous save/restore
 // work completed before the returned error -- the same point at which the documented

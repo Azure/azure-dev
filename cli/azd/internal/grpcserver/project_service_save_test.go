@@ -45,7 +45,7 @@ func (s *projectSaveTransport) savedFailure() []string {
 	return append([]string(nil), s.trailers.Get("azd-project-add-service-save-failed")...)
 }
 
-func TestProjectAddServiceAcknowledgesOnlyCompletedFailedSave(t *testing.T) {
+func TestProjectAddServiceStableRestoresCompletedFailedSaveWithoutAcknowledgment(t *testing.T) {
 	for _, existed := range []bool{false, true} {
 		name := "new"
 		if existed {
@@ -100,7 +100,7 @@ func TestProjectAddServiceAcknowledgesOnlyCompletedFailedSave(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("save did not finish")
 			}
-			assert.Equal(t, []string{"this-attempt"}, stream.savedFailure())
+			assert.Empty(t, stream.trailers, "stable calls must not expose a hidden completion protocol")
 			after, err := os.ReadFile(azdContext.ProjectPath())
 			require.NoError(t, err)
 			assert.Equal(t, before, after)
@@ -127,8 +127,8 @@ func TestProjectAddServiceAcknowledgesOnlyCompletedFailedSave(t *testing.T) {
 	}
 }
 
-func TestProjectAddServiceOmitsAcknowledgementWithoutOneOperationToken(t *testing.T) {
-	for _, tokens := range [][]string{nil, {""}, {"one", "two"}} {
+func TestProjectAddServiceStableIgnoresOperationMetadata(t *testing.T) {
+	for _, tokens := range [][]string{nil, {""}, {"one"}, {"one", "two"}, {strings.Repeat("a", 65)}} {
 		t.Run("", func(t *testing.T) {
 			dir := t.TempDir()
 			azdContext := azdcontext.NewAzdContextWithDirectory(dir)
@@ -199,7 +199,7 @@ func TestProjectAddServiceFailedSaveRestorationDoesNotDropConcurrentAddition(t *
 	release()
 	require.ErrorIs(t, <-first, os.ErrPermission)
 	require.NoError(t, <-second)
-	assert.Equal(t, []string{"failed-attempt"}, stream.savedFailure())
+	assert.Empty(t, stream.trailers)
 	cached, err := service.lazyProjectConfig.GetValue()
 	require.NoError(t, err)
 	assert.Contains(t, cached.Services, "kept")
@@ -210,7 +210,7 @@ func TestProjectAddServiceFailedSaveRestorationDoesNotDropConcurrentAddition(t *
 	assert.NotContains(t, saved.Services, "failed")
 }
 
-func TestProjectAddServiceAcknowledgesCompletedPreSaveRejection(t *testing.T) {
+func TestProjectAddServiceStablePreSaveRejectionHasNoAcknowledgment(t *testing.T) {
 	for _, failure := range []string{"layered", "reload", "project context", "mapper"} {
 		t.Run(failure, func(t *testing.T) {
 			dir := t.TempDir()
@@ -253,7 +253,7 @@ func TestProjectAddServiceAcknowledgesCompletedPreSaveRejection(t *testing.T) {
 			if failure == "mapper" {
 				assert.ErrorContains(t, err, "synthetic mapper failure")
 			}
-			assert.Equal(t, []string{"pre-save-attempt"}, stream.savedFailure())
+			assert.Empty(t, stream.trailers)
 			after, err := os.ReadFile(azdContext.ProjectPath())
 			require.NoError(t, err)
 			assert.Equal(t, body, after)
@@ -263,7 +263,7 @@ func TestProjectAddServiceAcknowledgesCompletedPreSaveRejection(t *testing.T) {
 	}
 }
 
-func TestProjectAddServicePreSaveRejectionRequiresOneValidToken(t *testing.T) {
+func TestProjectAddServiceStablePreSaveRejectionIgnoresOperationMetadata(t *testing.T) {
 	for _, tokens := range [][]string{nil, {""}, {"one", "two"}, {strings.Repeat("a", 65)}} {
 		t.Run("", func(t *testing.T) {
 			service := &projectService{

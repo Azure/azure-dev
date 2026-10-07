@@ -88,27 +88,21 @@ For directly invoked extension commands, the host preserves the extension proces
 
 ### Project service save acknowledgment
 
-`Project.AddService` accepts an optional, fresh
-`azd-project-add-service-operation` metadata value of at most 64 bytes.
-On a failure after acquiring the project mutation lock, the host echoes that
-value in the `azd-project-add-service-save-failed` trailer after synchronous
-work completes. This includes completed pre-save rejections and failed saves
-after restoring the previous cached service. Success, panics, cancellation,
-deadline expiration, and validation errors rejected before the lock do not
-carry the acknowledgment.
+The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.
+This read-only RPC advertises whether the active `AddService` implementation
+supports `AddServiceRequest.operation_id` and `AddServiceAcknowledgment` status
+details. Stable `Project.AddService` calls return ordinary errors and do not
+provide completion acknowledgments.
 
-For the preview channel, `AzdClient.ProjectBeta()` exposes the generated
-`v1beta.ProjectServiceClient`. Set `AddServiceRequest.operation_id` to a fresh
+When supported, set `AddServiceRequest.operation_id` to a fresh
 per-call identifier of at most 64 bytes (not characters). Longer identifiers
 are rejected with `InvalidArgument` before project mutation or saving.
 The host returns an `AddServiceAcknowledgment` with that
 identifier as a `google.rpc.Status` detail on the same completed failures,
-instead of a trailer. Existing host-error codes, messages, and structured
+Existing host-error codes, messages, and structured
 details are preserved alongside the acknowledgment. The stable protobuf shape
 is unchanged.
 
-Before choosing the typed mutation, call the beta-only, read-only
-`ProjectService.GetAddServiceCapabilities(EmptyRequest)` RPC.
 `GetAddServiceCapabilitiesResponse.acknowledgment_supported` is true for the
 built-in implementation, including when an unrelated focused method is
 overridden. A custom `AddService` override is unsupported unless it explicitly

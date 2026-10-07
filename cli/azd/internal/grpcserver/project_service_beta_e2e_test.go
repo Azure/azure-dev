@@ -153,14 +153,14 @@ func TestServerE2E_StableProjectServiceAddServiceUnchanged(t *testing.T) {
 	ps.saveProject = func(_ context.Context, _ *project.ProjectConfig, _ string) error { return os.ErrPermission }
 
 	client, ctx := dialProjectSDK(t, serverInfo)
-	ctx = metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", "e2e-stable-token")
 	var trailers metadata.MD
 	_, err := client.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{Name: "api", Host: "containerapp", Language: "python"},
 	}, grpc.Trailer(&trailers))
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "permission denied")
-	assert.Equal(t, []string{"e2e-stable-token"}, trailers.Get("azd-project-add-service-save-failed"))
+	assert.Empty(t, trailers.Get("azd-project-add-service-save-failed"),
+		"stable calls must return ordinary errors without completion acknowledgments")
 }
 
 func TestServerE2E_BetaProjectServiceCancellationDoesNotConfirmCompletion(t *testing.T) {

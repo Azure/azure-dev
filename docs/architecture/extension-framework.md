@@ -124,12 +124,6 @@ mutation; errors from the subsequent mutation never trigger a fallback replay.
 Stable calls can succeed normally, but failed saves retain the scaffold
 with manual inspection guidance.
 
-The evaluations extension uses a private dynamic descriptor registry
-generated from the canonical beta schema by `grpc/generateprojectclient`.
-This permits reproducible builds with its released SDK pin, without a local
-replace, pseudo-version, duplicate schema, or conflicting global protobuf
-registration. Its private client supplies the project fields absent from its
-released SDK pin. Regeneration is part of `make proto`.
 Completion acknowledgments exist only on the typed beta API.
 Stable callers receive ordinary errors and retain uncertain
 scaffolds for manual recovery, without trusting custom metadata or trailers.

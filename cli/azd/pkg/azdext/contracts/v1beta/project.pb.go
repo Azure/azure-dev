@@ -78,9 +78,9 @@ type AddServiceRequest struct {
 	// Longer identifiers are rejected before mutation. When set, a failed AddService that
 	// reached the project mutation lock returns this identifier via an AddServiceAcknowledgment
 	// detail on the returned gRPC status, confirming the host observed and completed (not
-	// necessarily succeeded) the operation before the error was returned. This is the v1beta
-	// typed replacement for the v1 azd-project-add-service-operation gRPC metadata convention;
-	// canceled or timed-out outcomes never carry an acknowledgment.
+	// necessarily succeeded) the operation before the error was returned. Completion
+	// acknowledgments are beta-only; stable v1 returns ordinary errors. Canceled or timed-out
+	// outcomes never carry an acknowledgment.
 	// see docs/architecture/extension-framework.md#project-service-save-acknowledgment.
 	OperationId   string `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
 	unknownFields protoimpl.UnknownFields

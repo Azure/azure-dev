@@ -111,13 +111,6 @@ A caller override for `Get`, for example, does not suppress the built-in
 implementations must explicitly supply their own capability response to advertise
 acknowledgment support.
 
-For preview fields absent from released SDKs, the evaluations extension snapshots
-canonical descriptors with `grpc/generateprojectclient` during `make proto` and
-uses a private dynamic registry. This avoids duplicate global registration and
-does not introduce a second schema. The private client selects the stable
-host path when the read-only beta capability RPC explicitly reports unsupported
-or returns `Unimplemented`.
-
 Stable handlers can return gRPC statuses containing stable contract messages
 in `Any` details. Before a beta response is sent, the host translates every
 `azd.extensions.v1.*` detail to the matching generated

@@ -2178,7 +2178,7 @@ func EvaluatorNeedsFields(evaluator string, missing []string) error {
 // EvaluatorFieldMalformed reports a required interaction column with an unusable value.
 func EvaluatorFieldMalformed(evaluator string, columns []string) error {
 	return fmt.Errorf(
-		"evaluator %q requires %s to be a non-empty string or an array on every row; "+
+		"evaluator %q requires %s to be a non-empty string or an array of message objects on every row; "+
 			"fix the value in the dataset, or rebind %s with `data_mapping`",
 		evaluator, quoteList(columns), pluralColumns(columns))
 }

@@ -196,6 +196,9 @@ func TestMalformedTextValue(t *testing.T) {
 	}{
 		{"non-empty string", "hello", false},
 		{"non-empty array", []any{map[string]any{"role": "user", "content": "hi"}}, false},
+		{"string array", []any{"not-a-message"}, true},
+		{"number array", []any{float64(1)}, true},
+		{"mixed array", []any{map[string]any{"role": "user"}, "not-a-message"}, true},
 		{"whitespace string", " \t\n", true},
 		{"empty string", "", true},
 		{"empty array", []any{}, false},

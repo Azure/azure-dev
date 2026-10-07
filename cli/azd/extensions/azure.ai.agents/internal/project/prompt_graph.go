@@ -303,7 +303,11 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 
 func (g *promptGraph) validate() error {
 	if err := g.managed.ValidateAuthoredSkills(); err != nil {
-		return err
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			err.Error(),
+			"specify only one version for each skill under 'skills:'",
+		)
 	}
 	for _, n := range g.nodes {
 		if n.Validate == nil {

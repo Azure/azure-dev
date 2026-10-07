@@ -98,7 +98,7 @@ When supported, set `AddServiceRequest.operation_id` to a fresh
 per-call identifier of at most 64 bytes (not characters). Longer identifiers
 are rejected with `InvalidArgument` before project mutation or saving.
 The host returns an `AddServiceAcknowledgment` with that
-identifier as a `google.rpc.Status` detail on the same completed failures,
+identifier as a `google.rpc.Status` detail on the same completed failures.
 Existing host-error codes, messages, and structured
 details are preserved alongside the acknowledgment. The stable protobuf shape
 is unchanged.

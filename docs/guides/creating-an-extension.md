@@ -107,22 +107,20 @@ For extensions that are still in development or preview, consider publishing to 
 ## Detailed Reference
 
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
-For `Project.AddService`, use the optional
-[save acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment)
-with a fresh per-call identifier, root-file comparison, and local ownership
-checks before compensating local edits. The preview `ProjectBeta()` client uses
-typed status details with identifiers of at most 64 bytes. Before selecting
-that mutation path, call its read-only `GetAddServiceCapabilities` probe and
-require `acknowledgment_supported`. Only an explicit false response or
-`Unimplemented` from the probe permits an older stable-SDK path; all other
-probe errors abort. Never fall back or replay after a mutation error.
+For `Project.AddService`, the preview `ProjectBeta()` client supports typed
+[save acknowledgments](../architecture/extension-framework.md#project-service-save-acknowledgment)
+with fresh per-call identifiers of at most 64 bytes. Before selecting that
+mutation path, call its read-only `GetAddServiceCapabilities` probe and require
+`acknowledgment_supported`. Only an explicit false response or `Unimplemented`
+from the probe permits an older stable-SDK path; all other probe errors abort.
+Never fall back or replay after a mutation error.
 
-The stable client retains its optional metadata/trailer protocol, but a
-capability-based compatibility path must not use legacy trailers to infer
-typed support or safe compensation. An older host or a missing response
-requires retention and explicit recovery guidance, not status-code-based
-rollback. Use a published SDK containing the beta client and probe symbols;
-local source builds do not establish published availability.
+The stable client returns ordinary errors without a metadata/trailer completion
+protocol. An older host, a missing capability response, or any stable mutation
+failure requires retaining uncertain local work and providing explicit recovery
+guidance, not status-code-based rollback. Use a published SDK containing the
+beta client and probe symbols; local source builds do not establish published
+availability.
 
 For comprehensive extension development documentation, see:
 

@@ -23,7 +23,8 @@ clients, and their request and response types come from `contracts/v1beta`.
 `AddServiceRequest.operation_id` opts into an `AddServiceAcknowledgment`
 status detail on completed failures. The identifier is limited to 64 bytes;
 longer values are rejected before project mutation. `Project()` retains the
-stable request shape and optional metadata/trailer acknowledgment. See
+stable request shape, returns ordinary errors, and ignores operation metadata
+without emitting completion acknowledgments. See
 [Project service save acknowledgment](../../../../docs/architecture/extension-framework.md#project-service-save-acknowledgment)
 for timing and conservative recovery rules. Use a published SDK containing
 these beta symbols and a host containing the focused override; the existence

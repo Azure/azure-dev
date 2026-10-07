@@ -1,14 +1,18 @@
 # Release History
 
-## 1.36.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.35.1 (2026-10-07)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#10181]](https://github.com/Azure/azure-dev/pull/10181) Fix non-interactive extension installs returning success when an explicit version pin cannot be applied without confirmation.
+- [[#10181]](https://github.com/Azure/azure-dev/pull/10181) Fix registered file extension sources becoming unavailable after changing working directories.
+- [[#10181]](https://github.com/Azure/azure-dev/pull/10181) Fix the Foundry SDK accepting multiple objects or documents in a selected file reference.
+- [[#10254]](https://github.com/Azure/azure-dev/pull/10254) Fix nested dependency injection scopes overwriting registrations in parent or sibling scopes.
+- [[#10254]](https://github.com/Azure/azure-dev/pull/10254) Fix extension auto-install diagnostics ignoring the command's selected output format.
+- [[#10294]](https://github.com/Azure/azure-dev/pull/10294) Fix environment access failing after project initialization when an earlier lookup found no project.
+- [[#10282]](https://github.com/Azure/azure-dev/pull/10282) Fix directly invoked extension commands losing their process exit codes.
+- [[#10280]](https://github.com/Azure/azure-dev/pull/10280) Fix repeated unchanged progress lines during extension installs and updates when output is not a terminal.
+- [[#10317]](https://github.com/Azure/azure-dev/pull/10317) Fix stale in-memory authentication entries surviving cache cleanup during re-login.
 
 ## 1.35.0 (2026-09-30)
 

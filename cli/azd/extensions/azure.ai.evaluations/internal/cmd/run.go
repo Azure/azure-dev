@@ -177,6 +177,12 @@ func (a *runStartAction) Run() error {
 	if a.flags.maxSamples < 0 {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
 	}
+	if a.cmd.Flags().Changed("dataset") && strings.TrimSpace(a.flags.datasetName) == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--dataset must not be empty when explicitly supplied",
+			"Provide a dataset name declared in the eval configuration, or omit --dataset to use the eval's dataset.")
+	}
 
 	newContext := a.newContext
 	if newContext == nil {

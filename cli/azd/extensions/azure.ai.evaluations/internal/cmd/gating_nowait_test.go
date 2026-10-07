@@ -83,3 +83,22 @@ func TestNegativeMaxSamplesFlagIsRefusedBeforeAnyNetworkWork(t *testing.T) {
 	require.True(t, ok, "the refusal must carry a structured code")
 	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 }
+
+func TestEmptyDatasetOverrideIsRefusedBeforeAnyNetworkWork(t *testing.T) {
+	for _, value := range []string{"", "  "} {
+		root := NewRootCommand()
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs([]string{"run", "start", "--dataset=" + value})
+
+		err := root.ExecuteContext(t.Context())
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "--dataset")
+		assert.Contains(t, err.Error(), "must not be empty")
+		local, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "the refusal must carry a structured code")
+		assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+	}
+}

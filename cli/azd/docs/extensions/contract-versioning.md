@@ -19,16 +19,10 @@ therefore do not have stable `v1` generated types or facade aliases. The
 corresponding `AzdClient` convenience accessors return generated `v1beta`
 clients, and their request and response types come from `contracts/v1beta`.
 
-`AzdClient.ProjectBeta()` also returns a generated beta client. Its
-`AddServiceRequest.operation_id` opts into an `AddServiceAcknowledgment`
-status detail on completed failures. The identifier is limited to 64 bytes;
-longer values are rejected before project mutation. `Project()` retains the
-stable request shape, returns ordinary errors, and ignores operation metadata
-without emitting completion acknowledgments. See
-[Project service save acknowledgment](../../../../docs/architecture/extension-framework.md#project-service-save-acknowledgment)
-for timing and conservative recovery rules. Use a published SDK containing
-these beta symbols and a host containing the focused override; the existence
-of a beta service route alone does not establish support for the new field.
+`AzdClient.ProjectBeta()` exposes the generated preview project client
+alongside the stable `Project()` accessor. Clients whose SDK exposes it use
+`ProjectBeta().GetAddServiceCapabilities` before opting into
+typed `AddService` completion acknowledgments.
 
 ## Channel policy
 
@@ -97,15 +91,6 @@ should implement only the focused method interfaces they need. Do not embed the 
 registration rejects whole generated beta servers, unknown service keys, and
 values that do not implement a focused interface.
 
-Built-in project overrides are composed per method with caller overrides.
-A caller's focused method takes precedence for that method only; an unrelated
-override does not disable the built-in `AddService` acknowledgment behavior.
-The beta-only `GetAddServiceCapabilities(EmptyRequest)` probe advertises the
-selected implementation through `GetAddServiceCapabilitiesResponse` field
-`acknowledgment_supported = 1`. A custom `AddService` is unsupported by default
-and must explicitly override the probe to opt in to the complete contract.
-The probe is read-only and does not load project configuration.
-
 An additive beta enum value on an existing shared request field is different
 from an additive field: proto3 preserves its numeric value in the stable
 message even when stable does not define that value. Such a preview value also
@@ -119,6 +104,19 @@ make host registration fail. Wire the override through the existing
 `NewServer` options rather than adding another constructor dependency. After
 the capability graduates to stable, the regenerated adapter automatically
 uses stable business logic when no override is configured.
+
+Built-in focused project overrides compose with caller overrides per method.
+A caller override for `Get`, for example, does not suppress the built-in
+`AddService` acknowledgment or read-only capability handler. Custom `AddService`
+implementations must explicitly supply their own capability response to advertise
+acknowledgment support.
+
+For preview fields absent from released SDKs, the evaluations extension snapshots
+canonical descriptors with `grpc/generateprojectclient` during `make proto` and
+uses a private dynamic registry. This avoids duplicate global registration and
+does not introduce a second schema. The private client selects the stable
+host path when the read-only beta capability RPC explicitly reports unsupported
+or returns `Unimplemented`.
 
 Stable handlers can return gRPC statuses containing stable contract messages
 in `Any` details. Before a beta response is sent, the host translates every

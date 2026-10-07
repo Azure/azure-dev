@@ -90,10 +90,6 @@ For extensions that are still in development or preview, consider publishing to 
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)
 - **Reuse parameter patterns** — Use established flags like `--subscription`, `--name`, `--type`
 - **Integrate with help** — Make your extension discoverable through `azd help`
-- **Documentation routing** — The host's `--docs` flag opens the extensions overview for
-  intermediate namespace groups such as `azd ai`. At and below your extension's namespace,
-  the extension handles flags itself; `--docs` is not automatically supplied by the host
-  or Go SDK. See [Command Documentation Routing](../architecture/extension-framework.md#command-documentation-routing).
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
   first-party `ReportUsage` attributes must be declared and classified in
@@ -107,20 +103,17 @@ For extensions that are still in development or preview, consider publishing to 
 ## Detailed Reference
 
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
-For `Project.AddService`, the preview `ProjectBeta()` client supports typed
-[save acknowledgments](../architecture/extension-framework.md#project-service-save-acknowledgment)
-with fresh per-call identifiers of at most 64 bytes. Before selecting that
-mutation path, call its read-only `GetAddServiceCapabilities` probe and require
-`acknowledgment_supported`. Only an explicit false response or `Unimplemented`
-from the probe permits an older stable-SDK path; all other probe errors abort.
-Never fall back or replay after a mutation error.
-
-The stable client returns ordinary errors without a metadata/trailer completion
-protocol. An older host, a missing capability response, or any stable mutation
-failure requires retaining uncertain local work and providing explicit recovery
-guidance, not status-code-based rollback. Use a published SDK containing the
-beta client and probe symbols; local source builds do not establish published
-availability.
+For `Project.AddService`, use the optional
+[save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),
+the read-only beta `GetAddServiceCapabilities` RPC, a fresh typed operation ID,
+and local ownership checks before compensating local edits. Only an explicit
+unsupported response or `Unimplemented` from the capability RPC selects the stable
+host path. Never retry a failed mutating RPC on another channel. Unacknowledged failures
+require retention and explicit inspection guidance rather than status-code-based
+rollback; do not trust custom metadata/trailers as a substitute for the typed API.
+The acknowledgment covers completed pre-save rejections only on host builds
+that implement that behavior. It proves that the operation cannot write later;
+it does not replace a root-file comparison or ownership checks.
 
 For comprehensive extension development documentation, see:
 

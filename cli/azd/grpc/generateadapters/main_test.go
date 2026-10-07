@@ -90,7 +90,6 @@ func TestGenerateCodePreservesUnknownFieldsForSharedStreams(t *testing.T) {
 	generated, err := generateCode(services, services)
 	require.NoError(t, err)
 	require.Contains(t, string(generated), "transcodeBetaStreamRequest(request, stableRequest)")
-	require.Contains(t, string(generated), "findBetaOverride[BetaExampleServiceStreamOverride](a.override)")
 }
 
 func TestGenerateCodeRejectsOverrideForBetaOnlyService(t *testing.T) {

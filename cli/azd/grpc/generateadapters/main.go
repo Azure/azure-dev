@@ -483,8 +483,7 @@ func writeUnaryAdapterMethod(
 	)
 	fmt.Fprintf(
 		output,
-		"\tif override, ok := findBetaOverride[%s](a.override); ok {\n"+
-			"\t\treturn override.%s(ctx, req)\n\t}\n",
+		"\tif override, ok := findBetaOverride[%s](a.override); ok {\n\t\treturn override.%s(ctx, req)\n\t}\n",
 		overrideInterfaceName(service, betaMethod),
 		betaMethod.name,
 	)
@@ -528,8 +527,7 @@ func writeBidiAdapterMethod(
 	)
 	fmt.Fprintf(
 		output,
-		"\tif override, ok := findBetaOverride[%s](a.override); ok {\n"+
-			"\t\treturn override.%s(stream)\n\t}\n",
+		"\tif override, ok := findBetaOverride[%s](a.override); ok {\n\t\treturn override.%s(stream)\n\t}\n",
 		overrideInterfaceName(service, betaMethod),
 		betaMethod.name,
 	)

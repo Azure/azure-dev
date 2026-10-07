@@ -91,45 +91,48 @@ For directly invoked extension commands, the host preserves the extension proces
 The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.
 This read-only RPC advertises whether the active `AddService` implementation
 supports `AddServiceRequest.operation_id` and `AddServiceAcknowledgment` status
-details. Stable `Project.AddService` calls return ordinary errors and do not
-provide completion acknowledgments.
+details. An unrelated focused beta override does not disable the built-in
+implementation. A custom `AddService` override must explicitly advertise its
+own support; the built-in capability response otherwise reports false.
 
-When supported, set `AddServiceRequest.operation_id` to a fresh
-per-call identifier of at most 64 bytes (not characters). Longer identifiers
+When supported, the caller supplies a fresh operation ID of at most 64 bytes
+(not characters) and makes exactly one beta `AddService` call. Longer identifiers
 are rejected with `InvalidArgument` before project mutation or saving.
-The host returns an `AddServiceAcknowledgment` with that
-identifier as a `google.rpc.Status` detail on the same completed failures.
-Existing host-error codes, messages, and structured
-details are preserved alongside the acknowledgment. The stable protobuf shape
-is unchanged.
+A failed operation that acquired the project mutation
+lock attaches an `AddServiceAcknowledgment` detail echoing that ID. Completion,
+including synchronous save retries, cleanup, and cache restoration, happens
+under the mutation lock. The status detail is serialized after the shared
+mutation helper returns and releases that lock. Success, panics, and errors
+rejected before the lock, cancellation, and deadline expiration do not carry a
+failure acknowledgment. Existing host-error codes, messages, suggestions, and
+structured details are preserved alongside the acknowledgment. Detail-attachment
+failures are explicit internal errors, not confirmed completion.
 
-`GetAddServiceCapabilitiesResponse.acknowledgment_supported` is true for the
-built-in implementation, including when an unrelated focused method is
-overridden. A custom `AddService` override is unsupported unless it explicitly
-implements the capability override and guarantees the acknowledgment contract.
-The probe does not load or save project configuration.
+Require exactly one well-formed matching detail before compensating local
+edits. Missing, malformed, stale, wrong-type, or duplicate details are uncertain
+outcomes. Cancellation, deadlines, authentication/authorization and transport
+failures are not safe completion signals. Completion is not proof that the
+root file stayed unchanged: retain root-byte comparisons, local locks, and
+ownership checks before rollback.
 
-Only an explicit unsupported response or `Unimplemented` from this probe
-permits an older stable-SDK path. Authentication, cancellation, and transient
-probe errors abort before mutation. Once a mutation path is selected, do not
-fall back or replay on any mutation error, including `Unimplemented`.
-The stable path cannot establish typed completion; do not infer support from
-legacy trailers or the presence of a beta route.
+The authentication/authorization exclusions above are a consumer recovery
+policy, not additional host acknowledgment suppression.
 
-Require exactly one matching acknowledgment before considering compensation
-of local edits. Missing, mismatched, duplicate, or lost acknowledgments remain
-uncertain outcomes. Cancellation or a transport error can reach the caller
-while host work is still running. Completion does not prove that no bytes were
-written before a failure: compare root-file bytes and check local ownership
-before compensation. This protocol is not a cross-file transaction.
+An explicit false capability response or `Unimplemented` from the read-only
+RPC selects the stable host path. Other capability errors stop before
+mutation; errors from the subsequent mutation never trigger a fallback replay.
+Stable calls can succeed normally, but failed saves retain the scaffold
+with manual inspection guidance.
 
-The beta API requires a published SDK containing the accessor, request field,
-and status-detail type, and a host containing the focused beta override.
-Earlier beta hosts can discard an unknown request field, so route availability
-alone does not prove completion-acknowledgment support. Pin a verified containing
-SDK and establish the compatible host requirement only after that release
-exists. Local builds, replacements, and source ancestry do not establish
-published availability.
+The evaluations extension uses a private dynamic descriptor registry
+generated from the canonical beta schema by `grpc/generateprojectclient`.
+This permits reproducible builds with its released SDK pin, without a local
+replace, pseudo-version, duplicate schema, or conflicting global protobuf
+registration. Its private client supplies the project fields absent from its
+released SDK pin. Regeneration is part of `make proto`.
+Completion acknowledgments exist only on the typed beta API.
+Stable callers receive ordinary errors and retain uncertain
+scaffolds for manual recovery, without trusting custom metadata or trailers.
 
 ## Deployment Preview
 
@@ -151,18 +154,6 @@ for registration and provider requirements.
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
-
-## Command Documentation Routing
-
-The host creates intermediate command groups for dotted extension namespaces. For example,
-extensions registered as `ai.eval` and `ai.dataset` share the host-owned `azd ai` group.
-`azd ai --docs` opens the [extensions overview](https://learn.microsoft.com/azure/developer/azure-developer-cli/extensions/overview),
-not a generated anchor in the built-in command reference. Existing built-in command groups
-retain their reference anchors even when an extension adds a child command.
-
-Commands at and below the extension's own namespace are delegated to the extension process.
-Their flags, including whether they support `--docs`, are determined by that extension.
-Use `--help` for its command-specific usage.
 
 ## Detailed Reference
 

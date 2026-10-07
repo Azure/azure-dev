@@ -260,6 +260,8 @@ func (s *projectService) AddService(
 // work completed before the returned error -- the same point at which the documented
 // acknowledgment contract promises a signal to an opted-in caller. Success, panics, cancellation,
 // deadline expiration, and errors returned before the lock do not set acknowledged.
+// Completion and cache restoration happen under the lock. The caller serializes the
+// acknowledgment after this function returns and the lock has been released.
 func (s *projectService) addService(
 	ctx context.Context, req *azdext.AddServiceRequest, operationToken string,
 ) (acknowledged bool, resultErr error) {

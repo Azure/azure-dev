@@ -5,7 +5,6 @@ package grpcserver
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
@@ -13,6 +12,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// betaProjectServiceOverride implements the v1beta typed AddServiceAcknowledgment contract
+// and shares mutation logic with the stable v1 handler (projectService.addService).
+// Completion acknowledgments are beta-only; stable callers receive ordinary errors.
+// See "Project service save acknowledgment" in docs/architecture/extension-framework.md.
 type betaProjectServiceOverride struct {
 	service *projectService
 	custom  any
@@ -20,8 +23,8 @@ type betaProjectServiceOverride struct {
 
 var _ BetaProjectServiceAddServiceOverride = (*betaProjectServiceOverride)(nil)
 
-// GetAddServiceCapabilities advertises only the built-in acknowledgment implementation.
-// A custom AddService override must explicitly supply its own capability override to opt in.
+// GetAddServiceCapabilities only advertises the built-in acknowledgment implementation.
+// A custom AddService override must supply its own capability implementation to opt in.
 func (o *betaProjectServiceOverride) GetAddServiceCapabilities(
 	context.Context, *v1beta.EmptyRequest,
 ) (*v1beta.GetAddServiceCapabilitiesResponse, error) {
@@ -29,8 +32,11 @@ func (o *betaProjectServiceOverride) GetAddServiceCapabilities(
 	return &v1beta.GetAddServiceCapabilitiesResponse{AcknowledgmentSupported: !custom}, nil
 }
 
-// AddService reports completed failures using a typed beta status detail.
-// Operation identifiers over 64 bytes are rejected before project mutation.
+// AddService adapts the v1beta AddServiceRequest.operation_id field onto the shared mutation
+// logic. On an acknowledged failure it attaches an AddServiceAcknowledgment detail to the
+// returned gRPC status instead of a trailer, so the capability is discoverable from the v1beta
+// service definition and generated clients rather than relying on an undocumented header name.
+// Operation identifiers longer than 64 bytes are rejected before project mutation.
 func (o *betaProjectServiceOverride) AddService(
 	ctx context.Context, req *v1beta.AddServiceRequest,
 ) (*v1beta.EmptyResponse, error) {
@@ -51,10 +57,11 @@ func (o *betaProjectServiceOverride) AddService(
 			withDetails, detailErr := status.Convert(mapHostError(err)).WithDetails(
 				&v1beta.AddServiceAcknowledgment{OperationId: req.GetOperationId()},
 			)
-			if detailErr != nil {
-				return nil, fmt.Errorf("%w; attaching AddService acknowledgment: %w", err, detailErr)
+			if detailErr == nil {
+				return nil, withDetails.Err()
 			}
-			return nil, withDetails.Err()
+			return nil, status.Errorf(codes.Internal,
+				"AddService failed: %v; attaching completion acknowledgment: %v", err, detailErr)
 		}
 		return nil, err
 	}

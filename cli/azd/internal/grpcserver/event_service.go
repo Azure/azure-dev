@@ -86,7 +86,7 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 	}
 
 	// Create message broker with EventMessageEnvelope
-	envelope := azdext.NewEventMessageEnvelope()
+	envelope := azdext.NewEventMessageEnvelope(extension.Id)
 	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id, log.Default())
 
 	// Register handlers for incoming subscription requests (no response needed)
@@ -132,8 +132,7 @@ func (s *eventService) onSubscribeProjectEvent(
 		}
 
 		evt := ext.Event(eventName)
-		// Pass the stream context (ctx) which has extension claims
-		handler := s.createProjectEventHandler(ctx, extension, eventName, broker)
+		handler := s.createProjectEventHandler(extension, eventName, broker)
 		if err := projectConfig.AddHandler(ctx, evt, handler); err != nil {
 			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
@@ -143,7 +142,6 @@ func (s *eventService) onSubscribeProjectEvent(
 }
 
 func (s *eventService) createProjectEventHandler(
-	streamCtx context.Context,
 	extension *extensions.Extension,
 	eventName string,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
@@ -175,8 +173,7 @@ func (s *eventService) createProjectEventHandler(
 			}
 
 			return s.runWithEnvReload(ctx, func() error {
-				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				response, err := broker.SendAndWait(ctx, invokeMsg)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
 				}
@@ -247,8 +244,7 @@ func (s *eventService) onSubscribeServiceEvent(
 				continue
 			}
 
-			// Pass the stream context (ctx) which has extension claims
-			handler := s.createServiceEventHandler(ctx, serviceConfig, extension, eventName, broker)
+			handler := s.createServiceEventHandler(serviceConfig, extension, eventName, broker)
 			if err := serviceConfig.AddHandler(ctx, evt, handler); err != nil {
 				return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
@@ -259,7 +255,6 @@ func (s *eventService) onSubscribeServiceEvent(
 }
 
 func (s *eventService) createServiceEventHandler(
-	streamCtx context.Context,
 	serviceConfig *project.ServiceConfig,
 	extension *extensions.Extension,
 	eventName string,
@@ -306,8 +301,7 @@ func (s *eventService) createServiceEventHandler(
 			}
 
 			return s.runWithEnvReload(ctx, func() error {
-				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				response, err := broker.SendAndWait(ctx, invokeMsg)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}

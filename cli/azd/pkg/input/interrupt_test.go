@@ -52,6 +52,47 @@ func TestPushInterruptHandler_LIFO(t *testing.T) {
 	require.Nil(t, currentInterruptHandler())
 }
 
+func TestPushInterruptHandler_OutOfOrderPop(t *testing.T) {
+	require.Nil(t, currentInterruptHandler())
+
+	firstCalls := 0
+	secondCalls := 0
+	first := func() bool {
+		firstCalls++
+		return true
+	}
+	second := func() bool {
+		secondCalls++
+		return true
+	}
+	popFirst := PushInterruptHandler(first)
+	popSecond := PushInterruptHandler(second)
+	t.Cleanup(popFirst)
+	t.Cleanup(popSecond)
+
+	popFirst()
+
+	require.Len(t, SnapshotInterruptStack(), 1)
+	require.NotNil(t, currentInterruptHandler())
+	require.True(t, currentInterruptHandler()())
+	require.Zero(t, firstCalls)
+	require.Equal(t, 1, secondCalls)
+
+	popSecond()
+	require.Nil(t, currentInterruptHandler())
+
+	thirdCalls := 0
+	popThird := PushInterruptHandler(func() bool {
+		thirdCalls++
+		return true
+	})
+	t.Cleanup(popThird)
+	popFirst()
+	require.True(t, currentInterruptHandler()())
+	require.Equal(t, 1, thirdCalls)
+	popThird()
+}
+
 func TestTryStartInterruptHandler_PreventsConcurrent(t *testing.T) {
 	require.True(t, tryStartInterruptHandler())
 	t.Cleanup(finishInterruptHandler)

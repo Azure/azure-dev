@@ -153,16 +153,44 @@ func classify(err error) (string, []attribute.KeyValue) {
 	if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
 		return classifyArmDeployError(armDeployErr)
 	}
-	if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+
+	extensionRunErr, hasExtensionRunErr := errors.AsType[*extensions.ExtensionRunError](err)
+	extServiceErr, hasExtServiceErr := errors.AsType[*azdext.ServiceError](err)
+	extLocalErr, hasExtLocalErr := errors.AsType[*azdext.LocalError](err)
+	extToolErr, hasExtToolErr := errors.AsType[*azdext.ToolError](err)
+
+	if hasExtensionRunErr {
+		if runCode := classifyCancellationCause(extensionRunErr.Err); runCode != "" {
+			if hasExtLocalErr {
+				localCode, attrs := classifyExtLocalError(extLocalErr)
+				if localCode == runCode {
+					return localCode, attrs
+				}
+			}
+			return runCode, nil
+		}
+	}
+	if cancellationCode := classifyCancellationCause(err); cancellationCode != "" {
+		if hasExtLocalErr {
+			localCode, attrs := classifyExtLocalError(extLocalErr)
+			if localCode == cancellationCode {
+				return localCode, attrs
+			}
+		}
+		if hasExtensionRunErr || hasExtServiceErr || hasExtLocalErr || hasExtToolErr {
+			return cancellationCode, nil
+		}
+	}
+	if hasExtServiceErr {
 		return classifyExtServiceError(extServiceErr)
 	}
-	if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+	if hasExtLocalErr {
 		return classifyExtLocalError(extLocalErr)
 	}
-	if extToolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
+	if hasExtToolErr {
 		return classifyExtToolError(extToolErr)
 	}
-	if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
+	if hasExtensionRunErr {
 		return "ext.run.failed", nil
 	}
 	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
@@ -244,6 +272,15 @@ func classifyGRPCStatus(err error) (string, []attribute.KeyValue, bool) {
 		return "", nil, false
 	}
 
+	// Cancellation and deadlines are authoritative even when the status still
+	// contains details for the operation error that was interrupted.
+	switch st.Code() {
+	case grpcCodes.Canceled:
+		return "user.canceled", nil, true
+	case grpcCodes.DeadlineExceeded:
+		return "internal.timeout", nil, true
+	}
+
 	if relayedErr := azdext.ExtensionErrorFromStatus(st); relayedErr != nil {
 		code, attrs := classify(azdext.UnwrapError(relayedErr))
 		return code, attrs, true
@@ -273,16 +310,6 @@ func classifyGRPCStatus(err error) (string, []attribute.KeyValue, bool) {
 				fields.ErrCategory.String("auth"),
 			}, true
 		}
-	}
-
-	// gRPC status errors do not unwrap to context.Canceled or
-	// context.DeadlineExceeded, so preserve the host-side cancellation
-	// classifications explicitly at the transport boundary.
-	switch st.Code() {
-	case grpcCodes.Canceled:
-		return "user.canceled", nil, true
-	case grpcCodes.DeadlineExceeded:
-		return "internal.timeout", nil, true
 	}
 
 	grpcCode := st.Code().String()
@@ -407,10 +434,41 @@ func classifyExtServiceError(extServiceErr *azdext.ServiceError) (string, []attr
 func classifyExtLocalError(extLocalErr *azdext.LocalError) (string, []attribute.KeyValue) {
 	domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
 	code := normalizeCodeSegment(extLocalErr.Code, "failed")
-	return fmt.Sprintf("ext.%s.%s", domain, code), []attribute.KeyValue{
+	attrs := []attribute.KeyValue{
 		fields.ErrCategory.String(domain),
 		fields.ErrCode.String(code),
 	}
+
+	if domain == string(azdext.LocalErrorCategoryUser) &&
+		(code == "canceled" || code == "cancelled") {
+		return "user.canceled", attrs
+	}
+	if domain == string(azdext.LocalErrorCategoryInternal) && code == "deadline_exceeded" {
+		return "internal.timeout", attrs
+	}
+
+	return fmt.Sprintf("ext.%s.%s", domain, code), attrs
+}
+
+func classifyCancellationCause(err error) string {
+	switch {
+	case errors.Is(err, terminal.InterruptErr),
+		errors.Is(err, context.Canceled):
+		return "user.canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "internal.timeout"
+	}
+
+	if st, ok := azdext.GRPCStatusFromError(err); ok {
+		switch st.Code() {
+		case grpcCodes.Canceled:
+			return "user.canceled"
+		case grpcCodes.DeadlineExceeded:
+			return "internal.timeout"
+		}
+	}
+
+	return ""
 }
 
 func classifyExtToolError(extToolErr *azdext.ToolError) (string, []attribute.KeyValue) {

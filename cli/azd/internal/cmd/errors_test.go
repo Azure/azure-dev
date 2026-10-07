@@ -331,6 +331,139 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: nil,
 		},
 		{
+			name: "WithCanceledExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err:              context.Canceled,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithDeadlineExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err:              context.DeadlineExceeded,
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithReportedErrorAndCanceledExtensionRunError",
+			err: fmt.Errorf(
+				"%w: %w",
+				&azdext.LocalError{
+					Message:  "extension reported a failure",
+					Code:     "reported_failure",
+					Category: azdext.LocalErrorCategoryInternal,
+				},
+				&extensions.ExtensionRunError{
+					ExtensionId:      "test.ext",
+					ExtensionVersion: "1.2.3",
+					Err:              context.Canceled,
+				},
+			),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithReportedCancellationAndFailedExtensionRunError",
+			err: fmt.Errorf(
+				"%w: %w",
+				&azdext.LocalError{
+					Message:  "operation cancelled",
+					Code:     "cancelled",
+					Category: azdext.LocalErrorCategoryUser,
+				},
+				&extensions.ExtensionRunError{
+					ExtensionId:      "test.ext",
+					ExtensionVersion: "1.2.3",
+					Err:              errors.New("exit code 1"),
+				},
+			),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("cancelled"),
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithReportedCancellationAndCanceledExtensionRunError",
+			err: fmt.Errorf(
+				"%w: %w",
+				&azdext.LocalError{
+					Message:  "operation cancelled",
+					Code:     "cancelled",
+					Category: azdext.LocalErrorCategoryUser,
+				},
+				&extensions.ExtensionRunError{
+					ExtensionId:      "test.ext",
+					ExtensionVersion: "1.2.3",
+					Err:              context.Canceled,
+				},
+			),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("cancelled"),
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithJoinedExtServiceErrorAndContextCanceled",
+			err: errors.Join(
+				&azdext.ServiceError{
+					Message:     "request failed",
+					ErrorCode:   "Conflict",
+					StatusCode:  409,
+					ServiceName: "management.azure.com",
+				},
+				context.Canceled,
+			),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithJoinedExtToolErrorAndContextDeadlineExceeded",
+			err: errors.Join(
+				&azdext.ToolError{
+					Message:  "tool failed",
+					ToolName: "docker",
+					Kind:     azdext.ToolErrorKindFailed,
+				},
+				context.DeadlineExceeded,
+			),
+			wantErrReason:  "internal.timeout",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithFailedExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err:              errors.New("exit code 1"),
+			},
+			wantErrReason: "ext.run.failed",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
 			name:          "WithErrNoCurrentUser",
 			err:           auth.ErrNoCurrentUser,
 			wantErrReason: "auth.not_logged_in",
@@ -446,6 +579,73 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
 				fields.ErrorKey(fields.ErrCode.Key).String("token_expired"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorUserCanceled",
+			err: &azdext.LocalError{
+				Message:  "operation canceled",
+				Code:     "canceled",
+				Category: azdext.LocalErrorCategoryUser,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("canceled"),
+			},
+		},
+		{
+			name: "WithTransportedExtLocalErrorUserCanceled",
+			err: &azdext.LocalError{
+				Message:  "operation canceled",
+				Err:      context.Canceled,
+				Code:     "canceled",
+				Category: azdext.LocalErrorCategoryUser,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("canceled"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorUserCancelled",
+			err: &azdext.LocalError{
+				Message:  "operation cancelled",
+				Code:     "cancelled",
+				Category: azdext.LocalErrorCategoryUser,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("cancelled"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorDeadlineExceeded",
+			err: &azdext.LocalError{
+				Message:  "operation timed out",
+				Code:     "deadline_exceeded",
+				Category: azdext.LocalErrorCategoryInternal,
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("internal"),
+				fields.ErrorKey(fields.ErrCode.Key).String("deadline_exceeded"),
+			},
+		},
+		{
+			name: "WithTransportedExtLocalErrorDeadlineExceeded",
+			err: &azdext.LocalError{
+				Message:  "operation timed out",
+				Err:      context.DeadlineExceeded,
+				Code:     "deadline_exceeded",
+				Category: azdext.LocalErrorCategoryInternal,
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("internal"),
+				fields.ErrorKey(fields.ErrCode.Key).String("deadline_exceeded"),
 			},
 		},
 		{
@@ -1265,6 +1465,26 @@ func TestMapError_GRPCStatus(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	canceledStatus, err := status.New(codes.Canceled, "operation canceled").WithDetails(
+		azdext.WrapError(&azdext.ServiceError{
+			Message:     "service failed",
+			ErrorCode:   "Conflict",
+			StatusCode:  409,
+			ServiceName: "management.azure.com",
+		}),
+	)
+	require.NoError(t, err)
+
+	deadlineStatus, err := status.New(codes.DeadlineExceeded, "operation timed out").WithDetails(
+		azdext.WrapError(&azdext.ServiceError{
+			Message:     "service failed",
+			ErrorCode:   "Conflict",
+			StatusCode:  409,
+			ServiceName: "management.azure.com",
+		}),
+	)
+	require.NoError(t, err)
+
 	tests := []struct {
 		name      string
 		err       error
@@ -1311,6 +1531,16 @@ func TestMapError_GRPCStatus(t *testing.T) {
 		{
 			name:     "DeadlineExceeded",
 			err:      status.Error(codes.DeadlineExceeded, "deadline exceeded"),
+			wantCode: "internal.timeout",
+		},
+		{
+			name:     "CanceledOverridesRelayedFailure",
+			err:      canceledStatus.Err(),
+			wantCode: "user.canceled",
+		},
+		{
+			name:     "DeadlineOverridesRelayedFailure",
+			err:      deadlineStatus.Err(),
 			wantCode: "internal.timeout",
 		},
 		{

@@ -56,3 +56,8 @@ func TestExecutionError_Error_Script(t *testing.T) {
 	assert.Contains(t, got, "pwsh")
 	assert.NotContains(t, got, "inline")
 }
+
+func TestExecutionError_Interrupted(t *testing.T) {
+	assert.False(t, (&ExecutionError{}).Interrupted())
+	assert.True(t, (&ExecutionError{interrupted: true}).Interrupted())
+}

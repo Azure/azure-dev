@@ -35,6 +35,8 @@ var (
 	}
 )
 
+const extensionListenerShutdownGracePeriod = 2 * time.Second
+
 // extensionFailure tracks a failed extension and its startup error.
 type extensionFailure struct {
 	extension *extensions.Extension
@@ -108,10 +110,11 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		return nil, err
 	}
 
+	processCtx, cancelProcesses := context.WithCancel(context.WithoutCancel(ctx))
+	var processes []*extensionProcess
+
 	defer func() {
-		if err := grpcServer.Stop(); err != nil {
-			log.Printf("failed to stop gRPC server: %v\n", err)
-		}
+		shutdownExtensionProcesses(grpcServer, cancelProcesses, processes)
 	}()
 
 	forceColor := !color.NoColor
@@ -141,7 +144,14 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		ext := extension
 		wg.Go(func() {
 			startTime := time.Now()
-			if err := startAndWaitExtension(ctx, ext, m.extensionRunner, serverInfo, startOpts); err != nil {
+			process, err := startAndWaitExtension(ctx, processCtx, ext, m.extensionRunner, serverInfo, startOpts)
+			if process != nil {
+				mu.Lock()
+				processes = append(processes, process)
+				mu.Unlock()
+			}
+
+			if err != nil {
 				elapsed := time.Since(startTime)
 				log.Printf("'%s' extension failed to become ready after %v: %v\n", ext.Id, elapsed, err)
 				if reportedErr := ext.GetReportedError(); reportedErr != nil {
@@ -165,6 +175,10 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	// Wait for all extensions to reach a terminal state (ready or failed)
 	wg.Wait()
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 
 	// Check for failed extensions and display categorized warnings
 	if len(failedExtensions) > 0 {
@@ -323,30 +337,42 @@ type extensionStartOptions struct {
 	forceColor  bool
 }
 
+type extensionProcess struct {
+	extension *extensions.Extension
+	done      chan struct{}
+}
+
 // startAndWaitExtension launches an extension's `listen` process against the gRPC server described
 // by serverInfo and blocks until the extension signals readiness or fails. It is the per-extension
 // startup shared by ExtensionsMiddleware (every listen-capable extension) and ExtensionActivator
 // (a targeted subset).
 func startAndWaitExtension(
-	ctx context.Context,
+	readyParentCtx context.Context,
+	processCtx context.Context,
 	ext *extensions.Extension,
 	runner *extensions.Runner,
 	serverInfo *grpcserver.ServerInfo,
 	opts extensionStartOptions,
-) error {
-	jwtToken, err := grpcserver.GenerateExtensionTokenWithContext(ctx, ext, serverInfo)
+) (*extensionProcess, error) {
+	jwtToken, err := grpcserver.GenerateExtensionTokenWithContext(readyParentCtx, ext, serverInfo)
 	if err != nil {
 		err = fmt.Errorf("generating extension token for '%s': %w", ext.Id, err)
 		ext.Fail(err)
-		return err
+		return nil, err
 	}
 
 	stdin := ext.StdIn()
 	stdout := ext.StdOut()
 	stderr := ext.StdErr()
+	process := &extensionProcess{
+		extension: ext,
+		done:      make(chan struct{}),
+	}
 
 	// Start the extension process in a separate goroutine
 	go func() {
+		defer close(process.done)
+
 		allEnv := []string{
 			fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
 			fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
@@ -357,7 +383,7 @@ func startAndWaitExtension(
 		}
 
 		// Propagate trace context to the extension process
-		if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
+		if traceEnv := tracing.Environ(processCtx); len(traceEnv) > 0 {
 			allEnv = append(allEnv, traceEnv...)
 		}
 
@@ -378,17 +404,85 @@ func startAndWaitExtension(
 			Environment: opts.environment,
 		}
 
-		if _, err := runner.Invoke(ctx, ext, invokeOptions); err != nil {
-			log.Printf("%v", err)
+		if _, err := runner.Invoke(processCtx, ext, invokeOptions); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				log.Printf("%v", err)
+			}
 			ext.Fail(err)
+			return
 		}
+
+		ext.Fail(fmt.Errorf("extension '%s' exited before signaling readiness", ext.Id))
 	}()
 
 	// Wait for the extension to signal readiness or failure.
 	// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment.
 	// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 15 seconds).
-	readyCtx, cancel := getReadyContext(ctx)
+	readyCtx, cancel := getReadyContext(readyParentCtx)
 	defer cancel()
 
-	return ext.WaitUntilReady(readyCtx)
+	return process, ext.WaitUntilReady(readyCtx)
+}
+
+func shutdownExtensionProcesses(
+	grpcServer *grpcserver.Server,
+	cancelProcesses context.CancelFunc,
+	processes []*extensionProcess,
+) {
+	shutdownExtensionProcessesWithGracePeriod(
+		grpcServer,
+		cancelProcesses,
+		processes,
+		extensionListenerShutdownGracePeriod,
+	)
+}
+
+func shutdownExtensionProcessesWithGracePeriod(
+	grpcServer *grpcserver.Server,
+	cancelProcesses context.CancelFunc,
+	processes []*extensionProcess,
+	gracePeriod time.Duration,
+) {
+	if err := grpcServer.Stop(); err != nil {
+		log.Printf("failed to stop gRPC server: %v\n", err)
+	}
+
+	if waitForExtensionProcesses(processes, gracePeriod) {
+		cancelProcesses()
+		return
+	}
+
+	cancelProcesses()
+	if waitForExtensionProcesses(processes, gracePeriod) {
+		return
+	}
+
+	for _, process := range processes {
+		if process == nil {
+			continue
+		}
+		select {
+		case <-process.done:
+		default:
+			log.Printf("extension '%s' did not stop after cancellation", process.extension.Id)
+		}
+	}
+}
+
+func waitForExtensionProcesses(processes []*extensionProcess, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for _, process := range processes {
+		if process == nil {
+			continue
+		}
+		select {
+		case <-process.done:
+		case <-timer.C:
+			return false
+		}
+	}
+
+	return true
 }

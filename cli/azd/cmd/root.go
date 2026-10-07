@@ -556,7 +556,8 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 			}
 
 			return false
-		})
+		}).
+		UseMiddleware("cancellation", middleware.NewCancellationMiddleware)
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

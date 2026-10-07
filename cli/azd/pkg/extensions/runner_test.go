@@ -5,6 +5,7 @@ package extensions
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -408,6 +409,51 @@ func TestRunner_Invoke_CommandError_WrapsInExtensionRunError(t *testing.T) {
 	require.Equal(t, ext.Id, runErr.ExtensionId)
 	require.Equal(t, ext.Version, runErr.ExtensionVersion)
 	require.ErrorIs(t, runErr, cmdError)
+}
+
+func TestRunner_Invoke_CanceledContextOverridesSuccessfulExit(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.ExitCode)
+
+	var runErr *ExtensionRunError
+	require.ErrorAs(t, err, &runErr)
+	require.ErrorIs(t, runErr, context.Canceled)
+}
+
+func TestRunner_Invoke_CanceledContextPreservesCommandError(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	cmdError := errors.New("process terminated")
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, cmdError
+	})
+
+	_, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.ErrorIs(t, err, cmdError)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestRunner_Invoke_ExtensionPathResolution(t *testing.T) {

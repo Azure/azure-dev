@@ -1062,6 +1062,8 @@ func (c *AskerConsole) handleResize(width int32) {
 	c.spinnerLineMu.Unlock()
 }
 
+var terminalInterruptWatcher sync.Once
+
 func watchTerminalResize(c *AskerConsole) {
 	if runtime.GOOS == "windows" {
 		go func() {
@@ -1219,7 +1221,9 @@ func NewConsole(
 	if isTerminal {
 		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
-		watchTerminalInterrupt(c)
+		terminalInterruptWatcher.Do(func() {
+			watchTerminalInterrupt(c)
+		})
 	}
 
 	return c

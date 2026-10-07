@@ -4,6 +4,7 @@
 package azdext
 
 import (
+	"context"
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -36,6 +37,8 @@ type ServiceError struct {
 type LocalError struct {
 	// Message is the human-readable error message
 	Message string
+	// Err is the canonical local cause when one is available.
+	Err error
 	// Code is an extension-defined machine-readable error code (lowercase snake_case, e.g. "missing_subscription_id").
 	// It appears in telemetry as the last segment of ext.<category>.<code>.
 	Code string
@@ -84,6 +87,15 @@ func (e *LocalError) Error() string {
 	return e.Message
 }
 
+// Unwrap returns the canonical local cause when one is available.
+func (e *LocalError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+
+	return e.Err
+}
+
 // Error implements the error interface.
 func (e *ServiceError) Error() string {
 	return e.Message
@@ -108,10 +120,11 @@ func (e *ToolError) Unwrap() error {
 // to serialize errors before sending them over gRPC.
 //
 // The function applies detection in priority order:
-//  1. [ServiceError] / [LocalError] / [ToolError] — already structured by extension code (highest specificity)
-//  2. [azcore.ResponseError] — Azure SDK HTTP errors
-//  3. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
-//  4. Fallback — unclassified error with original message
+//  1. Cancellation and deadline errors
+//  2. [ServiceError] / [LocalError] / [ToolError] — already structured by extension code
+//  3. [azcore.ResponseError] — Azure SDK HTTP errors
+//  4. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
+//  5. Fallback — unclassified error with original message
 //
 // The counterpart [UnwrapError] is called from the azd host to deserialize
 // the proto back into typed Go errors for telemetry classification.
@@ -123,6 +136,27 @@ func WrapError(err error) *ExtensionError {
 	extErr := &ExtensionError{
 		Message: err.Error(),
 		Origin:  ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED,
+	}
+
+	switch {
+	case errors.Is(err, context.Canceled):
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     "canceled",
+				Category: string(LocalErrorCategoryUser),
+			},
+		}
+		return extErr
+	case errors.Is(err, context.DeadlineExceeded):
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     "deadline_exceeded",
+				Category: string(LocalErrorCategoryInternal),
+			},
+		}
+		return extErr
 	}
 
 	// Check for extension error types (already structured)
@@ -198,6 +232,32 @@ func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status)
 	relayed := ExtensionErrorFromStatus(st)
 	serviceDetail := ServiceErrorDetailFromStatus(st)
 	isAuth := st.Code() == codes.Unauthenticated
+	isCanceled := st.Code() == codes.Canceled
+	isDeadlineExceeded := st.Code() == codes.DeadlineExceeded
+
+	if isCanceled || isDeadlineExceeded {
+		extErr.Message = st.Message()
+		if actionable != nil {
+			extErr.Suggestion = actionable.GetSuggestion()
+			extErr.Links = actionable.GetLinks()
+		}
+
+		code := "canceled"
+		category := LocalErrorCategoryUser
+		if isDeadlineExceeded {
+			code = "deadline_exceeded"
+			category = LocalErrorCategoryInternal
+		}
+
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     code,
+				Category: string(category),
+			},
+		}
+		return
+	}
 
 	if relayed != nil {
 		relayedCopy := proto.Clone(relayed).(*ExtensionError)
@@ -405,8 +465,10 @@ func UnwrapError(msg *ExtensionError) error {
 
 	if localErr := msg.GetLocalError(); localErr != nil {
 		normalizedCategory := ParseLocalErrorCategory(localErr.GetCategory())
+
 		return &LocalError{
 			Message:    msg.GetMessage(),
+			Err:        canonicalLocalErrorCause(normalizedCategory, localErr.GetCode()),
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
 			Suggestion: msg.GetSuggestion(),
@@ -460,10 +522,12 @@ func unwrapPreviewErrorDetails(msg *ExtensionError, links []errorhandler.ErrorLi
 	}
 
 	if localErr := preview.GetLocalError(); localErr != nil && len(localErr.GetCauseTypes()) > 0 {
+		category := ParseLocalErrorCategory(localErr.GetCategory())
 		return &LocalError{
 			Message:    preview.GetMessage(),
+			Err:        canonicalLocalErrorCause(category, localErr.GetCode()),
 			Code:       localErr.GetCode(),
-			Category:   ParseLocalErrorCategory(localErr.GetCategory()),
+			Category:   category,
 			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
 			Suggestion: preview.GetSuggestion(),
 			Links:      links,
@@ -490,6 +554,17 @@ func unwrapPreviewErrorDetails(msg *ExtensionError, links []errorhandler.ErrorLi
 	}
 
 	return nil
+}
+
+func canonicalLocalErrorCause(category LocalErrorCategory, code string) error {
+	switch {
+	case category == LocalErrorCategoryUser && (code == "canceled" || code == "cancelled"):
+		return context.Canceled
+	case category == LocalErrorCategoryInternal && code == "deadline_exceeded":
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
 }
 
 // WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.

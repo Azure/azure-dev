@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -86,7 +87,7 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 	}
 
 	// Create broker with client stream
-	envelope := &EventMessageEnvelope{}
+	envelope := NewEventMessageEnvelope(em.extensionId)
 	// Use client as name since we're on the client side (extension process)
 	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId, em.brokerLogger)
 
@@ -232,12 +233,12 @@ func (em *EventManager) onInvokeProjectHandler(
 	var handlerError *ExtensionError
 
 	// Call the project event handler
-	err := handler(ctx, args)
-	if err != nil {
+	handlerErr := handlerErrorWithContextCause(ctx, handler(ctx, args))
+	if handlerErr != nil {
 		handlerStatus = "failed"
-		handlerMessage = err.Error()
-		handlerError = WrapError(err)
-		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, err)
+		handlerMessage = handlerErr.Error()
+		handlerError = WrapError(handlerErr)
+		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, handlerErr)
 	}
 
 	// Return status message
@@ -284,12 +285,12 @@ func (em *EventManager) onInvokeServiceHandler(
 	var handlerError *ExtensionError
 
 	// Call the service event handler
-	err := handler(ctx, args)
-	if err != nil {
+	handlerErr := handlerErrorWithContextCause(ctx, handler(ctx, args))
+	if handlerErr != nil {
 		handlerStatus = "failed"
-		handlerMessage = err.Error()
-		handlerError = WrapError(err)
-		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, err)
+		handlerMessage = handlerErr.Error()
+		handlerError = WrapError(handlerErr)
+		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, handlerErr)
 	}
 
 	// Return status message
@@ -304,4 +305,21 @@ func (em *EventManager) onInvokeServiceHandler(
 			},
 		},
 	}, nil
+}
+
+func handlerErrorWithContextCause(ctx context.Context, handlerErr error) error {
+	ctxErr := ctx.Err()
+	if ctxErr == nil {
+		return handlerErr
+	}
+
+	cause := context.Cause(ctx)
+	if cause == nil {
+		cause = ctxErr
+	}
+	if handlerErr == nil || errors.Is(handlerErr, ctxErr) {
+		return cause
+	}
+
+	return handlerErr
 }

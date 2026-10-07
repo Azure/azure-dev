@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -54,8 +55,15 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 	rootCmd.SilenceErrors = true
 
-	ctx := NewContext()
-	ctx = WithAccessToken(ctx)
+	interruptCtx, stopInterruptNotifications := signal.NotifyContext(NewContext(), os.Interrupt)
+	defer stopInterruptNotifications()
+	go func(ctx context.Context) {
+		<-ctx.Done()
+		// Restore the default signal behavior after the first interrupt so a
+		// subsequent Ctrl+C can still force-exit an unresponsive extension.
+		stopInterruptNotifications()
+	}(interruptCtx)
+	ctx := WithAccessToken(interruptCtx)
 
 	var cfg runConfig
 	for _, o := range opts {
@@ -83,7 +91,7 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 		}
 	}
 
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
+	if err := executeCommand(ctx, rootCmd); err != nil {
 		if reportErr := ReportError(ctx, err); reportErr != nil {
 			log.Printf("warning: failed to report structured error: %v", reportErr)
 			printError(err)
@@ -91,6 +99,16 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 		os.Exit(1)
 	}
+}
+
+func executeCommand(ctx context.Context, rootCmd *cobra.Command) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 func printError(err error) {

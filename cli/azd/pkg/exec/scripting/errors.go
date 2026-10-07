@@ -39,6 +39,8 @@ type ExecutionError struct {
 	ExitCode int
 	Shell    string
 	IsInline bool
+
+	interrupted bool
 }
 
 func (e *ExecutionError) Error() string {
@@ -51,4 +53,9 @@ func (e *ExecutionError) Error() string {
 	}
 	return fmt.Sprintf(
 		"script exited with code %d (shell: %s)", e.ExitCode, e.Shell)
+}
+
+// Interrupted reports whether script execution ended because of Ctrl+C.
+func (e *ExecutionError) Interrupted() bool {
+	return e != nil && e.interrupted
 }

@@ -21,6 +21,7 @@ func NewProvisioningEnvelope() *ProvisioningEnvelope {
 
 // Verify interface implementation at compile time
 var _ grpcbroker.MessageEnvelope[ProvisioningMessage] = (*ProvisioningEnvelope)(nil)
+var _ grpcbroker.PersistentHandlerContextEnvelope[ProvisioningMessage] = (*ProvisioningEnvelope)(nil)
 
 // GetRequestId returns the request ID from the message.
 func (ops *ProvisioningEnvelope) GetRequestId(ctx context.Context, msg *ProvisioningMessage) string {
@@ -88,6 +89,11 @@ func (ops *ProvisioningEnvelope) GetInnerMessage(msg *ProvisioningMessage) any {
 	default:
 		return nil
 	}
+}
+
+func (ops *ProvisioningEnvelope) PreserveHandlerContext(_ context.Context, msg *ProvisioningMessage) bool {
+	_, ok := ops.GetInnerMessage(msg).(*RegisterProvisioningProviderRequest)
+	return ok
 }
 
 // IsProgressMessage returns true if the message contains a progress message.

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"slices"
 	"strings"
@@ -95,10 +94,13 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 		return noop, err
 	}
 
+	processCtx, cancelProcesses := context.WithCancel(context.WithoutCancel(ctx))
+	processes := make([]*extensionProcess, len(toStart))
+	var cleanupOnce sync.Once
 	cleanup = func() {
-		if err := grpcServer.Stop(); err != nil {
-			log.Printf("failed to stop gRPC server after extension activation: %v", err)
-		}
+		cleanupOnce.Do(func() {
+			shutdownExtensionProcesses(grpcServer, cancelProcesses, processes)
+		})
 	}
 
 	startOpts := extensionStartOptions{
@@ -114,10 +116,22 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	var wg sync.WaitGroup
 	for i, ext := range toStart {
 		wg.Go(func() {
-			startErrs[i] = startAndWaitExtension(ctx, ext, a.extensionRunner, serverInfo, startOpts)
+			processes[i], startErrs[i] = startAndWaitExtension(
+				ctx,
+				processCtx,
+				ext,
+				a.extensionRunner,
+				serverInfo,
+				startOpts,
+			)
 		})
 	}
 	wg.Wait()
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		cleanup()
+		return noop, ctxErr
+	}
 
 	for i, startErr := range startErrs {
 		if startErr == nil {

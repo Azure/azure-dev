@@ -5,9 +5,12 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -203,4 +206,104 @@ func TestMiddlewareRunner_RunAction_InvalidAction(t *testing.T) {
 		"nonexistent-action",
 	)
 	require.Error(t, err)
+}
+
+func TestCancellationMiddleware_FirstInterruptCancelsCommandContext(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	started := make(chan struct{})
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := NewCancellationMiddleware().Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, nil
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("middleware did not invoke the command")
+	}
+
+	handlers := input.SnapshotInterruptStack()
+	require.Len(t, handlers, initialHandlers+1)
+	require.True(t, handlers[len(handlers)-1]())
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("command did not stop after cancellation")
+	}
+
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+}
+
+func TestCancellationMiddleware_SecondInterruptRequestsForceExit(t *testing.T) {
+	_, cancel := context.WithCancel(t.Context())
+	controller := &commandInterruptController{cancel: cancel}
+
+	require.True(t, controller.handle())
+	require.False(t, controller.handle())
+}
+
+func TestCommandInterruptController_FinishCompletesPendingCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	controller := &commandInterruptController{
+		cancel:                cancel,
+		cancellationRequested: true,
+	}
+
+	controller.finish(false)
+
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+}
+
+func TestCommandInterruptController_InterruptedProcessAwaitsHostInterrupt(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	ctx, cancel := context.WithCancel(t.Context())
+	controller := &commandInterruptController{cancel: cancel}
+	controller.popHandler = input.PushInterruptHandler(controller.handle)
+
+	controller.finish(true)
+
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers+1)
+	require.True(t, controller.handle())
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+}
+
+func TestProcessWasInterrupted_WrappedError(t *testing.T) {
+	err := fmt.Errorf("wrapped: %w", interruptedTestError{})
+	require.True(t, processWasInterrupted(err))
+}
+
+type interruptedTestError struct{}
+
+func (interruptedTestError) Error() string {
+	return "interrupted"
+}
+
+func (interruptedTestError) Interrupted() bool {
+	return true
+}
+
+func TestCancellationMiddleware_ChildActionUsesParentHandler(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	called := false
+
+	_, err := NewCancellationMiddleware().Run(
+		WithChildAction(t.Context()),
+		func(ctx context.Context) (*actions.ActionResult, error) {
+			called = true
+			return nil, nil
+		},
+	)
+
+	require.NoError(t, err)
+	require.True(t, called)
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
 }

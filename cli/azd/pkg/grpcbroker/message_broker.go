@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 	"google.golang.org/grpc/codes"
@@ -78,6 +79,44 @@ type MessageEnvelope[T any] interface {
 	CreateProgressMessage(requestId string, message string) *T
 }
 
+// CancellationMessageEnvelope customizes cancellation control messages for envelopes
+// that cannot use the default request-id + error representation.
+type CancellationMessageEnvelope[T any] interface {
+	CreateCancellationMessage(ctx context.Context, request *T, err error) *T
+	IsCancellationMessage(ctx context.Context, msg *T) bool
+	GetCancellationError(msg *T) error
+}
+
+// PersistentHandlerContextEnvelope identifies messages whose handlers retain
+// the stream context after returning, such as provider registrations and event
+// subscriptions. These handlers must not receive a request-scoped context that
+// is canceled as soon as the registration call completes.
+type PersistentHandlerContextEnvelope[T any] interface {
+	PreserveHandlerContext(ctx context.Context, msg *T) bool
+}
+
+const defaultCancellationGracePeriod = time.Second
+
+var errMessageBrokerClosed = errors.New("message broker closed")
+var errRequestAlreadyPending = errors.New("request with correlation id already pending")
+
+type messageBrokerOptions struct {
+	cancellationGracePeriod time.Duration
+}
+
+// MessageBrokerOption configures a MessageBroker.
+type MessageBrokerOption func(*messageBrokerOptions)
+
+// WithCancellationGracePeriod controls how long a canceled caller waits for the
+// remote handler to acknowledge cancellation before returning.
+func WithCancellationGracePeriod(gracePeriod time.Duration) MessageBrokerOption {
+	return func(options *messageBrokerOptions) {
+		if gracePeriod >= 0 {
+			options.cancellationGracePeriod = gracePeriod
+		}
+	}
+}
+
 // handlerWrapper wraps a registered handler function with metadata
 type handlerWrapper struct {
 	handlerFunc   reflect.Value
@@ -85,6 +124,38 @@ type handlerWrapper struct {
 	responseType  reflect.Type
 	hasProgress   bool
 	progressIndex int // parameter index for progress callback
+}
+
+type activeRequest struct {
+	cancel context.CancelCauseFunc
+}
+
+type responseWaiter[T any] struct {
+	ch        chan *T
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func newResponseWaiter[T any](buffer int) *responseWaiter[T] {
+	return &responseWaiter[T]{
+		ch:   make(chan *T, buffer),
+		done: make(chan struct{}),
+	}
+}
+
+func (w *responseWaiter[T]) close() {
+	w.closeOnce.Do(func() {
+		close(w.done)
+	})
+}
+
+func (w *responseWaiter[T]) send(msg *T) bool {
+	select {
+	case w.ch <- msg:
+		return true
+	case <-w.done:
+		return false
+	}
 }
 
 // MessageBroker handles bidirectional message routing for gRPC streams.
@@ -97,13 +168,19 @@ type handlerWrapper struct {
 // This broker works with both client-side (grpc.BidiStreamingClient) and
 // server-side (grpc.BidiStreamingServer) streams through the unified BidiStream interface.
 type MessageBroker[TMessage any] struct {
-	logger        *log.Logger // Private logger for broker trace output; can be silenced independently
-	stream        BidiStream[TMessage]
-	envelope      MessageEnvelope[TMessage]
-	name          string                                     // Name identifier for logging purposes
-	responseChans syncmap.Map[string, chan *TMessage]        // Used for storing response channels by request id
-	handlers      syncmap.Map[reflect.Type, *handlerWrapper] // Used for storing message handlers by request type
-	sendMu        sync.Mutex                                 // Protects concurrent stream.Send() calls
+	logger          *log.Logger // Private logger for broker trace output; can be silenced independently
+	stream          BidiStream[TMessage]
+	envelope        MessageEnvelope[TMessage]
+	name            string                                         // Name identifier for logging purposes
+	responseWaiters syncmap.Map[string, *responseWaiter[TMessage]] // Pending responses by request id
+	handlers        syncmap.Map[reflect.Type, *handlerWrapper]     // Registered handlers by request type
+	sendMu          sync.Mutex                                     // Protects concurrent stream.Send() calls
+	stateMu         sync.Mutex                                     // Protects active requests and broker closure
+	active          map[string]map[*activeRequest]struct{}
+	closed          bool
+	closeOnce       sync.Once
+
+	cancellationGracePeriod time.Duration
 
 	// Ready signaling for when the broker starts receiving messages
 	readyCh   chan struct{} // Closed when Run() starts, signals readiness to all waiters
@@ -123,18 +200,58 @@ func NewMessageBroker[TMessage any](
 	ops MessageEnvelope[TMessage],
 	name string,
 	logger *log.Logger,
+	options ...MessageBrokerOption,
 ) *MessageBroker[TMessage] {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
 
-	return &MessageBroker[TMessage]{
-		logger:   logger,
-		stream:   stream,
-		envelope: ops,
-		name:     name,
-		readyCh:  make(chan struct{}),
+	brokerOptions := messageBrokerOptions{
+		cancellationGracePeriod: defaultCancellationGracePeriod,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(&brokerOptions)
+		}
+	}
+
+	return &MessageBroker[TMessage]{
+		logger:                  logger,
+		stream:                  stream,
+		envelope:                ops,
+		name:                    name,
+		active:                  map[string]map[*activeRequest]struct{}{},
+		cancellationGracePeriod: brokerOptions.cancellationGracePeriod,
+		readyCh:                 make(chan struct{}),
+	}
+}
+
+func (mb *MessageBroker[TMessage]) registerResponseWaiter(
+	requestId string,
+	waiter *responseWaiter[TMessage],
+) error {
+	mb.stateMu.Lock()
+	defer mb.stateMu.Unlock()
+
+	if mb.closed {
+		return errMessageBrokerClosed
+	}
+	if _, exists := mb.responseWaiters.Load(requestId); exists {
+		return fmt.Errorf("%w: %s", errRequestAlreadyPending, requestId)
+	}
+
+	mb.responseWaiters.Store(requestId, waiter)
+	return nil
+}
+
+func (mb *MessageBroker[TMessage]) unregisterResponseWaiter(
+	requestId string,
+	waiter *responseWaiter[TMessage],
+) {
+	mb.stateMu.Lock()
+	mb.responseWaiters.Delete(requestId)
+	mb.stateMu.Unlock()
+	waiter.close()
 }
 
 // On registers a handler for a specific message type.
@@ -231,9 +348,16 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 	msgType := reflect.TypeOf(innerMsg)
 	mb.logger.Printf("[%s] [RequestId=%s] Sending request, MessageType=%v", mb.name, requestId, msgType)
 
-	ch := make(chan *TMessage, 1)
-	mb.responseChans.Store(requestId, ch)
-	defer mb.responseChans.Delete(requestId)
+	waiter := newResponseWaiter[TMessage](1)
+	if err := mb.registerResponseWaiter(requestId, waiter); err != nil {
+		if ctxErr := contextError(ctx); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+	defer func() {
+		mb.unregisterResponseWaiter(requestId, waiter)
+	}()
 
 	// Send request in goroutine to ensure we're waiting before response arrives
 	errCh := make(chan error, 1)
@@ -243,12 +367,20 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 		errCh <- mb.stream.Send(msg)
 	}()
 
+	requestSent := false
+
 	// Wait for send to complete, response, or context cancellation
 	for {
 		select {
 		case <-ctx.Done():
 			mb.logger.Printf("[%s] [RequestId=%s] Context cancelled, MessageType=%v", mb.name, requestId, msgType)
-			return nil, ctx.Err()
+			return nil, mb.cancelPendingRequest(ctx, msg, requestId, msgType, waiter, errCh, requestSent)
+		case <-waiter.done:
+			mb.logger.Printf("[%s] [RequestId=%s] Waiter closed (broker stopped)", mb.name, requestId)
+			if ctxErr := contextError(ctx); ctxErr != nil {
+				return nil, ctxErr
+			}
+			return nil, errMessageBrokerClosed
 		case err := <-errCh:
 			if err != nil {
 				err = wrapResourceExhausted(err, "SendAndWait")
@@ -261,24 +393,29 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 				)
 				return nil, err
 			}
+			requestSent = true
 			mb.logger.Printf("[%s] [RequestId=%s] Request sent successfully, MessageType=%v", mb.name, requestId, msgType)
-		case resp, ok := <-ch:
-			if !ok {
-				mb.logger.Printf("[%s] [RequestId=%s] Channel closed (broker stopped)", mb.name, requestId)
-				return nil, errors.New("channel closed by broker")
-			}
+		case resp := <-waiter.ch:
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)
 			mb.logger.Printf("[%s] [RequestId=%s] Received response, MessageType=%v", mb.name, requestId, respType)
-			if err := mb.envelope.GetError(resp); err != nil {
+			responseErr := mb.envelope.GetError(resp)
+			if ctxErr := contextError(ctx); ctxErr != nil {
+				if responseErr != nil && !errors.Is(responseErr, context.Canceled) &&
+					!errors.Is(responseErr, context.DeadlineExceeded) {
+					return nil, errors.Join(responseErr, ctxErr)
+				}
+				return nil, ctxErr
+			}
+			if responseErr != nil {
 				mb.logger.Printf(
 					"[%s] [RequestId=%s] Response contains error, MessageType=%v, Error=%v",
 					mb.name,
 					requestId,
 					respType,
-					err,
+					responseErr,
 				)
-				return nil, err
+				return nil, responseErr
 			}
 			return resp, nil
 		}
@@ -336,12 +473,17 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	msgType := reflect.TypeOf(innerMsg)
 
 	// Use a larger buffer to handle multiple progress messages without blocking the dispatcher
-	ch := make(chan *TMessage, 50)
-	mb.logger.Printf("[%s] [RequestId=%s] Registering channel, MessageType=%v", mb.name, requestId, msgType)
-	mb.responseChans.Store(requestId, ch)
+	waiter := newResponseWaiter[TMessage](50)
+	mb.logger.Printf("[%s] [RequestId=%s] Registering waiter, MessageType=%v", mb.name, requestId, msgType)
+	if err := mb.registerResponseWaiter(requestId, waiter); err != nil {
+		if ctxErr := contextError(ctx); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
 	defer func() {
-		mb.logger.Printf("[%s] [RequestId=%s] Cleaning up channel", mb.name, requestId)
-		mb.responseChans.Delete(requestId)
+		mb.logger.Printf("[%s] [RequestId=%s] Cleaning up waiter", mb.name, requestId)
+		mb.unregisterResponseWaiter(requestId, waiter)
 	}()
 
 	// Send request in goroutine to ensure we're waiting before response arrives
@@ -353,6 +495,8 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 		errCh <- mb.stream.Send(msg)
 	}()
 
+	requestSent := false
+
 	// Wait for responses, send completion, or context cancellation
 	for {
 		select {
@@ -362,9 +506,15 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 				mb.name,
 				requestId,
 				msgType,
-				ctx.Err(),
+				contextError(ctx),
 			)
-			return nil, ctx.Err()
+			return nil, mb.cancelPendingRequest(ctx, msg, requestId, msgType, waiter, errCh, requestSent)
+		case <-waiter.done:
+			mb.logger.Printf("[%s] [RequestId=%s] Waiter closed (dispatcher stopped)", mb.name, requestId)
+			if ctxErr := contextError(ctx); ctxErr != nil {
+				return nil, ctxErr
+			}
+			return nil, errMessageBrokerClosed
 		case err := <-errCh:
 			if err != nil {
 				err = wrapResourceExhausted(err, "SendAndWaitWithProgress")
@@ -377,18 +527,14 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 				)
 				return nil, err
 			}
+			requestSent = true
 			mb.logger.Printf(
 				"[%s] [RequestId=%s] Request sent successfully, MessageType=%v, waiting for response",
 				mb.name,
 				requestId,
 				msgType,
 			)
-		case resp, ok := <-ch:
-			if !ok {
-				mb.logger.Printf("[%s] [RequestId=%s] Channel closed (dispatcher likely stopped)", mb.name, requestId)
-				return nil, errors.New("channel closed by dispatcher")
-			}
-
+		case resp := <-waiter.ch:
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)
 			mb.logger.Printf("[%s] [RequestId=%s] Received on channel, MessageType=%v", mb.name, requestId, respType)
@@ -408,19 +554,172 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 
 			// Any non-progress message with matching RequestId is our final response
 			mb.logger.Printf("[%s] [RequestId=%s] Received final response, MessageType=%v", mb.name, requestId, respType)
-			if err := mb.envelope.GetError(resp); err != nil {
+			responseErr := mb.envelope.GetError(resp)
+			if ctxErr := contextError(ctx); ctxErr != nil {
+				if responseErr != nil && !errors.Is(responseErr, context.Canceled) &&
+					!errors.Is(responseErr, context.DeadlineExceeded) {
+					return nil, errors.Join(responseErr, ctxErr)
+				}
+				return nil, ctxErr
+			}
+			if responseErr != nil {
 				mb.logger.Printf(
 					"[%s] [RequestId=%s] Response contains error, MessageType=%v, Error=%v",
 					mb.name,
 					requestId,
 					respType,
-					err,
+					responseErr,
 				)
-				return nil, err
+				return nil, responseErr
 			}
 			return resp, nil
 		}
 	}
+}
+
+func (mb *MessageBroker[TMessage]) cancelPendingRequest(
+	ctx context.Context,
+	request *TMessage,
+	requestId string,
+	msgType reflect.Type,
+	waiter *responseWaiter[TMessage],
+	requestSendErrCh <-chan error,
+	requestSent bool,
+) error {
+	cause := contextError(ctx)
+	if cause == nil {
+		cause = context.Canceled
+	}
+
+	cancellationMessage := mb.createCancellationMessage(ctx, request, cause)
+	if cancellationMessage == nil {
+		return cause
+	}
+
+	if !requestSent {
+		select {
+		case err := <-requestSendErrCh:
+			if err != nil {
+				return errors.Join(cause, wrapResourceExhausted(err, "Send canceled request"))
+			}
+		case <-time.After(mb.cancellationGracePeriod):
+			go func() {
+				if err := <-requestSendErrCh; err == nil {
+					_ = mb.sendCancellationMessage(requestId, msgType, cancellationMessage)
+				}
+			}()
+			return cause
+		}
+	}
+
+	cancelSendErrCh := make(chan error, 1)
+	go func() {
+		cancelSendErrCh <- mb.sendCancellationMessage(requestId, msgType, cancellationMessage)
+	}()
+
+	timer := time.NewTimer(mb.cancellationGracePeriod)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-waiter.done:
+			return cause
+		case response := <-waiter.ch:
+			if mb.envelope.IsProgressMessage(response) {
+				continue
+			}
+			if responseErr := mb.envelope.GetError(response); responseErr != nil {
+				if errors.Is(responseErr, context.Canceled) ||
+					errors.Is(responseErr, context.DeadlineExceeded) {
+					return cause
+				}
+				return errors.Join(responseErr, cause)
+			}
+			return cause
+		case sendErr := <-cancelSendErrCh:
+			if sendErr != nil {
+				return errors.Join(cause, sendErr)
+			}
+			cancelSendErrCh = nil
+		case <-timer.C:
+			return cause
+		}
+	}
+}
+
+func (mb *MessageBroker[TMessage]) sendCancellationMessage(
+	requestId string,
+	msgType reflect.Type,
+	msg *TMessage,
+) error {
+	mb.logger.Printf(
+		"[%s] [RequestId=%s] Sending cancellation, MessageType=%v",
+		mb.name,
+		requestId,
+		msgType,
+	)
+
+	mb.sendMu.Lock()
+	defer mb.sendMu.Unlock()
+
+	if err := mb.stream.Send(msg); err != nil {
+		err = wrapResourceExhausted(err, "Send cancellation")
+		mb.logger.Printf(
+			"[%s] [RequestId=%s] ERROR: Cancellation send failed, MessageType=%v, Error=%v",
+			mb.name,
+			requestId,
+			msgType,
+			err,
+		)
+		return err
+	}
+
+	return nil
+}
+
+func (mb *MessageBroker[TMessage]) createCancellationMessage(
+	ctx context.Context,
+	request *TMessage,
+	err error,
+) *TMessage {
+	if envelope, ok := mb.envelope.(CancellationMessageEnvelope[TMessage]); ok {
+		return envelope.CreateCancellationMessage(ctx, request, err)
+	}
+
+	requestId := mb.envelope.GetRequestId(ctx, request)
+	if requestId == "" {
+		return nil
+	}
+
+	msg := new(TMessage)
+	mb.envelope.SetRequestId(ctx, msg, requestId)
+	mb.envelope.SetError(msg, err)
+	if mb.envelope.GetRequestId(ctx, msg) == "" || mb.envelope.GetError(msg) == nil {
+		return nil
+	}
+
+	return msg
+}
+
+func (mb *MessageBroker[TMessage]) isCancellationMessage(ctx context.Context, msg *TMessage) bool {
+	if envelope, ok := mb.envelope.(CancellationMessageEnvelope[TMessage]); ok {
+		return envelope.IsCancellationMessage(ctx, msg)
+	}
+
+	if mb.envelope.GetRequestId(ctx, msg) == "" || mb.envelope.GetInnerMessage(msg) != nil {
+		return false
+	}
+
+	err := mb.envelope.GetError(msg)
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func (mb *MessageBroker[TMessage]) cancellationError(msg *TMessage) error {
+	if envelope, ok := mb.envelope.(CancellationMessageEnvelope[TMessage]); ok {
+		return envelope.GetCancellationError(msg)
+	}
+
+	return mb.envelope.GetError(msg)
 }
 
 // Ready blocks until the message broker starts receiving messages or the context is cancelled.
@@ -434,7 +733,7 @@ func (mb *MessageBroker[TMessage]) Ready(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		// Context cancelled before broker became ready
-		return ctx.Err()
+		return contextError(ctx)
 	}
 }
 
@@ -456,7 +755,7 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			mb.logger.Printf("[%s] Dispatcher stopped due to context cancellation", mb.name)
-			return ctx.Err()
+			return contextError(ctx)
 		default:
 			resp, err := mb.stream.Recv()
 			if err != nil {
@@ -477,7 +776,7 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 						return nil
 					}
 					if st.Code() == codes.Canceled {
-						return ctx.Err()
+						return contextError(ctx)
 					}
 				}
 
@@ -485,9 +784,9 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 				return fmt.Errorf("stream receive failed: %w", err)
 			}
 
-			// Process the received message asynchronously
-			// This allows the dispatcher to continue receiving while handlers execute
-			go mb.processMessage(ctx, resp)
+			// Route the message synchronously so a request-specific handler context
+			// is registered before a following cancellation message is received.
+			mb.processMessage(ctx, resp)
 		}
 	}
 }
@@ -502,14 +801,14 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 	// Check if this is a progress message - always route to channel, never to handler
 	if mb.envelope.IsProgressMessage(resp) {
 		mb.logger.Printf("[%s] Received progress message: RequestId=%s, MessageType=%v", mb.name, requestId, msgType)
-		if ch, ok := mb.responseChans.Load(requestId); ok {
+		if waiter, ok := mb.responseWaiters.Load(requestId); ok {
 			mb.logger.Printf(
 				"[%s] Dispatching progress message to channel for RequestId=%s, MessageType=%v",
 				mb.name,
 				requestId,
 				msgType,
 			)
-			ch <- resp
+			waiter.send(resp)
 		} else {
 			mb.logger.Printf(
 				"[%s] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
@@ -525,29 +824,115 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 
 	// Try to route to channel first (client pattern - awaiting response)
 	if requestId != "" {
-		if ch, ok := mb.responseChans.Load(requestId); ok {
+		if waiter, ok := mb.responseWaiters.Load(requestId); ok {
 			// Warn when channel buffer is actually nearly full
-			if cap(ch) > 1 && len(ch) >= cap(ch)-1 {
+			if cap(waiter.ch) > 1 && len(waiter.ch) >= cap(waiter.ch)-1 {
 				mb.logger.Printf(
 					"[%s] WARNING: Channel buffer nearly full for RequestId=%s (len=%d, cap=%d)",
 					mb.name,
 					requestId,
-					len(ch),
-					cap(ch),
+					len(waiter.ch),
+					cap(waiter.ch),
 				)
 			}
 
 			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
-			ch <- resp
-			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
-				mb.name, requestId, msgType)
+			if waiter.send(resp) {
+				mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
+					mb.name, requestId, msgType)
+			}
 			return
 		}
 	}
 
+	if mb.isCancellationMessage(ctx, resp) {
+		if mb.cancelActiveRequest(requestId, mb.cancellationError(resp)) {
+			mb.logger.Printf("[%s] Cancelled active handler for RequestId=%s", mb.name, requestId)
+		} else {
+			mb.logger.Printf("[%s] No active handler found for cancellation RequestId=%s", mb.name, requestId)
+		}
+		return
+	}
+
 	// No channel found, try to route to handler (server pattern - incoming request)
-	mb.processHandlerRequest(ctx, resp, requestId, msgType)
+	mb.startHandlerRequest(ctx, resp, requestId, msgType)
+}
+
+func (mb *MessageBroker[TMessage]) startHandlerRequest(
+	ctx context.Context,
+	envelope *TMessage,
+	requestId string,
+	msgType reflect.Type,
+) {
+	mb.stateMu.Lock()
+	if mb.closed {
+		mb.stateMu.Unlock()
+		return
+	}
+
+	handlerCtx := ctx
+	var request *activeRequest
+	preserveHandlerContext := false
+	if persistentEnvelope, ok := mb.envelope.(PersistentHandlerContextEnvelope[TMessage]); ok {
+		preserveHandlerContext = persistentEnvelope.PreserveHandlerContext(ctx, envelope)
+	}
+	if requestId != "" && !preserveHandlerContext {
+		var cancel context.CancelCauseFunc
+		handlerCtx, cancel = context.WithCancelCause(ctx)
+		request = &activeRequest{cancel: cancel}
+
+		requests := mb.active[requestId]
+		if requests == nil {
+			requests = map[*activeRequest]struct{}{}
+			mb.active[requestId] = requests
+		}
+		requests[request] = struct{}{}
+	}
+	mb.stateMu.Unlock()
+
+	go func() {
+		if request != nil {
+			defer mb.finishActiveRequest(requestId, request)
+		}
+		mb.processHandlerRequest(handlerCtx, envelope, requestId, msgType)
+	}()
+}
+
+func (mb *MessageBroker[TMessage]) cancelActiveRequest(requestId string, cause error) bool {
+	if requestId == "" {
+		return false
+	}
+	if cause == nil {
+		cause = context.Canceled
+	}
+
+	mb.stateMu.Lock()
+	requests := make([]*activeRequest, 0, len(mb.active[requestId]))
+	for request := range mb.active[requestId] {
+		requests = append(requests, request)
+	}
+	mb.stateMu.Unlock()
+	if len(requests) == 0 {
+		return false
+	}
+
+	for _, request := range requests {
+		request.cancel(cause)
+	}
+	return true
+}
+
+func (mb *MessageBroker[TMessage]) finishActiveRequest(requestId string, request *activeRequest) {
+	mb.stateMu.Lock()
+	if requests := mb.active[requestId]; requests != nil {
+		delete(requests, request)
+	}
+	if len(mb.active[requestId]) == 0 {
+		delete(mb.active, requestId)
+	}
+	mb.stateMu.Unlock()
+	request.cancel(nil)
 }
 
 // processHandlerRequest extracts the inner message, finds the appropriate handler,
@@ -662,6 +1047,11 @@ func (mb *MessageBroker[TMessage]) invokeHandler(
 		}
 	}()
 
+	if ctxErr := contextError(ctx); handlerErr == nil ||
+		(ctxErr != nil && errors.Is(handlerErr, ctx.Err())) {
+		handlerErr = ctxErr
+	}
+
 	// If handler returned nil envelope and no error, suppress the response entirely.
 	// This allows handlers to return (nil, nil) to indicate no response should be sent,
 	// which is used by intermediate chunk handlers that don't need acknowledgment.
@@ -686,6 +1076,13 @@ func (mb *MessageBroker[TMessage]) invokeHandler(
 	return responseEnvelope
 }
 
+func contextError(ctx context.Context) error {
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return ctx.Err()
+}
+
 // createProgressFunc creates a progress callback function for a given request ID
 func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, requestId string) ProgressFunc {
 	return func(message string) {
@@ -707,10 +1104,31 @@ func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, reque
 
 // Close gracefully shuts down the broker (optional, for cleanup)
 func (mb *MessageBroker[TMessage]) Close() {
-	// Close all pending channels
-	mb.responseChans.Range(func(key string, ch chan *TMessage) bool {
-		close(ch)
-		mb.responseChans.Delete(key)
-		return true
+	mb.closeOnce.Do(func() {
+		mb.stateMu.Lock()
+		mb.closed = true
+
+		var activeRequests []*activeRequest
+		for requestId, requests := range mb.active {
+			for request := range requests {
+				activeRequests = append(activeRequests, request)
+			}
+			delete(mb.active, requestId)
+		}
+
+		var responseWaiters []*responseWaiter[TMessage]
+		mb.responseWaiters.Range(func(key string, waiter *responseWaiter[TMessage]) bool {
+			responseWaiters = append(responseWaiters, waiter)
+			mb.responseWaiters.Delete(key)
+			return true
+		})
+		mb.stateMu.Unlock()
+
+		for _, request := range activeRequests {
+			request.cancel(context.Canceled)
+		}
+		for _, waiter := range responseWaiters {
+			waiter.close()
+		}
 	})
 }

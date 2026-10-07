@@ -5,10 +5,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -314,7 +318,11 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Environment: a.globalOptions.EnvironmentName,
 	}
 
-	runResult, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)
+	invocationCtx, interruptController, cleanupInterruptHandler := installExtensionInterruptHandler(ctx)
+	defer cleanupInterruptHandler()
+
+	runResult, invokeErr := a.extensionRunner.Invoke(invocationCtx, extension, options)
+	invokeErr = interruptController.finish(invokeErr, extension)
 
 	// Update warning is shown via defer above (runs after invoke completes)
 
@@ -337,6 +345,210 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	return nil, nil
+}
+
+type extensionInterruptController struct {
+	mu                           sync.Mutex
+	cancelProcess                context.CancelFunc
+	gracePeriod                  time.Duration
+	graceTimer                   *time.Timer
+	cancellationRequested        bool
+	processCancellationRequested bool
+	finished                     bool
+	awaitingHostInterrupt        bool
+	handledAfterFinish           bool
+	popHandler                   func()
+	popOnce                      sync.Once
+}
+
+func installExtensionInterruptHandler(
+	ctx context.Context,
+) (context.Context, *extensionInterruptController, func()) {
+	processCtx, cancelProcess := context.WithCancel(ctx)
+	// POSIX terminals deliver SIGINT to the interactive child directly, so the
+	// first interrupt gives the extension a bounded graceful-shutdown window.
+	// Windows extensions run in a separate process group and need the host to
+	// cancel their invocation immediately.
+	gracePeriod := extensionCancellationGracePeriod
+	if runtime.GOOS == "windows" {
+		gracePeriod = 0
+	}
+	controller := newExtensionInterruptController(cancelProcess, gracePeriod)
+	popHandler := input.PushInterruptHandler(controller.handle)
+	controller.popHandler = popHandler
+
+	return processCtx, controller, controller.close
+}
+
+func newExtensionInterruptController(
+	cancelProcess context.CancelFunc,
+	gracePeriod time.Duration,
+) *extensionInterruptController {
+	return &extensionInterruptController{
+		cancelProcess: cancelProcess,
+		gracePeriod:   gracePeriod,
+	}
+}
+
+var extensionCancellationGracePeriod = 3 * time.Second
+
+func (c *extensionInterruptController) handle() bool {
+	c.mu.Lock()
+	if c.finished {
+		switch {
+		case c.awaitingHostInterrupt:
+			c.awaitingHostInterrupt = false
+			c.mu.Unlock()
+			c.pop()
+			return true
+		case !c.handledAfterFinish:
+			// The signal goroutine may have captured this handler immediately
+			// before finish popped it. Claim that in-flight signal once so it
+			// cannot fall through to the process-wide os.Exit path.
+			c.handledAfterFinish = true
+			c.mu.Unlock()
+			return true
+		default:
+			c.mu.Unlock()
+			return false
+		}
+	}
+	if !c.cancellationRequested {
+		c.cancellationRequested = true
+		shouldCancel := c.gracePeriod <= 0
+		if shouldCancel {
+			c.processCancellationRequested = true
+		} else {
+			c.graceTimer = time.AfterFunc(c.gracePeriod, c.cancelAfterGrace)
+		}
+		c.mu.Unlock()
+
+		if shouldCancel {
+			c.cancelProcess()
+		}
+		return true
+	}
+
+	shouldCancel := c.requestProcessCancellationLocked()
+	c.mu.Unlock()
+	if shouldCancel {
+		c.cancelProcess()
+		return true
+	}
+
+	return false
+}
+
+func (c *extensionInterruptController) requestProcessCancellationLocked() bool {
+	if c.processCancellationRequested {
+		return false
+	}
+
+	c.processCancellationRequested = true
+	if c.graceTimer != nil {
+		c.graceTimer.Stop()
+		c.graceTimer = nil
+	}
+	return true
+}
+
+func (c *extensionInterruptController) cancelAfterGrace() {
+	c.mu.Lock()
+	c.graceTimer = nil
+	if c.finished || c.processCancellationRequested {
+		c.mu.Unlock()
+		return
+	}
+	c.processCancellationRequested = true
+	c.mu.Unlock()
+
+	c.cancelProcess()
+}
+
+func (c *extensionInterruptController) finish(invokeErr error, extension *extensions.Extension) error {
+	processInterrupted := isExtensionInterruptExit(invokeErr)
+
+	c.mu.Lock()
+	c.finished = true
+	if c.graceTimer != nil {
+		c.graceTimer.Stop()
+		c.graceTimer = nil
+	}
+	cancellationRequested := c.cancellationRequested
+	interrupted := cancellationRequested || processInterrupted
+	if processInterrupted && !cancellationRequested {
+		// The child can be reaped before azd's signal goroutine invokes the
+		// scoped handler, including after an earlier interrupt that the child
+		// handled. Keep the handler registered until the pending SIGINT is
+		// consumed so it cannot hit the default process-wide os.Exit path.
+		c.awaitingHostInterrupt = true
+	}
+	awaitingHostInterrupt := c.awaitingHostInterrupt
+	c.mu.Unlock()
+
+	if !awaitingHostInterrupt {
+		c.pop()
+	}
+
+	switch {
+	case invokeErr != nil && interrupted:
+		return markExtensionRunCanceled(invokeErr, extension)
+	case invokeErr == nil && cancellationRequested:
+		return markExtensionRunCanceled(nil, extension)
+	default:
+		return invokeErr
+	}
+}
+
+func (c *extensionInterruptController) close() {
+	c.mu.Lock()
+	c.finished = true
+	c.processCancellationRequested = true
+	if c.graceTimer != nil {
+		c.graceTimer.Stop()
+		c.graceTimer = nil
+	}
+	awaitingHostInterrupt := c.awaitingHostInterrupt
+	c.mu.Unlock()
+
+	c.cancelProcess()
+
+	if !awaitingHostInterrupt {
+		c.pop()
+	}
+}
+
+func (c *extensionInterruptController) pop() {
+	c.popOnce.Do(func() {
+		if c.popHandler != nil {
+			c.popHandler()
+		}
+	})
+}
+
+func isExtensionInterruptExit(err error) bool {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	return ok && exitErr.Interrupted()
+}
+
+func markExtensionRunCanceled(invokeErr error, extension *extensions.Extension) error {
+	if runErr, ok := errors.AsType[*extensions.ExtensionRunError](invokeErr); ok {
+		if errors.Is(runErr.Err, context.Canceled) {
+			return invokeErr
+		}
+
+		return &extensions.ExtensionRunError{
+			ExtensionId:      runErr.ExtensionId,
+			ExtensionVersion: runErr.ExtensionVersion,
+			Err:              errors.Join(runErr.Err, context.Canceled),
+		}
+	}
+
+	return &extensions.ExtensionRunError{
+		ExtensionId:      extension.Id,
+		ExtensionVersion: extension.Version,
+		Err:              errors.Join(invokeErr, context.Canceled),
+	}
 }
 
 // updateCheckOutcome holds the result of an async update check

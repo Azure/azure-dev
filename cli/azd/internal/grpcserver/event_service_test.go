@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -246,7 +247,7 @@ func createBrokerForEventHandler(
 	t *testing.T,
 	extensionID string,
 	responseFn func(*azdext.EventMessage) *azdext.EventMessage,
-) (*grpcbroker.MessageBroker[azdext.EventMessage], context.Context, func()) {
+) (*grpcbroker.MessageBroker[azdext.EventMessage], func()) {
 	t.Helper()
 
 	streamCtx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
@@ -268,7 +269,7 @@ func createBrokerForEventHandler(
 	}
 
 	brokerCtx, cancel := context.WithCancel(streamCtx)
-	broker := grpcbroker.NewMessageBroker(stream, azdext.NewEventMessageEnvelope(), extensionID, nil)
+	broker := grpcbroker.NewMessageBroker(stream, azdext.NewEventMessageEnvelope(extensionID), extensionID, nil)
 
 	go func() {
 		_ = broker.Run(brokerCtx)
@@ -281,7 +282,7 @@ func createBrokerForEventHandler(
 		cancel()
 	}
 
-	return broker, streamCtx, cleanup
+	return broker, cleanup
 }
 
 func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
@@ -419,17 +420,11 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	extension := createTestExtension()
 	eventName := "prepackage"
 
-	// Create a context with metadata containing extension claims (simulating the stream context)
-	md := metadata.New(map[string]string{
-		"authorization": "fake-token", // Extension claims would normally be in this token
-	})
-	streamCtx := metadata.NewIncomingContext(t.Context(), md)
-
 	// Create a mock broker (nil is acceptable since we're not executing the handler)
 	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
 
 	// Create the handler
-	handler := service.createProjectEventHandler(streamCtx, extension, eventName, mockBroker)
+	handler := service.createProjectEventHandler(extension, eventName, mockBroker)
 	require.NotNil(t, handler)
 
 	// Test that the handler function is created correctly
@@ -550,17 +545,11 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 		RelativePath: "./test-service",
 	}
 
-	// Create a context with metadata containing extension claims (simulating the stream context)
-	md := metadata.New(map[string]string{
-		"authorization": "fake-token", // Extension claims would normally be in this token
-	})
-	streamCtx := metadata.NewIncomingContext(t.Context(), md)
-
 	// Create a mock broker (nil is acceptable since we're not executing the handler)
 	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
 
 	// Create the handler
-	handler := service.createServiceEventHandler(streamCtx, serviceConfig, extension, eventName, mockBroker)
+	handler := service.createServiceEventHandler(serviceConfig, extension, eventName, mockBroker)
 	require.NotNil(t, handler)
 
 	// Test that the handler function is created correctly
@@ -573,7 +562,7 @@ func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *tes
 	projectConfig, err := service.lazyProject.GetValue()
 	require.NoError(t, err)
 
-	broker, streamCtx, cleanup := createBrokerForEventHandler(
+	broker, cleanup := createBrokerForEventHandler(
 		t,
 		extension.Id,
 		func(msg *azdext.EventMessage) *azdext.EventMessage {
@@ -603,7 +592,7 @@ func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *tes
 	)
 	defer cleanup()
 
-	handler := service.createProjectEventHandler(streamCtx, extension, "prepackage", broker)
+	handler := service.createProjectEventHandler(extension, "prepackage", broker)
 	err = handler(t.Context(), project.ProjectLifecycleEventArgs{Project: projectConfig})
 	require.Error(t, err)
 
@@ -617,11 +606,76 @@ func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *tes
 	assert.Equal(t, "Hook troubleshooting", localErr.Links[0].Title)
 }
 
+func TestEventService_createProjectEventHandler_CancelsExtensionHandler(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	invokeReceived := make(chan struct{})
+	cancellationReceived := make(chan struct{})
+	broker, cleanup := createBrokerForEventHandler(
+		t,
+		extension.Id,
+		func(msg *azdext.EventMessage) *azdext.EventMessage {
+			if invoke := msg.GetInvokeProjectHandler(); invoke != nil {
+				close(invokeReceived)
+				return nil
+			}
+
+			statusMsg := msg.GetProjectHandlerStatus()
+			if statusMsg != nil && statusMsg.Status == "canceling" {
+				close(cancellationReceived)
+				return &azdext.EventMessage{
+					MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+						ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+							EventName: statusMsg.EventName,
+							Status:    "failed",
+							Message:   context.Canceled.Error(),
+							Error:     azdext.WrapError(context.Canceled),
+						},
+					},
+				}
+			}
+
+			return nil
+		},
+	)
+	defer cleanup()
+
+	handler := service.createProjectEventHandler(extension, "prepackage", broker)
+	operationCtx, cancelOperation := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- handler(operationCtx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+	}()
+
+	select {
+	case <-invokeReceived:
+	case <-time.After(time.Second):
+		t.Fatal("extension handler was not invoked")
+	}
+	cancelOperation()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("event handler did not return after cancellation")
+	}
+
+	select {
+	case <-cancellationReceived:
+	case <-time.After(time.Second):
+		t.Fatal("extension handler did not receive cancellation")
+	}
+}
+
 func TestEventService_createProjectEventHandler_MapperErrorHasInvocationMetadata(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
 
-	handler := service.createProjectEventHandler(t.Context(), extension, "prepackage", nil)
+	handler := service.createProjectEventHandler(extension, "prepackage", nil)
 	err := handler(t.Context(), project.ProjectLifecycleEventArgs{
 		Project: &project.ProjectConfig{
 			ResourceGroupName: osutil.NewExpandableString("${"),
@@ -645,7 +699,7 @@ func TestEventService_createProjectEventHandler_BackCompatFailedMessage(t *testi
 	projectConfig, err := service.lazyProject.GetValue()
 	require.NoError(t, err)
 
-	broker, streamCtx, cleanup := createBrokerForEventHandler(
+	broker, cleanup := createBrokerForEventHandler(
 		t,
 		extension.Id,
 		func(msg *azdext.EventMessage) *azdext.EventMessage {
@@ -665,7 +719,7 @@ func TestEventService_createProjectEventHandler_BackCompatFailedMessage(t *testi
 	)
 	defer cleanup()
 
-	handler := service.createProjectEventHandler(streamCtx, extension, "prepackage", broker)
+	handler := service.createProjectEventHandler(extension, "prepackage", broker)
 	err = handler(t.Context(), project.ProjectLifecycleEventArgs{Project: projectConfig})
 	require.EqualError(t, err, "extension test.extension project hook prepackage failed: old host failure message")
 }
@@ -678,7 +732,7 @@ func TestEventService_createServiceEventHandler_RoundTripsStructuredError(t *tes
 	serviceConfig := projectConfig.Services["api"]
 	require.NotNil(t, serviceConfig)
 
-	broker, streamCtx, cleanup := createBrokerForEventHandler(
+	broker, cleanup := createBrokerForEventHandler(
 		t,
 		extension.Id,
 		func(msg *azdext.EventMessage) *azdext.EventMessage {
@@ -710,7 +764,7 @@ func TestEventService_createServiceEventHandler_RoundTripsStructuredError(t *tes
 	)
 	defer cleanup()
 
-	handler := service.createServiceEventHandler(streamCtx, serviceConfig, extension, "prepackage", broker)
+	handler := service.createServiceEventHandler(serviceConfig, extension, "prepackage", broker)
 	err = handler(t.Context(), project.ServiceLifecycleEventArgs{
 		Project:        projectConfig,
 		Service:        serviceConfig,
@@ -737,7 +791,7 @@ func TestEventService_createServiceEventHandler_BackCompatFailedMessage(t *testi
 	serviceConfig := projectConfig.Services["api"]
 	require.NotNil(t, serviceConfig)
 
-	broker, streamCtx, cleanup := createBrokerForEventHandler(
+	broker, cleanup := createBrokerForEventHandler(
 		t,
 		extension.Id,
 		func(msg *azdext.EventMessage) *azdext.EventMessage {
@@ -758,7 +812,7 @@ func TestEventService_createServiceEventHandler_BackCompatFailedMessage(t *testi
 	)
 	defer cleanup()
 
-	handler := service.createServiceEventHandler(streamCtx, serviceConfig, extension, "prepackage", broker)
+	handler := service.createServiceEventHandler(serviceConfig, extension, "prepackage", broker)
 	err = handler(t.Context(), project.ServiceLifecycleEventArgs{
 		Project:        projectConfig,
 		Service:        serviceConfig,

@@ -222,6 +222,8 @@ func (e *Executor) runCommand(
 				ExitCode: exitErr.ExitCode(),
 				Shell:    shell,
 				IsInline: isInline,
+
+				interrupted: isInterruptExit(exitErr),
 			}
 		}
 		return e.wrapError(err, scriptOrPath, shell, isInline)

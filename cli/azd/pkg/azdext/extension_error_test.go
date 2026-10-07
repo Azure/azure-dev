@@ -4,6 +4,7 @@
 package azdext
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -165,6 +166,108 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name:     "ContextCanceledError",
+			inputErr: context.Canceled,
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "canceled", protoErr.GetLocalError().GetCode())
+				assert.Equal(t, string(LocalErrorCategoryUser), protoErr.GetLocalError().GetCategory())
+				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name: "CancelledLocalError",
+			inputErr: &LocalError{
+				Message:  "operation cancelled",
+				Code:     "cancelled",
+				Category: LocalErrorCategoryUser,
+			},
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, "cancelled", protoErr.GetLocalError().GetCode())
+				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name: "CancellationDominatesJoinedFailure",
+			inputErr: errors.Join(&ServiceError{
+				Message:     "service failed",
+				ErrorCode:   "Conflict",
+				StatusCode:  409,
+				ServiceName: "management.azure.com",
+			}, context.Canceled),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "canceled", protoErr.GetLocalError().GetCode())
+				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name:     "GrpcCanceledError",
+			inputErr: status.Error(codes.Canceled, "operation canceled"),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "operation canceled", protoErr.GetMessage())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "canceled", localDetail.GetCode())
+				assert.Equal(t, string(LocalErrorCategoryUser), localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryUser, localErr.Category)
+				assert.Equal(t, "canceled", localErr.Code)
+				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name: "GrpcCancellationOverridesRelayedFailure",
+			inputErr: mustStatusErrorWithDetails(codes.Canceled, "operation canceled", WrapError(&ServiceError{
+				Message:     "service failed",
+				ErrorCode:   "Conflict",
+				StatusCode:  409,
+				ServiceName: "management.azure.com",
+			})),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "canceled", protoErr.GetLocalError().GetCode())
+				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name:     "GrpcDeadlineExceededError",
+			inputErr: status.Error(codes.DeadlineExceeded, "operation timed out"),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "operation timed out", protoErr.GetMessage())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "deadline_exceeded", localDetail.GetCode())
+				assert.Equal(t, string(LocalErrorCategoryInternal), localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryInternal, localErr.Category)
+				assert.Equal(t, "deadline_exceeded", localErr.Code)
+				require.ErrorIs(t, goErr, context.DeadlineExceeded)
+			},
+		},
+		{
+			name: "GrpcDeadlineOverridesRelayedFailure",
+			inputErr: mustStatusErrorWithDetails(codes.DeadlineExceeded, "operation timed out", WrapError(&ServiceError{
+				Message:     "service failed",
+				ErrorCode:   "Conflict",
+				StatusCode:  409,
+				ServiceName: "management.azure.com",
+			})),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "deadline_exceeded", protoErr.GetLocalError().GetCode())
+				require.ErrorIs(t, goErr, context.DeadlineExceeded)
+			},
+		},
+		{
 			name: "WrappedGrpcUnauthenticatedError",
 			inputErr: fmt.Errorf(
 				"failed to prompt: %w",
@@ -313,6 +416,29 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			tt.verify(t, protoErr, goErr)
 		})
 	}
+}
+
+func TestUnwrapError_PreviewCancellationPreservesCanonicalCause(t *testing.T) {
+	previewErr := &v1beta.ExtensionError{
+		Message: "operation canceled",
+		Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+		Source: &v1beta.ExtensionError_LocalError{
+			LocalError: &v1beta.LocalErrorDetail{
+				Code:       "canceled",
+				Category:   "user",
+				CauseTypes: []string{"*agents.TransportError"},
+			},
+		},
+	}
+	stableErr := &ExtensionError{}
+	require.True(t, transcodeStatusDetail(previewErr, stableErr))
+
+	err := UnwrapError(stableErr)
+
+	require.ErrorIs(t, err, context.Canceled)
+	localErr, ok := errors.AsType[*LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, []string{"*agents.TransportError"}, localErr.CauseTypes)
 }
 
 func TestExtensionError_ToolErrorRoundTrip(t *testing.T) {

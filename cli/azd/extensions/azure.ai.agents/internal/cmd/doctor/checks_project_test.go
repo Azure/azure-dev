@@ -1005,6 +1005,43 @@ func TestCheckAgentDefinitionValid_AggregatesKindAwareFailures(t *testing.T) {
 	}, got.Details["failureCodes"])
 }
 
+func TestCheckAgentDefinitionValid_RejectsHostedDeployPrechecks(t *testing.T) {
+	t.Parallel()
+
+	invalidRegistry, err := structpb.NewStruct(map[string]any{
+		"kind":                 "hosted",
+		"name":                 "registry-agent",
+		"registryConnectionId": "private-registry",
+	})
+	require.NoError(t, err)
+	invalidEnvironment, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "environment-agent",
+	})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, t.TempDir(), map[string]*azdext.ServiceConfig{
+		"environment-agent": {
+			Name:                 "environment-agent",
+			Host:                 agentHost,
+			Environment:          map[string]string{"invalid-name": "value"},
+			AdditionalProperties: invalidEnvironment,
+		},
+		"registry-agent": {
+			Name:                 "registry-agent",
+			Host:                 agentHost,
+			AdditionalProperties: invalidRegistry,
+		},
+	})
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Empty(t, got.Details["validatedServices"])
+	require.Equal(t, map[string]string{
+		"environment-agent": exterrors.CodeInvalidEnvironmentVariableName,
+		"registry-agent":    exterrors.CodeInvalidServiceConfig,
+	}, got.Details["failureCodes"])
+}
+
 func TestSortAgentServices(t *testing.T) {
 	t.Parallel()
 

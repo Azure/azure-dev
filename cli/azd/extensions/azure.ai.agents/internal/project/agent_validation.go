@@ -116,6 +116,15 @@ func validateHostedAgentServiceDefinition(
 	if !isHosted {
 		return unsupportedAgentKindError(svc, agent_yaml.AgentKind(structKind(resolved)))
 	}
+	if err := validateEnvironmentVariableNames(
+		svc.GetEnvironment(),
+		hosted.EnvironmentVariables,
+	); err != nil {
+		return err
+	}
+	if err := validateRegistryConnectionDefinition(hosted); err != nil {
+		return err
+	}
 
 	effectiveService := *svc
 	effectiveService.AdditionalProperties = resolved

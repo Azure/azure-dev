@@ -96,10 +96,11 @@ func TestValidateAgentServiceDefinitionSupportedKinds(t *testing.T) {
 
 func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 	tests := []struct {
-		name     string
-		values   map[string]any
-		wantCode string
-		want     string
+		name               string
+		values             map[string]any
+		serviceEnvironment map[string]string
+		wantCode           string
+		want               string
 	}{
 		{
 			name: "prompt model",
@@ -211,6 +212,38 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 			want:     "activity.digitalWorkerType must be",
 		},
 		{
+			name: "hosted registry connection without image",
+			values: map[string]any{
+				"kind":                 "hosted",
+				"name":                 "hosted-agent",
+				"registryConnectionId": "private-registry",
+			},
+			wantCode: exterrors.CodeInvalidServiceConfig,
+			want:     "requires a pre-built container image",
+		},
+		{
+			name: "hosted service environment name",
+			values: map[string]any{
+				"kind": "hosted",
+				"name": "hosted-agent",
+			},
+			serviceEnvironment: map[string]string{"invalid-name": "value"},
+			wantCode:           exterrors.CodeInvalidEnvironmentVariableName,
+			want:               `"invalid-name"`,
+		},
+		{
+			name: "hosted definition environment name",
+			values: map[string]any{
+				"kind": "hosted",
+				"name": "hosted-agent",
+				"environmentVariables": []any{
+					map[string]any{"name": "9INVALID", "value": "value"},
+				},
+			},
+			wantCode: exterrors.CodeInvalidEnvironmentVariableName,
+			want:     `"9INVALID"`,
+		},
+		{
 			name: "voice",
 			values: map[string]any{
 				"kind":             "voice",
@@ -254,6 +287,7 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 			t.Run(tt.name+"/"+source, func(t *testing.T) {
 				root := t.TempDir()
 				svc := validationTestService(t, root, source, tt.values)
+				svc.Environment = tt.serviceEnvironment
 
 				_, err := ValidateAgentServiceDefinition(svc, root)
 

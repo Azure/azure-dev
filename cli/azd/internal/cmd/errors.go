@@ -132,6 +132,9 @@ func classify(err error) (string, []attribute.KeyValue) {
 	if _, ok := errors.AsType[*serviceOperationTimeoutError](err); ok {
 		return "internal.timeout", nil
 	}
+	if isInterruptedProcessError(err) {
+		return "user.canceled", nil
+	}
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 		return updateErr.Code, nil
 	}
@@ -448,6 +451,16 @@ func classifyExtLocalError(extLocalErr *azdext.LocalError) (string, []attribute.
 	}
 
 	return fmt.Sprintf("ext.%s.%s", domain, code), attrs
+}
+
+type interruptedProcessError interface {
+	error
+	Interrupted() bool
+}
+
+func isInterruptedProcessError(err error) bool {
+	interruptedErr, ok := errors.AsType[interruptedProcessError](err)
+	return ok && interruptedErr.Interrupted()
 }
 
 func classifyCancellationCause(err error) string {

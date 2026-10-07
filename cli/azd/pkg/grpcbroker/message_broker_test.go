@@ -751,6 +751,88 @@ func TestRegisterResponseWaiter_RejectsDuplicateCorrelationId(t *testing.T) {
 	second.close()
 }
 
+func TestResponseWaiter_FullProgressQueueKeepsFinalResponse(t *testing.T) {
+	waiter := newResponseWaiter[TestMessage](1)
+	t.Cleanup(waiter.close)
+
+	progress := &TestMessage{RequestId: "request", IsProgress: true, ProgressText: "first"}
+	droppedProgress := &TestMessage{RequestId: "request", IsProgress: true, ProgressText: "second"}
+	final := &TestMessage{RequestId: "request", InnerMsg: &TestResponse{Result: "done"}}
+
+	require.True(t, waiter.send(progress, true))
+	require.False(t, waiter.send(droppedProgress, true))
+	require.True(t, waiter.send(final, false))
+
+	actualProgress, ok := waiter.receive()
+	require.True(t, ok)
+	require.Same(t, progress, actualProgress)
+
+	actualFinal, ok := waiter.receive()
+	require.True(t, ok)
+	require.Same(t, final, actualFinal)
+}
+
+func TestRun_FullProgressWaiterDoesNotBlockCancellation(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
+	slowWaiter := newResponseWaiter[TestMessage](1)
+	require.NoError(t, broker.registerResponseWaiter("slow-request", slowWaiter))
+	t.Cleanup(func() {
+		broker.unregisterResponseWaiter("slow-request", slowWaiter)
+	})
+
+	handlerStarted := make(chan struct{})
+	handlerCanceled := make(chan error, 1)
+	require.NoError(t, broker.On(func(ctx context.Context, _ *TestRequest) (*TestMessage, error) {
+		close(handlerStarted)
+		<-ctx.Done()
+		handlerCanceled <- context.Cause(ctx)
+		return nil, ctx.Err()
+	}))
+
+	brokerCtx, cancelBroker := context.WithCancel(t.Context())
+	defer cancelBroker()
+	go func() {
+		_ = broker.Run(brokerCtx)
+	}()
+	require.NoError(t, broker.Ready(t.Context()))
+
+	clientStream := sim.ClientStream()
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId: "cancel-request",
+		InnerMsg:  &TestRequest{Value: "work"},
+	}))
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId:    "slow-request",
+		IsProgress:   true,
+		ProgressText: "first",
+	}))
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId:    "slow-request",
+		IsProgress:   true,
+		ProgressText: "second",
+	}))
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId: "cancel-request",
+		Error:     context.Canceled,
+	}))
+
+	select {
+	case cause := <-handlerCanceled:
+		require.ErrorIs(t, cause, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("full progress waiter blocked cancellation delivery")
+	}
+}
+
 func TestDuplicateRequestIds_DoNotCancelActiveHandlers(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()

@@ -27,6 +27,7 @@ func TestExecuteCommand(t *testing.T) {
 				called = true
 			},
 		}
+		cmd.SetArgs([]string{})
 
 		require.ErrorIs(t, executeCommand(ctx, cmd), context.Canceled)
 		require.False(t, called)
@@ -39,6 +40,7 @@ func TestExecuteCommand(t *testing.T) {
 				cancel()
 			},
 		}
+		cmd.SetArgs([]string{})
 
 		require.ErrorIs(t, executeCommand(ctx, cmd), context.Canceled)
 	})
@@ -50,12 +52,14 @@ func TestExecuteCommand(t *testing.T) {
 				return expected
 			},
 		}
+		cmd.SetArgs([]string{})
 
 		require.ErrorIs(t, executeCommand(t.Context(), cmd), expected)
 	})
 
 	t.Run("Success", func(t *testing.T) {
 		cmd := &cobra.Command{Run: func(cmd *cobra.Command, args []string) {}}
+		cmd.SetArgs([]string{})
 		require.NoError(t, executeCommand(t.Context(), cmd))
 	})
 }

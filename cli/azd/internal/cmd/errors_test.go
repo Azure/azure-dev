@@ -95,6 +95,18 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithInterruptedToolExitAndContextCanceled",
+			err: errors.Join(
+				&exec.ExitError{
+					Cmd:      "any",
+					ExitCode: 130,
+				},
+				context.Canceled,
+			),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
 			name: "WithArmDeploymentError",
 			err: &azapi.AzureDeploymentError{
 				Operation: azapi.DeploymentOperationDeploy,

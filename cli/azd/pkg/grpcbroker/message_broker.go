@@ -130,32 +130,101 @@ type activeRequest struct {
 	cancel context.CancelCauseFunc
 }
 
-type responseWaiter[T any] struct {
-	ch        chan *T
-	done      chan struct{}
-	closeOnce sync.Once
+type queuedResponse[T any] struct {
+	message  *T
+	progress bool
 }
 
-func newResponseWaiter[T any](buffer int) *responseWaiter[T] {
+type responseWaiter[T any] struct {
+	ready            chan struct{}
+	done             chan struct{}
+	mu               sync.Mutex
+	queue            []queuedResponse[T]
+	progressCapacity int
+	pendingProgress  int
+	finalQueued      bool
+	closed           bool
+	closeOnce        sync.Once
+}
+
+func newResponseWaiter[T any](progressCapacity int) *responseWaiter[T] {
 	return &responseWaiter[T]{
-		ch:   make(chan *T, buffer),
-		done: make(chan struct{}),
+		ready:            make(chan struct{}, 1),
+		done:             make(chan struct{}),
+		progressCapacity: progressCapacity,
 	}
 }
 
 func (w *responseWaiter[T]) close() {
 	w.closeOnce.Do(func() {
+		w.mu.Lock()
+		w.closed = true
+		clear(w.queue)
+		w.queue = nil
+		w.pendingProgress = 0
+		w.finalQueued = false
+		w.mu.Unlock()
 		close(w.done)
 	})
 }
 
-func (w *responseWaiter[T]) send(msg *T) bool {
-	select {
-	case w.ch <- msg:
-		return true
-	case <-w.done:
+func (w *responseWaiter[T]) send(msg *T, progress bool) bool {
+	w.mu.Lock()
+	if w.closed ||
+		(progress && w.pendingProgress >= w.progressCapacity) ||
+		(!progress && w.finalQueued) {
+		w.mu.Unlock()
 		return false
 	}
+
+	w.queue = append(w.queue, queuedResponse[T]{
+		message:  msg,
+		progress: progress,
+	})
+	if progress {
+		w.pendingProgress++
+	} else {
+		w.finalQueued = true
+	}
+	notify := len(w.queue) == 1
+	w.mu.Unlock()
+
+	if notify {
+		select {
+		case w.ready <- struct{}{}:
+		default:
+		}
+	}
+
+	return true
+}
+
+func (w *responseWaiter[T]) receive() (*T, bool) {
+	w.mu.Lock()
+	if len(w.queue) == 0 {
+		w.mu.Unlock()
+		return nil, false
+	}
+
+	item := w.queue[0]
+	w.queue[0] = queuedResponse[T]{}
+	w.queue = w.queue[1:]
+	if item.progress {
+		w.pendingProgress--
+	} else {
+		w.finalQueued = false
+	}
+	notify := len(w.queue) > 0
+	w.mu.Unlock()
+
+	if notify {
+		select {
+		case w.ready <- struct{}{}:
+		default:
+		}
+	}
+
+	return item.message, true
 }
 
 // MessageBroker handles bidirectional message routing for gRPC streams.
@@ -395,7 +464,11 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 			}
 			requestSent = true
 			mb.logger.Printf("[%s] [RequestId=%s] Request sent successfully, MessageType=%v", mb.name, requestId, msgType)
-		case resp := <-waiter.ch:
+		case <-waiter.ready:
+			resp, ok := waiter.receive()
+			if !ok {
+				continue
+			}
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)
 			mb.logger.Printf("[%s] [RequestId=%s] Received response, MessageType=%v", mb.name, requestId, respType)
@@ -472,7 +545,7 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	innerMsg := mb.envelope.GetInnerMessage(msg)
 	msgType := reflect.TypeOf(innerMsg)
 
-	// Use a larger buffer to handle multiple progress messages without blocking the dispatcher
+	// Retain a bounded backlog of progress updates without blocking the dispatcher.
 	waiter := newResponseWaiter[TMessage](50)
 	mb.logger.Printf("[%s] [RequestId=%s] Registering waiter, MessageType=%v", mb.name, requestId, msgType)
 	if err := mb.registerResponseWaiter(requestId, waiter); err != nil {
@@ -534,7 +607,11 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 				requestId,
 				msgType,
 			)
-		case resp := <-waiter.ch:
+		case <-waiter.ready:
+			resp, ok := waiter.receive()
+			if !ok {
+				continue
+			}
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)
 			mb.logger.Printf("[%s] [RequestId=%s] Received on channel, MessageType=%v", mb.name, requestId, respType)
@@ -624,7 +701,11 @@ func (mb *MessageBroker[TMessage]) cancelPendingRequest(
 		select {
 		case <-waiter.done:
 			return cause
-		case response := <-waiter.ch:
+		case <-waiter.ready:
+			response, ok := waiter.receive()
+			if !ok {
+				continue
+			}
 			if mb.envelope.IsProgressMessage(response) {
 				continue
 			}
@@ -808,7 +889,13 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 				requestId,
 				msgType,
 			)
-			waiter.send(resp)
+			if !waiter.send(resp, true) {
+				mb.logger.Printf(
+					"[%s] WARNING: Dropping progress message for RequestId=%s because its buffer is full or closed",
+					mb.name,
+					requestId,
+				)
+			}
 		} else {
 			mb.logger.Printf(
 				"[%s] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
@@ -825,22 +912,17 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 	// Try to route to channel first (client pattern - awaiting response)
 	if requestId != "" {
 		if waiter, ok := mb.responseWaiters.Load(requestId); ok {
-			// Warn when channel buffer is actually nearly full
-			if cap(waiter.ch) > 1 && len(waiter.ch) >= cap(waiter.ch)-1 {
-				mb.logger.Printf(
-					"[%s] WARNING: Channel buffer nearly full for RequestId=%s (len=%d, cap=%d)",
-					mb.name,
-					requestId,
-					len(waiter.ch),
-					cap(waiter.ch),
-				)
-			}
-
 			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
-			if waiter.send(resp) {
-				mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
+			if waiter.send(resp, false) {
+				mb.logger.Printf("[%s] Message queued successfully for RequestId=%s, MessageType=%v",
 					mb.name, requestId, msgType)
+			} else {
+				mb.logger.Printf(
+					"[%s] WARNING: Response was not queued for RequestId=%s because its waiter is closed",
+					mb.name,
+					requestId,
+				)
 			}
 			return
 		}

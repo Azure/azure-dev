@@ -15,16 +15,23 @@ import (
 
 // runForJSON sanitizes only known error diagnostics on a copy. Dataset values,
 // unknown service fields, and the original model remain untouched.
-func runForJSON(run *eval_api.OpenAIEvalRun) *eval_api.OpenAIEvalRun {
+func runForJSON(run *eval_api.OpenAIEvalRun) (*eval_api.OpenAIEvalRun, error) {
 	if run == nil || run.Error == nil {
-		return run
+		return run, nil
 	}
-	display := *run
-	diagnostic := *run.Error
-	diagnostic.Code = urlsafe.Text(diagnostic.Code)
-	diagnostic.Message = urlsafe.Text(diagnostic.Message)
-	display.Error = &diagnostic
-	return &display
+	raw, err := json.Marshal(run)
+	if err != nil {
+		return nil, fmt.Errorf("writing run diagnostics: %w", err)
+	}
+	raw, err = redactExportRunError(raw)
+	if err != nil {
+		return nil, err
+	}
+	var display eval_api.OpenAIEvalRun
+	if err := json.Unmarshal(raw, &display); err != nil {
+		return nil, fmt.Errorf("reading sanitized run diagnostics: %w", err)
+	}
+	return &display, nil
 }
 
 // redactExportRunError applies the same diagnostic-only projection to a raw
@@ -59,38 +66,112 @@ func redactExportRunError(raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(run)
 }
 
-// redactExportError redacts the code and message of one exported error object.
+// redactExportError redacts the recognized diagnostic members of one exported
+// error object, including nested details and inner errors.
 func redactExportError(errorJSON json.RawMessage) (redacted json.RawMessage, changed bool, err error) {
 	var diagnostic map[string]json.RawMessage
 	if err := json.Unmarshal(errorJSON, &diagnostic); err != nil {
 		return nil, false, fmt.Errorf("reading exported run error: %w", err)
 	}
-	// The service's key spelling is kept, and matched without regard to case the
-	// way the run decodes it, so `Message` is redacted as `message` is.
-	for key := range diagnostic {
-		if !strings.EqualFold(key, "code") && !strings.EqualFold(key, "message") {
-			continue
-		}
-		value := diagnostic[key]
-		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			continue
-		}
-		var text string
-		if err := json.Unmarshal(value, &text); err != nil {
-			return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
-		}
-		if safe := urlsafe.Text(text); safe != text {
-			encoded, err := json.Marshal(safe)
+	redacted, changed, err = redactDiagnosticObject(diagnostic)
+	if err != nil || !changed {
+		return errorJSON, changed, err
+	}
+	return redacted, true, nil
+}
+
+func redactDiagnosticObject(diagnostic map[string]json.RawMessage) (json.RawMessage, bool, error) {
+	changed := false
+	for key, value := range diagnostic {
+		switch {
+		case strings.EqualFold(key, "code"),
+			strings.EqualFold(key, "message"),
+			strings.EqualFold(key, "target"):
+			redacted, valueChanged, err := redactDiagnosticText(key, value)
 			if err != nil {
 				return nil, false, err
 			}
-			diagnostic[key] = encoded
-			changed = true
+			if valueChanged {
+				diagnostic[key] = redacted
+				changed = true
+			}
+		case strings.EqualFold(key, "details"),
+			strings.EqualFold(key, "innererror"),
+			strings.EqualFold(key, "inner_error"),
+			strings.EqualFold(key, "error"):
+			redacted, valueChanged, err := redactDiagnosticValue(value)
+			if err != nil {
+				return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
+			}
+			if valueChanged {
+				diagnostic[key] = redacted
+				changed = true
+			}
 		}
 	}
 	if !changed {
-		return errorJSON, false, nil
+		return nil, false, nil
 	}
-	redacted, err = json.Marshal(diagnostic)
+	redacted, err := json.Marshal(diagnostic)
 	return redacted, err == nil, err
+}
+
+func redactDiagnosticText(key string, value json.RawMessage) (json.RawMessage, bool, error) {
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return value, false, nil
+	}
+	var text string
+	if err := json.Unmarshal(value, &text); err != nil {
+		return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
+	}
+	safe := urlsafe.Text(text)
+	if safe == text {
+		return value, false, nil
+	}
+	encoded, err := json.Marshal(safe)
+	return encoded, err == nil, err
+}
+
+func redactDiagnosticValue(value json.RawMessage) (json.RawMessage, bool, error) {
+	trimmed := bytes.TrimSpace(value)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return value, false, nil
+	}
+	switch trimmed[0] {
+	case '"':
+		return redactDiagnosticText("nested diagnostic", value)
+	case '{':
+		var diagnostic map[string]json.RawMessage
+		if err := json.Unmarshal(value, &diagnostic); err != nil {
+			return nil, false, err
+		}
+		redacted, changed, err := redactDiagnosticObject(diagnostic)
+		if err != nil || !changed {
+			return value, changed, err
+		}
+		return redacted, true, nil
+	case '[':
+		var entries []json.RawMessage
+		if err := json.Unmarshal(value, &entries); err != nil {
+			return nil, false, err
+		}
+		changed := false
+		for i, entry := range entries {
+			redacted, entryChanged, err := redactDiagnosticValue(entry)
+			if err != nil {
+				return nil, false, err
+			}
+			if entryChanged {
+				entries[i] = redacted
+				changed = true
+			}
+		}
+		if !changed {
+			return value, false, nil
+		}
+		redacted, err := json.Marshal(entries)
+		return redacted, err == nil, err
+	default:
+		return value, false, nil
+	}
 }

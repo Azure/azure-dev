@@ -78,7 +78,8 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 
 			var original eval_api.OpenAIEvalRun
 			require.NoError(t, json.Unmarshal([]byte(response), &original))
-			projected := runForJSON(&original)
+			projected, err := runForJSON(&original)
+			require.NoError(t, err)
 			assert.Equal(t, "Failed "+diagnosticURL, original.Error.Message)
 			assert.NotSame(t, original.Error, projected.Error)
 		})
@@ -95,7 +96,9 @@ func TestRunJSONDropsEveryCaseVariantOfARedactedKey(t *testing.T) {
 	var run eval_api.OpenAIEvalRun
 	require.NoError(t, json.Unmarshal([]byte(response), &run))
 
-	raw, err := json.Marshal(runForJSON(&run))
+	projected, err := runForJSON(&run)
+	require.NoError(t, err)
+	raw, err := json.Marshal(projected)
 	require.NoError(t, err)
 	for _, secret := range []string{"SIGONE", "SIGTWO", "SIGTHREE"} {
 		assert.NotContains(t, string(raw), secret)
@@ -117,7 +120,9 @@ func TestRunJSONDropsEveryCaseVariantOfARedactedKey(t *testing.T) {
 		`"Error":{"message":"Failed https://host/b?sig=SIGTWO"}}`
 	var spelled eval_api.OpenAIEvalRun
 	require.NoError(t, json.Unmarshal([]byte(topLevel), &spelled))
-	raw, err = json.Marshal(runForJSON(&spelled))
+	projected, err = runForJSON(&spelled)
+	require.NoError(t, err)
+	raw, err = json.Marshal(projected)
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "SIGONE")
 	assert.NotContains(t, string(raw), "SIGTWO")
@@ -308,6 +313,68 @@ func TestExportRedactsEverySpellingOfTheRunError(t *testing.T) {
 	}
 }
 
+func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
+	credentialURL := "https://" + "fixture-user:fixture-password" +
+		"@host/rows?sig=detail-secret#fragment-secret"
+	encodedURL, err := json.Marshal(credentialURL)
+	require.NoError(t, err)
+	response := `{"id":"run","error":{"message":"validation failed","details":[` +
+		`{"message":"download ` + string(encodedURL[1:len(encodedURL)-1]) + `",` +
+		`"target":"https://host/rows?sig=target-secret","unknown":9007199254740993,` +
+		`"details":[{"error":{"message":"nested https://host/rows?sig=deep-secret"}}]}],` +
+		`"innererror":{"inner_error":{"target":"https://host/rows?sig=inner-secret"}},` +
+		`"unknown":{"url":"https://host/rows?sig=keep-user-data"}}}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/output_items"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/runs/run"):
+			_, _ = w.Write([]byte(response))
+		case strings.HasSuffix(r.URL.Path, "/runs"):
+			_, _ = w.Write([]byte(`{"data":[` + response + `]}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	ec := evalContextFor(srv)
+
+	outputs := map[string]string{}
+	for _, caller := range []string{"show", "list", "export"} {
+		var out bytes.Buffer
+		command := jsonCmd(t, "json")
+		command.SetContext(t.Context())
+		command.SetOut(&out)
+		switch caller {
+		case "show":
+			action := &runShowAction{cmd: command, runID: "run", flags: &runShowFlags{}}
+			require.NoError(t, action.show(t.Context(), ec, "eval", gate{}))
+		case "list":
+			action := &runListAction{cmd: command, flags: &runListFlags{}}
+			require.NoError(t, action.list(t.Context(), ec, "eval"))
+		case "export":
+			action := &runOutputExportAction{cmd: command, runID: "run", flags: &runOutputExportFlags{}}
+			require.NoError(t, action.export(t.Context(), ec, "eval", exportToStdout))
+		}
+		outputs[caller] = out.String()
+	}
+
+	for name, raw := range outputs {
+		for _, secret := range []string{
+			"fixture-user", "fixture-password", "detail-secret", "fragment-secret",
+			"target-secret", "deep-secret", "inner-secret",
+		} {
+			assert.NotContains(t, raw, secret, name)
+		}
+		assert.Contains(t, raw, "9007199254740993", name)
+		assert.Contains(t, raw, "keep-user-data", name)
+	}
+	assert.Contains(t, response, "detail-secret", "copy-on-output leaves the source unchanged")
+}
+
 func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testing.T) {
 	for _, raw := range []string{`null`, `{}`, `{"error":null}`, `{"error":{}}`, `{"error":{"message":null}}`} {
 		projected, err := redactExportRunError(json.RawMessage(raw))
@@ -318,7 +385,9 @@ func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testi
 		_, err := redactExportRunError(json.RawMessage(raw))
 		require.Error(t, err)
 	}
-	assert.Nil(t, runForJSON(nil))
+	projected, err := runForJSON(nil)
+	require.NoError(t, err)
+	assert.Nil(t, projected)
 }
 
 func TestRunJSONCallersPreserveInlineSourceNumbers(t *testing.T) {

@@ -276,7 +276,9 @@ func TestJSONRedactsADiagnosticWhateverCaseTheServiceSpelledItIn(t *testing.T) {
 			var run eval_api.OpenAIEvalRun
 			require.NoError(t, json.Unmarshal([]byte(raw), &run))
 
-			out, err := json.Marshal(runForJSON(&run))
+			projected, err := runForJSON(&run)
+			require.NoError(t, err)
+			out, err := json.Marshal(projected)
 			require.NoError(t, err)
 			assert.NotContains(t, string(out), secret)
 			var decoded struct {

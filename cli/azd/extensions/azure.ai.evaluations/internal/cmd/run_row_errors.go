@@ -53,6 +53,9 @@ func summarizeRowErrors(items []eval_api.OutputItem) []rowErrorGroup {
 				code:      failureText(sample.Code),
 				message:   failureText(sample.Message),
 			}
+			if key.code == "" && key.message == "" {
+				continue
+			}
 			if counted[key] {
 				continue
 			}
@@ -94,7 +97,7 @@ func writeJobFailure(out io.Writer, job *eval_api.GenerationJob) {
 	if job == nil {
 		return
 	}
-	if reason := job.Error.Reason(); reason != "" {
+	if reason := job.Error.Diagnostic(); reason != "" {
 		fmt.Fprint(out, messages.JobErrorLine(failureText(reason)))
 		renderFailureDetails(out, job.Error)
 	}

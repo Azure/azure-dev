@@ -356,7 +356,11 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	display := runForDisplay(final, evalID, run.ID)
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(out, runForJSON(final)); err != nil {
+		projected, err := runForJSON(final)
+		if err != nil {
+			return err
+		}
+		if err := emitJSON(out, projected); err != nil {
 			return err
 		}
 	} else {

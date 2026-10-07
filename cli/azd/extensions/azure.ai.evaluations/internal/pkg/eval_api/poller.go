@@ -91,7 +91,7 @@ func (e *JobFailedError) Error() string {
 	if e.Job != nil {
 		// The service's own words reach the terminal and CI logs, and can quote a
 		// URL that carries a SAS token or userinfo.
-		if reason := failuretext.Text(e.Job.Error.Reason()); reason != "" {
+		if reason := failuretext.Text(e.Job.Error.Diagnostic()); reason != "" {
 			return messages.JobFailedWithReason(string(e.Status), reason)
 		}
 	}

@@ -102,6 +102,18 @@ func (e *JobError) Reason() string {
 	return strings.TrimSpace(e.detail)
 }
 
+// Diagnostic returns the best text available for a failed job or run,
+// falling back to its service code when it carried no explanatory message.
+func (e *JobError) Diagnostic() string {
+	if reason := e.Reason(); reason != "" {
+		return reason
+	}
+	if e == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.Code)
+}
+
 func blank(text string) bool {
 	return strings.TrimSpace(text) == ""
 }

@@ -103,7 +103,8 @@ func TestRowErrorsAreGroupedAndCounted(t *testing.T) {
 		rowErrorItem("2", erroredResult("quality", "RateLimit", "slow down")),
 		rowErrorItem("3",
 			eval_api.OutputResult{Name: "quality", Status: "errored"}, // errored without any reason
-			erroredResult("quality", "", "")),                         // empty sample error is not a reason
+			erroredResult("quality", "", ""),                          // empty sample error is not a reason
+			erroredResult("quality", "   ", "\t\n")),                  // sanitized-empty diagnostics are not reasons
 		{ID: "4", Results: []eval_api.OutputResult{{Name: "quality", Label: "pass"}}},
 	})
 	require.Equal(t, []rowErrorGroup{
@@ -192,11 +193,14 @@ func TestRunSummaryReadsReasonsFromErroredRows(t *testing.T) {
 	}
 }
 
-// -o json carries the service's own object, so a nested reason is data the
-// caller already has, and reading it for the human view must not rewrite it.
-func TestShowJSONLeavesANestedReasonUntouched(t *testing.T) {
+// Nested diagnostics are service text just like the headline, so JSON output
+// must redact credentials from them while preserving unrelated service fields.
+func TestShowJSONRedactsNestedDiagnostics(t *testing.T) {
 	const response = `{"id":"run_failed","status":"failed","error":{"code":"E","message":"",` +
-		`"details":[{"code":"d","message":"` + failureReasonText + `"}]}}`
+		`"details":[{"code":"d","message":"download ` +
+		`https://storage.example/rows?sig=nested-secret",` +
+		`"target":"https://storage.example/rows?sig=target-secret","unknown":9007199254740993}],` +
+		`"inner_error":{"message":"retry https://storage.example/rows?sig=inner-secret"}}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(response))
@@ -209,7 +213,12 @@ func TestShowJSONLeavesANestedReasonUntouched(t *testing.T) {
 	command.SetOut(&out)
 	action := &runShowAction{cmd: command, runID: "run_failed", flags: &runShowFlags{}}
 	require.NoError(t, action.show(t.Context(), evalContextFor(srv), "eval_failed", gate{}))
-	assert.JSONEq(t, response, out.String())
+	for _, secret := range []string{
+		"nested-secret", "target-secret", "inner-secret", "sig=",
+	} {
+		assert.NotContains(t, out.String(), secret)
+	}
+	assert.Contains(t, out.String(), `"unknown": 9007199254740993`)
 }
 
 // Reasons are grouped by what a reader would see, so messages that differ only
@@ -268,4 +277,15 @@ func TestJobFailureLineIsRedactedAndReadsNestedReasons(t *testing.T) {
 	writeJobFailure(&none, &eval_api.GenerationJob{ID: "job_2", Status: "failed"})
 	writeJobFailure(&none, nil)
 	assert.Empty(t, none.String(), "a failure with no reason prints no error line")
+
+	var codeOnly eval_api.GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"id":"job_3","status":"failed","error":{"code":"Throttled"}}`), &codeOnly))
+	var codeOut bytes.Buffer
+	writeJobFailure(&codeOut, &codeOnly)
+	assert.Equal(t, "error: Throttled\n", codeOut.String())
+
+	var showOut bytes.Buffer
+	writeJobStatus(&showOut, &codeOnly)
+	assert.Equal(t, "job_3  failed\nerror: Throttled\n", showOut.String())
 }

@@ -68,7 +68,7 @@ func ValidateAgentServiceDefinition(
 			result.Name = svc.GetName()
 		}
 	case agent_yaml.AgentKindPromptVoice, agent_yaml.AgentKindVoice:
-		if err := validateVoiceAgentServiceDefinition(svc, projectRoot); err != nil {
+		if err := validateVoiceAgentServiceDefinition(svc, resolved, projectRoot); err != nil {
 			return AgentDefinitionValidation{}, err
 		}
 	default:
@@ -126,14 +126,8 @@ func validateHostedAgentServiceDefinition(
 		return err
 	}
 
-	effectiveService := *svc
-	effectiveService.AdditionalProperties = resolved
-	settings, err := LoadServiceTargetAgentConfig(&effectiveService)
-	if err != nil {
-		return invalidAgentDefinitionError(svc, err)
-	}
-	if _, err := ResolveActivityProfileForDeploy(hosted, settings.Activity); err != nil {
-		return invalidAgentDefinitionError(svc, err)
+	if err := validateAgentActivitySettings(svc, resolved, hosted); err != nil {
+		return err
 	}
 
 	buildConfig := &agent_yaml.AgentBuildConfig{}
@@ -196,6 +190,7 @@ func promptAgentValidationDir(
 
 func validateVoiceAgentServiceDefinition(
 	svc *azdext.ServiceConfig,
+	resolved *structpb.Struct,
 	projectRoot string,
 ) error {
 	_, found, err := VoiceAgentFromResolvedService(svc, projectRoot)
@@ -203,7 +198,31 @@ func validateVoiceAgentServiceDefinition(
 		return err
 	}
 	if !found {
-		return unsupportedAgentKindError(svc, agent_yaml.AgentKind(structKind(ServiceConfigProps(svc))))
+		return unsupportedAgentKindError(svc, agent_yaml.AgentKind(structKind(resolved)))
+	}
+	if err := validateAgentActivitySettings(
+		svc,
+		resolved,
+		agent_yaml.ContainerAgent{},
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateAgentActivitySettings(
+	svc *azdext.ServiceConfig,
+	resolved *structpb.Struct,
+	hosted agent_yaml.ContainerAgent,
+) error {
+	effectiveService := *svc
+	effectiveService.AdditionalProperties = resolved
+	settings, err := LoadServiceTargetAgentConfig(&effectiveService)
+	if err != nil {
+		return invalidAgentDefinitionError(svc, err)
+	}
+	if _, err := ResolveActivityProfileForDeploy(hosted, settings.Activity); err != nil {
+		return invalidAgentDefinitionError(svc, err)
 	}
 	return nil
 }

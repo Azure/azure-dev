@@ -255,6 +255,32 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 			want:     "outputModalities[0] must not be blank",
 		},
 		{
+			name: "voice activity use case",
+			values: map[string]any{
+				"kind":  "voice",
+				"name":  "voice-agent",
+				"model": map[string]any{"id": "gpt-realtime"},
+				"activity": map[string]any{
+					"useCase": "digital_worker",
+				},
+			},
+			wantCode: exterrors.CodeInvalidAgentManifest,
+			want:     "activity.useCase is not supported",
+		},
+		{
+			name: "voice digital worker type",
+			values: map[string]any{
+				"kind":  "voice",
+				"name":  "voice-agent",
+				"model": map[string]any{"id": "gpt-realtime"},
+				"activity": map[string]any{
+					"digitalWorkerType": "m365",
+				},
+			},
+			wantCode: exterrors.CodeInvalidAgentManifest,
+			want:     "requires an Activity-protocol hosted agent",
+		},
+		{
 			name: "missing kind",
 			values: map[string]any{
 				"name": "missing-kind",

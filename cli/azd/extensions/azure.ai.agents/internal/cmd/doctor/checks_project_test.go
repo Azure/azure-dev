@@ -1042,6 +1042,34 @@ func TestCheckAgentDefinitionValid_RejectsHostedDeployPrechecks(t *testing.T) {
 	}, got.Details["failureCodes"])
 }
 
+func TestCheckAgentDefinitionValid_RejectsVoiceActivityConfig(t *testing.T) {
+	t.Parallel()
+
+	invalidActivity, err := structpb.NewStruct(map[string]any{
+		"kind":  "voice",
+		"name":  "voice-agent",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"activity": map[string]any{
+			"useCase": "digital_worker",
+		},
+	})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, t.TempDir(), map[string]*azdext.ServiceConfig{
+		"voice-agent": {
+			Name:                 "voice-agent",
+			Host:                 agentHost,
+			AdditionalProperties: invalidActivity,
+		},
+	})
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Empty(t, got.Details["validatedServices"])
+	require.Equal(t, map[string]string{
+		"voice-agent": exterrors.CodeInvalidAgentManifest,
+	}, got.Details["failureCodes"])
+}
+
 func TestSortAgentServices(t *testing.T) {
 	t.Parallel()
 

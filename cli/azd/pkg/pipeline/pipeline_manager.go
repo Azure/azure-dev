@@ -92,7 +92,7 @@ type PipelineManager struct {
 	ciProvider        CiProvider
 	args              *PipelineManagerArgs
 	azdCtx            *azdcontext.AzdContext
-	env               *environment.Environment
+	env               environment.Env
 	entraIdService    entraid.EntraIdService
 	gitCli            *git.Cli
 	console           input.Console
@@ -115,7 +115,7 @@ func NewPipelineManager(
 	entraIdService entraid.EntraIdService,
 	gitCli *git.Cli,
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	args *PipelineManagerArgs,
 	serviceLocator ioc.ServiceLocator,
@@ -265,7 +265,7 @@ func (pm *PipelineManager) Configure(
 	if err != nil {
 		return result, fmt.Errorf("loading user configuration: %w", err)
 	}
-	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
+	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.GetConfig(), userConfig)
 	if smr != nil {
 		if _, err := uuid.Parse(*smr); err != nil {
 			return result, fmt.Errorf("Invalid service management reference %s: %w", *smr, err)
@@ -424,7 +424,7 @@ func (pm *PipelineManager) Configure(
 
 		// Set in .env to be retrieved for any additional runs
 		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
-		if err := pm.envManager.Save(ctx, pm.env); err != nil {
+		if err := pm.envManager.Save(ctx, pm.env.BackingEnv()); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
 
@@ -546,7 +546,7 @@ func (pm *PipelineManager) Configure(
 
 		// Set in .env to be retrieved for any additional runs
 		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
-		if err := pm.envManager.Save(ctx, pm.env); err != nil {
+		if err := pm.envManager.Save(ctx, pm.env.BackingEnv()); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
 
@@ -1125,10 +1125,10 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 func (pm *PipelineManager) savePipelineProviderToEnv(
 	ctx context.Context,
 	provider ciProviderType,
-	env *environment.Environment,
+	env environment.Env,
 ) error {
 	env.DotenvSet(envPersistedKey, string(provider))
-	err := pm.envManager.Save(ctx, env)
+	err := pm.envManager.Save(ctx, env.BackingEnv())
 	if err != nil {
 		return err
 	}

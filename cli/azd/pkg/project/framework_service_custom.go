@@ -13,11 +13,11 @@ import (
 )
 
 type customProject struct {
-	env *environment.Environment
+	env environment.Env
 }
 
 // NewCustomProject creates a new instance of the custom language project
-func NewCustomProject(env *environment.Environment) FrameworkService {
+func NewCustomProject(env environment.Env) FrameworkService {
 	return &customProject{
 		env: env,
 	}

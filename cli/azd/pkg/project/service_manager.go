@@ -155,7 +155,7 @@ type ServiceManager interface {
 type ServiceOperationCache map[string]any
 
 type serviceManager struct {
-	env                 *environment.Environment
+	env                 environment.Env
 	resourceManager     ResourceManager
 	serviceLocator      ioc.ServiceLocator
 	operationCache      ServiceOperationCache
@@ -167,7 +167,7 @@ type serviceManager struct {
 
 // NewServiceManager creates a new instance of the ServiceManager component
 func NewServiceManager(
-	env *environment.Environment,
+	env environment.Env,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
 	operationCache ServiceOperationCache,
@@ -780,7 +780,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	return frameworkService, nil
 }
 
-func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []string {
+func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env environment.Env) []string {
 	overriddenEndpoints := env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
 	if overriddenEndpoints != "" {
 		var endpoints []string

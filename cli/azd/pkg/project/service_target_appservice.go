@@ -20,7 +20,7 @@ import (
 )
 
 type appServiceTarget struct {
-	env             *environment.Environment
+	env             environment.Env
 	envManager      environment.Manager
 	containerHelper *ContainerHelper
 	cli             *azapi.AzureClient
@@ -29,7 +29,7 @@ type appServiceTarget struct {
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	containerHelper *ContainerHelper,
 	azCli *azapi.AzureClient,
@@ -172,7 +172,7 @@ func (st *appServiceTarget) Publish(
 		st.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteContainer.Location)
 	}
 
-	if err := st.envManager.Save(ctx, st.env); err != nil {
+	if err := st.envManager.Save(ctx, st.env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving image name to environment: %w", err)
 	}
 

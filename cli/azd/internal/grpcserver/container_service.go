@@ -30,7 +30,7 @@ type containerService struct {
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper]
 	lazyServiceManager  *lazy.Lazy[project.ServiceManager]
 	lazyProject         *lazy.Lazy[*project.ProjectConfig]
-	lazyEnvironment     *lazy.Lazy[*environment.Environment]
+	lazyEnvironment     *lazy.Lazy[environment.Env]
 }
 
 func mapContainerPublishError(err error) error {
@@ -137,7 +137,7 @@ func NewContainerService(
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper],
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyProjectConf *lazy.Lazy[*project.ProjectConfig],
-	lazyEnvironment *lazy.Lazy[*environment.Environment],
+	lazyEnvironment *lazy.Lazy[environment.Env],
 ) azdext.ContainerServiceServer {
 	return &containerService{
 		console:             console,

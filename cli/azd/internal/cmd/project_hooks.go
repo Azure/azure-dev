@@ -23,7 +23,7 @@ import (
 // `pre<cmd>`/`post<cmd>` hooks — see cmd/middleware/hooks.go.
 type projectCommandHookDeps struct {
 	projectConfig  *project.ProjectConfig
-	env            *environment.Environment
+	env            environment.Env
 	envManager     environment.Manager
 	console        input.Console
 	commandRunner  exec.CommandRunner

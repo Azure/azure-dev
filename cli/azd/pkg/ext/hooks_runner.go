@@ -32,7 +32,7 @@ type HooksRunner struct {
 	console        input.Console
 	cwd            string
 	hooks          map[string][]*HookConfig
-	env            *environment.Environment
+	env            environment.Env
 	envManager     environment.Manager
 	serviceLocator ioc.ServiceLocator
 }
@@ -46,7 +46,7 @@ func NewHooksRunner(
 	console input.Console,
 	cwd string,
 	hooks map[string][]*HookConfig,
-	env *environment.Environment,
+	env environment.Env,
 	serviceLocator ioc.ServiceLocator,
 ) *HooksRunner {
 	if cwd == "" {
@@ -108,7 +108,7 @@ func (h *HooksRunner) RunHooks(
 	}
 
 	for _, hookConfig := range hooks {
-		if err := h.envManager.Reload(ctx, h.env); err != nil {
+		if err := h.envManager.Reload(ctx, h.env.BackingEnv()); err != nil {
 			return fmt.Errorf("reloading environment before running hook: %w", err)
 		}
 
@@ -117,7 +117,7 @@ func (h *HooksRunner) RunHooks(
 			return err
 		}
 
-		if err := h.envManager.Reload(ctx, h.env); err != nil {
+		if err := h.envManager.Reload(ctx, h.env.BackingEnv()); err != nil {
 			return fmt.Errorf("reloading environment after running hook: %w", err)
 		}
 	}

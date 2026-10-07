@@ -266,7 +266,7 @@ type BicepProvider struct {
 
 	// Dependencies
 	envManager          environment.Manager
-	env                 *environment.Environment
+	env                 environment.Env
 	console             input.Console
 	bicepCli            *bicep.Cli
 	azapi               *azapi.AzureClient
@@ -385,7 +385,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 
 // ensureResourceGroup ensures that the resource group with AZURE_RESOURCE_GROUP key exists in the environment,
 // prompting the user to create a resource group if it is unset or does not exist.
-func (p *BicepProvider) ensureResourceGroup(ctx context.Context, env *environment.Environment) error {
+func (p *BicepProvider) ensureResourceGroup(ctx context.Context, env environment.Env) error {
 	promptAndSave := func(opt prompt.PromptResourceOptions) error {
 		rgName, err := p.prompters.PromptResourceGroup(ctx, opt)
 		if err != nil {
@@ -393,7 +393,7 @@ func (p *BicepProvider) ensureResourceGroup(ctx context.Context, env *environmen
 		}
 
 		p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-		if err := p.envManager.Save(ctx, p.env); err != nil {
+		if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 			return fmt.Errorf("saving resource group name: %w", err)
 		}
 
@@ -2159,7 +2159,7 @@ func evalParamEnvSubst(
 	principalId string,
 	principalType string,
 	paramName string,
-	env *environment.Environment,
+	env environment.Env,
 	virtualEnv map[string]string,
 ) (string, envSubstResult, error) {
 	result := envSubstResult{}
@@ -3488,7 +3488,7 @@ func (p *BicepProvider) ensureParameters(
 	_, hasAzdLocation := p.env.Dotenv()[environment.LocationEnvVarName]
 	if hasLocation && !hasAzdLocation && locationSystemEnv != "" {
 		p.env.SetLocation(locationSystemEnv)
-		if err := p.envManager.Save(ctx, p.env); err != nil {
+		if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 			return nil, fmt.Errorf("saving location to .env: %w", err)
 		}
 	}
@@ -3605,7 +3605,7 @@ func (p *BicepProvider) ensureParameters(
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
 
-		if v, has := p.env.Config.Get(configKey); has {
+		if v, has := p.env.GetConfig().Get(configKey); has {
 			if isValueAssignableToParameterType(parameterType, v) {
 				configuredParameters[key] = azure.ArmParameter{
 					Value: v,
@@ -3614,7 +3614,7 @@ func (p *BicepProvider) ensureParameters(
 			} else {
 				// The saved value is no longer valid (perhaps the user edited their template to change the type of a)
 				// parameter and then re-ran `azd provision`. Forget the saved value (if we can) and prompt for a new one.
-				_ = p.env.Config.Unset("infra.parameters.%s")
+				_ = p.env.GetConfig().Unset("infra.parameters.%s")
 			}
 		}
 
@@ -3631,7 +3631,7 @@ func (p *BicepProvider) ensureParameters(
 			configuredParameters[key] = azure.ArmParameter{
 				Value: genValue,
 			}
-			mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
+			mustSetParamAsConfig(key, genValue, p.env.GetConfig(), param.Secure())
 			configModified = true
 			continue
 		}
@@ -3669,7 +3669,7 @@ func (p *BicepProvider) ensureParameters(
 			for _, prompt := range parameterPrompts {
 				key := prompt.key
 				value := values[prompt.key]
-				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
+				mustSetParamAsConfig(key, value, p.env.GetConfig(), prompt.param.Secure())
 				configModified = true
 				configuredParameters[key] = azure.ArmParameter{
 					Value: value,
@@ -3688,7 +3688,7 @@ func (p *BicepProvider) ensureParameters(
 				if key != "location" {
 					// location param is special.
 					// It is not persisted in config, it is set in the .env directly
-					mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
+					mustSetParamAsConfig(key, value, p.env.GetConfig(), prompt.param.Secure())
 				}
 				configModified = true
 				configuredParameters[key] = azure.ArmParameter{
@@ -3699,7 +3699,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	if configModified {
-		if err := p.envManager.Save(ctx, p.env); err != nil {
+		if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 			return nil, fmt.Errorf("saving prompt values: %w", err)
 		}
 	}
@@ -3816,7 +3816,7 @@ func NewBicepProvider(
 	resourceManager infra.ResourceManager,
 	deploymentManager *infra.DeploymentManager,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	prompters prompt.Prompter,
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
@@ -3887,7 +3887,7 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 			continue
 		}
 
-		_, isPrompt := p.env.Config.Get(fmt.Sprintf("infra.parameters.%s", key))
+		_, isPrompt := p.env.GetConfig().Get(fmt.Sprintf("infra.parameters.%s", key))
 		singleMapping := len(parametersInfo.envMapping[key]) == 1
 		usingEnvVarMapping := false
 		if singleMapping {

@@ -385,6 +385,9 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	mockContext.Container.MustRegisterSingleton(func() *environment.Environment {
 		return env
 	})
+	mockContext.Container.MustRegisterSingleton(func() environment.Env {
+		return env
+	})
 	mockContext.Container.MustRegisterSingleton(func() *azapi.AzureClient {
 		return mockazapi.NewAzureClientFromMockContext(mockContext)
 	})

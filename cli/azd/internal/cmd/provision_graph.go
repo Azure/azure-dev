@@ -781,7 +781,7 @@ func (p *ProvisionAction) displayEnvironmentDetails(ctx context.Context) {
 // callers ([ProvisionAction] and [UpGraphAction]) so that a single
 // [provisionSingleLayer] implementation can serve both code paths.
 type provisionLayerDeps struct {
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	serviceLocator      ioc.ServiceLocator
 	defaultProvider     provisioning.DefaultProviderResolver
@@ -873,8 +873,9 @@ func runProvisionSingleLayer(
 	// Snapshot the shared environment so this layer resolves parameters
 	// from current values (including outputs from prior phases).
 	envMu.Lock()
+	backingEnv := deps.env.BackingEnv()
 	layerEnv := environment.NewWithValues(
-		deps.env.Name(), deps.env.Dotenv(),
+		backingEnv.Name(), backingEnv.Dotenv(),
 	)
 	envMu.Unlock()
 
@@ -1101,11 +1102,11 @@ func mergeLayerOutputsLocked(
 	envMu.Lock()
 	defer envMu.Unlock()
 
-	if err := deps.envManager.Reload(ctx, deps.env); err != nil {
+	if err := deps.envManager.Reload(ctx, deps.env.BackingEnv()); err != nil {
 		return fmt.Errorf("reloading shared env: %w", err)
 	}
 
-	currentEnv := deps.env.Dotenv()
+	currentEnv := deps.env.BackingEnv().Dotenv()
 	for key, param := range outputs {
 		newValue := resolveOutputString(param)
 		if existing, ok := currentEnv[key]; ok && existing != newValue {
@@ -1113,7 +1114,7 @@ func mergeLayerOutputsLocked(
 		}
 	}
 
-	return provisioning.UpdateEnvironment(ctx, outputs, deps.env, deps.envManager)
+	return provisioning.UpdateEnvironment(ctx, outputs, deps.env.BackingEnv(), deps.envManager)
 }
 
 // reloadSharedEnvLocked acquires envMu and reloads deps.env from disk,
@@ -1129,7 +1130,7 @@ func reloadSharedEnvLocked(
 ) error {
 	envMu.Lock()
 	defer envMu.Unlock()
-	return deps.envManager.Reload(ctx, deps.env)
+	return deps.envManager.Reload(ctx, deps.env.BackingEnv())
 }
 
 // resolveOutputString converts a provisioning output parameter to its string

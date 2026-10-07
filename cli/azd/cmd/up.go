@@ -67,7 +67,7 @@ func newUpCmd() *cobra.Command {
 type upAction struct {
 	flags               *upFlags
 	console             input.Console
-	env                 *environment.Environment
+	env                 environment.Env
 	projectConfig       *project.ProjectConfig
 	provisioningManager *provisioning.Manager
 	envManager          environment.Manager
@@ -80,7 +80,7 @@ type upAction struct {
 func newUpAction(
 	flags *upFlags,
 	console input.Console,
-	env *environment.Environment,
+	env environment.Env,
 	projectConfig *project.ProjectConfig,
 	provisioningManager *provisioning.Manager,
 	envManager environment.Manager,
@@ -131,7 +131,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		updatedEnv = true
 	}
 	if updatedEnv {
-		if err := u.envManager.Save(ctx, u.env); err != nil {
+		if err := u.envManager.Save(ctx, u.env.BackingEnv()); err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}
 	}

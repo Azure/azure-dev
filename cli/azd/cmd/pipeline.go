@@ -129,7 +129,7 @@ type pipelineConfigAction struct {
 	alphaFeatureManager *alpha.FeatureManager
 	manager             *pipeline.PipelineManager
 	provisioningManager *provisioning.Manager
-	env                 *environment.Environment
+	env                 environment.Env
 	console             input.Console
 	prompters           prompt.Prompter
 	projectConfig       *project.ProjectConfig
@@ -137,7 +137,7 @@ type pipelineConfigAction struct {
 }
 
 func newPipelineConfigAction(
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	flags *pipelineConfigFlags,
 	alphaFeatureManager *alpha.FeatureManager,

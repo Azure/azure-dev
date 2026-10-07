@@ -371,7 +371,7 @@ func TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk(t *testing.T) {
 
 	// Establish an initial saved state on disk via the env manager.
 	deps.env.DotenvSet("INITIAL", "value")
-	require.NoError(t, deps.envManager.Save(t.Context(), deps.env))
+	require.NoError(t, deps.envManager.Save(t.Context(), deps.env.BackingEnv()))
 
 	// Simulate A's post-hook subprocess: write a new key to disk that
 	// the parent process's in-memory deps.env knows nothing about.
@@ -414,7 +414,7 @@ func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
 
 	// Seed an initial saved state.
 	deps.env.DotenvSet("BASE", "value")
-	require.NoError(t, deps.envManager.Save(t.Context(), deps.env))
+	require.NoError(t, deps.envManager.Save(t.Context(), deps.env.BackingEnv()))
 
 	outputsA := map[string]provisioning.OutputParameter{
 		"FROM_A": {Type: provisioning.ParameterTypeString, Value: "a-value"},

@@ -34,7 +34,7 @@ func TestFrameworkService_onRegisterRequest(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		lazyEnv *lazy.Lazy[*environment.Environment]
+		lazyEnv *lazy.Lazy[environment.Env]
 	}{
 		{
 			name:    "no lazy env",
@@ -42,13 +42,13 @@ func TestFrameworkService_onRegisterRequest(t *testing.T) {
 		},
 		{
 			name: "env load error",
-			lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			lazyEnv: lazy.NewLazy(func() (environment.Env, error) {
 				return nil, errors.New("no environment")
 			}),
 		},
 		{
 			name:    "env available",
-			lazyEnv: lazy.From(environment.NewWithValues("test", nil)),
+			lazyEnv: lazy.From[environment.Env](environment.NewWithValues("test", nil)),
 		},
 	}
 

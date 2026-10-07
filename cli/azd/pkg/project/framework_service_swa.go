@@ -15,7 +15,7 @@ import (
 )
 
 type swaProject struct {
-	env           *environment.Environment
+	env           environment.Env
 	console       input.Console
 	commandRunner exec.CommandRunner
 	swa           *swa.Cli
@@ -25,7 +25,7 @@ type swaProject struct {
 // NewSwaProject creates a new instance of a Azd project that
 // leverages swa cli for building
 func NewSwaProject(
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	swa *swa.Cli,
@@ -44,7 +44,7 @@ func NewSwaProject(
 // use of DI and ServiceLocators, where we sometimes need to resolve this type as a FrameworkService instance instead
 // of a CompositeFrameworkService as [NewSwaProject] does.
 func NewSwaProjectAsFrameworkService(
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	swa *swa.Cli,

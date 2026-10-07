@@ -30,7 +30,7 @@ import (
 type AzdoScmProvider struct {
 	envManager     environment.Manager
 	repoDetails    *AzdoRepositoryDetails
-	env            *environment.Environment
+	env            environment.Env
 	azdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
@@ -40,7 +40,7 @@ type AzdoScmProvider struct {
 
 func NewAzdoScmProvider(
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	azdContext *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -98,7 +98,7 @@ func (p *AzdoScmProvider) preConfigureCheck(
 // helper function to save configuration values to .env file
 func (p *AzdoScmProvider) saveEnvironmentConfig(ctx context.Context, key string, value string) error {
 	p.env.DotenvSet(key, value)
-	err := p.envManager.Save(ctx, p.env)
+	err := p.envManager.Save(ctx, p.env.BackingEnv())
 	if err != nil {
 		return err
 	}
@@ -566,7 +566,7 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		repoDetails.projectId = proj.Id.String()
 		p.env.DotenvSet(azdo.AzDoEnvironmentProjectIdName, repoDetails.projectId)
 
-		if err := p.envManager.Save(ctx, p.env); err != nil {
+		if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}
 	}
@@ -589,7 +589,7 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
-func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
+func azdoPat(ctx context.Context, env environment.Env, console input.Console) string {
 	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
 	if err != nil {
 		log.Printf("Error getting PAT when it should be found: %v", err)
@@ -669,7 +669,7 @@ func (p *AzdoScmProvider) GitPush(
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
 type AzdoCiProvider struct {
 	envManager    environment.Manager
-	Env           *environment.Environment
+	Env           environment.Env
 	AzdContext    *azdcontext.AzdContext
 	credentials   *entraid.AzureCredentials
 	console       input.Console
@@ -678,7 +678,7 @@ type AzdoCiProvider struct {
 
 func NewAzdoCiProvider(
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
 	commandRunner exec.CommandRunner,

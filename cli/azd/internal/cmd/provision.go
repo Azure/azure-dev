@@ -124,7 +124,7 @@ type ProvisionAction struct {
 	provisionManager    *provisioning.Manager
 	projectManager      project.ProjectManager
 	resourceManager     project.ResourceManager
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	formatter           output.Formatter
 	projectConfig       *project.ProjectConfig
@@ -157,7 +157,7 @@ func NewProvisionAction(
 	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
 	projectConfig *project.ProjectConfig,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	console input.Console,
 	commandRunner exec.CommandRunner,
@@ -257,7 +257,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		envChanged = true
 	}
 	if envChanged {
-		if err := p.envManager.Save(ctx, p.env); err != nil {
+		if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}
 	}

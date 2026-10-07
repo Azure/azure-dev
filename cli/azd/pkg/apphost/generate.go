@@ -56,7 +56,7 @@ func (aspireD *AspireDashboard) MarshalJSON() ([]byte, error) {
 
 func AspireDashboardUrl(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
 
 	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")

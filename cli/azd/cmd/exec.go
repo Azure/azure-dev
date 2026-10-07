@@ -90,14 +90,14 @@ func (f *execFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type execAction struct {
-	env             *environment.Environment
+	env             environment.Env
 	keyvaultService keyvault.KeyVaultService
 	flags           *execFlags
 	args            []string
 }
 
 func newExecAction(
-	env *environment.Environment,
+	env environment.Env,
 	keyvaultService keyvault.KeyVaultService,
 	flags *execFlags,
 	args []string,

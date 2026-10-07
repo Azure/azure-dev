@@ -18,7 +18,7 @@ import (
 )
 
 type nodeProject struct {
-	env           *environment.Environment
+	env           environment.Env
 	cli           node.Cli
 	commandRunner exec.CommandRunner
 
@@ -28,7 +28,7 @@ type nodeProject struct {
 
 // NewNodeProject creates a new instance of a Node.js project framework service.
 // It auto-detects whether the project uses npm, pnpm, or yarn.
-func NewNodeProject(cli node.Cli, env *environment.Environment, commandRunner exec.CommandRunner) FrameworkService {
+func NewNodeProject(cli node.Cli, env environment.Env, commandRunner exec.CommandRunner) FrameworkService {
 	return &nodeProject{
 		env:           env,
 		cli:           cli,

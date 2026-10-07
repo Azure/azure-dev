@@ -48,7 +48,7 @@ type ResourceManager interface {
 }
 
 type resourceManager struct {
-	env                  *environment.Environment
+	env                  environment.Env
 	deploymentService    *azapi.StandardDeployments
 	resourceService      *azapi.ResourceService
 	azureResourceManager infra.ResourceManager
@@ -56,7 +56,7 @@ type resourceManager struct {
 
 // NewResourceManager creates a new instance of the project resource manager
 func NewResourceManager(
-	env *environment.Environment,
+	env environment.Env,
 	deploymentService *azapi.StandardDeployments,
 	resourceService *azapi.ResourceService,
 	azureResourceManager infra.ResourceManager,

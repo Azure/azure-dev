@@ -193,7 +193,7 @@ func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 type envSetAction struct {
 	console    input.Console
 	azdCtx     *azdcontext.AzdContext
-	env        *environment.Environment
+	env        environment.Env
 	envManager environment.Manager
 	flags      *envSetFlags
 	args       []string
@@ -201,7 +201,7 @@ type envSetAction struct {
 
 func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	console input.Console,
 	flags *envSetFlags,
@@ -282,7 +282,7 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		dotEnv[key] = value
 	}
 
-	if err := e.envManager.Save(ctx, e.env); err != nil {
+	if err := e.envManager.Save(ctx, e.env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -355,7 +355,7 @@ func (f *envSetSecretFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCo
 type envSetSecretAction struct {
 	console             input.Console
 	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	flags               *envSetFlags
 	args                []string
@@ -454,7 +454,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 			envValue := keyvault.NewAzureKeyVaultSecret(kvSubId, kvAccount.Name, kvSecretName)
 			e.env.DotenvSet(secretName, envValue)
-			if err := e.envManager.Save(ctx, e.env); err != nil {
+			if err := e.envManager.Save(ctx, e.env.BackingEnv()); err != nil {
 				return nil, fmt.Errorf("saving environment: %w", err)
 			}
 
@@ -640,7 +640,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
 	envValue := keyvault.NewAzureKeyVaultSecret(subId, kvAccount.Name, kvSecretName)
 	e.env.DotenvSet(secretName, envValue)
-	if err := e.envManager.Save(ctx, e.env); err != nil {
+	if err := e.envManager.Save(ctx, e.env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -730,7 +730,7 @@ func (e *envSetSecretAction) selectKeyVaultSecret(ctx context.Context, subId str
 
 func newEnvSetSecretAction(
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	console input.Console,
 	flags *envSetFlags,
@@ -1115,7 +1115,7 @@ type envRefreshAction struct {
 	projectConfig       *project.ProjectConfig
 	projectManager      project.ProjectManager
 	extensionActivator  provisioningProviderActivator
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	prompters           prompt.Prompter
 	flags               *envRefreshFlags
@@ -1131,7 +1131,7 @@ func newEnvRefreshAction(
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	extensionActivator *middleware.ExtensionActivator,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	prompters prompt.Prompter,
 	flags *envRefreshFlags,
@@ -1353,7 +1353,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	localEnvPath := ef.envManager.EnvPath(ef.env)
+	localEnvPath := ef.envManager.EnvPath(ef.env.BackingEnv())
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
@@ -1632,7 +1632,7 @@ func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	key := a.args[0]
-	value, ok := env.Config.Get(key)
+	value, ok := env.GetConfig().Get(key)
 
 	if !ok {
 		return nil, &internal.ErrorWithSuggestion{
@@ -1732,12 +1732,12 @@ func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	path := a.args[0]
 	value := a.args[1]
 
-	err = env.Config.Set(path, parseConfigValue(value))
+	err = env.GetConfig().Set(path, parseConfigValue(value))
 	if err != nil {
 		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
 
-	if err := a.envManager.Save(ctx, env); err != nil {
+	if err := a.envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -1831,12 +1831,12 @@ func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	path := a.args[0]
 
-	err = env.Config.Unset(path)
+	err = env.GetConfig().Unset(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}
 
-	if err := a.envManager.Save(ctx, env); err != nil {
+	if err := a.envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 

@@ -312,7 +312,7 @@ const (
 // GitHubCiProvider implements a CiProvider using GitHub to manage CI pipelines as
 // GitHub actions.
 type GitHubCiProvider struct {
-	env                *environment.Environment
+	env                environment.Env
 	credentialProvider account.SubscriptionCredentialProvider
 	entraIdService     entraid.EntraIdService
 	ghCli              *github.Cli
@@ -321,7 +321,7 @@ type GitHubCiProvider struct {
 }
 
 func NewGitHubCiProvider(
-	env *environment.Environment,
+	env environment.Env,
 	credentialProvider account.SubscriptionCredentialProvider,
 	entraIdService entraid.EntraIdService,
 	ghCli *github.Cli,

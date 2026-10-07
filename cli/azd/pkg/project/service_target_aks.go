@@ -79,7 +79,7 @@ type AksServiceOptions struct {
 }
 
 type aksTarget struct {
-	env                    *environment.Environment
+	env                    environment.Env
 	envManager             environment.Manager
 	console                input.Console
 	managedClustersService azapi.ManagedClustersService
@@ -94,7 +94,7 @@ type aksTarget struct {
 
 // Creates a new instance of the AKS service target
 func NewAksTarget(
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	console input.Console,
 	managedClustersService azapi.ManagedClustersService,
@@ -225,7 +225,7 @@ func (t *aksTarget) Publish(
 		}
 		if remoteImage != "" {
 			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
-			saveErr := t.envManager.Save(ctx, t.env)
+			saveErr := t.envManager.Save(ctx, t.env.BackingEnv())
 			if saveErr != nil {
 				return nil, fmt.Errorf("saving image name to environment: %w", saveErr)
 			}
@@ -302,7 +302,7 @@ func (t *aksTarget) Deploy(
 	if len(endpointArtifacts) > 0 {
 		if serviceEndpoint, found := endpointArtifacts.FindLast(WithKind(ArtifactKindEndpoint)); found {
 			t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", serviceEndpoint.Location)
-			saveErr := t.envManager.Save(ctx, t.env)
+			saveErr := t.envManager.Save(ctx, t.env.BackingEnv())
 			if saveErr != nil {
 				return nil, fmt.Errorf("failed updating environment with endpoint url, %w", saveErr)
 			}

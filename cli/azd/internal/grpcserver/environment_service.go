@@ -188,14 +188,14 @@ func (s *environmentService) SetValue(ctx context.Context, req *azdext.SetEnvReq
 	}
 
 	env.DotenvSet(req.Key, req.Value)
-	if err := envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("failed to save environment: %w", err)
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-func (s *environmentService) currentEnvironment(ctx context.Context) (*environment.Environment, error) {
+func (s *environmentService) currentEnvironment(ctx context.Context) (environment.Env, error) {
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -224,7 +224,7 @@ func (s *environmentService) currentEnvironment(ctx context.Context) (*environme
 }
 
 // resolveEnvironment resolves the environment by name if provided, otherwise falls back to the default environment.
-func (s *environmentService) resolveEnvironment(ctx context.Context, envName string) (*environment.Environment, error) {
+func (s *environmentService) resolveEnvironment(ctx context.Context, envName string) (environment.Env, error) {
 	if envName == "" {
 		return s.currentEnvironment(ctx)
 	}
@@ -247,7 +247,7 @@ func (s *environmentService) GetConfig(
 		return nil, err
 	}
 
-	value, exists := env.Config.Get(req.Path)
+	value, exists := env.GetConfig().Get(req.Path)
 
 	var valueBytes []byte
 	if exists {
@@ -275,7 +275,7 @@ func (s *environmentService) GetConfigString(
 		return nil, err
 	}
 
-	value, exists := env.Config.GetString(req.Path)
+	value, exists := env.GetConfig().GetString(req.Path)
 
 	return &azdext.GetConfigStringResponse{
 		Value: value,
@@ -295,7 +295,7 @@ func (s *environmentService) GetConfigSection(
 
 	var section map[string]any
 
-	exists, err := env.Config.GetSection(req.Path, &section)
+	exists, err := env.GetConfig().GetSection(req.Path, &section)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get section: %w", err)
 	}
@@ -333,11 +333,11 @@ func (s *environmentService) SetConfig(ctx context.Context, req *azdext.SetConfi
 		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
 	}
 
-	if err := env.Config.Set(req.Path, value); err != nil {
+	if err := env.GetConfig().Set(req.Path, value); err != nil {
 		return nil, fmt.Errorf("failed to set value: %w", err)
 	}
 
-	if err := envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -359,11 +359,11 @@ func (s *environmentService) UnsetConfig(
 		return nil, err
 	}
 
-	if err := env.Config.Unset(req.Path); err != nil {
+	if err := env.GetConfig().Unset(req.Path); err != nil {
 		return nil, fmt.Errorf("failed to unset value: %w", err)
 	}
 
-	if err := envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 

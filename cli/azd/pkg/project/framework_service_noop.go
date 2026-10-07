@@ -13,7 +13,7 @@ import (
 
 // NewNoOpProject creates a new instance of a no-op project, which implements the FrameworkService interface
 // but does not perform any actions.
-func NewNoOpProject(env *environment.Environment) FrameworkService {
+func NewNoOpProject(env environment.Env) FrameworkService {
 	return &noOpProject{}
 }
 

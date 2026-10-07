@@ -23,13 +23,13 @@ import (
 const AppServiceJavaPackageName = "app"
 
 type mavenProject struct {
-	env      *environment.Environment
+	env      environment.Env
 	mavenCli *maven.Cli
 	javacCli *javac.Cli
 }
 
 // NewMavenProject creates a new instance of a maven project
-func NewMavenProject(env *environment.Environment, mavenCli *maven.Cli, javaCli *javac.Cli) FrameworkService {
+func NewMavenProject(env environment.Env, mavenCli *maven.Cli, javaCli *javac.Cli) FrameworkService {
 	return &mavenProject{
 		env:      env,
 		mavenCli: mavenCli,

@@ -40,7 +40,7 @@ func Test_ComposeService_AddResource(t *testing.T) {
 	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
 		return envManager, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return env, nil
 	})
 	composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
@@ -105,7 +105,7 @@ func Test_ComposeService_GetResource(t *testing.T) {
 	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
 		return envManager, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return env, nil
 	})
 	composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
@@ -165,7 +165,7 @@ func Test_ComposeService_ListResources(t *testing.T) {
 		lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
 			return envManager, nil
 		})
-		lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 			return env, nil
 		})
 		composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
@@ -192,7 +192,7 @@ func Test_ComposeService_ListResources(t *testing.T) {
 		lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
 			return envManager, nil
 		})
-		lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 			return env, nil
 		})
 		composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
@@ -214,7 +214,7 @@ func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
 		return envManager, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return env, nil
 	})
 	service := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
@@ -245,7 +245,7 @@ func Test_ComposeService_GetResourceType_Unimplemented(t *testing.T) {
 	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
 		return envManager, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return env, nil
 	})
 	service := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
@@ -264,7 +264,7 @@ func TestComposeService_AddResource_AzdContextError(t *testing.T) {
 	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return nil, errors.New("no azd context")
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return nil, nil
 	})
 	lazyMgr := lazy.NewLazy(func() (environment.Manager, error) {
@@ -286,7 +286,7 @@ func TestComposeService_AddResource_EnvError(t *testing.T) {
 	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return ctx, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return nil, errors.New("env error")
 	})
 	lazyMgr := lazy.NewLazy(func() (environment.Manager, error) {
@@ -308,7 +308,7 @@ func TestComposeService_AddResource_EnvManagerError(t *testing.T) {
 	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return ctx, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("dev", nil), nil
 	})
 	lazyMgr := lazy.NewLazy(func() (environment.Manager, error) {
@@ -361,7 +361,7 @@ func TestComposeService_AddResource_HappyPath(t *testing.T) {
 
 	ctx := azdcontext.NewAzdContextWithDirectory(dir)
 	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("dev", nil), nil
 	})
 	mockMgr := &mockEnvManager{}
@@ -387,7 +387,7 @@ func TestComposeService_AddResource_WithResourceId(t *testing.T) {
 
 	ctx := azdcontext.NewAzdContextWithDirectory(dir)
 	lazyCtx := lazy.NewLazy(func() (*azdcontext.AzdContext, error) { return ctx, nil })
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("dev", nil), nil
 	})
 	mockMgr := &mockEnvManager{}

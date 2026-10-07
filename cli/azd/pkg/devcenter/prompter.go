@@ -223,14 +223,14 @@ func (p *Prompter) PromptEnvironmentDefinition(
 // Responses for prompt are stored in azd environment configuration and used for future provisioning operations
 func (p *Prompter) PromptParameters(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	envDef *devcentersdk.EnvironmentDefinition,
 ) (map[string]any, error) {
 	paramValues := map[string]any{}
 
 	for _, param := range envDef.Parameters {
 		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Id)
-		paramValue, exists := env.Config.Get(paramPath)
+		paramValue, exists := env.GetConfig().Get(paramPath)
 
 		if exists {
 			paramValues[param.Id] = paramValue

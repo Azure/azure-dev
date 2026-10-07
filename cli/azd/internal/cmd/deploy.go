@@ -140,7 +140,7 @@ type DeployAction struct {
 	args                []string
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
@@ -165,7 +165,7 @@ func NewDeployAction(
 	serviceManager project.ServiceManager,
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
-	environment *environment.Environment,
+	environment environment.Env,
 	envManager environment.Manager,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,

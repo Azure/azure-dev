@@ -39,7 +39,7 @@ import (
 )
 
 type dotnetContainerAppTarget struct {
-	env                 *environment.Environment
+	env                 environment.Env
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
@@ -62,7 +62,7 @@ type dotnetContainerAppTarget struct {
 // Note that unlike [ContainerAppTarget] this target does not add SERVICE_<XYZ>_IMAGE_NAME values to the environment,
 // instead, the image name is present on the context object used when rendering the template.
 func NewDotNetContainerAppTarget(
-	env *environment.Environment,
+	env environment.Env,
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
@@ -301,7 +301,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	var inputs map[string]any
 	// inputs are auto-gen during provision and saved to env-config
-	if has, err := at.env.Config.GetSection("inputs", &inputs); err != nil {
+	if has, err := at.env.GetConfig().GetSection("inputs", &inputs); err != nil {
 		return nil, fmt.Errorf("failed to get inputs section: %w", err)
 	} else if !has {
 		inputs = make(map[string]any)
@@ -884,7 +884,7 @@ func compileBicep(
 	cli *bicep.Cli,
 	ctx context.Context,
 	bicepModulePath string,
-	env *environment.Environment,
+	env environment.Env,
 ) (armDeployment, error) {
 	var result armDeployment
 
@@ -1047,7 +1047,7 @@ type containerAppTemplateManifestFuncs struct {
 	containerAppService containerapps.ContainerAppService
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
-	env                 *environment.Environment
+	env                 environment.Env
 	keyvaultService     keyvault.KeyVaultService
 }
 
@@ -1075,7 +1075,7 @@ func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, er
 	}
 
 	key := infraParametersKey + name
-	val, found := fns.env.Config.Get(key)
+	val, found := fns.env.GetConfig().Get(key)
 	if !found {
 		return "", fmt.Errorf("parameter %s not found", name)
 	}

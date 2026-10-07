@@ -144,7 +144,7 @@ func pathHasInfraModule(path, module string) (bool, error) {
 
 func getEnvDetails(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	subMgr *account.SubscriptionsManager) (ux.EnvironmentDetails, error) {
 	details := ux.EnvironmentDetails{}
 	subscription, err := subMgr.GetSubscription(ctx, env.GetSubscriptionId())

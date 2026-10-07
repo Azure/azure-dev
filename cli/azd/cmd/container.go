@@ -259,13 +259,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Register an initialized environment based on the specified environment flag, or the default environment.
-	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
+	// Note that referencing an environment.Env in a command automatically triggers a UI prompt if the
 	// environment is uninitialized or a default environment doesn't yet exist.
 	container.MustRegisterScoped(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
 			envManager environment.Manager,
-			lazyEnv *lazy.Lazy[*environment.Environment],
+			lazyEnv *lazy.Lazy[environment.Env],
 			envFlags internal.EnvFlag,
 		) (*environment.Environment, error) {
 			if azdContext == nil {
@@ -287,8 +287,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
+	container.MustRegisterScoped(func(env *environment.Environment) environment.Env {
+		return env
+	})
 	container.MustRegisterScoped(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
-		return func(ctx context.Context) (*environment.Environment, error) {
+		return func(ctx context.Context) (environment.Env, error) {
 			azdCtx, err := azdcontext.NewAzdContext()
 			if err != nil {
 				return nil, err
@@ -380,8 +383,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			lazyEnvManager *lazy.Lazy[environment.Manager],
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 			envFlags internal.EnvFlag,
-		) *lazy.Lazy[*environment.Environment] {
-			return lazy.NewLazy(func() (*environment.Environment, error) {
+		) *lazy.Lazy[environment.Env] {
+			return lazy.NewLazy(func() (environment.Env, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {
 					return nil, err
@@ -686,7 +689,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterNamedSingleton("resourceNotAvailableHandler",
 		func(
 			locationService *azapi.ResourceTypeLocationService,
-			lazyEnv *lazy.Lazy[*environment.Environment],
+			lazyEnv *lazy.Lazy[environment.Env],
 		) errorhandler.ErrorHandler {
 			return errorhandler.NewResourceNotAvailableHandler(
 				locationService,
@@ -1102,10 +1105,10 @@ type ArmClientInitializer[T comparable] func(
 	armClientOptions *arm.ClientOptions,
 ) (T, error)
 
-// lazyEnvironmentResolver adapts *lazy.Lazy[*environment.Environment]
+// lazyEnvironmentResolver adapts *lazy.Lazy[environment.Env]
 // to the errorhandler.EnvironmentResolver interface.
 type lazyEnvironmentResolver struct {
-	lazyEnv *lazy.Lazy[*environment.Environment]
+	lazyEnv *lazy.Lazy[environment.Env]
 }
 
 func (r *lazyEnvironmentResolver) Getenv(key string) string {

@@ -17,14 +17,14 @@ import (
 
 // aiEndpointTarget is a ServiceTarget implementation for deploying to Azure ML online endpoints
 type aiEndpointTarget struct {
-	env        *environment.Environment
+	env        environment.Env
 	envManager environment.Manager
 	aiHelper   AiHelper
 }
 
 // NewAiEndpointTarget creates a new aiEndpointTarget instance
 func NewAiEndpointTarget(
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	aiHelper AiHelper,
 ) ServiceTarget {
@@ -234,7 +234,7 @@ func (m *aiEndpointTarget) Deploy(
 		}
 	}
 
-	if err := m.envManager.Save(ctx, m.env); err != nil {
+	if err := m.envManager.Save(ctx, m.env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("failed saving environment: %w", err)
 	}
 

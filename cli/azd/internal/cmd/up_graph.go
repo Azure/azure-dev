@@ -70,7 +70,7 @@ import (
 //     `ProjectEventProvision` events internally.
 type UpGraphAction struct {
 	projectConfig       *project.ProjectConfig
-	env                 *environment.Environment
+	env                 environment.Env
 	envManager          environment.Manager
 	console             input.Console
 	alphaFeatureManager *alpha.FeatureManager
@@ -92,7 +92,7 @@ type UpGraphAction struct {
 // the IoC container.
 func NewUpGraphAction(
 	projectConfig *project.ProjectConfig,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,

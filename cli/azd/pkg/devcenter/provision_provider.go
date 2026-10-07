@@ -37,7 +37,7 @@ const (
 // ProvisionProvider is a devcenter provider for provisioning ADE environments
 type ProvisionProvider struct {
 	console           input.Console
-	env               *environment.Environment
+	env               environment.Env
 	envManager        environment.Manager
 	config            *Config
 	devCenterClient   devcentersdk.DevCenterClient
@@ -50,7 +50,7 @@ type ProvisionProvider struct {
 // NewProvisionProvider creates a new devcenter provider
 func NewProvisionProvider(
 	console input.Console,
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	config *Config,
 	devCenterClient devcentersdk.DevCenterClient,
@@ -152,12 +152,12 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 
 	for key, value := range paramValues {
 		path := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
-		if err := p.env.Config.Set(path, value); err != nil {
+		if err := p.env.GetConfig().Set(path, value); err != nil {
 			return nil, fmt.Errorf("failed setting config value %s: %w", path, err)
 		}
 	}
 
-	if err := p.envManager.Save(ctx, p.env); err != nil {
+	if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("failed saving environment: %w", err)
 	}
 
@@ -367,42 +367,42 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 	// Set any missing config values in environment configuration for future use
 	// Some values are set at the global / project level so we only want to set missing values in the environment config
 	if currentConfig.Name == "" {
-		if err := p.env.Config.Set(DevCenterNamePath, p.config.Name); err != nil {
+		if err := p.env.GetConfig().Set(DevCenterNamePath, p.config.Name); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.Project == "" {
-		if err := p.env.Config.Set(DevCenterProjectPath, p.config.Project); err != nil {
+		if err := p.env.GetConfig().Set(DevCenterProjectPath, p.config.Project); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.Catalog == "" {
-		if err := p.env.Config.Set(DevCenterCatalogPath, p.config.Catalog); err != nil {
+		if err := p.env.GetConfig().Set(DevCenterCatalogPath, p.config.Catalog); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.EnvironmentType == "" {
-		if err := p.env.Config.Set(DevCenterEnvTypePath, p.config.EnvironmentType); err != nil {
+		if err := p.env.GetConfig().Set(DevCenterEnvTypePath, p.config.EnvironmentType); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.EnvironmentDefinition == "" {
-		if err := p.env.Config.Set(DevCenterEnvDefinitionPath, p.config.EnvironmentDefinition); err != nil {
+		if err := p.env.GetConfig().Set(DevCenterEnvDefinitionPath, p.config.EnvironmentDefinition); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.User == "" {
-		if err := p.env.Config.Set(DevCenterUserPath, p.config.User); err != nil {
+		if err := p.env.GetConfig().Set(DevCenterUserPath, p.config.User); err != nil {
 			return err
 		}
 	}
 
-	if err := p.envManager.Save(ctx, p.env); err != nil {
+	if err := p.envManager.Save(ctx, p.env.BackingEnv()); err != nil {
 		return fmt.Errorf("failed saving environment: %w", err)
 	}
 

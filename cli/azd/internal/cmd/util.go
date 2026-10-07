@@ -23,7 +23,7 @@ func getResourceGroupFollowUp(
 	portalUrlBase string,
 	projectConfig *project.ProjectConfig,
 	resourceManager project.ResourceManager,
-	env *environment.Environment,
+	env environment.Env,
 	whatIf bool,
 ) (followUp string) {
 	if formatter.Kind() == output.JsonFormat {

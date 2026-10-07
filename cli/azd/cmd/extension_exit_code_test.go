@@ -100,7 +100,7 @@ func TestExtensionAction_Run_ExitCode(t *testing.T) {
 			action := &extensionAction{
 				console:          mockCtx.Console,
 				extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
-				lazyEnv:          lazy.From[*environment.Environment](nil),
+				lazyEnv:          lazy.From[environment.Env](nil),
 				extensionManager: manager,
 				azdServer:        newExtensionActionTestServer(),
 				globalOptions:    &internal.GlobalCommandOptions{},

@@ -99,7 +99,7 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	env     *environment.Environment
+	env     environment.Env
 	cli     *azapi.AzureClient
 	console input.Console
 	// containerTarget handles the phases that are identical to App Service container deployments
@@ -110,7 +110,7 @@ type functionAppTarget struct {
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
-	env *environment.Environment,
+	env environment.Env,
 	envManager environment.Manager,
 	containerHelper *ContainerHelper,
 	azCli *azapi.AzureClient,

@@ -146,7 +146,7 @@ func bindExtension(
 type extensionAction struct {
 	console          input.Console
 	extensionRunner  *extensions.Runner
-	lazyEnv          *lazy.Lazy[*environment.Environment]
+	lazyEnv          *lazy.Lazy[environment.Env]
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
 	globalOptions    *internal.GlobalCommandOptions
@@ -159,7 +159,7 @@ func newExtensionAction(
 	console input.Console,
 	extensionRunner *extensions.Runner,
 	commandRunner exec.CommandRunner,
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnv *lazy.Lazy[environment.Env],
 	extensionManager *extensions.Manager,
 	cmd *cobra.Command,
 	azdServer *grpcserver.Server,

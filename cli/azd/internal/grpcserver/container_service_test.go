@@ -211,7 +211,7 @@ func TestContainerService_Build_EnvironmentError(t *testing.T) {
 	lazyHelper := lazy.NewLazy(func() (*project.ContainerHelper, error) {
 		return &project.ContainerHelper{}, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return nil, errors.New("env error")
 	})
 	svc := NewContainerService(nil, lazyHelper, nil, lazyProject, lazyEnv)
@@ -233,7 +233,7 @@ func TestContainerService_Package_EnvironmentError(t *testing.T) {
 	lazyHelper := lazy.NewLazy(func() (*project.ContainerHelper, error) {
 		return &project.ContainerHelper{}, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return nil, errors.New("env error")
 	})
 	svc := NewContainerService(nil, lazyHelper, nil, lazyProject, lazyEnv)

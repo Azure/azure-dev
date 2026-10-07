@@ -14,7 +14,7 @@ import (
 )
 
 // helper method to verify that a configuration exists in the .env file or in system environment variables
-func ensureConfigExists(env *environment.Environment, key string, label string) (string, error) {
+func ensureConfigExists(env environment.Env, key string, label string) (string, error) {
 	value, exists := env.LookupEnv(key)
 	if !exists || value == "" {
 		return value, fmt.Errorf("%s not found in environment variable %s", label, key)
@@ -23,7 +23,7 @@ func ensureConfigExists(env *environment.Environment, key string, label string) 
 }
 
 // helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
-func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (
+func EnsurePatExists(ctx context.Context, env environment.Env, console input.Console) (
 	string, bool, error) {
 	value, err := ensureConfigExists(env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
@@ -54,7 +54,7 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 func EnsureOrgNameExists(
 	ctx context.Context,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 ) (
 	string, bool, error) {
@@ -84,10 +84,10 @@ func saveEnvironmentConfig(
 	key string,
 	value string,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.Env,
 ) error {
 	env.DotenvSet(key, value)
-	err := envManager.Save(ctx, env)
+	err := envManager.Save(ctx, env.BackingEnv())
 
 	if err != nil {
 		return err

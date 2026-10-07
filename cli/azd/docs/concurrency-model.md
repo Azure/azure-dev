@@ -156,6 +156,12 @@ endpoint URL.
 
 ## `pkg/environment.Environment`
 
+Ordinary consumers accept `environment.Env` and access configuration through
+`env.GetConfig()`. Storage APIs continue to accept `*environment.Environment`;
+use `env.BackingEnv()` at save/reload boundaries and for backing-state snapshots
+and layer output merges. The backing object may be a layer-local snapshot rather
+than the shared environment.
+
 | Lock                     | Protects                                          | Acquired by                                                                |
 |--------------------------|---------------------------------------------------|----------------------------------------------------------------------------|
 | `mu sync.RWMutex`        | `dotenv map[string]string`, `deletedKeys`         | `Getenv`, `LookupEnv`, `Dotenv`, `DotenvSet`, `DotenvDelete`, `Reload`, all helpers |

@@ -207,7 +207,7 @@ func Test_ProjectService_Get_ResolvesServiceEnvironment(t *testing.T) {
 	})
 
 	service := NewProjectService(
-		nil, nil, lazy.From(env), lazy.From(projectConfig), project.NewImportManager(nil), nil)
+		nil, nil, lazy.From[environment.Env](env), lazy.From(projectConfig), project.NewImportManager(nil), nil)
 
 	getResponse, err := service.Get(t.Context(), &azdext.EmptyRequest{})
 	require.NoError(t, err)
@@ -258,7 +258,7 @@ func Test_ProjectService_AddService_PreservesEnvTemplates(t *testing.T) {
 	service := NewProjectService(
 		lazy.From(azdContext),
 		nil,
-		lazy.From(env),
+		lazy.From[environment.Env](env),
 		lazy.From(projectConfig),
 		project.NewImportManager(nil),
 		github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
@@ -2030,7 +2030,7 @@ func TestProjectService_GetServiceTargetResource_EnvError(t *testing.T) {
 			},
 		}, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return nil, errors.New("env not found")
 	})
 	svc := NewProjectService(nil, nil, lazyEnv, lazyProject, nil, nil)
@@ -2054,7 +2054,7 @@ func TestProjectService_GetServiceTargetResource_SubscriptionEmpty(t *testing.T)
 		}, nil
 	})
 	// environment.New returns env with NO AZURE_SUBSCRIPTION_ID set
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.New("test"), nil
 	})
 	svc := NewProjectService(nil, nil, lazyEnv, lazyProject, nil, nil)
@@ -2078,7 +2078,7 @@ func TestProjectService_GetServiceTargetResource_ResourceManagerError(t *testing
 			},
 		}, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("test", map[string]string{
 			"AZURE_SUBSCRIPTION_ID": "sub-123",
 		}), nil
@@ -2141,7 +2141,7 @@ func TestProjectService_GetServiceTargetResource_GetTargetResourceError(t *testi
 			},
 		}, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("test", map[string]string{
 			"AZURE_SUBSCRIPTION_ID": "sub-123",
 		}), nil
@@ -2177,7 +2177,7 @@ func TestProjectService_GetServiceTargetResource_Success(t *testing.T) {
 			},
 		}, nil
 	})
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("test", map[string]string{
 			"AZURE_SUBSCRIPTION_ID": "sub-123",
 		}), nil
@@ -2241,7 +2241,7 @@ func newProjectServiceWithYaml(t *testing.T, yamlContent string) azdext.ProjectS
 	require.NoError(t, err)
 	lazyPC := lazy.NewLazy(func() (*project.ProjectConfig, error) { return pc, nil })
 
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+	lazyEnv := lazy.NewLazy(func() (environment.Env, error) {
 		return environment.NewWithValues("dev", nil), nil
 	})
 

@@ -142,7 +142,7 @@ func CreatePipeline(
 	repoName string,
 	connection *azuredevops.Connection,
 	credentials *entraid.AzureCredentials,
-	env *environment.Environment,
+	env environment.Env,
 	console input.Console,
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,
@@ -201,7 +201,7 @@ func CreatePipeline(
 }
 
 func getDefinitionVariables(
-	env *environment.Environment,
+	env environment.Env,
 	credentials *entraid.AzureCredentials,
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,
@@ -259,7 +259,7 @@ func createAzureDevPipelineArgs(
 	name string,
 	repoName string,
 	credentials *entraid.AzureCredentials,
-	env *environment.Environment,
+	env environment.Env,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,

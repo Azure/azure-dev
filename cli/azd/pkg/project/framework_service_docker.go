@@ -42,7 +42,7 @@ type DockerProjectOptions struct {
 }
 
 type dockerProject struct {
-	env                 *environment.Environment
+	env                 environment.Env
 	docker              *docker.Cli
 	framework           FrameworkService
 	containerHelper     *ContainerHelper
@@ -54,7 +54,7 @@ type dockerProject struct {
 // NewDockerProject creates a new instance of a Azd project that
 // leverages docker for building
 func NewDockerProject(
-	env *environment.Environment,
+	env environment.Env,
 	docker *docker.Cli,
 	containerHelper *ContainerHelper,
 	console input.Console,
@@ -76,7 +76,7 @@ func NewDockerProject(
 // use of DI and ServiceLocators, where we sometimes need to resolve this type as a FrameworkService instance instead
 // of a CompositeFrameworkService as [NewDockerProject] does.
 func NewDockerProjectAsFrameworkService(
-	env *environment.Environment,
+	env environment.Env,
 	docker *docker.Cli,
 	containerHelper *ContainerHelper,
 	console input.Console,

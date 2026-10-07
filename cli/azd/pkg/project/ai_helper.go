@@ -95,7 +95,7 @@ type AiHelper interface {
 
 // aiHelper provides helper functions for interacting with Azure Machine Learning resources
 type aiHelper struct {
-	env                   *environment.Environment
+	env                   environment.Env
 	clock                 clock.Clock
 	pythonBridge          ai.PythonBridge
 	credentialProvider    account.SubscriptionCredentialProvider
@@ -112,7 +112,7 @@ type aiHelper struct {
 
 // NewAiHelper creates a new instance of AiHelper
 func NewAiHelper(
-	env *environment.Environment,
+	env environment.Env,
 	clock clock.Clock,
 	pythonBridge ai.PythonBridge,
 	credentialProvider account.SubscriptionCredentialProvider,

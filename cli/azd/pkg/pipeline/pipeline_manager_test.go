@@ -877,6 +877,7 @@ func createPipelineManager(
 	ioc.RegisterInstance(mockContext.Container, azdContext)
 	ioc.RegisterInstance[environment.Manager](mockContext.Container, envManager)
 	ioc.RegisterInstance(mockContext.Container, env)
+	ioc.RegisterInstance[environment.Env](mockContext.Container, env)
 	ioc.RegisterInstance(mockContext.Container, entraIdService)
 	ioc.RegisterInstance[account.SubscriptionCredentialProvider](
 		mockContext.Container,

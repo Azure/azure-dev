@@ -114,7 +114,7 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 	action := &extensionAction{
 		console:          mockCtx.Console,
 		extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
-		lazyEnv:          lazy.From[*environment.Environment](nil),
+		lazyEnv:          lazy.From[environment.Env](nil),
 		extensionManager: newExtensionActionTestManager(t, mockCtx, extension),
 		azdServer:        newExtensionActionTestServer(),
 		globalOptions: &internal.GlobalCommandOptions{

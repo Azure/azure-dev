@@ -219,9 +219,14 @@ func FunctionAppName(name string) string {
 
 // BicepPropertyKey returns key as a quoted, escaped Bicep property name.
 func BicepPropertyKey(key string) string {
+	return "'" + EscapeBicepString(key) + "'"
+}
+
+// EscapeBicepString escapes literal text for a single-quoted Bicep string.
+func EscapeBicepString(value string) string {
 	escaper := strings.NewReplacer(
 		`\`, `\\`, `'`, `\'`, "$", `\$`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
-	return "'" + escaper.Replace(key) + "'"
+	return escaper.Replace(value)
 }
 
 // ContainerAppSecretName returns a suitable name a container app secret name.

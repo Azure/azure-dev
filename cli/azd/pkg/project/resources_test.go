@@ -4,7 +4,10 @@
 package project
 
 import (
+	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,7 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
 func Test_AllResourceTypes(t *testing.T) {
@@ -426,6 +432,7 @@ func Test_infraSpec_FunctionAppRuntimeByLanguage(t *testing.T) {
 	} {
 		t.Run(string(tt.language), func(t *testing.T) {
 			cfg := &ProjectConfig{
+				Path: t.TempDir(),
 				Resources: map[string]*ResourceConfig{
 					"api": {
 						Name: "api", Type: ResourceTypeHostFunctionApp,
@@ -503,6 +510,82 @@ func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
 	assert.Contains(t, bicep, "containerName: 'app-package-worker-${take(uniqueString('worker'), 6)}")
 	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'api')")
 	assert.Contains(t, bicep, "uniqueString(resourceGroup().id, 'worker')")
+}
+
+func Test_infraSpec_FunctionAppEscapedSettings(t *testing.T) {
+	cfg := &ProjectConfig{
+		Resources: map[string]*ResourceConfig{
+			"api": {
+				Name: "api", Type: ResourceTypeHostFunctionApp,
+				Props: FunctionAppProps{
+					Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+					Env: []ServiceEnvVar{
+						{Name: "MY-SETTING", Value: "it's"},
+						{Name: "Logging.Level", Value: "C:\\app\nnext\tline\r$"},
+						{Name: "MESSAGE", Value: "it's ${FIRST} and ${SECOND}!"},
+					},
+				},
+			},
+		},
+		Services: map[string]*ServiceConfig{
+			"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+		},
+	}
+	spec, err := infraSpec(cfg)
+	require.NoError(t, err)
+	templates, err := scaffold.Load()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	require.NoError(t, scaffold.ExecInfra(templates, *spec, dir))
+	content, err := os.ReadFile(filepath.Join(dir, "resources.bicep"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), `'MY-SETTING': 'it\'s'`)
+	assert.Contains(t, string(content), `'Logging.Level': 'C:\\app\nnext\tline\r\$'`)
+	assert.Contains(t, string(content), `'MESSAGE': 'it\'s ${first} and ${second}!'`)
+	if !testing.Short() {
+		cli := bicep.NewCli(mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		_, err := cli.Build(t.Context(), filepath.Join(dir, "main.bicep"))
+		require.NoError(t, err)
+	}
+}
+
+func Test_infraFs_DotNetFunctionProject(t *testing.T) {
+	for _, extension := range []string{".csproj", ".fsproj", ".vbproj"} {
+		for _, inProcess := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/inProcess=%t", extension, inProcess), func(t *testing.T) {
+				dir := t.TempDir()
+				sourceDir := filepath.Join(dir, "api")
+				require.NoError(t, os.Mkdir(sourceDir, 0o700))
+				contents := `<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>` +
+					`<PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.0.0" />` +
+					`</ItemGroup></Project>`
+				if inProcess {
+					contents = `<Project Sdk="Microsoft.NET.Sdk.Functions"></Project>`
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "api"+extension), []byte(contents), 0o600))
+				cfg := &ProjectConfig{
+					Path: dir,
+					Resources: map[string]*ResourceConfig{
+						"api": {
+							Name: "api", Type: ResourceTypeHostFunctionApp,
+							Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "dotnet-isolated", Version: "8.0"}},
+						},
+					},
+					Services: map[string]*ServiceConfig{
+						"api": {
+							Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguageDotNet, RelativePath: "api",
+						},
+					},
+				}
+				_, err := infraFs(t.Context(), cfg)
+				if inProcess {
+					require.ErrorContains(t, err, "requires a .NET isolated Function App")
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
 }
 
 func Test_infraSpec_FunctionAppRejectsUnsupportedConfiguration(t *testing.T) {

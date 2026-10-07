@@ -496,6 +496,13 @@ func mapFunctionApp(
 	expectedStack := ""
 	switch {
 	case svcConfig.Language.IsDotNet():
+		projectPath := svcConfig.RelativePath
+		if !filepath.IsAbs(projectPath) {
+			projectPath = filepath.Join(prj.Path, projectPath)
+		}
+		if err := ValidateDotNetFunctionProject(projectPath); err != nil {
+			return fmt.Errorf("resources.%s: %w", res.Name, err)
+		}
 		expectedStack = "dotnet-isolated"
 	case svcConfig.Language == ServiceLanguagePython:
 		expectedStack = "python"
@@ -866,7 +873,7 @@ func genBicepParamsFromEnvSubst(
 	var result string
 	if len(names) == 0 {
 		// literal string with no expressions, quote the value as a Bicep string
-		result = "'" + s + "'"
+		result = "'" + scaffold.EscapeBicepString(s) + "'"
 	} else if len(names) == 1 {
 		// single expression, return the bicep parameter name to reference the expression
 		result = scaffold.BicepName(names[0])
@@ -877,13 +884,13 @@ func genBicepParamsFromEnvSubst(
 		result = "'"
 		for i, loc := range locations {
 			// replace each expression with references by variable name
-			result += s[previous:loc.start]
+			result += scaffold.EscapeBicepString(s[previous:loc.start])
 			result += "${"
 			result += scaffold.BicepName(names[i])
 			result += "}"
 			previous = loc.stop + 1
 		}
-		result += "'"
+		result += scaffold.EscapeBicepString(s[previous:]) + "'"
 	}
 
 	return result

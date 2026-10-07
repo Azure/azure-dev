@@ -118,10 +118,11 @@ func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.Invo
 	}
 
 	for _, selector := range moderation.StreamSelectors {
-		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
-			EventType: selector.EventType,
-			TextField: selector.TextField,
-		})
+		mappedSelector := agent_api.SseTextSelector{EventType: selector.EventType}
+		if selector.TextField != nil {
+			mappedSelector.TextField = *selector.TextField
+		}
+		mapped.StreamSelectors = append(mapped.StreamSelectors, mappedSelector)
 	}
 
 	return mapped

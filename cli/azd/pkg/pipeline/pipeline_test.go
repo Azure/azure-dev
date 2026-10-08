@@ -660,16 +660,15 @@ func Test_PipelineManager_ProviderNames(t *testing.T) {
 func Test_PipelineManager_SetParameters_cov3(t *testing.T) {
 	t.Parallel()
 
-	t.Run("sets parameters on nil configOptions", func(t *testing.T) {
+	t.Run("sets parameters", func(t *testing.T) {
 		t.Parallel()
 
-		pm := &PipelineManager{}
+		pm := &PipelineManager{configOptions: &configurePipelineOptions{}}
 		params := []provisioning.Parameter{
 			{Name: "param1", Value: "val1"},
 		}
 		pm.SetParameters(params)
 
-		require.NotNil(t, pm.configOptions)
 		assert.Equal(t, params, pm.configOptions.providerParameters)
 	})
 
@@ -2877,6 +2876,45 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("terraform layer variables", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		var commands []string
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "variable") && strings.Contains(command, "set")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			commands = append(commands, args.Args...)
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		env := environment.NewWithValues("test-env", map[string]string{
+			environment.EnvNameEnvVarName:        "prod",
+			environment.LocationEnvVarName:       "centralus",
+			environment.SubscriptionIdEnvVarName: "sub-789",
+			"RS_RESOURCE_GROUP":                  "tf-state-rg",
+			"RS_STORAGE_ACCOUNT":                 "tfstateacct",
+			"RS_CONTAINER_NAME":                  "tfstate",
+		})
+
+		provider := &GitHubCiProvider{
+			env:     env,
+			ghCli:   github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
+			console: mockContext.Console,
+		}
+
+		err := provider.setPipelineVariables(
+			*mockContext.Context, "owner/repo",
+			provisioning.Options{Layers: []provisioning.Options{
+				{Provider: provisioning.ProviderKind("microsoft.foundry")},
+				{Provider: provisioning.Terraform},
+			}},
+			"tenant-id", "client-id",
+		)
+		require.NoError(t, err)
+		assert.Contains(t, commands, "RS_RESOURCE_GROUP")
+		assert.Contains(t, commands, "RS_STORAGE_ACCOUNT")
+		assert.Contains(t, commands, "RS_CONTAINER_NAME")
+	})
+
 	t.Run("terraform missing RS variable", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4425,16 +4463,9 @@ func Test_toCiProviderType_values_cov3(t *testing.T) {
 func Test_toInfraProviderType_values_cov3(t *testing.T) {
 	t.Parallel()
 
-	bicepProvider, err := toInfraProviderType("bicep")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderBicep, bicepProvider)
-
-	tfProvider, err := toInfraProviderType("terraform")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderTerraform, tfProvider)
-
-	_, err = toInfraProviderType("other")
-	require.Error(t, err)
+	assert.Equal(t, infraProviderBicep, toInfraProviderType("bicep"))
+	assert.Equal(t, infraProviderTerraform, toInfraProviderType("terraform"))
+	assert.Equal(t, infraProviderCustom, toInfraProviderType("other"))
 }
 
 // =====================================================================
@@ -6229,28 +6260,21 @@ func Test_toInfraProviderType_additionalCases(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		input   string
-		want    infraProviderType
-		wantErr bool
+		input string
+		want  infraProviderType
 	}{
-		{"bicep", infraProviderBicep, false},
-		{"terraform", infraProviderTerraform, false},
-		{"", infraProviderUndefined, false},
-		{"Bicep", "", true},
-		{"TERRAFORM", "", true},
-		{"pulumi", "", true},
+		{"bicep", infraProviderBicep},
+		{"terraform", infraProviderTerraform},
+		{"", infraProviderUndefined},
+		{"Bicep", infraProviderCustom},
+		{"TERRAFORM", infraProviderCustom},
+		{"pulumi", infraProviderCustom},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
-			got, err := toInfraProviderType(tt.input)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.want, got)
-			}
+			assert.Equal(t, tt.want, toInfraProviderType(tt.input))
 		})
 	}
 }
@@ -6778,17 +6802,12 @@ func Test_PipelineManager_SetParameters_multipleParams(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// PipelineManager.SetParameters — nil configOptions gets initialized
+// PipelineManager configOptions — initialized by constructor
 // ---------------------------------------------------------------------------
 
-func Test_PipelineManager_SetParameters_nilConfigOptions(t *testing.T) {
+func Test_PipelineManager_ConfigOptionsInitialized(t *testing.T) {
 	t.Parallel()
 	manager, _ := helperSetupManager(t, ciProviderGitHubActions)
 
-	// Force nil configOptions (it may be set by the constructor)
-	manager.configOptions = nil
-	manager.SetParameters([]provisioning.Parameter{{Name: "p1", Value: "v1"}})
-
 	require.NotNil(t, manager.configOptions)
-	assert.Len(t, manager.configOptions.providerParameters, 1)
 }

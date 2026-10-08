@@ -21,7 +21,8 @@ steps:
     - pwsh: |
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandArgumentPassing = 'Legacy'
-        if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN) -or $env:GH_TOKEN -match '^\$\(.+\)$') {
+        if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN) -or
+            $env:WINGET_CREATE_GITHUB_TOKEN -match '^\$\(.+\)$') {
           throw "GitHub token is required to generate the WinGet manifest."
         }
         $wingetCreateVersion = '${{ parameters.WingetCreateVersion }}'
@@ -40,8 +41,7 @@ steps:
           Microsoft.Azd `
           --version '$(MSI_VERSION)' `
           --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
-          --out $outputRoot `
-          --token $env:GH_TOKEN
+          --out $outputRoot
         if ($LASTEXITCODE -ne 0) {
           throw "Failed to generate the WinGet manifest."
         }
@@ -51,7 +51,7 @@ steps:
         }
       displayName: Generate and validate WinGet manifest
       env:
-        GH_TOKEN: $(azuresdk-github-pat)
+        WINGET_CREATE_GITHUB_TOKEN: $(azuresdk-github-pat)
 
   - ${{ if eq(parameters.Operation, 'Publish') }}:
     - pwsh: |

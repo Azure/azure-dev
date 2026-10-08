@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -653,8 +654,10 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	serviceKey := agentServiceKey(serviceConfig.Name)
 	endpoint := PromptAgentResponsesEndpoint(settings, agentName, harnessed)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	endpointVersionKey := envkey.AgentPromptEndpointVersion(serviceConfig.Name)
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: endpointVersionKey, Value: ""},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentName},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), Value: endpoint},
 	}
@@ -670,6 +673,11 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 			EnvName: p.env.Name,
 			Key:     envkey.AgentProjectEndpoint(serviceConfig.Name),
 			Value:   strings.TrimRight(settings.ProjectEndpoint, "/"),
+		},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     endpointVersionKey,
+			Value:   promptEndpointSnapshotVersion,
 		},
 		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: version},
 	)
@@ -699,15 +707,35 @@ func PromptAgentResponsesEndpoint(
 	return ""
 }
 
-// PromptAgentDeploymentEndpoint returns the Responses endpoint persisted by the
-// last completed deployment. VERSION is written last and acts as the readiness
-// marker for the endpoint snapshot.
-func PromptAgentDeploymentEndpoint(
+const promptEndpointSnapshotVersion = "1"
+
+// PromptAgentVersionResolver retrieves the deployed prompt definition used to
+// repair endpoint snapshots written before kind-aware routing was persisted.
+type PromptAgentVersionResolver func(
+	context.Context,
+	string,
+	string,
+	string,
+) (*agent_api.AgentVersionObject, error)
+
+// ResolvePromptAgentDeploymentEndpoint returns the Responses endpoint persisted
+// by the last completed deployment. VERSION is written last and acts as the
+// readiness marker for the endpoint snapshot.
+//
+// Legacy deployments persisted the project-scoped Responses URL for both plain
+// and harnessed prompt agents. When an unversioned snapshot has that ambiguous
+// shape, the deployed definition is fetched to determine whether the endpoint
+// must be repaired in memory.
+func ResolvePromptAgentDeploymentEndpoint(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
 	envValues map[string]string,
 	serviceName string,
+	resolveVersion PromptAgentVersionResolver,
 ) (string, error) {
 	serviceKey := agentServiceKey(serviceName)
 	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
 	var missing []string
@@ -729,7 +757,116 @@ func PromptAgentDeploymentEndpoint(
 			"run `azd deploy` to deploy the prompt agent and set its callable endpoint",
 		)
 	}
+
+	if strings.TrimSpace(envValues[envkey.AgentPromptEndpointVersion(serviceName)]) ==
+		promptEndpointSnapshotVersion {
+		return endpoint, nil
+	}
+
+	projectEndpoint := strings.TrimRight(
+		strings.TrimSpace(envValues[envkey.AgentProjectEndpoint(serviceName)]),
+		"/",
+	)
+	legacyEndpoint := projectEndpoint + "/openai/v1/responses"
+	if projectEndpoint == "" || endpoint != legacyEndpoint {
+		return endpoint, nil
+	}
+
+	agentName := strings.TrimSpace(envValues[nameKey])
+	if agentName == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("%s environment variable is required to resolve the deployed prompt endpoint", nameKey),
+			"run `azd deploy` to refresh the prompt agent deployment state",
+		)
+	}
+	agentVersion := strings.TrimSpace(envValues[versionKey])
+	if resolveVersion == nil {
+		var err error
+		resolveVersion, err = promptAgentVersionResolver(azdClient, envValues)
+		if err != nil {
+			return "", err
+		}
+	}
+	deployedVersion, err := resolveVersion(ctx, projectEndpoint, agentName, agentVersion)
+	if err != nil {
+		return "", fmt.Errorf(
+			"resolving the deployed prompt endpoint for agent %q version %q: %w",
+			agentName,
+			agentVersion,
+			err,
+		)
+	}
+	harnessed, err := deployedPromptAgentIsHarnessed(deployedVersion)
+	if err != nil {
+		return "", err
+	}
+	if harnessed {
+		return buildResponsesProtocolURL(projectEndpoint, agentName), nil
+	}
 	return endpoint, nil
+}
+
+func promptAgentVersionResolver(
+	azdClient *azdext.AzdClient,
+	envValues map[string]string,
+) (PromptAgentVersionResolver, error) {
+	if azdClient == nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeInvalidResponseState,
+			"cannot resolve a legacy prompt endpoint without an azd client",
+		)
+	}
+	settings := &PromptAgentSettings{
+		SubscriptionID: strings.TrimSpace(envValues["AZURE_SUBSCRIPTION_ID"]),
+	}
+	return func(
+		ctx context.Context,
+		projectEndpoint, agentName, agentVersion string,
+	) (*agent_api.AgentVersionObject, error) {
+		if err := validateAuthenticatedPromptEndpoint(projectEndpoint); err != nil {
+			return nil, err
+		}
+		credential, err := ResolvePromptCredential(ctx, azdClient, settings)
+		if err != nil {
+			return nil, err
+		}
+		client := agent_api.NewAgentClient(projectEndpoint, credential)
+		version, err := client.GetPromptAgentVersion(
+			ctx,
+			agentName,
+			agentVersion,
+			ProjectEndpointAPIVersion,
+		)
+		if err != nil {
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+		}
+		return version, nil
+	}, nil
+}
+
+func deployedPromptAgentIsHarnessed(version *agent_api.AgentVersionObject) (bool, error) {
+	if version == nil || version.Definition == nil {
+		return false, exterrors.Internal(
+			exterrors.CodeInvalidResponseState,
+			"deployed prompt agent version did not include a definition",
+		)
+	}
+	definitionJSON, err := json.Marshal(version.Definition)
+	if err != nil {
+		return false, exterrors.Internal(
+			exterrors.CodeInvalidResponseState,
+			fmt.Sprintf("failed to read the deployed prompt agent definition: %s", err),
+		)
+	}
+	var definition agent_api.ManagedAgentDefinition
+	if err := json.Unmarshal(definitionJSON, &definition); err != nil {
+		return false, exterrors.Internal(
+			exterrors.CodeInvalidResponseState,
+			fmt.Sprintf("failed to read the deployed prompt agent definition: %s", err),
+		)
+	}
+	return definition.Harness != nil && strings.TrimSpace(definition.Harness.Type) != "", nil
 }
 
 // azdEnvValues returns the current azd environment as a key/value map. Used to

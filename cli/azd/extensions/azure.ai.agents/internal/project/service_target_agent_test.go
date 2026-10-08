@@ -4431,7 +4431,16 @@ func TestEndpoints_PromptUsesPersistedEndpointDespiteDefinitionChanges(t *testin
 		"model":        "gpt-5-mini",
 		"instructions": "Be helpful.",
 	})
-	provider := &AgentServiceTargetProvider{azdClient: client}
+	var versionLookups atomic.Int32
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		promptAgentVersionResolver: func(
+			context.Context, string, string, string,
+		) (*agent_api.AgentVersionObject, error) {
+			versionLookups.Add(1)
+			return nil, errors.New("unexpected prompt version lookup")
+		},
+	}
 	require.NoError(t, provider.Initialize(t.Context(), service))
 	require.Empty(t, provider.projectPath)
 	require.EqualValues(t, 0, projectServer.getCalls.Load())
@@ -4441,6 +4450,108 @@ func TestEndpoints_PromptUsesPersistedEndpointDespiteDefinitionChanges(t *testin
 	require.Equal(t, []string{"https://deployed.example/agents/deployed-agent/responses"}, got)
 	require.Equal(t, projectRoot, provider.projectPath)
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
+	require.EqualValues(t, 0, versionLookups.Load())
+}
+
+func TestEndpoints_PromptRepairsLegacyEndpointFromDeployedDefinition(t *testing.T) {
+	t.Parallel()
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	tests := []struct {
+		name       string
+		definition any
+		want       string
+	}{
+		{
+			name: "harnessed endpoint is repaired",
+			definition: map[string]any{
+				"kind": "prompt",
+				"harness": map[string]any{
+					"type": agent_api.ManagedAgentHarnessGitHubCopilot,
+				},
+			},
+			want: projectEndpoint + "/agents/deployed-agent/endpoint/protocols/openai/responses?api-version=v1",
+		},
+		{
+			name:       "plain endpoint is preserved",
+			definition: map[string]any{"kind": "prompt"},
+			want:       projectEndpoint + "/openai/v1/responses",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectRoot := t.TempDir()
+			client := newEndpointsTestClient(t, projectRoot, map[string]string{
+				"AGENT_RAI_AGENT_NAME":             "deployed-agent",
+				"AGENT_RAI_AGENT_ENDPOINT":         projectEndpoint + "/openai/v1/responses",
+				"AGENT_RAI_AGENT_PROJECT_ENDPOINT": projectEndpoint,
+				"AGENT_RAI_AGENT_VERSION":          "3",
+			})
+			service := inlineAgentService(t, map[string]any{
+				"kind":         "prompt",
+				"name":         "locally-edited-agent",
+				"model":        "gpt-5-mini",
+				"instructions": "Be helpful.",
+			})
+			var versionLookups atomic.Int32
+			provider := &AgentServiceTargetProvider{
+				azdClient: client,
+				promptAgentVersionResolver: func(
+					_ context.Context,
+					gotProjectEndpoint, gotAgentName, gotAgentVersion string,
+				) (*agent_api.AgentVersionObject, error) {
+					versionLookups.Add(1)
+					require.Equal(t, projectEndpoint, gotProjectEndpoint)
+					require.Equal(t, "deployed-agent", gotAgentName)
+					require.Equal(t, "3", gotAgentVersion)
+					return &agent_api.AgentVersionObject{Definition: test.definition}, nil
+				},
+			}
+
+			got, err := provider.Endpoints(t.Context(), service, nil)
+			require.NoError(t, err)
+			require.Equal(t, []string{test.want}, got)
+			require.EqualValues(t, 1, versionLookups.Load())
+		})
+	}
+}
+
+func TestEndpoints_PromptCurrentPlainSnapshotSkipsVersionLookup(t *testing.T) {
+	t.Parallel()
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	projectRoot := t.TempDir()
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"AGENT_RAI_AGENT_NAME":                    "deployed-agent",
+		"AGENT_RAI_AGENT_ENDPOINT":                projectEndpoint + "/openai/v1/responses",
+		"AGENT_RAI_AGENT_PROJECT_ENDPOINT":        projectEndpoint,
+		"AGENT_RAI_AGENT_PROMPT_ENDPOINT_VERSION": promptEndpointSnapshotVersion,
+		"AGENT_RAI_AGENT_VERSION":                 "3",
+	})
+	service := inlineAgentService(t, map[string]any{
+		"kind":         "prompt",
+		"name":         "prompt-agent",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+	})
+	var versionLookups atomic.Int32
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		promptAgentVersionResolver: func(
+			context.Context, string, string, string,
+		) (*agent_api.AgentVersionObject, error) {
+			versionLookups.Add(1)
+			return nil, errors.New("unexpected prompt version lookup")
+		},
+	}
+
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{projectEndpoint + "/openai/v1/responses"}, got)
+	require.EqualValues(t, 0, versionLookups.Load())
 }
 
 func TestEndpoints_PromptRequiresCompleteDeployment(t *testing.T) {

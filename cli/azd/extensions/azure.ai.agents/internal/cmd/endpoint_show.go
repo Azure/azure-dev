@@ -100,7 +100,7 @@ func runEndpointShow(
 	case agent_yaml.AgentKindHosted:
 		return runHostedEndpointShow(ctx, validation.Name, flags.output)
 	case agent_yaml.AgentKindPrompt:
-		return runPromptEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output)
+		return runPromptEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output, nil)
 	case agent_yaml.AgentKindPromptVoice, agent_yaml.AgentKindVoice:
 		return runVoiceEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output)
 	default:
@@ -143,12 +143,19 @@ func runPromptEndpointShow(
 	validation project.AgentDefinitionValidation,
 	environmentName string,
 	outputFormat string,
+	resolveVersion project.PromptAgentVersionResolver,
 ) error {
 	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
 	if err != nil {
 		return fmt.Errorf("reading the azd environment: %w", err)
 	}
-	endpoint, err := project.PromptAgentDeploymentEndpoint(envValues, svc.GetName())
+	endpoint, err := project.ResolvePromptAgentDeploymentEndpoint(
+		ctx,
+		azdClient,
+		envValues,
+		svc.GetName(),
+		resolveVersion,
+	)
 	if err != nil {
 		return err
 	}

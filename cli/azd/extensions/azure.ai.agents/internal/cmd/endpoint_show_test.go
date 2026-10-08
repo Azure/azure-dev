@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -164,6 +165,7 @@ func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 		}},
 	}
 	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	versionLookups := 0
 
 	output := captureEndpointOutput(t, func() error {
 		return runPromptEndpointShow(
@@ -173,6 +175,10 @@ func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "locally-edited-name"},
 			"",
 			"json",
+			func(context.Context, string, string, string) (*agent_api.AgentVersionObject, error) {
+				versionLookups++
+				return nil, errors.New("unexpected prompt version lookup")
+			},
 		)
 	})
 
@@ -184,6 +190,58 @@ func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 		`"responses": "https://deployed.example/responses"`,
 	)
 	assert.NotContains(t, output, `"agent_endpoint"`)
+	require.Equal(t, 0, versionLookups)
+}
+
+func TestRunPromptEndpointShowRepairsLegacyHarnessedEndpoint(t *testing.T) {
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost}
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_ASSISTANT_NAME":             "deployed-name",
+			"AGENT_ASSISTANT_ENDPOINT":         projectEndpoint + "/openai/v1/responses",
+			"AGENT_ASSISTANT_PROJECT_ENDPOINT": projectEndpoint,
+			"AGENT_ASSISTANT_VERSION":          "3",
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	versionLookups := 0
+
+	output := captureEndpointOutput(t, func() error {
+		return runPromptEndpointShow(
+			t.Context(),
+			client,
+			svc,
+			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "locally-edited-name"},
+			"",
+			"json",
+			func(
+				_ context.Context,
+				gotProjectEndpoint, gotAgentName, gotAgentVersion string,
+			) (*agent_api.AgentVersionObject, error) {
+				versionLookups++
+				require.Equal(t, projectEndpoint, gotProjectEndpoint)
+				require.Equal(t, "deployed-name", gotAgentName)
+				require.Equal(t, "3", gotAgentVersion)
+				return &agent_api.AgentVersionObject{Definition: map[string]any{
+					"kind": "prompt",
+					"harness": map[string]any{
+						"type": agent_api.ManagedAgentHarnessGitHubCopilot,
+					},
+				}}, nil
+			},
+		)
+	})
+
+	require.Contains(t, output, `"name": "deployed-name"`)
+	require.Contains(
+		t,
+		output,
+		`"responses": "`+projectEndpoint+
+			`/agents/deployed-name/endpoint/protocols/openai/responses?api-version=v1"`,
+	)
+	require.Equal(t, 1, versionLookups)
 }
 
 func TestRunPromptEndpointShowRequiresCompleteDeployment(t *testing.T) {
@@ -223,6 +281,7 @@ func TestRunPromptEndpointShowRequiresCompleteDeployment(t *testing.T) {
 				project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "prompt-agent"},
 				"",
 				"json",
+				nil,
 			)
 
 			localErr, ok := errors.AsType[*azdext.LocalError](err)

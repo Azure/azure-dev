@@ -186,14 +186,15 @@ type AgentServiceTargetProvider struct {
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
-	deployContextReady bool
-	credential         azcore.TokenCredential
-	tenantId           string
-	env                *azdext.Environment
-	foundryProject     *arm.ResourceID
-	projectServices    map[string]*azdext.ServiceConfig
-	dependencyEnabled  dependencyEnabled
-	dependencyEnv      map[string]string
+	deployContextReady         bool
+	credential                 azcore.TokenCredential
+	tenantId                   string
+	env                        *azdext.Environment
+	foundryProject             *arm.ResourceID
+	projectServices            map[string]*azdext.ServiceConfig
+	dependencyEnabled          dependencyEnabled
+	dependencyEnv              map[string]string
+	promptAgentVersionResolver PromptAgentVersionResolver
 }
 
 const (
@@ -712,7 +713,13 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	if validation.Kind == agent_yaml.AgentKindPrompt {
-		endpoint, err := PromptAgentDeploymentEndpoint(azdEnv, serviceConfig.Name)
+		endpoint, err := ResolvePromptAgentDeploymentEndpoint(
+			ctx,
+			p.azdClient,
+			azdEnv,
+			serviceConfig.Name,
+			p.promptAgentVersionResolver,
+		)
 		if err != nil {
 			return nil, err
 		}

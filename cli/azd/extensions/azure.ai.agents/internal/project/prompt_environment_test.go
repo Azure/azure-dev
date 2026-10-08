@@ -47,18 +47,22 @@ func TestRegisterPromptAgentEnvVarsWritesOwnershipBeforeReady(t *testing.T) {
 				map[string]any{memoryStoreBindingKey: "memory"})
 			require.NoError(t, err)
 
-			require.GreaterOrEqual(t, len(envServer.writes), 6)
+			require.GreaterOrEqual(t, len(envServer.writes), 8)
 			requests := envServer.writes
 			require.Equal(t, "AGENT_PROMPT_AGENT_VERSION", requests[0].Key)
 			require.Empty(t, requests[0].Value)
-			require.Equal(t, "AGENT_PROMPT_AGENT_ENDPOINT", requests[2].Key)
-			require.Equal(t, test.wantTarget, requests[2].Value)
-			require.Equal(t, envkey.AgentProjectEndpoint(service.Name), requests[len(requests)-2].Key)
+			require.Equal(t, envkey.AgentPromptEndpointVersion(service.Name), requests[1].Key)
+			require.Empty(t, requests[1].Value)
+			require.Equal(t, "AGENT_PROMPT_AGENT_ENDPOINT", requests[3].Key)
+			require.Equal(t, test.wantTarget, requests[3].Value)
+			require.Equal(t, envkey.AgentProjectEndpoint(service.Name), requests[len(requests)-3].Key)
 			require.Equal(
 				t,
 				"https://acct.services.ai.azure.com/api/projects/project",
-				requests[len(requests)-2].Value,
+				requests[len(requests)-3].Value,
 			)
+			require.Equal(t, envkey.AgentPromptEndpointVersion(service.Name), requests[len(requests)-2].Key)
+			require.Equal(t, promptEndpointSnapshotVersion, requests[len(requests)-2].Value)
 			require.Equal(t, "AGENT_PROMPT_AGENT_VERSION", requests[len(requests)-1].Key)
 			require.Equal(t, "3", requests[len(requests)-1].Value)
 		})

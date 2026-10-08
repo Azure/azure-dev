@@ -83,6 +83,24 @@ func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.E
 		return nil, err
 	}
 
+	return s.getConfigured(ctx, name)
+}
+
+// GetReadOnly returns a remote environment snapshot without prompting for or persisting configuration.
+func (s *EnvironmentStore) GetReadOnly(ctx context.Context, name string) (*environment.Environment, error) {
+	if err := s.config.EnsureValid(); err != nil {
+		return nil, fmt.Errorf("DevCenter configuration is not valid: %w", err)
+	}
+
+	// Reload fills missing configuration from the remote environment. Keep those
+	// changes on this read's copy rather than the shared store configuration.
+	snapshot := *s
+	snapshot.config = new(*s.config)
+	snapshot.cachedConfig = nil
+	return snapshot.getConfigured(ctx, name)
+}
+
+func (s *EnvironmentStore) getConfigured(ctx context.Context, name string) (*environment.Environment, error) {
 	filter := func(env *devcentersdk.Environment) bool {
 		return s.envDefFilter(env) && strings.EqualFold(env.Name, name)
 	}

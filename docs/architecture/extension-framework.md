@@ -122,6 +122,14 @@ messages. Each preview runs on a fresh provider without `Initialize`.
 See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
 for registration and provider requirements.
 
+The host resolves declared services without generated-service imports and exposes
+read-only environment snapshots to extensions, rejecting environment mutations.
+JSON contains structured results and `skippedServices`, without terminal progress
+or provider text. The Foundry agents extension compares unified service-level
+hosted definitions, reports unknown build/upload artifacts, and rejects legacy
+agent-file projects. See the
+[agents guide](../../cli/azd/extensions/azure.ai.agents/README.md#deployment-preview).
+
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.

@@ -83,13 +83,24 @@ func (est *ExternalServiceTarget) Preview(
 	if est.preview == nil {
 		return nil, ErrDeployPreviewNotSupported
 	}
-
-	protoConfig, err := est.toProtoServiceConfig(serviceConfig)
-	if err != nil {
-		return nil, err
+	if serviceConfig == nil {
+		return nil, errors.New("service configuration is required")
+	}
+	var env *environment.Environment
+	if est.lazyEnv != nil {
+		var err error
+		env, err = est.lazyEnv.GetValue()
+		if err != nil {
+			return nil, fmt.Errorf("loading environment for deployment preview: %w", err)
+		}
+	}
+	var protoConfig *azdext.ServiceConfig
+	if err := mapper.WithResolver(envResolver(env)).Convert(serviceConfig, &protoConfig); err != nil {
+		return nil, fmt.Errorf("converting service config: %w", err)
 	}
 
-	return est.preview(ctx, protoConfig)
+	result, err := est.preview(ctx, protoConfig)
+	return result, est.wrapInvocationError(err, "preview")
 }
 
 // toProtoServiceConfig converts a ServiceConfig to its proto representation, expanding

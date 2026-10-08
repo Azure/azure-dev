@@ -1,0 +1,163 @@
+# Tier 2 — read-only preview of the shared modern hosted code agent.
+# Run with the core and extension builds containing preview support, before 2.18.
+# Setup incurs Azure cost; this scenario must not create or modify cloud resources.
+# Preview is a core azd deploy flag, not an azd ai agent deploy/dry-run command.
+name: "deploy-preview"
+command: "azd deploy --preview --no-prompt"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:deploy", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+# Keep normal authentication. Never reset or repair the shared project.
+# The sole snapshot exclusion is this scenario's guarded evidence directory.
+# Hash file contents and symlink targets without exposing their values.
+pre:
+  - run: |
+      test -f azure.yaml && test -d .azure || {
+        echo "ERROR: Run tier2/2.00-setup-deploy-shared-agent.yaml successfully before preview."
+        exit 1
+      }
+      for legacy in agent.yaml agent.yml agent.manifest.yaml agent.manifest.yml; do
+        if [ -e "$legacy" ]; then
+          echo "ERROR: This scenario requires the unified azure.yaml project, not a legacy agent definition."
+          exit 1
+        fi
+      done
+    name: "require the shared modern project"
+  - run: |
+      mkdir .deploy-preview-evidence || {
+        echo "ERROR: Reserved preview evidence directory exists or cannot be created; project left untouched."
+        exit 1
+      }
+      printf '%s\n' deploy-preview > .deploy-preview-evidence/owned-by-scenario
+      cat > .deploy-preview-evidence/snapshot.py <<'PY'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import stat
+      import sys
+
+      root = Path.cwd()
+      evidence = root / ".deploy-preview-evidence"
+      entries = []
+
+      def record(path):
+          info = path.lstat()
+          digest = None
+          if stat.S_ISREG(info.st_mode):
+              hasher = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      hasher.update(chunk)
+              digest = hasher.hexdigest()
+          elif stat.S_ISLNK(info.st_mode):
+              digest = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+          entries.append([
+              str(path.relative_to(root)), stat.S_IFMT(info.st_mode),
+              stat.S_IMODE(info.st_mode), info.st_size,
+              info.st_mtime_ns, info.st_ctime_ns, digest,
+          ])
+          if stat.S_ISDIR(info.st_mode):
+              for child in sorted(path.iterdir(), key=lambda item: item.name):
+                  if child != evidence:
+                      record(child)
+
+      record(root)
+      (evidence / sys.argv[1]).write_text(
+          json.dumps(entries, indent=2) + "\n", encoding="utf-8"
+      )
+      PY
+      python3 .deploy-preview-evidence/snapshot.py state-before.json
+    name: "record all project paths, metadata, and content hashes"
+
+post:
+  - run: |
+      if [ -f .deploy-preview-evidence/owned-by-scenario ]; then
+        python3 .deploy-preview-evidence/snapshot.py state-final.json &&
+          cmp -s .deploy-preview-evidence/state-before.json .deploy-preview-evidence/state-final.json
+      fi
+    name: "verify project state even after a product failure"
+    continue_on_error: true
+  - run: |
+      if [ -f .deploy-preview-evidence/owned-by-scenario ]; then
+        rm -rf -- .deploy-preview-evidence
+      fi
+    name: "remove only this scenario's comparison evidence"
+
+goals:
+  - >-
+    READ-ONLY CONTRACT: No product prompts are allowed in either preview, including environment,
+    login, tenant, subscription, service-selection, or extension-install prompts. Fail without
+    answering any prompt. Use the existing authenticated session; do not bypass authentication,
+    log in, install or update binaries, edit the shared project, or repair its environment.
+    Never run init, provision, up, down, or a deploy without --preview. Do not use an
+    azd ai agent deploy or --dry-run command.
+  - >-
+    Wait for the initial 'azd deploy --preview --no-prompt' command to exit with code 0.
+    Confirm the hosted-agent result identifies agent '{shared_agent_name}' and states that
+    it compares the latest remote agent version. Read azure.yaml without editing it and confirm
+    the agent is a unified azure.ai.agent service with a hosted code definition, not a legacy
+    agent.yaml or agent.manifest.yaml deployment.
+  - >-
+    Confirm the text contains 'unknown: code' and explains that preview does not build, push,
+    or upload artifacts. Known configuration may have differences or match the latest remote
+    version; unknown code must prevent an unqualified 'No deployment configuration changes.'
+    claim. Any reported known changes must include a group, operation, and field path, not
+    old or new values. Infrastructure and dependencies must be described as outside the comparison.
+  - >-
+    For both previews, confirm no package, build, push, upload, dependency deployment,
+    provisioning, agent-version creation, or lifecycle-hook activity appears. Unsupported
+    dependency services may be reported as skipped. A read-only comparison progress indicator
+    is allowed in text output only and must clear when the command finishes.
+  - >-
+    Immediately after the text preview, run
+    'python3 .deploy-preview-evidence/snapshot.py state-after-text.json &&
+    cmp -s .deploy-preview-evidence/state-before.json .deploy-preview-evidence/state-after-text.json'
+    and require exit code 0. No project paths, permissions, modification timestamps, or content
+    may change; this includes azure.yaml, source files, every .azure file and directory,
+    environment/deployment state, caches, and lock files. Only the scenario-owned evidence
+    directory is excluded. Do not restore or remove unexpected product artifacts to make this pass.
+  - >-
+    In the same cwd, run exactly
+    'azd deploy --preview --no-prompt --output json > .deploy-preview-evidence/preview.json
+    2> .deploy-preview-evidence/preview.stderr' and require exit code 0. Then run
+    'python3 -m json.tool .deploy-preview-evidence/preview.json' and require exit code 0.
+    The complete raw stdout must be one JSON object: no banners, progress, ANSI escapes,
+    success messages, or other terminal text may precede or follow it. Inspect stderr too;
+    it must not contain deployment/build/upload/hook activity.
+  - >-
+    Confirm the JSON has a timestamp and a services object. Locate the hosted-agent entry
+    whose data.agent equals '{shared_agent_name}'; data.service must match its services key.
+    Its data.status must be 'update' or 'unknown', data.changes must be an array, and
+    data.unknown must be an array containing 'code'. Every change must have string group,
+    path, and operation fields, with operation one of 'add', 'update', or 'remove', without
+    old/new values. Its data.notes must explain the latest-version read-only comparison and
+    that artifacts are not built or uploaded. Human-readable provider message text must not
+    be serialized alongside data. If skippedServices is present, it describes unsupported
+    services only, not a failed hosted-agent preview.
+  - >-
+    Confirm neither text nor JSON nor stderr exposes environment values, credentials,
+    credential-bearing URL userinfo, query strings, or fragments. Configuration field paths
+    and operations may be shown, but sensitive values must remain omitted.
+  - >-
+    After the JSON preview, run
+    'python3 .deploy-preview-evidence/snapshot.py state-after-json.json &&
+    cmp -s .deploy-preview-evidence/state-before.json .deploy-preview-evidence/state-after-json.json'
+    and require exit code 0 with the same whole-project read-only guarantees as the text preview.
+    Leave all original shared-project files and cloud resources intact for 2.18-delete and teardown.
+  - >-
+    Take best-effort screenshots of the text preview and parsed JSON result. A capture error
+    or timeout is an observation identifying unavailable evidence; do not retry capture or
+    block remaining product checks and post hooks.
+  - >-
+    Report a finding and fail for unexpected prompts, any project-state mutation,
+    deployment/build/upload/hook activity, leaked values, misleading no-change claims,
+    incorrect fields, malformed JSON, or a non-zero product exit. Do not copy credentials
+    into findings, retry a failed command, substitute commands, or deploy/provision to
+    work around a failure. The second preview tests JSON output only after the text checks pass.

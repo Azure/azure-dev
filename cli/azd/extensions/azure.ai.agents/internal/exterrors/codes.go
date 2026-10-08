@@ -3,6 +3,9 @@
 
 package exterrors
 
+// CodeDeploymentPreviewUnsupported identifies configurations not supported by preview.
+const CodeDeploymentPreviewUnsupported = "deployment_preview_unsupported"
+
 // Error codes for user cancellation.
 const (
 	CodeCancelled = "cancelled"

@@ -10,6 +10,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | `auth` | Stable |
 | `config` | Stable |
 | `deploy` | Stable |
+| Foundry hosted-agent comparison (`deploy --preview`) | In development; not released |
 | `down` | Stable |
 | `env` | Stable |
 | `help` | Stable |
@@ -25,6 +26,16 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | `up` | Stable |
 | `update` | Beta |
 | `version` | Stable |
+
+Foundry agent comparisons for [#8549](https://github.com/Azure/azure-dev/issues/8549)
+consume published SDK v1.35.1, including the merged
+[SDK prerequisite](https://github.com/Azure/azure-dev/pull/10055). They support unified
+service-level `azure.yaml` definitions for hosted `azure.ai.agent` services only.
+Legacy `agent.yaml`/`agent.manifest.yaml` (including `.yml` variants) and deprecated
+nested `config:` definitions return an unsupported preview error.
+Existing built-in deployment previews remain supported. See the
+[agents extension guide](../../cli/azd/extensions/azure.ai.agents/README.md)
+for migration guidance and artifact-comparison limitations.
 
 ## Languages
 

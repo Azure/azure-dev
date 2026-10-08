@@ -84,8 +84,9 @@ type ServiceDeployResult struct {
 	Warnings  []string           `json:"warnings,omitempty"`
 }
 
-// ServiceDeployPreviewResult is the result of a successful deployment preview.
+// ServiceDeployPreviewResult contains provider-sanitized deployment information without deploying a service.
+// Message is rendered only in human-readable output; Data is the machine-readable preview.
 type ServiceDeployPreviewResult struct {
-	Message string         `json:"message,omitempty"`
-	Data    map[string]any `json:"data,omitempty"`
+	Message string         `json:"-"`
+	Data    map[string]any `json:"data"`
 }

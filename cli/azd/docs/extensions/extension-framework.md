@@ -1600,8 +1600,9 @@ if err := host.Run(ctx); err != nil {
 `azd deploy --preview` asks each selected service's target to describe the
 changes a deployment would make. Nothing is packaged, published, or deployed,
 service targets are not initialized, and deploy hooks do not run. Services whose
-host does not support preview are reported and skipped. The flag cannot be
-combined with `--from-package` or `--timeout`.
+host does not support preview are reported and skipped; JSON lists them in
+`skippedServices`. A selection containing only unsupported services fails.
+The flag cannot be combined with `--from-package`; `--timeout` limits each comparison.
 
 Core built-in service targets resolve their Azure resource before generating the
 preview. Extension service targets receive the effective service configuration
@@ -1642,6 +1643,18 @@ implementations, and nil results fail the command.
 
 These APIs may change during incubation. The stable `v1` contracts and the
 root `azdext` facade do not include preview types.
+
+Preview resolves only declared `azure.yaml` services, without importing generated
+Aspire services. The host exposes detached environment snapshots without remote
+hydration, persisted normalization, or lock-file creation, and rejects environment
+mutations and listing during preview. Normal login still applies and may update
+the authentication cache. Structured JSON excludes provider text and progress.
+
+The Foundry agents extension implements comparison for unified service-level
+hosted definitions only, using published SDK v1.35.1. Legacy agent files and
+nested `config:` return an unsupported error; build/upload-dependent artifacts
+are reported as unknown. See the
+[agents guide](../../extensions/azure.ai.agents/README.md#deployment-preview).
 
 ## Developer Artifacts
 

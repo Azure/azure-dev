@@ -128,6 +128,48 @@ func next(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{}, nil
 }
 
+func TestLoginGuardNoPrompt(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		credentialErr error
+		mode          auth.AuthSource
+		loginCommand  string
+	}{
+		{name: "built-in", credentialErr: auth.ErrNoCurrentUser, mode: auth.AzdBuiltIn, loginCommand: "azd auth login"},
+		{name: "delegated", credentialErr: auth.ErrNoCurrentUser, mode: auth.AzDelegated, loginCommand: "az login"},
+		{name: "credential-error", credentialErr: errors.New("credential unavailable")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.Console.SetNoPromptMode(true)
+			mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool {
+				t.Fatal("no-prompt must never prompt for login")
+				return false
+			})
+			authManager := &mockCurrentUserAuthManager{}
+			authManager.On("CredentialForCurrentUser", mock.Anything, mock.Anything).
+				Return(nil, tt.credentialErr).Once()
+			if errors.Is(tt.credentialErr, auth.ErrNoCurrentUser) {
+				authManager.On("Mode").Return(tt.mode, nil).Once()
+			}
+			guard := NewLoginGuardMiddleware(mockContext.Console, authManager, nil)
+			result, err := guard.Run(t.Context(), func(context.Context) (*actions.ActionResult, error) {
+				t.Fatal("authentication must succeed before the next action")
+				return nil, nil
+			})
+			require.Nil(t, result)
+			require.ErrorIs(t, err, tt.credentialErr)
+			if errors.Is(tt.credentialErr, auth.ErrNoCurrentUser) {
+				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+				require.True(t, ok)
+				require.Contains(t, suggestion.Message, "--no-prompt")
+				require.Contains(t, suggestion.Suggestion, tt.loginCommand)
+			}
+			authManager.AssertExpectations(t)
+		})
+	}
+}
+
 type mockCurrentUserAuthManager struct {
 	mock.Mock
 }

@@ -189,6 +189,63 @@ before the prompt agent. Connection objects remain unsupported on any agent.
 
 ## Deploying Agents
 
+### Deployment preview
+
+`azd deploy <service-name> --preview` compares a **hosted** `azure.ai.agent`
+service's effective configuration with the latest agent version in Microsoft
+Foundry. Add `--output json` for structured results. Creating an absent agent,
+configuration changes, and no changes are successful preview outcomes; authentication,
+authorization, connectivity, and invalid configuration/response failures are errors.
+Normal azd login is required, including the usual non-interactive behavior with
+`--no-prompt`.
+
+```bash
+azd deploy my-agent --preview
+azd deploy --all --preview --output json
+```
+
+Preview supports only **unified service-level definitions in `azure.yaml`**.
+Deprecated nested `config:`, `agent.yaml`/`agent.manifest.yaml` definitions (including `.yml` variants),
+`AGENT_DEFINITION_PATH` overrides, and root `$ref` includes that supply a whole
+agent definition are explicitly unsupported. Move the definition into the service
+entry using the [migration guidance](#migrating-legacy-agent-configuration).
+Field/file includes and root fragments that do not supply `kind` remain supported.
+An unused legacy file does not override a valid modern definition. Nested `config:`
+is rejected, matching current runtime source validation. Normal deployment's
+supported sources and root `$ref` behavior are unchanged by preview.
+
+The comparison shares deployment's request normalization for environment values
+(including model deployment references), CPU/memory, protocols, description,
+metadata, content policies, session settings, and authored endpoint/card settings.
+Values are omitted from text and JSON changes to protect credentials and environment
+values; changed field paths and operations are grouped by metadata, protocols,
+resources, environment variables, model deployment, image, and applicable code,
+session, safety, and endpoint settings. A real deploy still creates a new agent
+version even when configuration has no changes.
+
+Prebuilt image passthrough (`docker.imagePassthrough: true`) can be compared directly.
+Build-mode images and code packages are reported as **unknown** until a build/upload
+produces the final artifact. Preview never builds, packages, pushes, uploads, runs
+deployment hooks, deploys dependencies, provisions resources, or writes deployment
+state. It does not claim “no changes” when artifacts or environment inputs remain
+unknown. Mutable image tags are compared as references, not registry digests.
+Infrastructure, dependency resources, and routing to older agent versions are outside
+the comparison's scope.
+
+The extension consumes published azd SDK **v1.35.1**, containing the beta-only
+preview contract from [#10055](https://github.com/Azure/azure-dev/pull/10055), without
+a local module replacement. Preview uses `WithBetaServiceTargetPreview` and
+`preview.ServiceTargetPreviewProvider`; ordinary deployments stay on the stable
+service-target contract. Older hosts that cannot negotiate preview remain usable
+for ordinary deployment.
+
+`--timeout` bounds each service comparison; `--from-package` cannot be combined
+with `--preview`. Unsupported hosts are reported in `skippedServices` in JSON;
+a selection with no supported services fails. `azd ai agent` has no deploy command,
+so no standalone `--dry-run` command is provided.
+
+### Normal deployment
+
 Deploy Agents through the normal azd project lifecycle:
 
 - `azd deploy <service>` deploys the selected `azure.ai.agent` service.

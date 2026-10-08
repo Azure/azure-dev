@@ -19,12 +19,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 )
 
 // Test_EnvironmentService_NoEnvironment verifies that when no environments are set,
 // the GetCurrent method returns an error and List returns an empty list.
 func Test_EnvironmentService_NoEnvironment(t *testing.T) {
-	// Setup a mock context and temporary project directory.
+	// Set up a mock context and temporary project directory.
 	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
@@ -38,7 +39,7 @@ func Test_EnvironmentService_NoEnvironment(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Setup environment data store and manager.
+	// Set up environment data store and manager.
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
 	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
@@ -62,10 +63,122 @@ func Test_EnvironmentService_NoEnvironment(t *testing.T) {
 	require.Equal(t, 0, len(listResponse.Environments))
 }
 
-// Test_EnvironmentService_Flow validates the complete flow including:
+func TestEnvironmentServicePreviewGetCurrentUsesSelectedSnapshot(t *testing.T) {
+	selected := environment.NewWithValues("selected", map[string]string{"KEY": "snapshot"})
+	service := NewEnvironmentServiceWithEnvironment(nil, nil, lazy.From(selected))
+
+	response, err := service.GetCurrent(t.Context(), &azdext.EmptyRequest{})
+
+	require.NoError(t, err)
+	require.Equal(t, "selected", response.Environment.Name)
+
+	values, err := service.GetValues(t.Context(), &azdext.GetEnvironmentRequest{Name: "selected"})
+	require.NoError(t, err)
+	require.Contains(t, values.KeyValues, &azdext.KeyValue{Key: "KEY", Value: "snapshot"})
+}
+
+func TestEnvironmentServicePreviewUnnamedSnapshotHasNoCurrentEnvironment(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://example.services.ai.azure.com/api/projects/preview")
+	service := NewEnvironmentServiceWithEnvironment(nil, nil, lazy.From(environment.New("")))
+	_, err := service.GetCurrent(t.Context(), &azdext.EmptyRequest{})
+	require.Equal(t, codes.NotFound, status.Code(mapHostError(err)))
+	value, err := service.GetValue(t.Context(), &azdext.GetEnvRequest{Key: "FOUNDRY_PROJECT_ENDPOINT"})
+	require.NoError(t, err)
+	require.Equal(t, "https://example.services.ai.azure.com/api/projects/preview", value.Value)
+}
+
+func TestEnvironmentServicePreviewNamedReadsUseReadOnlyManager(t *testing.T) {
+	selected := environment.New("selected")
+	other := environment.NewWithValues("other", map[string]string{"KEY": "value"})
+	require.NoError(t, other.Config.Set("test", "config-value"))
+	manager := &mockenv.MockEnvManager{}
+	service := NewEnvironmentServiceWithEnvironment(
+		nil, lazy.From[environment.Manager](manager), lazy.From(selected),
+	)
+	operations := map[string]func() error{
+		"get": func() error {
+			response, err := service.Get(t.Context(), &azdext.GetEnvironmentRequest{Name: "other"})
+			if err == nil {
+				require.Equal(t, "other", response.Environment.Name)
+			}
+			return err
+		},
+		"values": func() error {
+			response, err := service.GetValues(t.Context(), &azdext.GetEnvironmentRequest{Name: "other"})
+			if err == nil {
+				require.Contains(t, response.KeyValues, &azdext.KeyValue{Key: "KEY", Value: "value"})
+			}
+			return err
+		},
+		"value": func() error {
+			response, err := service.GetValue(t.Context(), &azdext.GetEnvRequest{EnvName: "other", Key: "KEY"})
+			if err == nil {
+				require.Equal(t, "value", response.Value)
+			}
+			return err
+		},
+		"config": func() error {
+			response, err := service.GetConfig(t.Context(), &azdext.GetConfigRequest{EnvName: "other", Path: "test"})
+			if err == nil {
+				require.Equal(t, `"config-value"`, string(response.Value))
+			}
+			return err
+		},
+		"config-string": func() error {
+			response, err := service.GetConfigString(
+				t.Context(), &azdext.GetConfigStringRequest{EnvName: "other", Path: "test"},
+			)
+			if err == nil {
+				require.Equal(t, "config-value", response.Value)
+			}
+			return err
+		},
+	}
+	manager.On("GetReadOnly", t.Context(), "other").Return(other, nil).Times(len(operations))
+	for name, operation := range operations {
+		t.Run(name, func(t *testing.T) { require.NoError(t, operation()) })
+	}
+	manager.AssertExpectations(t)
+}
+
+func TestEnvironmentServicePreviewRejectsEnvironmentMutations(t *testing.T) {
+	env := environment.New("selected")
+	service := NewEnvironmentServiceWithEnvironment(nil, nil, lazy.From(env))
+	operations := map[string]func() error{
+		"list": func() error {
+			_, err := service.List(t.Context(), &azdext.EmptyRequest{})
+			return err
+		},
+		"select": func() error {
+			_, err := service.Select(t.Context(), &azdext.SelectEnvironmentRequest{Name: "other"})
+			return err
+		},
+		"set-value": func() error {
+			_, err := service.SetValue(t.Context(), &azdext.SetEnvRequest{Key: "KEY", Value: "value"})
+			return err
+		},
+		"set-config": func() error {
+			_, err := service.SetConfig(t.Context(), &azdext.SetConfigRequest{Path: "test", Value: []byte(`"value"`)})
+			return err
+		},
+		"unset-config": func() error {
+			_, err := service.UnsetConfig(t.Context(), &azdext.UnsetConfigRequest{Path: "test"})
+			return err
+		},
+	}
+	for name, operation := range operations {
+		t.Run(name, func(t *testing.T) {
+			err := operation()
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		})
+	}
+	require.NotContains(t, env.Dotenv(), "KEY")
+}
+
+// Test_EnvironmentService_Flow validates the complete flow including
 // environment creation, setting a default and verifying get, list, value retrieval, and selection.
 func Test_EnvironmentService_Flow(t *testing.T) {
-	// Setup a mock context and temporary project directory.
+	// Set up a mock context and temporary project directory.
 	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
@@ -403,6 +516,13 @@ type mockEnvManager struct {
 }
 
 func (m *mockEnvManager) Get(ctx context.Context, name string) (*environment.Environment, error) {
+	if m.getFunc != nil {
+		return m.getFunc(ctx, name)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockEnvManager) GetReadOnly(ctx context.Context, name string) (*environment.Environment, error) {
 	if m.getFunc != nil {
 		return m.getFunc(ctx, name)
 	}

@@ -197,6 +197,15 @@ environment state must take the appropriate lock or it will either return
 inconsistent instances (cache miss → divergent writes) or corrupt the .env
 file on disk.
 
+**Read-only snapshots**: `Manager.GetReadOnly` deliberately bypasses the cache,
+hydration, and persistence paths. Each call returns a detached snapshot, with
+environment-name normalization applied only in memory. `LocalFileDataStore.GetReadOnly`
+shares the parsing helper with normal reloads but does not acquire a file lock or
+create `.env.lock`. Atomic file replacement prevents reading a partially written
+`.env`; the snapshot is not a transaction spanning `.env` and `config.json`.
+Remote fallback happens only when the local environment is absent, not when a
+local read or parse fails.
+
 ---
 
 ## `pkg/tools/kubectl.Cli`

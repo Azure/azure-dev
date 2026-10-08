@@ -154,6 +154,34 @@ type ServiceManager interface {
 // The ServiceOperationCache is used as a singleton cache for all service manager instances
 type ServiceOperationCache map[string]any
 
+// ServiceTargetResolver resolves a service target without initializing framework or deployment dependencies.
+type ServiceTargetResolver interface {
+	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error)
+}
+
+type serviceTargetResolver struct {
+	serviceLocator      ioc.ServiceLocator
+	alphaFeatureManager *alpha.FeatureManager
+}
+
+// NewServiceTargetResolver creates a target-only resolver for read-only command paths.
+func NewServiceTargetResolver(
+	serviceLocator ioc.ServiceLocator,
+	alphaFeatureManager *alpha.FeatureManager,
+) ServiceTargetResolver {
+	return &serviceTargetResolver{
+		serviceLocator:      serviceLocator,
+		alphaFeatureManager: alphaFeatureManager,
+	}
+}
+
+func (r *serviceTargetResolver) GetServiceTarget(
+	_ context.Context,
+	serviceConfig *ServiceConfig,
+) (ServiceTarget, error) {
+	return resolveServiceTarget(r.serviceLocator, r.alphaFeatureManager, serviceConfig)
+}
+
 type serviceManager struct {
 	env                 *environment.Environment
 	resourceManager     ResourceManager
@@ -664,12 +692,20 @@ func (sm *serviceManager) Deploy(
 }
 
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
-func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
+func (sm *serviceManager) GetServiceTarget(_ context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
+	return resolveServiceTarget(sm.serviceLocator, sm.alphaFeatureManager, serviceConfig)
+}
+
+func resolveServiceTarget(
+	serviceLocator ioc.ServiceLocator,
+	alphaFeatureManager *alpha.FeatureManager,
+	serviceConfig *ServiceConfig,
+) (ServiceTarget, error) {
 	var target ServiceTarget
 	host := string(serviceConfig.Host)
 
 	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(host); isAlphaFeature {
-		if !sm.alphaFeatureManager.IsEnabled(alphaFeatureId) {
+		if !alphaFeatureManager.IsEnabled(alphaFeatureId) {
 			return nil, fmt.Errorf(
 				"service host '%s' is currently in alpha and needs to be enabled explicitly."+
 					" Run `%s` to enable the feature",
@@ -679,7 +715,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 		}
 	}
 
-	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
+	if err := serviceLocator.ResolveNamed(host, &target); err != nil {
 		if errors.Is(err, ioc.ErrResolveInstance) {
 			unsupportedErr := &UnsupportedServiceHostError{
 				Host:        host,

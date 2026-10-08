@@ -35,6 +35,12 @@ func (m *MockEnvManager) Get(ctx context.Context, name string) (*environment.Env
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }
 
+func (m *MockEnvManager) GetReadOnly(ctx context.Context, name string) (*environment.Environment, error) {
+	args := m.Called(ctx, name)
+	env, _ := args.Get(0).(*environment.Environment)
+	return env, args.Error(1)
+}
+
 func (m *MockEnvManager) Save(ctx context.Context, env *environment.Environment) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)

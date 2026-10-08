@@ -74,6 +74,20 @@ func (l *LoginGuardMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 func (l *LoginGuardMiddleware) ensureLogin(ctx context.Context) (azcore.TokenCredential, error) {
 	cred, credentialErr := l.authManager.CredentialForCurrentUser(ctx, nil)
 	if credentialErr != nil {
+		if l.console.IsNoPromptMode() {
+			if !errors.Is(credentialErr, auth.ErrNoCurrentUser) {
+				return nil, credentialErr
+			}
+			suggestion := "Run 'azd auth login' to sign in before running this command."
+			if mode, err := l.authManager.Mode(); err == nil && mode == auth.AzDelegated {
+				suggestion = "Run 'az login' to sign in when using Azure CLI authentication."
+			}
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        credentialErr,
+				Message:    "Authentication is required, but interactive login is disabled by --no-prompt.",
+				Suggestion: suggestion,
+			}
+		}
 		// If running in CI/CD, don't prompt for interactive login, just return the authentication error
 		if resource.IsRunningOnCI() {
 			return nil, credentialErr

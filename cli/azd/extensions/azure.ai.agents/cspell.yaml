@@ -3,6 +3,19 @@ overrides:
   - filename: ["internal/helpformat/*.go", "internal/cmd/root.go"]
     words:
       - helpformat
+  - filename: tests/cli-interactive-tester-scenarios/tier2/2.17a-deploy-preview.yaml
+    words:
+      - elif
+      - fsencode
+      - hashlib
+      - hexdigest
+      - IFMT
+      - IMODE
+      - ISDIR
+      - ISLNK
+      - ISREG
+      - iterdir
+      - readlink
 words:
   # Connection commands
   - tavily

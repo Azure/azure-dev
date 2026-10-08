@@ -123,6 +123,24 @@ func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 	})
 }
 
+func TestStorageBlobDataStoreGetReadOnlyOnlyDownloads(t *testing.T) {
+	ctx := t.Context()
+	blobClient := &MockBlobClient{}
+	blobClient.On("Items", ctx).Return(validBlobItems, nil).Once()
+	blobClient.On("Download", ctx, "env1/.env").
+		Return(io.NopCloser(bytes.NewBufferString("KEY=value")), nil).Once()
+	blobClient.On("Download", ctx, "env1/config.json").
+		Return(io.NopCloser(bytes.NewBufferString("{}")), nil).Once()
+	store := NewStorageBlobDataStore(config.NewManager(), blobClient)
+	readOnly, ok := store.(ReadOnlyDataStore)
+	require.True(t, ok)
+	env, err := readOnly.GetReadOnly(ctx, "env1")
+	require.NoError(t, err)
+	require.Equal(t, "value", env.Getenv("KEY"))
+	require.Equal(t, "env1", env.Name())
+	blobClient.AssertExpectations(t)
+}
+
 func Test_StorageBlobDataStore_Path(t *testing.T) {
 	configManager := config.NewManager()
 	blobClient := &MockBlobClient{}

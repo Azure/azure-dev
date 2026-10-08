@@ -75,6 +75,10 @@ type Manager interface {
 	// If the environment specified by the given name does not exist, ErrNotFound is returned.
 	Get(ctx context.Context, name string) (*Environment, error)
 
+	// GetReadOnly returns a detached snapshot of an existing environment without caching,
+	// normalizing persisted values, or hydrating a remote environment into local storage.
+	GetReadOnly(ctx context.Context, name string) (*Environment, error)
+
 	Save(ctx context.Context, env *Environment) error
 	SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error
 	Reload(ctx context.Context, env *Environment) error
@@ -490,6 +494,40 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	m.cacheMu.Unlock()
 
 	return localEnv, nil
+}
+
+func (m *manager) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
+	if name == "" {
+		return nil, ErrNameNotSpecified
+	}
+
+	localEnv, err := getReadOnly(ctx, m.local, name)
+	if err != nil {
+		if m.remote == nil || !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+
+		localEnv, err = getReadOnly(ctx, m.remote, name)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Preserve the normal Get invariant for consumers without writing the
+	// normalization back to either data store.
+	if envName, ok := localEnv.LookupEnv(EnvNameEnvVarName); !ok || envName != name {
+		localEnv.DotenvSet(EnvNameEnvVarName, name)
+	}
+
+	return localEnv, nil
+}
+
+func getReadOnly(ctx context.Context, store DataStore, name string) (*Environment, error) {
+	readOnlyStore, ok := store.(ReadOnlyDataStore)
+	if !ok {
+		return nil, errors.New("environment data store does not support read-only access")
+	}
+	return readOnlyStore.GetReadOnly(ctx, name)
 }
 
 // getFromCache retrieves an environment from the cache if it exists.

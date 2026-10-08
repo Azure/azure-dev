@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -286,6 +287,92 @@ func Test_EnvManager_Get(t *testing.T) {
 	})
 }
 
+func Test_EnvManager_GetReadOnlyDoesNotModifyLocalEnvironment(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+	}{
+		{name: "missing environment name", contents: "KEY=value\n"},
+		{name: "mismatched environment name", contents: "AZURE_ENV_NAME=other\nKEY=value\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			azdContext := azdcontext.NewAzdContextWithDirectory(projectDir)
+			envRoot := azdContext.EnvironmentRoot("selected")
+			require.NoError(t, os.MkdirAll(envRoot, 0o700))
+			envPath := filepath.Join(envRoot, DotEnvFileName)
+			require.NoError(t, os.WriteFile(envPath, []byte(tt.contents), 0o600))
+
+			localDataStore := NewLocalFileDataStore(
+				azdContext,
+				config.NewFileConfigManager(config.NewManager()),
+			)
+			manager := newManagerForTest(
+				azdContext,
+				mockinput.NewMockConsole(),
+				localDataStore,
+				nil,
+			)
+
+			env, err := manager.GetReadOnly(t.Context(), "selected")
+			require.NoError(t, err)
+			require.Equal(t, "selected", env.Name())
+			require.Equal(t, "selected", env.Getenv(EnvNameEnvVarName))
+			require.Equal(t, "value", env.Getenv("KEY"))
+
+			after, err := os.ReadFile(envPath)
+			require.NoError(t, err)
+			require.Equal(t, tt.contents, string(after))
+			require.NoFileExists(t, filepath.Join(envRoot, DotEnvFileName+".lock"))
+		})
+	}
+}
+
+func Test_EnvManager_GetReadOnlyRemoteFallbackDoesNotHydrateOrCache(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	localDataStore := &MockDataStore{}
+	remoteDataStore := &MockDataStore{}
+	remoteEnv := NewWithValues("remote", map[string]string{
+		EnvNameEnvVarName: "mismatched",
+		"KEY":             "remote-value",
+	})
+
+	localDataStore.On("GetReadOnly", *mockContext.Context, "remote").Return(nil, ErrNotFound).Twice()
+	remoteDataStore.On("GetReadOnly", *mockContext.Context, "remote").Return(remoteEnv, nil).Twice()
+
+	manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+	for range 2 {
+		env, err := manager.GetReadOnly(*mockContext.Context, "remote")
+		require.NoError(t, err)
+		require.Equal(t, "remote", env.Getenv(EnvNameEnvVarName))
+		require.Equal(t, "remote-value", env.Getenv("KEY"))
+	}
+
+	localDataStore.AssertNumberOfCalls(t, "GetReadOnly", 2)
+	remoteDataStore.AssertNumberOfCalls(t, "GetReadOnly", 2)
+	localDataStore.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
+	localDataStore.AssertNotCalled(t, "Reload", mock.Anything, mock.Anything)
+	localDataStore.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
+}
+
+func Test_EnvManager_GetReadOnlyDoesNotMaskLocalFailures(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	local := &MockDataStore{}
+	remote := &MockDataStore{}
+	expected := errors.New("invalid local environment")
+	local.On("GetReadOnly", *mockContext.Context, "selected").Return(nil, expected).Once()
+	manager := newManagerForTest(
+		azdcontext.NewAzdContextWithDirectory(t.TempDir()), mockContext.Console, local, remote,
+	)
+	_, err := manager.GetReadOnly(*mockContext.Context, "selected")
+	require.ErrorIs(t, err, expected)
+	remote.AssertNotCalled(t, "GetReadOnly", mock.Anything, mock.Anything)
+	local.AssertExpectations(t)
+}
+
 func Test_EnvManager_Save(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
@@ -454,6 +541,17 @@ func (m *MockDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironme
 }
 
 func (m *MockDataStore) Get(ctx context.Context, name string) (*Environment, error) {
+	args := m.Called(ctx, name)
+
+	env, ok := args.Get(0).(*Environment)
+	if ok {
+		return env, args.Error(1)
+	}
+
+	return nil, args.Error(1)
+}
+
+func (m *MockDataStore) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
 	args := m.Called(ctx, name)
 
 	env, ok := args.Get(0).(*Environment)

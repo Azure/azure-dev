@@ -50,5 +50,10 @@ type DataStore interface {
 	Delete(ctx context.Context, name string) error
 }
 
+// ReadOnlyDataStore loads environment snapshots without persisting, hydrating, or caching them.
+type ReadOnlyDataStore interface {
+	GetReadOnly(ctx context.Context, name string) (*Environment, error)
+}
+
 type LocalDataStore DataStore
 type RemoteDataStore DataStore

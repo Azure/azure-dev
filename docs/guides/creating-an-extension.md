@@ -112,6 +112,9 @@ multiple handlers and workflow steps are resolved.
   from `pkg/azdext/preview`. This [v1beta-only contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
   is experimental. A preview runs on a fresh provider without `Initialize` and must not
   build, deploy, or persist deployment state.
+  Return sanitized text in `Message` and structured data in `Data`; JSON excludes
+  terminal text. Changed and unchanged comparisons succeed; read failures and
+  missing results must fail. The host exposes read-only environment snapshots.
 
 ## Detailed Reference
 

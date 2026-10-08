@@ -120,6 +120,11 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	return env, nil
 }
 
+// GetReadOnly returns a remote environment snapshot without modifying local storage.
+func (sbd *StorageBlobDataStore) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
+	return sbd.Get(ctx, name)
+}
+
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)

@@ -251,6 +251,38 @@ func TestEnvironmentStoreReloadFailurePreservesSharedSettings(t *testing.T) {
 	manager.AssertExpectations(t)
 }
 
+func TestEnvironmentStoreGetReadOnlyDoesNotConfigureStore(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
+	mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", mockEnvironments[0].Name, mockEnvironments[0])
+	cfg := &Config{
+		Name:                  "DEV_CENTER_01",
+		Project:               "Project1",
+		EnvironmentDefinition: "WebApp",
+	}
+	original := *cfg
+	manager := &mockDevCenterManager{}
+	manager.On("Outputs", *mockContext.Context, mock.Anything, mock.Anything).
+		Return(map[string]provisioning.OutputParameter{
+			"KEY": {Type: "string", Value: "value"},
+		}, nil).Once()
+	store := newEnvironmentStoreForTest(t, mockContext, cfg, manager)
+	readOnly, ok := store.(environment.ReadOnlyDataStore)
+	require.True(t, ok)
+	env, err := readOnly.GetReadOnly(*mockContext.Context, mockEnvironments[0].Name)
+	require.NoError(t, err)
+	require.Equal(t, "value", env.Getenv("KEY"))
+	require.Equal(t, original, *cfg)
+	manager.AssertExpectations(t)
+}
+
+func TestEnvironmentStoreGetReadOnlyRejectsMissingConfiguration(t *testing.T) {
+	store := &EnvironmentStore{config: &Config{}}
+	_, err := store.GetReadOnly(t.Context(), "selected")
+	require.ErrorContains(t, err, "DevCenter configuration is not valid")
+}
+
 func Test_EnvironmentStore_Save(t *testing.T) {
 	tests := []struct {
 		name     string

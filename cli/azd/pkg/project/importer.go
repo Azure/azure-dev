@@ -21,6 +21,11 @@ type ImportManager struct {
 	dotNetImporter *DotNetImporter
 }
 
+// DeclaredServiceResolver resolves only services declared directly in the project configuration.
+type DeclaredServiceResolver interface {
+	ServiceStableDeclared(projectConfig *ProjectConfig) ([]*ServiceConfig, error)
+}
+
 func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
@@ -114,6 +119,22 @@ func (im *ImportManager) ServiceStableFiltered(
 
 	setProjectServiceTargets(allServices)
 
+	return FilterServicesByCondition(allServices, targetServiceName, getenv)
+}
+
+// ServiceStableDeclared returns only services declared in the project, ordered by their dependencies.
+// It does not discover or import generated services, which can execute builds or mutate environment state.
+func (im *ImportManager) ServiceStableDeclared(projectConfig *ProjectConfig) ([]*ServiceConfig, error) {
+	return im.sortServicesByDependencies(slices.Collect(maps.Values(projectConfig.Services)), projectConfig)
+}
+
+// FilterServicesByCondition selects enabled services, preserving their supplied order.
+// Explicitly targeting a disabled or unknown service returns an error instead of an empty selection.
+func FilterServicesByCondition(
+	allServices []*ServiceConfig,
+	targetServiceName string,
+	getenv func(string) string,
+) ([]*ServiceConfig, error) {
 	// If targeting a specific service, check if it exists and is enabled
 	if targetServiceName != "" {
 		for _, svc := range allServices {
@@ -134,7 +155,6 @@ func (im *ImportManager) ServiceStableFiltered(
 				return []*ServiceConfig{svc}, nil
 			}
 		}
-		// This shouldn't happen as getTargetServiceName already validates existence
 		return nil, fmt.Errorf("service '%s' not found", targetServiceName)
 	}
 
@@ -222,6 +242,7 @@ func (im *ImportManager) sortServicesByDependencies(
 	}
 
 	for len(queue) > 0 {
+		slices.Sort(queue)
 		// Remove a service with no dependencies
 		current := queue[0]
 		queue = queue[1:]

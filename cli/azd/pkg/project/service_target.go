@@ -143,6 +143,11 @@ type ServiceTargetResourcePreviewer interface {
 	) (*ServiceDeployPreviewResult, error)
 }
 
+// ServiceTargetPreviewCapability optionally reports whether a target supports deployment preview.
+type ServiceTargetPreviewCapability interface {
+	SupportsPreview() bool
+}
+
 func resourceTypeMismatchError(
 	resourceName string,
 	resourceType string,

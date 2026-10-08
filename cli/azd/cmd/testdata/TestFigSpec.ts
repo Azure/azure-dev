@@ -8665,7 +8665,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['--preview'],
-					description: 'Preview changes to services without deploying them.',
+					description: 'Previews supported service deployments without building, publishing, or deploying.',
 				},
 				{
 					name: ['--timeout'],

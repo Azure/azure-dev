@@ -33,6 +33,22 @@ func Test_ServiceResults_Json_Marshal(t *testing.T) {
 	require.NotEmpty(t, string(jsonBytes))
 }
 
+func TestServiceDeployPreviewResultJSON(t *testing.T) {
+	t.Parallel()
+	result := &ServiceDeployPreviewResult{
+		Message: "human-readable preview",
+		Data: map[string]any{
+			"kind":    "preview",
+			"enabled": true,
+			"nested":  map[string]any{"count": 2},
+		},
+	}
+	data, err := json.Marshal(result)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"data":{"kind":"preview","enabled":true,"nested":{"count":2}}}`, string(data))
+	require.NotContains(t, string(data), result.Message)
+}
+
 func TestArtifactCollection(t *testing.T) {
 	// Create a new service context
 	ctx := NewServiceContext()

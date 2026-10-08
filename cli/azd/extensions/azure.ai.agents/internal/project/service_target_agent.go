@@ -195,6 +195,7 @@ type AgentServiceTargetProvider struct {
 	projectServices    map[string]*azdext.ServiceConfig
 	dependencyEnabled  dependencyEnabled
 	dependencyEnv      map[string]string
+	previewReader      func(endpoint, tenantID string) (agentPreviewReader, error)
 }
 
 const (
@@ -2199,6 +2200,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
+	return prepareDeployRequest(serviceConfig, agentDef, azdEnv, extraOptions)
+}
+
+// prepareDeployRequest is the pure normalization shared by deploy and preview.
+// It must not invoke lifecycle hooks, persist defaults, or write terminal output.
+func prepareDeployRequest(
+	serviceConfig *azdext.ServiceConfig,
+	agentDef agent_yaml.ContainerAgent,
+	azdEnv map[string]string,
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
 	// Seed core-expanded values before resolving legacy variables.
 	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
 	if resolvedEnvVars == nil {
@@ -2209,12 +2223,17 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			if _, found := resolvedEnvVars[envVar.Name]; found {
 				continue
 			}
-			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
+			resolved, err := ResolveAgentEnvironmentVariable(
 				envVar.Name,
 				envVar.Value,
 				serviceConfig.GetEnvironment(),
-				azdEnv,
+				func(name string) string { return azdEnv[name] },
 			)
+			if err != nil {
+				// Preserve ordinary deployment's existing malformed-template fallback.
+				resolved = envVar.Value
+			}
+			resolvedEnvVars[envVar.Name] = resolved
 		}
 	}
 
@@ -2227,8 +2246,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
-	WarnOrphanedConfigEnv(serviceConfig)
 
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
@@ -2272,7 +2289,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
 		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
 	}
-	_, err = ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
+	profile, err := ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentRequest,
@@ -2280,6 +2297,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the activity configuration in azure.yaml",
 		)
 	}
+	ensureActivityEndpointAuthSchemeForProfile(request, profile)
 
 	// Default to "responses" when the direct/root-$ref definition omits protocols.
 	protocols := agentDef.Protocols
@@ -4119,28 +4137,6 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	return nil
-}
-
-// resolveEnvironmentVariables expands legacy inline templates.
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
-	name string,
-	value string,
-	serviceEnvironment map[string]string,
-	azdEnv map[string]string,
-) string {
-	resolved, err := ResolveAgentEnvironmentVariable(
-		name,
-		value,
-		serviceEnvironment,
-		func(varName string) string {
-			return azdEnv[varName]
-		},
-	)
-	if err != nil {
-		// If resolution fails, return original value
-		return value
-	}
-	return resolved
 }
 
 // ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.

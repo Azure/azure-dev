@@ -16,6 +16,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // Test the edge case of empty kind
@@ -277,6 +279,70 @@ func Test_ExternalServiceTarget_Preview(t *testing.T) {
 		require.NoError(t, err)
 		assert.Same(t, want, result)
 	})
+
+	t.Run("snapshot expansion preserves source and caller state", func(t *testing.T) {
+		service := &ServiceConfig{
+			Name: "agent", Host: "azure.ai.agent",
+			Environment:          osutil.ExpandableMap{"MODEL": osutil.NewExpandableString("${DEPLOYMENT}")},
+			AdditionalProperties: map[string]any{"$ref": "agent.yaml", "kind": "hosted"},
+		}
+		env := environment.NewWithValues("preview", map[string]string{"DEPLOYMENT": "model"})
+		initialValues := env.Dotenv()
+		called := false
+		target := NewExternalServiceTarget("agent", "azure.ai.agent", nil, nil, nil, nil, lazy.From(env),
+			func(ctx context.Context, config *azdext.ServiceConfig) (*ServiceDeployPreviewResult, error) {
+				called = true
+				require.Equal(t, map[string]string{"MODEL": "model"}, config.Environment)
+				require.Equal(t, "agent.yaml", config.AdditionalProperties.AsMap()["$ref"])
+				return &ServiceDeployPreviewResult{}, nil
+			})
+		_, err := target.(ServiceTargetPreviewer).Preview(t.Context(), service)
+		require.NoError(t, err)
+		require.True(t, called)
+		require.Equal(t, "${DEPLOYMENT}", service.Environment["MODEL"].Raw())
+		require.Equal(t, "agent.yaml", service.AdditionalProperties["$ref"])
+		require.Equal(t, initialValues, env.Dotenv())
+	})
+
+	for _, tc := range []struct {
+		name        string
+		service     *ServiceConfig
+		envErr      error
+		callbackErr error
+		called      bool
+	}{
+		{name: "nil config"},
+		{name: "environment failure", service: serviceConfig, envErr: errors.New("snapshot unavailable")},
+		{name: "invalid expansion", service: &ServiceConfig{
+			Name: "agent", Image: osutil.NewExpandableString("${INVALID"),
+		}},
+		{name: "callback failure", service: serviceConfig, callbackErr: errors.New("provider read failed"), called: true},
+		{name: "unsupported callback", service: serviceConfig, callbackErr: ErrDeployPreviewNotSupported, called: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			env := lazy.NewLazy(func() (*environment.Environment, error) { return nil, tc.envErr })
+			target := NewExternalServiceTarget("agent", "azure.ai.agent",
+				&extensions.Extension{Id: "test.extension", Version: "1.2.3"}, nil, nil, nil, env,
+				func(context.Context, *azdext.ServiceConfig) (*ServiceDeployPreviewResult, error) {
+					called = true
+					return nil, tc.callbackErr
+				})
+			result, err := target.(ServiceTargetPreviewer).Preview(t.Context(), tc.service)
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.Equal(t, tc.called, called)
+			if tc.envErr != nil {
+				require.ErrorIs(t, err, tc.envErr)
+			}
+			if tc.callbackErr != nil {
+				require.ErrorIs(t, err, tc.callbackErr)
+				metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+				require.True(t, ok)
+				require.Equal(t, "service_target.preview", metadata.InvocationEvent())
+			}
+		})
+	}
 }
 
 // ---------- IgnoreFile method coverage for different targets ----------

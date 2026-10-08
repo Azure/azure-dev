@@ -738,19 +738,27 @@ func requireBetaHandlerStopsOnCancel(
 ) {
 	t.Helper()
 
-	invoked := make(chan struct{})
+	invoked := make(chan struct{}, 1)
+	cancellationReceived := make(chan error, 1)
+	envelope := newBetaEventMessageEnvelope()
+	recvCh := make(chan *v1beta.EventMessage, 1)
 	stream := &scriptedBetaEventStream{
 		ctx:    streamCtx,
-		recvCh: make(chan *v1beta.EventMessage),
-		sendFn: func(*v1beta.EventMessage) error {
-			close(invoked)
+		recvCh: recvCh,
+		sendFn: func(msg *v1beta.EventMessage) error {
+			if envelope.GetInnerMessage(msg) != nil {
+				invoked <- struct{}{}
+			} else if err := envelope.GetError(msg); err != nil {
+				cancellationReceived <- err
+				recvCh <- &v1beta.EventMessage{RequestId: msg.GetRequestId()}
+			}
 			return nil
 		},
 	}
 	brokerCtx, stopBroker := context.WithCancel(streamCtx)
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		newBetaEventMessageEnvelope(),
+		envelope,
 		extensionID,
 		nil,
 	)
@@ -781,6 +789,13 @@ func requireBetaHandlerStopsOnCancel(
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("handler did not stop after its invocation was canceled")
+	}
+
+	select {
+	case err := <-cancellationReceived:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("extension handler did not receive cancellation")
 	}
 }
 

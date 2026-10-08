@@ -489,7 +489,7 @@ func TestEventService_createProjectEventHandler_DoesNotCollectFollowUp(t *testin
 			projectConfig, err := service.lazyProject.GetValue()
 			require.NoError(t, err)
 
-			broker, streamCtx, cleanup := createBrokerForEventHandler(
+			broker, cleanup := createBrokerForEventHandler(
 				t,
 				extension.Id,
 				func(msg *azdext.EventMessage) *azdext.EventMessage {
@@ -508,12 +508,7 @@ func TestEventService_createProjectEventHandler_DoesNotCollectFollowUp(t *testin
 			)
 			defer cleanup()
 
-			handler := service.createProjectEventHandler(
-				streamCtx,
-				extension,
-				tt.eventName,
-				broker,
-			)
+			handler := service.createProjectEventHandler(extension, tt.eventName, broker)
 			collector := commandresult.NewFollowUpCollector()
 			collector.Add(commandresult.FollowUp{
 				ExtensionID: extension.Id,

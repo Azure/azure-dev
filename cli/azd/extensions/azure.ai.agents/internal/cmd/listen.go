@@ -21,9 +21,11 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
+	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -39,6 +41,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 
 func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
+	operationReporter := newOperationReporter()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
@@ -47,6 +50,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "provision")
+			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+			if classes := operationProjectClasses(args.Project); len(classes) > 0 {
+				operationReporter.report(ctx, usage, "provision", classes)
+			}
 			return preprovisionHandler(ctx, azdClient, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -54,6 +61,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
+			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
+				operationServiceClass(args.Service),
+			})
 			return predeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
@@ -329,7 +340,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 // isHostedAgentService checks if a service is a hosted (container) agent by
 // resolving its direct/root-$ref definition from the service entry.
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	_, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 	return err == nil && isHosted
 }
 
@@ -365,7 +376,7 @@ func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGro
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+		ca, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 		if err != nil || !isHosted {
 			continue
 		}
@@ -540,7 +551,7 @@ func resolveServiceActivityProfile(
 	if err != nil {
 		return project.ActivityProfile{}, err
 	}
-	agent, isHosted, _, err := project.LoadAgentDefinition(resolvedSvc, projectRoot)
+	agent, isHosted, _, err := project.LoadHostedAgentDefinition(resolvedSvc, projectRoot)
 	if err != nil || !isHosted {
 		return project.ActivityProfile{}, err
 	}
@@ -630,7 +641,7 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		if _, _, _, err := project.LoadAgentDefinition(svc, proj.GetPath()); err != nil {
+		if _, err := project.ValidateAgentServiceDefinition(svc, proj.GetPath()); err != nil {
 			return err
 		}
 	}
@@ -879,7 +890,7 @@ func kindEnvUpdate(
 	// A missing definition is tolerated here: the bicepless inline path lets
 	// users declare prompt agents that carry no hosted definition, and service
 	// targets that truly need the definition surface the error where they read it.
-	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
+	_, isHosted, source, err := project.LoadHostedAgentDefinition(svc, azdProject.Path)
 	if err != nil {
 		// Tolerate only a missing definition: the bicepless inline path lets users
 		// declare prompt agents that carry no hosted definition. Validation and

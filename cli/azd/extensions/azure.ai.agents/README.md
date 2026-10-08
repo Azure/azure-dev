@@ -25,6 +25,7 @@ for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
 [Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
@@ -69,6 +70,15 @@ project routes (prompt, voice, workflow) are excluded.
 
 This records command-path adoption, not whether the service accepted or
 completed work. No prompt, agent name, endpoint, or service response is sent.
+
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
 
 ## Non-interactive automation
 
@@ -719,7 +729,7 @@ services:
             - $.output
           streamSelectors:
             - eventType: response.output_text.delta
-              textField: $.delta
+              textField: delta
 ```
 
 Fields:
@@ -729,9 +739,35 @@ Fields:
 | `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
-| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
-| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
-| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. See [Selectors and field names](#selectors-and-field-names). |
+
+#### Selectors and field names
+
+`inputPaths` and `outputPaths` are **selector expressions**. They support `$` for
+the document root, dotted members, array indexes, and `[*]` wildcards — for
+example `$.messages[*].content`. They are not a full JSONPath implementation.
+
+`textField` is **not** a selector: when provided, it is the non-empty, exact
+**name of a field** on the matched event payload, with no surrounding whitespace.
+Write `delta`, not `$.delta`, `""`, or `" delta"`. It defaults to `delta` when
+omitted.
+
+`eventType` is matched exactly, with no surrounding whitespace, against the value
+of the `type` field *inside* the event's `data:` payload, not against the SSE
+`event:` line. So for a frame like
+
+```text
+data: {"type": "response.output_text.delta", "delta": "Hi"}
+```
+
+the selector is `eventType: response.output_text.delta` with `textField: delta`.
+
+> **Why this matters:** a `textField` that names no field on the payload yields no
+> text, so that event contributes nothing to moderation. A `$.`-prefixed or
+> whitespace-padded value therefore silently disables screening for every frame it
+> applies to. azd rejects those values for this reason.
 
 `invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
 includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
@@ -846,7 +882,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 

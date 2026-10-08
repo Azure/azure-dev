@@ -503,7 +503,7 @@ func TestCheckAgentDefinitionValid_InlineInvalidKind_Fails(
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
-	require.Contains(t, failures[0], "kind must be one of")
+	require.Contains(t, failures[0], "unsupported kind")
 	require.NotContains(t, failures[0], "template.")
 }
 
@@ -940,6 +940,136 @@ func TestCheckAgentDefinitionValid_MultipleFailures_Aggregates(
 	require.Contains(t, strings.Join(failures, "\n"), "agent-b:")
 }
 
+func TestCheckAgentDefinitionValid_AggregatesKindAwareFailures(t *testing.T) {
+	t.Parallel()
+
+	valid, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "hosted-agent",
+	})
+	require.NoError(t, err)
+	invalidPrompt, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "prompt-agent",
+		"instructions": "Help.",
+	})
+	require.NoError(t, err)
+	invalidVoice, err := structpb.NewStruct(map[string]any{
+		"kind":             "voice",
+		"name":             "voice-agent",
+		"model":            map[string]any{"id": "gpt-realtime"},
+		"outputModalities": []any{""},
+	})
+	require.NoError(t, err)
+	unsupportedWorkflow, err := structpb.NewStruct(map[string]any{
+		"kind": "workflow",
+		"name": "workflow-agent",
+	})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, t.TempDir(), map[string]*azdext.ServiceConfig{
+		"hosted-agent": {
+			Name:                 "hosted-agent",
+			Host:                 agentHost,
+			AdditionalProperties: valid,
+		},
+		"prompt-agent": {
+			Name:                 "prompt-agent",
+			Host:                 agentHost,
+			AdditionalProperties: invalidPrompt,
+		},
+		"voice-agent": {
+			Name:                 "voice-agent",
+			Host:                 agentHost,
+			AdditionalProperties: invalidVoice,
+		},
+		"workflow-agent": {
+			Name:                 "workflow-agent",
+			Host:                 agentHost,
+			AdditionalProperties: unsupportedWorkflow,
+		},
+	})
+
+	require.Equal(t, StatusFail, got.Status)
+	failures, ok := got.Details["failures"].([]string)
+	require.True(t, ok)
+	require.Len(t, failures, 3)
+	require.Contains(t, failures[0], "prompt-agent: prompt agent requires a non-empty model")
+	require.Contains(t, failures[1], "voice-agent: agent service definition is not valid")
+	require.Contains(t, failures[2], `workflow-agent: agent service "workflow-agent" declares unsupported kind "workflow"`)
+	require.Equal(t, []string{"hosted-agent"}, got.Details["validatedServices"])
+	require.Equal(t, map[string]string{
+		"prompt-agent":   exterrors.CodeInvalidAgentManifest,
+		"voice-agent":    exterrors.CodeInvalidAgentManifest,
+		"workflow-agent": exterrors.CodeUnsupportedAgentKind,
+	}, got.Details["failureCodes"])
+}
+
+func TestCheckAgentDefinitionValid_RejectsHostedDeployPrechecks(t *testing.T) {
+	t.Parallel()
+
+	invalidRegistry, err := structpb.NewStruct(map[string]any{
+		"kind":                 "hosted",
+		"name":                 "registry-agent",
+		"registryConnectionId": "private-registry",
+	})
+	require.NoError(t, err)
+	invalidEnvironment, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "environment-agent",
+	})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, t.TempDir(), map[string]*azdext.ServiceConfig{
+		"environment-agent": {
+			Name:                 "environment-agent",
+			Host:                 agentHost,
+			Environment:          map[string]string{"invalid-name": "value"},
+			AdditionalProperties: invalidEnvironment,
+		},
+		"registry-agent": {
+			Name:                 "registry-agent",
+			Host:                 agentHost,
+			AdditionalProperties: invalidRegistry,
+		},
+	})
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Empty(t, got.Details["validatedServices"])
+	require.Equal(t, map[string]string{
+		"environment-agent": exterrors.CodeInvalidEnvironmentVariableName,
+		"registry-agent":    exterrors.CodeInvalidServiceConfig,
+	}, got.Details["failureCodes"])
+}
+
+func TestCheckAgentDefinitionValid_RejectsVoiceActivityConfig(t *testing.T) {
+	t.Parallel()
+
+	invalidActivity, err := structpb.NewStruct(map[string]any{
+		"kind":  "voice",
+		"name":  "voice-agent",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"activity": map[string]any{
+			"useCase": "digital_worker",
+		},
+	})
+	require.NoError(t, err)
+
+	got := runAgentDefinitionCheck(t, t.TempDir(), map[string]*azdext.ServiceConfig{
+		"voice-agent": {
+			Name:                 "voice-agent",
+			Host:                 agentHost,
+			AdditionalProperties: invalidActivity,
+		},
+	})
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Empty(t, got.Details["validatedServices"])
+	require.Equal(t, map[string]string{
+		"voice-agent": exterrors.CodeInvalidAgentManifest,
+	}, got.Details["failureCodes"])
+}
+
 func TestSortAgentServices(t *testing.T) {
 	t.Parallel()
 
@@ -1029,7 +1159,7 @@ func TestCheckAgentDefinitionValid_MissingKind_Fails(t *testing.T) {
 	failures, ok := got.Details["failures"].([]string)
 	require.True(t, ok)
 	require.Len(t, failures, 1)
-	require.Contains(t, failures[0], "agent definition not found")
+	require.Contains(t, failures[0], "requires a kind")
 }
 
 func TestCheckAgentDefinitionValid_InvalidKind_Fails(t *testing.T) {

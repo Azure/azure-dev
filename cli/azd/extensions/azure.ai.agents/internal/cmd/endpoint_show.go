@@ -83,7 +83,7 @@ func runEndpointShow(
 	}
 
 	// Resolve the direct/root-$ref service definition to get the agent name.
-	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
+	agentDef, _, source, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return exterrors.ValidationFromError(
 			err,

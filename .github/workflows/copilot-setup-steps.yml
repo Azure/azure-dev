@@ -38,7 +38,7 @@ jobs:
       - name: Install gh-aw extension
         uses: github/gh-aw-actions/setup-cli@7c1d4b7ab319216ef4a931cc3dcb0d7245144ff1 # v0.90.1
         with:
-          version: v0.89.22
+          version: v0.90.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0

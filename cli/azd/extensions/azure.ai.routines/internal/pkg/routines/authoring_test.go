@@ -4,6 +4,7 @@
 package routines
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -140,4 +141,42 @@ action:
 	require.NoError(t, err)
 	assert.Equal(t, "0 9 * * *", yamlRoutine.Triggers["default"].CronExpression)
 	assert.Equal(t, "agent", yamlRoutine.Action.AgentName)
+}
+
+func TestParseAuthoringYAML_NumericTriggerNameUsesCamelCaseValidation(t *testing.T) {
+	t.Parallel()
+
+	routine, err := ParseAuthoringYAML([]byte(`
+triggers:
+  1:
+    type: schedule
+    cronExpression: "0 9 * * *"
+`))
+	require.NoError(t, err)
+	assert.Equal(t, "0 9 * * *", routine.Triggers["1"].CronExpression)
+
+	_, err = ParseAuthoringYAML([]byte(`
+triggers:
+  1:
+    type: schedule
+    cron_expression: "0 9 * * *"
+`))
+	keyErr, ok := errors.AsType[*AuthoringKeyError](err)
+	require.True(t, ok)
+	assert.Equal(t, `triggers["1"].cron_expression`, keyErr.Path)
+	assert.Equal(t, "cronExpression", keyErr.Replacement)
+}
+
+func TestParseAuthoringYAML_MixedKeyActionRejectsRetiredProperty(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseAuthoringYAML([]byte(`
+action:
+  type: invoke_agent_responses_api
+  1: ignored
+  agent_name: agent
+`))
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "action.agent_name")
+	assert.ErrorContains(t, err, "agentName")
 }

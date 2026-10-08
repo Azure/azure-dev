@@ -180,6 +180,24 @@ func TestParseRoutineServiceConfig_RejectsSnakeCaseFileRef(t *testing.T) {
 	require.ErrorContains(t, err, "agentName")
 }
 
+func TestParseRoutineServiceConfig_RejectsSnakeCaseUnderNumericFileRefTrigger(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "routine.yaml"),
+		[]byte("triggers:\n  1:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n"),
+		0o600,
+	))
+
+	_, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name:                 "nightly",
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./routine.yaml"}),
+	}, root)
+	require.ErrorContains(t, err, "cron_expression")
+	require.ErrorContains(t, err, "cronExpression")
+}
+
 func TestParseRoutineServiceConfig_RejectsSnakeCaseOverlay(t *testing.T) {
 	t.Parallel()
 

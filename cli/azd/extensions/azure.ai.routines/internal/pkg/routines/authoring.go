@@ -4,6 +4,7 @@
 package routines
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -107,31 +108,62 @@ func AuthoringMap(routine *Routine) (map[string]any, error) {
 // routine property locations. Pass-through action input and trigger parameters
 // are intentionally not inspected.
 func ValidateAuthoringKeys(values map[string]any) error {
-	if triggers, ok := values["triggers"].(map[string]any); ok {
-		for _, triggerName := range slices.Sorted(maps.Keys(triggers)) {
-			trigger, ok := triggers[triggerName].(map[string]any)
-			if !ok {
-				continue
-			}
-			for _, key := range slices.Sorted(maps.Keys(legacyTriggerAuthoringKeys)) {
-				if _, found := trigger[key]; found {
-					return legacyAuthoringKeyError(
-						fmt.Sprintf("triggers[%q].%s", triggerName, key),
-						legacyTriggerAuthoringKeys[key],
-					)
-				}
+	for _, trigger := range authoringMappingEntries(values["triggers"]) {
+		for _, key := range slices.Sorted(maps.Keys(legacyTriggerAuthoringKeys)) {
+			if _, found := authoringMappingValue(trigger.Value, key); found {
+				return legacyAuthoringKeyError(
+					fmt.Sprintf("triggers[%q].%s", trigger.Key, key),
+					legacyTriggerAuthoringKeys[key],
+				)
 			}
 		}
 	}
 
-	if action, ok := values["action"].(map[string]any); ok {
-		for _, key := range slices.Sorted(maps.Keys(legacyActionAuthoringKeys)) {
-			if _, found := action[key]; found {
-				return legacyAuthoringKeyError("action."+key, legacyActionAuthoringKeys[key])
-			}
+	action := values["action"]
+	for _, key := range slices.Sorted(maps.Keys(legacyActionAuthoringKeys)) {
+		if _, found := authoringMappingValue(action, key); found {
+			return legacyAuthoringKeyError("action."+key, legacyActionAuthoringKeys[key])
 		}
 	}
 	return nil
+}
+
+type authoringMappingEntry struct {
+	Key   string
+	Value any
+}
+
+func authoringMappingEntries(value any) []authoringMappingEntry {
+	var entries []authoringMappingEntry
+	switch mapping := value.(type) {
+	case map[string]any:
+		entries = make([]authoringMappingEntry, 0, len(mapping))
+		for key, value := range mapping {
+			entries = append(entries, authoringMappingEntry{Key: key, Value: value})
+		}
+	case map[any]any:
+		entries = make([]authoringMappingEntry, 0, len(mapping))
+		for key, value := range mapping {
+			entries = append(entries, authoringMappingEntry{Key: fmt.Sprint(key), Value: value})
+		}
+	}
+	slices.SortFunc(entries, func(a, b authoringMappingEntry) int {
+		return cmp.Compare(a.Key, b.Key)
+	})
+	return entries
+}
+
+func authoringMappingValue(value any, key string) (any, bool) {
+	switch mapping := value.(type) {
+	case map[string]any:
+		value, found := mapping[key]
+		return value, found
+	case map[any]any:
+		value, found := mapping[key]
+		return value, found
+	default:
+		return nil, false
+	}
 }
 
 func legacyAuthoringKeyError(path, replacement string) error {

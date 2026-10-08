@@ -89,6 +89,11 @@ func TestReadRoutineManifest_RejectsSnakeCaseJSONAndYAML(t *testing.T) {
 			contents: "triggers:\n  default:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n",
 			wantKey:  "cron_expression", wantNew: "cronExpression",
 		},
+		{
+			name: "yaml numeric trigger", extension: ".yaml",
+			contents: "triggers:\n  1:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n",
+			wantKey:  "cron_expression", wantNew: "cronExpression",
+		},
 	}
 
 	for _, test := range tests {

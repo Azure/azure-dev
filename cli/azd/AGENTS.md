@@ -488,6 +488,13 @@ When creating or modifying GitHub Actions workflows:
 - **Prefer Azure DevOps pipelines** for jobs that need secrets or Azure credentials — the team uses internal ADO pipelines for authenticated workloads in this public repo
 - **No placeholder steps**: Don't add workflow steps that echo "TODO" or list directories without producing output. If downstream steps depend on generated files, implement the generation or remove the dependency
 
+### GitHub authentication in Azure DevOps
+
+When adding or changing GitHub API access in a pipeline:
+
+- Always use the shared [GitHub App login template](../../eng/common/pipelines/templates/steps/login-to-github.yml) instead of personal access tokens. Generate the token in the job that needs it and map `GH_TOKEN` explicitly to the consuming task. See [publish-cli-winget.yml](../../eng/pipelines/templates/steps/publish-cli-winget.yml) for an example.
+- Check the documentation or source for the exact tool version in use. Some tools recommend passing tokens through an environment variable or credential store instead of a command-line argument because arguments may be recorded in logs or diagnostic files.
+
 ## Copilot Code Review
 
 When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd-specific criteria.

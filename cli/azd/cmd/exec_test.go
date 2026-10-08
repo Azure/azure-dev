@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -397,6 +398,30 @@ func TestExecAction_ExplicitShellExpressionBypassesInvalidPathProbe(t *testing.T
 			shell:  "cmd",
 		},
 		args: []string{"echo success>nul&rem deploy.cmd"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
+func TestExecAction_ExplicitShellPreservesExistingFilePrecedence(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows permits ampersands in filenames")
+	}
+
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "deploy&test.cmd")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("@exit /b 0\r\n"), 0o600))
+	t.Chdir(tempDir)
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{filepath.Base(scriptPath)},
 	}
 
 	_, err := action.Run(t.Context())

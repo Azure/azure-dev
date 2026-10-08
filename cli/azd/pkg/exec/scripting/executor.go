@@ -55,6 +55,7 @@ func (e *Executor) Execute(ctx context.Context, scriptPath string) error {
 	if err != nil {
 		return &ValidationError{
 			Field: "scriptPath", Reason: fmt.Sprintf("invalid path: %v", err),
+			Err: err,
 		}
 	}
 
@@ -65,6 +66,7 @@ func (e *Executor) Execute(ctx context.Context, scriptPath string) error {
 		}
 		return &ValidationError{
 			Field: "scriptPath", Reason: fmt.Sprintf("cannot access: %v", err),
+			Err: err,
 		}
 	}
 	if info.IsDir() {

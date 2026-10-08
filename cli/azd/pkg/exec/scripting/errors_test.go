@@ -4,6 +4,7 @@
 package scripting
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,6 +19,17 @@ func TestValidationError_Error(t *testing.T) {
 		"validation error for scriptPath: cannot be empty",
 		err.Error(),
 	)
+}
+
+func TestValidationError_Unwrap(t *testing.T) {
+	cause := errors.New("cause")
+	err := &ValidationError{
+		Field:  "scriptPath",
+		Reason: "cannot access",
+		Err:    cause,
+	}
+
+	assert.ErrorIs(t, err, cause)
 }
 
 func TestScriptNotFoundError_Error(t *testing.T) {

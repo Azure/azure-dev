@@ -159,24 +159,23 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Explicit shell syntax is unambiguously inline. Bypass file probing because
-	// Windows rejects operator characters as invalid filenames before fallback.
-	if a.flags.shell != "" && hasShellSyntaxBeforePathBoundary(scriptInput) {
+	// Try file execution first; fall back based on argument shape.
+	err = exec.Execute(ctx, scriptInput)
+	if a.flags.shell != "" &&
+		hasShellSyntaxBeforePathBoundary(scriptInput) &&
+		isInvalidFilenameError(err) {
+		// Windows rejects shell operators as invalid filename characters.
 		err = exec.ExecuteInline(ctx, scriptInput)
-	} else {
-		// Try file execution first; fall back based on argument shape.
-		err = exec.Execute(ctx, scriptInput)
-		if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
-			// Guard ambiguous path-like input unless --shell explicitly
-			// indicates inline execution.
-			if shouldFailOnMissingScript(scriptInput, a.flags.shell) {
-				return nil, err
-			}
-			if len(scriptArgs) > 0 && a.flags.shell == "" {
-				err = exec.ExecuteDirect(ctx, scriptInput, scriptArgs)
-			} else {
-				err = exec.ExecuteInline(ctx, scriptInput)
-			}
+	} else if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
+		// Guard ambiguous path-like input unless --shell explicitly
+		// indicates inline execution.
+		if shouldFailOnMissingScript(scriptInput, a.flags.shell) {
+			return nil, err
+		}
+		if len(scriptArgs) > 0 && a.flags.shell == "" {
+			err = exec.ExecuteDirect(ctx, scriptInput, scriptArgs)
+		} else {
+			err = exec.ExecuteInline(ctx, scriptInput)
 		}
 	}
 	if err != nil {

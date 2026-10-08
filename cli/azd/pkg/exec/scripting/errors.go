@@ -9,10 +9,16 @@ import "fmt"
 type ValidationError struct {
 	Field  string
 	Reason string
+	Err    error
 }
 
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("validation error for %s: %s", e.Field, e.Reason)
+}
+
+// Unwrap returns the underlying validation cause, if any.
+func (e *ValidationError) Unwrap() error {
+	return e.Err
 }
 
 // ScriptNotFoundError indicates that a script file could not be found.

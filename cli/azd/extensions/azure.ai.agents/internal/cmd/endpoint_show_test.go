@@ -171,6 +171,7 @@ func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 			client,
 			svc,
 			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "locally-edited-name"},
+			"",
 			"json",
 		)
 	})
@@ -220,6 +221,7 @@ func TestRunPromptEndpointShowRequiresCompleteDeployment(t *testing.T) {
 				client,
 				&azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost},
 				project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "prompt-agent"},
+				"",
 				"json",
 			)
 
@@ -249,6 +251,7 @@ func TestRunVoiceEndpointShowUsesDeployedVoiceEndpoint(t *testing.T) {
 			client,
 			svc,
 			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindVoice, Name: "authored-voice"},
+			"",
 			"table",
 		)
 	})
@@ -274,6 +277,7 @@ func TestRunVoiceEndpointShowRequiresDeployedVoiceEndpoint(t *testing.T) {
 		client,
 		svc,
 		project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPromptVoice, Name: "voice-agent"},
+		"",
 		"json",
 	)
 
@@ -282,6 +286,95 @@ func TestRunVoiceEndpointShowRequiresDeployedVoiceEndpoint(t *testing.T) {
 	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
 	require.Contains(t, localErr.Message, "AGENT_VOICE_ENDPOINT")
 	require.Contains(t, localErr.Suggestion, "azd deploy")
+}
+
+func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
+	tests := []struct {
+		name            string
+		serviceName     string
+		definition      map[string]any
+		defaultValues   map[string]string
+		selectedValues  map[string]string
+		wantEndpoint    string
+		defaultEndpoint string
+	}{
+		{
+			name:        "prompt",
+			serviceName: "assistant",
+			definition: map[string]any{
+				"kind":         "prompt",
+				"name":         "assistant",
+				"model":        "gpt-5-mini",
+				"instructions": "Help.",
+			},
+			defaultValues: map[string]string{
+				"AGENT_ASSISTANT_ENDPOINT": "https://default.example/responses",
+				"AGENT_ASSISTANT_VERSION":  "1",
+			},
+			selectedValues: map[string]string{
+				"AGENT_ASSISTANT_ENDPOINT": "https://staging.example/responses",
+				"AGENT_ASSISTANT_VERSION":  "2",
+			},
+			wantEndpoint:    "https://staging.example/responses",
+			defaultEndpoint: "https://default.example/responses",
+		},
+		{
+			name:        "voice",
+			serviceName: "voice",
+			definition: map[string]any{
+				"kind":  "voice",
+				"name":  "voice",
+				"model": map[string]any{"id": "gpt-realtime"},
+			},
+			defaultValues: map[string]string{
+				"AGENT_VOICE_ENDPOINT": "wss://default.example/voice",
+			},
+			selectedValues: map[string]string{
+				"AGENT_VOICE_ENDPOINT": "wss://staging.example/voice",
+			},
+			wantEndpoint:    "wss://staging.example/voice",
+			defaultEndpoint: "wss://default.example/voice",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			props, err := structpb.NewStruct(test.definition)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name:                 test.serviceName,
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			}
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "default"},
+				values: map[string]map[string]string{
+					"default": test.defaultValues,
+					"staging": test.selectedValues,
+				},
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					svc.Name: svc,
+				},
+			}}, &helpersPromptServer{}, env)
+
+			output := captureEndpointOutput(t, func() error {
+				return runEndpointShow(
+					t.Context(),
+					client,
+					&endpointShowFlags{name: svc.Name, output: "json"},
+					&azdext.ExtensionContext{Environment: "staging", NoPrompt: true},
+				)
+			})
+
+			require.Contains(t, output, test.wantEndpoint)
+			require.NotContains(t, output, test.defaultEndpoint)
+			require.Equal(t, 0, env.getCurrentCalls)
+			require.Equal(t, 1, env.getValuesCalls)
+		})
+	}
 }
 
 func TestRunEndpointShowRejectsWorkflowKind(t *testing.T) {

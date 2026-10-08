@@ -375,7 +375,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 			assert.Equal(t, "${AZURE_RESOURCE_GROUP}", tfvars["resource_group_name"])
 			assert.Equal(t, "${AZURE_ENV_NAME}", tfvars["environment_name"])
 			assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", tfvars["foundry_project_name"])
-			assert.Equal(t, "${AZURE_PRINCIPAL_ID}", tfvars["principal_id"])
+			assert.NotContains(t, tfvars, "principal_id")
 			assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvars["resource_token_salt"])
 			assert.NotContains(t, tfvars, "connections")
 			assert.NotContains(t, tfvars, "connectionCredentials")

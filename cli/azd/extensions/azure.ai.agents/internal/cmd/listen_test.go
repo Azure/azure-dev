@@ -1008,6 +1008,33 @@ func TestPredeployAcceptsValidDirectAndRootRefServices(t *testing.T) {
 	require.Equal(t, map[string]any{"custom": "preserved"}, nonAgentConfig.AsMap())
 }
 
+func TestPredeployAgentRBACRunsPerService(t *testing.T) {
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+
+	prompt := &azdext.ServiceConfig{
+		Name: "assistant",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "prompt", "name": "assistant", "model": "gpt-4.1", "instructions": "Help the user.",
+		}),
+	}
+	hosted := &azdext.ServiceConfig{
+		Name: "worker", Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", "name": "worker"}),
+	}
+	proj := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+		"assistant": prompt, "worker": hosted,
+	}}
+	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: prompt}))
+	firstCalls := envServer.getCurrentCalls
+	require.GreaterOrEqual(t, firstCalls, 2)
+	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: hosted}))
+	require.GreaterOrEqual(t, envServer.getCurrentCalls, firstCalls+2)
+}
+
 func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {
 	tests := []struct {
 		name           string

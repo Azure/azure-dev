@@ -105,15 +105,9 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleFoundryOwner, // c883944f-...: includes Microsoft.Authorization/roleAssignments/write
 }
 
-// CheckDeveloperRBAC verifies that the currently authenticated developer has the required
-// RBAC roles for deploying hosted agents:
-//   - Foundry User on the Foundry Project (to create and run agents)
-//   - Container Registry Tasks Contributor OR Container Registry Repository Contributor
-//     on the ACR (to build images via remote build and push container images)
-//
-// Missing roles are reported as warnings rather than errors so that deployment can proceed.
-// The developer may need to obtain the missing roles separately for full functionality.
-func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
+// CheckDeveloperRBAC checks project access and hosted-only permissions when needed.
+// Missing roles are warnings so deployment can proceed when access is managed externally.
+func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHosted bool) error {
 	envClient := azdClient.Environment()
 	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -185,21 +179,17 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	principalID := userProfile.Id
 	fmt.Printf("  Developer: %s (%s)\n", userProfile.DisplayName, principalID)
 
-	// Check 1: Foundry User (or superset role) on Foundry Project scope.
+	// Foundry User (or a superset) is sufficient to use the agent data plane.
 	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check AI User role: %s\n", err)
 	} else if !hasAIAccess {
-		// Attempt to auto-assign Foundry User to the developer. This succeeds when the
-		// developer has Owner, User Access Administrator, or RBAC Administrator.
 		fmt.Println("  Foundry User role not found — attempting to auto-assign...")
 		if _, assignErr := assignRoleToIdentity(
 			ctx, cred, principalID, roleAzureAIUser,
 			"Foundry User → Foundry Project", info.ProjectScope,
 			armauthorization.PrincipalTypeUser,
 		); assignErr != nil {
-			// Warn rather than fail hard on 403 — deployment can proceed, but the developer
-			// may not be able to interact with agents until this role is assigned.
 			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
 				respErr.StatusCode == http.StatusForbidden {
 				fmt.Printf("%s\n", output.WithWarningFormat(
@@ -219,6 +209,9 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		}
 	} else {
 		fmt.Println("  ✓ Foundry User on Foundry Project")
+	}
+	if !hasHosted {
+		return nil
 	}
 
 	// Check 2: roleAssignments/write capability on Foundry Project scope.

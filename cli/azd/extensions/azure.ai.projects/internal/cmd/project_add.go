@@ -2024,7 +2024,6 @@ func terraformEjectionVariables(
 		"resource_group_name":  resourceGroupName,
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
-		"principal_id":         "${AZURE_PRINCIPAL_ID}",
 		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
 		"deployments":          deployments,
 	}, includeAcr, nil

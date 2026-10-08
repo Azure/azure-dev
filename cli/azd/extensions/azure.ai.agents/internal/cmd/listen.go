@@ -259,15 +259,6 @@ func updateLegacyProjectDeployments(
 	)
 }
 
-// developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
-// process lifetime. Service-level predeploy handlers fire per-service, but the
-// RBAC pre-flight check is project-scoped and idempotent — running it once is
-// sufficient and avoids duplicate ARM/Graph calls and noisy output.
-var (
-	developerRBACOnce sync.Once
-	developerRBACErr  error
-)
-
 // duplicateAgentNameWarnOnce ensures the duplicate agent-name warning is emitted
 // at most once per extension process lifetime. Service-level predeploy handlers
 // fire per-service, but the check is project-scoped — a single pass over every
@@ -318,19 +309,14 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// Capture the current session so it can be resumed on the newly deployed
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
-	if isHostedAgentService(svc, args.Project) {
+	hosted := isHostedAgentService(svc, args.Project)
+	if hosted {
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	// Run developer RBAC pre-flight checks only for hosted agent deployments.
-	// Guarded by sync.Once since this handler fires per-service but the check
-	// is project-scoped.
-	if isHostedAgentService(svc, args.Project) {
-		developerRBACOnce.Do(func() {
-			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
-		})
-		if developerRBACErr != nil {
-			return developerRBACErr
+	if hosted || isPromptAgentService(svc, args.Project) {
+		if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
+			return err
 		}
 	}
 

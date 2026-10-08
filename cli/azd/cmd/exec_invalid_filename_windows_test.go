@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func TestIsInvalidFilenameError(t *testing.T) {
+func TestIsFileProbeFallbackError(t *testing.T) {
 	t.Run("invalid name", func(t *testing.T) {
 		err := &scripting.ValidationError{
 			Field: "scriptPath",
@@ -24,7 +24,33 @@ func TestIsInvalidFilenameError(t *testing.T) {
 			},
 		}
 
-		assert.True(t, isInvalidFilenameError(err))
+		assert.True(t, isFileProbeFallbackError(err))
+	})
+
+	t.Run("filename too long", func(t *testing.T) {
+		err := &scripting.ValidationError{
+			Field: "scriptPath",
+			Err: &os.PathError{
+				Op:   "CreateFile",
+				Path: "long.cmd",
+				Err:  windows.ERROR_FILENAME_EXCED_RANGE,
+			},
+		}
+
+		assert.True(t, isFileProbeFallbackError(err))
+	})
+
+	t.Run("buffer overflow", func(t *testing.T) {
+		err := &scripting.ValidationError{
+			Field: "scriptPath",
+			Err: &os.PathError{
+				Op:   "GetFullPathName",
+				Path: "long.cmd",
+				Err:  windows.ERROR_BUFFER_OVERFLOW,
+			},
+		}
+
+		assert.True(t, isFileProbeFallbackError(err))
 	})
 
 	t.Run("access denied", func(t *testing.T) {
@@ -37,10 +63,10 @@ func TestIsInvalidFilenameError(t *testing.T) {
 			},
 		}
 
-		assert.False(t, isInvalidFilenameError(err))
+		assert.False(t, isFileProbeFallbackError(err))
 	})
 
 	t.Run("script not found", func(t *testing.T) {
-		assert.False(t, isInvalidFilenameError(&scripting.ScriptNotFoundError{Path: "deploy.cmd"}))
+		assert.False(t, isFileProbeFallbackError(&scripting.ScriptNotFoundError{Path: "deploy.cmd"}))
 	})
 }

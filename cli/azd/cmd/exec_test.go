@@ -668,3 +668,46 @@ func TestExecAction_ExplicitShellClearInvalidPathDoesNotFallback(t *testing.T) {
 	_, inline := errors.AsType[*internal.ExitCodeError](err)
 	assert.False(t, inline, "clear script paths must not fall back to inline execution")
 }
+
+func TestExecAction_ExplicitShellLongCommandBypassesPathProbe(t *testing.T) {
+	shell := "bash"
+	inlineCommand := ": " + strings.Repeat("x", 300)
+	missingScript := strings.Repeat("x", 300) + ".sh"
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		inlineCommand = "rem " + strings.Repeat("x", 300)
+		missingScript = strings.Repeat("x", 300) + ".cmd"
+	}
+
+	t.Run("inline command", func(t *testing.T) {
+		action := &execAction{
+			env:             environment.NewWithValues("test", nil),
+			keyvaultService: &mockExecKeyVaultService{},
+			flags: &execFlags{
+				global: &internal.GlobalCommandOptions{},
+				shell:  shell,
+			},
+			args: []string{inlineCommand},
+		}
+
+		_, err := action.Run(t.Context())
+		require.NoError(t, err)
+	})
+
+	t.Run("clear missing script", func(t *testing.T) {
+		action := &execAction{
+			env:             environment.NewWithValues("test", nil),
+			keyvaultService: &mockExecKeyVaultService{},
+			flags: &execFlags{
+				global: &internal.GlobalCommandOptions{},
+				shell:  shell,
+			},
+			args: []string{missingScript},
+		}
+
+		_, err := action.Run(t.Context())
+		require.Error(t, err)
+		_, inline := errors.AsType[*internal.ExitCodeError](err)
+		assert.False(t, inline, "clear long script paths must not fall back to inline execution")
+	})
+}

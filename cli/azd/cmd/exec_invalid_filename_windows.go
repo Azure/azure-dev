@@ -10,6 +10,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func isInvalidFilenameError(err error) bool {
-	return errors.Is(err, windows.ERROR_INVALID_NAME)
+func isFileProbeFallbackError(err error) bool {
+	return errors.Is(err, windows.ERROR_INVALID_NAME) ||
+		errors.Is(err, windows.ERROR_FILENAME_EXCED_RANGE) ||
+		errors.Is(err, windows.ERROR_BUFFER_OVERFLOW)
 }

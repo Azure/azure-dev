@@ -6,11 +6,29 @@ package cmd
 
 import (
 	"errors"
+	"os"
+	"syscall"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec/scripting"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsInvalidFilenameError(t *testing.T) {
-	assert.False(t, isInvalidFilenameError(errors.New("invalid filename")))
+func TestIsFileProbeFallbackError(t *testing.T) {
+	t.Run("filename too long", func(t *testing.T) {
+		err := &scripting.ValidationError{
+			Field: "scriptPath",
+			Err: &os.PathError{
+				Op:   "stat",
+				Path: "long.sh",
+				Err:  syscall.ENAMETOOLONG,
+			},
+		}
+
+		assert.True(t, isFileProbeFallbackError(err))
+	})
+
+	t.Run("other error", func(t *testing.T) {
+		assert.False(t, isFileProbeFallbackError(errors.New("invalid filename")))
+	})
 }

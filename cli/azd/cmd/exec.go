@@ -161,12 +161,8 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Try file execution first; fall back based on argument shape.
 	err = exec.Execute(ctx, scriptInput)
-	if a.flags.shell != "" &&
-		!shouldFailOnMissingScript(scriptInput, a.flags.shell) &&
-		isInvalidFilenameError(err) {
-		// Windows rejects shell operators as invalid filename characters.
-		err = exec.ExecuteInline(ctx, scriptInput)
-	} else if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
+	if _, notFound := errors.AsType[*scripting.ScriptNotFoundError](err); notFound ||
+		isFileProbeFallbackError(err) {
 		// Guard ambiguous path-like input unless --shell explicitly
 		// indicates inline execution.
 		if shouldFailOnMissingScript(scriptInput, a.flags.shell) {

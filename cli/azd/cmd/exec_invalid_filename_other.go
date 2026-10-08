@@ -4,6 +4,11 @@
 
 package cmd
 
-func isInvalidFilenameError(error) bool {
-	return false
+import (
+	"errors"
+	"syscall"
+)
+
+func isFileProbeFallbackError(err error) bool {
+	return errors.Is(err, syscall.ENAMETOOLONG)
 }

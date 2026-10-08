@@ -192,7 +192,7 @@ func TestAgentDefinitionFromServiceRejectsMixedDirectAndConfig(t *testing.T) {
 	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 }
 
-func TestLoadAgentDefinitionRejectsNonEmptyDefinitionPath(t *testing.T) {
+func TestLoadHostedAgentDefinitionRejectsNonEmptyDefinitionPath(t *testing.T) {
 	for _, value := range []string{"missing.yaml", "   "} {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv("AGENT_DEFINITION_PATH", value)
@@ -203,7 +203,7 @@ func TestLoadAgentDefinitionRejectsNonEmptyDefinitionPath(t *testing.T) {
 				Host:                 "azure.ai.agent",
 				AdditionalProperties: props,
 			}
-			_, _, _, err = LoadAgentDefinition(svc, t.TempDir())
+			_, _, _, err = LoadHostedAgentDefinition(svc, t.TempDir())
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
@@ -217,7 +217,7 @@ func TestLoadAgentDefinitionRejectsNonEmptyDefinitionPath(t *testing.T) {
 	}
 }
 
-func TestLoadAgentDefinitionTreatsEmptyDefinitionPathAsUnset(t *testing.T) {
+func TestLoadHostedAgentDefinitionTreatsEmptyDefinitionPathAsUnset(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
 	require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestLoadAgentDefinitionTreatsEmptyDefinitionPathAsUnset(t *testing.T) {
 		Host:                 "azure.ai.agent",
 		AdditionalProperties: props,
 	}
-	_, isHosted, _, err := LoadAgentDefinition(svc, t.TempDir())
+	_, isHosted, _, err := LoadHostedAgentDefinition(svc, t.TempDir())
 	require.NoError(t, err)
 	require.True(t, isHosted)
 }
@@ -361,7 +361,7 @@ func TestResolveAgentEnvironmentVariable(t *testing.T) {
 	})
 }
 
-func TestLoadAgentDefinition_UnrelatedInlineRejectsConfig(
+func TestLoadHostedAgentDefinition_UnrelatedInlineRejectsConfig(
 	t *testing.T,
 ) {
 	config, err := AgentDefinitionToServiceProperties(
@@ -382,7 +382,7 @@ func TestLoadAgentDefinition_UnrelatedInlineRejectsConfig(
 		Config:               config,
 	}
 
-	_, _, _, err = LoadAgentDefinition(
+	_, _, _, err = LoadHostedAgentDefinition(
 		svc,
 		t.TempDir(),
 	)
@@ -563,7 +563,7 @@ func TestAgentDefinitionFromService_InvalidDefinition(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestLoadAgentDefinition_ResolvedKindValidation(t *testing.T) {
+func TestLoadHostedAgentDefinition_ResolvedKindValidation(t *testing.T) {
 	tests := []struct {
 		name       string
 		kind       agent_yaml.AgentKind
@@ -618,7 +618,7 @@ func TestLoadAgentDefinition_ResolvedKindValidation(t *testing.T) {
 				AdditionalProperties: props,
 			}
 
-			_, isHosted, source, err := LoadAgentDefinition(
+			_, isHosted, source, err := LoadHostedAgentDefinition(
 				svc,
 				projectRoot,
 			)
@@ -639,7 +639,7 @@ func TestLoadAgentDefinition_ResolvedKindValidation(t *testing.T) {
 	}
 }
 
-func TestLoadAgentDefinition_ReportsCanonicalPathsForDirectAndRootRef(t *testing.T) {
+func TestLoadHostedAgentDefinition_ReportsCanonicalPathsForDirectAndRootRef(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]any
@@ -690,7 +690,7 @@ func TestLoadAgentDefinition_ReportsCanonicalPathsForDirectAndRootRef(t *testing
 					AdditionalProperties: props,
 				}
 
-				_, _, _, err = LoadAgentDefinition(svc, projectRoot)
+				_, _, _, err = LoadHostedAgentDefinition(svc, projectRoot)
 
 				localErr, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok, "expected LocalError, got %T: %v", err, err)
@@ -702,7 +702,7 @@ func TestLoadAgentDefinition_ReportsCanonicalPathsForDirectAndRootRef(t *testing
 	}
 }
 
-func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
+func TestLoadHostedAgentDefinition_ToolboxServiceReference(t *testing.T) {
 	t.Parallel()
 
 	props, err := structpb.NewStruct(map[string]any{
@@ -717,7 +717,7 @@ func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 		AdditionalProperties: props,
 	}
 
-	_, isHosted, _, err := LoadAgentDefinition(
+	_, isHosted, _, err := LoadHostedAgentDefinition(
 		svc,
 		t.TempDir(),
 	)
@@ -730,7 +730,7 @@ func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 	require.Equal(t, "research-tools", cfg.Toolboxes[0].Name)
 }
 
-func TestLoadAgentDefinitionLegacyFilenameGuidance(t *testing.T) {
+func TestLoadHostedAgentDefinitionLegacyFilenameGuidance(t *testing.T) {
 	tests := []struct {
 		name       string
 		suggestion string
@@ -767,7 +767,7 @@ func TestLoadAgentDefinitionLegacyFilenameGuidance(t *testing.T) {
 				0o600,
 			))
 			svc := &azdext.ServiceConfig{Name: "disk-agent", Host: "azure.ai.agent", RelativePath: "."}
-			_, _, _, err := LoadAgentDefinition(svc, dir)
+			_, _, _, err := LoadHostedAgentDefinition(svc, dir)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.Equal(t, exterrors.CodeAgentDefinitionNotFound, localErr.Code)
@@ -776,7 +776,7 @@ func TestLoadAgentDefinitionLegacyFilenameGuidance(t *testing.T) {
 	}
 }
 
-func TestLoadAgentDefinitionValidServiceIgnoresMalformedLegacyFile(t *testing.T) {
+func TestLoadHostedAgentDefinitionValidServiceIgnoresMalformedLegacyFile(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "agent.yaml"),
@@ -791,14 +791,14 @@ func TestLoadAgentDefinitionValidServiceIgnoresMalformedLegacyFile(t *testing.T)
 		RelativePath:         ".",
 		AdditionalProperties: props,
 	}
-	got, isHosted, source, err := LoadAgentDefinition(svc, dir)
+	got, isHosted, source, err := LoadHostedAgentDefinition(svc, dir)
 	require.NoError(t, err)
 	require.True(t, isHosted)
 	require.Equal(t, AgentDefinitionSourceInline, source)
 	require.Equal(t, "basic-agent", got.Name)
 }
 
-func TestLoadAgentDefinition_FileRef(t *testing.T) {
+func TestLoadHostedAgentDefinition_FileRef(t *testing.T) {
 	dir := t.TempDir()
 	definitionsDir := filepath.Join(dir, "definitions")
 	require.NoError(t, os.MkdirAll(definitionsDir, 0o700))
@@ -833,7 +833,7 @@ func TestLoadAgentDefinition_FileRef(t *testing.T) {
 		AdditionalProperties: props,
 	}
 
-	got, isHosted, source, err := LoadAgentDefinition(svc, dir)
+	got, isHosted, source, err := LoadHostedAgentDefinition(svc, dir)
 	require.NoError(t, err)
 	require.True(t, isHosted)
 	require.Equal(t, AgentDefinitionSourceInline, source)

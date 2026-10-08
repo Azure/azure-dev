@@ -105,7 +105,7 @@ func projectAgentServicesFrom(
 			)
 		}
 
-		definition, _, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
+		validation, err := projectpkg.ValidateAgentServiceDefinition(svc, projectRoot)
 		if err != nil {
 			return nil, exterrors.ValidationFromError(
 				err,
@@ -125,7 +125,7 @@ func projectAgentServicesFrom(
 			)
 		}
 		if agentName == "" {
-			agentName = definition.Name
+			agentName = validation.Name
 		}
 		if agentName == "" {
 			agentName = serviceName

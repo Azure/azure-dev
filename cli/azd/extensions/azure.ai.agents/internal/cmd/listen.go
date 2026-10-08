@@ -340,7 +340,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 // isHostedAgentService checks if a service is a hosted (container) agent by
 // resolving its direct/root-$ref definition from the service entry.
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	_, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 	return err == nil && isHosted
 }
 
@@ -376,7 +376,7 @@ func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGro
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+		ca, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 		if err != nil || !isHosted {
 			continue
 		}
@@ -551,7 +551,7 @@ func resolveServiceActivityProfile(
 	if err != nil {
 		return project.ActivityProfile{}, err
 	}
-	agent, isHosted, _, err := project.LoadAgentDefinition(resolvedSvc, projectRoot)
+	agent, isHosted, _, err := project.LoadHostedAgentDefinition(resolvedSvc, projectRoot)
 	if err != nil || !isHosted {
 		return project.ActivityProfile{}, err
 	}
@@ -641,7 +641,7 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		if _, _, _, err := project.LoadAgentDefinition(svc, proj.GetPath()); err != nil {
+		if _, err := project.ValidateAgentServiceDefinition(svc, proj.GetPath()); err != nil {
 			return err
 		}
 	}
@@ -890,7 +890,7 @@ func kindEnvUpdate(
 	// A missing definition is tolerated here: the bicepless inline path lets
 	// users declare prompt agents that carry no hosted definition, and service
 	// targets that truly need the definition surface the error where they read it.
-	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
+	_, isHosted, source, err := project.LoadHostedAgentDefinition(svc, azdProject.Path)
 	if err != nil {
 		// Tolerate only a missing definition: the bicepless inline path lets users
 		// declare prompt agents that carry no hosted definition. Validation and

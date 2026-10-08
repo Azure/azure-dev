@@ -103,7 +103,7 @@ func runEndpointUpdate(
 	}
 
 	// Resolve the agent definition from the service entry or its explicit root $ref.
-	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
+	agentDef, _, source, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return exterrors.ValidationFromError(
 			err,

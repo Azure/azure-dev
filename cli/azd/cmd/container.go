@@ -25,6 +25,7 @@ import (
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/terminal"
@@ -949,6 +950,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(func(manager *extensions.Manager) grpcserver.ExtensionLookup {
+		return manager
+	})
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterScoped(middleware.NewExtensionActivator)
@@ -1004,7 +1008,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
+	container.MustRegisterScoped(grpcserver.NewFollowUpManager)
 	container.MustRegisterScoped(grpcserver.NewEventService)
+	container.MustRegisterScoped(grpcserver.NewCommandResultService)
 	container.MustRegisterScoped(grpcserver.NewContainerService)
 	container.MustRegisterSingleton(grpcserver.NewAccountService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
@@ -1056,6 +1062,7 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	// Cancel the child context when the step completes so that any event handlers
 	// registered during this step (e.g. by service target Initialize methods) are
 	// marked as expired and cleaned up on the next RaiseEvent call.
+	ctx = commandresult.EnsureFollowUpCommandOrder(ctx)
 	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
 	defer cancel()
 

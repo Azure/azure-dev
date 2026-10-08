@@ -356,6 +356,12 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"explicit shell path with spaces", "my scripts/deploy.sh", "bash", false},
 		{"explicit shell environment path", "$HOME/scripts/deploy.sh", "bash", false},
 		{"explicit shell quoted path", `echo "scripts/deploy.sh"`, "bash", false},
+		{
+			"explicit shell operator after path argument",
+			"Write-Output config\\settings.json | Out-String",
+			"pwsh",
+			false,
+		},
 		{"explicit shell path", "./missing.ps1", "pwsh", true},
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
@@ -409,6 +415,25 @@ func TestExecAction_ExplicitShellExpressionBypassesInvalidPathProbe(t *testing.T
 			shell:  "cmd",
 		},
 		args: []string{"echo success>nul&rem deploy.cmd"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
+func TestExecAction_ExplicitShellExpressionWithPathArgumentBypassesInvalidPathProbe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{`echo config\settings.json|findstr settings>nul&rem deploy.cmd`},
 	}
 
 	_, err := action.Run(t.Context())
@@ -511,4 +536,25 @@ func TestExecAction_InvalidFilenameRequiresExplicitShell(t *testing.T) {
 	require.Error(t, err)
 	_, ok := errors.AsType[*scripting.ValidationError](err)
 	require.True(t, ok)
+}
+
+func TestExecAction_ExplicitShellClearInvalidPathDoesNotFallback(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{`scripts\deploy|test.cmd`},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	_, inline := errors.AsType[*internal.ExitCodeError](err)
+	assert.False(t, inline, "clear script paths must not fall back to inline execution")
 }

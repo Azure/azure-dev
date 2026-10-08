@@ -162,7 +162,8 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Try file execution first; fall back based on argument shape.
 	err = exec.Execute(ctx, scriptInput)
 	if a.flags.shell != "" &&
-		hasShellSyntaxBeforePathBoundary(scriptInput) &&
+		hasShellSyntax(scriptInput) &&
+		!shouldFailOnMissingScript(scriptInput, a.flags.shell) &&
 		isInvalidFilenameError(err) {
 		// Windows rejects shell operators as invalid filename characters.
 		err = exec.ExecuteInline(ctx, scriptInput)
@@ -199,6 +200,8 @@ var scriptExtensions = map[string]bool{
 	".py": true, ".rb": true, ".pl": true,
 }
 
+const shellSyntaxCharacters = "'\"`$<>()|&;"
+
 func shouldFailOnMissingScript(input, shell string) bool {
 	if shell != "" && hasShellSyntaxBeforePathBoundary(input) {
 		return false
@@ -216,8 +219,12 @@ func shouldFailOnMissingScript(input, shell string) bool {
 	return firstWhitespace == -1 || (firstSeparator >= 0 && firstSeparator < firstWhitespace)
 }
 
+func hasShellSyntax(input string) bool {
+	return strings.ContainsAny(input, shellSyntaxCharacters)
+}
+
 func hasShellSyntaxBeforePathBoundary(input string) bool {
-	firstShellSyntax := strings.IndexAny(input, "'\"`$<>()|&;")
+	firstShellSyntax := strings.IndexAny(input, shellSyntaxCharacters)
 	if firstShellSyntax < 0 {
 		return false
 	}

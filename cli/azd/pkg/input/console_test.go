@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -528,6 +529,42 @@ func TestAskerConsole_Message_EmptySkippedInJson(t *testing.T) {
 	c.Message(t.Context(), "hello")
 	require.NotEmpty(t, buf.String(), "non-empty message should emit JSON output")
 	require.Contains(t, buf.String(), `"consoleMessage"`)
+}
+
+func TestAskerConsole_Message_MirrorsJsonEventWithoutChangingTerminalOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	eventWriter := output.NewJsonEventWriter(path)
+	require.NoError(t, eventWriter.Open())
+
+	consoleOutput := &strings.Builder{}
+	console := NewConsoleWithJsonEventWriter(
+		true,
+		false,
+		Writers{Output: writerAdapter{consoleOutput}},
+		ConsoleHandles{
+			Stderr: io.Discard,
+			Stdin:  strings.NewReader(""),
+			Stdout: writerAdapter{consoleOutput},
+		},
+		&output.NoneFormatter{},
+		nil,
+		eventWriter,
+	)
+
+	console.Message(t.Context(), output.WithSuccessFormat("SUCCESS: deployed"))
+	require.NoError(t, eventWriter.Close())
+
+	require.Contains(t, consoleOutput.String(), "SUCCESS: deployed")
+
+	eventBytes, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var event contracts.EventEnvelope
+	require.NoError(t, json.Unmarshal(eventBytes, &event))
+	require.Equal(t, contracts.ConsoleMessageEventDataType, event.Type)
+
+	data, ok := event.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "SUCCESS: deployed\n", data["message"])
 }
 
 // TestAskerConsole_Previewer_ConcurrentRefCount verifies that parallel callers of

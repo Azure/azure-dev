@@ -67,6 +67,15 @@ func (f *JsonFormatter) QueryFilter(obj any) (any, error) {
 // jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
 // removed. A trailing newline is added to the message.
 func EventForMessage(message string) contracts.EventEnvelope {
+	return eventForMessage(message, "")
+}
+
+// EventForStreamMessage creates a console message event associated with stdout or stderr.
+func EventForStreamMessage(message string, stream string) contracts.EventEnvelope {
+	return eventForMessage(message, stream)
+}
+
+func eventForMessage(message string, stream string) contracts.EventEnvelope {
 	// Strip any ANSI colors for the message.
 	var buf bytes.Buffer
 
@@ -79,15 +88,16 @@ func EventForMessage(message string) contracts.EventEnvelope {
 	// Add the newline that would have been added by fmt.Println when we wrote the message directly to the console.
 	buf.WriteByte('\n')
 
-	return newConsoleMessageEvent(buf.String())
+	return newConsoleMessageEvent(buf.String(), stream)
 }
 
-func newConsoleMessageEvent(msg string) contracts.EventEnvelope {
+func newConsoleMessageEvent(msg string, stream string) contracts.EventEnvelope {
 	return contracts.EventEnvelope{
 		Type:      contracts.ConsoleMessageEventDataType,
 		Timestamp: time.Now(),
 		Data: contracts.ConsoleMessage{
 			Message: msg,
+			Stream:  stream,
 		},
 	}
 }

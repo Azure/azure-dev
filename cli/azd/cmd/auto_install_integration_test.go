@@ -36,7 +36,8 @@ func TestNewCommandConsole_FormatsFollowUpToChildStderr(t *testing.T) {
 
 	formatter, err := output.GetCommandFormatter(child)
 	require.NoError(t, err)
-	console := newCommandConsole(&internal.GlobalCommandOptions{NoPrompt: true}, formatter, child)
+	console := newCommandConsole(
+		&internal.GlobalCommandOptions{NoPrompt: true}, formatter, output.NewJsonEventWriter(""), child)
 	const followUp = "Install the required extension to continue."
 	console.Message(t.Context(), followUp)
 

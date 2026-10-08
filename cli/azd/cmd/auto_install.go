@@ -745,7 +745,7 @@ func executeWithAutoInstallCommand(
 			return result
 		}
 
-		if childConsole, err := newChildCommandConsole(globalOpts, foundCmd); err != nil {
+		if childConsole, err := newChildCommandConsole(rootContainer, globalOpts, foundCmd); err != nil {
 			result.Err = errors.Join(commandErr, err)
 			return result
 		} else {
@@ -958,13 +958,22 @@ func executeWithAutoInstallCommand(
 // newChildCommandConsole creates a console using the child's std streams, so we can stay consistent with any console
 // output format changes. Without this, our default root input.Console would write out inconsistent output (ie, plain text
 // when the user requested JSON, for instance).
-func newChildCommandConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
+func newChildCommandConsole(
+	rootContainer *ioc.NestedContainer,
+	globalOpts *internal.GlobalCommandOptions,
+	foundCmd *cobra.Command,
+) (input.Console, error) {
 	formatter, err := output.GetCommandFormatter(foundCmd)
 	if err != nil {
 		return nil, fmt.Errorf("resolving output format for %s: %w", foundCmd.CommandPath(), err)
 	}
 
-	return newCommandConsole(globalOpts, formatter, foundCmd), nil
+	var eventWriter *output.JsonEventWriter
+	if err := rootContainer.Resolve(&eventWriter); err != nil {
+		return nil, fmt.Errorf("resolving json event writer: %w", err)
+	}
+
+	return newCommandConsole(globalOpts, formatter, eventWriter, foundCmd), nil
 }
 
 // CreateGlobalFlagSet creates a new flag set with all global flags defined.

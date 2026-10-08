@@ -27,6 +27,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | `AZD_IN_CLOUDSHELL` | Indicates azd is running in Azure Cloud Shell |
 | `AZD_SKIP_UPDATE_CHECK` | Skip the periodic update availability check |
 | `AZD_DEBUG_LOG` | Enable debug file logging |
+| `AZD_OUTPUT_JSONL` | Append structured command output as JSON Lines (JSONL) to the specified file while preserving normal terminal output. Existing content is preserved across executions. See the [canonical reference](../../cli/azd/docs/environment-variables.md#general-configuration) for the full contract. |
 
 ## Tool Path Overrides
 

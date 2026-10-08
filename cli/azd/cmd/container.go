@@ -122,6 +122,7 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 func newCommandConsole(
 	rootOptions *internal.GlobalCommandOptions,
 	formatter output.Formatter,
+	eventWriter *output.JsonEventWriter,
 	cmd *cobra.Command,
 ) input.Console {
 	writer := cmd.OutOrStdout()
@@ -137,6 +138,9 @@ func newCommandConsole(
 	isTerminal := cmd.OutOrStdout() == os.Stdout &&
 		cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
+	stdout := output.NewJsonEventStreamWriter(cmd.OutOrStdout(), eventWriter, "stdout")
+	stderr := output.NewJsonEventStreamWriter(cmd.ErrOrStderr(), eventWriter, "stderr")
+
 	// Check for external prompt configuration from environment variables
 	var externalPromptCfg *input.ExternalPromptConfiguration
 	if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
@@ -150,11 +154,19 @@ func newCommandConsole(
 		}
 	}
 
-	return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
-		Stdin:  cmd.InOrStdin(),
-		Stdout: cmd.OutOrStdout(),
-		Stderr: cmd.ErrOrStderr(),
-	}, formatter, externalPromptCfg)
+	return input.NewConsoleWithJsonEventWriter(
+		rootOptions.NoPrompt,
+		isTerminal,
+		input.Writers{Output: writer},
+		input.ConsoleHandles{
+			Stdin:  cmd.InOrStdin(),
+			Stdout: stdout,
+			Stderr: stderr,
+		},
+		formatter,
+		externalPromptCfg,
+		eventWriter,
+	)
 }
 
 // Registers common Azd dependencies
@@ -165,6 +177,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)
+	container.MustRegisterSingleton(output.NewJsonEventWriterFromEnv)
 
 	container.MustRegisterScoped(newCommandConsole)
 

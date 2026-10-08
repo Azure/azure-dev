@@ -755,6 +755,7 @@ func Test_NewExtensionShowAction(t *testing.T) {
 func Test_NewExtensionInstallAction(t *testing.T) {
 	t.Parallel()
 	action := newExtensionInstallAction(
+		&cobra.Command{},
 		[]string{"test-ext"},
 		&extensionInstallFlags{},
 		mockinput.NewMockConsole(),

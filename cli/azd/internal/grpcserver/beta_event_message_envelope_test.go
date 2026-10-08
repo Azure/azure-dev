@@ -14,7 +14,7 @@ import (
 )
 
 func TestBetaEventMessageEnvelope_UsesTopLevelRequestID(t *testing.T) {
-	envelope := betaEventMessageEnvelope{}
+	envelope := newBetaEventMessageEnvelope()
 	message := envelope.CreateProgressMessage("request-1", "warning")
 
 	require.Equal(t, "request-1", envelope.GetRequestId(t.Context(), message))
@@ -33,7 +33,7 @@ func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
 			Suggestion: "Check the extension configuration",
 		}
 
-		message := wrapBetaEventError(err)
+		message := wrapBetaError(err)
 		localErr, ok := errors.AsType[*azdext.LocalError](unwrapBetaExtensionError(message))
 		require.True(t, ok)
 		require.Equal(t, []string{"*demo.TransportError"}, localErr.CauseTypes)
@@ -50,7 +50,7 @@ func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
 			Suggestion: "Check the tool output",
 		}
 
-		message := wrapBetaEventError(err)
+		message := wrapBetaError(err)
 		require.Equal(t, v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL, message.GetOrigin())
 		require.Equal(t, "docker", message.GetToolError().GetToolName())
 		require.Equal(t, "failed", message.GetToolError().GetFailureKind())
@@ -95,8 +95,8 @@ func TestWrapBetaEventError_PreservesErrorChainPrecedence(t *testing.T) {
 				ExitCode:   new(42),
 				Suggestion: "Check the tool output",
 			}
-			message := wrapBetaEventError(err)
-			expected := wrapBetaEventError(tt.cause)
+			message := wrapBetaError(err)
+			expected := wrapBetaError(tt.cause)
 			require.Equal(t, expected.GetOrigin(), message.GetOrigin())
 			require.Equal(t, expected.GetSource(), message.GetSource())
 			require.Equal(t, expected.GetMessage(), message.GetMessage())
@@ -109,33 +109,33 @@ func TestWrapBetaEventError_PreservesErrorChainPrecedence(t *testing.T) {
 
 func TestValidateBetaEventMessageModes(t *testing.T) {
 	t.Run("modern requires a request ID", func(t *testing.T) {
-		err := validateModernBetaEventMessage(&v1beta.EventMessage{
+		err := validateBetaEventMessage(&v1beta.EventMessage{
 			MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
 				ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
 					EventName: "predeploy",
 					Status:    "completed",
 				},
 			},
-		})
+		}, betaEventStreamRequestIDs)
 		require.ErrorContains(t, err, "request_id is required")
 	})
 
 	t.Run("legacy rejects progress", func(t *testing.T) {
-		err := validateLegacyBetaEventMessage(&v1beta.EventMessage{
+		err := validateBetaEventMessage(&v1beta.EventMessage{
 			MessageType: &v1beta.EventMessage_HandlerOutput{
 				HandlerOutput: &v1beta.HandlerOutput{Output: "warning"},
 			},
-		})
+		}, betaEventStreamLegacy)
 		require.ErrorContains(t, err, "require a new stream")
 	})
 
 	t.Run("modern rejects server message types", func(t *testing.T) {
-		err := validateModernBetaEventMessage(&v1beta.EventMessage{
+		err := validateBetaEventMessage(&v1beta.EventMessage{
 			RequestId: "request-1",
 			MessageType: &v1beta.EventMessage_InvokeProjectHandler{
 				InvokeProjectHandler: &v1beta.InvokeProjectHandler{EventName: "predeploy"},
 			},
-		})
+		}, betaEventStreamRequestIDs)
 		require.ErrorContains(t, err, "invalid message for a beta event client")
 	})
 }

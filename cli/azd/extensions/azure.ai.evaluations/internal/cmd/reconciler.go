@@ -5,13 +5,16 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"maps"
+	"math/big"
 	"os"
 	"reflect"
 	"slices"
@@ -30,12 +33,22 @@ import (
 type evalReconciler struct {
 	ec *evalContext
 
+	// Requests prepared by the side-effect-free validation pass. The published
+	// contract is resolved per reference, including explicit version pins.
+	prepared map[string]preparedEval
+
+	// Reconciled service versions identify contracts, not authored identity pins.
+	evaluatorVersions map[string]string
+
+	// Registered dataset versions whose content was inspected by preflight.
+	datasetVersions map[string]string
+	localDatasets   map[string]preparedLocalDataset
+
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
-	// Substance keys are never removed from the environment, so one left behind
-	// by an earlier edit still points at a live eval -- and adopting it renames
-	// that eval and leaves the declaration that asked for it sharing the other
-	// one's runs.
+	// A substance key left behind by an edit can still point at a live eval.
+	// Adopting it without ownership checks would rename that eval and leave
+	// both declarations sharing its runs.
 	//
 	// The owner is recorded rather than a bare flag because every declaration
 	// reserves its own id up front: "already claimed" is the normal case, and
@@ -106,13 +119,20 @@ func (r *evalReconciler) ownedByAnother(id, name string) bool {
 func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
 	r.reserveExplicitIDs(groups)
 	for i := range groups {
-		decision, err := r.decide(ctx, groups[i])
-		if err != nil {
-			// Nothing decided, so nothing skipped. The error surfaces from
-			// EnsureEval, where it can fail the deploy.
+		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		if _, selected := r.prepared[groups[i].Name]; len(r.prepared) > 0 && !selected {
+			// Targeted create cannot release an unselected sibling's history:
+			// that sibling will not be reconciled, even if its pin changed.
+			r.claim(id, groups[i].Name)
 			continue
 		}
-		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		decision, err := r.decide(ctx, groups[i])
+		if err != nil {
+			// An unreadable decision is not evidence that an owner abandoned
+			// its eval. EnsureEval still reports the error for this declaration.
+			r.claim(id, groups[i].Name)
+			continue
+		}
 		if id == "" || decision.recreate {
 			continue
 		}
@@ -166,6 +186,10 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	if decided, ok := r.decided[group.Name]; ok {
 		return decided, nil
 	}
+	prepared, validated := r.prepared[group.Name]
+	if validated {
+		group = prepared.group
+	}
 
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
@@ -182,10 +206,58 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	definition = fingerprintEra + definition
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
+	recreate := substanceChanged(prior, definition, digest)
+	if recreate && group.Source != nil {
+		legacy := group
+		legacy.Source = nil
+		legacyDefinition, err := project.FingerprintDefinition(legacy)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
+			recreate = false
+		}
+	}
+	if recreate && validated {
+		legacyDigest, err := project.FingerprintGroup(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		legacyDefinition, err := project.FingerprintDefinition(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		legacyUnchanged := !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest)
+		if !legacyUnchanged && prepared.declared.Source != nil {
+			legacy := prepared.declared
+			legacy.Source = nil
+			sourceStripped, err := project.FingerprintDefinition(legacy)
+			if err != nil {
+				return evalDecision{}, err
+			}
+			legacyUnchanged = prior == sourceStripped || prior == fingerprintEra+sourceStripped
+		}
+		if digest != legacyDigest && legacyUnchanged {
+			// Some earlier lifecycle builds sent catalog pins but omitted them
+			// from fingerprints. Older builds ignored catalog pins entirely;
+			// those unpinned criteria must be recreated to honor the pin.
+			id := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
+			if id != "" {
+				remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
+				if err != nil && !eval_api.IsNotFound(err) {
+					return evalDecision{}, err
+				}
+				if err == nil {
+					recreate = !matchingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
+				}
+			}
+		}
+	}
+
 	decided := evalDecision{
 		digest:     digest,
 		definition: definition,
-		recreate:   substanceChanged(prior, definition, digest),
+		recreate:   recreate,
 	}
 	if r.decided == nil {
 		r.decided = map[string]evalDecision{}
@@ -272,30 +344,18 @@ func (r *evalReconciler) EnsureDataset(
 	decl project.DatasetDecl,
 	localPath string,
 ) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	// No local source means the dataset is already registered; just confirm it.
 	if localPath == "" {
-		version := decl.Version
-		if version == "" {
-			list, err := r.ec.datasetClient.ListDatasetVersions(
-				ctx, decl.Name, ProjectEndpointAPIVersion,
-			)
+		version := r.datasetVersions[decl.Name]
+		if version == "" || (decl.Version != "" && version != decl.Version) {
+			var err error
+			version, err = r.datasetReference(ctx, decl)
 			if err != nil {
-				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
+				return "", false, err
 			}
-			if len(list.Value) == 0 {
-				return "", false, messages.DatasetNotLocalNorRegistered(decl.Name)
-			}
-			version = dataset_api.LatestVersion(list.Value)
-		} else if _, err := r.ec.datasetClient.GetDataset(
-			ctx, decl.Name, version, ProjectEndpointAPIVersion,
-		); err != nil {
-			// Only a 404 means the version is not there. Every other failure was
-			// reported as "no such version", which sent a reader looking for a
-			// version that exists and that they simply cannot read.
-			if !dataset_api.IsNotFound(err) {
-				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
-			}
-			return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, version)
 		}
 
 		// Recorded so a run reads the version reconciliation settled on. Without
@@ -315,7 +375,7 @@ func (r *evalReconciler) EnsureDataset(
 	// A malformed row is only noticed once the service tries to evaluate it,
 	// by which point a version has been published and the eval points at
 	// it. Reading the file here costs nothing and names the offending line.
-	if err := validateJSONL(localPath); err != nil {
+	if _, err := inspectJSONL(ctx, localPath, nil); err != nil {
 		return "", false, messages.DatasetProblem(decl.Name, err)
 	}
 
@@ -325,65 +385,36 @@ func (r *evalReconciler) EnsureDataset(
 	}
 
 	key := project.FingerprintKey("dataset", decl.Name)
-	if prior := r.ec.privateValue(ctx, key); prior == digest {
-		// Unchanged since the last deploy; reuse the recorded version, but only
-		// after confirming nobody published a newer one outside the repo. An
-		// explicit `version:` is the author saying which version they want, so
-		// it settles the question and the check does not apply.
-		if version := r.ec.privateValue(ctx, versionKey("dataset", decl.Name)); version != "" {
-			if decl.Version == "" {
-				if err := r.checkDatasetDrift(ctx, decl.Name, version); err != nil {
-					return "", false, err
-				}
-				if err := r.applyDatasetTags(ctx, decl, version); err != nil {
-					return "", false, err
-				}
-				return version, false, nil
-			}
-
-			// A pin settles which version to use, not whether it is still
-			// there. Skipping the service entirely let a deleted version
-			// report as unchanged while the eval pointed at nothing.
-			_, getErr := r.ec.datasetClient.GetDataset(
-				ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
-			)
-			switch {
-			case getErr == nil || !dataset_api.IsNotFound(getErr):
-				// Deliberately not recorded. The key means "the version this file's
-				// content published", which is what the drift check compares
-				// against: writing the pin here made removing it later read as
-				// somebody having published behind the configuration's back, and
-				// failed the deploy. The run reads the pin from the declaration.
-				//
-				// Anything short of a confirmed absence leaves the pin alone
-				// rather than failing a deploy on a transient read -- but says so,
-				// because otherwise the deploy reports the version verified when
-				// all it did was fail to look.
-				if getErr != nil {
-					fmt.Fprint(warnWriter(ctx), messages.Warning(
-						messages.DatasetVersionNotVerified(decl.Name, decl.Version, getErr)))
-				}
-				// Not "changed", even when the pin moved. The flag chooses
-				// between "Published <kind> <name> version N" and "unchanged at
-				// version N", and re-pinning publishes nothing -- so reporting a
-				// move as a change would announce a publish that did not happen.
-				// The line still carries the pin, so it reads as unchanged at the
-				// version now in force, which is what took effect.
-				return decl.Version, false, nil
-
-			case decl.Version == version:
-				// The pin names the version this file already published, and it
-				// is gone -- someone deleted it out from under the deployment,
-				// which is what `create` hit straight after `dataset delete`.
-				// Republishing here would quietly undo that.
-				return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, decl.Version)
-			}
-			// The pin names some other version, and it is not there: that is the
-			// author asking for it to be published, since `version` beside
-			// `file` is the version to publish rather than one to count from.
-			// Falls through to the upload instead of refusing over the version
-			// it was asked to create.
+	selected, validated := r.localDatasets[decl.Name]
+	if validated {
+		if selected.digest != digest || selected.pin != decl.Version {
+			return "", false, fmt.Errorf("dataset %q changed after validation; retry the command", decl.Name)
 		}
+	} else {
+		selected.version, err = r.localDatasetReuse(ctx, decl, digest)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if selected.version != "" {
+		if decl.Version == "" {
+			if validated {
+				if err := r.checkDatasetDrift(ctx, decl.Name, selected.version); err != nil {
+					return "", false, err
+				}
+			}
+			if err := r.applyDatasetTags(ctx, decl, selected.version); err != nil {
+				return "", false, err
+			}
+		} else if validated {
+			// A version selected by preflight must not become an upload if it
+			// disappears. The inspected rows, not the local file, were validated.
+			if _, err := r.datasetReference(ctx, decl); err != nil {
+				return "", false, err
+			}
+		}
+		// Preserve the file-to-published-version baseline when a pin is reused.
+		return selected.version, false, nil
 	}
 
 	// Uploaded by the path the author declared. Collapsing a file to its
@@ -480,19 +511,37 @@ func tagsAlreadyApplied(have, want map[string]string) bool {
 // registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
+	_, err := inspectJSONL(context.Background(), path, nil)
+	return err
+}
+
+// inspectJSONL validates every row and returns the columns every row supplies.
+func inspectJSONL(
+	ctx context.Context, path string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
 	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	return inspectJSONLContent(ctx, path, f, validateRow)
+}
+
+func inspectJSONLContent(
+	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	scanner := bufio.NewScanner(content)
 	// A row carrying a whole conversation runs well past the 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
 	rows := 0
+	var columns map[string]bool
 	for line := 1; scanner.Scan(); line++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		text := scanner.Text()
 		if line == 1 {
 			// PowerShell's `>` and Set-Content write a byte order mark, so a
@@ -508,20 +557,37 @@ func validateJSONL(path string) error {
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return messages.JSONLRowInvalid(path, line, err)
+			return nil, messages.JSONLRowInvalid(source, line, err)
 		}
 		if len(row) == 0 {
-			return messages.JSONLRowEmpty(path, line)
+			return nil, messages.JSONLRowEmpty(source, line)
+		}
+		if validateRow != nil {
+			if err := validateRow(row, rows); err != nil {
+				return nil, err
+			}
+		}
+		if columns == nil {
+			columns = make(map[string]bool, len(row))
+			for field := range row {
+				columns[field] = true
+			}
+		} else {
+			for field := range columns {
+				if _, ok := row[field]; !ok {
+					delete(columns, field)
+				}
+			}
 		}
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(source, err)
 	}
 	if rows == 0 {
-		return messages.JSONLNoRows(path)
+		return nil, messages.JSONLNoRows(source)
 	}
-	return nil
+	return columns, ctx.Err()
 }
 
 func (r *evalReconciler) checkDatasetDrift(
@@ -538,12 +604,14 @@ func (r *evalReconciler) checkDatasetDrift(
 		// An empty listing is not proof the recorded version is gone: it is
 		// equally what a listing that has not caught up reports, and what a
 		// project the state does not belong to reports. The point read settles
-		// it, and only a confirmed 404 refuses -- the same rule the pinned path
-		// uses, so a transient read still does not fail a deploy.
+		// it: only a successful read establishes that the version is usable.
 		if _, getErr := r.ec.datasetClient.GetDataset(
 			ctx, name, recorded, ProjectEndpointAPIVersion,
-		); getErr != nil && dataset_api.IsNotFound(getErr) {
-			return messages.DatasetVersionNotFoundWithHint(name, recorded)
+		); getErr != nil {
+			if dataset_api.IsNotFound(getErr) {
+				return messages.DatasetVersionNotFoundWithHint(name, recorded)
+			}
+			return messages.ReadingDatasetVersion(name, recorded, getErr)
 		}
 		return nil
 	}
@@ -585,51 +653,26 @@ func (r *evalReconciler) EnsureEvaluator(
 	decl project.EvaluatorDecl,
 	localPath string,
 ) (string, bool, error) {
-	var body json.RawMessage
-	var digest string
-
-	switch {
-	case decl.Definition != nil:
-		// Also how a `$ref` to a rubric file arrives: resolution has already
-		// spliced the file's keys in, so there is nothing left to read.
-		raw, err := json.Marshal(decl.Definition)
-		if err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		digest = project.FingerprintBytes(body)
-
-	case localPath == "":
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if r.evaluatorVersions == nil {
+		r.evaluatorVersions = map[string]string{}
+	}
+	if !decl.CarriesItsRubric() && localPath == "" {
 		raw, err := r.ec.evalClient.GetEvaluatorRaw(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
 		)
 		if err != nil {
 			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
-		return versionFromRaw(raw, decl.Version), false, nil
-
-	default:
-		if _, err := os.Stat(localPath); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
-			}
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		raw, err := project.ReadFileNoBOM(localPath)
-		if err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-
-		if digest, err = project.Fingerprint(localPath); err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
+		version := versionFromRaw(raw, decl.Version)
+		r.evaluatorVersions[decl.Name] = version
+		return version, false, nil
+	}
+	body, digest, err := localEvaluator(decl, localPath)
+	if err != nil {
+		return "", false, err
 	}
 
 	// The author's own definition decides whether there is anything to publish.
@@ -639,7 +682,6 @@ func (r *evalReconciler) EnsureEvaluator(
 	// still there to be found, and the deletion never publishes.
 	digestKey := project.FingerprintKey("evaluator", decl.Name)
 	prior := r.ec.privateValue(ctx, digestKey)
-	authorEdited := prior != "" && prior != digest
 
 	// Compare against the definition already on the service.
 	var known json.RawMessage
@@ -648,13 +690,16 @@ func (r *evalReconciler) EnsureEvaluator(
 	)
 	// A read that failed is not a read that found nothing: falling through
 	// publishes a new version with no drift check, over whatever is already
-	// there. Only a confirmed absence is a first publish.
-	if err != nil && !eval_api.IsNotFound(err) {
+	// there. A 404 or a complete, valid empty version list permits first publish.
+	if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 		return "", false, messages.CheckingEvaluatorExists(decl.Name, err)
 	}
 	if err == nil {
+		if _, err := evaluatorContract(existing); err != nil {
+			return "", false, messages.EvaluatorProblem(decl.Name, err)
+		}
 		remote := versionFromRaw(existing, "")
-		if !authorEdited && sameDefinition(existing, body) {
+		if canReuseEvaluator(prior, digest, existing, body) {
 			// Nothing to publish, but the version is still worth recording:
 			// it is what a later deploy compares against to notice that
 			// someone moved the evaluator on from here.
@@ -662,7 +707,9 @@ func (r *evalReconciler) EnsureEvaluator(
 				r.ec.remember(ctx, versionKey("evaluator", decl.Name), remote)
 			}
 			r.ec.remember(ctx, digestKey, digest)
-			return versionFromRaw(existing, decl.Version), false, nil
+			version := versionFromRaw(existing, decl.Version)
+			r.evaluatorVersions[decl.Name] = version
+			return version, false, nil
 		}
 
 		// The definitions differ, which means either the local file changed
@@ -685,7 +732,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	// drift comparison are taken from the authored definition, and
 	// folding catalog metadata in earlier would make every existing
 	// evaluator look edited and publish a version nobody asked for.
-	published, err := withCatalogMetadata(body, decl)
+	published, err := evaluatorPublishBody(body, decl, known)
 	if err != nil {
 		return "", false, messages.EvaluatorProblem(decl.Name, err)
 	}
@@ -699,6 +746,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
 	r.ec.remember(ctx, digestKey, digest)
+	r.evaluatorVersions[decl.Name] = created.Version
 	return created.Version, true, nil
 }
 
@@ -817,26 +865,37 @@ func (r *evalReconciler) EnsureEval(
 	group project.Eval,
 	datasetPath string,
 ) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	if group.ID != "" {
 		// An explicit id skips every read below, so nothing here noticed when it
 		// named an eval that had been deleted or was simply mistyped: the deploy
 		// reported success and the first run against it answered 404. One point
 		// read settles it, and it is the same confirmation an external dataset
 		// or evaluator reference gets.
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
 			if eval_api.IsNotFound(err) {
 				return "", false, messages.EvalNotFound(group.ID)
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if !responseSchemaMatches(&group, remote) {
+			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
+		}
+		if prepared, validated := r.prepared[group.Name]; validated &&
+			conflictingSourceContract(prepared.group, remote, prepared.request) {
+			return "", false, incompatibleSourceContract(group.ID)
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
 	}
 
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
-	// dataset, target, level — needs a new eval. Name and description are
+	// dataset, target, level, source mode — needs a new eval. Name and description are
 	// excluded from the digest and pushed in place instead, and so are
-	// max_samples and source:, which the run carries rather than the eval.
+	// max_samples and source filters, which the run carries rather than the eval.
 	digest, definition, recreate, err := r.evalDigests(ctx, group)
 	if err != nil {
 		return "", false, err
@@ -847,12 +906,47 @@ func (r *evalReconciler) EnsureEval(
 	// dataset's columns, so it happens before the reuse decision: a dataset can
 	// lose a column an evaluator needs without the eval's own declaration
 	// changing, and reusing the eval would let that reach a run unreported.
-	req, err := buildEvalRequest(
-		&group,
-		r.ec.evaluatorSchemas(ctx),
-		datasetColumnsFromPath(datasetPath),
-	)
-	if err != nil {
+	prepared, validated := r.prepared[group.Name]
+	req := prepared.request
+	columns := prepared.columns
+	if !validated {
+		columns = datasetColumnsFromPath(datasetPath)
+	}
+	if validated && len(prepared.localEvaluators) > 0 {
+		// Publishing a rubric can add a schema that the authored file does not
+		// carry. Refresh only these local, unpinned references; every other
+		// contract, including version pins, stays the one validated earlier.
+		schemas := maps.Clone(prepared.schemas)
+		for _, name := range prepared.localEvaluators {
+			version := r.evaluatorVersions[name]
+			if version == "" {
+				return "", false, fmt.Errorf("evaluator %q has no reconciled version to read", name)
+			}
+			raw, err := r.ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
+			if err != nil {
+				return "", false, messages.ReadingEvaluator(name, err)
+			}
+			schema, err := evaluatorContract(raw)
+			if err != nil {
+				return "", false, messages.EvaluatorProblem(name, err)
+			}
+			schemas[name] = schema
+		}
+		req, err = buildEvalRequest(&prepared.group, schemas, prepared.columns)
+		if err != nil {
+			return "", false, err
+		}
+	} else if !validated {
+		req, err = buildEvalRequest(
+			&group,
+			r.ec.evaluatorSchemas(ctx),
+			columns,
+		)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if err := validateDatasetInteractions(&group, req, columns); err != nil {
 		return "", false, err
 	}
 
@@ -871,7 +965,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest)
+		adopted, err := r.adoptRenamed(ctx, group, digest, req)
 		if err != nil {
 			return "", false, err
 		}
@@ -888,7 +982,9 @@ func (r *evalReconciler) EnsureEval(
 			// this lookup exists to keep.
 			return "", false, err
 		}
-		if err == nil {
+		if err == nil &&
+			(!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) &&
+			responseSchemaMatches(&group, remote) && !conflictingSourceContract(group, remote, req) {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -918,6 +1014,124 @@ func (r *evalReconciler) EnsureEval(
 	return created.ID, true, nil
 }
 
+// conflictingEvaluatorPins repairs state from builds that sent inherited pins
+// but omitted them from fingerprints. Only an actual stored pin disagreement
+// is evidence to recreate; unrelated server enrichment is not compared.
+func conflictingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	pin := func(version string) string {
+		if version == "latest" {
+			return ""
+		}
+		return version
+	}
+	for _, desired := range want {
+		for _, stored := range have {
+			if stored.Name == desired.Name && stored.EvaluatorName == desired.EvaluatorName &&
+				pin(stored.EvaluatorVersion) != pin(desired.EvaluatorVersion) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchingEvaluatorPins requires positive evidence before a legacy digest can
+// adopt an eval: that index did not distinguish inherited catalog versions.
+func matchingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	if len(want) == 0 || len(have) != len(want) || conflictingEvaluatorPins(have, want) {
+		return false
+	}
+	for _, desired := range want {
+		if !slices.ContainsFunc(have, func(stored eval_api.TestingCriterion) bool {
+			return stored.Type == desired.Type && stored.Name == desired.Name &&
+				stored.EvaluatorName == desired.EvaluatorName
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
+// conflictingSourceContract detects positive evidence that stored mappings read
+// a different source or disagree with authored bindings. Missing inferred
+// mappings and unrelated enrichment are not edits.
+func conflictingSourceContract(
+	group project.Eval, have *eval_api.OpenAIEval, want *eval_api.CreateOpenAIEvalRequest,
+) bool {
+	if group.Source == nil || have == nil || want == nil || want.DataSourceConfig == nil {
+		return false
+	}
+	if group.Source.Type != project.SourceTypeTraces && group.Source.Type != project.SourceTypeResponses {
+		return false
+	}
+	switch have.DataSourceConfig["scenario"] {
+	case "responses":
+		if group.Source.Type == project.SourceTypeTraces {
+			return true
+		}
+	case "traces", "traces_preview":
+		if group.Source.Type == project.SourceTypeResponses {
+			return true
+		}
+	}
+	// Service-defined scenarios omit this field; enrichment is not a custom contract.
+	if want.DataSourceConfig.Type == "custom" && have.DataSourceConfig["type"] == "custom" {
+		if sampled, known := have.DataSourceConfig["include_sample_schema"].(bool); known &&
+			sampled != want.DataSourceConfig.IncludeSampleSchema {
+			return true
+		}
+	}
+	namespace := func(binding string) string {
+		for _, prefix := range []string{"{{item.", "{{sample."} {
+			if strings.HasPrefix(binding, prefix) && strings.HasSuffix(binding, "}}") {
+				return prefix
+			}
+		}
+		return ""
+	}
+	for _, desired := range want.TestingCriteria {
+		matched := false
+		for _, stored := range have.TestingCriteria {
+			if stored.Name != desired.Name || stored.EvaluatorName != desired.EvaluatorName {
+				continue
+			}
+			matched = true
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() != desired.Name || ref.Evaluator != desired.EvaluatorName {
+					continue
+				}
+				for field, binding := range ref.DataMapping {
+					if held, present := stored.DataMapping[field]; !present || held != binding {
+						return true
+					}
+				}
+			}
+			for _, field := range []string{"query", "response", "messages", "tool_calls", "tool_definitions"} {
+				from, to := namespace(stored.DataMapping[field]), namespace(desired.DataMapping[field])
+				if from != "" && to != "" && from != to {
+					return true
+				}
+			}
+			if group.Source.Type == project.SourceTypeResponses {
+				outputs := []string{"{{sample.output_items}}", "{{sample.output_text}}"}
+				from, to := stored.DataMapping["response"], desired.DataMapping["response"]
+				if from != to && slices.Contains(outputs, from) && slices.Contains(outputs, to) {
+					return true
+				}
+			}
+		}
+		if !matched {
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() == desired.Name && ref.Evaluator == desired.EvaluatorName &&
+					len(ref.DataMapping) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // adoptRenamed reclaims the eval this declaration used to be called, so a
 // rename keeps the id and every run under it rather than forking the history.
 //
@@ -927,8 +1141,22 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
+	request *eval_api.CreateOpenAIEvalRequest,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
+	legacy := false
+	if id == "" {
+		if prepared, ok := r.prepared[group.Name]; ok {
+			legacyDigest, err := project.FingerprintGroup(prepared.declared)
+			if err != nil {
+				return "", err
+			}
+			if legacyDigest != digest {
+				id = r.ec.scopedValue(ctx, digestIDKey(legacyDigest), r.scope)
+				legacy = id != ""
+			}
+		}
+	}
 	if id == "" {
 		return "", nil
 	}
@@ -946,6 +1174,11 @@ func (r *evalReconciler) adoptRenamed(
 			return "", nil
 		}
 		return "", err
+	}
+	if conflictingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria)) ||
+		!responseSchemaMatches(&group, remote) || conflictingSourceContract(group, remote, request) {
+		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil
@@ -1000,6 +1233,12 @@ func withDescription(held map[string]string, description string) map[string]stri
 	return merged
 }
 
+// canReuseEvaluator is shared with preflight so authored metadata cannot mask
+// the published contract of a version that reconciliation will leave unchanged.
+func canReuseEvaluator(prior, digest string, existing, body []byte) bool {
+	return (prior == "" || prior == digest) && sameDefinition(existing, body)
+}
+
 // sameDefinition reports whether the locally authored definition already
 // matches what the service holds.
 //
@@ -1032,22 +1271,82 @@ func sameDefinition(existing, candidate []byte) bool {
 
 	for key, want := range authored {
 		got, ok := onService[key]
-		if !ok || !equalJSON(got, want) {
+		if !ok {
+			return false
+		}
+		if key == "dimensions" && equalJSON(authored["type"], []byte(`"rubric"`)) {
+			if !sameAuthoredDimensions(got, want) {
+				return false
+			}
+		} else if !equalJSON(got, want) {
 			return false
 		}
 	}
 	return true
 }
 
-// equalJSON compares two JSON values structurally, so key order and
-// whitespace do not register as a change.
-func equalJSON(a, b json.RawMessage) bool {
-	var left, right any
-	if err := json.Unmarshal(a, &left); err != nil {
+// sameAuthoredDimensions ignores service-added fields without ignoring authored
+// edits, dimension order, or removals detected by the persisted file digest.
+func sameAuthoredDimensions(existing, candidate json.RawMessage) bool {
+	var have, want []map[string]json.RawMessage
+	if json.Unmarshal(existing, &have) != nil || json.Unmarshal(candidate, &want) != nil || len(have) != len(want) {
 		return false
 	}
-	if err := json.Unmarshal(b, &right); err != nil {
+	if have == nil || want == nil {
+		return have == nil && want == nil
+	}
+	for i, dimension := range want {
+		if dimension == nil || have[i] == nil {
+			return false
+		}
+		for key, value := range dimension {
+			if !equalJSON(have[i][key], value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// equalJSON compares two JSON values structurally, so key order and
+// whitespace do not register as a change. Numbers retain exact values while
+// equivalent decimal and exponent spellings compare equal.
+func equalJSON(a, b json.RawMessage) bool {
+	if !json.Valid(a) || !json.Valid(b) {
 		return false
+	}
+	var left, right any
+	leftDecoder, rightDecoder := json.NewDecoder(bytes.NewReader(a)), json.NewDecoder(bytes.NewReader(b))
+	leftDecoder.UseNumber()
+	rightDecoder.UseNumber()
+	if err := leftDecoder.Decode(&left); err != nil {
+		return false
+	}
+	if err := rightDecoder.Decode(&right); err != nil {
+		return false
+	}
+	return equalJSONValue(left, right)
+}
+
+func equalJSONValue(left, right any) bool {
+	switch left := left.(type) {
+	case json.Number:
+		right, ok := right.(json.Number)
+		if !ok {
+			return false
+		}
+		if left == right {
+			return true
+		}
+		leftNumber, leftOK := new(big.Rat).SetString(string(left))
+		rightNumber, rightOK := new(big.Rat).SetString(string(right))
+		return leftOK && rightOK && leftNumber.Cmp(rightNumber) == 0
+	case []any:
+		right, ok := right.([]any)
+		return ok && slices.EqualFunc(left, right, equalJSONValue)
+	case map[string]any:
+		right, ok := right.(map[string]any)
+		return ok && maps.EqualFunc(left, right, equalJSONValue)
 	}
 	return reflect.DeepEqual(left, right)
 }

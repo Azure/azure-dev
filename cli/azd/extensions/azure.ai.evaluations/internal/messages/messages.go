@@ -114,10 +114,11 @@ func NoEvaluatorsChosen() error {
 // the verdict does not exist yet when --no-wait returns, so the gate was
 // silently dropped and the command exited 0 however the run turned out.
 func GateNeedsTheWait() error {
-	return errors.New(
-		"--fail-on needs a result to judge, and --no-wait returns before there " +
-			"is one. Drop --no-wait, or reattach with `azd ai eval run show " +
-			"<run> --wait --fail-on <gate>`")
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		"--fail-on needs a result to judge, and --no-wait returns before there "+
+			"is one. Drop --no-wait, or reattach with `azd ai eval run show "+
+			"<run> --wait --fail-on <gate>`",
+		"")
 }
 
 // GateOutlivedTheWait reports a gate that never got a verdict because the run
@@ -283,6 +284,11 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
+// ExportAvailableResults offers a snapshot without claiming a moving run is complete.
+func ExportAvailableResults(eval, runID string) string {
+	return "\nExport available results:\n" + exportRunCommand(eval, runID)
+}
+
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
@@ -348,6 +354,12 @@ func RunMustBeNamed(evalID string) error {
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
 		evalID, shellArg(evalID))
+}
+
+// ListedRunMissingID refuses to guess an identifier omitted by the service.
+func ListedRunMissingID(evalID string) error {
+	return fmt.Errorf("the service omitted the newest run ID for eval %q; "+
+		"supply --run with a known run ID instead of selecting the latest run", evalID)
 }
 
 // ReadingRun reports a failure to read the run the caller named.
@@ -551,22 +563,23 @@ func NoRowsScored() string {
 	return "\nNo rows have been scored yet.\n"
 }
 
-// SamplesNeedingALook closes a --failed-only listing, holding the rows that
-// failed apart from the rows nothing managed to score.
-//
-// One count covering both contradicted the totals printed two lines above it,
-// which is what a reader compares it with: a run reporting 5 failed and 8
-// errored closed with "13 sample(s) failed at least one evaluator".
-// FilteredItemCount closes a filtered listing by naming the filter it applied.
-//
-// --failed-only used to keep rows nothing had scored and then count them as
-// failures, so the footer contradicted the totals directly above it.
-//
-// Phrased as "6 of 15 test cases failed" rather than "are failed": the status
-// reads as the verb, which is what the results spec prints and what a reader
-// says out loud.
-func FilteredItemCount(shown, total int, status string) string {
-	return fmt.Sprintf("\n%d of %d test cases %s\n", shown, total, status)
+// NoMatchingRows describes an empty selection without claiming the run has no results.
+func NoMatchingRows() string {
+	return "\nNo results match the selected status filter.\n"
+}
+
+// FilteredItemCount names only the rows displayed, not the run's total failures.
+func FilteredItemCount(shown int, status string, all bool) string {
+	scope := " on this page"
+	if all {
+		scope = ""
+	}
+	return fmt.Sprintf("\nShowing %s%s.\n", countOf(shown, status+" test case"), scope)
+}
+
+// FilteredRunTotal distinguishes the service's matching and full-run totals.
+func FilteredRunTotal(matching, total int, status string) string {
+	return fmt.Sprintf("Full run: %d %s of %s (service-reported).\n", matching, status, countOf(total, "total test case"))
 }
 
 // UnknownItemStatus reports a --status value that names no outcome.
@@ -590,6 +603,21 @@ func GateSawUnscoredRows(errored, skipped, total int) error {
 		"%s of %d samples were not scored, so the pass rate this gate read covers "+
 			"only the rest; use --fail-on any-failure to count them against the run",
 		unscoredBreakdown(errored, skipped), total)
+}
+
+// GateUnaccountedRows identifies a count mismatch without assigning an outcome.
+func GateUnaccountedRows(unaccounted, total, scored int) error {
+	return fmt.Errorf(
+		"%d of %d rows are not accounted for by the reported counts; the pass-rate gate covers %d scored rows",
+		unaccounted, total, scored)
+}
+
+// GateCountsUnavailable reports an indeterminate gate without a quality verdict.
+func GateCountsUnavailable(missing []string) error {
+	return fmt.Errorf(
+		"evaluation gate is indeterminate: result_counts did not report %s; "+
+			"inspect the run with `azd ai eval run show` and retry when the required counts are available",
+		strings.Join(missing, ", "))
 }
 
 // unscoredBreakdown counts what a pass rate left out, by what it was.
@@ -792,8 +820,10 @@ func EvaluationLevelChoice(level string) string {
 
 // EvaluationLevelNotAChoice reports an --evaluation-level that names neither.
 func EvaluationLevelNotAChoice(given string, levels []string) error {
-	return fmt.Errorf("--evaluation-level %q is not an evaluation level; use %s",
-		given, strings.Join(levels, " or "))
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--evaluation-level %q is not an evaluation level; use %s",
+			given, strings.Join(levels, " or ")),
+		"")
 }
 
 // SelectingEvaluationLevel reports a failed evaluation-level prompt.
@@ -957,15 +987,6 @@ func UsingLastRun(runID string) string {
 		"Using last run: %s (select a specific run with --run)\n", runID)
 }
 
-// PortalLinkAfterRows closes a per-sample listing with the run's one link.
-//
-// Labelled the way every other view labels it: the run's report page is in the
-// portal, and a reader looking for the link should not have to know two words
-// for it.
-func PortalLinkAfterRows(url string) string {
-	return fmt.Sprintf("\nPortal: %s\n", url)
-}
-
 // ExportFormatUnsupported reports an --format the export command cannot write.
 //
 // The recipe travels with the refusal. It was in the command's help, which is
@@ -1007,17 +1028,23 @@ func ExportedTestCases(count int, path string) string {
 
 // FailOnInvalid reports a --fail-on value that is neither form of threshold.
 func FailOnInvalid(spec string) error {
-	return fmt.Errorf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on must be any-failure or pass-rate=<0..1>, got %q", spec),
+		"")
 }
 
 // FailOnRateNotNumber reports a --fail-on pass rate that will not parse.
 func FailOnRateNotNumber(rate string) error {
-	return fmt.Errorf("--fail-on pass-rate must be a number, got %q", rate)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on pass-rate must be a number, got %q", rate),
+		"")
 }
 
 // FailOnRateOutOfRange reports a --fail-on pass rate outside 0..1.
 func FailOnRateOutOfRange(value float64) error {
-	return fmt.Errorf("--fail-on pass-rate must be between 0 and 1, got %v", value)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--fail-on pass-rate must be between 0 and 1, got %v", value),
+		"")
 }
 
 // GateNoResultCounts reports a gate that has nothing to measure against.
@@ -1535,18 +1562,6 @@ func NoFreeArtifactName(name string) error {
 			"or --output-dir to write elsewhere", name)
 }
 
-// DatasetVersionNotVerified reports a pinned version the service would not
-// confirm, on a deploy that is going ahead with it anyway.
-//
-// Failing here would break a deploy on a transient read, and the pin is the
-// author's explicit choice. Saying nothing reported the version verified when
-// all the deploy did was fail to look at it.
-func DatasetVersionNotVerified(name, version string, err error) error {
-	return fmt.Errorf(
-		"could not confirm dataset %q version %s still exists (%w); continuing with it",
-		name, version, err)
-}
-
 // ArtifactLeftAlone reports a destination a previous collection already filled.
 //
 // A rubric is meant to be edited, and `job show` is documented as safe to
@@ -1689,14 +1704,17 @@ func JSONLLineInvalid(line int, err error) error {
 
 // JSONLRowInvalid reports a row that is not JSON before the file is published.
 func JSONLRowInvalid(path string, line int, err error) error {
-	return fmt.Errorf(
-		"%s line %d is not valid JSON: %w. Every line must be one JSON object",
-		path, line, err)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s line %d is not valid JSON: %s. Every line must be one JSON object",
+			path, line, err),
+		"")
 }
 
 // JSONLRowEmpty reports a row that parses to nothing to evaluate.
 func JSONLRowEmpty(path string, line int) error {
-	return fmt.Errorf("%s line %d is an empty object, which evaluates to nothing", path, line)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%s line %d is an empty object, which evaluates to nothing", path, line),
+		"")
 }
 
 // JSONLNoRows reports a dataset file with nothing in it to evaluate.
@@ -1802,11 +1820,16 @@ func OutputFileAndDirBothGiven() error {
 		"--output-file and --output-dir both name where to write; pass one")
 }
 
-// OutputFileNeedsSingleFileDataset refuses a folder dataset written to one path.
+// OutputFileNeedsSingleFileDataset refuses content not confirmed as a single-file dataset.
 //
 // Picking one of its files to satisfy the flag hands back part of the dataset
 // under a name that claims to be all of it.
 func OutputFileNeedsSingleFileDataset(name, version string, files int) error {
+	if files == 1 {
+		return fmt.Errorf(
+			"dataset %s version %s contains one file, but its metadata does not identify it "+
+				"as a single-file dataset; use --output-dir", name, version)
+	}
 	return fmt.Errorf(
 		"dataset %s version %s holds %d files, so it has no single path to write; "+
 			"use --output-dir", name, version, files)
@@ -2746,14 +2769,18 @@ func JudgeModelRequired() error {
 // EvaluatorRefEmpty reports an --evaluator that carries no name, which is what
 // a stray comma leaves behind.
 func EvaluatorRefEmpty() error {
-	return errors.New("--evaluator was given an empty reference: name an evaluator, " +
-		"or use builtin.<name> for a built-in")
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		"--evaluator was given an empty reference: name an evaluator, "+
+			"or use builtin.<name> for a built-in",
+		"")
 }
 
 // EvaluatorRefMalformed reports a reference no evaluator can be found under.
 func EvaluatorRefMalformed(ref string) error {
-	return fmt.Errorf("%q is not an evaluator reference: repeat --evaluator, or separate "+
-		"them with commas, and use builtin.<name> for a built-in", ref)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%q is not an evaluator reference: repeat --evaluator, or separate "+
+			"them with commas, and use builtin.<name> for a built-in", ref),
+		"")
 }
 
 // EvaluatorRefNotAPath reports an --evaluator value carrying path separators.
@@ -2763,9 +2790,11 @@ func EvaluatorRefMalformed(ref string) error {
 // uploads whatever that resolves to. Refused rather than cleaned up: a reader
 // who typed a path meant something other than this flag.
 func EvaluatorRefNotAPath(ref string) error {
-	return fmt.Errorf("%q looks like a path, not an evaluator name: pass a name such as "+
-		"builtin.relevance or quality, and declare a rubric file with source: in the "+
-		"configuration instead", ref)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("%q looks like a path, not an evaluator name: pass a name such as "+
+			"builtin.relevance or quality, and declare a rubric file with source: in the "+
+			"configuration instead", ref),
+		"")
 }
 
 // EvaluatorBuiltinUnknown reports a builtin.<name> the project's catalogue does
@@ -3220,6 +3249,18 @@ func ResponsesSourceNeedsResponseIDs() error {
 	return errors.New("source.response_ids is required for a responses source")
 }
 
+// ResponsesSourceBlankResponseID identifies an invalid entry without printing stored response IDs.
+func ResponsesSourceBlankResponseID(index int) error {
+	return fmt.Errorf("source.response_ids[%d] must not be blank; supply a stored response ID or remove this entry", index)
+}
+
+// SourceSampleConflict refuses a dataset cap on a source-backed evaluation.
+func SourceSampleConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--max-samples or max_samples cannot cap source-backed eval %q", evalName),
+		"Remove the dataset cap. For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
 func AtLeastOneEvaluatorRequired(index int, eval string) error {
 	return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", index, eval)
@@ -3619,9 +3660,10 @@ func MaxSamplesNegative(got int) error {
 
 // NegativeMaxSamplesFlag reports the same thing given on the command line.
 func NegativeMaxSamplesFlag(got int) error {
-	return fmt.Errorf(
-		"--max-samples cannot be negative, got %d. "+
-			"Omit it to send every row, or give the number of rows to send", got)
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--max-samples cannot be negative, got %d. "+
+			"Omit it to send every row, or give the number of rows to send", got),
+		"")
 }
 
 // FlagDoesNotApply reports a flag given to a generate that produces nothing it
@@ -3851,6 +3893,11 @@ func RubricDimensionsNotReturned() string {
 	return "\nRubric dimensions: not returned by service\n"
 }
 
+// RubricDimensionsUnreadable preserves valid detail output while identifying malformed data.
+func RubricDimensionsUnreadable() string {
+	return "\nWARNING: Dimension scores could not be read; use --output json to inspect the service data.\n"
+}
+
 // LocalContextHeading opens what init settled without asking.
 func LocalContextHeading() string {
 	return "\nUsing local configuration:\n"
@@ -4073,7 +4120,10 @@ func explainGenerationWarning(code string) string {
 }
 
 // PortalLink closes a detail view with the asset's portal URL.
-func PortalLink(url string) string {
+func PortalLink(url string, redacted bool) string {
+	if redacted {
+		return fmt.Sprintf("Portal (redacted link; may open a general page): %s\n", url)
+	}
 	return fmt.Sprintf("Portal: %s\n", url)
 }
 
@@ -4207,13 +4257,29 @@ func isCredentialUnavailable(err error) bool {
 func ServiceRefused(status int, err error) error {
 	concise := conciseServiceError(err)
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return exterrors.Auth(
-			exterrors.CodeAuthFailed,
-			fmt.Sprintf(
-				"the Foundry project refused the request (HTTP %d): %v. "+
-					"Run `azd auth login`, and check you have access to this project",
-				status, concise),
-			"run `azd auth login`, and check you have access to this project")
+		full := concise.Error()
+		safe := full
+		if svc, ok := errors.AsType[*serviceError](concise); ok {
+			safe = svc.SafeMessage()
+		}
+		const (
+			tail       = "Run `azd auth login`, and check you have access to this project"
+			suggestion = "run `azd auth login`, and check you have access to this project"
+		)
+		return &authServiceError{
+			LocalError: &azdext.LocalError{
+				Message: fmt.Sprintf(
+					"the Foundry project refused the request (HTTP %d): %s. %s", status, full, tail),
+				Code:       exterrors.CodeAuthFailed,
+				Category:   azdext.LocalErrorCategoryAuth,
+				Suggestion: suggestion,
+			},
+			// Same wording as Message, but built from the endpoint-free
+			// sentence, so -o json never discloses which Foundry account or
+			// project backed the refused call.
+			safe: fmt.Sprintf(
+				"the Foundry project refused the request (HTTP %d): %s. %s", status, safe, tail),
+		}
 	}
 	return concise
 }

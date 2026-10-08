@@ -471,7 +471,9 @@ type InvokeProjectHandler struct {
 	// Name of the event being invoked.
 	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
 	// Current project configuration.
-	Project       *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	Project *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	// Opaque identifier for the current project handler invocation.
+	InvocationId  string `protobuf:"bytes,3,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -518,6 +520,13 @@ func (x *InvokeProjectHandler) GetProject() *ProjectConfig {
 		return x.Project
 	}
 	return nil
+}
+
+func (x *InvokeProjectHandler) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
 }
 
 // Server invokes the service event handler
@@ -782,11 +791,12 @@ const file_azd_extensions_v1beta_event_proto_rawDesc = "" +
 	"eventNames\x12\x1a\n" +
 	"\blanguage\x18\x02 \x01(\tR\blanguage\x12\x12\n" +
 	"\x04host\x18\x03 \x01(\tR\x04host\"\x1f\n" +
-	"\x1dSubscribeServiceEventResponse\"u\n" +
+	"\x1dSubscribeServiceEventResponse\"\x9a\x01\n" +
 	"\x14InvokeProjectHandler\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12>\n" +
-	"\aproject\x18\x02 \x01(\v2$.azd.extensions.v1beta.ProjectConfigR\aproject\"\x85\x02\n" +
+	"\aproject\x18\x02 \x01(\v2$.azd.extensions.v1beta.ProjectConfigR\aproject\x12#\n" +
+	"\rinvocation_id\x18\x03 \x01(\tR\finvocationId\"\x85\x02\n" +
 	"\x14InvokeServiceHandler\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12>\n" +

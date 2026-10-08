@@ -24,7 +24,8 @@ connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
-[Agent context telemetry](#agent-context-telemetry) and
+[Agent context telemetry](#agent-context-telemetry),
+[Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
 ### Agent context telemetry
@@ -48,6 +49,26 @@ both azd-created and existing ACR destinations. Ambiguous legacy or invalid
 hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
 are reported as `unknown`. The event never includes agent names, service keys,
 registry connections, image references, paths, URLs, prompts, or other customer content.
+
+### Remote invoke adoption telemetry
+
+`agent.invoke.selected` reports the selected mode once a remote invoke has
+resolved its protocol and target. For project-backed routes, only hosted-agent
+services are counted; an explicit `--agent-endpoint` has no project service kind
+to verify. The event runs before the invoke request, not necessarily before
+authentication: protocol or target resolution can check whether a brownfield
+agent exists in Foundry. Failures before resolution are not counted, while
+later request failures do not prevent the usage report. Local and non-hosted
+project routes (prompt, voice, workflow) are excluded.
+
+| Attribute | Values | Description |
+|---|---|---|
+| `ext.agent.invoke.protocol` | `responses`, `invocations`, `a2a` (currently) | Resolved invocable protocol. |
+| `ext.agent.invoke.long_running` | `true`, `false` | String-encoded choice of `--long-running`; supported for remote Responses only. |
+| `ext.agent.invoke.no_wait` | `true`, `false` | String-encoded choice of `--no-wait`; requires `--long-running`. |
+
+This records command-path adoption, not whether the service accepted or
+completed work. No prompt, agent name, endpoint, or service response is sent.
 
 ## Non-interactive automation
 
@@ -401,7 +422,7 @@ services:
         version: "2"
     tools:
       - type: github_copilot_toolset_preview
-        default_config:
+        defaultConfig:
           enabled: false
         configs:
           - name: web
@@ -409,7 +430,7 @@ services:
 ```
 
 Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
-and `subagents`. `default_config.enabled` applies to every built-in; entries in
+and `subagents`. `defaultConfig.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
 
@@ -441,6 +462,34 @@ structuredInputs:
 
 Nested tool definitions remain API-owned and use the field names documented by
 the corresponding Foundry tool contract.
+
+## Prompt agent memory
+
+Prompt agents can declare one memory store for azd to provision and attach
+through a memory-search tool. Prompt memory properties use camelCase:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: my-agent
+    model: gpt-5-mini
+    instructions: Remember useful details from earlier conversations.
+    memory:
+      store: conversation-memory
+      chatModel: gpt-5-mini
+      embeddingModel: text-embedding-3-small
+      scope: "{{$userId}}"
+      updateDelay: 300
+      maxMemories: 5
+      options:
+        chatSummaryEnabled: true
+        userProfileEnabled: true
+        proceduralMemoryEnabled: false
+        defaultTtlSeconds: 2592000
+        userProfileDetails: Remember stable preferences.
+```
 
 ## Content safety policies
 
@@ -670,7 +719,7 @@ services:
             - $.output
           streamSelectors:
             - eventType: response.output_text.delta
-              textField: $.delta
+              textField: delta
 ```
 
 Fields:
@@ -680,9 +729,35 @@ Fields:
 | `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
-| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
-| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
-| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. See [Selectors and field names](#selectors-and-field-names). |
+
+#### Selectors and field names
+
+`inputPaths` and `outputPaths` are **selector expressions**. They support `$` for
+the document root, dotted members, array indexes, and `[*]` wildcards — for
+example `$.messages[*].content`. They are not a full JSONPath implementation.
+
+`textField` is **not** a selector: when provided, it is the non-empty, exact
+**name of a field** on the matched event payload, with no surrounding whitespace.
+Write `delta`, not `$.delta`, `""`, or `" delta"`. It defaults to `delta` when
+omitted.
+
+`eventType` is matched exactly, with no surrounding whitespace, against the value
+of the `type` field *inside* the event's `data:` payload, not against the SSE
+`event:` line. So for a frame like
+
+```text
+data: {"type": "response.output_text.delta", "delta": "Hi"}
+```
+
+the selector is `eventType: response.output_text.delta` with `textField: delta`.
+
+> **Why this matters:** a `textField` that names no field on the payload yields no
+> text, so that event contributes nothing to moderation. A `$.`-prefixed or
+> whitespace-padded value therefore silently disables screening for every frame it
+> applies to. azd rejects those values for this reason.
 
 `invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
 includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
@@ -797,7 +872,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 

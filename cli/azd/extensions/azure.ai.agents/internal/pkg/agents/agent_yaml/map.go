@@ -118,10 +118,11 @@ func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.Invo
 	}
 
 	for _, selector := range moderation.StreamSelectors {
-		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
-			EventType: selector.EventType,
-			TextField: selector.TextField,
-		})
+		mappedSelector := agent_api.SseTextSelector{EventType: selector.EventType}
+		if selector.TextField != nil {
+			mappedSelector.TextField = *selector.TextField
+		}
+		mapped.StreamSelectors = append(mapped.StreamSelectors, mappedSelector)
 	}
 
 	return mapped
@@ -649,9 +650,9 @@ func CreatePromptAgentAPIRequest(
 	}
 
 	// Tools and the camelCase authored fields toolChoice and structuredInputs are
-	// passed through to their snake_case Foundry API fields.
+	// translated to their snake_case Foundry API fields.
 	if len(promptAgent.Tools) > 0 {
-		promptDef.Tools = promptAgent.Tools
+		promptDef.Tools = promptToolsForAPI(promptAgent.Tools)
 	}
 	if promptAgent.ToolChoice != nil {
 		promptDef.ToolChoice = promptAgent.ToolChoice

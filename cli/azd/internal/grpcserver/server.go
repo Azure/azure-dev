@@ -37,6 +37,7 @@ type Server struct {
 	userConfigService    azdext.UserConfigServiceServer
 	deploymentService    azdext.DeploymentServiceServer
 	eventService         azdext.EventServiceServer
+	commandResultService v1beta.CommandResultServiceServer
 	composeService       v1beta.ComposeServiceServer
 	workflowService      azdext.WorkflowServiceServer
 	extensionService     azdext.ExtensionServiceServer
@@ -71,6 +72,7 @@ func NewServer(
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
 	telemetryService v1beta.TelemetryServiceServer,
+	commandResultService v1beta.CommandResultServiceServer,
 ) *Server {
 	server := &Server{
 		projectService:       projectService,
@@ -79,6 +81,7 @@ func NewServer(
 		userConfigService:    userConfigService,
 		deploymentService:    deploymentService,
 		eventService:         eventServiceImpl,
+		commandResultService: commandResultService,
 		composeService:       composeService,
 		workflowService:      workflowService,
 		extensionService:     extensionService,
@@ -93,11 +96,13 @@ func NewServer(
 		telemetryService:     telemetryService,
 		betaServiceOverrides: map[BetaService]any{},
 	}
-	if eventService, ok := eventServiceImpl.(*eventService); ok {
-		server.betaServiceOverrides[BetaEventService] = &betaEventService{service: eventService}
-	}
 	if principalService, ok := accountService.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
 		server.WithOptions(WithBetaServiceOverride(BetaAccountService, principalService))
+	}
+	if events, ok := eventServiceImpl.(*eventService); ok {
+		server.WithOptions(WithBetaServiceOverride(
+			BetaEventService, &betaEventService{service: events},
+		))
 	}
 	return server
 }

@@ -39,7 +39,8 @@ var noEnvResolver = func(name string) string {
 // eventService implements azdext.EventServiceServer.
 type eventService struct {
 	azdext.UnimplementedEventServiceServer
-	extensionManager *extensions.Manager
+	extensionManager ExtensionLookup
+	followUps        *followUpManager
 	console          input.Console
 
 	lazyEnvManager *lazy.Lazy[environment.Manager]
@@ -99,15 +100,22 @@ func lifecycleOutputProgress(
 	}
 }
 
+// ExtensionLookup resolves an installed extension.
+type ExtensionLookup interface {
+	GetInstalled(extensions.FilterOptions) (*extensions.Extension, error)
+}
+
 func NewEventService(
-	extensionManager *extensions.Manager,
+	extensionManager ExtensionLookup,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
 	lazyEnv *lazy.Lazy[*environment.Environment],
+	followUps *followUpManager,
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
+		followUps:        followUps,
 		lazyEnvManager:   lazyEnvManager,
 		lazyProject:      lazyProject,
 		lazyEnv:          lazyEnv,

@@ -191,9 +191,9 @@ func TestCreatePromptAgentAPIRequest_CopilotToolset(t *testing.T) {
 		Instructions:    "Use web research when requested.",
 		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
 		Tools: []any{map[string]any{
-			"type":           githubCopilotToolsetPreview,
-			"default_config": map[string]any{"enabled": false},
-			"configs":        []any{map[string]any{"name": "web", "enabled": true}},
+			"type":          githubCopilotToolsetPreview,
+			"defaultConfig": map[string]any{"enabled": false},
+			"configs":       []any{map[string]any{"name": "web", "enabled": true}},
 		}},
 	}
 

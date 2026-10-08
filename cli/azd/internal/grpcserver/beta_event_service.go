@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
-	"sync"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
@@ -17,10 +19,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type betaEventService struct {
@@ -32,145 +34,100 @@ var _ BetaEventServiceEventStreamOverride = (*betaEventService)(nil)
 func (s *betaEventService) EventStream(
 	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
 ) error {
-	extension, err := s.authorize(stream.Context())
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get extension claims: %w", err)
+	}
+
+	extension, err := s.service.extensionManager.GetInstalled(
+		extensions.FilterOptions{Id: claims.Subject},
+	)
+	if err != nil {
+		return status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err)
+	}
+	if !extension.HasCapability(extensions.LifecycleEventsCapability) {
+		return status.Error(codes.PermissionDenied, "extension does not support lifecycle events")
 	}
 
 	first, err := stream.Recv()
 	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+			return nil
+		}
+		if streamStatus, ok := status.FromError(err); ok &&
+			streamStatus.Code() == codes.Canceled {
+			return nil
+		}
+		return fmt.Errorf("failed to receive initial event subscription: %w", err)
+	}
+
+	mode, err := betaEventStreamModeFor(first)
+	if err != nil {
 		return err
 	}
-	if first == nil {
-		return status.Error(codes.InvalidArgument, "first event message is required")
-	}
 
-	switch {
-	case first.GetRequestId() == "" && isEventSubscription(first):
-		if err := validateLegacyBetaEventMessage(first); err != nil {
-			return err
-		}
-		legacyAdapter := &betaEventServiceAdapter{stable: s.service}
-		return legacyAdapter.EventStream(&legacyBetaEventStream{
-			BidiStreamingServer: stream,
-			first:               first,
-		})
-	case first.GetRequestId() != "" && isEventSubscription(first):
-		eventStream := &modernBetaEventStream{
-			BidiStreamingServer: stream,
-			first:               first,
-		}
-		return s.runModern(stream.Context(), extension, eventStream)
-	default:
-		return status.Error(
-			codes.InvalidArgument,
-			"event stream must start with a project or service subscription",
-		)
+	betaStream := newBetaEventStream(stream, first, mode)
+	if mode == betaEventStreamLegacy {
+		return delegateLegacyBetaEventStream(betaStream, s.service)
 	}
-}
+	stream = betaStream
 
-func (s *betaEventService) authorize(ctx context.Context) (*extensions.Extension, error) {
-	claims, err := extensions.GetClaimsFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get extension claims: %w", err)
-	}
-
-	extension, err := s.service.extensionManager.GetInstalled(extensions.FilterOptions{
-		Id: claims.Subject,
-	})
-	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
-	}
-	if !extension.HasCapability(extensions.LifecycleEventsCapability) {
-		return nil, status.Error(codes.PermissionDenied, "extension does not support lifecycle events")
-	}
-
-	return extension, nil
-}
-
-func (s *betaEventService) runModern(
-	ctx context.Context,
-	extension *extensions.Extension,
-	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
-) error {
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		betaEventMessageEnvelope{},
+		newBetaEventMessageEnvelope(),
 		extension.Id,
 		log.Default(),
 	)
-	var subscriptionMu sync.Mutex
-	var subscriptionCancels []context.CancelFunc
-	subscriptionsClosed := false
-	trackSubscriptionCancel := func(cancel context.CancelFunc) {
-		subscriptionMu.Lock()
-		if subscriptionsClosed {
-			subscriptionMu.Unlock()
-			cancel()
-			return
-		}
-		subscriptionCancels = append(subscriptionCancels, cancel)
-		subscriptionMu.Unlock()
-	}
-	defer func() {
-		subscriptionMu.Lock()
-		subscriptionsClosed = true
-		cancels := subscriptionCancels
-		subscriptionMu.Unlock()
-		for _, cancel := range cancels {
-			cancel()
-		}
-	}()
-
 	if err := broker.On(func(
 		ctx context.Context,
-		request *v1beta.SubscribeProjectEvent,
+		msg *v1beta.SubscribeProjectEvent,
 	) (*v1beta.EventMessage, error) {
-		return s.onSubscribeProjectEvent(ctx, extension, request, broker, trackSubscriptionCancel)
+		return s.subscribeProject(ctx, extension, msg, broker)
 	}); err != nil {
-		return fmt.Errorf("register beta project event subscription handler: %w", err)
+		return err
 	}
 	if err := broker.On(func(
 		ctx context.Context,
-		request *v1beta.SubscribeServiceEvent,
+		msg *v1beta.SubscribeServiceEvent,
 	) (*v1beta.EventMessage, error) {
-		return s.onSubscribeServiceEvent(ctx, extension, request, broker, trackSubscriptionCancel)
+		return s.subscribeService(ctx, extension, msg, broker)
 	}); err != nil {
-		return fmt.Errorf("register beta service event subscription handler: %w", err)
+		return err
 	}
-
 	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("beta event broker error: %w", err)
+		return fmt.Errorf("broker error: %w", err)
 	}
 	return nil
 }
 
-func (s *betaEventService) onSubscribeProjectEvent(
+func (s *betaEventService) subscribeProject(
 	ctx context.Context,
 	extension *extensions.Extension,
-	request *v1beta.SubscribeProjectEvent,
+	msg *v1beta.SubscribeProjectEvent,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
-	trackCancel func(context.CancelFunc),
 ) (*v1beta.EventMessage, error) {
-	if err := validateEventNames(request.GetEventNames()); err != nil {
-		return nil, err
+	if msg == nil || len(msg.EventNames) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "event names are required")
 	}
-
 	projectConfig, err := s.service.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
 	}
-
-	registrationCtx, cancel := context.WithCancel(ctx)
-	trackCancel(cancel)
-	for _, eventName := range request.GetEventNames() {
-		handler := s.createProjectEventHandler(ctx, extension, eventName, broker)
-		if err := projectConfig.AddHandler(registrationCtx, ext.Event(eventName), handler); err != nil {
-			cancel()
+	for i, eventName := range msg.EventNames {
+		if eventName == "" {
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"event name at index %d cannot be empty",
+				i,
+			)
+		}
+		handler := s.createProjectHandler(ctx, extension, eventName, broker)
+		if err := projectConfig.AddHandler(ctx, ext.Event(eventName), handler); err != nil {
 			return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
 	}
-
 	return &v1beta.EventMessage{
 		MessageType: &v1beta.EventMessage_SubscribeProjectEventResponse{
 			SubscribeProjectEventResponse: &v1beta.SubscribeProjectEventResponse{},
@@ -178,84 +135,28 @@ func (s *betaEventService) onSubscribeProjectEvent(
 	}, nil
 }
 
-func (s *betaEventService) onSubscribeServiceEvent(
-	ctx context.Context,
-	extension *extensions.Extension,
-	request *v1beta.SubscribeServiceEvent,
-	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
-	trackCancel func(context.CancelFunc),
-) (*v1beta.EventMessage, error) {
-	if err := validateEventNames(request.GetEventNames()); err != nil {
-		return nil, err
-	}
-
-	projectConfig, err := s.service.lazyProject.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	registrationCtx, cancel := context.WithCancel(ctx)
-	trackCancel(cancel)
-	for _, eventName := range request.GetEventNames() {
-		for _, serviceConfig := range projectConfig.ServiceConfigs() {
-			if request.GetLanguage() != "" &&
-				string(serviceConfig.Language) != request.GetLanguage() {
-				continue
-			}
-			if request.GetHost() != "" && string(serviceConfig.Host) != request.GetHost() {
-				continue
-			}
-
-			handler := s.createServiceEventHandler(
-				ctx,
-				serviceConfig,
-				extension,
-				eventName,
-				broker,
-			)
-			if err := serviceConfig.AddHandler(registrationCtx, ext.Event(eventName), handler); err != nil {
-				cancel()
-				return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
-			}
-		}
-	}
-
-	return &v1beta.EventMessage{
-		MessageType: &v1beta.EventMessage_SubscribeServiceEventResponse{
-			SubscribeServiceEventResponse: &v1beta.SubscribeServiceEventResponse{},
-		},
-	}, nil
-}
-
-func validateEventNames(eventNames []string) error {
-	if len(eventNames) == 0 {
-		return status.Error(codes.InvalidArgument, "event names are required")
-	}
-	for index, eventName := range eventNames {
-		if eventName == "" {
-			return status.Errorf(
-				codes.InvalidArgument,
-				"event name at index %d cannot be empty",
-				index,
-			)
-		}
-	}
-	return nil
-}
-
-func (s *betaEventService) createProjectEventHandler(
+func (s *betaEventService) createProjectHandler(
 	streamCtx context.Context,
 	extension *extensions.Extension,
 	eventName string,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+		var completed bool
+		invocationID := s.service.followUps.Begin(extension.Id, eventName)
+		defer s.service.followUps.Discard(invocationID)
+
 		err := func() error {
-			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
+			claims, err := extensions.GetClaimsFromContext(streamCtx)
+			if err != nil {
+				return fmt.Errorf("failed to get extension claims: %w", err)
+			}
+			invocationCtx := extensions.WithClaimsContext(ctx, claims)
+
 			cleanupPreview, output := s.service.syncExtensionOutput(
 				ctx,
 				extension,
-				previewTitle,
+				fmt.Sprintf("%s (%s)", extension.DisplayName, eventName),
 				shouldPersistLifecycleOutput(eventName),
 			)
 			defer cleanupPreview()
@@ -265,64 +166,111 @@ func (s *betaEventService) createProjectEventHandler(
 			if err == nil && env != nil {
 				resolver = env.Getenv
 			}
-
 			var stableProject *azdext.ProjectConfig
 			if err := mapper.WithResolver(resolver).Convert(args.Project, &stableProject); err != nil {
 				return err
 			}
-			betaProject := &v1beta.ProjectConfig{}
-			if err := transcodeStableResponse(stableProject, betaProject); err != nil {
+			protoProject := new(v1beta.ProjectConfig)
+			if err := transcodeStableResponse(stableProject, protoProject); err != nil {
 				return fmt.Errorf("convert project config to beta: %w", err)
 			}
-
-			invocationCtx, err := addStreamClaims(ctx, streamCtx)
-			if err != nil {
-				return err
-			}
-			invokeMessage := &v1beta.EventMessage{
-				RequestId: uuid.NewString(),
+			invoke := &v1beta.EventMessage{
+				RequestId: invocationID,
 				MessageType: &v1beta.EventMessage_InvokeProjectHandler{
 					InvokeProjectHandler: &v1beta.InvokeProjectHandler{
-						EventName: eventName,
-						Project:   betaProject,
+						EventName:    eventName,
+						Project:      protoProject,
+						InvocationId: invocationID,
 					},
 				},
 			}
-
 			return s.service.runWithEnvReload(ctx, func() error {
 				response, err := broker.SendAndWaitWithProgress(
-					invocationCtx,
-					invokeMessage,
-					lifecycleOutputProgress(output),
+					invocationCtx, invoke, lifecycleOutputProgress(output),
 				)
 				if err != nil {
-					return fmt.Errorf("failed to invoke project event %s: %w", eventName, err)
+					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
 				}
-
-				statusMessage := response.GetProjectHandlerStatus()
-				if statusMessage == nil || statusMessage.GetEventName() != eventName {
-					return fmt.Errorf("unexpected response for project event %s", eventName)
+				statusMsg, ok := response.MessageType.(*v1beta.EventMessage_ProjectHandlerStatus)
+				if !ok {
+					return fmt.Errorf("unexpected response type for project event %s", eventName)
 				}
-				if statusMessage.GetStatus() != "failed" {
-					return nil
+				if statusMsg.ProjectHandlerStatus.Status == "failed" {
+					if extErr := unwrapBetaError(statusMsg.ProjectHandlerStatus.Error); extErr != nil {
+						return extErr
+					}
+					return fmt.Errorf(
+						"extension %s project hook %s failed: %s",
+						extension.Id,
+						eventName,
+						statusMsg.ProjectHandlerStatus.Message,
+					)
 				}
-				if extensionErr := unwrapBetaExtensionError(statusMessage.GetError()); extensionErr != nil {
-					return extensionErr
-				}
-				return fmt.Errorf(
-					"extension %s project hook %s failed: %s",
-					extension.Id,
-					eventName,
-					statusMessage.GetMessage(),
-				)
+				completed = statusMsg.ProjectHandlerStatus.Status == "completed"
+				return nil
 			})
 		}()
 
+		if err == nil && completed {
+			text, hasText := s.service.followUps.Commit(invocationID)
+			if strings.HasPrefix(eventName, "post") && hasText {
+				if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+					collector.Add(commandresult.FollowUp{
+						ExtensionID:  extension.Id,
+						CommandOrder: commandresult.FollowUpCommandOrderFromContext(ctx),
+						EventName:    eventName,
+						Layer:        betaFollowUpLayer(args),
+						Text:         text,
+					})
+				}
+			}
+		}
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
 }
 
-func (s *betaEventService) createServiceEventHandler(
+func (s *betaEventService) subscribeService(
+	ctx context.Context,
+	extension *extensions.Extension,
+	msg *v1beta.SubscribeServiceEvent,
+	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+) (*v1beta.EventMessage, error) {
+	if msg == nil || len(msg.EventNames) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "event names are required")
+	}
+	projectConfig, err := s.service.lazyProject.GetValue()
+	if err != nil {
+		return nil, err
+	}
+	for i, eventName := range msg.EventNames {
+		if eventName == "" {
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"event name at index %d cannot be empty",
+				i,
+			)
+		}
+		for _, serviceConfig := range projectConfig.ServiceConfigs() {
+			if msg.Language != "" && string(serviceConfig.Language) != msg.Language {
+				continue
+			}
+			if msg.Host != "" && string(serviceConfig.Host) != msg.Host {
+				continue
+			}
+			handler := s.createServiceHandler(ctx, serviceConfig, extension, eventName, broker)
+			if err := serviceConfig.AddHandler(ctx, ext.Event(eventName), handler); err != nil {
+				return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
+			}
+		}
+	}
+	return &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeServiceEventResponse{
+			SubscribeServiceEventResponse: &v1beta.SubscribeServiceEventResponse{},
+		},
+	}, nil
+}
+
+func (s *betaEventService) createServiceHandler(
 	streamCtx context.Context,
 	serviceConfig *project.ServiceConfig,
 	extension *extensions.Extension,
@@ -331,27 +279,25 @@ func (s *betaEventService) createServiceEventHandler(
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
-			previewTitle := fmt.Sprintf(
-				"%s (%s.%s)",
-				extension.DisplayName,
-				args.Service.Name,
-				eventName,
-			)
+			claims, err := extensions.GetClaimsFromContext(streamCtx)
+			if err != nil {
+				return fmt.Errorf("failed to get extension claims: %w", err)
+			}
+			invocationCtx := extensions.WithClaimsContext(ctx, claims)
+
 			cleanupPreview, output := s.service.syncExtensionOutput(
 				ctx,
 				extension,
-				previewTitle,
+				fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName),
 				shouldPersistLifecycleOutput(eventName),
 			)
 			defer cleanupPreview()
-
 			resolver := noEnvResolver
 			env, err := s.service.lazyEnv.GetValue()
 			if err == nil && env != nil {
 				resolver = env.Getenv
 			}
 			objectMapper := mapper.WithResolver(resolver)
-
 			var stableProject *azdext.ProjectConfig
 			if err := objectMapper.Convert(args.Project, &stableProject); err != nil {
 				return err
@@ -364,193 +310,85 @@ func (s *betaEventService) createServiceEventHandler(
 			if err := objectMapper.Convert(args.ServiceContext, &stableContext); err != nil {
 				return err
 			}
-
-			betaProject := &v1beta.ProjectConfig{}
-			if err := transcodeStableResponse(stableProject, betaProject); err != nil {
+			protoProject := new(v1beta.ProjectConfig)
+			if err := transcodeStableResponse(stableProject, protoProject); err != nil {
 				return fmt.Errorf("convert project config to beta: %w", err)
 			}
-			betaService := &v1beta.ServiceConfig{}
-			if err := transcodeStableResponse(stableService, betaService); err != nil {
+			protoService := new(v1beta.ServiceConfig)
+			if err := transcodeStableResponse(stableService, protoService); err != nil {
 				return fmt.Errorf("convert service config to beta: %w", err)
 			}
-			betaContext := &v1beta.ServiceContext{}
-			if err := transcodeStableResponse(stableContext, betaContext); err != nil {
+			protoContext := new(v1beta.ServiceContext)
+			if err := transcodeStableResponse(stableContext, protoContext); err != nil {
 				return fmt.Errorf("convert service context to beta: %w", err)
 			}
-
-			invocationCtx, err := addStreamClaims(ctx, streamCtx)
-			if err != nil {
-				return err
-			}
-			invokeMessage := &v1beta.EventMessage{
-				RequestId: uuid.NewString(),
+			invoke := &v1beta.EventMessage{
 				MessageType: &v1beta.EventMessage_InvokeServiceHandler{
 					InvokeServiceHandler: &v1beta.InvokeServiceHandler{
 						EventName:      eventName,
-						Project:        betaProject,
-						Service:        betaService,
-						ServiceContext: betaContext,
+						Project:        protoProject,
+						Service:        protoService,
+						ServiceContext: protoContext,
 					},
 				},
 			}
-
+			// Keep legacy service/event correlation for existing clients.
+			invoke.RequestId = newBetaEventMessageEnvelope().GetRequestId(invocationCtx, invoke)
 			return s.service.runWithEnvReload(ctx, func() error {
 				response, err := broker.SendAndWaitWithProgress(
-					invocationCtx,
-					invokeMessage,
-					lifecycleOutputProgress(output),
+					invocationCtx, invoke, lifecycleOutputProgress(output),
 				)
 				if err != nil {
-					return fmt.Errorf("failed to invoke service event %s: %w", eventName, err)
+					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}
-
-				statusMessage := response.GetServiceHandlerStatus()
-				if statusMessage == nil ||
-					statusMessage.GetEventName() != eventName ||
-					statusMessage.GetServiceName() != args.Service.Name {
-					return fmt.Errorf("unexpected response for service event %s", eventName)
+				statusMsg, ok := response.MessageType.(*v1beta.EventMessage_ServiceHandlerStatus)
+				if !ok {
+					return fmt.Errorf("unexpected response type for service event %s", eventName)
 				}
-				if statusMessage.GetStatus() != "failed" {
-					return nil
+				if statusMsg.ServiceHandlerStatus.Status == "failed" {
+					if extErr := unwrapBetaError(statusMsg.ServiceHandlerStatus.Error); extErr != nil {
+						return extErr
+					}
+					return fmt.Errorf(
+						"extension %s service hook %s.%s failed: %s",
+						extension.Id,
+						args.Service.Name,
+						eventName,
+						statusMsg.ServiceHandlerStatus.Message,
+					)
 				}
-				if extensionErr := unwrapBetaExtensionError(statusMessage.GetError()); extensionErr != nil {
-					return extensionErr
-				}
-				return fmt.Errorf(
-					"extension %s service hook %s.%s failed: %s",
-					extension.Id,
-					args.Service.Name,
-					eventName,
-					statusMessage.GetMessage(),
-				)
+				return nil
 			})
 		}()
-
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
 }
 
-func addStreamClaims(ctx, streamCtx context.Context) (context.Context, error) {
-	claims, err := extensions.GetClaimsFromContext(streamCtx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get extension claims: %w", err)
+func betaFollowUpLayer(args project.ProjectLifecycleEventArgs) string {
+	if args.Args == nil {
+		return ""
 	}
-	return extensions.WithClaimsContext(ctx, claims), nil
+	if layer, ok := args.Args["layer"].(string); ok && layer != "" {
+		return layer
+	}
+	if path, ok := args.Args["path"].(string); ok {
+		return path
+	}
+	return ""
 }
 
-func isEventSubscription(message *v1beta.EventMessage) bool {
-	return message.GetSubscribeProjectEvent() != nil ||
-		message.GetSubscribeServiceEvent() != nil
-}
+func unwrapBetaError(err *v1beta.ExtensionError) error {
+	if err == nil {
+		return nil
+	}
 
-type modernBetaEventStream struct {
-	grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage]
-	first *v1beta.EventMessage
-}
-
-func (s *modernBetaEventStream) Recv() (*v1beta.EventMessage, error) {
-	var message *v1beta.EventMessage
-	if s.first != nil {
-		message = s.first
-		s.first = nil
-	} else {
-		var err error
-		message, err = s.BidiStreamingServer.Recv()
-		if err != nil {
-			return nil, err
+	wire, marshalErr := proto.Marshal(err)
+	if marshalErr == nil {
+		stableError := new(azdext.ExtensionError)
+		if unmarshalErr := proto.Unmarshal(wire, stableError); unmarshalErr == nil {
+			return azdext.UnwrapError(stableError)
 		}
 	}
-	if err := validateModernBetaEventMessage(message); err != nil {
-		return nil, err
-	}
-	return message, nil
-}
 
-type legacyBetaEventStream struct {
-	grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage]
-	first *v1beta.EventMessage
-}
-
-func (s *legacyBetaEventStream) Recv() (*v1beta.EventMessage, error) {
-	if s.first != nil {
-		message := s.first
-		s.first = nil
-		return message, nil
-	}
-	message, err := s.BidiStreamingServer.Recv()
-	if err != nil {
-		return nil, err
-	}
-	if err := validateLegacyBetaEventMessage(message); err != nil {
-		return nil, err
-	}
-	return message, nil
-}
-
-func validateModernBetaEventMessage(message *v1beta.EventMessage) error {
-	if message == nil {
-		return status.Error(codes.InvalidArgument, "event message is required")
-	}
-	if message.GetRequestId() == "" {
-		return status.Error(codes.InvalidArgument, "beta event request_id is required")
-	}
-	if message.GetError() != nil {
-		return status.Error(codes.InvalidArgument, "extensions cannot send top-level event errors")
-	}
-
-	switch content := message.GetMessageType().(type) {
-	case *v1beta.EventMessage_SubscribeProjectEvent:
-		if content.SubscribeProjectEvent == nil {
-			break
-		}
-	case *v1beta.EventMessage_SubscribeServiceEvent:
-		if content.SubscribeServiceEvent == nil {
-			break
-		}
-	case *v1beta.EventMessage_ProjectHandlerStatus:
-		if content.ProjectHandlerStatus == nil {
-			break
-		}
-	case *v1beta.EventMessage_ServiceHandlerStatus:
-		if content.ServiceHandlerStatus == nil {
-			break
-		}
-	case *v1beta.EventMessage_HandlerOutput:
-		if content.HandlerOutput == nil {
-			break
-		}
-	default:
-		return status.Error(codes.InvalidArgument, "invalid message for a beta event client")
-	}
-	if (betaEventMessageEnvelope{}).GetInnerMessage(message) == nil {
-		return status.Error(codes.InvalidArgument, "event message payload is required")
-	}
-	return nil
-}
-
-func validateLegacyBetaEventMessage(message *v1beta.EventMessage) error {
-	if message == nil {
-		return status.Error(codes.InvalidArgument, "event message is required")
-	}
-	if message.GetRequestId() != "" || message.GetError() != nil ||
-		message.GetHandlerOutput() != nil ||
-		message.GetSubscribeProjectEventResponse() != nil ||
-		message.GetSubscribeServiceEventResponse() != nil {
-		return status.Error(
-			codes.InvalidArgument,
-			"beta event protocol fields require a new stream with a request_id",
-		)
-	}
-	switch message.GetMessageType().(type) {
-	case *v1beta.EventMessage_SubscribeProjectEvent,
-		*v1beta.EventMessage_SubscribeServiceEvent,
-		*v1beta.EventMessage_ProjectHandlerStatus,
-		*v1beta.EventMessage_ServiceHandlerStatus:
-	default:
-		return status.Error(codes.InvalidArgument, "invalid message for a legacy beta event stream")
-	}
-	if (betaEventMessageEnvelope{}).GetInnerMessage(message) == nil {
-		return status.Error(codes.InvalidArgument, "event message payload is required")
-	}
-	return nil
+	return fmt.Errorf("%s", err.Message)
 }

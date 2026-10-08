@@ -98,7 +98,14 @@ func runEndpointShow(
 
 	switch validation.Kind {
 	case agent_yaml.AgentKindHosted:
-		return runHostedEndpointShow(ctx, validation.Name, flags.output)
+		return runHostedEndpointShow(
+			ctx,
+			azdClient,
+			validation.Name,
+			extCtx.Environment,
+			flags.output,
+			nil,
+		)
 	case agent_yaml.AgentKindPrompt:
 		return runPromptEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output, nil)
 	case agent_yaml.AgentKindPromptVoice, agent_yaml.AgentKindVoice:
@@ -111,18 +118,45 @@ func runEndpointShow(
 	}
 }
 
-func runHostedEndpointShow(ctx context.Context, agentName, outputFormat string) error {
-	agentContext, err := newAgentContext(ctx, "", "", agentName, "")
+type hostedEndpointAgentResolver func(
+	context.Context,
+	string,
+	string,
+) (*agent_api.AgentObject, error)
+
+func runHostedEndpointShow(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	environmentName string,
+	outputFormat string,
+	resolveAgent hostedEndpointAgentResolver,
+) error {
+	projectEndpoint, err := hostedEndpointProjectEndpoint(ctx, azdClient, environmentName)
 	if err != nil {
 		return err
 	}
 
-	agentClient, err := agentContext.NewClient()
-	if err != nil {
-		return err
+	if resolveAgent == nil {
+		resolveAgent = func(
+			ctx context.Context,
+			projectEndpoint string,
+			agentName string,
+		) (*agent_api.AgentObject, error) {
+			credential, err := newAgentCredential()
+			if err != nil {
+				return nil, err
+			}
+			return agent_api.NewAgentClient(projectEndpoint, credential).GetAgent(
+				ctx,
+				agentName,
+				DefaultAgentAPIVersion,
+				false,
+			)
+		}
 	}
 
-	agent, err := agentClient.GetAgent(ctx, agentName, DefaultAgentAPIVersion, false)
+	agent, err := resolveAgent(ctx, projectEndpoint, agentName)
 	if err != nil {
 		return fmt.Errorf("failed to get agent %q: %w", agentName, err)
 	}
@@ -134,6 +168,37 @@ func runHostedEndpointShow(ctx context.Context, agentName, outputFormat string) 
 		AgentCard:     agent.AgentCard,
 	}
 	return printEndpointShowResult(result, outputFormat)
+}
+
+func hostedEndpointProjectEndpoint(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) (string, error) {
+	if environmentName == "" {
+		return resolveAgentEndpoint(ctx, "", "")
+	}
+
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
+	if err != nil {
+		return "", fmt.Errorf("reading the azd environment: %w", err)
+	}
+	projectEndpoint := strings.TrimSpace(envValues["FOUNDRY_PROJECT_ENDPOINT"])
+	if projectEndpoint == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			fmt.Sprintf(
+				"FOUNDRY_PROJECT_ENDPOINT is required in azd environment %q",
+				environmentName,
+			),
+			"run `azd provision` for the selected environment or select an environment with a Foundry project",
+		)
+	}
+	normalized, _, err := validateProjectEndpoint(projectEndpoint)
+	if err != nil {
+		return "", err
+	}
+	return normalized, nil
 }
 
 func runPromptEndpointShow(

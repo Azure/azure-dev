@@ -348,6 +348,45 @@ func TestRunVoiceEndpointShowRequiresDeployedVoiceEndpoint(t *testing.T) {
 }
 
 func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
+	t.Run("hosted", func(t *testing.T) {
+		const defaultEndpoint = "https://default.services.ai.azure.com/api/projects/default"
+		const selectedEndpoint = "https://staging.services.ai.azure.com/api/projects/staging"
+		env := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "default"},
+			values: map[string]map[string]string{
+				"default": {"FOUNDRY_PROJECT_ENDPOINT": defaultEndpoint},
+				"staging": {"FOUNDRY_PROJECT_ENDPOINT": selectedEndpoint},
+			},
+		}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+		resolverCalls := 0
+
+		output := captureEndpointOutput(t, func() error {
+			return runHostedEndpointShow(
+				t.Context(),
+				client,
+				"hosted-agent",
+				"staging",
+				"json",
+				func(
+					_ context.Context,
+					projectEndpoint, agentName string,
+				) (*agent_api.AgentObject, error) {
+					resolverCalls++
+					require.Equal(t, selectedEndpoint, projectEndpoint)
+					require.Equal(t, "hosted-agent", agentName)
+					return &agent_api.AgentObject{Name: agentName}, nil
+				},
+			)
+		})
+
+		require.Contains(t, output, `"name": "hosted-agent"`)
+		require.NotContains(t, output, defaultEndpoint)
+		require.Equal(t, 1, resolverCalls)
+		require.Equal(t, 0, env.getCurrentCalls)
+		require.Equal(t, 1, env.getValuesCalls)
+	})
+
 	tests := []struct {
 		name            string
 		serviceName     string

@@ -362,6 +362,13 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 			"pwsh",
 			false,
 		},
+		{"explicit shell glob", "if exist *.txt rem deploy.cmd", "cmd", false},
+		{
+			"explicit shell absolute path argument",
+			"if exist C:\\config\\settings.json rem deploy.cmd",
+			"cmd",
+			false,
+		},
 		{"explicit shell path", "./missing.ps1", "pwsh", true},
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
@@ -407,18 +414,28 @@ func TestExecAction_ExplicitShellExpressionBypassesInvalidPathProbe(t *testing.T
 		t.Skip("Windows rejects shell operators as invalid filename characters")
 	}
 
-	action := &execAction{
-		env:             environment.NewWithValues("test", nil),
-		keyvaultService: &mockExecKeyVaultService{},
-		flags: &execFlags{
-			global: &internal.GlobalCommandOptions{},
-			shell:  "cmd",
-		},
-		args: []string{"echo success>nul&rem deploy.cmd"},
+	tests := []string{
+		"echo success>nul&rem deploy.cmd",
+		"if exist *.txt rem deploy.cmd",
+		`if exist C:\config\settings.json rem deploy.cmd`,
 	}
 
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags: &execFlags{
+					global: &internal.GlobalCommandOptions{},
+					shell:  "cmd",
+				},
+				args: []string{input},
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestExecAction_ExplicitShellExpressionWithPathArgumentBypassesInvalidPathProbe(t *testing.T) {

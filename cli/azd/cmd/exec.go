@@ -162,7 +162,6 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Try file execution first; fall back based on argument shape.
 	err = exec.Execute(ctx, scriptInput)
 	if a.flags.shell != "" &&
-		hasShellSyntax(scriptInput) &&
 		!shouldFailOnMissingScript(scriptInput, a.flags.shell) &&
 		isInvalidFilenameError(err) {
 		// Windows rejects shell operators as invalid filename characters.
@@ -217,10 +216,6 @@ func shouldFailOnMissingScript(input, shell string) bool {
 	firstWhitespace := strings.IndexFunc(input, unicode.IsSpace)
 	firstSeparator := strings.IndexAny(input, "/\\")
 	return firstWhitespace == -1 || (firstSeparator >= 0 && firstSeparator < firstWhitespace)
-}
-
-func hasShellSyntax(input string) bool {
-	return strings.ContainsAny(input, shellSyntaxCharacters)
 }
 
 func hasShellSyntaxBeforePathBoundary(input string) bool {

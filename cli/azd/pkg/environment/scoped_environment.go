@@ -5,6 +5,7 @@ package environment
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
@@ -88,9 +89,7 @@ func (e *mappedScopedEnvironment) Dotenv() map[string]string {
 	for localName, sharedName := range e.inputs {
 		mapped[localName], _ = e.ScopedEnvironment.LookupEnv(sharedName)
 	}
-	for localName, value := range mapped {
-		values[localName] = value
-	}
+	maps.Copy(values, mapped)
 
 	return values
 }

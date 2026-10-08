@@ -735,6 +735,7 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		extension,
 		"predeploy",
 		broker,
+		newBetaServiceEventCorrelations(),
 	)
 	collector := commandresult.NewServiceEventMessageCollector()
 	handlerCtx := commandresult.WithServiceEventMessageCollector(t.Context(), collector)
@@ -793,6 +794,7 @@ func TestBetaEventServiceServiceHandlerUsesInvocationCancellation(t *testing.T) 
 			extension,
 			"prepackage",
 			broker,
+			newBetaServiceEventCorrelations(),
 		)
 		return handler(ctx, project.ServiceLifecycleEventArgs{
 			Project:        projectConfig,

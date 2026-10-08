@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"io"
+	"net/url"
 	"testing"
 	"time"
 
@@ -466,7 +467,14 @@ func newServerWithEventService(eventService azdext.EventServiceServer) *Server {
 }
 
 func TestCollectBetaServiceEventMessagesRedactsLinkCredentials(t *testing.T) {
-	const rawURL = "https://user:password@example.com/docs?sig=secret#fragment"
+	rawURL := (&url.URL{
+		Scheme:   "https",
+		User:     url.UserPassword("test-user", "test-password"),
+		Host:     "example.com",
+		Path:     "/docs",
+		RawQuery: "sig=secret",
+		Fragment: "fragment",
+	}).String()
 	collector := commandresult.NewServiceEventMessageCollector()
 	ctx := commandresult.WithServiceEventMessageCollector(t.Context(), collector)
 

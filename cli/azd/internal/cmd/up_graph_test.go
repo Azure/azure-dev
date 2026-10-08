@@ -116,7 +116,7 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 	}
 }
 
-func TestFinalizeUpDeployProgress_RendersBeforeRestoringPreviewer(t *testing.T) {
+func TestFinalizeUpDeployProgress_RestoresPreviewerBeforeFinalTable(t *testing.T) {
 	previewer := &previewerState{}
 	writer := &previewerStateWriter{previewer: previewer}
 	tracker := newDeployProgressTracker(writer, true, []string{"web"})
@@ -124,14 +124,14 @@ func TestFinalizeUpDeployProgress_RendersBeforeRestoringPreviewer(t *testing.T) 
 	previewer.PausePreviewer()
 	tracker.Render()
 	finalized := false
-	stopTicker := func() {
+	resumePreviewer := func() {
 		previewer.ResumePreviewer()
 	}
 
 	finalizeUpDeployProgress(
 		tracker,
 		func() {},
-		stopTicker,
+		resumePreviewer,
 		&finalized,
 	)
 
@@ -140,12 +140,12 @@ func TestFinalizeUpDeployProgress_RendersBeforeRestoringPreviewer(t *testing.T) 
 	require.Equal(t, 1, previewer.resumeCount)
 	require.NotEmpty(t, writer.writeStates)
 	require.True(t, writer.writeStates[0], "the live progress table must render while previewer output is paused")
-	require.True(t, writer.writeStates[len(writer.writeStates)-1],
-		"the final table must render before previewer output is restored")
+	require.False(t, writer.writeStates[len(writer.writeStates)-1],
+		"the final table must render after previewer cleanup")
 	require.Contains(t, writer.String(), "Status")
 
 	outputAfterFirstFinalize := writer.String()
-	finalizeUpDeployProgress(tracker, nil, stopTicker, &finalized)
+	finalizeUpDeployProgress(tracker, nil, resumePreviewer, &finalized)
 	require.Equal(t, outputAfterFirstFinalize, writer.String())
 	require.Equal(t, 1, previewer.resumeCount)
 }

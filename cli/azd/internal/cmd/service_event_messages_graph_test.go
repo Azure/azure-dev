@@ -462,12 +462,15 @@ type serviceEventMessageCommandFixture struct {
 	serviceOrder  <-chan []string
 }
 
+type serviceEventMessageConsoleDecorator func(input.Console, *bytes.Buffer) input.Console
+
 func newServiceEventMessageCommandFixture(
 	t *testing.T,
 	command string,
 	formatter output.Formatter,
 	projectYaml string,
 	handler func(context.Context, string, *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error),
+	consoleDecorators ...serviceEventMessageConsoleDecorator,
 ) *serviceEventMessageCommandFixture {
 	t.Helper()
 	require.Contains(t, []string{"deploy", "up"}, command)
@@ -493,12 +496,15 @@ func newServiceEventMessageCommandFixture(
 		projectManager.AssertExpectations(t)
 		envManager.AssertExpectations(t)
 	})
-	console := &serviceEventMessageConsole{Console: input.NewConsole(
+	var console input.Console = &serviceEventMessageConsole{Console: input.NewConsole(
 		true, false,
 		input.Writers{Output: &fixture.consoleOutput},
 		input.ConsoleHandles{Stdin: strings.NewReader(""), Stdout: &fixture.consoleOutput, Stderr: io.Discard},
 		formatter, nil,
 	)}
+	for _, decorate := range consoleDecorators {
+		console = decorate(console, &fixture.consoleOutput)
+	}
 	importManager := project.NewImportManager(nil)
 	if command == "deploy" {
 		cmd := corecmd.NewDeployCmd()

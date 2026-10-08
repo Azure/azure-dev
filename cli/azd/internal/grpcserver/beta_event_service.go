@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -93,7 +94,7 @@ func (s *betaEventService) EventStream(
 		ctx context.Context,
 		msg *v1beta.SubscribeServiceEvent,
 	) (*v1beta.EventMessage, error) {
-		return s.subscribeService(ctx, extension, msg, broker)
+		return s.subscribeService(ctx, extension, msg, broker, betaStream.serviceCorrelations)
 	}); err != nil {
 		return err
 	}
@@ -232,6 +233,7 @@ func (s *betaEventService) subscribeService(
 	extension *extensions.Extension,
 	msg *v1beta.SubscribeServiceEvent,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+	correlations *betaServiceEventCorrelations,
 ) (*v1beta.EventMessage, error) {
 	if msg == nil || len(msg.EventNames) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "event names are required")
@@ -255,7 +257,14 @@ func (s *betaEventService) subscribeService(
 			if msg.Host != "" && string(serviceConfig.Host) != msg.Host {
 				continue
 			}
-			handler := s.createServiceHandler(ctx, serviceConfig, extension, eventName, broker)
+			handler := s.createServiceHandler(
+				ctx,
+				serviceConfig,
+				extension,
+				eventName,
+				broker,
+				correlations,
+			)
 			if err := serviceConfig.AddHandler(ctx, ext.Event(eventName), handler); err != nil {
 				return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
@@ -274,6 +283,7 @@ func (s *betaEventService) createServiceHandler(
 	extension *extensions.Extension,
 	eventName string,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+	correlations *betaServiceEventCorrelations,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
@@ -319,7 +329,9 @@ func (s *betaEventService) createServiceHandler(
 			if err := transcodeStableResponse(stableContext, protoContext); err != nil {
 				return fmt.Errorf("convert service context to beta: %w", err)
 			}
+			requestID := uuid.NewString()
 			invoke := &v1beta.EventMessage{
+				RequestId: requestID,
 				MessageType: &v1beta.EventMessage_InvokeServiceHandler{
 					InvokeServiceHandler: &v1beta.InvokeServiceHandler{
 						EventName:      eventName,
@@ -329,13 +341,17 @@ func (s *betaEventService) createServiceHandler(
 					},
 				},
 			}
-			// Keep legacy service/event correlation for existing clients.
-			invoke.RequestId = newBetaEventMessageEnvelope().GetRequestId(invocationCtx, invoke)
 			return s.service.runWithEnvReload(ctx, func() error {
+				if err := correlations.register(args.Service.Name, eventName, requestID); err != nil {
+					return err
+				}
+				defer correlations.abandon(requestID)
+
 				response, err := broker.SendAndWait(invocationCtx, invoke)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}
+				correlations.finish(requestID)
 				statusMsg, ok := response.MessageType.(*v1beta.EventMessage_ServiceHandlerStatus)
 				if !ok || statusMsg.ServiceHandlerStatus == nil {
 					return fmt.Errorf("unexpected response type for service event %s", eventName)

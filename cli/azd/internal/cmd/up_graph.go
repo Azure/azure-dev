@@ -799,11 +799,11 @@ func finalizeUpDeployProgress(
 	if stopTicker != nil {
 		stopTicker()
 	}
-	if tracker != nil && tracker.HasActivity() {
-		tracker.RenderFinal()
-	}
 	if resumePreviewer != nil {
 		resumePreviewer()
+	}
+	if tracker != nil && tracker.HasActivity() {
+		tracker.RenderFinal()
 	}
 }
 

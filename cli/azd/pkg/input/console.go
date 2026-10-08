@@ -438,6 +438,9 @@ func (c *AskerConsole) stopPreviewerLocked(keepLogs bool) {
 // is called. Use this when a progress table owns the terminal output and previewer
 // content would corrupt the display.
 func (c *AskerConsole) PausePreviewer() {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
 	c.previewerSuppressed.Store(true)
 }
 

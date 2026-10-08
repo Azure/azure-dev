@@ -662,6 +662,52 @@ func TestAskerConsole_Previewer_SuppressedShowDoesNotReleaseActiveOwner(t *testi
 	require.Nil(t, c.(*AskerConsole).previewer.Load())
 }
 
+func TestAskerConsole_PausePreviewerSerializesWithProgressRenderer(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	).(*AskerConsole)
+
+	c.showProgressMu.Lock()
+	pauseStarted := make(chan struct{})
+	pauseDone := make(chan struct{})
+	go func() {
+		close(pauseStarted)
+		c.PausePreviewer()
+		close(pauseDone)
+	}()
+	<-pauseStarted
+
+	select {
+	case <-pauseDone:
+		c.showProgressMu.Unlock()
+		t.Fatal("PausePreviewer completed while the renderer lock was held")
+	case <-time.After(50 * time.Millisecond):
+	}
+	c.showProgressMu.Unlock()
+
+	select {
+	case <-pauseDone:
+	case <-time.After(time.Second):
+		t.Fatal("PausePreviewer did not complete after the renderer unlocked")
+	}
+	require.True(t, c.previewerSuppressed.Load())
+	require.Equal(t, io.Discard, c.ShowPreviewer(t.Context(), nil))
+	require.Zero(t, c.previewerRefCount)
+}
+
 // TestAskerConsole_Previewer_ConcurrentWriteStress runs many goroutines writing
 // and stopping concurrently to verify there are no data races.
 func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {

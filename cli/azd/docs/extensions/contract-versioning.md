@@ -91,9 +91,15 @@ beta clients. This mode has no beta subscription acknowledgements or
 invocation IDs and cannot use beta-only follow-up or structured deploy
 messages. A subscription with `request_id` selects the current beta mode;
 later subscriptions and project handler statuses must also carry IDs.
-Service statuses carrying structured messages must echo their invocation ID;
-statuses without messages retain service/event correlation. Stable `v1`
-behavior is unchanged.
+Every modern service invocation uses a unique `request_id`. A status carrying
+structured messages must echo that ID. For compatibility, an ID-less status
+without messages is correlated only when exactly one matching service/event
+invocation is outstanding and no canceled invocation could have replied late.
+An unmatched status is not assigned to a new invocation. If multiple calls or
+a canceled call make the mapping ambiguous, the host returns
+`InvalidArgument` instead of guessing. Clients that omit response IDs should
+serialize calls for each service/event pair and open a new stream after
+cancellation uncertainty. Stable `v1` behavior is unchanged.
 
 An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with

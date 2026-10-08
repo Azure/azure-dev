@@ -421,6 +421,7 @@ func (da *DeployAction) deployServicesGraph(
 	// machine-readable output modes (e.g. --output json) so raw progress
 	// lines don't pollute stdout alongside the JSON result, and when no
 	// writer is available (e.g. test mocks).
+	var resumePreviewer func()
 	if w := origConsole.GetWriter(); da.formatter.Kind() != output.JsonFormat && w != nil {
 		da.progressTracker = newDeployProgressTracker(
 			w,
@@ -433,7 +434,15 @@ func (da *DeployAction) deployServicesGraph(
 		// don't corrupt the progress table display.
 		if ps, ok := origConsole.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
-			defer ps.ResumePreviewer()
+			resumed := false
+			resumePreviewer = func() {
+				if resumed {
+					return
+				}
+				resumed = true
+				ps.ResumePreviewer()
+			}
+			defer resumePreviewer()
 		}
 	} else {
 		// Still wrap the console for thread-safety without suppressing spinners.
@@ -530,9 +539,12 @@ func (da *DeployAction) deployServicesGraph(
 		return unwrapStepErrors(result)
 	})
 
-	// Stop ticker and render final progress state.
+	// Stop the ticker, clean up previews, then render the final table.
 	if stopTicker != nil {
 		stopTicker()
+	}
+	if resumePreviewer != nil {
+		resumePreviewer()
 	}
 	if da.progressTracker != nil {
 		da.progressTracker.RenderFinal()

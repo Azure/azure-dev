@@ -93,6 +93,9 @@ overrides:
       words:
           - CODEOWNERS
           - vitest
+    - filename: .github/workflows/lint-go.yml
+      words:
+          - golangci
     - filename:
           - .github/workflows/codeowners-validation.yml
           - .github/scripts/src/codeowners-validation.js

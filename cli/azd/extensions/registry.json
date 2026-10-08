@@ -6853,6 +6853,105 @@
               "version": "~1.0.0-beta.6"
             }
           ]
+        },
+        {
+          "version": "1.0.0-beta.19",
+          "requiredAzdVersion": ">=1.34.2",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent <command> [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new prompt, hosted, or voice agent project.",
+              "usage": "azd ai agent init"
+            },
+            {
+              "name": "init-prompt-voice",
+              "description": "Initialize a new prompt voice agent.",
+              "usage": "azd ai agent init --kind prompt-voice --agent-name my-voice-agent"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5ad4e724cdb53136717b6c85e8429a5533dc666d4d0649b84541dacf93d66a0d"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_1.0.0-beta.19/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "739f0bcb7a952dface0dd0a06c99900e119e2a1661f73bbefcf6553fb00ac608"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_1.0.0-beta.19/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "76589b504d1014134ede8ecd34d06e89117c8fbce03ce4a9b5428fe15dad51b8"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_1.0.0-beta.19/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1956de39b6cf0b2947ea281b52b19f06e2a66ed59bdb40ccc703a7368a63b0bb"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_1.0.0-beta.19/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e0cc27bf15bc3efddb07da5f1eab1e02ba2ee51a1757736e43a2173fd300baba"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_1.0.0-beta.19/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "662a5bf0e29f16586dcf2f34e930f4afa0225ba3dd549546b7711eb615681119"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_1.0.0-beta.19/azure-ai-agents-windows-arm64.zip"
+            }
+          },
+          "dependencies": [
+            {
+              "id": "azure.ai.inspector",
+              "version": "~1.0.0-beta.1"
+            },
+            {
+              "id": "azure.ai.projects",
+              "version": "~1.0.0-beta.12"
+            },
+            {
+              "id": "azure.ai.connections",
+              "version": "~1.0.0-beta.7"
+            },
+            {
+              "id": "azure.ai.toolboxes",
+              "version": "~1.0.0-beta.6"
+            }
+          ]
         }
       ]
     },

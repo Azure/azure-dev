@@ -1,5 +1,76 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Hosted agent deployment preview
+
+With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
+project, use the core deployment command:
+
+```bash
+azd deploy <service> --preview --no-prompt
+azd deploy <service> --preview --no-prompt --output json
+```
+
+Preview supports `host: azure.ai.agent`, `kind: hosted` definitions declared at
+service level in unified `azure.yaml`. Legacy `agent.yaml`/`agent.manifest.yaml`
+projects, whole agent-file references, deprecated nested `config`, and
+`AGENT_DEFINITION_PATH` overrides return an unsupported error with migration
+guidance. Local references to individual fields or fragments remain supported.
+Unused legacy files do not override an inline definition. Prompt, voice, and
+workflow agent definitions are outside this preview's scope. There is no
+standalone `azd ai agent deploy` or `--dry-run` command.
+
+The provider reads the latest remote agent version and compares the desired
+deployment request, including extension defaults, with its configuration. It
+reports `create` on a missing agent, `update` for known differences, `noChange`
+for an equal fully known configuration, or `unknown` when known fields match
+but inputs/artifacts are unresolved. Changes are grouped by metadata, protocols,
+resources, environment variables, model deployment reference, container image,
+code, session settings, content safety, endpoint, and agent card. Changes include
+only field paths and add/update/remove operations, not old/new values.
+
+Image passthrough compares the configured image reference, including a private
+registry connection. A future build/push image and a future code ZIP upload are
+unknown: preview does not build or invent a final tag. Equal image tags do not
+prove their mutable content is unchanged. Unset `${VAR}` inputs in service `env`
+or `image` are unknown rather than empty-value changes; explicit empty values and
+`${VAR:-default}` retain their ordinary meanings. Foundry `${{...}}` expressions
+are preserved, not evaluated or resolved to credentials.
+
+The existing host JSON envelope contains `timestamp` and `services`. Provider
+results are at `services.<service>.data`, with `service`, `agent`, `status`,
+`changes` (each has `group`, `path`, `operation`), `unknown`, and `notes`.
+Create, update, no-change, and unknown previews succeed; configuration,
+authentication, permission, connectivity, and malformed-response errors fail.
+`noChange` describes configuration only: ordinary deploy still creates a new
+agent version.
+
+### Read-only boundary and inherited host limitations
+
+The provider runs on a fresh instance without `Initialize`, uses only project,
+environment, and tenant reads plus the Foundry agent GET, and returns output to
+the host. It never calls deployment writes, prompts, builds, uploads, provisioning,
+or extension-owned state persistence. Normal deployment remains on the stable
+service-target lifecycle. Provider values are omitted and credential-bearing
+URLs are sanitized; provider errors do not echo raw API bodies or authored values.
+
+The unchanged azd host skips package/publish/deploy and deployment hooks, but its
+ordinary project/environment-loading path still runs. Environment selection or
+loading can prompt, download remote environment state, or save host-managed
+environment defaults before the provider is called. This is not a host-wide
+no-filesystem-writes guarantee; use an already initialized, selected local
+environment with `--no-prompt`. Services filtered out by conditions are not
+previewed. Hosts without a preview provider skip that service with a warning;
+skipped services are absent from JSON results. Preview does not evaluate
+infrastructure/dependency changes or deployment readiness, and compares the latest
+version, not necessarily the version receiving endpoint traffic. The host rejects
+`--timeout` and non-empty `--from-package` with `--preview`.
+
+Offline regression coverage includes an
+[integration runner against the unchanged main host](tests/host-preview/README.md).
+The optional [live preview scenario](tests/cli-interactive-tester-scenarios/tier2/2.17a-deploy-preview.yaml)
+is driven through `foundry-extension-scenario-orchestrator`; its setup incurs Azure
+cost and is not run automatically.
+
 ## Extension telemetry API
 
 Extension code reports best-effort usage events through the shared

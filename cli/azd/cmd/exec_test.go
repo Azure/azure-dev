@@ -349,6 +349,7 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
 		{"explicit shell operator without separator", "cat<deploy.sh", "bash", false},
+		{"explicit shell path with later operator", "./deploy&test.sh", "bash", true},
 	}
 
 	for _, tt := range tests {
@@ -381,4 +382,23 @@ func TestExecAction_FileNotFoundNoInlineFallback(t *testing.T) {
 			assert.Contains(t, err.Error(), "not found")
 		})
 	}
+}
+
+func TestExecAction_ExplicitShellExpressionBypassesInvalidPathProbe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{"echo success>nul&rem deploy.cmd"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
 }

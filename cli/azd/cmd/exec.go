@@ -159,8 +159,13 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Try file execution first; fall back based on argument shape.
-	if err := exec.Execute(ctx, scriptInput); err != nil {
+	// Explicit shell syntax is unambiguously inline. Bypass file probing because
+	// Windows rejects operator characters as invalid filenames before fallback.
+	if a.flags.shell != "" && hasShellSyntaxBeforePathBoundary(scriptInput) {
+		err = exec.ExecuteInline(ctx, scriptInput)
+	} else {
+		// Try file execution first; fall back based on argument shape.
+		err = exec.Execute(ctx, scriptInput)
 		if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
 			// Guard ambiguous path-like input unless --shell explicitly
 			// indicates inline execution.
@@ -173,15 +178,15 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				err = exec.ExecuteInline(ctx, scriptInput)
 			}
 		}
-		if err != nil {
-			if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
-				return nil, &internal.ExitCodeError{
-					ExitCode: execErr.ExitCode,
-					Err:      err,
-				}
+	}
+	if err != nil {
+		if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
+			return nil, &internal.ExitCodeError{
+				ExitCode: execErr.ExitCode,
+				Err:      err,
 			}
-			return nil, err
 		}
+		return nil, err
 	}
 
 	return nil, nil

@@ -365,20 +365,19 @@ func routineManifestFixture(t *testing.T, agentName string) (string, string, *ro
 	projectRoot := t.TempDir()
 	manifestPath := filepath.Join(projectRoot, "routines", "nightly.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(manifestPath), 0o700))
-	require.NoError(t, os.WriteFile(manifestPath, []byte(`triggers:
+	manifest := []byte(`triggers:
   default:
     type: schedule
-	    cronExpression: "0 2 * * *"
+    cronExpression: "0 2 * * *"
 action:
   type: invoke_agent_responses_api
-	  agentName: `+agentName+"\n"), 0o600))
-	return projectRoot, manifestPath, &routines.Routine{
-		Name: "nightly-summary",
-		Triggers: map[string]routines.RoutineTrigger{
-			routines.DefaultTriggerKey: {Type: "schedule", CronExpression: "0 2 * * *"},
-		},
-		Action: &routines.RoutineAction{Type: "invoke_agent_responses_api", AgentName: agentName},
-	}
+  agentName: ` + agentName + "\n")
+	require.NoError(t, os.WriteFile(manifestPath, manifest, 0o600))
+
+	routine, err := routines.ParseAuthoringYAML(manifest)
+	require.NoError(t, err)
+	routine.Name = "nightly-summary"
+	return projectRoot, manifestPath, routine
 }
 
 func mustStruct(t *testing.T, values map[string]any) *structpb.Struct {

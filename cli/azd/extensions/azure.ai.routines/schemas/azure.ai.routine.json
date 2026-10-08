@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json",
   "title": "Azure AI Foundry routine service",
-  "description": "Service-level configuration for a host: azure.ai.routine entry. The service key is the routine name. A routine is a scheduled or event-driven invocation of an agent declared as an azure.ai.agent service; the routine service must uses: the agent it invokes. Extension-owned authoring keys use camelCase and are translated to the Foundry API wire contract during deployment.",
+  "description": "Service-level configuration for a host: azure.ai.routine entry. The service key is the routine name. A routine is a scheduled or event-driven invocation of an agent declared as an azure.ai.agent service; the routine service must use the agent it invokes. Extension-owned authoring keys use camelCase and are translated to the Foundry API wire contract during deployment.",
   "type": "object",
   "additionalProperties": true,
   "properties": {

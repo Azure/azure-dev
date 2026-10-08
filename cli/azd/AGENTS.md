@@ -492,9 +492,8 @@ When creating or modifying GitHub Actions workflows:
 
 When adding or changing GitHub API access in a pipeline:
 
-- Prefer the shared [GitHub App login template](../../eng/common/pipelines/templates/steps/login-to-github.yml) over personal access tokens. Check existing workflows for the current authentication pattern.
-- Use the pinned tool's supported environment or credential mechanism rather than passing secrets in command-line arguments. Log masking does not protect diagnostic files.
-- Generate short-lived tokens close to use and verify access to all target repositories. Distinguish local configuration checks from live permission validation.
+- Always use the shared [GitHub App login template](../../eng/common/pipelines/templates/steps/login-to-github.yml) instead of personal access tokens. [publish-cli-winget.yml](../../eng/pipelines/templates/steps/publish-cli-winget.yml) is an example: it logs in within the job that needs the token and passes `GH_TOKEN` to the tool through an environment variable, not a command-line argument, which tools can log.
+- Verify the token can access every repository the tool reads. Local checks only cover wiring, so say when live validation is still pending.
 
 ## Copilot Code Review
 

@@ -25,6 +25,7 @@ for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
 [Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
@@ -69,6 +70,15 @@ project routes (prompt, voice, workflow) are excluded.
 
 This records command-path adoption, not whether the service accepted or
 completed work. No prompt, agent name, endpoint, or service response is sent.
+
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
 
 ## Non-interactive automation
 

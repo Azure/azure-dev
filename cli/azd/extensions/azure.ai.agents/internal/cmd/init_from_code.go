@@ -48,6 +48,7 @@ type InitFromCodeAction struct {
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
+	recordInitProperties(ctx, map[string]any{"kind": "hosted"})
 	if !a.sourceValidated && a.flags.src != "" {
 		if err := validateExplicitInitSource(ctx, a.azdClient, a.flags.src); err != nil {
 			return err
@@ -125,6 +126,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
+		recordInitDefinition(ctx, localDefinition)
 		if strings.TrimSpace(localDefinition.Image) != "" {
 			resolver := &InitAction{
 				azdClient:     a.azdClient,

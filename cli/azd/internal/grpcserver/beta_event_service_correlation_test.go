@@ -99,6 +99,44 @@ func TestServer_BetaEventStreamCorrelatesSameServiceHooksOutOfOrder(t *testing.T
 	require.ErrorIs(t, err, io.EOF)
 }
 
+func TestServer_BetaEventStreamRejectsMismatchedServiceStatusRequestID(t *testing.T) {
+	projectConfig, ctx, stream := newAuthenticatedBetaEventStream(t, "test.beta.mismatched")
+	subscribeBetaServiceEvent(t, stream, "service-subscription")
+
+	apiDone := raiseBetaServiceEvent(
+		ctx,
+		projectConfig,
+		projectConfig.Services["api"],
+		"predeploy",
+	)
+	apiInvoke, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "api", apiInvoke.GetInvokeServiceHandler().GetService().GetName())
+
+	webDone := raiseBetaServiceEvent(
+		ctx,
+		projectConfig,
+		projectConfig.Services["web"],
+		"predeploy",
+	)
+	webInvoke, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "web", webInvoke.GetInvokeServiceHandler().GetService().GetName())
+
+	require.NoError(t, stream.Send(betaServiceStatusMessage(
+		apiInvoke.GetRequestId(),
+		"predeploy",
+		"web",
+		"completed",
+		"",
+		"",
+	)))
+	_, err = stream.Recv()
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Error(t, waitBetaServiceEvent(t, ctx, apiDone))
+	require.Error(t, waitBetaServiceEvent(t, ctx, webDone))
+}
+
 func TestServer_BetaEventStreamRejectsAmbiguousIDlessServiceStatus(t *testing.T) {
 	projectConfig, ctx, stream := newAuthenticatedBetaEventStream(t, "test.beta.ambiguous")
 	subscribeBetaServiceEvent(t, stream, "service-subscription")

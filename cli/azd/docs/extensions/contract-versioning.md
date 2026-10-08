@@ -99,7 +99,9 @@ An unmatched status is not assigned to a new invocation. If multiple calls or
 a canceled call make the mapping ambiguous, the host returns
 `InvalidArgument` instead of guessing. Clients that omit response IDs should
 serialize calls for each service/event pair and open a new stream after
-cancellation uncertainty. Stable `v1` behavior is unchanged.
+cancellation uncertainty. A status with a known ID for a different
+service/event pair is rejected with `InvalidArgument`; unknown IDs remain
+unmatched, including late canceled responses. Stable `v1` behavior is unchanged.
 
 An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with

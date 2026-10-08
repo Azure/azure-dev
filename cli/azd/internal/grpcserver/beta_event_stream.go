@@ -114,17 +114,29 @@ func (c *betaServiceEventCorrelations) correlate(
 	if serviceStatus == nil {
 		return nil
 	}
-	if message.GetRequestId() != "" {
-		c.finish(message.GetRequestId())
-		return nil
-	}
-
 	key := betaServiceEventKey{
 		serviceName: serviceStatus.GetServiceName(),
 		eventName:   serviceStatus.GetEventName(),
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if requestID := message.GetRequestId(); requestID != "" {
+		expected, exists := c.requestIDs[requestID]
+		if !exists {
+			return nil
+		}
+		if expected != key {
+			return status.Errorf(
+				codes.InvalidArgument,
+				"service handler status for %s.%s does not match its request_id",
+				key.serviceName,
+				key.eventName,
+			)
+		}
+		c.removeLocked(requestID)
+		return nil
+	}
 
 	pending := c.pending[key]
 	if len(pending) == 0 {

@@ -23,7 +23,6 @@
 
 - [[#10072]](https://github.com/Azure/azure-dev/pull/10072) Add operation classifications to existing agent usage telemetry.
 - [[#10236]](https://github.com/Azure/azure-dev/pull/10236) Add usage telemetry for selected remote agent invocation protocols and modes.
-- [[#10238]](https://github.com/Azure/azure-dev/pull/10238) Add hosted container mode classification to resolved agent context telemetry.
 
 ## 1.0.0-beta.18 (2026-09-30)
 

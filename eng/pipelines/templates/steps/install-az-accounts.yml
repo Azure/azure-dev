@@ -2,23 +2,17 @@ steps:
   - pwsh: |
       $ErrorActionPreference = 'Stop'
       $requiredVersion = '5.5.3'
-      $repositoryUrl = 'https://www.powershellgallery.com/api/v2'
 
-      $repository = Get-PSRepository |
-        Where-Object SourceLocation -eq $repositoryUrl |
-        Select-Object -First 1
+      $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
       if (-not $repository) {
-        Register-PSRepository `
-          -Name PowerShellGallery `
-          -SourceLocation $repositoryUrl `
-          -InstallationPolicy Trusted
-        $repository = Get-PSRepository |
-          Where-Object SourceLocation -eq $repositoryUrl |
-          Select-Object -First 1
+        Register-PSRepository -Default
+        $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
       }
+
       if (-not $repository) {
-        throw "Failed to register the PowerShell repository at $repositoryUrl."
+        throw "Failed to find or register PSGallery."
       }
+
       if ($repository.InstallationPolicy -ne 'Trusted') {
         Set-PSRepository -Name $repository.Name -InstallationPolicy Trusted
       }

@@ -199,7 +199,8 @@ var scriptExtensions = map[string]bool{
 	".py": true, ".rb": true, ".pl": true,
 }
 
-const shellSyntaxCharacters = "'\"`$<>()|&;"
+const shellSyntaxCharacters = "'\"`$<>()|&;*?[]{}~^%!"
+const shellExpansionCharacters = "'\"`$*?[]{}~^%!"
 
 func shouldFailOnMissingScript(input, shell string) bool {
 	if shell != "" &&
@@ -244,6 +245,9 @@ func hasShellSyntaxAfterLeadingPath(input string) bool {
 		}
 		foundShellSyntax = true
 		syntaxIndex := searchFrom + offset
+		if strings.ContainsRune(shellExpansionCharacters, rune(input[syntaxIndex])) {
+			return true
+		}
 		ext := strings.ToLower(filepath.Ext(strings.TrimSpace(input[:syntaxIndex])))
 		if scriptExtensions[ext] {
 			return true

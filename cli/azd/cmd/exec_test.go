@@ -373,6 +373,15 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"explicit shell compact pipeline with leading path", "./deploy.sh|tee output.log", "bash", false},
 		{"explicit shell extensionless leading path", "./deploy | tee output.log", "bash", false},
 		{"explicit shell compact extensionless path", "./deploy|tee", "bash", false},
+		{"explicit shell leading path glob", "./scripts/*.sh", "bash", false},
+		{"explicit shell leading path single-character glob", "./scripts/?.sh", "bash", false},
+		{"explicit shell leading path bracket glob", "./scripts/[ab].sh", "bash", false},
+		{"explicit shell leading path brace expansion", "./scripts/{a,b}.sh", "bash", false},
+		{"explicit shell home expansion", "~/scripts/*.sh", "bash", false},
+		{"explicit cmd environment expansion", "%TEMP%\\deploy.cmd", "cmd", false},
+		{"explicit cmd delayed expansion", "!SCRIPT!", "cmd", false},
+		{"explicit cmd escape", "^deploy.cmd", "cmd", false},
+		{"glob without explicit shell", "./scripts/*.sh", "", true},
 		{
 			"explicit PowerShell pipeline with leading path",
 			".\\deploy.ps1 | Out-String",
@@ -489,6 +498,35 @@ func TestExecAction_ExplicitShellPipelineWithLeadingPathBypassesInvalidPathProbe
 	require.NoError(t, err)
 }
 
+func TestExecAction_ExplicitShellLeadingPathExpansionFallsBackInline(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is required for shell expansion coverage")
+	}
+
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir("scripts", 0o750))
+	for _, name := range []string{"a.sh", "b.sh"} {
+		require.NoError(t, os.WriteFile(filepath.Join("scripts", name), []byte("exit 0\n"), 0o600))
+	}
+
+	for _, input := range []string{"./scripts/*.sh", "./scripts/{a,b}.sh"} {
+		t.Run(input, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags: &execFlags{
+					global: &internal.GlobalCommandOptions{},
+					shell:  "bash",
+				},
+				args: []string{input},
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestExecAction_ExplicitShellPreservesExistingFilePrecedence(t *testing.T) {
 	shell := "bash"
 	extension := ".sh"
@@ -502,11 +540,13 @@ func TestExecAction_ExplicitShellPreservesExistingFilePrecedence(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
-	filenameCharacters := []string{"&", "(", ")", ";", "$", "'", "`", "^", "!"}
+	filenameCharacters := []string{
+		"&", "(", ")", ";", "$", "'", "`", "^", "!", "[", "]", "{", "}", "~",
+	}
 	if runtime.GOOS != "windows" {
 		// cmd file execution intentionally neutralizes %VAR% expansion, so a
 		// percent sign is not a supported Windows filename case.
-		filenameCharacters = append(filenameCharacters, "<", ">", "|", `"`, "%")
+		filenameCharacters = append(filenameCharacters, "<", ">", "|", `"`, "%", "*", "?")
 	}
 
 	tests := []string{

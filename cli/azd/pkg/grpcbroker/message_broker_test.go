@@ -129,6 +129,19 @@ func (s *serverSideStream) Recv() (*TestMessage, error) {
 	}
 }
 
+type errorBidiStream struct {
+	sendErr error
+	recvErr error
+}
+
+func (s *errorBidiStream) Send(*TestMessage) error {
+	return s.sendErr
+}
+
+func (s *errorBidiStream) Recv() (*TestMessage, error) {
+	return nil, s.recvErr
+}
+
 // SimpleMessageEnvelope is a simple implementation of MessageEnvelope for testing
 type SimpleMessageEnvelope struct{}
 
@@ -176,6 +189,30 @@ func (e *SimpleMessageEnvelope) CreateProgressMessage(requestId string, message 
 		IsProgress:   true,
 		ProgressText: message,
 	}
+}
+
+type customCancellationEnvelope struct {
+	SimpleMessageEnvelope
+}
+
+func (e *customCancellationEnvelope) CreateCancellationMessage(
+	_ context.Context,
+	request *TestMessage,
+	err error,
+) *TestMessage {
+	return &TestMessage{
+		RequestId: request.RequestId,
+		Error:     err,
+		Data:      "custom-cancellation",
+	}
+}
+
+func (e *customCancellationEnvelope) IsCancellationMessage(_ context.Context, msg *TestMessage) bool {
+	return msg.Data == "custom-cancellation"
+}
+
+func (e *customCancellationEnvelope) GetCancellationError(msg *TestMessage) error {
+	return msg.Error
 }
 
 type persistentTestMessageEnvelope struct {
@@ -672,6 +709,35 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRun_GracefulShutdown_GRPCStatus(t *testing.T) {
+	tests := []struct {
+		name    string
+		recvErr error
+	}{
+		{
+			name:    "UnavailableEOF",
+			recvErr: status.Error(codes.Unavailable, "transport closed: EOF"),
+		},
+		{
+			name:    "Canceled",
+			recvErr: status.Error(codes.Canceled, "stream canceled"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			broker := NewMessageBroker(
+				&errorBidiStream{recvErr: tt.recvErr},
+				&SimpleMessageEnvelope{},
+				"test",
+				nil,
+			)
+
+			require.NoError(t, broker.Run(t.Context()))
+		})
+	}
+}
+
 // TestClose_ClosesAllWaiters tests that Close properly cleans up.
 func TestClose_ClosesAllWaiters(t *testing.T) {
 	sim := NewSimulatedBidiStream()
@@ -770,6 +836,99 @@ func TestResponseWaiter_FullProgressQueueKeepsFinalResponse(t *testing.T) {
 	actualFinal, ok := waiter.receive()
 	require.True(t, ok)
 	require.Same(t, final, actualFinal)
+}
+
+func TestResponseWaiter_CloseDiscardsQueuedResponses(t *testing.T) {
+	waiter := newResponseWaiter[TestMessage](1)
+	require.True(t, waiter.send(&TestMessage{RequestId: "request"}, false))
+
+	waiter.close()
+
+	require.False(t, waiter.send(&TestMessage{RequestId: "request"}, false))
+	response, ok := waiter.receive()
+	require.False(t, ok)
+	require.Nil(t, response)
+}
+
+func TestCancellationMessageEnvelope_CustomControlMessage(t *testing.T) {
+	envelope := &customCancellationEnvelope{}
+	broker := NewMessageBroker(
+		&errorBidiStream{},
+		envelope,
+		"test",
+		nil,
+	)
+	request := &TestMessage{RequestId: "request"}
+
+	cancellation := broker.createCancellationMessage(t.Context(), request, context.DeadlineExceeded)
+
+	require.Equal(t, "request", cancellation.RequestId)
+	require.Equal(t, "custom-cancellation", cancellation.Data)
+	require.True(t, broker.isCancellationMessage(t.Context(), cancellation))
+	require.ErrorIs(t, broker.cancellationError(cancellation), context.DeadlineExceeded)
+}
+
+func TestCancellationMessageEnvelope_DefaultRequiresRequestId(t *testing.T) {
+	broker := NewMessageBroker(
+		&errorBidiStream{},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+	)
+
+	cancellation := broker.createCancellationMessage(
+		t.Context(),
+		&TestMessage{},
+		context.Canceled,
+	)
+
+	require.Nil(t, cancellation)
+}
+
+func TestCancelPendingRequest_CancellationSendFailure(t *testing.T) {
+	sendErr := errors.New("send failed")
+	broker := NewMessageBroker(
+		&errorBidiStream{sendErr: sendErr},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := broker.cancelPendingRequest(
+		ctx,
+		&TestMessage{RequestId: "request"},
+		"request",
+		reflect.TypeFor[*TestRequest](),
+		newResponseWaiter[TestMessage](1),
+		make(chan error),
+		true,
+	)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, sendErr)
+}
+
+func TestCancelActiveRequest_DefaultCauseAndMissingRequest(t *testing.T) {
+	broker := NewMessageBroker(
+		&errorBidiStream{},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+	)
+
+	require.False(t, broker.cancelActiveRequest("", nil))
+	require.False(t, broker.cancelActiveRequest("missing", nil))
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	request := &activeRequest{cancel: cancel}
+	broker.active["request"] = map[*activeRequest]struct{}{
+		request: {},
+	}
+
+	require.True(t, broker.cancelActiveRequest("request", nil))
+	require.ErrorIs(t, context.Cause(ctx), context.Canceled)
 }
 
 func TestRun_FullProgressWaiterDoesNotBlockCancellation(t *testing.T) {

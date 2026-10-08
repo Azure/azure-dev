@@ -455,9 +455,16 @@ func TestExtensionHost_ValidateBetaServiceEventRegistrations(t *testing.T) {
 			},
 		},
 		{
-			name: "unsupported event",
+			name: "unsupported prepackage event",
 			betaHandlers: []betaServiceEventRegistration{
 				{EventName: "prepackage", Handler: handler},
+			},
+			wantError: "use predeploy or postdeploy",
+		},
+		{
+			name: "unsupported postpackage event",
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "postpackage", Handler: handler},
 			},
 			wantError: "use predeploy or postdeploy",
 		},
@@ -500,6 +507,7 @@ func TestExtensionHost_ValidateBetaServiceEventRegistrations(t *testing.T) {
 				return
 			}
 			require.ErrorContains(t, err, test.wantError)
+			require.ErrorContains(t, host.Run(t.Context()), test.wantError)
 		})
 	}
 }

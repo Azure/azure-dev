@@ -18,6 +18,8 @@ steps:
       Use1ESArtifactTask: ${{ eq(parameters.Operation, 'Publish') }}
 
   - ${{ if eq(parameters.Operation, 'Prepare') }}:
+    - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+
     - pwsh: |
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandArgumentPassing = 'Legacy'
@@ -51,7 +53,7 @@ steps:
         }
       displayName: Generate and validate WinGet manifest
       env:
-        WINGET_CREATE_GITHUB_TOKEN: $(azuresdk-github-pat)
+        WINGET_CREATE_GITHUB_TOKEN: $(GH_TOKEN)
 
   - ${{ if eq(parameters.Operation, 'Publish') }}:
     - pwsh: |

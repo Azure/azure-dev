@@ -135,41 +135,32 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 	// prefer empty array over `nil` since this is a contracted return value,
 	// where empty array is preferred for "NotFound" semantics.
 	envs := []*contracts.EnvListEnvironment{}
+environmentEntries:
 	for _, ent := range environments {
 		if ent.IsDir() || ent.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 			if !azdcontext.IsValidEnvironmentName(ent.Name()) {
 				log.Printf("skipping environment entry %q: %v", ent.Name(), InvalidEnvironmentNameError(ent.Name()))
 				continue
 			}
-			envPath, err := fs.azdContext.EnvironmentFilePath(ent.Name(), DotEnvFileName)
-			if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
-				log.Printf("skipping environment entry %q: %v", ent.Name(), err)
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			configPath, err := fs.azdContext.EnvironmentFilePath(ent.Name(), ConfigFileName)
-			if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
-				log.Printf("skipping environment entry %q: %v", ent.Name(), err)
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			_, err = fs.azdContext.EnvironmentFilePath(ent.Name(), DotEnvFileName+".lock")
-			if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
-				log.Printf("skipping environment entry %q: %v", ent.Name(), err)
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
 			ev := &contracts.EnvListEnvironment{
-				Name:       ent.Name(),
-				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: envPath,
-				ConfigPath: configPath,
+				Name:      ent.Name(),
+				IsDefault: ent.Name() == defaultEnv,
+			}
+			for _, name := range []string{DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock"} {
+				path, err := fs.azdContext.EnvironmentFilePath(ent.Name(), name)
+				if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
+					log.Printf("skipping environment entry %q: %v", ent.Name(), err)
+					continue environmentEntries
+				}
+				if err != nil {
+					return nil, err
+				}
+				switch name {
+				case DotEnvFileName:
+					ev.DotEnvPath = path
+				case ConfigFileName:
+					ev.ConfigPath = path
+				}
 			}
 			envs = append(envs, ev)
 		}

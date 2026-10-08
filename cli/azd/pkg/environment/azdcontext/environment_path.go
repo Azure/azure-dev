@@ -44,6 +44,9 @@ func resolveExistingPath(path string) (string, error) {
 	return filepath.Join(resolvedParent, filepath.Base(path)), nil
 }
 
+// resolveEnvironmentChild allows a single local child name and missing entries.
+// Existing entries must match the requested directory or regular-file type; links,
+// reparse points, special files, and paths outside base are rejected.
 func resolveEnvironmentChild(base, name string, directory bool) (string, error) {
 	if !filepath.IsLocal(name) || name == "." || filepath.Base(name) != name {
 		return "", fmt.Errorf("invalid environment file name %q", name)

@@ -17,6 +17,8 @@ var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
 // IsValidEnvironmentName reports whether name is a deployment name and a local directory name.
 func IsValidEnvironmentName(name string) bool {
 	if runtime.GOOS == "windows" && strings.HasSuffix(name, ".") {
+		// Windows strips trailing periods when resolving directory names, so distinct names
+		// could otherwise refer to the same environment directory.
 		return false
 	}
 	// Dot-only names can resolve to the current or parent directory, including

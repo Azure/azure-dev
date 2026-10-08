@@ -44,6 +44,8 @@ func NewRootCommand() *cobra.Command {
 	// -p / --project-endpoint is inherited by all subcommands.
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL for remote operations only (not add, context, or version)")
+	rootCmd.PersistentFlags().String("tenant-id", "",
+		"Tenant ID for Azure authentication (overrides the azd context)")
 	rootCmd.PersistentFlags().String(routineHTTPTimeoutFlag, "",
 		fmt.Sprintf("HTTP request timeout override (for example, 2m or 90s). "+
 			"Defaults to %s for reads and %s for writes. Not supported by add, context, or version.",
@@ -84,7 +86,11 @@ func validateRemoteFlags(cmd *cobra.Command) error {
 	case "create", "update", "show", "list", "delete", "enable", "disable", "dispatch", "run":
 		return nil
 	}
-	for _, name := range []string{"project-endpoint", routineHTTPTimeoutFlag} {
+	for _, name := range []string{
+		"project-endpoint",
+		"tenant-id",
+		routineHTTPTimeoutFlag,
+	} {
 		if cmd.Flags().Changed(name) {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,

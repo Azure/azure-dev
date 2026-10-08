@@ -107,6 +107,24 @@ is rejected. This applies to `create --force`, manifest-based `update`, and
 The default table summaries from `create`, `show`, and `update` include the
 dispatch identity. Use `--output json` for machine-readable output.
 
+## Select a tenant for remote commands
+
+Remote routine commands use the tenant resolved by azd from the active
+environment or `AZURE_SUBSCRIPTION_ID`; without either, azd uses the signed-in
+user's home tenant. To select a tenant explicitly, use the root
+`--tenant-id` flag:
+
+```bash
+azd ai routine --tenant-id <tenant-id> create nightly-summary --file ./routine.yaml
+```
+
+An explicit tenant takes precedence over azd's environment and subscription
+context. This is useful when the project endpoint is configured separately
+from the subscription, including guest-user access. For guest users, use the
+subscription's user-access tenant rather than its resource tenant. The flag
+applies to remote routine commands; local commands such as `add` and `context`
+reject it.
+
 ## Timeout configuration
 
 Routine read API calls default to a 30-second HTTP request timeout.

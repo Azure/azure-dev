@@ -14,6 +14,7 @@ import (
 	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -109,6 +110,65 @@ func TestRootCommandRegistersTimeoutFlag(t *testing.T) {
 	flag := rootCmd.PersistentFlags().Lookup(routineHTTPTimeoutFlag)
 	require.NotNil(t, flag)
 	assert.Empty(t, flag.DefValue)
+}
+
+func TestRoutineCredentialOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		args          []string
+		wantTenantID  string
+		wantErrorText string
+	}{
+		{
+			name: "tenant defaults to azd context",
+		},
+		{
+			name:         "explicit tenant overrides azd context",
+			args:         []string{"--tenant-id=guest-access-tenant"},
+			wantTenantID: "guest-access-tenant",
+		},
+		{
+			name:          "empty explicit tenant is rejected",
+			args:          []string{"--tenant-id="},
+			wantErrorText: "--tenant-id must not be empty",
+		},
+		{
+			name:          "whitespace explicit tenant is rejected",
+			args:          []string{"--tenant-id=   "},
+			wantErrorText: "--tenant-id must not be empty",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := &cobra.Command{Use: "root"}
+			root.PersistentFlags().String("tenant-id", "", "")
+			var options *azidentity.AzureDeveloperCLICredentialOptions
+			command := &cobra.Command{
+				Use: "create",
+				RunE: func(cmd *cobra.Command, _ []string) error {
+					var err error
+					options, err = routineCredentialOptions(cmd)
+					return err
+				},
+			}
+			root.AddCommand(command)
+			root.SetArgs(append([]string{"create"}, test.args...))
+			err := root.ExecuteContext(t.Context())
+			if test.wantErrorText != "" {
+				require.ErrorContains(t, err, test.wantErrorText)
+				require.Nil(t, options)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, test.wantTenantID, options.TenantID)
+		})
+	}
 }
 
 // ─── boolStr ─────────────────────────────────────────────────────────────────

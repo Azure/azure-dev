@@ -40,6 +40,10 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 	if err != nil {
 		return nil, "", err
 	}
+	credentialOptions, err := routineCredentialOptions(cmd)
+	if err != nil {
+		return nil, "", err
+	}
 
 	flagEndpoint, _ := cmd.Flags().GetString("project-endpoint")
 
@@ -48,9 +52,7 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 		return nil, "", err
 	}
 
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
-	)
+	cred, err := azidentity.NewAzureDeveloperCLICredential(credentialOptions)
 	if err != nil {
 		return nil, "", exterrors.Auth(
 			exterrors.CodeAuthFailed,
@@ -64,6 +66,28 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 		cred,
 		routineClientOptions(requestTimeout),
 	), resolved.Endpoint, nil
+}
+
+func routineCredentialOptions(
+	cmd *cobra.Command,
+) (*azidentity.AzureDeveloperCLICredentialOptions, error) {
+	tenantID := ""
+	if cmd != nil {
+		if flag := cmd.Flag("tenant-id"); flag != nil && flag.Changed {
+			tenantID = flag.Value.String()
+			if strings.TrimSpace(tenantID) == "" {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--tenant-id must not be empty",
+					"provide a tenant ID for Azure authentication",
+				)
+			}
+		}
+	}
+
+	return &azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID: tenantID,
+	}, nil
 }
 
 func routineUpsertClientFactoryFromCommand(cmd *cobra.Command) routineUpsertClientFactory {

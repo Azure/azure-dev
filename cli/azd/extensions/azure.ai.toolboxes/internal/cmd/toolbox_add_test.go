@@ -64,6 +64,7 @@ func TestRunLocalConnectionAddUpdatesDefinition(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// #nosec G304 -- path is inside this test's own TempDir.
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "instanceName: docs-config")

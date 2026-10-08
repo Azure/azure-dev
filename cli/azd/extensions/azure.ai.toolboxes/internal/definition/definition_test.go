@@ -29,6 +29,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	}
 
 	require.NoError(t, Save(path, want))
+	// #nosec G304 -- path is inside this test's own TempDir.
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	text := string(content)

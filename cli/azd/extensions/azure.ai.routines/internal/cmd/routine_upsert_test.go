@@ -371,6 +371,58 @@ func TestRoutineShowTableOutputIncludesDispatchIdentity(t *testing.T) {
 	assert.Contains(t, output.String(), routines.RoutineDispatchIdentityCreator)
 }
 
+func TestRoutineShowJSONOutputUsesCommandWriter(t *testing.T) {
+	t.Parallel()
+
+	client := &routineUpsertClientStub{
+		existing: routineWithDispatchIdentity(
+			routines.RoutineDispatchIdentityCreator,
+		),
+	}
+	var output bytes.Buffer
+	cmd := newRoutineShowCommand(&azdext.ExtensionContext{})
+	cmd.SetOut(&output)
+
+	err := runRoutineShowWithClientFactory(
+		t.Context(),
+		cmd,
+		"nightly",
+		"json",
+		fixedRoutineUpsertClientFactory(client),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 1, client.getCalls)
+
+	var result routines.Routine
+	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	assert.Equal(t, "nightly", result.Name)
+	require.NotNil(t, result.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, result.Authorization.Identity)
+}
+
+func TestRoutineShowJSONOutputReturnsWriterError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	client := &routineUpsertClientStub{
+		existing: routineWithDispatchIdentity(
+			routines.RoutineDispatchIdentityCreator,
+		),
+	}
+	cmd := newRoutineShowCommand(&azdext.ExtensionContext{})
+	cmd.SetOut(routineSummaryFailingWriter{err: writeErr})
+
+	err := runRoutineShowWithClientFactory(
+		t.Context(),
+		cmd,
+		"nightly",
+		"json",
+		fixedRoutineUpsertClientFactory(client),
+	)
+	require.ErrorIs(t, err, writeErr)
+	assert.Equal(t, 1, client.getCalls)
+}
+
 func TestRoutineServiceDeployDispatchIdentity(t *testing.T) {
 	t.Parallel()
 

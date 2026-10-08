@@ -67,7 +67,7 @@ func runRoutineShowWithClientFactory(
 	}
 
 	if output == "json" {
-		return printJSON(routine)
+		return printJSONTo(cmd.OutOrStdout(), routine)
 	}
 
 	return routineSummaryTable(cmd.OutOrStdout(), routine)

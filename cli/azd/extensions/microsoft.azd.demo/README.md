@@ -130,11 +130,10 @@ This `listen` command is required when your extension leverages `LifecycleEvents
 
 This command is invoked by `azd` to allow your extension to subscribe to lifecycle events within the current `azd` project and services.
 
-The demo uses the beta event stream for `predeploy` and `postdeploy`. It waits
-for subscription acknowledgements and sends handler output with the matching
-invocation request ID, so the host can retain deploy hook output after the
-preview closes. Other demo lifecycle handlers continue to use the stable
-extension host.
+The demo uses beta service handlers for `predeploy` and `postdeploy`. They
+return structured info and warning messages that azd displays after the
+deployment table and includes in deploy/up JSON results. Other demo lifecycle
+handlers continue to use the stable extension host.
 
 ### `telemetry`
 

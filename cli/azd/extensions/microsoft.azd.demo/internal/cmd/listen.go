@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -34,41 +33,10 @@ func newListenCommand() *cobra.Command {
 			host := azdext.NewExtensionHost(azdClient)
 			configureExtensionHostWithOutput(host, cmd.OutOrStdout())
 
-			deployEvents := newDemoBetaEventRunner(azdClient, cmd.OutOrStdout())
-			if err := deployEvents.Start(ctx); err != nil {
-				return fmt.Errorf("failed to register beta deploy hooks: %w", err)
+			if err := host.Run(ctx); err != nil {
+				return fmt.Errorf("failed to run extension: %w", err)
 			}
-
-			hostErrors := make(chan error, 1)
-			go func() {
-				hostErrors <- host.Run(ctx)
-			}()
-
-			select {
-			case <-deployEvents.Done():
-				if cmd.Context().Err() != nil {
-					cancel()
-					return <-hostErrors
-				}
-				cancel()
-				<-hostErrors
-				return fmt.Errorf("beta deploy event stream stopped: %w", deployEvents.Wait())
-			case err := <-hostErrors:
-				if cmd.Context().Err() != nil {
-					cancel()
-					_ = deployEvents.Wait()
-					return err
-				}
-				cancel()
-				betaErr := deployEvents.Wait()
-				if err != nil {
-					return fmt.Errorf("failed to run extension: %w", err)
-				}
-				if betaErr != nil && !errors.Is(betaErr, context.Canceled) {
-					return fmt.Errorf("beta deploy event stream stopped: %w", betaErr)
-				}
-				return errors.New("extension host stopped before listen context was canceled")
-			}
+			return nil
 		},
 	}
 
@@ -142,7 +110,32 @@ func configureExtensionHostWithOutput(host *azdext.ExtensionHost, output io.Writ
 				)
 				return err
 			})
-		}, nil)
+		}, nil).
+		WithBetaServiceEventHandler(
+			"predeploy",
+			func(_ context.Context, args *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error) {
+				return &azdext.BetaServiceEventResponse{
+					Messages: []azdext.BetaServiceEventMessage{{
+						Kind:    azdext.BetaServiceEventMessageInfo,
+						Message: fmt.Sprintf("Preparing service %q for deployment.", args.Service.Name),
+					}},
+				}, nil
+			},
+			nil,
+		).
+		WithBetaServiceEventHandler(
+			"postdeploy",
+			func(_ context.Context, args *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error) {
+				return &azdext.BetaServiceEventResponse{
+					Messages: []azdext.BetaServiceEventMessage{{
+						Kind:       azdext.BetaServiceEventMessageWarning,
+						Message:    fmt.Sprintf("Demo warning for service %q.", args.Service.Name),
+						Suggestion: "This is an example structured deploy message.",
+					}},
+				}, nil
+			},
+			nil,
+		)
 }
 
 func runDemoWork(ctx context.Context, write func(int) error) error {

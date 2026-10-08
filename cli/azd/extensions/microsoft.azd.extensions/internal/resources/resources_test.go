@@ -151,6 +151,11 @@ func TestNonGoScaffoldEventMessageMatchesStableContract(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, eventMessageFields(t, canonical), eventMessageFields(t, scaffold))
+	require.Equal(
+		t,
+		serviceHandlerStatusFields(t, canonical),
+		serviceHandlerStatusFields(t, scaffold),
+	)
 
 	for _, path := range []string{
 		"languages/javascript/generated/proto/event_pb.js",
@@ -161,10 +166,11 @@ func TestNonGoScaffoldEventMessageMatchesStableContract(t *testing.T) {
 		require.NotContains(t, string(generated), "ExtensionReadyEvent", path)
 		require.NotContains(t, string(generated), "extension_ready_event", path)
 		for _, betaOnlyField := range []string{
-			"handler_output",
 			"subscribe_project_event_response",
 			"subscribe_service_event_response",
 			"request_id",
+			"ServiceEventMessage",
+			"service_event_message",
 		} {
 			require.NotContains(t, string(generated), betaOnlyField, path)
 		}
@@ -256,8 +262,23 @@ func eventMessageFields(t *testing.T, proto []byte) map[string]string {
 	return fields
 }
 
+func serviceHandlerStatusFields(t *testing.T, proto []byte) map[string]string {
+	t.Helper()
+
+	message := serviceHandlerStatusPattern.FindSubmatch(proto)
+	require.Len(t, message, 2, "ServiceHandlerStatus message must be present")
+
+	fields := map[string]string{}
+	for _, match := range protoFieldPattern.FindAllSubmatch(message[1], -1) {
+		fields[string(match[2])] = string(match[1]) + ":" + string(match[3])
+	}
+	require.NotEmpty(t, fields, "ServiceHandlerStatus message must contain fields")
+	return fields
+}
+
 var azdModuleRequirePattern = regexp.MustCompile(`github\.com/azure/azure-dev/cli/azd (\S+)`)
 var eventMessageOneofPattern = regexp.MustCompile(`(?s)message EventMessage\s*\{.*?oneof message_type\s*\{(.*?)\n\s*\}`)
+var serviceHandlerStatusPattern = regexp.MustCompile(`(?s)message ServiceHandlerStatus\s*\{(.*?)\n\s*\}`)
 var protoFieldPattern = regexp.MustCompile(`(?m)^\s*([\w.]+)\s+(\w+)\s*=\s*(\d+);`)
 
 // pseudoVersionPattern matches the trailing "<yyyymmddhhmmss>-<12 hex digits>" that the Go

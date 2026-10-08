@@ -6,20 +6,19 @@ package grpcserver
 import (
 	"context"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
-func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
+func TestServer_BetaEventStreamCollectsServiceMessages(t *testing.T) {
 	extension := &extensions.Extension{
 		Id:           "test.beta.events",
 		Version:      "1.0.0",
@@ -81,12 +80,6 @@ func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
 	require.NotEmpty(t, projectInvoke.GetRequestId())
 	require.NoError(t, stream.Send(&v1beta.EventMessage{
 		RequestId: projectInvoke.GetRequestId(),
-		MessageType: &v1beta.EventMessage_HandlerOutput{
-			HandlerOutput: &v1beta.HandlerOutput{Output: "project RBAC warning\n"},
-		},
-	}))
-	require.NoError(t, stream.Send(&v1beta.EventMessage{
-		RequestId: projectInvoke.GetRequestId(),
 		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
 			ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
 				EventName: "predeploy",
@@ -118,10 +111,12 @@ func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
 
 	serviceConfig := projectConfig.Services["api"]
 	require.NotNil(t, serviceConfig)
+	collector := commandresult.NewServiceEventMessageCollector()
+	eventCtx := commandresult.WithServiceEventMessageCollector(ctx, collector)
 	serviceDone := make(chan error, 1)
 	go func() {
 		serviceDone <- serviceConfig.RaiseEvent(
-			ctx,
+			eventCtx,
 			ext.Event("predeploy"),
 			project.ServiceLifecycleEventArgs{
 				Project:        projectConfig,
@@ -139,21 +134,26 @@ func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
 	require.NotEmpty(t, serviceInvoke.GetRequestId())
 	require.NoError(t, stream.Send(&v1beta.EventMessage{
 		RequestId: serviceInvoke.GetRequestId(),
-		MessageType: &v1beta.EventMessage_HandlerOutput{
-			HandlerOutput: &v1beta.HandlerOutput{Output: "service RBAC warning\n"},
-		},
-	}))
-	require.NoError(t, stream.Send(&v1beta.EventMessage{
-		RequestId: serviceInvoke.GetRequestId(),
 		MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
 			ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
 				EventName:   "predeploy",
 				ServiceName: "api",
 				Status:      "completed",
+				Messages: []*v1beta.ServiceEventMessage{{
+					Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "service RBAC warning",
+				}},
 			},
 		},
 	}))
 	require.NoError(t, <-serviceDone)
+	require.Equal(t, []commandresult.ServiceEventMessage{{
+		ExtensionID: extension.Id,
+		ServiceName: "api",
+		EventName:   "predeploy",
+		Kind:        "warning",
+		Message:     "service RBAC warning",
+	}}, collector.Snapshot([]string{"api"}))
 
 	disconnectedDone := make(chan error, 1)
 	go func() {
@@ -167,20 +167,8 @@ func TestServer_BetaEventStreamRetainsDeployHookOutput(t *testing.T) {
 	disconnectedInvoke, err := stream.Recv()
 	require.NoError(t, err)
 	require.NotNil(t, disconnectedInvoke.GetInvokeProjectHandler())
-	require.NoError(t, stream.Send(&v1beta.EventMessage{
-		RequestId: disconnectedInvoke.GetRequestId(),
-		MessageType: &v1beta.EventMessage_HandlerOutput{
-			HandlerOutput: &v1beta.HandlerOutput{Output: "disconnected hook warning\n"},
-		},
-	}))
 	require.NoError(t, stream.CloseSend())
 	require.Error(t, <-disconnectedDone)
-
-	console := service.console.(*mockinput.MockConsole)
-	output := strings.Join(console.Output(), "\n")
-	require.Contains(t, output, "project RBAC warning")
-	require.Contains(t, output, "service RBAC warning")
-	require.Contains(t, output, "disconnected hook warning")
 }
 
 func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
@@ -211,6 +199,8 @@ func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
 	ctx = azdext.WithAccessToken(ctx, accessToken)
 	stream, err := client.EventsBeta().EventStream(ctx)
 	require.NoError(t, err)
+	collector := commandresult.NewServiceEventMessageCollector()
+	eventCtx := commandresult.WithServiceEventMessageCollector(ctx, collector)
 	require.NoError(t, stream.Send(&v1beta.EventMessage{
 		RequestId: "service-subscription",
 		MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
@@ -234,7 +224,7 @@ func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
 		results[name] = done
 		go func() {
 			done <- serviceConfig.RaiseEvent(
-				ctx,
+				eventCtx,
 				ext.Event("predeploy"),
 				project.ServiceLifecycleEventArgs{
 					Project:        projectConfig,
@@ -267,19 +257,6 @@ func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
 		}
 	}
 
-	for _, part := range []string{"first", "second"} {
-		for index, invocation := range invocations {
-			require.NoError(t, stream.Send(&v1beta.EventMessage{
-				RequestId: invocation.GetRequestId(),
-				MessageType: &v1beta.EventMessage_HandlerOutput{
-					HandlerOutput: &v1beta.HandlerOutput{
-						Output: names[index] + " " + part + " warning\n",
-					},
-				},
-			}))
-		}
-	}
-
 	// Complete in reverse receive order with different outcomes.
 	for _, index := range []int{1, 0} {
 		status := "completed"
@@ -296,6 +273,16 @@ func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
 					ServiceName: names[index],
 					Status:      status,
 					Message:     message,
+					Messages: []*v1beta.ServiceEventMessage{
+						{
+							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+							Message: names[index] + " first warning",
+						},
+						{
+							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+							Message: names[index] + " second warning",
+						},
+					},
 				},
 			},
 		}))
@@ -319,11 +306,36 @@ func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
 		}
 	}
 
-	console := service.console.(*mockinput.MockConsole)
-	require.ElementsMatch(t, []string{
-		"api first warning\napi second warning",
-		"web first warning\nweb second warning",
-	}, console.Output())
+	require.Equal(t, []commandresult.ServiceEventMessage{
+		{
+			ExtensionID: extension.Id,
+			ServiceName: "api",
+			EventName:   "predeploy",
+			Kind:        "warning",
+			Message:     "api first warning",
+		},
+		{
+			ExtensionID: extension.Id,
+			ServiceName: "api",
+			EventName:   "predeploy",
+			Kind:        "warning",
+			Message:     "api second warning",
+		},
+		{
+			ExtensionID: extension.Id,
+			ServiceName: "web",
+			EventName:   "predeploy",
+			Kind:        "warning",
+			Message:     "web first warning",
+		},
+		{
+			ExtensionID: extension.Id,
+			ServiceName: "web",
+			EventName:   "predeploy",
+			Kind:        "warning",
+			Message:     "web second warning",
+		},
+	}, collector.Snapshot([]string{"api", "web"}))
 	require.NoError(t, stream.CloseSend())
 	message, err := stream.Recv()
 	require.Nil(t, message)
@@ -451,4 +463,38 @@ func newServerWithEventService(eventService azdext.EventServiceServer) *Server {
 		v1beta.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
 	)
+}
+
+func TestCollectBetaServiceEventMessagesRedactsLinkCredentials(t *testing.T) {
+	const rawURL = "https://user:password@example.com/docs?sig=secret#fragment"
+	collector := commandresult.NewServiceEventMessageCollector()
+	ctx := commandresult.WithServiceEventMessageCollector(t.Context(), collector)
+
+	err := collectBetaServiceEventMessages(
+		ctx,
+		"test.extension",
+		"postdeploy",
+		"api",
+		&v1beta.ServiceHandlerStatus{
+			EventName:   "postdeploy",
+			ServiceName: "api",
+			Status:      "completed",
+			Messages: []*v1beta.ServiceEventMessage{{
+				Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+				Message: "Review the deployment settings.",
+				Links: []*v1beta.ErrorLink{{
+					Title: "Deployment guide",
+					Url:   rawURL,
+				}},
+			}},
+		},
+	)
+	require.NoError(t, err)
+
+	messages := collector.Snapshot([]string{"api"})
+	require.Len(t, messages, 1)
+	require.Equal(t, "https://example.com/docs", messages[0].Links[0].URL)
+	for _, secret := range []string{"user", "password", "sig", "secret", "fragment"} {
+		require.NotContains(t, messages[0].Links[0].URL, secret)
+	}
 }

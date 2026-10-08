@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -202,6 +203,7 @@ func NewDeployAction(
 type DeploymentResult struct {
 	Timestamp time.Time                               `json:"timestamp"`
 	Services  map[string]*project.ServiceDeployResult `json:"services"`
+	Messages  []commandresult.ServiceEventMessage     `json:"messages,omitempty"`
 }
 
 func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -403,6 +405,9 @@ func (da *DeployAction) deployServicesGraph(
 	if err != nil {
 		return nil, err
 	}
+	serviceOrder := deploymentServiceOrder(stableServices)
+	messageCollector := commandresult.NewServiceEventMessageCollector()
+	ctx = commandresult.WithServiceEventMessageCollector(ctx, messageCollector)
 	concurrency := resolveDeployGraphConcurrency(da.env.LookupEnv)
 
 	// Wrap console for thread-safe output during parallel deployment.
@@ -417,14 +422,10 @@ func (da *DeployAction) deployServicesGraph(
 	// lines don't pollute stdout alongside the JSON result, and when no
 	// writer is available (e.g. test mocks).
 	if w := origConsole.GetWriter(); da.formatter.Kind() != output.JsonFormat && w != nil {
-		serviceNames := make([]string, len(stableServices))
-		for i, svc := range stableServices {
-			serviceNames[i] = svc.Name
-		}
 		da.progressTracker = newDeployProgressTracker(
 			w,
 			origConsole.IsSpinnerInteractive(),
-			serviceNames,
+			serviceOrder,
 		)
 		da.console = &silentSpinnerConsole{syncConsole: sc}
 		// Suppress previewer output at the shared console level so that
@@ -536,6 +537,10 @@ func (da *DeployAction) deployServicesGraph(
 	if da.progressTracker != nil {
 		da.progressTracker.RenderFinal()
 	}
+	messages := messageCollector.Snapshot(serviceOrder)
+	if da.formatter.Kind() != output.JsonFormat {
+		displayServiceEventMessages(ctx, origConsole, messages)
+	}
 
 	// Clean up temporary package artifacts created during graph execution.
 	if da.flags.fromPackage == "" {
@@ -543,6 +548,19 @@ func (da *DeployAction) deployServicesGraph(
 	}
 
 	if err != nil {
+		if da.formatter.Kind() == output.JsonFormat && len(messages) > 0 {
+			if formatErr := formatDeploymentResult(
+				da.formatter,
+				da.writer,
+				state,
+				messages,
+			); formatErr != nil {
+				err = errors.Join(
+					err,
+					fmt.Errorf("deploy result could not be displayed: %w", formatErr),
+				)
+			}
+		}
 		return nil, err
 	}
 
@@ -565,12 +583,7 @@ func (da *DeployAction) deployServicesGraph(
 	}
 
 	if da.formatter.Kind() == output.JsonFormat {
-		deployResult := DeploymentResult{
-			Timestamp: time.Now(),
-			Services:  state.ResultsSnapshot(),
-		}
-
-		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
+		if fmtErr := formatDeploymentResult(da.formatter, da.writer, state, messages); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
 	}

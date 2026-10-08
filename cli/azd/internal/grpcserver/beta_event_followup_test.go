@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -400,7 +399,7 @@ func (s *readyExtensionService) Ready(
 	return &azdext.ReadyResponse{}, nil
 }
 
-func TestBetaEventServiceBetaClientFollowUpAndOutputEndToEnd(t *testing.T) {
+func TestBetaEventServiceBetaClientFollowUpAndStructuredMessagesEndToEnd(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
 	extension.Capabilities = []extensions.CapabilityType{
@@ -482,6 +481,18 @@ func TestBetaEventServiceBetaClientFollowUpAndOutputEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "subscribe-1", ack.GetRequestId())
 	require.NotNil(t, ack.GetSubscribeProjectEventResponse())
+	require.NoError(t, stream.Send(&v1beta.EventMessage{
+		RequestId: "service-subscribe-1",
+		MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+			SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{
+				EventNames: []string{"predeploy"},
+			},
+		},
+	}))
+	serviceAck, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "service-subscribe-1", serviceAck.GetRequestId())
+	require.NotNil(t, serviceAck.GetSubscribeServiceEventResponse())
 
 	_, err = client.Extension().Ready(streamCtx, &azdext.ReadyRequest{})
 	require.NoError(t, err)
@@ -489,8 +500,10 @@ func TestBetaEventServiceBetaClientFollowUpAndOutputEndToEnd(t *testing.T) {
 
 	projectConfig, err := service.lazyProject.GetValue()
 	require.NoError(t, err)
-	collector := commandresult.NewFollowUpCollector()
-	eventCtx := commandresult.WithFollowUpCollector(t.Context(), collector)
+	followUpCollector := commandresult.NewFollowUpCollector()
+	messageCollector := commandresult.NewServiceEventMessageCollector()
+	eventCtx := commandresult.WithFollowUpCollector(t.Context(), followUpCollector)
+	eventCtx = commandresult.WithServiceEventMessageCollector(eventCtx, messageCollector)
 	eventDone := make(chan error, 1)
 	go func() {
 		eventDone <- projectConfig.RaiseEvent(
@@ -515,14 +528,6 @@ func TestBetaEventServiceBetaClientFollowUpAndOutputEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(&v1beta.EventMessage{
 		RequestId: invocation.GetRequestId(),
-		MessageType: &v1beta.EventMessage_HandlerOutput{
-			HandlerOutput: &v1beta.HandlerOutput{
-				Output: "RBAC warning retained alongside follow-up\n",
-			},
-		},
-	}))
-	require.NoError(t, stream.Send(&v1beta.EventMessage{
-		RequestId: invocation.GetRequestId(),
 		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
 			ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
 				EventName: "postdeploy",
@@ -531,9 +536,51 @@ func TestBetaEventServiceBetaClientFollowUpAndOutputEndToEnd(t *testing.T) {
 		},
 	}))
 	require.NoError(t, <-eventDone)
-	require.Equal(t, "Run azd show", collector.Text())
-	require.Contains(t, service.console.(*mockinput.MockConsole).Output(),
-		"RBAC warning retained alongside follow-up")
+	require.Equal(t, "Run azd show", followUpCollector.Text())
+
+	serviceConfig := projectConfig.Services["api"]
+	require.NotNil(t, serviceConfig)
+	serviceDone := make(chan error, 1)
+	go func() {
+		serviceDone <- serviceConfig.RaiseEvent(
+			eventCtx,
+			ext.Event("predeploy"),
+			project.ServiceLifecycleEventArgs{
+				Project:        projectConfig,
+				Service:        serviceConfig,
+				ServiceContext: project.NewServiceContext(),
+			},
+		)
+	}()
+	serviceInvocation, err := stream.Recv()
+	require.NoError(t, err)
+	serviceHandler := serviceInvocation.GetInvokeServiceHandler()
+	require.NotNil(t, serviceHandler)
+	require.Equal(t, "api", serviceHandler.GetService().GetName())
+	require.Equal(t, "predeploy", serviceHandler.GetEventName())
+	require.NotEmpty(t, serviceInvocation.GetRequestId())
+	require.NoError(t, stream.Send(&v1beta.EventMessage{
+		RequestId: serviceInvocation.GetRequestId(),
+		MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+			ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+				EventName:   "predeploy",
+				ServiceName: "api",
+				Status:      "completed",
+				Messages: []*v1beta.ServiceEventMessage{{
+					Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "RBAC warning retained alongside follow-up",
+				}},
+			},
+		},
+	}))
+	require.NoError(t, <-serviceDone)
+	require.Equal(t, []commandresult.ServiceEventMessage{{
+		ExtensionID: extension.Id,
+		ServiceName: "api",
+		EventName:   "predeploy",
+		Kind:        "warning",
+		Message:     "RBAC warning retained alongside follow-up",
+	}}, messageCollector.Snapshot([]string{"api"}))
 }
 
 func TestBetaEventServiceLegacyBetaClientProjectHandlerCompletes(t *testing.T) {
@@ -651,16 +698,15 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		sendErr <- nil
 		stream.recvCh <- &v1beta.EventMessage{
 			RequestId: msg.GetRequestId(),
-			MessageType: &v1beta.EventMessage_HandlerOutput{
-				HandlerOutput: &v1beta.HandlerOutput{Output: "service warning\n"},
-			},
-		}
-		stream.recvCh <- &v1beta.EventMessage{
 			MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
 				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
 					EventName:   invoke.EventName,
 					ServiceName: invoke.Service.Name,
 					Status:      "completed",
+					Messages: []*v1beta.ServiceEventMessage{{
+						Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+						Message: "service warning",
+					}},
 				},
 			},
 		}
@@ -690,15 +736,22 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		"predeploy",
 		broker,
 	)
-	err = handler(t.Context(), project.ServiceLifecycleEventArgs{
+	collector := commandresult.NewServiceEventMessageCollector()
+	handlerCtx := commandresult.WithServiceEventMessageCollector(t.Context(), collector)
+	err = handler(handlerCtx, project.ServiceLifecycleEventArgs{
 		Project:        projectConfig,
 		Service:        serviceConfig,
 		ServiceContext: project.NewServiceContext(),
 	})
 	require.NoError(t, err)
 	require.NoError(t, <-sendErr)
-	require.Contains(t, service.console.(*mockinput.MockConsole).Output(),
-		"service warning")
+	require.Equal(t, []commandresult.ServiceEventMessage{{
+		ExtensionID: extension.Id,
+		ServiceName: serviceConfig.Name,
+		EventName:   "predeploy",
+		Kind:        "warning",
+		Message:     "service warning",
+	}}, collector.Snapshot([]string{serviceConfig.Name}))
 }
 
 func TestBetaEventServiceProjectHandlerUsesInvocationCancellation(t *testing.T) {

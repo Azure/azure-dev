@@ -126,23 +126,16 @@ func (*betaEventMessageEnvelope) SetError(
 	msg.Error = wrapBetaError(err)
 }
 
-func (*betaEventMessageEnvelope) IsProgressMessage(msg *v1beta.EventMessage) bool {
-	return msg.GetHandlerOutput() != nil
+func (*betaEventMessageEnvelope) IsProgressMessage(*v1beta.EventMessage) bool {
+	return false
 }
 
-func (*betaEventMessageEnvelope) GetProgressMessage(msg *v1beta.EventMessage) string {
-	return msg.GetHandlerOutput().GetOutput()
+func (*betaEventMessageEnvelope) GetProgressMessage(*v1beta.EventMessage) string {
+	return ""
 }
 
-func (*betaEventMessageEnvelope) CreateProgressMessage(
-	requestID string, message string,
-) *v1beta.EventMessage {
-	return &v1beta.EventMessage{
-		RequestId: requestID,
-		MessageType: &v1beta.EventMessage_HandlerOutput{
-			HandlerOutput: &v1beta.HandlerOutput{Output: message},
-		},
-	}
+func (*betaEventMessageEnvelope) CreateProgressMessage(string, string) *v1beta.EventMessage {
+	return nil
 }
 
 func (*betaEventMessageEnvelope) GetInnerMessage(
@@ -168,8 +161,6 @@ func (*betaEventMessageEnvelope) GetInnerMessage(
 		return m.SubscribeProjectEventResponse
 	case *v1beta.EventMessage_SubscribeServiceEventResponse:
 		return m.SubscribeServiceEventResponse
-	case *v1beta.EventMessage_HandlerOutput:
-		return m.HandlerOutput
 	default:
 		return nil
 	}

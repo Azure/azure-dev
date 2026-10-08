@@ -18,6 +18,9 @@ service EventService {
 
 // Represents different types of messages sent over the stream
 message EventMessage {
+  reserved 11;
+  reserved "handler_output";
+
   oneof message_type {
     SubscribeProjectEvent subscribe_project_event = 1;
     InvokeProjectHandler invoke_project_handler = 2;
@@ -27,7 +30,6 @@ message EventMessage {
     ServiceHandlerStatus service_handler_status = 6;
     SubscribeProjectEventResponse subscribe_project_event_response = 7;
     SubscribeServiceEventResponse subscribe_service_event_response = 8;
-    HandlerOutput handler_output = 11;
   }
 
   // Correlates request and response messages on the event stream.
@@ -36,12 +38,19 @@ message EventMessage {
   ExtensionError error = 10;
 }
 
-// Output emitted by a lifecycle handler.
-message HandlerOutput {
-  reserved 1;
-  reserved "request_id";
-  // Output text emitted by the handler.
-  string output = 2;
+// How azd presents a service lifecycle message.
+enum ServiceEventMessageKind {
+  SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED = 0;
+  SERVICE_EVENT_MESSAGE_KIND_INFO = 1;
+  SERVICE_EVENT_MESSAGE_KIND_WARNING = 2;
+}
+
+// A non-blocking message returned by a service handler.
+message ServiceEventMessage {
+  ServiceEventMessageKind kind = 1;
+  string message = 2;
+  string suggestion = 3;
+  repeated ErrorLink links = 4;
 }
 
 // Client subscribes to project-related events
@@ -112,4 +121,6 @@ message ServiceHandlerStatus {
   string message = 4;
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 5;
+  // Non-blocking messages returned by a service deploy handler.
+  repeated ServiceEventMessage messages = 6;
 }

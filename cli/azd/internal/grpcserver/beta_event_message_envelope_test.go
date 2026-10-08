@@ -15,12 +15,21 @@ import (
 
 func TestBetaEventMessageEnvelope_UsesTopLevelRequestID(t *testing.T) {
 	envelope := newBetaEventMessageEnvelope()
-	message := envelope.CreateProgressMessage("request-1", "warning")
+	message := &v1beta.EventMessage{
+		RequestId: "request-1",
+		MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+			ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+				EventName:   "predeploy",
+				ServiceName: "api",
+				Status:      "completed",
+			},
+		},
+	}
 
 	require.Equal(t, "request-1", envelope.GetRequestId(t.Context(), message))
-	require.True(t, envelope.IsProgressMessage(message))
-	require.Equal(t, "warning", envelope.GetProgressMessage(message))
-	require.Nil(t, message.GetHandlerOutput().ProtoReflect().Descriptor().Fields().ByName("request_id"))
+	require.False(t, envelope.IsProgressMessage(message))
+	require.Empty(t, envelope.GetProgressMessage(message))
+	require.Nil(t, envelope.CreateProgressMessage("request-1", "warning"))
 }
 
 func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
@@ -120,13 +129,21 @@ func TestValidateBetaEventMessageModes(t *testing.T) {
 		require.ErrorContains(t, err, "request_id is required")
 	})
 
-	t.Run("legacy rejects progress", func(t *testing.T) {
+	t.Run("legacy rejects structured service messages", func(t *testing.T) {
 		err := validateBetaEventMessage(&v1beta.EventMessage{
-			MessageType: &v1beta.EventMessage_HandlerOutput{
-				HandlerOutput: &v1beta.HandlerOutput{Output: "warning"},
+			MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+					EventName:   "predeploy",
+					ServiceName: "api",
+					Status:      "completed",
+					Messages: []*v1beta.ServiceEventMessage{{
+						Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+						Message: "warning",
+					}},
+				},
 			},
 		}, betaEventStreamLegacy)
-		require.ErrorContains(t, err, "require a new stream")
+		require.ErrorContains(t, err, "require a new beta event stream")
 	})
 
 	t.Run("modern rejects server message types", func(t *testing.T) {

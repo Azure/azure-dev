@@ -161,6 +161,40 @@ func TestBetaEventStreamRequestIDModeValidation(t *testing.T) {
 			},
 		},
 		{
+			name: "structured service message requires request ID",
+			message: &v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "predeploy",
+						ServiceName: "api",
+						Status:      "completed",
+						Messages: []*v1beta.ServiceEventMessage{{
+							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+							Message: "service warning",
+						}},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "structured service message with request ID",
+			message: &v1beta.EventMessage{
+				RequestId: "invocation-1",
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "predeploy",
+						ServiceName: "api",
+						Status:      "completed",
+						Messages: []*v1beta.ServiceEventMessage{{
+							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+							Message: "service warning",
+						}},
+					},
+				},
+			},
+		},
+		{
 			name: "project status without request ID",
 			message: &v1beta.EventMessage{
 				MessageType: &v1beta.EventMessage_ProjectHandlerStatus{

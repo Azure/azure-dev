@@ -50,9 +50,9 @@ capabilities:
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
 
 The default scaffolds and SDK `EventManager` use the stable `v1` contract.
-Correlated deploy hook output is available through the beta event stream; Go
-extensions must opt in with
-`AzdClient.EventsBeta()` and send invocation request IDs. See
+Go extensions can opt into beta structured messages for service
+`predeploy`/`postdeploy` handlers with
+`ExtensionHost.WithBetaServiceEventHandler`. See
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for the stream requirements and legacy-client behavior.
 

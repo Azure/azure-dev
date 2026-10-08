@@ -94,9 +94,10 @@ Extensions can access these azd services via gRPC:
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations
 
-Deploy hook output retention uses the beta event stream. Extensions opt in
-through the generated `v1beta` client; the stable event contract and default
-language scaffolds remain unchanged. See
+Structured deploy messages use the beta event stream. Go extensions opt in
+with `ExtensionHost.WithBetaServiceEventHandler` for service `predeploy` and
+`postdeploy` events; the stable event contract and default language scaffolds
+remain unchanged. See
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for beta stream routing and legacy-client behavior.
 

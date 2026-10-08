@@ -20,14 +20,17 @@ The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
 
-Correlated lifecycle output is beta-only. The beta event stream carries
-subscription acknowledgements, a top-level `request_id` and `error`, and
-`HandlerOutput` progress messages. Stable event contracts and the default
-language scaffolds remain unchanged. New clients can opt in through the
-generated `v1beta` EventService client; streams whose first subscription has
-no request ID keep using the legacy adapter without correlated output. See
-[extension contract versioning](../docs/extensions/contract-versioning.md)
-for the host routing and compatibility rules.
+Structured deploy messages are beta-only. Service `predeploy` and
+`postdeploy` handlers can return non-blocking info or warning messages in
+`ServiceHandlerStatus.messages`. Go extensions register them with
+`ExtensionHost.WithBetaServiceEventHandler`; the default language scaffolds
+and stable event contracts remain unchanged.
+
+Messages use the correlated beta event stream. Its first subscription must
+include a `request_id`, and each service status carrying messages must echo
+the invocation's ID. Legacy beta streams retain their existing behavior but
+cannot send structured messages. See the extension contract versioning guide
+for host routing and compatibility behavior.
 
 ## Generate contracts
 

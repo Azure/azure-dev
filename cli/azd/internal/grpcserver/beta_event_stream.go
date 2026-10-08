@@ -114,21 +114,35 @@ func validateBetaEventMessage(message *v1beta.EventMessage, mode betaEventStream
 				"request_id cannot be added after a legacy beta event subscription",
 			)
 		}
-		if message.GetHandlerOutput() != nil || message.GetError() != nil {
+		if message.GetError() != nil {
 			return status.Error(codes.InvalidArgument, "beta protocol fields require a new stream")
+		}
+		if message.GetServiceHandlerStatus() != nil &&
+			len(message.GetServiceHandlerStatus().GetMessages()) > 0 {
+			return status.Error(
+				codes.InvalidArgument,
+				"structured service event messages require a new beta event stream",
+			)
 		}
 	case betaEventStreamRequestIDs:
 		switch message.MessageType.(type) {
 		case *v1beta.EventMessage_SubscribeProjectEvent,
 			*v1beta.EventMessage_SubscribeServiceEvent,
-			*v1beta.EventMessage_ProjectHandlerStatus,
-			*v1beta.EventMessage_HandlerOutput:
+			*v1beta.EventMessage_ProjectHandlerStatus:
 			if message.RequestId == "" {
 				return status.Error(
 					codes.InvalidArgument,
 					"request_id is required for this beta event message",
 				)
 			}
+		}
+		if message.GetServiceHandlerStatus() != nil &&
+			len(message.GetServiceHandlerStatus().GetMessages()) > 0 &&
+			message.RequestId == "" {
+			return status.Error(
+				codes.InvalidArgument,
+				"request_id is required for structured service event messages",
+			)
 		}
 		if message.GetError() != nil {
 			return status.Error(codes.InvalidArgument, "extensions cannot send top-level event errors")
@@ -152,10 +166,6 @@ func validateBetaEventMessage(message *v1beta.EventMessage, mode betaEventStream
 		}
 	case *v1beta.EventMessage_ServiceHandlerStatus:
 		if content.ServiceHandlerStatus != nil {
-			return nil
-		}
-	case *v1beta.EventMessage_HandlerOutput:
-		if mode != betaEventStreamLegacy && content.HandlerOutput != nil {
 			return nil
 		}
 	default:

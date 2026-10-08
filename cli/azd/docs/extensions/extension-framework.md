@@ -2509,28 +2509,32 @@ used with the beta
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
-- **HandlerOutput**
-  Carries output emitted by a lifecycle handler while it is running.
+- **ServiceEventMessage**
+  Carries a non-blocking info or warning returned by a service deploy hook.
 
   Contains:
-  - `output`: The text written by the handler.
+  - `kind`: Whether the message is informational or a warning.
+  - `message`: The text displayed by azd.
+  - `suggestion`: Optional next-step guidance.
+  - `links`: Optional references with titles and URLs.
 
-`HandlerOutput` is available only on the beta `EventMessage` stream. The
-invocation `request_id` is on the enclosing event message, not in the output
-payload. Stable `v1` event messages and the default language scaffolds do not
-include this field.
+Structured messages are available only on the beta
+`ServiceHandlerStatus.messages` field and only for service `predeploy` and
+`postdeploy` handlers. Go extensions opt in with
+`ExtensionHost.WithBetaServiceEventHandler`; the stable event API and default
+language scaffolds remain unchanged.
 
-Go clients opt in with `AzdClient.EventsBeta()`, which returns the generated
-`v1beta.EventServiceClient`. They must include request IDs on subscriptions,
-project statuses, and output messages, and wait for subscription
-acknowledgements. Service statuses without IDs keep their existing service/event
-correlation; output messages echo the request ID from the service invocation.
-The host correlates output with the
-invocation and retains bounded output for `predeploy` and `postdeploy` hooks
-after the preview closes. A legacy beta stream whose first subscription has no
-request ID keeps the older behavior but cannot send correlated output. See
-[contract versioning](contract-versioning.md#host-registration-and-adaptation)
-for the stream routing rules.
+The beta event stream must begin with a subscription containing a
+`request_id`, and service statuses carrying messages must echo the invocation
+ID. Statuses without messages retain service/event correlation. Legacy beta
+streams whose first subscription has no request ID keep their existing
+behavior but cannot send structured messages. Returned messages are displayed
+after the deploy table and included in deploy/up JSON results, including when
+the handler also returns an error.
+
+See [contract versioning](contract-versioning.md#host-registration-and-adaptation)
+for the stream routing rules and the [SDK reference](extension-sdk-reference.md#structured-deploy-messages-beta)
+for registration details.
 
 #### ServiceContext and Service Event Arguments
 

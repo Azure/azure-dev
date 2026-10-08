@@ -227,7 +227,7 @@ func TestRecentErrorDetailsAreBetaOnly(t *testing.T) {
 	require.NotNil(t, v1beta.File_azd_extensions_v1beta_errors_proto.Messages().ByName("ToolErrorDetail"))
 }
 
-func TestLifecycleOutputIsBetaOnly(t *testing.T) {
+func TestStructuredServiceMessagesAreBetaOnly(t *testing.T) {
 	stableEvent := (&v1.EventMessage{}).ProtoReflect().Descriptor()
 	betaEvent := (&v1beta.EventMessage{}).ProtoReflect().Descriptor()
 
@@ -236,26 +236,32 @@ func TestLifecycleOutputIsBetaOnly(t *testing.T) {
 		"subscribe_service_event_response",
 		"request_id",
 		"error",
-		"handler_output",
 	} {
 		require.Nil(t, stableEvent.Fields().ByName(fieldName), fieldName)
 		require.NotNil(t, betaEvent.Fields().ByName(fieldName), fieldName)
 	}
 
+	require.Nil(t, stableEvent.Fields().ByName("handler_output"))
+	require.Nil(t, betaEvent.Fields().ByName("handler_output"))
 	require.Equal(
 		t,
 		protoreflect.FieldNumber(9),
 		betaEvent.Fields().ByName("request_id").Number(),
 	)
+
+	stableStatus := (&v1.ServiceHandlerStatus{}).ProtoReflect().Descriptor()
+	betaStatus := (&v1beta.ServiceHandlerStatus{}).ProtoReflect().Descriptor()
+	require.Nil(t, stableStatus.Fields().ByName("messages"))
 	require.Equal(
 		t,
-		protoreflect.FieldNumber(11),
-		betaEvent.Fields().ByName("handler_output").Number(),
+		protoreflect.FieldNumber(6),
+		betaStatus.Fields().ByName("messages").Number(),
 	)
-	require.Nil(t, v1.File_azd_extensions_v1_event_proto.Messages().ByName("HandlerOutput"))
 	require.NotNil(t, v1beta.File_azd_extensions_v1beta_event_proto.
 		Messages().
-		ByName("HandlerOutput"))
+		ByName("ServiceEventMessage"))
+	require.NotNil(t, v1beta.File_azd_extensions_v1beta_event_proto.Enums().
+		ByName("ServiceEventMessageKind"))
 }
 
 func validateStableSubset(

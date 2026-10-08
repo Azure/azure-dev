@@ -24,6 +24,56 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// How azd presents a service lifecycle message.
+type ServiceEventMessageKind int32
+
+const (
+	ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED ServiceEventMessageKind = 0
+	ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO        ServiceEventMessageKind = 1
+	ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING     ServiceEventMessageKind = 2
+)
+
+// Enum value maps for ServiceEventMessageKind.
+var (
+	ServiceEventMessageKind_name = map[int32]string{
+		0: "SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED",
+		1: "SERVICE_EVENT_MESSAGE_KIND_INFO",
+		2: "SERVICE_EVENT_MESSAGE_KIND_WARNING",
+	}
+	ServiceEventMessageKind_value = map[string]int32{
+		"SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED": 0,
+		"SERVICE_EVENT_MESSAGE_KIND_INFO":        1,
+		"SERVICE_EVENT_MESSAGE_KIND_WARNING":     2,
+	}
+)
+
+func (x ServiceEventMessageKind) Enum() *ServiceEventMessageKind {
+	p := new(ServiceEventMessageKind)
+	*p = x
+	return p
+}
+
+func (x ServiceEventMessageKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ServiceEventMessageKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_azd_extensions_v1beta_event_proto_enumTypes[0].Descriptor()
+}
+
+func (ServiceEventMessageKind) Type() protoreflect.EnumType {
+	return &file_azd_extensions_v1beta_event_proto_enumTypes[0]
+}
+
+func (x ServiceEventMessageKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ServiceEventMessageKind.Descriptor instead.
+func (ServiceEventMessageKind) EnumDescriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_event_proto_rawDescGZIP(), []int{0}
+}
+
 // Represents different types of messages sent over the stream
 type EventMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -37,7 +87,6 @@ type EventMessage struct {
 	//	*EventMessage_ServiceHandlerStatus
 	//	*EventMessage_SubscribeProjectEventResponse
 	//	*EventMessage_SubscribeServiceEventResponse
-	//	*EventMessage_HandlerOutput
 	MessageType isEventMessage_MessageType `protobuf_oneof:"message_type"`
 	// Correlates request and response messages on the event stream.
 	RequestId string `protobuf:"bytes,9,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -156,15 +205,6 @@ func (x *EventMessage) GetSubscribeServiceEventResponse() *SubscribeServiceEvent
 	return nil
 }
 
-func (x *EventMessage) GetHandlerOutput() *HandlerOutput {
-	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_HandlerOutput); ok {
-			return x.HandlerOutput
-		}
-	}
-	return nil
-}
-
 func (x *EventMessage) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
@@ -215,10 +255,6 @@ type EventMessage_SubscribeServiceEventResponse struct {
 	SubscribeServiceEventResponse *SubscribeServiceEventResponse `protobuf:"bytes,8,opt,name=subscribe_service_event_response,json=subscribeServiceEventResponse,proto3,oneof"`
 }
 
-type EventMessage_HandlerOutput struct {
-	HandlerOutput *HandlerOutput `protobuf:"bytes,11,opt,name=handler_output,json=handlerOutput,proto3,oneof"`
-}
-
 func (*EventMessage_SubscribeProjectEvent) isEventMessage_MessageType() {}
 
 func (*EventMessage_InvokeProjectHandler) isEventMessage_MessageType() {}
@@ -235,31 +271,31 @@ func (*EventMessage_SubscribeProjectEventResponse) isEventMessage_MessageType() 
 
 func (*EventMessage_SubscribeServiceEventResponse) isEventMessage_MessageType() {}
 
-func (*EventMessage_HandlerOutput) isEventMessage_MessageType() {}
-
-// Output emitted by a lifecycle handler.
-type HandlerOutput struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Output text emitted by the handler.
-	Output        string `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+// A non-blocking message returned by a service handler.
+type ServiceEventMessage struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Kind          ServiceEventMessageKind `protobuf:"varint,1,opt,name=kind,proto3,enum=azd.extensions.v1beta.ServiceEventMessageKind" json:"kind,omitempty"`
+	Message       string                  `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Suggestion    string                  `protobuf:"bytes,3,opt,name=suggestion,proto3" json:"suggestion,omitempty"`
+	Links         []*ErrorLink            `protobuf:"bytes,4,rep,name=links,proto3" json:"links,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *HandlerOutput) Reset() {
-	*x = HandlerOutput{}
+func (x *ServiceEventMessage) Reset() {
+	*x = ServiceEventMessage{}
 	mi := &file_azd_extensions_v1beta_event_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HandlerOutput) String() string {
+func (x *ServiceEventMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HandlerOutput) ProtoMessage() {}
+func (*ServiceEventMessage) ProtoMessage() {}
 
-func (x *HandlerOutput) ProtoReflect() protoreflect.Message {
+func (x *ServiceEventMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_azd_extensions_v1beta_event_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -271,16 +307,37 @@ func (x *HandlerOutput) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HandlerOutput.ProtoReflect.Descriptor instead.
-func (*HandlerOutput) Descriptor() ([]byte, []int) {
+// Deprecated: Use ServiceEventMessage.ProtoReflect.Descriptor instead.
+func (*ServiceEventMessage) Descriptor() ([]byte, []int) {
 	return file_azd_extensions_v1beta_event_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *HandlerOutput) GetOutput() string {
+func (x *ServiceEventMessage) GetKind() ServiceEventMessageKind {
 	if x != nil {
-		return x.Output
+		return x.Kind
+	}
+	return ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED
+}
+
+func (x *ServiceEventMessage) GetMessage() string {
+	if x != nil {
+		return x.Message
 	}
 	return ""
+}
+
+func (x *ServiceEventMessage) GetSuggestion() string {
+	if x != nil {
+		return x.Suggestion
+	}
+	return ""
+}
+
+func (x *ServiceEventMessage) GetLinks() []*ErrorLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
 }
 
 // Client subscribes to project-related events
@@ -689,7 +746,9 @@ type ServiceHandlerStatus struct {
 	// For backward compatibility with older hosts, populate this even when error is set.
 	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 	// Optional structured error details (set when status is "failed").
-	Error         *ExtensionError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	Error *ExtensionError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	// Non-blocking messages returned by a service deploy handler.
+	Messages      []*ServiceEventMessage `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -759,11 +818,18 @@ func (x *ServiceHandlerStatus) GetError() *ExtensionError {
 	return nil
 }
 
+func (x *ServiceHandlerStatus) GetMessages() []*ServiceEventMessage {
+	if x != nil {
+		return x.Messages
+	}
+	return nil
+}
+
 var File_azd_extensions_v1beta_event_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_event_proto_rawDesc = "" +
 	"\n" +
-	"!azd/extensions/v1beta/event.proto\x12\x15azd.extensions.v1beta\x1a\"azd/extensions/v1beta/models.proto\x1a\"azd/extensions/v1beta/errors.proto\"\xaf\b\n" +
+	"!azd/extensions/v1beta/event.proto\x12\x15azd.extensions.v1beta\x1a\"azd/extensions/v1beta/models.proto\x1a\"azd/extensions/v1beta/errors.proto\"\xf6\a\n" +
 	"\fEventMessage\x12f\n" +
 	"\x17subscribe_project_event\x18\x01 \x01(\v2,.azd.extensions.v1beta.SubscribeProjectEventH\x00R\x15subscribeProjectEvent\x12c\n" +
 	"\x16invoke_project_handler\x18\x02 \x01(\v2+.azd.extensions.v1beta.InvokeProjectHandlerH\x00R\x14invokeProjectHandler\x12c\n" +
@@ -772,16 +838,19 @@ const file_azd_extensions_v1beta_event_proto_rawDesc = "" +
 	"\x16invoke_service_handler\x18\x05 \x01(\v2+.azd.extensions.v1beta.InvokeServiceHandlerH\x00R\x14invokeServiceHandler\x12c\n" +
 	"\x16service_handler_status\x18\x06 \x01(\v2+.azd.extensions.v1beta.ServiceHandlerStatusH\x00R\x14serviceHandlerStatus\x12\x7f\n" +
 	" subscribe_project_event_response\x18\a \x01(\v24.azd.extensions.v1beta.SubscribeProjectEventResponseH\x00R\x1dsubscribeProjectEventResponse\x12\x7f\n" +
-	" subscribe_service_event_response\x18\b \x01(\v24.azd.extensions.v1beta.SubscribeServiceEventResponseH\x00R\x1dsubscribeServiceEventResponse\x12M\n" +
-	"\x0ehandler_output\x18\v \x01(\v2$.azd.extensions.v1beta.HandlerOutputH\x00R\rhandlerOutput\x12\x1d\n" +
+	" subscribe_service_event_response\x18\b \x01(\v24.azd.extensions.v1beta.SubscribeServiceEventResponseH\x00R\x1dsubscribeServiceEventResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\t \x01(\tR\trequestId\x12;\n" +
 	"\x05error\x18\n" +
 	" \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05errorB\x0e\n" +
-	"\fmessage_type\"9\n" +
-	"\rHandlerOutput\x12\x16\n" +
-	"\x06output\x18\x02 \x01(\tR\x06outputJ\x04\b\x01\x10\x02R\n" +
-	"request_id\"8\n" +
+	"\fmessage_typeJ\x04\b\v\x10\fR\x0ehandler_output\"\xcb\x01\n" +
+	"\x13ServiceEventMessage\x12B\n" +
+	"\x04kind\x18\x01 \x01(\x0e2..azd.extensions.v1beta.ServiceEventMessageKindR\x04kind\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1e\n" +
+	"\n" +
+	"suggestion\x18\x03 \x01(\tR\n" +
+	"suggestion\x126\n" +
+	"\x05links\x18\x04 \x03(\v2 .azd.extensions.v1beta.ErrorLinkR\x05links\"8\n" +
 	"\x15SubscribeProjectEvent\x12\x1f\n" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +
 	"eventNames\"\x1f\n" +
@@ -808,14 +877,19 @@ const file_azd_extensions_v1beta_event_proto_rawDesc = "" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12;\n" +
-	"\x05error\x18\x04 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\"\xc7\x01\n" +
+	"\x05error\x18\x04 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\"\x8f\x02\n" +
 	"\x14ServiceHandlerStatus\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12!\n" +
 	"\fservice_name\x18\x02 \x01(\tR\vserviceName\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12;\n" +
-	"\x05error\x18\x05 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error2k\n" +
+	"\x05error\x18\x05 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\x12F\n" +
+	"\bmessages\x18\x06 \x03(\v2*.azd.extensions.v1beta.ServiceEventMessageR\bmessages*\x92\x01\n" +
+	"\x17ServiceEventMessageKind\x12*\n" +
+	"&SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fSERVICE_EVENT_MESSAGE_KIND_INFO\x10\x01\x12&\n" +
+	"\"SERVICE_EVENT_MESSAGE_KIND_WARNING\x10\x022k\n" +
 	"\fEventService\x12[\n" +
 	"\vEventStream\x12#.azd.extensions.v1beta.EventMessage\x1a#.azd.extensions.v1beta.EventMessage(\x010\x01BGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
@@ -831,47 +905,52 @@ func file_azd_extensions_v1beta_event_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1beta_event_proto_rawDescData
 }
 
+var file_azd_extensions_v1beta_event_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_azd_extensions_v1beta_event_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_azd_extensions_v1beta_event_proto_goTypes = []any{
-	(*EventMessage)(nil),                  // 0: azd.extensions.v1beta.EventMessage
-	(*HandlerOutput)(nil),                 // 1: azd.extensions.v1beta.HandlerOutput
-	(*SubscribeProjectEvent)(nil),         // 2: azd.extensions.v1beta.SubscribeProjectEvent
-	(*SubscribeProjectEventResponse)(nil), // 3: azd.extensions.v1beta.SubscribeProjectEventResponse
-	(*SubscribeServiceEvent)(nil),         // 4: azd.extensions.v1beta.SubscribeServiceEvent
-	(*SubscribeServiceEventResponse)(nil), // 5: azd.extensions.v1beta.SubscribeServiceEventResponse
-	(*InvokeProjectHandler)(nil),          // 6: azd.extensions.v1beta.InvokeProjectHandler
-	(*InvokeServiceHandler)(nil),          // 7: azd.extensions.v1beta.InvokeServiceHandler
-	(*ProjectHandlerStatus)(nil),          // 8: azd.extensions.v1beta.ProjectHandlerStatus
-	(*ServiceHandlerStatus)(nil),          // 9: azd.extensions.v1beta.ServiceHandlerStatus
-	(*ExtensionError)(nil),                // 10: azd.extensions.v1beta.ExtensionError
-	(*ProjectConfig)(nil),                 // 11: azd.extensions.v1beta.ProjectConfig
-	(*ServiceConfig)(nil),                 // 12: azd.extensions.v1beta.ServiceConfig
-	(*ServiceContext)(nil),                // 13: azd.extensions.v1beta.ServiceContext
+	(ServiceEventMessageKind)(0),          // 0: azd.extensions.v1beta.ServiceEventMessageKind
+	(*EventMessage)(nil),                  // 1: azd.extensions.v1beta.EventMessage
+	(*ServiceEventMessage)(nil),           // 2: azd.extensions.v1beta.ServiceEventMessage
+	(*SubscribeProjectEvent)(nil),         // 3: azd.extensions.v1beta.SubscribeProjectEvent
+	(*SubscribeProjectEventResponse)(nil), // 4: azd.extensions.v1beta.SubscribeProjectEventResponse
+	(*SubscribeServiceEvent)(nil),         // 5: azd.extensions.v1beta.SubscribeServiceEvent
+	(*SubscribeServiceEventResponse)(nil), // 6: azd.extensions.v1beta.SubscribeServiceEventResponse
+	(*InvokeProjectHandler)(nil),          // 7: azd.extensions.v1beta.InvokeProjectHandler
+	(*InvokeServiceHandler)(nil),          // 8: azd.extensions.v1beta.InvokeServiceHandler
+	(*ProjectHandlerStatus)(nil),          // 9: azd.extensions.v1beta.ProjectHandlerStatus
+	(*ServiceHandlerStatus)(nil),          // 10: azd.extensions.v1beta.ServiceHandlerStatus
+	(*ExtensionError)(nil),                // 11: azd.extensions.v1beta.ExtensionError
+	(*ErrorLink)(nil),                     // 12: azd.extensions.v1beta.ErrorLink
+	(*ProjectConfig)(nil),                 // 13: azd.extensions.v1beta.ProjectConfig
+	(*ServiceConfig)(nil),                 // 14: azd.extensions.v1beta.ServiceConfig
+	(*ServiceContext)(nil),                // 15: azd.extensions.v1beta.ServiceContext
 }
 var file_azd_extensions_v1beta_event_proto_depIdxs = []int32{
-	2,  // 0: azd.extensions.v1beta.EventMessage.subscribe_project_event:type_name -> azd.extensions.v1beta.SubscribeProjectEvent
-	6,  // 1: azd.extensions.v1beta.EventMessage.invoke_project_handler:type_name -> azd.extensions.v1beta.InvokeProjectHandler
-	8,  // 2: azd.extensions.v1beta.EventMessage.project_handler_status:type_name -> azd.extensions.v1beta.ProjectHandlerStatus
-	4,  // 3: azd.extensions.v1beta.EventMessage.subscribe_service_event:type_name -> azd.extensions.v1beta.SubscribeServiceEvent
-	7,  // 4: azd.extensions.v1beta.EventMessage.invoke_service_handler:type_name -> azd.extensions.v1beta.InvokeServiceHandler
-	9,  // 5: azd.extensions.v1beta.EventMessage.service_handler_status:type_name -> azd.extensions.v1beta.ServiceHandlerStatus
-	3,  // 6: azd.extensions.v1beta.EventMessage.subscribe_project_event_response:type_name -> azd.extensions.v1beta.SubscribeProjectEventResponse
-	5,  // 7: azd.extensions.v1beta.EventMessage.subscribe_service_event_response:type_name -> azd.extensions.v1beta.SubscribeServiceEventResponse
-	1,  // 8: azd.extensions.v1beta.EventMessage.handler_output:type_name -> azd.extensions.v1beta.HandlerOutput
-	10, // 9: azd.extensions.v1beta.EventMessage.error:type_name -> azd.extensions.v1beta.ExtensionError
-	11, // 10: azd.extensions.v1beta.InvokeProjectHandler.project:type_name -> azd.extensions.v1beta.ProjectConfig
-	11, // 11: azd.extensions.v1beta.InvokeServiceHandler.project:type_name -> azd.extensions.v1beta.ProjectConfig
-	12, // 12: azd.extensions.v1beta.InvokeServiceHandler.service:type_name -> azd.extensions.v1beta.ServiceConfig
-	13, // 13: azd.extensions.v1beta.InvokeServiceHandler.service_context:type_name -> azd.extensions.v1beta.ServiceContext
-	10, // 14: azd.extensions.v1beta.ProjectHandlerStatus.error:type_name -> azd.extensions.v1beta.ExtensionError
-	10, // 15: azd.extensions.v1beta.ServiceHandlerStatus.error:type_name -> azd.extensions.v1beta.ExtensionError
-	0,  // 16: azd.extensions.v1beta.EventService.EventStream:input_type -> azd.extensions.v1beta.EventMessage
-	0,  // 17: azd.extensions.v1beta.EventService.EventStream:output_type -> azd.extensions.v1beta.EventMessage
-	17, // [17:18] is the sub-list for method output_type
-	16, // [16:17] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	3,  // 0: azd.extensions.v1beta.EventMessage.subscribe_project_event:type_name -> azd.extensions.v1beta.SubscribeProjectEvent
+	7,  // 1: azd.extensions.v1beta.EventMessage.invoke_project_handler:type_name -> azd.extensions.v1beta.InvokeProjectHandler
+	9,  // 2: azd.extensions.v1beta.EventMessage.project_handler_status:type_name -> azd.extensions.v1beta.ProjectHandlerStatus
+	5,  // 3: azd.extensions.v1beta.EventMessage.subscribe_service_event:type_name -> azd.extensions.v1beta.SubscribeServiceEvent
+	8,  // 4: azd.extensions.v1beta.EventMessage.invoke_service_handler:type_name -> azd.extensions.v1beta.InvokeServiceHandler
+	10, // 5: azd.extensions.v1beta.EventMessage.service_handler_status:type_name -> azd.extensions.v1beta.ServiceHandlerStatus
+	4,  // 6: azd.extensions.v1beta.EventMessage.subscribe_project_event_response:type_name -> azd.extensions.v1beta.SubscribeProjectEventResponse
+	6,  // 7: azd.extensions.v1beta.EventMessage.subscribe_service_event_response:type_name -> azd.extensions.v1beta.SubscribeServiceEventResponse
+	11, // 8: azd.extensions.v1beta.EventMessage.error:type_name -> azd.extensions.v1beta.ExtensionError
+	0,  // 9: azd.extensions.v1beta.ServiceEventMessage.kind:type_name -> azd.extensions.v1beta.ServiceEventMessageKind
+	12, // 10: azd.extensions.v1beta.ServiceEventMessage.links:type_name -> azd.extensions.v1beta.ErrorLink
+	13, // 11: azd.extensions.v1beta.InvokeProjectHandler.project:type_name -> azd.extensions.v1beta.ProjectConfig
+	13, // 12: azd.extensions.v1beta.InvokeServiceHandler.project:type_name -> azd.extensions.v1beta.ProjectConfig
+	14, // 13: azd.extensions.v1beta.InvokeServiceHandler.service:type_name -> azd.extensions.v1beta.ServiceConfig
+	15, // 14: azd.extensions.v1beta.InvokeServiceHandler.service_context:type_name -> azd.extensions.v1beta.ServiceContext
+	11, // 15: azd.extensions.v1beta.ProjectHandlerStatus.error:type_name -> azd.extensions.v1beta.ExtensionError
+	11, // 16: azd.extensions.v1beta.ServiceHandlerStatus.error:type_name -> azd.extensions.v1beta.ExtensionError
+	2,  // 17: azd.extensions.v1beta.ServiceHandlerStatus.messages:type_name -> azd.extensions.v1beta.ServiceEventMessage
+	1,  // 18: azd.extensions.v1beta.EventService.EventStream:input_type -> azd.extensions.v1beta.EventMessage
+	1,  // 19: azd.extensions.v1beta.EventService.EventStream:output_type -> azd.extensions.v1beta.EventMessage
+	19, // [19:20] is the sub-list for method output_type
+	18, // [18:19] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1beta_event_proto_init() }
@@ -890,20 +969,20 @@ func file_azd_extensions_v1beta_event_proto_init() {
 		(*EventMessage_ServiceHandlerStatus)(nil),
 		(*EventMessage_SubscribeProjectEventResponse)(nil),
 		(*EventMessage_SubscribeServiceEventResponse)(nil),
-		(*EventMessage_HandlerOutput)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_event_proto_rawDesc), len(file_azd_extensions_v1beta_event_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_azd_extensions_v1beta_event_proto_goTypes,
 		DependencyIndexes: file_azd_extensions_v1beta_event_proto_depIdxs,
+		EnumInfos:         file_azd_extensions_v1beta_event_proto_enumTypes,
 		MessageInfos:      file_azd_extensions_v1beta_event_proto_msgTypes,
 	}.Build()
 	File_azd_extensions_v1beta_event_proto = out.File

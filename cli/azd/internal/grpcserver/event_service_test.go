@@ -7,10 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
-	"sync"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -576,149 +573,17 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 	assert.NotNil(t, handler)
 }
 
-func TestEventService_syncExtensionOutput_PersistsDeployOutput(t *testing.T) {
+func TestEventService_syncExtensionOutputCleansUpPreview(t *testing.T) {
 	service, _ := createTestEventService()
-	console := service.console.(*mockinput.MockConsole)
 	extension := createTestExtension()
 
-	cleanup, output := service.syncExtensionOutput(
-		t.Context(),
-		extension,
-		"Test Extension (predeploy)",
-		shouldPersistLifecycleOutput("predeploy"),
-	)
-	_, err := output.Write([]byte("RBAC warning\n"))
+	cleanup := service.syncExtensionOutput(
+		t.Context(), extension, "Test Extension (predeploy)")
+	_, err := extension.StdOut().Write([]byte("preview output\n"))
 	require.NoError(t, err)
-
 	cleanup()
 
-	require.Contains(t, console.Output(), "RBAC warning")
-}
-
-func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testing.T) {
-	service, _ := createTestEventService()
 	console := service.console.(*mockinput.MockConsole)
-	extension := createTestExtension()
-
-	outputsReady := make(chan struct{}, 2)
-	cleanupStart := make(chan struct{})
-	var cleanupWg sync.WaitGroup
-	type lifecycleOutputTestCase struct {
-		output *boundedLifecycleOutput
-		text   string
-	}
-	outputs := make(chan lifecycleOutputTestCase, 2)
-
-	for _, title := range []string{
-		"Test Extension (predeploy.api)",
-		"Test Extension (predeploy.web)",
-	} {
-		cleanupWg.Go(func() {
-			cleanup, output := service.syncExtensionOutput(
-				t.Context(),
-				extension,
-				title,
-				true,
-			)
-			outputs <- lifecycleOutputTestCase{
-				output: output,
-				text:   title,
-			}
-			outputsReady <- struct{}{}
-			<-cleanupStart
-			cleanup()
-		})
-	}
-
-	<-outputsReady
-	<-outputsReady
-
-	apiOutput := <-outputs
-	webOutput := <-outputs
-	writeStart := make(chan struct{})
-	writeErrors := make(chan error, 2)
-	var writeWg sync.WaitGroup
-	for _, testCase := range []lifecycleOutputTestCase{apiOutput, webOutput} {
-		writeWg.Go(func() {
-			<-writeStart
-			_, err := testCase.output.Write([]byte(testCase.text + "\n"))
-			writeErrors <- err
-		})
-	}
-
-	close(writeStart)
-	writeWg.Wait()
-	require.NoError(t, <-writeErrors)
-	require.NoError(t, <-writeErrors)
-
-	close(cleanupStart)
-	cleanupWg.Wait()
-
-	require.ElementsMatch(t,
-		[]string{
-			apiOutput.text,
-			webOutput.text,
-		},
-		console.Output(),
-	)
-
-	_, err := extension.StdOut().Write([]byte("unrelated service output\n"))
-	require.NoError(t, err)
-	require.NotContains(t, strings.Join(console.Output(), "\n"), "unrelated")
-}
-
-func TestEventService_syncExtensionOutput_BoundsPersistedOutput(t *testing.T) {
-	service, _ := createTestEventService()
-	console := service.console.(*mockinput.MockConsole)
-	extension := createTestExtension()
-
-	cleanup, output := service.syncExtensionOutput(
-		t.Context(),
-		extension,
-		"Test Extension (predeploy)",
-		true,
-	)
-	_, err := output.Write([]byte("warning\n" + strings.Repeat("x", maxLifecycleOutputBytes)))
-	require.NoError(t, err)
-
-	cleanup()
-
-	retainedOutput := strings.Join(console.Output(), "\n")
-	require.Contains(t, retainedOutput, "warning")
-	require.Contains(t, retainedOutput, "lifecycle output truncated")
-	require.LessOrEqual(t, len(retainedOutput), maxLifecycleOutputBytes+64)
-}
-
-func TestBoundedLifecycleOutput_TruncatesOnUTF8Boundary(t *testing.T) {
-	output := &boundedLifecycleOutput{}
-	input := strings.Repeat("x", maxLifecycleOutputBytes-1) + "💩"
-
-	n, err := output.Write([]byte(input))
-	require.NoError(t, err)
-	require.Equal(t, len(input), n)
-	require.LessOrEqual(t, output.buffer.Len(), maxLifecycleOutputBytes)
-	require.True(t, utf8.ValidString(output.String()))
-	require.Contains(t, output.String(), "lifecycle output truncated")
-	require.NotContains(t, output.String(), "💩")
-}
-
-func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testing.T) {
-	service, _ := createTestEventService()
-	console := service.console.(*mockinput.MockConsole)
-	extension := createTestExtension()
-
-	cleanup, output := service.syncExtensionOutput(
-		t.Context(),
-		extension,
-		"Test Extension (prepackage)",
-		shouldPersistLifecycleOutput("prepackage"),
-	)
-	_, err := extension.StdOut().Write([]byte("package output\n"))
-	require.NoError(t, err)
-	require.Nil(t, output)
-
-	cleanup()
-
 	require.Empty(t, console.Output())
 }
 

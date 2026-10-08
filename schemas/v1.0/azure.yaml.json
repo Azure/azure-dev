@@ -108,6 +108,30 @@
                                 "description": "Optional. Configuration passed to the infrastructure provisioning provider.",
                                 "additionalProperties": true
                             },
+                            "paramAliases": {
+                                "type": "object",
+                                "title": "Layer input aliases",
+                                "description": "Optional. Maps environment variable names used by this layer to variable names in the shared project environment.",
+                                "propertyNames": {
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                },
+                                "additionalProperties": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                }
+                            },
+                            "outputAliases": {
+                                "type": "object",
+                                "title": "Layer output aliases",
+                                "description": "Optional. Maps provisioning output names produced by this layer to variable names in the shared project environment.",
+                                "propertyNames": {
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                },
+                                "additionalProperties": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                }
+                            },
                             "dependsOn": {
                                 "type": "array",
                                 "title": "Layer names this layer must wait for",

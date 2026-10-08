@@ -37,7 +37,7 @@ type Manager struct {
 	serviceLocator      ioc.ServiceLocator
 	defaultProvider     DefaultProviderResolver
 	envManager          environment.Manager
-	env                 *environment.Environment
+	env                 environment.ScopedEnvironment
 	console             input.Console
 	provider            Provider
 	alphaFeatureManager *alpha.FeatureManager
@@ -119,7 +119,8 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 	}
 
-	if err := UpdateEnvironment(ctx, deployResult.Deployment.Outputs, m.env, m.envManager); err != nil {
+	scopedEnv := m.scopedEnvironment()
+	if err := UpdateEnvironment(ctx, deployResult.Deployment.Outputs, scopedEnv, m.envManager); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -127,7 +128,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(m.projectPath, m.options.Path)
 	}
-	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, m.env)
+	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, scopedEnv)
 	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(AzdOperationsFeatureKey)
 	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
 		m.console.Message(ctx, ErrBindMountOperationDisabled.Error())
@@ -137,7 +138,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 			return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
 		}
 		if err := doBindMountOperation(
-			ctx, bindMountOperations, m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
+			ctx, bindMountOperations, scopedEnv, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
 			return nil, fmt.Errorf("error running bind mount operation: %w", err)
 		}
 	}
@@ -170,7 +171,7 @@ type azdOperationsModel struct {
 	Operations []azdOperation
 }
 
-func azdOperations(infraPath string, env *environment.Environment) (azdOperationsModel, error) {
+func azdOperations(infraPath string, env environment.ScopedEnvironment) (azdOperationsModel, error) {
 	path := filepath.Join(infraPath, azdOperationsFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -199,7 +200,10 @@ func azdOperations(infraPath string, env *environment.Environment) (azdOperation
 	return operations, nil
 }
 
-func azdFileShareUploadOperations(infraPath string, env *environment.Environment) ([]azdOperationFileShareUpload, error) {
+func azdFileShareUploadOperations(
+	infraPath string,
+	env environment.ScopedEnvironment,
+) ([]azdOperationFileShareUpload, error) {
 	model, err := azdOperations(infraPath, env)
 	if err != nil {
 		return nil, err
@@ -238,7 +242,7 @@ var ErrBindMountOperationDisabled = fmt.Errorf(
 func doBindMountOperation(
 	ctx context.Context,
 	fileShareUploadOperations []azdOperationFileShareUpload,
-	env *environment.Environment,
+	env environment.ScopedEnvironment,
 	console input.Console,
 	fileShareService storage.FileShareService,
 	cloudStorageEndpointSuffix string,
@@ -316,14 +320,16 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 	}
 
+	scopedEnv := m.scopedEnvironment()
+
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for _, key := range destroyResult.InvalidatedEnvKeys {
-		m.env.DotenvDelete(key)
+		scopedEnv.DotenvDelete(key)
 	}
 
 	// Update environment files to remove invalid infrastructure parameters
-	if err := m.envManager.Save(ctx, m.env); err != nil {
+	if err := m.envManager.Save(ctx, scopedEnv.BackingEnv()); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -333,7 +339,7 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 func UpdateEnvironment(
 	ctx context.Context,
 	outputs map[string]OutputParameter,
-	env *environment.Environment,
+	env environment.ScopedEnvironment,
 	envManager environment.Manager,
 ) error {
 	if len(outputs) > 0 {
@@ -350,7 +356,7 @@ func UpdateEnvironment(
 			}
 		}
 
-		if err := envManager.Save(ctx, env); err != nil {
+		if err := envManager.Save(ctx, env.BackingEnv()); err != nil {
 			return fmt.Errorf("writing environment: %w", err)
 		}
 	}
@@ -371,7 +377,7 @@ type EnsureSubscriptionAndLocationOptions struct {
 func EnsureSubscriptionAndLocation(
 	ctx context.Context,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.ScopedEnvironment,
 	prompter prompt.Prompter,
 	options EnsureSubscriptionAndLocationOptions,
 ) error {
@@ -404,7 +410,7 @@ func EnsureSubscriptionAndLocation(
 	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
 	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
 	env.SetSubscriptionId(subId)
-	if err := envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return err
 	}
 
@@ -440,13 +446,13 @@ func EnsureSubscriptionAndLocation(
 
 	// Same as before, this make sure the location is persisted in the .env file.
 	env.SetLocation(location)
-	return envManager.Save(ctx, env)
+	return envManager.Save(ctx, env.BackingEnv())
 }
 
 func EnsureSubscription(
 	ctx context.Context,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.ScopedEnvironment,
 	prompter prompt.Prompter,
 ) error {
 	subId := env.GetSubscriptionId()
@@ -478,10 +484,10 @@ func EnsureSubscription(
 	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
 	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
 	env.SetSubscriptionId(subId)
-	if err := envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env.BackingEnv()); err != nil {
 		return err
 	}
-	return envManager.Save(ctx, env)
+	return envManager.Save(ctx, env.BackingEnv())
 }
 
 // Creates a new instance of the Provisioning Manager
@@ -489,7 +495,7 @@ func NewManager(
 	serviceLocator ioc.ServiceLocator,
 	defaultProvider DefaultProviderResolver,
 	envManager environment.Manager,
-	env *environment.Environment,
+	env environment.ScopedEnvironment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
 	fileShareService storage.FileShareService,
@@ -535,13 +541,41 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		providerKey = defaultProvider
 	}
 
+	container, ok := m.serviceLocator.(*ioc.NestedContainer)
+	if !ok {
+		if len(m.options.ParamAliases) == 0 && len(m.options.OutputAliases) == 0 {
+			var provider Provider
+			if err := m.serviceLocator.ResolveNamed(string(providerKey), &provider); err != nil {
+				return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
+			}
+
+			return provider, nil
+		}
+
+		return nil, errors.New("provisioning provider requires a scoped service container")
+	}
+
+	providerScope, err := container.NewScope()
+	if err != nil {
+		return nil, fmt.Errorf("creating provisioning provider scope: %w", err)
+	}
+	ioc.RegisterInstance(providerScope, m.scopedEnvironment())
+
 	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
+	err = providerScope.ResolveNamed(string(providerKey), &provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
 	}
 
 	return provider, nil
+}
+
+func (m *Manager) scopedEnvironment() environment.ScopedEnvironment {
+	return environment.NewMappedScopedEnvironment(
+		m.env,
+		m.options.ParamAliases,
+		m.options.OutputAliases,
+	)
 }
 
 const (

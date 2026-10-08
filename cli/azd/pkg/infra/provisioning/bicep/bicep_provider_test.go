@@ -52,6 +52,80 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 )
 
+type parameterScopedEnvironment struct {
+	*environment.Environment
+	value string
+}
+
+func (e *parameterScopedEnvironment) LookupEnv(key string) (string, bool) {
+	if key == "LAYER_VALUE" {
+		return e.value, true
+	}
+	return e.Environment.LookupEnv(key)
+}
+
+type configurationScopedEnvironment struct {
+	*environment.Environment
+	config config.Config
+}
+
+func (e *configurationScopedEnvironment) GetConfig() config.Config {
+	return e.config
+}
+
+func TestBicepParameters_UsesScopedConfiguration(t *testing.T) {
+	t.Parallel()
+
+	backing := environment.NewWithValues("shared", map[string]string{
+		environment.LocationEnvVarName: "westus2",
+	})
+	require.NoError(t, backing.Config.Set("infra.parameters.value", "backing"))
+	scopedConfig := config.NewConfig(nil)
+	require.NoError(t, scopedConfig.Set("infra.parameters.value", "override"))
+	provider := &BicepProvider{
+		env:     &configurationScopedEnvironment{Environment: backing, config: scopedConfig},
+		path:    filepath.Join(t.TempDir(), "main.bicep"),
+		options: provisioning.Options{Module: "main"},
+	}
+
+	parameters, err := provider.ensureParameters(t.Context(), azure.ArmTemplate{
+		Parameters: map[string]azure.ArmTemplateParameterDefinition{
+			"value": {Type: "string"},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "override", parameters["value"].Value)
+	value, found := backing.Config.Get("infra.parameters.value")
+	require.True(t, found)
+	require.Equal(t, "backing", value)
+}
+
+func TestBicepLoadParameters_UsesScopedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.parameters.json"), []byte(
+		`{"parameters":{"value":{"value":"${LAYER_VALUE}"}}}`), 0600))
+	backing := environment.NewWithValues("shared", map[string]string{"LAYER_VALUE": "backing"})
+
+	for _, value := range []string{"layer-a", "layer-b"} {
+		t.Run(value, func(t *testing.T) {
+			scoped := &parameterScopedEnvironment{Environment: backing, value: value}
+			provider := &BicepProvider{
+				env:          scoped,
+				curPrincipal: &mockCurrentPrincipal{},
+				path:         filepath.Join(dir, "main.bicep"),
+				options:      provisioning.Options{Module: "main"},
+			}
+
+			parameters, err := provider.loadParameters(t.Context(), &azure.ArmTemplate{})
+			require.NoError(t, err)
+			require.Equal(t, value, parameters.parameters["value"].Value)
+			require.Equal(t, "backing", backing.Getenv("LAYER_VALUE"))
+		})
+	}
+}
+
 func TestBicepPlan(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)

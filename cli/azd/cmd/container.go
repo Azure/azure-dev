@@ -772,6 +772,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(azapi.NewStackDeployments)
 	container.MustRegisterScoped(infra.NewDeploymentManager)
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
+	container.MustRegisterScoped(func(env *environment.Environment) environment.ScopedEnvironment {
+		return env
+	})
 	container.MustRegisterScoped(provisioning.NewManager)
 	container.MustRegisterScoped(provisioning.NewPrincipalIdProvider)
 	container.MustRegisterScoped(prompt.NewDefaultPrompter)

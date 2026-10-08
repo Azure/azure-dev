@@ -328,7 +328,7 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 	}
 
 	require.NoError(t,
-		mergeLayerOutputsLocked(t.Context(), deps, envMu, "test-layer", outputs),
+		mergeLayerOutputsLocked(t.Context(), deps, envMu, "test-layer", outputs, nil),
 	)
 
 	// Disk must contain BOTH the subprocess write AND the deploy output.
@@ -426,12 +426,12 @@ func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		require.NoError(t,
-			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-a", outputsA),
+			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-a", outputsA, nil),
 		)
 	})
 	wg.Go(func() {
 		require.NoError(t,
-			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-b", outputsB),
+			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-b", outputsB, nil),
 		)
 	})
 	wg.Wait()

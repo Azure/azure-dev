@@ -156,6 +156,38 @@ endpoint URL.
 
 ## `pkg/environment.Environment`
 
+General consumers use `*environment.Environment`, including command actions, project
+services, extension RPC services, and the lazy environment loader.
+Provisioning providers and their environment-dependent helpers (principal lookup,
+subscription/location setup, and resource-group prompts) use `environment.ScopedEnvironment`.
+The default IoC registration exposes the same concrete environment through this
+interface. A provisioning scope can replace the interface without changing the
+shared environment used by other consumers.
+
+Scoped consumers access configuration through `env.GetConfig()`. Storage APIs still
+accept `*environment.Environment`; use `env.BackingEnv()` at save/reload boundaries.
+Do not use `BackingEnv()` to bypass scoped variable or configuration access.
+Provisioning output writes and destroy-time invalidation use the scoped environment
+so layer mappings are applied symmetrically, then save the backing environment.
+
+### Choosing the environment boundary
+
+Use `ScopedEnvironment` only when a consumer must observe a provisioning override.
+Being able to accept the interface is not a reason to migrate a consumer.
+Prove the boundary with different values in the scoped view and backing environment:
+
+- Bicep parameter substitution and Terraform parameter files must use the scoped value.
+- Provider principal lookup and resource-group prompts must use the scoped subscription.
+- Replacing the interface in a child scope must not change the concrete environment or its lazy loader.
+- Framework services, service targets, and hooks use the concrete environment supplied by their caller.
+  Provisioning output persistence uses the scoped environment and saves its backing environment.
+- External provider registration must succeed without loading an environment. A later operation must pick up
+  an environment that becomes available after registration.
+
+For dependency-injected consumers, test resolution from the child scope, not just direct construction.
+Check sibling isolation and persistence against the backing instance when adding a new scoped consumer.
+Do not inject a scoped environment into a singleton and assume it follows later scope changes.
+
 | Lock                     | Protects                                          | Acquired by                                                                |
 |--------------------------|---------------------------------------------------|----------------------------------------------------------------------------|
 | `mu sync.RWMutex`        | `dotenv map[string]string`, `deletedKeys`         | `Getenv`, `LookupEnv`, `Dotenv`, `DotenvSet`, `DotenvDelete`, `Reload`, all helpers |

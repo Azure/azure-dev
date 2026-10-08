@@ -231,6 +231,201 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	require.Contains(t, mockContext.Console.Output(), "Are you sure you want to destroy?")
 }
 
+type mappedOutputEnvironment struct {
+	environment.ScopedEnvironment
+	logicalKey  string
+	physicalKey string
+}
+
+func (e *mappedOutputEnvironment) DotenvDelete(key string) {
+	if key == e.logicalKey {
+		key = e.physicalKey
+	}
+
+	e.ScopedEnvironment.DotenvDelete(key)
+}
+
+type destroyResultProvider struct {
+	provisioning.Provider
+	result *provisioning.DestroyResult
+}
+
+type mappedEnvironmentProvider struct {
+	provisioning.Provider
+	env              environment.ScopedEnvironment
+	initializedInput string
+}
+
+func (p *mappedEnvironmentProvider) Initialize(context.Context, string, provisioning.Options) error {
+	p.initializedInput = p.env.Getenv("LOCAL_INPUT")
+	return nil
+}
+
+func (p *mappedEnvironmentProvider) Deploy(context.Context) (*provisioning.DeployResult, error) {
+	return &provisioning.DeployResult{
+		Deployment: &provisioning.Deployment{
+			Outputs: map[string]provisioning.OutputParameter{
+				"LOCAL_OUTPUT": {
+					Type:  provisioning.ParameterTypeString,
+					Value: "output-value",
+				},
+			},
+		},
+	}, nil
+}
+
+func (p *mappedEnvironmentProvider) Destroy(
+	context.Context,
+	provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
+	return &provisioning.DestroyResult{
+		InvalidatedEnvKeys: []string{"LOCAL_OUTPUT"},
+	}, nil
+}
+
+func TestManagerLayerAliasesFlowThroughProviderScope(t *testing.T) {
+	backing := environment.NewWithValues("test-env", map[string]string{
+		"SHARED_INPUT": "input-value",
+		"LOCAL_OUTPUT": "unrelated-value",
+	})
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, backing).Return(nil).Twice()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	var provider *mappedEnvironmentProvider
+	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test),
+		func(env environment.ScopedEnvironment) provisioning.Provider {
+			provider = &mappedEnvironmentProvider{env: env}
+			return provider
+		})
+
+	manager := provisioning.NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		backing,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
+	)
+	options := provisioning.Options{
+		Provider:      provisioning.Test,
+		ParamAliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
+		OutputAliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
+	}
+
+	require.NoError(t, manager.Initialize(t.Context(), "", options))
+	require.Equal(t, "input-value", provider.initializedInput,
+		"the provider should read LOCAL_INPUT from SHARED_INPUT through its scoped environment")
+
+	_, err := manager.Deploy(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "output-value", backing.Getenv("SHARED_OUTPUT"),
+		"the provider's LOCAL_OUTPUT should be persisted as SHARED_OUTPUT")
+	require.Equal(t, "unrelated-value", backing.Getenv("LOCAL_OUTPUT"),
+		"writing the aliased output should not overwrite the backing LOCAL_OUTPUT")
+
+	_, err = manager.Destroy(t.Context(), provisioning.NewDestroyOptions(true, false))
+	require.NoError(t, err)
+	require.Empty(t, backing.Getenv("SHARED_OUTPUT"),
+		"invalidating the provider's LOCAL_OUTPUT should delete SHARED_OUTPUT")
+	require.Equal(t, "unrelated-value", backing.Getenv("LOCAL_OUTPUT"),
+		"destroying the aliased output should not delete the backing LOCAL_OUTPUT")
+	envManager.AssertExpectations(t)
+}
+
+func (p *destroyResultProvider) Initialize(context.Context, string, provisioning.Options) error {
+	return nil
+}
+
+func (p *destroyResultProvider) Destroy(
+	context.Context,
+	provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
+	return p.result, nil
+}
+
+func TestManagerDestroy_InvalidatesMappedOutput(t *testing.T) {
+	t.Parallel()
+
+	const (
+		logicalKey  = "OUTPUT"
+		physicalKey = "LAYER_OUTPUT"
+	)
+
+	backing := environment.NewWithValues("test-env", map[string]string{
+		logicalKey:  "shared-value",
+		physicalKey: "layer-value",
+	})
+	scoped := &mappedOutputEnvironment{
+		ScopedEnvironment: backing,
+		logicalKey:        logicalKey,
+		physicalKey:       physicalKey,
+	}
+	provider := &destroyResultProvider{
+		result: &provisioning.DestroyResult{InvalidatedEnvKeys: []string{logicalKey}},
+	}
+
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Test), func() provisioning.Provider {
+		return provider
+	})
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, backing).Return(nil)
+
+	mgr := provisioning.NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		scoped,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
+	)
+	require.NoError(t, mgr.Initialize(t.Context(), "", provisioning.Options{Provider: provisioning.Test}))
+
+	_, err := mgr.Destroy(t.Context(), provisioning.NewDestroyOptions(true, false))
+
+	require.NoError(t, err)
+	require.Equal(t, "shared-value", backing.Getenv(logicalKey))
+	require.Empty(t, backing.Getenv(physicalKey))
+	envManager.AssertExpectations(t)
+}
+
+type setupScopedEnvironment struct {
+	*environment.Environment
+}
+
+func (e *setupScopedEnvironment) GetSubscriptionId() string {
+	return "layer-subscription"
+}
+
+func (e *setupScopedEnvironment) GetLocation() string {
+	return "layer-location"
+}
+
+func TestEnsureSubscriptionAndLocation_UsesScopedValuesAndSavesBackingEnvironment(t *testing.T) {
+	t.Parallel()
+
+	backing := environment.NewWithValues("shared", map[string]string{
+		environment.SubscriptionIdEnvVarName: "backing-subscription",
+		environment.LocationEnvVarName:       "backing-location",
+	})
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, backing).Return(nil).Twice()
+
+	require.NoError(t, provisioning.EnsureSubscriptionAndLocation(
+		t.Context(), envManager, &setupScopedEnvironment{Environment: backing},
+		noPromptPrompter{}, provisioning.EnsureSubscriptionAndLocationOptions{},
+	))
+	require.Equal(t, "layer-subscription", backing.GetSubscriptionId())
+	require.Equal(t, "layer-location", backing.GetLocation())
+	envManager.AssertExpectations(t)
+}
+
 func TestEnsureSubscriptionAndLocation_NoPromptMissingSubscriptionReturnsPromptRequiredError(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
 
@@ -383,6 +578,9 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 		}
 	})
 	mockContext.Container.MustRegisterSingleton(func() *environment.Environment {
+		return env
+	})
+	mockContext.Container.MustRegisterSingleton(func() environment.ScopedEnvironment {
 		return env
 	})
 	mockContext.Container.MustRegisterSingleton(func() *azapi.AzureClient {

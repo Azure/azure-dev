@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -527,6 +528,44 @@ func Test_ExternalFrameworkService_toProtoNil(t *testing.T) {
 	cfg, err := efs.toProtoServiceConfig(nil)
 	assert.Nil(t, cfg)
 	assert.NoError(t, err)
+}
+
+func TestExternalProviders_UseConcreteEnvironment(t *testing.T) {
+	t.Parallel()
+
+	backing := environment.NewWithValues("shared", map[string]string{"SERVICE_VALUE": "backing"})
+	root := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(root, lazy.From(backing))
+	scope, err := root.NewScope()
+	require.NoError(t, err)
+	scoped := environment.NewWithValues("layer", map[string]string{"SERVICE_VALUE": "override"})
+	ioc.RegisterInstance[environment.ScopedEnvironment](scope, scoped)
+
+	require.NoError(t, scope.Invoke(func(lazyEnv *lazy.Lazy[*environment.Environment]) {
+		framework := NewExternalFrameworkService("", "", nil, nil, nil, lazyEnv)
+		frameworkService, ok := framework.(*ExternalFrameworkService)
+		require.True(t, ok)
+		target := NewExternalServiceTarget("", "", nil, nil, nil, nil, lazyEnv, nil)
+		serviceTarget, ok := target.(*ExternalServiceTarget)
+		require.True(t, ok)
+		serviceConfig := &ServiceConfig{
+			Name: "api",
+			Environment: osutil.ExpandableMap{
+				"FROM_ENV": osutil.NewExpandableString("${SERVICE_VALUE}"),
+			},
+		}
+
+		for _, value := range []string{"backing", "updated"} {
+			backing.DotenvSet("SERVICE_VALUE", value)
+			frameworkConfig, err := frameworkService.toProtoServiceConfig(serviceConfig)
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{"FROM_ENV": value}, frameworkConfig.Environment)
+			targetConfig, err := serviceTarget.toProtoServiceConfig(serviceConfig)
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{"FROM_ENV": value}, targetConfig.Environment)
+			require.Equal(t, "override", scoped.Getenv("SERVICE_VALUE"))
+		}
+	}))
 }
 
 func Test_ExternalFrameworkService_toProtoServiceConfigExpandsEnvironment(t *testing.T) {

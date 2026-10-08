@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
@@ -876,6 +877,7 @@ func runProvisionSingleLayer(
 	layerEnv := environment.NewWithValues(
 		deps.env.Name(), deps.env.Dotenv(),
 	)
+	layerEnv.Config = &synchronizedConfig{Config: deps.env.Config, mu: envMu}
 	envMu.Unlock()
 
 	// Use a noop-save env manager for the per-layer manager. Saves happen
@@ -978,7 +980,7 @@ func runProvisionSingleLayer(
 	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
 		if deployResult.Deployment != nil && len(deployResult.Deployment.Outputs) > 0 {
 			if err := mergeLayerOutputsLocked(
-				ctx, deps, envMu, stepName, deployResult.Deployment.Outputs,
+				ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.OutputAliases,
 			); err != nil {
 				return deployResult, fmt.Errorf(
 					"updating environment for skipped layer %s: %w", stepName, err,
@@ -989,7 +991,7 @@ func runProvisionSingleLayer(
 		// can react to cached outputs.
 	} else {
 		if err := mergeLayerOutputsLocked(
-			ctx, deps, envMu, stepName, deployResult.Deployment.Outputs,
+			ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.OutputAliases,
 		); err != nil {
 			return deployResult, fmt.Errorf(
 				"updating environment for layer %s: %w", stepName, err,
@@ -1097,6 +1099,7 @@ func mergeLayerOutputsLocked(
 	envMu *sync.Mutex,
 	stepName string,
 	outputs map[string]provisioning.OutputParameter,
+	aliases map[string]string,
 ) error {
 	envMu.Lock()
 	defer envMu.Unlock()
@@ -1105,15 +1108,20 @@ func mergeLayerOutputsLocked(
 		return fmt.Errorf("reloading shared env: %w", err)
 	}
 
+	sharedOutputs, err := provisioning.ApplyOutputAliases(outputs, aliases)
+	if err != nil {
+		return fmt.Errorf("applying output aliases for layer %s: %w", stepName, err)
+	}
+
 	currentEnv := deps.env.Dotenv()
-	for key, param := range outputs {
+	for key, param := range sharedOutputs {
 		newValue := resolveOutputString(param)
 		if existing, ok := currentEnv[key]; ok && existing != newValue {
 			log.Printf("warning: layer %q overwrites env output %q", stepName, key)
 		}
 	}
 
-	return provisioning.UpdateEnvironment(ctx, outputs, deps.env, deps.envManager)
+	return provisioning.UpdateEnvironment(ctx, sharedOutputs, deps.env, deps.envManager)
 }
 
 // reloadSharedEnvLocked acquires envMu and reloads deps.env from disk,
@@ -1220,6 +1228,79 @@ func (c *syncConsole) EnsureBlankLine(ctx context.Context) {
 // writes; the authoritative save happens through the shared environment.
 type noopSaveEnvManager struct {
 	environment.Manager
+}
+
+// synchronizedConfig keeps provider configuration reads and writes in the same critical section
+// as shared environment saves during parallel layer provisioning.
+type synchronizedConfig struct {
+	config.Config
+	mu *sync.Mutex
+}
+
+func (c *synchronizedConfig) Raw() map[string]any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.Raw()
+}
+
+func (c *synchronizedConfig) ResolvedRaw() map[string]any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.ResolvedRaw()
+}
+
+func (c *synchronizedConfig) Get(path string) (any, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.Get(path)
+}
+
+func (c *synchronizedConfig) GetString(path string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.GetString(path)
+}
+
+func (c *synchronizedConfig) GetSection(path string, section any) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.GetSection(path, section)
+}
+
+func (c *synchronizedConfig) GetMap(path string) (map[string]any, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.GetMap(path)
+}
+
+func (c *synchronizedConfig) GetSlice(path string) ([]any, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.GetSlice(path)
+}
+
+func (c *synchronizedConfig) Set(path string, value any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.Set(path, value)
+}
+
+func (c *synchronizedConfig) SetSecret(path string, value string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.SetSecret(path, value)
+}
+
+func (c *synchronizedConfig) Unset(path string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.Unset(path)
+}
+
+func (c *synchronizedConfig) IsEmpty() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Config.IsEmpty()
 }
 
 func (*noopSaveEnvManager) Save(

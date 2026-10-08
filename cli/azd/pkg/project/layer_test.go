@@ -47,6 +47,10 @@ layers:
       - name: app-infra
         path: ./infra/app
         provider: bicep
+        paramAliases:
+          LOCAL_INPUT: SHARED_INPUT
+        outputAliases:
+          LOCAL_OUTPUT: SHARED_OUTPUT
     services:
       api:
         project: ./src/api
@@ -199,6 +203,10 @@ layers:
       - name: app-infra
         path: ./infra/app
         provider: bicep
+        paramAliases:
+          LOCAL_INPUT: SHARED_INPUT
+        outputAliases:
+          LOCAL_OUTPUT: SHARED_OUTPUT
     services:
       api:
         project: ./src/api
@@ -206,6 +214,8 @@ layers:
         language: js
 `)
 	require.NoError(t, err)
+	require.Equal(t, "SHARED_INPUT", projectConfig.Layers[0].Infra[0].ParamAliases["LOCAL_INPUT"])
+	require.Equal(t, "SHARED_OUTPUT", projectConfig.Layers[0].Infra[0].OutputAliases["LOCAL_OUTPUT"])
 
 	path := filepath.Join(t.TempDir(), "azure.yaml")
 	require.NoError(t, Save(t.Context(), projectConfig, path))
@@ -218,10 +228,17 @@ layers:
 	require.Contains(t, yaml, "- name: application")
 	require.Contains(t, yaml, "infra:")
 	require.Contains(t, yaml, "- provider: bicep")
+	require.Contains(t, yaml, "paramAliases:")
+	require.Contains(t, yaml, "outputAliases:")
 	require.Contains(t, yaml, "services:")
 	require.Contains(t, yaml, "api:")
 	require.NotContains(t, yaml, "layer: application")
 	require.Equal(t, 1, strings.Count(yaml, "layers:"))
+
+	reloaded, err := Load(t.Context(), path)
+	require.NoError(t, err)
+	require.Equal(t, projectConfig.Layers[0].Infra[0].ParamAliases, reloaded.Layers[0].Infra[0].ParamAliases)
+	require.Equal(t, projectConfig.Layers[0].Infra[0].OutputAliases, reloaded.Layers[0].Infra[0].OutputAliases)
 }
 
 func TestSaveProjectLayersPreservesEmptyLayers(t *testing.T) {

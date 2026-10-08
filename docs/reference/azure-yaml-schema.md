@@ -110,6 +110,38 @@ have permission to pull the image through its managed identity or registry crede
 When `imagePassthrough` is omitted or `false`, an external service image can still be pulled and copied into the
 configured destination registry.
 
+## Infrastructure Layer Variable Aliases
+
+Each entry under `infra.layers[]` or `layers[].infra[]` can translate between
+layer-local variable names and the shared project environment:
+
+```yaml
+infra:
+  layers:
+    - name: producer
+      path: infra/producer
+      outputAliases:
+        LOCAL_ENDPOINT: SHARED_ENDPOINT
+    - name: consumer
+      path: infra/consumer
+      paramAliases:
+        LOCAL_INPUT: SHARED_ENDPOINT
+```
+
+- `paramAliases` maps a variable name read by the layer to its source name in the
+  shared environment.
+- `outputAliases` maps a provisioning output name returned by the layer to the name
+  persisted in the shared environment. Outputs without a mapping keep their
+  original names.
+
+In this example, the producer's `LOCAL_ENDPOINT` output is stored as
+`SHARED_ENDPOINT`. The consumer reads that value as `LOCAL_INPUT`. These aliases
+work with both Bicep and Terraform providers. For Bicep layers, azd uses the
+aliases during static dependency analysis, so the consumer waits for the producer.
+Terraform dependencies are not inferred from aliases. Declare
+`dependsOn: [producer]` on the consumer when it needs the producer's outputs.
+This also applies to Bicep consumers of Terraform outputs.
+
 ## Hooks
 
 Hooks run user-defined scripts at lifecycle points:

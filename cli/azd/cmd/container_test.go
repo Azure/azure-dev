@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -291,6 +292,189 @@ func Test_EnvironmentRegistrations_InitLifecycle(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Test_EnvironmentRegistrations_SharedInstancePerScope verifies that concrete environment consumers share one backing
+// environment per scope and interface consumers preserve child-scope overrides.
+func Test_EnvironmentRegistrations_SharedInstancePerScope(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		// Resolving the interface or concrete type first must not create separate instances.
+		for _, firstResolution := range []string{"Interface", "Concrete"} {
+			scopeName := "Root"
+			if nested {
+				scopeName = "NestedWorkflow"
+			}
+			t.Run(scopeName+"/"+firstResolution, func(t *testing.T) {
+				projectDir := t.TempDir()
+				t.Chdir(projectDir)
+
+				root := ioc.NewNestedContainer(nil)
+				ioc.RegisterInstance(root, t.Context())
+				registerCommonDependencies(root)
+				ioc.RegisterInstance(root, newTestUserConfigManager(t))
+				root.MustRegisterScoped(func() internal.EnvFlag {
+					return internal.EnvFlag{EnvironmentName: "dev"}
+				})
+				console := mocks.NewMockContext(t.Context()).Console
+				root.MustRegisterScoped(func() input.Console { return console })
+
+				container := root
+				if nested {
+					var err error
+					container, err = root.NewScope()
+					require.NoError(t, err)
+				}
+
+				// Failed resolutions must remain retryable as the project and environment become available.
+				var lazyEnv *lazy.Lazy[*environment.Environment]
+				require.NoError(t, container.Resolve(&lazyEnv))
+				// Resolving the lazy wrapper succeeds without a project; evaluating it needs azure.yaml.
+				value, err := lazyEnv.GetValue()
+				require.ErrorIs(t, err, azdcontext.ErrNoProject)
+				require.Nil(t, value)
+
+				// make sure resolution works the same, no matter if you Resolve() the concrete type or
+				// the interface first.
+				var env environment.ScopedEnvironment
+				var concrete *environment.Environment
+				if firstResolution == "Interface" {
+					require.ErrorIs(t, container.Resolve(&env), azdcontext.ErrNoProject)
+				} else {
+					require.ErrorIs(t, container.Resolve(&concrete), azdcontext.ErrNoProject)
+				}
+
+				require.NoError(t, project.Save(
+					t.Context(), &project.ProjectConfig{Name: "test"}, filepath.Join(projectDir, "azure.yaml")))
+				// Saving azure.yaml fixes the missing project, but does not create the requested "dev" environment.
+				// A different error proves the lazy wrapper retried instead of caching ErrNoProject.
+				value, err = lazyEnv.GetValue()
+				require.ErrorIs(t, err, environment.ErrNotFound)
+				require.Nil(t, value)
+
+				var manager environment.Manager
+				require.NoError(t, container.Resolve(&manager))
+
+				// now that we've actually created the two environments we can test having the
+				// lazy singleton call through to Lazy.GetValue() and succeed...
+				_, err = manager.Create(t.Context(), environment.Spec{Name: "dev"})
+				require.NoError(t, err)
+				_, err = manager.Create(t.Context(), environment.Spec{Name: "prod"})
+				require.NoError(t, err)
+
+				resolveEnvironment := func(scope *ioc.NestedContainer, name string) environment.ScopedEnvironment {
+					t.Helper()
+
+					var resolved environment.ScopedEnvironment
+					var backing *environment.Environment
+
+					if firstResolution == "Interface" {
+						require.NoError(t, scope.Resolve(&resolved))
+						require.NoError(t, scope.Resolve(&backing))
+					} else {
+						require.NoError(t, scope.Resolve(&backing))
+						require.NoError(t, scope.Resolve(&resolved))
+					}
+
+					var scopedLazy *lazy.Lazy[*environment.Environment]
+					require.NoError(t, scope.Resolve(&scopedLazy))
+
+					lazyValue, err := scopedLazy.GetValue()
+					require.NoError(t, err)
+					require.Same(t, backing, resolved.BackingEnv())
+					require.Same(t, backing, lazyValue)
+					require.Equal(t, name, resolved.Name())
+
+					// In the basic form the environment is the same for all of these, you're just
+					// requesting a different veneer/interface over the top of it.
+					resolved.DotenvSet("CONSUMER_TEST", name)
+					require.Equal(t, name, backing.Getenv("CONSUMER_TEST"))
+					require.Equal(t, name, lazyValue.Getenv("CONSUMER_TEST"))
+
+					return resolved
+				}
+
+				// Reuse the same container after both failures: no reset or replacement should be necessary.
+				env = resolveEnvironment(container, "dev")
+				var resolvedLazy *lazy.Lazy[*environment.Environment]
+				require.NoError(t, container.Resolve(&resolvedLazy))
+				require.Same(t, lazyEnv, resolvedLazy)
+
+				// The original lazy wrapper should also succeed now that it's resolved once.
+				value, err = lazyEnv.GetValue()
+				require.NoError(t, err)
+				require.Same(t, env.BackingEnv(), value)
+
+				// A child scope selects its own environment without changing the parent's cached instance.
+				nextScope, err := container.NewScope()
+				require.NoError(t, err)
+				// swap from our parent context's 'dev' env to 'prod' for nextScope
+				ioc.RegisterInstance(nextScope, internal.EnvFlag{EnvironmentName: "prod"})
+				nextEnv := resolveEnvironment(nextScope, "prod")
+
+				var nextLazy *lazy.Lazy[*environment.Environment]
+				require.NoError(t, nextScope.Resolve(&nextLazy))
+				require.NotSame(t, lazyEnv, nextLazy)
+				require.NotSame(t, env.BackingEnv(), nextEnv.BackingEnv(), "parent and child purposefully diverge")
+				require.Same(t, env.BackingEnv(), resolveEnvironment(container, "dev").BackingEnv())
+
+				value, err = lazyEnv.GetValue()
+				require.NoError(t, err)
+				require.Equal(t, "dev", value.Name())
+				require.Equal(t, "dev", value.Getenv("CONSUMER_TEST"))
+
+				provisionScope, err := container.NewScope()
+				require.NoError(t, err)
+				layerEnv := environment.NewWithValues("layer", map[string]string{
+					"CONSUMER_TEST": "backing",
+				})
+				overriddenEnv := &getenvOverride{
+					ScopedEnvironment: layerEnv,
+					key:               "CONSUMER_TEST",
+					value:             "override",
+				}
+				ioc.RegisterInstance[environment.ScopedEnvironment](provisionScope, overriddenEnv)
+
+				var scopedEnv environment.ScopedEnvironment
+				require.NoError(t, provisionScope.Resolve(&scopedEnv))
+				require.Same(t, layerEnv, scopedEnv.BackingEnv())
+				require.Equal(t, "override", scopedEnv.Getenv("CONSUMER_TEST"))
+				require.Equal(t, "backing", scopedEnv.BackingEnv().Getenv("CONSUMER_TEST"))
+
+				var sharedEnv *environment.Environment
+				require.NoError(t, provisionScope.Resolve(&sharedEnv))
+				require.Equal(t, "dev", sharedEnv.Name())
+				require.NotEqual(t, "layer", sharedEnv.Getenv("CONSUMER_TEST"))
+
+				require.NoError(t, provisioning.UpdateEnvironment(t.Context(), map[string]provisioning.OutputParameter{
+					"OUTPUT_TEST": {Value: "deployed"},
+				}, sharedEnv, manager))
+				require.Equal(t, "deployed", sharedEnv.Getenv("OUTPUT_TEST"))
+				require.Empty(t, scopedEnv.Getenv("OUTPUT_TEST"))
+				require.Empty(t, nextEnv.Getenv("OUTPUT_TEST"))
+
+				var sharedLazy *lazy.Lazy[*environment.Environment]
+				require.NoError(t, provisionScope.Resolve(&sharedLazy))
+				sharedValue, err := sharedLazy.GetValue()
+				require.NoError(t, err)
+				require.Same(t, sharedEnv, sharedValue)
+				require.Equal(t, "dev", resolveEnvironment(container, "dev").Name())
+			})
+		}
+	}
+}
+
+type getenvOverride struct {
+	environment.ScopedEnvironment
+	key   string
+	value string
+}
+
+func (e *getenvOverride) Getenv(key string) string {
+	if key == e.key {
+		return e.value
+	}
+
+	return e.ScopedEnvironment.Getenv(key)
 }
 
 type testLazyComponent[T comparable] struct {

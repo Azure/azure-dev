@@ -369,6 +369,16 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 			"cmd",
 			false,
 		},
+		{"explicit shell pipeline with leading path", "./deploy.sh | tee output.log", "bash", false},
+		{"explicit shell compact pipeline with leading path", "./deploy.sh|tee output.log", "bash", false},
+		{"explicit shell extensionless leading path", "./deploy | tee output.log", "bash", false},
+		{"explicit shell compact extensionless path", "./deploy|tee", "bash", false},
+		{
+			"explicit PowerShell pipeline with leading path",
+			".\\deploy.ps1 | Out-String",
+			"pwsh",
+			false,
+		},
 		{"explicit shell path", "./missing.ps1", "pwsh", true},
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
@@ -451,6 +461,28 @@ func TestExecAction_ExplicitShellExpressionWithPathArgumentBypassesInvalidPathPr
 			shell:  "cmd",
 		},
 		args: []string{`echo config\settings.json|findstr settings>nul&rem deploy.cmd`},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
+func TestExecAction_ExplicitShellPipelineWithLeadingPathBypassesInvalidPathProbe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile("emit.cmd", []byte("@echo success\r\n"), 0o600))
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{`.\emit.cmd|findstr success>nul&rem deploy.cmd`},
 	}
 
 	_, err := action.Run(t.Context())

@@ -202,7 +202,8 @@ var scriptExtensions = map[string]bool{
 const shellSyntaxCharacters = "'\"`$<>()|&;"
 
 func shouldFailOnMissingScript(input, shell string) bool {
-	if shell != "" && hasShellSyntaxBeforePathBoundary(input) {
+	if shell != "" &&
+		(hasShellSyntaxBeforePathBoundary(input) || hasShellSyntaxAfterLeadingPath(input)) {
 		return false
 	}
 	if !looksLikeFilePath(input) {
@@ -225,6 +226,37 @@ func hasShellSyntaxBeforePathBoundary(input string) bool {
 	}
 	firstSeparator := strings.IndexAny(input, "/\\")
 	return firstSeparator < 0 || firstShellSyntax < firstSeparator
+}
+
+func hasShellSyntaxAfterLeadingPath(input string) bool {
+	input = strings.TrimSpace(input)
+	firstSeparator := strings.IndexAny(input, "/\\")
+	if firstSeparator < 0 {
+		return false
+	}
+
+	searchFrom := firstSeparator + 1
+	foundShellSyntax := false
+	for searchFrom < len(input) {
+		offset := strings.IndexAny(input[searchFrom:], shellSyntaxCharacters)
+		if offset < 0 {
+			break
+		}
+		foundShellSyntax = true
+		syntaxIndex := searchFrom + offset
+		ext := strings.ToLower(filepath.Ext(strings.TrimSpace(input[:syntaxIndex])))
+		if scriptExtensions[ext] {
+			return true
+		}
+		searchFrom = syntaxIndex + 1
+	}
+
+	if firstWhitespace := strings.IndexFunc(input, unicode.IsSpace); firstWhitespace > firstSeparator {
+		return strings.ContainsAny(input[firstWhitespace:], shellSyntaxCharacters)
+	}
+
+	ext := strings.ToLower(filepath.Ext(input))
+	return foundShellSyntax && !scriptExtensions[ext]
 }
 
 // looksLikeFilePath reports whether input appears to be a file path rather

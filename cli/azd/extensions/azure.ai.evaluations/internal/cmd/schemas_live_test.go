@@ -89,6 +89,7 @@ func TestLiveConversationEvaluatorBindsMessages(t *testing.T) {
 		schemas[name],
 		nil, // no target: the dataset holds both sides of the exchange
 		map[string]bool{conversationField: true},
+		nil, // no additional generated fields
 		"conversation",
 	)
 	require.NoError(t, err)

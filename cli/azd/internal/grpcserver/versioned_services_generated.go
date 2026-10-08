@@ -21,6 +21,8 @@ const (
 	BetaAccountService BetaService = "AccountService"
 	// BetaAiModelService identifies the beta AiModelService registration and its focused overrides.
 	BetaAiModelService BetaService = "AiModelService"
+	// BetaCommandResultService identifies the beta CommandResultService registration and its focused overrides.
+	BetaCommandResultService BetaService = "CommandResultService"
 	// BetaComposeService identifies the beta ComposeService registration and its focused overrides.
 	BetaComposeService BetaService = "ComposeService"
 	// BetaContainerService identifies the beta ContainerService registration and its focused overrides.
@@ -580,6 +582,7 @@ func registerBetaServices(
 		switch service {
 		case BetaAccountService:
 		case BetaAiModelService:
+		case BetaCommandResultService:
 		case BetaComposeService:
 		case BetaContainerService:
 		case BetaCopilotService:
@@ -625,6 +628,15 @@ func registerBetaServices(
 		stable:   stableAiModelService,
 		override: overrideAiModelService,
 	})
+	overrideCommandResultService := overrides[BetaCommandResultService]
+	if overrideCommandResultService != nil {
+		return fmt.Errorf("beta-only service CommandResultService uses its native implementation and does not accept an override")
+	}
+	betaCommandResultService, ok := serviceImplementations[BetaCommandResultService].(v1beta.CommandResultServiceServer)
+	if !ok {
+		return fmt.Errorf("implementation for beta-only service CommandResultService does not satisfy v1beta.CommandResultServiceServer")
+	}
+	v1beta.RegisterCommandResultServiceServer(registrar, betaCommandResultService)
 	overrideComposeService := overrides[BetaComposeService]
 	if overrideComposeService != nil {
 		return fmt.Errorf("beta-only service ComposeService uses its native implementation and does not accept an override")

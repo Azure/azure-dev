@@ -981,12 +981,12 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--force'],
-									description: 'Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need overwrite confirmation.',
+									description: 'Allow existing agent service configurations to be overwritten. With --no-prompt, pre-consent when init requires overwrite confirmation.',
 									isDangerous: true,
 								},
 								{
 									name: ['--image'],
-									description: 'Pre-built container image URL (e.g., \'myacr.azurecr.io/agent:v1\'). When set without --manifest, skips template/language selection, code scaffolding, Dockerfile generation, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.',
+									description: 'Pre-built container image URL (e.g., \'myacr.azurecr.io/agent:v1\'). Skips template/language selection, code scaffolding, Dockerfile-based source setup and build configuration, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.',
 									args: [
 										{
 											name: 'image',
@@ -1014,19 +1014,10 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--kind'],
-									description: 'Agent runtime to initialize: \'hosted\' (bring your own code/container), \'prompt\' (model + instructions; Foundry runs the agent), or \'prompt-voice\' (a declarative voice agent; use --model for the speech-to-speech model and --voice for the output voice agent). When omitted, when --manifest is supplied, the manifest determines the runtime and --kind is ignored; otherwise the hosted runtime is used. With --no-prompt, \'prompt\' requires --agent-name and either --model or --model-deployment (unless supplied by --manifest).',
+									description: 'Agent runtime to initialize: \'hosted\' (bring your own code/container), \'prompt\' (model + instructions; Foundry runs the agent), or \'prompt-voice\' (a declarative voice agent; use --model for the speech-to-speech model and --voice for the output voice agent). When omitted, the hosted runtime is used. With --no-prompt, \'prompt\' requires --agent-name and either --model or --model-deployment.',
 									args: [
 										{
 											name: 'kind',
-										},
-									],
-								},
-								{
-									name: ['--manifest', '-m'],
-									description: 'Path or URI to an agent manifest (hosted or \'kind: prompt\'), or to a sample\'s unified azure.yaml to adopt as the project manifest',
-									args: [
-										{
-											name: 'manifest',
 										},
 									],
 								},
@@ -1069,7 +1060,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--rai-policy'],
-									description: 'Responsible AI policy for a prompt or managed agent: \'none\' to inherit the account\'s default content filters, a policy name on the selected Foundry account, or a policy\'s full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents and when --manifest already declares policies.',
+									description: 'Responsible AI policy for a prompt or managed agent: \'none\' to inherit the account\'s default content filters, a policy name on the selected Foundry account, or a policy\'s full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an azure.yaml project document or a full repository template; declare policies in azure.yaml instead.',
 									args: [
 										{
 											name: 'rai-policy',
@@ -1096,10 +1087,19 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--src', '-s'],
-									description: 'Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
+									description: 'Source directory for generated agents, or target directory when adopting an azure.yaml project',
 									args: [
 										{
 											name: 'src',
+										},
+									],
+								},
+								{
+									name: ['--template', '-t'],
+									description: 'Path or supported GitHub URI to an azure.yaml project document',
+									args: [
+										{
+											name: 'template',
 										},
 									],
 								},
@@ -1958,7 +1958,7 @@ const completionSpec: Fig.Spec = {
 							subcommands: [
 								{
 									name: ['list', 'ls'],
-									description: 'List available agent samples that can be used with `azd ai agent init -m`.',
+									description: 'List available agent samples that can be used with `azd ai agent init -t`.',
 									options: [
 										{
 											name: ['--featured-only'],
@@ -1985,7 +1985,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--type'],
-											description: 'Filter by template type. Supported values: agent, azd, azure.yaml.',
+											description: 'Filter by template type. Supported values: azure.yaml, azd.',
 											args: [
 												{
 													name: 'type',
@@ -2205,6 +2205,396 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['state-stores'],
+							description: 'Inspect hosted-agent State Stores and manage their items.',
+							subcommands: [
+								{
+									name: ['items'],
+									description: 'Read, replace, and delete items in an existing State Store.',
+									subcommands: [
+										{
+											name: ['delete'],
+											description: 'Delete an item from an existing store.',
+											options: [
+												{
+													name: ['--agent-endpoint'],
+													description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+													args: [
+														{
+															name: 'agent-endpoint',
+														},
+													],
+												},
+												{
+													name: ['--agent-name', '-n'],
+													description: 'Agent service name in azure.yaml',
+													args: [
+														{
+															name: 'agent-name',
+														},
+													],
+												},
+												{
+													name: ['--if-match'],
+													description: 'Only write if the current ETag matches (preserve its quotes)',
+													args: [
+														{
+															name: 'if-match',
+														},
+													],
+												},
+												{
+													name: ['--output', '-o'],
+													description: 'The output format',
+													args: [
+														{
+															name: 'output',
+															suggestions: ['json', 'table'],
+														},
+													],
+												},
+												{
+													name: ['--store'],
+													description: 'Store name (defaults to the active store; does not change selection)',
+													args: [
+														{
+															name: 'store',
+														},
+													],
+												},
+												{
+													name: ['--yes', '-y'],
+													description: 'Skip delete confirmation (required with --no-prompt)',
+												},
+											],
+										},
+										{
+											name: ['list'],
+											description: 'List one page of item keys and metadata, without values.',
+											options: [
+												{
+													name: ['--after'],
+													description: 'Continue after last_id from the previous JSON response',
+													args: [
+														{
+															name: 'after',
+														},
+													],
+												},
+												{
+													name: ['--agent-endpoint'],
+													description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+													args: [
+														{
+															name: 'agent-endpoint',
+														},
+													],
+												},
+												{
+													name: ['--agent-name', '-n'],
+													description: 'Agent service name in azure.yaml',
+													args: [
+														{
+															name: 'agent-name',
+														},
+													],
+												},
+												{
+													name: ['--limit'],
+													description: 'Maximum results per page (1-100)',
+													args: [
+														{
+															name: 'limit',
+														},
+													],
+												},
+												{
+													name: ['--order'],
+													description: 'Service-defined order: asc or desc',
+													args: [
+														{
+															name: 'order',
+														},
+													],
+												},
+												{
+													name: ['--output', '-o'],
+													description: 'The output format',
+													args: [
+														{
+															name: 'output',
+															suggestions: ['json', 'table'],
+														},
+													],
+												},
+												{
+													name: ['--store'],
+													description: 'Store name (defaults to the active store; does not change selection)',
+													args: [
+														{
+															name: 'store',
+														},
+													],
+												},
+											],
+										},
+										{
+											name: ['set'],
+											description: 'Create or replace a JSON object item in an existing store.',
+											options: [
+												{
+													name: ['--agent-endpoint'],
+													description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+													args: [
+														{
+															name: 'agent-endpoint',
+														},
+													],
+												},
+												{
+													name: ['--agent-name', '-n'],
+													description: 'Agent service name in azure.yaml',
+													args: [
+														{
+															name: 'agent-name',
+														},
+													],
+												},
+												{
+													name: ['--if-match'],
+													description: 'Only write if the current ETag matches (preserve its quotes)',
+													args: [
+														{
+															name: 'if-match',
+														},
+													],
+												},
+												{
+													name: ['--output', '-o'],
+													description: 'The output format',
+													args: [
+														{
+															name: 'output',
+															suggestions: ['json', 'table'],
+														},
+													],
+												},
+												{
+													name: ['--store'],
+													description: 'Store name (defaults to the active store; does not change selection)',
+													args: [
+														{
+															name: 'store',
+														},
+													],
+												},
+												{
+													name: ['--tag'],
+													description: 'Replacement key=value tag (up to 16; keys <=64, values <=256 characters; omission clears tags)',
+													isRepeatable: true,
+													args: [
+														{
+															name: 'tag',
+														},
+													],
+												},
+												{
+													name: ['--value'],
+													description: 'JSON object value (not a REST request envelope)',
+													args: [
+														{
+															name: 'value',
+														},
+													],
+												},
+												{
+													name: ['--value-file'],
+													description: 'Read the JSON object from a file; - reads stdin',
+													args: [
+														{
+															name: 'value-file',
+														},
+													],
+												},
+											],
+										},
+										{
+											name: ['show'],
+											description: 'Show an item\'s JSON value, tags, and ETag.',
+											options: [
+												{
+													name: ['--agent-endpoint'],
+													description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+													args: [
+														{
+															name: 'agent-endpoint',
+														},
+													],
+												},
+												{
+													name: ['--agent-name', '-n'],
+													description: 'Agent service name in azure.yaml',
+													args: [
+														{
+															name: 'agent-name',
+														},
+													],
+												},
+												{
+													name: ['--output', '-o'],
+													description: 'The output format',
+													args: [
+														{
+															name: 'output',
+															suggestions: ['json', 'table'],
+														},
+													],
+												},
+												{
+													name: ['--store'],
+													description: 'Store name (defaults to the active store; does not change selection)',
+													args: [
+														{
+															name: 'store',
+														},
+													],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List one page of existing State Stores.',
+									options: [
+										{
+											name: ['--after'],
+											description: 'Continue after last_id from the previous JSON response',
+											args: [
+												{
+													name: 'after',
+												},
+											],
+										},
+										{
+											name: ['--agent-endpoint'],
+											description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+											args: [
+												{
+													name: 'agent-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent service name in azure.yaml',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--limit'],
+											description: 'Maximum results per page (1-100)',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--order'],
+											description: 'Service-defined order: asc or desc',
+											args: [
+												{
+													name: 'order',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['select'],
+									description: 'Validate and save the active store, or choose one interactively.',
+									options: [
+										{
+											name: ['--agent-endpoint'],
+											description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+											args: [
+												{
+													name: 'agent-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent service name in azure.yaml',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show the named store or the active store.',
+									options: [
+										{
+											name: ['--agent-endpoint'],
+											description: 'HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)',
+											args: [
+												{
+													name: 'agent-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent service name in azure.yaml',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['toolbox'],
 							description: 'Manage toolbox service dependencies for an agent.',
 							subcommands: [
@@ -2251,7 +2641,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2373,7 +2763,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2430,7 +2820,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2464,7 +2854,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2489,7 +2879,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2537,7 +2927,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2571,7 +2961,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -5948,7 +6338,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -5957,7 +6347,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -5972,7 +6362,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -5981,7 +6371,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6132,7 +6522,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6177,7 +6567,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6216,7 +6606,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6225,7 +6615,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6250,7 +6640,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6259,7 +6649,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6297,7 +6687,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6306,7 +6696,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6331,7 +6721,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6340,7 +6730,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6365,7 +6755,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6374,7 +6764,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6412,7 +6802,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint', '-p'],
-											description: 'Foundry project endpoint URL (overrides env var and config)',
+											description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -6421,7 +6811,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--timeout'],
-											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 											args: [
 												{
 													name: 'timeout',
@@ -6443,7 +6833,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6452,7 +6842,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6477,7 +6867,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6486,7 +6876,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6619,7 +7009,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6664,7 +7054,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6689,7 +7079,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
+									description: 'Foundry project endpoint URL for remote operations only (not add, context, or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6698,7 +7088,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--timeout'],
-									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
 										{
 											name: 'timeout',
@@ -6714,12 +7104,64 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add or update a Foundry skill service in azure.yaml.',
+							options: [
+								{
+									name: ['--description'],
+									description: 'Inline mode: required human-readable summary of the skill',
+									args: [
+										{
+											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Path to SKILL.md, a .zip package, or a directory containing SKILL.md at its root',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--instructions'],
+									description: 'Inline mode: required Markdown body defining skill behavior (literal text, not a file path)',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6776,7 +7218,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6806,7 +7248,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6845,7 +7287,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6883,7 +7325,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6908,7 +7350,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6960,7 +7402,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -6984,7 +7426,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env vars and global config)',
+									description: 'Foundry project endpoint URL for skill operations only (not context or version)',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7046,7 +7488,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7080,7 +7522,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7093,7 +7535,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7158,7 +7600,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7183,7 +7625,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7222,7 +7664,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7235,7 +7677,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7269,7 +7711,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7299,7 +7741,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7333,7 +7775,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7358,7 +7800,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7383,7 +7825,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7439,7 +7881,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7464,7 +7906,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7503,7 +7945,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7516,7 +7958,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7541,7 +7983,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -7570,7 +8012,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--project-endpoint'],
-											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 											args: [
 												{
 													name: 'project-endpoint',
@@ -7583,7 +8025,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									description: 'Foundry project endpoint URL for remote operations only (not local add or extension version).',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -9610,4 +10052,3 @@ const completionSpec: Fig.Spec = {
 };
 
 export default completionSpec;
-

@@ -8,7 +8,7 @@
 // into .agent_configs/<candidate-id>/. Managed prompt agents deploy from the
 // candidate's model, instructions, and matching function-tool updates in azure.yaml.
 // Other agent kinds select the local candidate through environment variables
-// in their definition (inline in azure.yaml, or legacy agent.yaml on disk).
+// in their service-level definition in azure.yaml.
 
 package cmd
 
@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/paths"
@@ -56,7 +57,8 @@ func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 candidate and write them into your local azd project under .agent_configs/.
 
 For managed prompt agents, this also updates the model and instructions
-in the azure.yaml service definition, including the deprecated config section.
+in the service-level azure.yaml definition. Definitions under config are rejected
+and must be moved to service-level properties before applying a candidate.
 Candidates must contain a non-empty model and instructions. Function tools are
 updated only when their names match existing function tools. Omitted fields,
 including nested parameter fields, are preserved. Supplied arrays and explicit
@@ -66,8 +68,8 @@ new tools are not added. Missing, null, or empty candidate tools leave tools
 unchanged. Malformed candidate tools are rejected before writing configuration.
 Optimized prompt-agent skills are not supported.
 Referenced definitions ($ref) must be inlined or updated manually.
-Prompt apply also requires AGENT_DEFINITION_PATH to be unset or empty and a
-service name without dots.
+Optimize apply requires AGENT_DEFINITION_PATH to be unset or empty for every
+agent kind. Prompt apply also requires a service name without dots.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy
@@ -133,7 +135,7 @@ func (a *OptimizeApplyAction) apply(
 	out io.Writer,
 	bold *color.Color,
 ) error {
-	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags, a.envName)
+	validation, err := projectpkg.ValidateAgentServiceDefinition(svc, project.Path)
 	if err != nil {
 		return err
 	}
@@ -143,12 +145,9 @@ func (a *OptimizeApplyAction) apply(
 		project.Path,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to resolve agent definition: %w", err)
+		return err
 	}
-	_, isPromptAgent, err := projectpkg.PromptAgentFromResolvedService(svc, project.Path)
-	if err != nil {
-		return fmt.Errorf("failed to read prompt agent definition: %w", err)
-	}
+	isPromptAgent := validation.Kind == agent_yaml.AgentKindPrompt
 	if usesFileRef {
 		guidance := "Add OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID to the referenced agent " +
 			"file, or inline the definition in azure.yaml"
@@ -160,15 +159,6 @@ func (a *OptimizeApplyAction) apply(
 			"agent service %q defines its agent via $ref; "+
 				"'optimize apply' cannot update a referenced file. %s",
 			svc.Name, guidance,
-		)
-	}
-	if isPromptAgent && os.Getenv("AGENT_DEFINITION_PATH") != "" {
-		return fmt.Errorf(
-			"prompt agent service %q uses AGENT_DEFINITION_PATH; "+
-				"'optimize apply' cannot update the selected external file. "+
-				"Inline the definition in azure.yaml and unset AGENT_DEFINITION_PATH, "+
-				"or manually update model, instructions, and tools in the selected file",
-			svc.Name,
 		)
 	}
 	if isPromptAgent && strings.Contains(svc.Name, ".") {
@@ -185,6 +175,11 @@ func (a *OptimizeApplyAction) apply(
 		return fmt.Errorf("invalid service path for %s: %w", svc.Name, err)
 	}
 	candidateDir := filepath.Join(serviceDir, agentConfigsDir, a.flags.candidate)
+
+	projectEndpoint, err := resolveProjectEndpointForDeploy(ctx, &a.flags.optimizeConnectionFlags, a.envName)
+	if err != nil {
+		return err
+	}
 
 	_, _ = bold.Fprintf(out, "Applying optimization candidate %s...\n\n", a.flags.candidate)
 
@@ -252,22 +247,9 @@ func (a *OptimizeApplyAction) apply(
 			"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
 			"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
 		}
-		if _, _, found, _, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
-			return fmt.Errorf("failed to read agent definition: %w", err)
-		} else if found {
-			fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
-			if err := persistInlineAgentEnvironment(ctx, azdClient, svc, envUpdates); err != nil {
-				return err
-			}
-		} else {
-			agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
-			fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
-			if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
-				return fmt.Errorf("failed to update agent.yaml: %w", err)
-			}
-			if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
-				return fmt.Errorf("failed to update agent.yaml: %w", err)
-			}
+		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
+		if err := persistInlineAgentEnvironment(ctx, azdClient, svc, envUpdates); err != nil {
+			return err
 		}
 	}
 
@@ -316,7 +298,7 @@ func persistPromptAgentCandidateConfig(
 	candidateConfig json.RawMessage,
 ) error {
 	if _, found, err := projectpkg.PromptAgentFromResolvedService(svc, projectPath); err != nil {
-		return fmt.Errorf("failed to read prompt agent definition: %w", err)
+		return err
 	} else if !found {
 		return nil
 	}
@@ -325,14 +307,11 @@ func persistPromptAgentCandidateConfig(
 	if err != nil {
 		return err
 	}
-	_, _, _, source, err := projectpkg.AgentDefinitionFromService(svc)
+	_, _, _, _, err = projectpkg.AgentDefinitionFromService(svc)
 	if err != nil {
-		return fmt.Errorf("failed to read agent definition: %w", err)
+		return err
 	}
 	path := ""
-	if source == projectpkg.AgentDefinitionSourceLegacyConfig {
-		path = "config"
-	}
 
 	// Read the file directly: GetServiceConfigSection interpolates local vault references.
 	data, projectFile, err := projectconfig.ReadProjectFile(projectPath)
@@ -526,9 +505,9 @@ func persistInlineAgentEnvironment(
 	svc *azdext.ServiceConfig,
 	envUpdates map[string]string,
 ) error {
-	_, _, found, source, err := projectpkg.AgentDefinitionFromService(svc)
+	_, _, found, _, err := projectpkg.AgentDefinitionFromService(svc)
 	if err != nil {
-		return fmt.Errorf("failed to read agent definition: %w", err)
+		return err
 	}
 	if !found {
 		return fmt.Errorf(
@@ -561,15 +540,11 @@ func persistInlineAgentEnvironment(
 		return err
 	}
 
-	environmentPath := "environmentVariables"
-	if source == projectpkg.AgentDefinitionSourceLegacyConfig {
-		environmentPath = "config.environmentVariables"
-	}
 	if _, err := azdClient.Project().UnsetServiceConfig(
 		ctx,
 		&azdext.UnsetServiceConfigRequest{
 			ServiceName: svc.Name,
-			Path:        environmentPath,
+			Path:        "environmentVariables",
 		},
 	); err != nil {
 		return fmt.Errorf(

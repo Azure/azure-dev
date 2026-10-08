@@ -30,7 +30,7 @@ func TestTheWrittenRubricKeepsOnlyWhatIsWorthEditing(t *testing.T) {
 		"definition": {
 			"type": "rubric",
 			"pass_threshold": 0.5,
-			"dimensions": [{"name": "accuracy", "weight": 1, "description": "Is it right?"}],
+			"dimensions": [{"id": "accuracy", "weight": 1, "description": "Is it right?"}],
 			"init_parameters": {"model": "gpt-4o-mini"},
 			"metrics": [{"name": "rubric_score"}],
 			"data_schema": {"query": "string"},
@@ -62,7 +62,7 @@ func TestTheWrittenRubricKeepsOnlyWhatIsWorthEditing(t *testing.T) {
 func TestTheWrittenRubricIsOrdered(t *testing.T) {
 	payload := json.RawMessage(`{"definition":{
 		"zeta": 1, "alpha": 2, "pass_threshold": 0.5, "type": "rubric",
-		"dimensions": [{"name": "d"}]
+		"dimensions": [{"id": "d"}]
 	}}`)
 
 	first := filepath.Join(t.TempDir(), "a.json")
@@ -77,11 +77,11 @@ func TestTheWrittenRubricIsOrdered(t *testing.T) {
 	assert.Equal(t, string(a), string(b), "two writes of one rubric are one file")
 
 	text := string(a)
-	assert.Less(t, strings.Index(text, `"type"`), strings.Index(text, `"dimensions"`))
+	assert.Less(t, strings.Index(text, `"alpha"`), strings.Index(text, `"dimensions"`))
 	assert.Less(t, strings.Index(text, `"dimensions"`), strings.Index(text, `"pass_threshold"`))
-	assert.Less(t, strings.Index(text, `"pass_threshold"`), strings.Index(text, `"alpha"`),
-		"anything the service adds later follows, sorted, rather than being dropped")
-	assert.Contains(t, text, `"zeta"`, "and it is kept, because dropping it loses the artifact")
+	assert.Less(t, strings.Index(text, `"pass_threshold"`), strings.Index(text, `"type"`))
+	assert.Contains(t, text, `"alpha"`, "unknown fields are preserved for future authoring contracts")
+	assert.Contains(t, text, `"zeta"`)
 }
 
 // A payload this does not understand is written whole. Losing a generated
@@ -90,10 +90,11 @@ func TestAnUnrecognizedRubricPayloadIsWrittenWhole(t *testing.T) {
 	dir := t.TempDir()
 
 	noDimensions := filepath.Join(dir, "a.json")
-	require.NoError(t, writeRubric(noDimensions, json.RawMessage(`{"definition":{"type":"prompt"}}`)))
+	prompt := `{"definition":{"type":"prompt","prompt_text":"Authored prompt","dimensions":[{"id":"prompt-only"}]}}`
+	require.NoError(t, writeRubric(noDimensions, json.RawMessage(prompt)))
 	body, err := os.ReadFile(noDimensions) //nolint:gosec // this test's own temp dir
 	require.NoError(t, err)
-	assert.Contains(t, string(body), "prompt")
+	assert.JSONEq(t, prompt, string(body), "prompt-based evaluators keep their separate authoring contract")
 
 	noEnvelope := filepath.Join(dir, "b.json")
 	require.NoError(t, writeRubric(noEnvelope, json.RawMessage(`{"something":"else"}`)))

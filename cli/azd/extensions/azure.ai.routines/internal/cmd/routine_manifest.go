@@ -12,8 +12,6 @@ import (
 
 	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
-
-	"gopkg.in/yaml.v3"
 )
 
 // readRoutineManifest reads and parses a routine manifest from a YAML or JSON file.
@@ -35,25 +33,28 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 		)
 	}
 
-	var r routines.Routine
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, &r); err != nil {
+		r, err := routines.ParseAuthoringYAML(data)
+		if err != nil {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidRoutineManifest,
 				fmt.Sprintf("failed to parse routine manifest %s: %v", path, err),
 				"ensure the file is valid YAML and matches the routine schema",
 			)
 		}
+		return r, nil
 	case ".json", "":
-		if err := json.Unmarshal(data, &r); err != nil {
+		r, err := routines.ParseAuthoringJSON(data)
+		if err != nil {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidRoutineManifest,
 				fmt.Sprintf("failed to parse routine manifest %s: %v", path, err),
 				"ensure the file is valid JSON and matches the routine schema",
 			)
 		}
+		return r, nil
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidRoutineManifest,
@@ -61,8 +62,6 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 			"use a .yaml, .yml, or .json file",
 		)
 	}
-
-	return &r, nil
 }
 
 // mergeRoutineFromFile copies non-zero fields from file into body only when the

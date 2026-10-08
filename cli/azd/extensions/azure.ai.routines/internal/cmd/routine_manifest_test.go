@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -55,7 +56,7 @@ triggers:
     at: "2026-01-01T00:00:00Z"
 action:
   type: invoke_agent_responses_api
-  agent_name: yaml-agent-name
+  agentName: yaml-agent-name
 `
 	path := filepath.Join(t.TempDir(), "routine.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0600))
@@ -66,6 +67,50 @@ action:
 	assert.Equal(t, "timer", got.Triggers["default"].Type)
 	require.NotNil(t, got.Action)
 	assert.Equal(t, "yaml-agent-name", got.Action.AgentName)
+}
+
+func TestReadRoutineManifest_RejectsSnakeCaseJSONAndYAML(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		extension string
+		contents  string
+		wantKey   string
+		wantNew   string
+	}{
+		{
+			name: "json", extension: ".json",
+			contents: `{"action":{"type":"invoke_agent_responses_api","agent_name":"agent"}}`,
+			wantKey:  "agent_name", wantNew: "agentName",
+		},
+		{
+			name: "yaml", extension: ".yaml",
+			contents: "triggers:\n  default:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n",
+			wantKey:  "cron_expression", wantNew: "cronExpression",
+		},
+		{
+			name: "yaml numeric trigger", extension: ".yaml",
+			contents: "triggers:\n  1:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n",
+			wantKey:  "cron_expression", wantNew: "cronExpression",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "routine"+test.extension)
+			require.NoError(t, os.WriteFile(path, []byte(test.contents), 0o600))
+
+			_, err := readRoutineManifest(path)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+			assert.Contains(t, localErr.Message, test.wantKey)
+			assert.Contains(t, localErr.Message, test.wantNew)
+		})
+	}
 }
 
 func TestReadRoutineManifest_FileNotFound(t *testing.T) {

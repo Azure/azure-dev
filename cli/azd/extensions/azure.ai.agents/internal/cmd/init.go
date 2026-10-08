@@ -50,7 +50,7 @@ type initFlags struct {
 	acrConnection     string
 	modelDeployment   string
 	model             string
-	manifestPointer   string
+	templatePointer   string
 	agentName         string
 	agentNameExplicit bool
 	description       string
@@ -311,7 +311,7 @@ func validateInitAgentName(name string) (string, error) {
 	return name, nil
 }
 
-// absolutizeRelativeManifestPaths converts the -m manifest pointer to absolute
+// absolutizeRelativeTemplatePaths converts the template pointer to absolute
 // when it refers to a local path so it remains valid after ensureProject
 // changes into a newly created project directory. URLs and already-absolute
 // paths are left unchanged. Errors here are surfaced because they indicate a
@@ -324,23 +324,23 @@ func validateInitAgentName(name string) (string, error) {
 // to absolute before ensureProject changes into the new project folder would
 // cause that rewrite to produce a "..\<src>" path that escapes the project
 // directory.
-func absolutizeRelativeManifestPaths(flags *initFlags) error {
-	if flags.manifestPointer == "" {
+func absolutizeRelativeTemplatePaths(flags *initFlags) error {
+	if flags.templatePointer == "" {
 		return nil
 	}
-	if strings.HasPrefix(flags.manifestPointer, "http://") ||
-		strings.HasPrefix(flags.manifestPointer, "https://") {
+	if strings.HasPrefix(flags.templatePointer, "http://") ||
+		strings.HasPrefix(flags.templatePointer, "https://") {
 		return nil
 	}
-	if filepath.IsAbs(flags.manifestPointer) {
+	if filepath.IsAbs(flags.templatePointer) {
 		return nil
 	}
 
-	abs, err := filepath.Abs(flags.manifestPointer)
+	abs, err := filepath.Abs(flags.templatePointer)
 	if err != nil {
-		return fmt.Errorf("resolve manifest path: %w", err)
+		return fmt.Errorf("resolve template path: %w", err)
 	}
-	flags.manifestPointer = abs
+	flags.templatePointer = abs
 	return nil
 }
 
@@ -353,8 +353,8 @@ func folderNameStrippingParenSuffix(title string) string {
 
 // parseGitHubUrlNaive parses public GitHub file URLs whose branch is a
 // single path segment.
-func parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
-	parsedURL, err := url.Parse(manifestPointer)
+func parseGitHubUrlNaive(templatePointer string) *GitHubUrlInfo {
+	parsedURL, err := url.Parse(templatePointer)
 	if err != nil {
 		return nil
 	}
@@ -660,12 +660,12 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 // caller intent.
 func canReuseExistingAgentConfiguration(
 	flags *initFlags,
-	manifestDetectedButDeclined bool,
+	templateDetectedButDeclined bool,
 	srcBlocksReuse bool,
 ) bool {
-	return flags.manifestPointer == "" &&
+	return flags.templatePointer == "" &&
 		!flags.force &&
-		!manifestDetectedButDeclined &&
+		!templateDetectedButDeclined &&
 		!agentDefiningFlagsSet(flags, srcBlocksReuse)
 }
 
@@ -674,16 +674,20 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "init [<path>] [-m <azure.yaml pointer>] [--src <source directory>]",
+		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
-Unified projects:
-When -m points at a unified azure.yaml (a project manifest that declares
-services with host: azure.ai.project / azure.ai.agent / ...), that azure.yaml
+Azure.yaml projects:
+When -t points at an azure.yaml project document that declares
+services with host: azure.ai.project / azure.ai.agent / ..., that azure.yaml
 is adopted as the project manifest and its referenced files are placed at the
 project root. Standalone agent definitions and AgentManifest template wrappers
 are rejected with migration guidance.
+
+Compatibility:
+--manifest / -m is deprecated and retained for compatibility. Use
+--template / -t instead.
 
 Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
@@ -716,17 +720,17 @@ agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
 
 Use --agent-name to choose a unique Foundry agent name when initializing from
-a reusable unified project.
+a reusable azure.yaml project.
 
 File Exclusions:
 A default .agentignore file is generated to control which files are excluded
 from code-deploy ZIP packaging (uses .gitignore syntax).`,
-		Example: `  # Adopt a sample's unified azure.yaml as the project manifest
-  azd ai agent init -m ./azure.yaml
-  azd ai agent init -m https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
+		Example: `  # Adopt a sample's azure.yaml as the project manifest
+  azd ai agent init -t ./azure.yaml
+  azd ai agent init -t https://github.com/Azure-Samples/<repo>/blob/main/azure.yaml
 
-  # Adopt a unified project with a unique Foundry agent name
-  azd ai agent init -m ./azure.yaml --agent-name my-unique-agent
+  # Adopt an azure.yaml project with a unique Foundry agent name
+  azd ai agent init -t ./azure.yaml --agent-name my-unique-agent
 
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
@@ -746,8 +750,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --no-prompt --kind prompt --agent-name my-agent \
     --project-id "<resource-id>" --model-deployment gpt-4.1-mini
 
-  # Non-interactive unified project adoption
-  azd ai agent init --no-prompt -m ./azure.yaml --project-id "<resource-id>"
+  # Non-interactive azure.yaml project adoption
+  azd ai agent init --no-prompt -t ./azure.yaml --project-id "<resource-id>"
 
   # Bring your own pre-built image (no source scaffolding, Dockerfile-based build setup, or ACR setup)
   azd ai agent init --no-prompt --agent-name my-agent \
@@ -770,7 +774,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				flags.env = extCtx.Environment
 			}
 
-			// Resolve optional positional argument into --manifest or --src
+			if err := validateTemplateFlagAliases(cmd); err != nil {
+				return err
+			}
+
+			// Resolve optional positional argument into --template or --src
 			if len(args) == 1 {
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
@@ -780,12 +788,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
 			}
 
-			// Capture whether the user explicitly provided a manifest (via -m flag
+			// Capture whether the user explicitly provided a template (via -t flag
 			// or positional argument) BEFORE the auto-detection logic below may also
-			// set flags.manifestPointer. This drives the opinionated-defaults path.
-			userProvidedManifest := flags.manifestPointer != ""
-			if userProvidedManifest {
-				if err := checkNotDirectory(flags.manifestPointer); err != nil {
+			// set flags.templatePointer. This drives the opinionated-defaults path.
+			userProvidedTemplate := flags.templatePointer != ""
+			if userProvidedTemplate {
+				if err := checkNotDirectory(flags.templatePointer); err != nil {
 					return err
 				}
 			}
@@ -795,20 +803,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 			// Capture explicit inputs before discovery/scaffolding fills internal defaults.
 			voiceInputErr := validateVoiceInitOptions(cmd, len(args) > 0 && flags.src != "")
-			if voiceSpecified || (flags.manifestPointer == "" &&
+			if voiceSpecified || (flags.templatePointer == "" &&
 				strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)) {
 				if voiceInputErr != nil {
 					return voiceInputErr
 				}
 			}
-			isPromptVoice := flags.manifestPointer == "" &&
+			isPromptVoice := flags.templatePointer == "" &&
 				strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if flags.image != "" {
 				if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
 					return err
 				}
 			}
-			if !userProvidedManifest {
+			if !userProvidedTemplate {
 				if err := validateFastPathAgentName(flags, isPromptVoice); err != nil {
 					return err
 				}
@@ -830,8 +838,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			printBanner(cmd.OutOrStdout())
 
 			var cachedExplicitAzureYaml []byte
-			if userProvidedManifest {
-				content, cached, err := validateLocalExplicitAzureYaml(flags.manifestPointer)
+			if userProvidedTemplate {
+				content, cached, err := validateLocalExplicitAzureYaml(flags.templatePointer)
 				if err != nil {
 					return err
 				}
@@ -841,7 +849,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 			sourceValidated := false
 			explicitSource := cmd.Flags().Changed("src") ||
-				(len(args) > 0 && flags.src != "" && flags.manifestPointer == "")
+				(len(args) > 0 && flags.src != "" && flags.templatePointer == "")
 			if explicitSource {
 				if err := validateExplicitInitSource(ctx, azdClient, flags.src); err != nil {
 					return err
@@ -913,7 +921,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			// Explicit YAML input is authoritative and must be a unified azure.yaml.
-			if userProvidedManifest {
+			if userProvidedTemplate {
 				content := cachedExplicitAzureYaml
 				if content == nil {
 					var err error
@@ -934,7 +942,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 			}
 
-			// With no explicit manifest, --kind selects the runtime directly. A
+			// With no explicit template, --kind selects the runtime directly. A
 			// harness is an optional capability of kind: prompt, not a separate
 			// agent kind. Omitting --kind preserves the existing hosted flow.
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
@@ -967,7 +975,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			// Validate --kind prompt-voice and its incompatible options before either
 			// synthesis branch. The image and prompt-voice fast paths both mutate
-			// flags.manifestPointer, so validating inside one branch is unreachable
+			// flags.templatePointer, so validating inside one branch is unreachable
 			// when the other runs first (e.g. --kind prompt-voice --image would
 			// otherwise silently create a hosted image agent).
 			if isPromptVoice {
@@ -978,12 +986,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						"a voice agent is managed and has no container image; drop --image",
 					)
 				}
-				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.manifestPointer != "" {
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.templatePointer != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--kind prompt-voice cannot be combined with --manifest",
+						"--kind prompt-voice cannot be combined with --template",
 						"a voice agent is synthesized from --agent-name/--model; "+
-							"drop --manifest, or omit --kind to adopt the manifest as-is",
+							"drop --template, or omit --kind to adopt the template as-is",
 					)
 				}
 			}
@@ -1124,7 +1132,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzureYaml); err != nil {
 							return err
 						}
-						flags.manifestPointer = selectedTemplate.Source
+						flags.templatePointer = selectedTemplate.Source
 						content, err := loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
 						if err != nil {
 							return err
@@ -1179,7 +1187,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return exterrors.Validation(
 							exterrors.CodeInvalidAgentManifest,
 							fmt.Sprintf("unsupported agent template type %q", selectedTemplate.EffectiveType()),
-							"Choose a unified azure.yaml or full azd repository template.",
+							"Choose an azure.yaml project document or full azd repository template.",
 						)
 					}
 
@@ -1250,8 +1258,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			defaultAgentModel,
 		))
 
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or supported GitHub URI to a unified azure.yaml project document")
+	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "",
+		"Path or supported GitHub URI to an azure.yaml project document")
+	cmd.Flags().StringVarP(&flags.templatePointer, "manifest", "m", "",
+		"Deprecated alias for --template")
+	_ = cmd.Flags().MarkDeprecated("manifest", "use --template/-t instead")
 
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
 		"Foundry agent name to write to azure.yaml. Reusing a name creates a new version of the existing agent.")
@@ -1262,7 +1273,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"Source directory for generated agents, or target directory when adopting a unified project")
+		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		fmt.Sprintf("Protocols supported by the agent (%s). Can be specified multiple times.", knownProtocolNames()))
@@ -1325,8 +1336,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"full ARM resource ID. The policy must already exist; azd attaches it, it does not "+
 			"create it. When omitted, you are prompted to pick from the policies on the account; "+
 			"with --no-prompt no policy is attached. "+
-			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting unified "+
-			"azure.yaml or a full repository template; declare policies in azure.yaml instead.")
+			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an "+
+			"azure.yaml project document or a full repository template; declare policies in azure.yaml instead.")
 
 	return cmd
 }
@@ -1347,7 +1358,7 @@ func fastPathProjectTarget(
 }
 
 func validateFastPathAgentName(flags *initFlags, isPromptVoice bool) error {
-	if flags.manifestPointer != "" || (flags.image == "" && !isPromptVoice) {
+	if flags.templatePointer != "" || (flags.image == "" && !isPromptVoice) {
 		return nil
 	}
 	if flags.agentName == "" {
@@ -1385,7 +1396,7 @@ func validateInitVoiceInput(flags *initFlags, specified bool) error {
 		return nil
 	}
 	voiceKind := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
-	if flags.manifestPointer != "" || flags.image != "" ||
+	if flags.templatePointer != "" || flags.image != "" ||
 		(flags.kind != "" && !voiceKind) || (flags.noPrompt && !voiceKind) {
 		return unusedInitVoiceError()
 	}
@@ -1460,7 +1471,7 @@ func validateUnifiedInitFlags(cmd *cobra.Command) error {
 	return exterrors.Validation(
 		exterrors.CodeConflictingArguments,
 		fmt.Sprintf(
-			"unified azure.yaml adoption cannot apply these explicitly set inputs: %s",
+			"azure.yaml project adoption cannot apply these explicitly set inputs: %s",
 			strings.Join(conflicts, ", "),
 		),
 		"Remove the conflicting flags or update the agent services in azure.yaml before running init.",
@@ -1803,7 +1814,7 @@ func isLocalFilePath(path string) bool {
 }
 
 // checkNotDirectory returns a validation error when path is a directory
-// instead of a unified azure.yaml file.
+// instead of an azure.yaml project document.
 func checkNotDirectory(path string) error {
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
@@ -1812,8 +1823,20 @@ func checkNotDirectory(path string) error {
 
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
-		fmt.Sprintf("'%s' is a directory, not a unified azure.yaml file", safeInitSourceDisplay(path)),
-		"the --manifest flag must point to a unified azure.yaml file, not a directory",
+		fmt.Sprintf("'%s' is a directory, not an azure.yaml project document", safeInitSourceDisplay(path)),
+		"the --template flag must point to an azure.yaml project document, not a directory",
+	)
+}
+
+func validateTemplateFlagAliases(cmd *cobra.Command) error {
+	if !cmd.Flags().Changed("template") || !cmd.Flags().Changed("manifest") {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"cannot pass both --template and deprecated --manifest",
+		"use --template/-t only",
 	)
 }
 
@@ -1862,15 +1885,15 @@ func applyPositionalArg(arg string, flags *initFlags, cmd *cobra.Command) error 
 	}
 
 	if isManifest {
-		if cmd.Flags().Changed("manifest") {
+		if cmd.Flags().Changed("template") || cmd.Flags().Changed("manifest") {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				"cannot pass both a positional argument and --manifest",
+				"cannot pass both a positional argument and --template",
 				"use either 'azd ai agent init <path>' or "+
-					"'azd ai agent init -m <manifest>', not both",
+					"'azd ai agent init -t <template>', not both",
 			)
 		}
-		flags.manifestPointer = arg
+		flags.templatePointer = arg
 	}
 
 	if isSrc {
@@ -1918,7 +1941,7 @@ func (a *InitAction) addVoiceAgentToProject(
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrappers cannot be generated by the standalone voice init flow",
-			"use a unified azure.yaml that declares both the hosted target and the voice wrapper",
+			"use an azure.yaml project document that declares both the hosted target and the voice wrapper",
 		)
 	}
 
@@ -2651,7 +2674,7 @@ func validateRegistryConnectionFlag(
 	if image == "" && !hasAzureYamlInput {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--registry-connection requires --image when no unified azure.yaml input is provided",
+			"--registry-connection requires --image when no azure.yaml project input is provided",
 			"Pass --image <registry/image:tag> or provide an image on the hosted agent service in azure.yaml",
 		)
 	}

@@ -813,7 +813,7 @@ same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
 flow as other current Hosted Agent and `invocations_ws` samples:
 
 ```powershell
-azd ai agent init -m .\path\to\azure.yaml
+azd ai agent init -t .\path\to\azure.yaml
 ```
 
 The local path can be replaced with its public GitHub URL after the sample is

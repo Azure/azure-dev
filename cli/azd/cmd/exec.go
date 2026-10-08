@@ -199,25 +199,30 @@ var scriptExtensions = map[string]bool{
 	".py": true, ".rb": true, ".pl": true,
 }
 
-const shellSyntaxCharacters = "'\"`$<>()|&;*?[]{}~^%!"
-const shellExpansionCharacters = "'\"`$*?[]{}~^%!"
+const shellSyntaxCharacters = "'\"`$<>()|&;"
+const explicitShellSyntaxCharacters = shellSyntaxCharacters + "*?[]{}~^%!"
 
 func shouldFailOnMissingScript(input, shell string) bool {
-	if shell != "" &&
-		(hasShellSyntaxBeforePathBoundary(input) || hasShellSyntaxAfterLeadingPath(input)) {
+	if shell != "" {
+		return looksLikeClearScriptPath(input)
+	}
+	return looksLikeFilePath(input)
+}
+
+func looksLikeClearScriptPath(input string) bool {
+	input = strings.TrimSpace(input)
+	if input == "" ||
+		strings.IndexFunc(input, unicode.IsSpace) >= 0 ||
+		strings.ContainsAny(input, explicitShellSyntaxCharacters) {
 		return false
 	}
-	if !looksLikeFilePath(input) {
-		return false
-	}
-	if shell == "" {
+
+	if strings.ContainsAny(input, "/\\") {
 		return true
 	}
 
-	input = strings.TrimSpace(input)
-	firstWhitespace := strings.IndexFunc(input, unicode.IsSpace)
-	firstSeparator := strings.IndexAny(input, "/\\")
-	return firstWhitespace == -1 || (firstSeparator >= 0 && firstSeparator < firstWhitespace)
+	ext := strings.ToLower(filepath.Ext(input))
+	return scriptExtensions[ext]
 }
 
 func hasShellSyntaxBeforePathBoundary(input string) bool {
@@ -227,40 +232,6 @@ func hasShellSyntaxBeforePathBoundary(input string) bool {
 	}
 	firstSeparator := strings.IndexAny(input, "/\\")
 	return firstSeparator < 0 || firstShellSyntax < firstSeparator
-}
-
-func hasShellSyntaxAfterLeadingPath(input string) bool {
-	input = strings.TrimSpace(input)
-	firstSeparator := strings.IndexAny(input, "/\\")
-	if firstSeparator < 0 {
-		return false
-	}
-
-	searchFrom := firstSeparator + 1
-	foundShellSyntax := false
-	for searchFrom < len(input) {
-		offset := strings.IndexAny(input[searchFrom:], shellSyntaxCharacters)
-		if offset < 0 {
-			break
-		}
-		foundShellSyntax = true
-		syntaxIndex := searchFrom + offset
-		if strings.ContainsRune(shellExpansionCharacters, rune(input[syntaxIndex])) {
-			return true
-		}
-		ext := strings.ToLower(filepath.Ext(strings.TrimSpace(input[:syntaxIndex])))
-		if scriptExtensions[ext] {
-			return true
-		}
-		searchFrom = syntaxIndex + 1
-	}
-
-	if firstWhitespace := strings.IndexFunc(input, unicode.IsSpace); firstWhitespace > firstSeparator {
-		return strings.ContainsAny(input[firstWhitespace:], shellSyntaxCharacters)
-	}
-
-	ext := strings.ToLower(filepath.Ext(input))
-	return foundShellSyntax && !scriptExtensions[ext]
 }
 
 // looksLikeFilePath reports whether input appears to be a file path rather

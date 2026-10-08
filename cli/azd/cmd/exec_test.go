@@ -382,6 +382,14 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"explicit cmd delayed expansion", "!SCRIPT!", "cmd", false},
 		{"explicit cmd escape", "^deploy.cmd", "cmd", false},
 		{"glob without explicit shell", "./scripts/*.sh", "", true},
+		{"home path without explicit shell", "~/scripts/deploy", "", true},
+		{"environment path without explicit shell", "%TEMP%\\deploy", "", true},
+		{
+			"compact pipeline with extensionless leading path",
+			".\\deploy|.\\cleanup.ps1",
+			"pwsh",
+			false,
+		},
 		{
 			"explicit PowerShell pipeline with leading path",
 			".\\deploy.ps1 | Out-String",
@@ -392,7 +400,7 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
 		{"explicit shell operator without separator", "cat<deploy.sh", "bash", false},
-		{"explicit shell path with later operator", "./deploy&test.sh", "bash", true},
+		{"explicit shell path with later operator", "./deploy&test.sh", "bash", false},
 	}
 
 	for _, tt := range tests {
@@ -506,10 +514,23 @@ func TestExecAction_ExplicitShellLeadingPathExpansionFallsBackInline(t *testing.
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.Mkdir("scripts", 0o750))
 	for _, name := range []string{"a.sh", "b.sh"} {
-		require.NoError(t, os.WriteFile(filepath.Join("scripts", name), []byte("exit 0\n"), 0o600))
+		//nolint:gosec // G306: expanded shell fixtures must be directly executable.
+		require.NoError(t, os.WriteFile(
+			filepath.Join("scripts", name),
+			[]byte("#!/usr/bin/env bash\nexit 0\n"),
+			0o700,
+		))
 	}
+	//nolint:gosec // G306: pipeline fixtures must be directly executable.
+	require.NoError(t, os.WriteFile("emit", []byte("#!/usr/bin/env bash\necho success\n"), 0o700))
+	//nolint:gosec // G306: pipeline fixtures must be directly executable.
+	require.NoError(t, os.WriteFile("cleanup.sh", []byte("#!/usr/bin/env bash\ncat >/dev/null\n"), 0o700))
 
-	for _, input := range []string{"./scripts/*.sh", "./scripts/{a,b}.sh"} {
+	for _, input := range []string{
+		"./scripts/*.sh",
+		"./scripts/{a,b}.sh",
+		"./emit|./cleanup.sh",
+	} {
 		t.Run(input, func(t *testing.T) {
 			action := &execAction{
 				env:             environment.NewWithValues("test", nil),
@@ -639,7 +660,7 @@ func TestExecAction_ExplicitShellClearInvalidPathDoesNotFallback(t *testing.T) {
 			global: &internal.GlobalCommandOptions{},
 			shell:  "cmd",
 		},
-		args: []string{`scripts\deploy|test.cmd`},
+		args: []string{`scripts\deploy.cmd`},
 	}
 
 	_, err := action.Run(t.Context())

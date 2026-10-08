@@ -120,11 +120,6 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	return env, nil
 }
 
-// GetReadOnly returns a remote environment snapshot without modifying local storage.
-func (sbd *StorageBlobDataStore) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
-	return sbd.Get(ctx, name)
-}
-
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
@@ -163,9 +158,7 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 
 	envMap, err := godotenv.Parse(dotEnvBuffer)
 	if err != nil {
-		env.replaceState(make(map[string]string), make(map[string]struct{}))
-	} else {
-		env.replaceState(envMap, make(map[string]struct{}))
+		return fmt.Errorf("loading .env: %w", err)
 	}
 
 	// Reload config file
@@ -176,13 +169,14 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 
 	defer configBuffer.Close()
 
-	if cfg, err := sbd.configManager.Load(configBuffer); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewEmptyConfig()
+	cfg, err := sbd.configManager.Load(configBuffer)
+	if errors.Is(err, os.ErrNotExist) {
+		cfg = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
 	}
+	env.replaceState(envMap, make(map[string]struct{}))
+	env.Config = cfg
 
 	if env.Name() != "" {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

@@ -18,11 +18,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
+	"github.com/theckman/yacspin"
 )
 
 type lineCapturer struct {
 	mu       sync.Mutex
 	captured []string
+	raw      strings.Builder
+}
+
+func (l *lineCapturer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.raw.String()
 }
 
 func (l *lineCapturer) lines() []string {
@@ -36,6 +44,7 @@ func (l *lineCapturer) lines() []string {
 func (l *lineCapturer) Write(bytes []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	_, _ = l.raw.Write(bytes)
 	var sb strings.Builder
 	for i, b := range bytes {
 		if b == '\n' {
@@ -104,6 +113,126 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 
 	c.StopSpinner(ctx, "Done.", StepDone)
 	require.Eventually(t, func() bool { return len(lines.lines()) == 5 }, waitTimeout, pollInterval)
+}
+
+func TestAskerConsole_Spinner_Idempotent(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		tty  bool
+		term string
+	}{
+		{name: "non-tty", term: "xterm"},
+		{name: "tty", tty: true, term: "xterm"},
+		{name: "dumb-tty", tty: true, term: "dumb"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TERM", tt.term)
+			t.Setenv("NO_COLOR", "1")
+			writer := &lineCapturer{}
+			handles := &lineCapturer{}
+			console := NewConsole(false, tt.tty, Writers{Output: writer},
+				ConsoleHandles{Stdin: strings.NewReader(""), Stdout: handles, Stderr: handles},
+				&output.NoneFormatter{}, nil)
+			c, ok := console.(*AskerConsole)
+			require.True(t, ok)
+			t.Cleanup(func() { c.StopSpinner(t.Context(), "", Step) })
+			// Keep animation ticks out of assertions about paints triggered by API calls.
+			require.NoError(t, c.spinner.Frequency(time.Hour))
+			if tt.tty {
+				c.handleResize(120)
+			}
+			waitForTitle := func(title string, before int) {
+				t.Helper()
+				require.Eventually(t, func() bool {
+					return strings.Count(writer.String(), title) > before
+				}, 2*time.Second, 5*time.Millisecond)
+			}
+
+			c.ShowSpinner(t.Context(), "Working", Step)
+			waitForTitle("Working", 0)
+			before := writer.String()
+			var callers sync.WaitGroup
+			for range 8 {
+				callers.Go(func() { c.ShowSpinner(t.Context(), "Working", Step) })
+			}
+			callers.Wait()
+			require.Never(t, func() bool { return writer.String() != before },
+				100*time.Millisecond, 5*time.Millisecond)
+			require.Equal(t, yacspin.SpinnerRunning, c.spinner.Status())
+
+			const nextTitle = "Working on the next operation"
+			c.ShowSpinner(t.Context(), nextTitle, Step)
+			waitForTitle(nextTitle, 0)
+
+			require.NoError(t, c.spinner.Pause())
+			count := strings.Count(writer.String(), nextTitle)
+			c.ShowSpinner(t.Context(), nextTitle, Step)
+			require.Equal(t, yacspin.SpinnerRunning, c.spinner.Status())
+			waitForTitle(nextTitle, count)
+
+			require.NoError(t, c.DoInteraction(func() error {
+				require.Equal(t, yacspin.SpinnerPaused, c.spinner.Status())
+				return nil
+			}))
+			require.Equal(t, yacspin.SpinnerRunning, c.spinner.Status())
+
+			if tt.tty {
+				c.handleResize(20)
+				waitForTitle("Worki...", 0)
+				count = strings.Count(writer.String(), nextTitle)
+				c.handleResize(120)
+				waitForTitle(nextTitle, count)
+			}
+
+			for _, status := range []struct {
+				format SpinnerUxType
+				text   string
+			}{
+				{StepDone, "Done:"},
+				{StepFailed, "Failed:"},
+				{StepWarning, "Warning:"},
+				{StepSkipped, "Skipped:"},
+			} {
+				c.StopSpinner(t.Context(), nextTitle, status.format)
+				require.Equal(t, yacspin.SpinnerStopped, c.spinner.Status())
+				require.Contains(t, writer.String(), status.text+" "+nextTitle)
+				count = strings.Count(writer.String(), nextTitle)
+				c.ShowSpinner(t.Context(), nextTitle, Step)
+				waitForTitle(nextTitle, count)
+			}
+			c.StopSpinner(t.Context(), "", Step)
+			require.Equal(t, yacspin.SpinnerStopped, c.spinner.Status())
+			require.Empty(t, handles.String(), "spinner output must stay on the injected writer")
+		})
+	}
+}
+
+func TestAskerConsole_Spinner_RendererRouting(t *testing.T) {
+	t.Run("json", func(t *testing.T) {
+		writer := &lineCapturer{}
+		c := NewConsole(false, false, Writers{Output: writer},
+			ConsoleHandles{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard},
+			&output.JsonFormatter{}, nil)
+		c.ShowSpinner(t.Context(), "Working", Step)
+		c.ShowSpinner(t.Context(), "Working", Step)
+		c.ShowSpinner(t.Context(), "Next", Step)
+		c.StopSpinner(t.Context(), "Next", StepDone)
+		require.False(t, c.IsSpinnerRunning(t.Context()))
+		require.Empty(t, writer.String())
+	})
+
+	t.Run("previewer", func(t *testing.T) {
+		c := newTestAskerConsole(t)
+		c.ShowPreviewer(t.Context(), nil)
+		t.Cleanup(func() { c.StopPreviewer(t.Context(), false) })
+		previewer := c.previewer.Load()
+		require.NotNil(t, previewer)
+		for _, title := range []string{"Working", "Working", "Next"} {
+			c.ShowSpinner(t.Context(), title, Step)
+			require.Same(t, previewer, c.previewer.Load())
+			require.False(t, c.IsSpinnerRunning(t.Context()))
+		}
+	})
 }
 
 func TestAskerConsoleExternalPrompt(t *testing.T) {
@@ -549,8 +678,9 @@ func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {
 // Before 1.25.0, azd up used a workflow runner that invoked azd provision + azd deploy as
 // sub-commands. Each ran independently and hooks used ShowPreviewer normally — output was visible.
 //
-// The fix moved PausePreviewer() to only be called when the deploy progress table ticker
-// actually starts (publish/deploy phase), not upfront before any graph steps execute.
+// The first fix moved PausePreviewer() to the publish/deploy phase, restoring output for hooks
+// that run before the tracker starts. The up graph must also ResumePreviewer before its terminal
+// postdeploy command hook so that hook receives a real previewer writer instead of io.Discard.
 func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	formatter, err := output.NewFormatter(string(output.NoneFormat))
 	require.NoError(t, err)
@@ -602,7 +732,7 @@ func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	// After ResumePreviewer, ShowPreviewer should work again.
 	ps.ResumePreviewer()
 	writerAfterResume := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
-		Title:        "postprovision Hook Output",
+		Title:        "postdeploy Hook Output",
 		MaxLineCount: 8,
 	})
 	require.NotEqual(t, io.Discard, writerAfterResume,

@@ -1,0 +1,30 @@
+Create a directory in a hosted agent session.
+
+Creates the specified directory in the session's filesystem.
+Parent directories are created as needed.
+
+Agent details are automatically resolved from the azd environment.
+
+Usage
+  azd ai agent files mkdir [dir] [flags]
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+  -d, --dir string           : Remote directory path to create
+  -s, --session-id string    : Session ID override (defaults to last invoke session)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for mkdir
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Create a directory (agent auto-detected)
+    azd ai agent files mkdir /data/output
+
+  Create with flags
+    azd ai agent files mkdir --dir /data/output --session-id <session-id>

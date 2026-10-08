@@ -20,7 +20,11 @@ reporter.Report(ctx, telemetry.Event{
 The example is illustrative; this extension does not currently emit a product
 usage event through this interface. Existing provisioning span attributes are
 unchanged by this adapter. Add an event only after its product question, bounded
-values, documentation, and privacy review are agreed.
+values, documentation, and privacy review are agreed. Before emitting, declare each
+`ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
+declaration only when its meaning, allowed values, classification, and purpose are
+identical, otherwise declare a distinct key — as enforced by
+`go test ./extensions/telemetry`.
 
 `Report` has no return value and never changes command or provider behavior. It
 uses a one-second timeout, does not retry, and does not log attribute values or
@@ -60,6 +64,18 @@ services:
 ```
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
+
+### Provisioning identity
+
+For a new Foundry project, the provider asks the azd host for the current principal's object ID and type in the selected subscription's resource tenant when `AZURE_PRINCIPAL_ID` is absent. Explicit principal IDs are read from layer inputs first, then the active azd environment, then the host process environment. `AZURE_PRINCIPAL_TYPE` defaults to `User` for an explicit ID; set it to `ServicePrincipal` when supplying a service principal's object ID.
+
+To disable the developer role assignment, persist an empty value with `azd env set AZURE_PRINCIPAL_ID ""` or supply an empty layer input. These values take precedence over a process-level value and skip principal lookup.
+
+When principal resolution changes the identity, cached on-disk parameters are reloaded with the resolved `AZURE_PRINCIPAL_ID` and `AZURE_PRINCIPAL_TYPE`. Literal values in JSON and Bicep parameter files still override provider defaults.
+
+If an on-disk parameter file supplies a different `principalId` without `principalType`, the template's type default applies instead of the deploying identity's type. Supply both parameters when the target identity differs from that default.
+
+### Infrastructure layers
 
 For projects that use `infra.layers`, declare exactly one layer with
 `provider: microsoft.foundry` and leave the root provider available for the
@@ -109,6 +125,16 @@ guidance instead of searching all subscription regions.
 Use `--force` with an explicit `--project-id` or `--project-endpoint` when
 replacing a different configured project. The command rejects `--force`
 without an explicit target instead of silently ignoring the flag.
+
+Use `--new-project` when a new project must be created even if the workspace
+already has a project endpoint or project ID configured:
+
+```sh
+azd ai project add --new-project
+```
+
+`--new-project` cannot be combined with `--project-id` or
+`--project-endpoint`.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment

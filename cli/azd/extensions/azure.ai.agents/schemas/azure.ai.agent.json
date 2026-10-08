@@ -86,8 +86,21 @@
     },
     "skills": {
       "type": "array",
-      "description": "Foundry skill names available to the prompt agent.",
-      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      "description": "Foundry skills available to the prompt agent. A string selects a locally resolved skill; an object may pin an existing skill version.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1, "pattern": "\\S" },
+          {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+              "version": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        ]
+      }
     },
     "language": {
       "type": "string",
@@ -245,15 +258,6 @@
     "metadata": {
       "type": "object",
       "description": "Optional metadata key-value pairs for the agent.",
-      "properties": {
-        "tags": {
-          "description": "Agent tags. Lists are stored as a JSON-encoded string in Foundry metadata; the encoded value must not exceed 512 characters.",
-          "oneOf": [
-            { "type": "string", "maxLength": 512 },
-            { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
-          ]
-        }
-      },
       "additionalProperties": true
     },
     "protocols": {
@@ -499,11 +503,11 @@
       "properties": {
         "store": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "description": { "type": "string" },
-        "chat_model": { "type": "string", "minLength": 1 },
-        "embedding_model": { "type": "string", "minLength": 1 },
+        "chatModel": { "type": "string", "minLength": 1 },
+        "embeddingModel": { "type": "string", "minLength": 1 },
         "scope": { "type": "string", "minLength": 1 },
-        "update_delay": { "type": "integer", "minimum": 0 },
-        "max_memories": { "type": "integer", "minimum": 1 },
+        "updateDelay": { "type": "integer", "minimum": 0 },
+        "maxMemories": { "type": "integer", "minimum": 1 },
         "options": { "$ref": "#/definitions/PromptMemoryOptions" }
       },
       "required": ["store"],
@@ -512,11 +516,11 @@
     "PromptMemoryOptions": {
       "type": "object",
       "properties": {
-        "chat_summary_enabled": { "type": "boolean" },
-        "user_profile_enabled": { "type": "boolean" },
-        "procedural_memory_enabled": { "type": "boolean" },
-        "default_ttl_seconds": { "type": "integer", "minimum": 0 },
-        "user_profile_details": { "type": "string" }
+        "chatSummaryEnabled": { "type": "boolean" },
+        "userProfileEnabled": { "type": "boolean" },
+        "proceduralMemoryEnabled": { "type": "boolean" },
+        "defaultTtlSeconds": { "type": "integer", "minimum": 0 },
+        "userProfileDetails": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -525,7 +529,7 @@
       "description": "Enablement configuration for GitHub Copilot built-in tools.",
       "properties": {
         "type": { "const": "github_copilot_toolset_preview" },
-        "default_config": {
+        "defaultConfig": {
           "type": "object",
           "properties": {
             "enabled": { "type": "boolean", "default": true }
@@ -775,9 +779,9 @@
       "properties": {
         "idleTimeoutSeconds": {
           "type": "integer",
-          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–14400 (inclusive). Defaults to 900 when omitted.",
           "minimum": 120,
-          "maximum": 3600
+          "maximum": 14400
         }
       },
       "additionalProperties": false
@@ -814,13 +818,13 @@
         },
         "inputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the request text: $ root, dotted members, array indexes, and [*] wildcards. Required when inputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
         "outputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the buffered response text: $ root, dotted members, array indexes, and [*] wildcards. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
@@ -876,8 +880,8 @@
       "type": "object",
       "description": "Locates the text to moderate inside a single server-sent event frame.",
       "properties": {
-        "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
-        "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
+        "eventType": { "type": "string", "pattern": "^\\S(?:.*\\S)?$", "description": "Exact value of the \"type\" field inside the event payload that this selector applies to, with no surrounding whitespace." },
+        "textField": { "type": "string", "pattern": "^[^\\s$](?:.*\\S)?$", "description": "Exact name of the field on the frame payload holding the text, for example \"delta\". Do not add surrounding whitespace or prefix it with \"$.\". Defaults to \"delta\" when omitted." }
       },
       "required": ["eventType"],
       "additionalProperties": false

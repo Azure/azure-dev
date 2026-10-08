@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.3 (2026-09-17)
+
+### Features Added
+
+- [[#10071]](https://github.com/Azure/azure-dev/pull/10071) Update the Microsoft Foundry meta-package to bundle the latest Foundry extension releases and require azd `>=1.32.0`.
+
 ## 1.0.0-beta.2 (2026-07-23)
 
 ### Features Added

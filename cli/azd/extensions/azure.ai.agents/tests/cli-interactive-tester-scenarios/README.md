@@ -29,13 +29,14 @@ and tell it what you want; it routes to a run skill and fans the work out to
 
 The orchestrator (or the run skill) **loads both profile files, merges them (local overrides
 shared), generates one run ID with seconds plus a short random suffix, derives
-`shared_agent_name = {prefix}-{shared_agent_suffix}-{run_id}`, and passes a per-scenario map as
+`shared_agent_name = {prefix}-{shared_agent_suffix}-{run_id}`, derives a bounded
+`foundry_project_name`, and passes a per-scenario map as
 `session_vars` on every `load_scenario`, `run_pre_hooks`, `start_session`, and
 `run_post_hooks` call**. For parallel-safe scenarios that map also includes the assigned
 `instance`, matching the `instance_id` passed to hooks and sessions. The scenario YAMLs
-reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{tenant}`
-(optional), `{shared_agent_name}`, and `{instance}` placeholders. The step-by-step driving
-rules those agents follow live in
+reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_version}`,
+`{model_sku}`, `{tenant}` (optional), `{shared_agent_name}`, `{foundry_project_name}`, and
+`{instance}` placeholders. The step-by-step driving rules those agents follow live in
 [`driving-mechanics.md`](./driving-mechanics.md).
 
 Most scenarios here declare **`pre:` hooks** (host-side setup such as resetting
@@ -179,10 +180,10 @@ Tier 0 (`tier0/`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
 them reuse that session credential.
 
-### GitHub login (manifest scenarios)
+### GitHub login (remote azure.yaml scenarios)
 
-The manifest scenarios (`1.03-init-from-azure-yaml-url`,
-`1.05-init-flag-agent-name`) download an agent manifest — and its sibling
+The remote project scenarios (`1.03-init-from-azure-yaml-url`,
+`1.05-init-flag-agent-name`) download a unified azure.yaml — and its sibling
 files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
 but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
 would otherwise drop into an **interactive GitHub login** mid-run. Like
@@ -333,11 +334,18 @@ in any order, any time.
 | `tier0/0.18-invoke-long-running-validation.yaml` | `invoke --long-running` / `--no-wait` help and invalid combinations |
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
 | `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
+| `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
+| `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
+| `tier0/0.22-state-stores-help-validation.yaml` | State Store command discovery, forward-pagination help, input-size guidance, and offline validation |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
+
+The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
+read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
+Tier 2 scenario checks the item lifecycle against an externally seeded store (see below).
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -368,6 +376,12 @@ post-hook cleanup serially.
 Each scenario declares a `requires:` field pointing to the Tier 1 scenario
 whose scaffold it deploys. The orchestrator **must** check this: if the
 prerequisite didn't PASS in the current run, the Tier 1b scenario is SKIPPED.
+When both `{model}` and `{model_sku}` are non-empty, each verifier replaces the
+scaffold's existing/default managed deployment with that model and SKU before
+provisioning, while preserving its deployment name. When `{model_version}` is
+non-empty, it also selects and verifies that exact version; otherwise the command
+resolves a version when the model and SKU identify one candidate. The replacement
+is skipped when either model or SKU is empty.
 
 ### Producer/consumer scaffold handoff
 
@@ -420,6 +434,8 @@ as their `cwd`.
 | `tier2/2.10-monitor-system.yaml` | `monitor --type system` |
 | `tier2/2.11-endpoint-update.yaml` | `endpoint update` |
 | `tier2/2.12-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
+| `tier2/2.13-invoke-latency.yaml` | Default-on platform latency, `--debug-latency=false`, and raw output against the shared Responses agent |
+| `tier2/2.14-state-stores-items.yaml` | Opt-in: State Store list/show, conditional item set, show, and repeat delete (requires external store seed) |
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
@@ -429,6 +445,17 @@ as their `cwd`.
 The shared Tier 2 agent supports the Responses protocol only. The suite does not yet cover
 successful Invocations calls or their session-bound memory semantics; that requires a separate
 Invocations-capable setup and lifecycle.
+
+**Opt-in State Store prerequisite:** After `2.00` deploys the shared agent, create a disposable,
+non-user-isolated store named `azd-state-stores-{run_id}` **for that agent** with the Foundry SDK
+or other store-creation tooling; `azd ai agent state-stores` cannot create a store. Run `2.14`
+only after this step and before `2.18` deletes the agent. Its pre-hook verifies the store exists
+and fails if absent; a missing store is never counted as a passed live test. The scenario uses
+only a run-unique item (`azd-probe-{run_id}`), which its post-hook removes even if a goal fails.
+Remove the disposable store using the seeding tool after the scenario, then run `2.99` teardown.
+A full Tier 2 sweep must arrange this seed between `2.00` and `2.14`; otherwise `2.14` fails
+its prerequisite rather than silently skipping the live check. Do not seed a user-isolated
+store: the CLI does not supply an end-user call ID for item operations.
 
 ## Tags
 
@@ -443,8 +470,8 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
-| traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:state-stores`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
+| traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy`, `manual-seed` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. `manual-seed` flags an opt-in scenario that needs an externally prepared fixture before it runs; filtering by this tag does not create the fixture. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
 
@@ -518,7 +545,7 @@ Two files in this directory drive the values:
 
 | File | Tracked? | Contents | Notes |
 |---|---|---|---|
-| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `shared_agent_suffix` |
+| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `model_version`, `model_sku`, `shared_agent_suffix` |
 | `profile.local.yaml` | ❌ gitignored | per-developer / per-CI overrides | required: `prefix`, `subscription`. optional: `tenant` (no default) |
 | `profile.local.yaml.example` | ✅ checked in | starter template | copy to `profile.local.yaml` and edit |
 
@@ -531,9 +558,12 @@ Variables exposed to scenarios via `session_vars`:
 | `{tenant}` | `profile.local.yaml` | optional, no default | scopes `az login` when provided and supplies product tenant pickers; when unset, omit `--tenant`, but fail without answering if a picker appears |
 | `{region}` | `profile.yaml` | `East US 2` | |
 | `{model}` | `profile.yaml` | `gpt-5.4-mini` | cheap/fast for tests |
+| `{model_version}` | `profile.yaml` | `2026-03-17` | optional exact version for Tier 1b/Tier 2 deployment replacement; clear it to allow unique-candidate resolution |
+| `{model_sku}` | `profile.yaml` | empty | optional Tier 1b/Tier 2 deployment SKU override |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
 | `{run_id}` | derived by orchestrator | 10-digit month/day/hour/minute/second timestamp plus 6 lowercase hexadecimal characters | Generated once per sweep and reused for artifacts, sessions, and resource identity. |
 | `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{run_id}` | Tier 2 subdirectory and agent name. Seconds plus the random suffix isolate concurrent runs. |
+| `{foundry_project_name}` | derived per scenario | bounded prefix plus the complete `{instance}` (Tier 1/1b) or `{run_id}` (Tier 2) | Foundry project name, deterministically truncated to at most 32 characters while preserving the run-unique suffix. Tier 1b reuses its prerequisite's exact value. |
 | `{instance}` | derived per scenario | `<scenario-key>-{run_id}` | Tier 0/Tier 1 parallel-safe identity; Tier 1b reuses its prerequisite's exact value. |
 | `{fixtures_dir}` | derived by orchestrator | `<scenarios-dir>/fixtures` | Tester-side absolute path to the `fixtures/` subdirectory (WSL-translated on Windows, native on Linux/macOS); used by pre-hooks to seed test fixture files |
 | `{prerequisite_scaffold_dir}` | returned by Tier 1 worker | verified absolute `produces:` path | Tier 1b only; exact scaffold directory from its declared prerequisite. |
@@ -546,11 +576,12 @@ cp profile.local.yaml.example profile.local.yaml
 ```
 
 The orchestrator must load both files, merge local overrides over shared defaults, generate
-one `run_id`, and derive `shared_agent_name` and `fixtures_dir` (the tester-side absolute path
+one `run_id`, and derive `shared_agent_name`, each applicable bounded
+`foundry_project_name`, and `fixtures_dir` (the tester-side absolute path
 of the `fixtures/` subdirectory — WSL-translated on Windows, native on Linux/macOS). For each
 parallel-safe scenario it adds the assigned `instance` to a per-scenario copy of that map.
-For Tier 1b it also adds the exact `scaffold_dir` returned by the prerequisite as
-`prerequisite_scaffold_dir`.
+For Tier 1b it also reuses the prerequisite's exact `foundry_project_name` and adds the exact
+`scaffold_dir` returned by the prerequisite as `prerequisite_scaffold_dir`.
 It passes the map as `session_vars=` on every `load_scenario` / `run_pre_hooks` /
 `start_session` / `run_post_hooks` call and passes the matching `instance_id` to every hook or
 session tool that accepts it. Failing to thread either value can render and execute different
@@ -564,13 +595,15 @@ profile/session variable.
 
 ## Conventions
 
-- **Tunable values** (subscription, region, model, prefix, tenant) come from
+- **Tunable values** (subscription, region, model, model SKU, prefix, tenant) come from
   the profile pair above — see [Profile / overrides](#profile--overrides).
 - **Resource naming**: every newly created Azure resource (Foundry
   project/account, azd environment, agent, model deployment, resource group) is
   named with the `{prefix}-` value from your profile plus a run-unique component: `-{instance}`
   in parallel-ready Tier 1 scenarios and the exact `{run_id}` in Tier 2. This keeps test
-  resources distinct across scenarios and concurrent runs and makes cleanup unambiguous. Note
+  resources distinct across scenarios and concurrent runs and makes cleanup unambiguous.
+  Foundry projects use `{foundry_project_name}`, which truncates only the prefix as needed to
+  preserve that complete unique component within the 32-character service limit. Note
   that some fields lowercase the value and replace invalid characters with hyphens — that
   normalization is expected (see `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.
@@ -603,10 +636,10 @@ How they're used here:
   (`1.04-init-from-code`, `1.06-init-deploy-mode-code`) also copy a committed Python
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
-- **`pre` gh-auth guard** — the manifest scenarios (`1.03-init-from-azure-yaml-url`,
+- **`pre` gh-auth guard** — the remote unified azure.yaml scenarios (`1.03-init-from-azure-yaml-url`,
   `1.05-init-flag-agent-name`) run `gh auth status` and fail fast if GitHub
-  CLI isn't authenticated, because downloading the manifest can fall back to the
-  `gh` CLI (and an interactive login) when the anonymous GitHub API is
+  CLI isn't authenticated, because downloading the project file and its sibling
+  files can fall back to the `gh` CLI (and an interactive login) when the anonymous GitHub API is
   rate-limited. Run `gh auth login` first (see [Authentication](#authentication)).
 - **`pre` idempotent setup (Tier 2)** — `2.00-setup-deploy-shared-agent` first runs
   `azd down --force --purge` if a project exists at the current run's
@@ -646,6 +679,15 @@ The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
 `fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,
 native on Linux/macOS) and passes it as a `session_var` alongside the other profile
 variables.
+
+### Managed deployment override helper
+
+[`fixtures/scripts/override-model-deployment.sh`](fixtures/scripts/override-model-deployment.sh)
+provides the shared Tier 1b/Tier 2 model deployment override. It preserves the
+scaffold's deployment name, applies the configured model and SKU, conditionally
+passes the optional model version, and verifies the command's JSON result without
+performing a second mutation. It exits successfully without calling `azd` when
+either the model or SKU is empty.
 
 ### Offline dependency composition fixture
 

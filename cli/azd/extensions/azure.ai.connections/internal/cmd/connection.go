@@ -86,7 +86,12 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List connections in the Foundry project.",
-		Args:  cobra.NoArgs,
+		Example: `  # List all project connections
+  azd ai connection list
+
+  # List remote tool connections as JSON
+  azd ai connection list --kind remote-tool --output json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
@@ -173,7 +178,9 @@ func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "show <name>",
 		Short: "Show connection details.",
 		Long:  "Show connection details. Use --show-credentials to fetch secret values.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # Inspect a connection without exposing credentials
+  azd ai connection show my-search`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
@@ -455,10 +462,12 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a new Foundry project connection.",
-		Example: `  azd ai connection create my-search \
+		Example: `  # Create an Azure AI Search connection using an API key
+  azd ai connection create my-search \
     --kind cognitive-search --target https://my-search.search.windows.net/ \
     --auth-type api-key --key "abc123..."
 
+  # Create a remote tool connection using a custom credential
   azd ai connection create my-tavily \
     --kind remote-tool --target https://mcp.tavily.com/mcp \
     --auth-type custom-keys --custom-key "x-api-key=tvly-abc123"`,
@@ -702,9 +711,16 @@ func newConnectionUpdateCommand(
 
 Only the specified flags are changed; all other fields are preserved.
 Does not accept --auth-type (delete and recreate to change auth type).`,
-		Example: `  azd ai connection update prod-search --key "$NEW_SEARCH_KEY"
+		Example: `  # Rotate an API key (shell variable syntax)
+  azd ai connection update prod-search --key "$NEW_SEARCH_KEY"
+
+  # Change the target without replacing other fields
   azd ai connection update my-conn --target https://new-endpoint.com
+
+  # Update a custom credential
   azd ai connection update my-mcp --custom-key "x-api-key=new-key"
+
+  # Update connection metadata
   azd ai connection update my-box --metadata "type=gateway_connector"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -844,6 +860,8 @@ func newConnectionDeleteCommand(
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a connection.",
+		Example: `  # Delete a connection after confirmation
+  azd ai connection delete my-search`,
 		Long: "Delete a connection and clear its matching local readiness markers. " +
 			"If the connection is already absent, clear stale markers and succeed without prompting.",
 		Args: cobra.ExactArgs(1),

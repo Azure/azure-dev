@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -386,13 +387,28 @@ func installedProvidesProvider(
 	capability extensions.CapabilityType,
 	providerName string,
 ) bool {
-	for extension := range maps.Values(installed) {
+	for _, extension := range installed {
 		if extensionProvidesProvider(extension.Capabilities, extension.Providers, capability, providerName) {
 			return true
 		}
 	}
-
 	return false
+}
+
+// promoteProjectRequiredExtension marks an installed extension the project requires as an
+// explicit install, so a record that only a pack pulled in survives when that pack is
+// uninstalled. Explicit records are left untouched.
+func promoteProjectRequiredExtension(
+	extensionManager extensionAutoInstallManager,
+	installed *extensions.Extension,
+) error {
+	if !installed.InstalledAsDependency {
+		return nil
+	}
+	if err := extensionManager.MarkExplicitlyInstalled(installed.Id); err != nil {
+		return fmt.Errorf("marking extension %s as explicitly installed: %w", installed.Id, err)
+	}
+	return nil
 }
 
 func extensionProvidesProvider(
@@ -513,6 +529,11 @@ func missingProjectExtensions(
 				if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
 					return nil, err
 				}
+				// The project requires this extension in its own right, so a record that only
+				// a pack pulled in becomes explicit and survives when that pack is uninstalled.
+				if err := promoteProjectRequiredExtension(extensionManager, installedExtension); err != nil {
+					return nil, err
+				}
 				continue
 			}
 
@@ -553,8 +574,11 @@ func missingProjectExtensions(
 	}
 
 	addProvider := func(capability extensions.CapabilityType, provider string) error {
-		if provider == "" || providerIsBuiltIn(capability, provider) ||
-			installedProvidesProvider(installed, capability, provider) {
+		if provider == "" || providerIsBuiltIn(capability, provider) {
+			return nil
+		}
+		// Reusing an inferred provider does not make it an explicitly requested installation.
+		if installedProvidesProvider(installed, capability, provider) {
 			return nil
 		}
 
@@ -723,8 +747,16 @@ func tryAutoInstallProjectExtensions(
 		return projectExtensionResult{}, nil
 	}
 
-	var projectConfig *project.ProjectConfig
-	if err := rootContainer.Resolve(&projectConfig); err != nil {
+	// Resolve the lazy value directly so a parse failure does not cache a nil concrete singleton
+	// before normal command error handling runs.
+	var lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
+	if err := rootContainer.Resolve(&lazyProjectConfig); err != nil {
+		log.Printf("skipping project extension auto-install: %v", err)
+		return projectExtensionResult{}, nil
+	}
+
+	projectConfig, err := lazyProjectConfig.GetValue()
+	if err != nil {
 		log.Printf("skipping project extension auto-install: %v", err)
 		return projectExtensionResult{}, nil
 	}

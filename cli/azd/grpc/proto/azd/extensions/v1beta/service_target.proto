@@ -77,7 +77,7 @@ message ServiceTargetOptions {
 
 message RegisterServiceTargetRequest {
   string host = 1;// unique identifier for the provider
-  // Explicit opt-in; stable extensions do not support deployment preview.
+  // Explicit opt-in; older extensions do not support deployment preview.
   bool supports_preview = 2;
 }
 

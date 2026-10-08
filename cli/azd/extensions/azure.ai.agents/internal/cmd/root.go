@@ -6,6 +6,8 @@ package cmd
 import (
 	"fmt"
 
+	"azureaiagent/internal/helpformat"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -21,6 +23,12 @@ func NewRootCommand() *cobra.Command {
 		),
 	})
 	rootCmd.SilenceUsage = true
+	rootCmd.Example = `  # Initialize and deploy an agent project
+  azd ai agent init
+  azd up
+
+  # Send a message to a deployed prompt or hosted agent
+  azd ai agent invoke "Hello"`
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	telemetryReporter := newAgentContextReporter()
@@ -50,6 +58,7 @@ func NewRootCommand() *cobra.Command {
 		operation := telemetryOperation(cmd.CommandPath())
 		if operation == "init" {
 			telemetryReporter.reportProject(cmd.Context(), operation)
+			reportInitOperation(cmd.Context())
 		}
 	}
 
@@ -85,6 +94,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
+	rootCmd.AddCommand(newStateStoresCommand(extCtx))
 	rootCmd.AddCommand(newInvocationsCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())
@@ -92,6 +102,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newCodeCommand(extCtx))
 	rootCmd.AddCommand(newEvalCommand(extCtx))
 	rootCmd.AddCommand(newOptimizeCommand(extCtx))
+
+	helpformat.Install(rootCmd, "azd ai", agentHelpFooter)
 
 	return rootCmd
 }

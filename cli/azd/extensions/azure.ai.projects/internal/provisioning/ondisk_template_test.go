@@ -33,6 +33,7 @@ type stubCompiler struct {
 	buildErr         error
 	buildParamResult bicep.BuildResult
 	buildParamErr    error
+	buildParam       func(context.Context, string, []string) (bicep.BuildResult, error)
 }
 
 func (s *stubCompiler) Build(ctx context.Context, file string) (bicep.BuildResult, error) {
@@ -47,6 +48,9 @@ func (s *stubCompiler) BuildBicepParam(ctx context.Context, file string, env []s
 	envCopy := append([]string(nil), env...)
 	sort.Strings(envCopy)
 	s.buildParamEnvs = append(s.buildParamEnvs, envCopy)
+	if s.buildParam != nil {
+		return s.buildParam(ctx, file, env)
+	}
 	return s.buildParamResult, s.buildParamErr
 }
 

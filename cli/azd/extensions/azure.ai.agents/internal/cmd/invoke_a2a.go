@@ -17,6 +17,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/google/uuid"
 )
@@ -124,6 +125,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
+	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolA2A, rc)
 
 	agentKey := rc.agentKey
 	if agentKey == "" && rc.azdClient != nil {
@@ -182,7 +184,6 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", a2aURL, err)
 	}
-	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Always capture session state from response headers (needed even in raw mode
@@ -202,7 +203,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	}
 	totalDuration := time.Since(invokeStart)
 	if !raw {
-		printInvokeTiming(os.Stdout, totalDuration, ttfb)
+		printInvokeTiming(os.Stdout, totalDuration)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	}
 	return nil

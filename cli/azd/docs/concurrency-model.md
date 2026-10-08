@@ -192,15 +192,6 @@ each get their own copy and writes would diverge. `saveMu` serializes the
 read-modify-write cycle on the .env file so two concurrent `Save` calls
 cannot interleave and clobber each other's writes.
 
-`GetReadOnly` is the deliberate exception to the shared-instance contract. It
-returns a detached snapshot without consulting or updating `cache`, hydrating
-remote state into local storage, normalizing persisted values, or creating a
-local lock file. Read-only command paths may use that snapshot, but must not
-pass it to `Save` or `Reload`.
-Deployment preview opts into snapshot resolution before loading command or
-extension dependencies. Its environment RPCs reuse the selected snapshot and
-reject writes; normal commands retain live environment loading and refresh behavior.
-
 **Why it matters**: A future `Manager` method that loads or persists
 environment state must take the appropriate lock or it will either return
 inconsistent instances (cache miss → divergent writes) or corrupt the .env
@@ -222,6 +213,23 @@ process without holding it.
 **Why it matters**: Without `mu`, two AKS service-target goroutines could
 race on `env` (one writing `KUBECONFIG=…`, the other reading it for an
 `Exec`) and produce non-deterministic command-line behavior.
+
+---
+
+## `pkg/tools/docker.Cli`
+
+| Synchronization | Protects | Used by |
+|-----------------|----------|---------|
+| `engineOnce sync.Once` | Initialization of `containerEngine` and `engineErr` | `selectContainerEngine` |
+
+**Contract**: Runtime selection happens once per `Cli`, on the first call that needs an engine name. `selectContainerEngine` reads `AZD_CONTAINER_RUNTIME` and PATH inside `engineOnce.Do`, then publishes an immutable engine name and selection error. Every reader goes through `selectContainerEngine`; no other code may write these fields. Changing the environment or PATH requires a new `Cli`.
+
+The selected value uses the shared `tools.ContainerEngine` type and its Docker/Podman constants through `ContainerHelper` and the .NET container methods. String conversion happens when constructing external commands. The .NET methods also accept the zero value to use the SDK's default runtime.
+
+`ContainerEngine`, `Name`, `InstallUrl`, and container operations use that same selection. Lightweight name lookup defaults to Docker if selection fails; `CheckInstalled` reports the cached selection error. Each `CheckInstalled` call repeats version and daemon checks outside `sync.Once`, so readiness failures and cancellations are not cached. Builds and other container subprocesses also run outside `sync.Once`.
+
+**Why it matters**: Parallel services and remote-build fallbacks share the
+singleton `docker.Cli`.
 
 ---
 
@@ -250,6 +258,55 @@ AKS Kustomize env expansion (`K8s.Kustomize.Env.Expand`) reads from
 for this consumer" so duplicate `Initialize` calls are no-ops. With parallel
 service deploys, two goroutines may race on the same `ServiceConfig` and
 both attempt initialization; the lock ensures only one succeeds.
+
+---
+
+## `pkg/watch.fileWatcher`
+
+The watcher has one backend-registration owner and one event consumer. Only the
+registration owner calls backend `Add` and `Close`. The consumer starts before
+initial registration and keeps draining events during cancellation until pending
+registration finishes and the owner closes the backend. This avoids abandoning
+native Windows backend replies or deadlocking on a full backend event buffer.
+
+Directory create events enqueue only the newly discovered subtree. Pending
+ancestor/descendant discoveries are deduplicated under `directoryQueue.mu`;
+the one-slot notification channel never blocks the consumer. The owner drains pending
+paths and registers them outside that lock. Established, unrelated trees are not
+walked again for a continuous stream of new directories.
+
+Both reporting methods send a barrier to the registration owner before taking
+the accounting mutex. The owner completes its in-flight batch and scans pending
+discoveries before acknowledging the barrier. The event consumer continues
+draining while snapshots wait; no queue or accounting lock spans registration
+or its filesystem traversal. This makes a final snapshot followed immediately
+by cancellation include children of already queued directories even when they
+have no individual backend events. Discoveries queued after the barrier drains
+the pending set belong to later work, not an atomic filesystem-wide snapshot.
+Shutdown releases waiting snapshots via `done`; callers needing a complete
+final snapshot must take it before canceling the watcher.
+
+`fileWatcher.mu` protects all reads and writes to `fileChanges`, including
+snapshot reconciliation. `initialFiles` is populated before event consumption
+and remains immutable: it stores startup file-path provenance, not transient
+paths or per-file generation identifiers.
+
+**Snapshot contract**: Both reporting methods reconcile `Created` with `os.Lstat`.
+Missing paths and directory replacements are omitted and reclaimed from the
+internal map; other filesystem errors retain the entry. Rebuilding the map also
+releases its peak transient capacity. Snapshots are cumulative, not a reset of
+live changes, and reconciliation still works after cancellation. New files stay
+`Created` across snapshots and writes. Late writes/removals for reclaimed paths
+absent from the startup inventory cannot turn them into `Modified` or `Deleted`.
+Startup paths retain the existing modified/deleted event accounting.
+
+This is a current-path contract, not inode-level generation tracking: fsnotify
+events do not identify file generations. A recreated non-directory path remains
+`Created` once discovered, and a queued removal cannot clear a currently live
+replacement. A directory at that path is never reported as a created file.
+Deleted startup paths and modified entries are not reconciled by filesystem
+existence. `GetFileChanges` sorts by path; the deprecated printer retains
+created/modified/deleted grouping and sorts paths within each group.
 
 ---
 

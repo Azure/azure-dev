@@ -1,0 +1,54 @@
+Evaluate and optimize AI agents — baseline scoring and iterative improvement.
+
+When run without a subcommand, submits an optimization job.
+Use --config for a custom YAML spec, or just provide the agent name to use sensible defaults.
+
+Usage
+  azd ai agent optimize [agent-name] [flags]
+  azd ai agent optimize [command]
+
+Available Commands
+  apply  : Apply optimized candidate configuration locally to your azd project.
+  cancel : Cancel a running optimization job.
+  deploy : Deploy a winning optimization candidate as a new agent version via the API.
+  list   : List recent optimization runs.
+  status : Check the status of an optimization job.
+
+Flags
+  -a, --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
+  -c, --config string           : Path to YAML config file (optional — values are prompted interactively if omitted)
+  -d, --dataset string          : Existing local file or registered dataset name
+      --endpoint string         : Optimization service endpoint (for local dev)
+  -m, --eval-model string       : Model for evaluation (required)
+      --evaluator stringArray   : Built-in or custom evaluator name (repeatable; required when not set in config)
+      --max-candidates int      : Maximum number of optimization candidates to generate (must be >= 1; default: 5)
+      --no-wait                 : Submit job and return immediately without waiting for completion
+      --optimize-model string   : Model for optimization reasoning (gpt-5 family recommended; required)
+      --poll-interval int       : Polling interval in seconds (default 10)
+  -p, --project-endpoint string : Foundry project endpoint URL
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for optimize
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Optimize (auto-detect agent from azd project)
+    azd ai agent optimize
+
+  Optimize a specific agent
+    azd ai agent optimize my-agent
+
+  Full control via config file
+    azd ai agent optimize --config spec.yaml
+
+  Subcommands
+    azd ai agent optimize status <id> --watch
+    azd ai agent optimize list
+    azd ai agent optimize cancel <id>
+    azd ai agent optimize deploy --candidate <id>
+
+Use azd ai agent optimize [command] --help to view examples and more information about a specific command.

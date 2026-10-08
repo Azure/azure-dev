@@ -92,6 +92,12 @@ type Dependencies struct {
 		projectResourceID string,
 	) (*project.DeveloperRBACResult, error)
 
+	probeProjectStorageRBAC func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		projectResourceID string,
+	) (*project.ProjectStorageRBACResult, error)
+
 	// readProjectResourceIDFn is a test seam: when non-nil it
 	// replaces the production `readProjectResourceID` call inside
 	// the `remote.rbac` check, letting unit tests exercise the

@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -21,58 +20,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
 )
 
-type serviceTargetBroker interface {
-	SendAndWait(context.Context, *azdext.ServiceTargetMessage) (*azdext.ServiceTargetMessage, error)
-	SendAndWaitWithProgress(
-		context.Context,
-		*azdext.ServiceTargetMessage,
-		func(string),
-	) (*azdext.ServiceTargetMessage, error)
-}
-
-type serviceTargetPreviewBroker interface {
-	Preview(context.Context, *azdext.ServiceConfig) (*ServiceDeployPreviewResult, error)
-}
-
 type ExternalServiceTarget struct {
-	extension        *extensions.Extension
-	targetName       string
-	targetKind       ServiceTargetKind
-	console          input.Console
-	prompters        prompt.Prompter
-	lazyEnv          *lazy.Lazy[*environment.Environment]
-	previewSupported bool
+	extension  *extensions.Extension
+	targetName string
+	targetKind ServiceTargetKind
+	console    input.Console
+	prompters  prompt.Prompter
+	lazyEnv    *lazy.Lazy[*environment.Environment]
 
-	broker        serviceTargetBroker
-	previewBroker serviceTargetPreviewBroker
+	broker  *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+	preview ExternalPreviewFunc
 }
 
-// NewBetaExternalServiceTarget creates an external service target backed by the beta contract.
-func NewBetaExternalServiceTarget(
-	name string,
-	kind ServiceTargetKind,
-	extension *extensions.Extension,
-	broker *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage],
-	console input.Console,
-	prompters prompt.Prompter,
-	lazyEnv *lazy.Lazy[*environment.Environment],
-) ServiceTarget {
-	betaBroker := &betaServiceTargetBroker{broker: broker}
-	return &ExternalServiceTarget{
-		extension:        extension,
-		targetName:       name,
-		targetKind:       kind,
-		console:          console,
-		prompters:        prompters,
-		lazyEnv:          lazyEnv,
-		previewSupported: true,
-		broker:           betaBroker,
-		previewBroker:    betaBroker,
-	}
-}
+// ExternalPreviewFunc forwards a deployment preview to the extension that registered the service target.
+// It returns ErrDeployPreviewNotSupported when the extension did not opt into deployment preview.
+type ExternalPreviewFunc func(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) (*ServiceDeployPreviewResult, error)
 
 type TargetResourceResolver interface {
 	ResolveTargetResource(
@@ -83,8 +50,7 @@ type TargetResourceResolver interface {
 	) (*environment.TargetResource, error)
 }
 
-// NewExternalServiceTarget creates a new external service target.
-// Preview is disabled unless the optional previewSupported argument is true.
+// NewExternalServiceTarget creates a new external service target
 func NewExternalServiceTarget(
 	name string,
 	kind ServiceTargetKind,
@@ -93,20 +59,37 @@ func NewExternalServiceTarget(
 	console input.Console,
 	prompters prompt.Prompter,
 	lazyEnv *lazy.Lazy[*environment.Environment],
-	previewSupported ...bool,
+	preview ExternalPreviewFunc,
 ) ServiceTarget {
 	target := &ExternalServiceTarget{
-		extension:        extension,
-		targetName:       name,
-		targetKind:       kind,
-		console:          console,
-		prompters:        prompters,
-		lazyEnv:          lazyEnv,
-		previewSupported: len(previewSupported) > 0 && previewSupported[0],
-		broker:           broker,
+		extension:  extension,
+		targetName: name,
+		targetKind: kind,
+		console:    console,
+		prompters:  prompters,
+		lazyEnv:    lazyEnv,
+		broker:     broker,
+		preview:    preview,
 	}
 
 	return target
+}
+
+// Preview implements ServiceTargetPreviewer.
+func (est *ExternalServiceTarget) Preview(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
+	if est.preview == nil {
+		return nil, ErrDeployPreviewNotSupported
+	}
+
+	protoConfig, err := est.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return est.preview(ctx, protoConfig)
 }
 
 // toProtoServiceConfig converts a ServiceConfig to its proto representation, expanding
@@ -115,107 +98,17 @@ func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceCon
 	return serviceConfigToProto(est.lazyEnv, serviceConfig)
 }
 
-// SupportsPreview reports the capability advertised during extension registration.
-func (est *ExternalServiceTarget) SupportsPreview() bool {
-	return est.previewSupported
-}
-
-// Preview requests a read-only deployment preview only when the provider advertised support.
-func (est *ExternalServiceTarget) Preview(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-) (*ServiceDeployPreviewResult, error) {
-	if !est.previewSupported {
-		return nil, fmt.Errorf("service host '%s' does not support deployment preview", est.targetKind)
-	}
-	if serviceConfig == nil {
-		return nil, errors.New("service configuration is required")
-	}
-
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return est.previewBroker.Preview(ctx, protoServiceConfig)
-}
-
-type betaServiceTargetBroker struct {
-	broker *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage]
-}
-
-func transcodeServiceTargetMessage(source, destination proto.Message) error {
-	wire, err := proto.Marshal(source)
-	if err != nil {
+func (est *ExternalServiceTarget) wrapInvocationError(err error, operation string) error {
+	if err == nil || est.extension == nil {
 		return err
 	}
-	return proto.Unmarshal(wire, destination)
-}
 
-func (b *betaServiceTargetBroker) SendAndWait(
-	ctx context.Context,
-	request *azdext.ServiceTargetMessage,
-) (*azdext.ServiceTargetMessage, error) {
-	betaRequest := new(v1beta.ServiceTargetMessage)
-	if err := transcodeServiceTargetMessage(request, betaRequest); err != nil {
-		return nil, err
-	}
-	response, err := b.broker.SendAndWait(ctx, betaRequest)
-	if err != nil {
-		return nil, err
-	}
-	stableResponse := new(azdext.ServiceTargetMessage)
-	if err := transcodeServiceTargetMessage(response, stableResponse); err != nil {
-		return nil, err
-	}
-	return stableResponse, nil
-}
-
-func (b *betaServiceTargetBroker) SendAndWaitWithProgress(
-	ctx context.Context,
-	request *azdext.ServiceTargetMessage,
-	onProgress func(string),
-) (*azdext.ServiceTargetMessage, error) {
-	betaRequest := new(v1beta.ServiceTargetMessage)
-	if err := transcodeServiceTargetMessage(request, betaRequest); err != nil {
-		return nil, err
-	}
-	response, err := b.broker.SendAndWaitWithProgress(ctx, betaRequest, onProgress)
-	if err != nil {
-		return nil, err
-	}
-	stableResponse := new(azdext.ServiceTargetMessage)
-	if err := transcodeServiceTargetMessage(response, stableResponse); err != nil {
-		return nil, err
-	}
-	return stableResponse, nil
-}
-
-func (b *betaServiceTargetBroker) Preview(
-	ctx context.Context,
-	serviceConfig *azdext.ServiceConfig,
-) (*ServiceDeployPreviewResult, error) {
-	betaConfig := new(v1beta.ServiceConfig)
-	if err := transcodeServiceTargetMessage(serviceConfig, betaConfig); err != nil {
-		return nil, err
-	}
-	response, err := b.broker.SendAndWait(ctx, &v1beta.ServiceTargetMessage{
-		RequestId: uuid.NewString(),
-		MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
-			PreviewRequest: &v1beta.ServiceTargetPreviewRequest{ServiceConfig: betaConfig},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	previewResponse := response.GetPreviewResponse()
-	if previewResponse == nil || previewResponse.Result == nil {
-		return nil, errors.New("invalid preview response: missing preview result")
-	}
-	return &ServiceDeployPreviewResult{
-		Message: previewResponse.Result.Message,
-		Data:    previewResponse.Result.Data.AsMap(),
-	}, nil
+	return extensions.WrapInvocationError(
+		err,
+		est.extension.Id,
+		est.extension.Version,
+		"service_target."+operation,
+	)
 }
 
 // Publish implements ServiceTarget.
@@ -259,7 +152,7 @@ func (est *ExternalServiceTarget) Publish(
 
 	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "publish")
 	}
 
 	publishResp := resp.GetPublishResponse()
@@ -269,7 +162,10 @@ func (est *ExternalServiceTarget) Publish(
 
 	var result *ServicePublishResult
 	if err := mapper.Convert(publishResp.Result, &result); err != nil {
-		return nil, fmt.Errorf("failed to convert publish result: %w", err)
+		return nil, est.wrapInvocationError(
+			fmt.Errorf("failed to convert publish result: %w", err),
+			"publish",
+		)
 	}
 
 	return result, nil
@@ -297,7 +193,7 @@ func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig 
 	}
 
 	_, err = est.broker.SendAndWait(ctx, req)
-	return err
+	return est.wrapInvocationError(err, "initialize")
 }
 
 // RequiredExternalTools returns the tools needed to run the deploy operation for this target.
@@ -337,7 +233,7 @@ func (est *ExternalServiceTarget) Package(
 
 	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "package")
 	}
 
 	packageResp := resp.GetPackageResponse()
@@ -348,7 +244,10 @@ func (est *ExternalServiceTarget) Package(
 	// Convert proto result using mapper
 	var convertedResult *ServicePackageResult
 	if err := mapper.Convert(packageResp.Result, &convertedResult); err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(
+			fmt.Errorf("failed to convert package result: %w", err),
+			"package",
+		)
 	}
 
 	return convertedResult, nil
@@ -393,18 +292,27 @@ func (est *ExternalServiceTarget) Deploy(
 	// Send request and wait for response, handling progress messages
 	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "deploy")
 	}
 
 	deployResponse := resp.GetDeployResponse()
 	if deployResponse == nil || deployResponse.Result == nil {
-		return nil, errors.New("invalid deploy response: missing deploy result")
+		return nil, est.wrapInvocationError(
+			&ExternalServiceTargetResponseError{
+				Operation: "deploy",
+				Detail:    "missing deploy result",
+			},
+			"deploy",
+		)
 	}
 
 	// Convert protobuf result back to project types using mapper
 	var result *ServiceDeployResult
 	if err := mapper.Convert(deployResponse.Result, &result); err != nil {
-		return nil, fmt.Errorf("failed to convert deploy result: %w", err)
+		return nil, est.wrapInvocationError(
+			fmt.Errorf("failed to convert deploy result: %w", err),
+			"deploy",
+		)
 	}
 
 	return result, nil
@@ -437,7 +345,7 @@ func (est *ExternalServiceTarget) Endpoints(
 
 	resp, err := est.broker.SendAndWait(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "endpoints")
 	}
 
 	endpointsResp := resp.GetEndpointsResponse()
@@ -490,12 +398,18 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 
 	resp, err := est.broker.SendAndWait(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "get_target_resource")
 	}
 
 	result := resp.GetGetTargetResourceResponse()
 	if result == nil || result.TargetResource == nil {
-		return nil, errors.New("invalid get target resource response: missing target resource")
+		return nil, est.wrapInvocationError(
+			&ExternalServiceTargetResponseError{
+				Operation: "get target resource",
+				Detail:    "missing target resource",
+			},
+			"get_target_resource",
+		)
 	}
 
 	target := environment.NewTargetResource(
@@ -507,6 +421,16 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 	target.SetMetadata(result.TargetResource.GetMetadata())
 
 	return target, nil
+}
+
+// ExternalServiceTargetResponseError reports a malformed response from an extension service-target provider.
+type ExternalServiceTargetResponseError struct {
+	Operation string
+	Detail    string
+}
+
+func (e *ExternalServiceTargetResponseError) Error() string {
+	return fmt.Sprintf("invalid %s response: %s", e.Operation, e.Detail)
 }
 
 func envResolver(env *environment.Environment) mapper.Resolver {

@@ -58,10 +58,11 @@ func RunWithProgress[T comparable, R any](
 		}
 		close(done)
 	}()
-	res, err := f(progress)
-	progress.Done()
-	<-done
-	return res, err
+	defer func() {
+		progress.Done()
+		<-done
+	}()
+	return f(progress)
 }
 
 // RunWithProgressE runs a function with a background goroutine reporting and progress to an observer.
@@ -77,8 +78,9 @@ func RunWithProgressE[T comparable](
 		}
 		close(done)
 	}()
-	err := f(progress)
-	progress.Done()
-	<-done
-	return err
+	defer func() {
+		progress.Done()
+		<-done
+	}()
+	return f(progress)
 }

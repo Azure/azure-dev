@@ -32,6 +32,9 @@ func TestUpdateAction_RejectsInvalidName(t *testing.T) {
 }
 
 func TestUpdateAction_ValidInputFailsAtEndpoint(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+
 	// A fully valid inline update with no endpoint configured must fail at
 	// endpoint resolution (not at flag validation or name validation).
 	a := &updateAction{flags: &updateFlags{
@@ -41,10 +44,10 @@ func TestUpdateAction_ValidInputFailsAtEndpoint(t *testing.T) {
 		instructionsSet: true,
 		instructions:    "new instructions",
 	}}
-	err := a.Run(context.Background())
+	err := a.Run(t.Context())
 	require.Error(t, err)
-	var le *azdext.LocalError
-	require.True(t, errors.As(err, &le))
+	le, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
 	require.Equal(t, exterrors.CodeMissingProjectEndpoint, le.Code,
 		"should fail at endpoint resolution with no project configured")
 }

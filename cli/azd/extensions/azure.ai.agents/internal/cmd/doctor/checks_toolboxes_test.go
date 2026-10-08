@@ -235,7 +235,7 @@ func TestCheckToolboxes_FailsWhenSomeEndpointsMissing(t *testing.T) {
 	require.Contains(t, res.Message, "code-runner")
 	require.Contains(t, res.Message, "TOOLBOX_CODE_RUNNER_MCP_ENDPOINT")
 	require.NotContains(t, res.Message, "web-search-tools")
-	require.Contains(t, res.Suggestion, "Migrate legacy toolboxes to azure.ai.toolbox services")
+	require.Contains(t, res.Suggestion, "Configure the toolbox in azure.yaml")
 	require.NotContains(t, res.Suggestion, "azd provision")
 	require.Equal(t, 1, res.Details["matchedCount"])
 }
@@ -370,9 +370,9 @@ func TestCheckToolboxes_MixedSourcesShowBothRemediations(t *testing.T) {
 			ToolboxSource: nextstep.ToolboxSourceSplit,
 		},
 		nextstep.ResourceRef{
-			Name:          "legacy-tools",
+			Name:          "bundled-tools",
 			ServiceName:   "agent",
-			ToolboxSource: nextstep.ToolboxSourceLegacyManifest,
+			ToolboxSource: nextstep.ToolboxSourceBundled,
 		},
 	)
 	state.ToolboxEndpointsChecked = true
@@ -384,7 +384,7 @@ func TestCheckToolboxes_MixedSourcesShowBothRemediations(t *testing.T) {
 	}, nil)
 	require.Equal(t, StatusFail, res.Status)
 	require.Contains(t, res.Suggestion, "azd deploy")
-	require.Contains(t, res.Suggestion, "Migrate legacy toolboxes to azure.ai.toolbox services")
+	require.Contains(t, res.Suggestion, "azd ai agent toolbox add")
 	require.NotContains(t, res.Suggestion, "azd provision")
 }
 

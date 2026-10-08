@@ -88,11 +88,16 @@ func (s *invokeUserConfigServer) getJSON(t *testing.T, path string, value any) {
 	}
 }
 
-func newInvokeTestAzdClient(t *testing.T, userConfigServer azdext.UserConfigServiceServer) *azdext.AzdClient {
+func newInvokeTestAzdClient(
+	t *testing.T, userConfigServer azdext.UserConfigServiceServer, environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -384,6 +389,139 @@ func TestInvokeCommandVersionFlagRegistered(t *testing.T) {
 	}
 	if versionFlag.DefValue != "" {
 		t.Errorf("version default = %q, want empty", versionFlag.DefValue)
+	}
+}
+
+func TestInvokeFlagsForceNewConversation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		newSession      bool
+		newConversation bool
+		want            bool
+	}{
+		{name: "neither flag", want: false},
+		{name: "new conversation", newConversation: true, want: true},
+		{name: "new session", newSession: true, want: true},
+		{name: "both flags", newSession: true, newConversation: true, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := &invokeFlags{
+				newSession:      tt.newSession,
+				newConversation: tt.newConversation,
+			}
+			if got := flags.forceNewConversation(); got != tt.want {
+				t.Errorf("forceNewConversation() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInvokeConversationResetConflict(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantConflict bool
+		wantInvalid  bool
+	}{
+		{
+			name:         "new session remote",
+			args:         []string{"--new-session", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name:         "new conversation remote",
+			args:         []string{"--new-conversation", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name:         "local",
+			args:         []string{"--local", "--new-session", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name: "explicit endpoint",
+			args: []string{
+				"--agent-endpoint",
+				"https://test.services.ai.azure.com/api/projects/test/agents/test/endpoint/protocols/openai/responses",
+				"--new-session", "--conversation-id", "conv_existing",
+			},
+			wantConflict: true,
+		},
+		{
+			name:         "both reset flags with explicit conversation",
+			args:         []string{"--new-session", "--new-conversation", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{name: "new session alone", args: []string{"--new-session"}},
+		{name: "new conversation alone", args: []string{"--new-conversation"}},
+		{name: "both reset flags", args: []string{"--new-session", "--new-conversation"}},
+		{name: "explicit conversation alone", args: []string{"--conversation-id", "conv_existing"}},
+		{name: "reset disabled", args: []string{"--new-session=false", "--conversation-id", "conv_existing"}},
+		{
+			name: "new conversation disabled",
+			args: []string{"--new-conversation=false", "--conversation-id", "conv_existing"},
+		},
+		{
+			name:        "empty conversation",
+			args:        []string{"--new-session", "--conversation-id="},
+			wantInvalid: true,
+		},
+		{
+			name:        "whitespace conversation",
+			args:        []string{"--conversation-id", "   "},
+			wantInvalid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A missing input file stops valid combinations before authentication or network requests.
+			inputPath := filepath.Join(t.TempDir(), "missing-input.txt")
+			cmd := newInvokeCommand(nil)
+			cmd.SetArgs(append(tt.args, "--input-file", inputPath))
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			err := cmd.ExecuteContext(t.Context())
+			if !tt.wantConflict && !tt.wantInvalid {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("expected input file error after flag validation, got %v", err)
+				}
+				return
+			}
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			if !ok {
+				t.Fatalf("expected structured validation error, got %v", err)
+			}
+			wantCode := exterrors.CodeConflictingArguments
+			if tt.wantInvalid {
+				wantCode = exterrors.CodeInvalidParameter
+			}
+			if localErr.Code != wantCode {
+				t.Errorf("code = %q, want %q", localErr.Code, wantCode)
+			}
+			if localErr.Category != azdext.LocalErrorCategoryValidation {
+				t.Errorf("category = %q, want validation", localErr.Category)
+			}
+			if tt.wantInvalid {
+				if !strings.Contains(localErr.Message, "--conversation-id cannot be empty") {
+					t.Errorf("unexpected invalid value message: %q", localErr.Message)
+				}
+				return
+			}
+			if !strings.Contains(localErr.Message, "cannot use conversation reset flags with --conversation-id") {
+				t.Errorf("unexpected conflict message: %q", localErr.Message)
+			}
+			if !strings.Contains(localErr.Suggestion, "remove --conversation-id") {
+				t.Errorf("expected guidance to remove --conversation-id, got %q", localErr.Suggestion)
+			}
+		})
 	}
 }
 
@@ -969,6 +1107,7 @@ func newInvokeRemoteContextTestAzdServer(
 	t *testing.T,
 	projectServer *helpersProjectServer,
 	environmentServer azdext.EnvironmentServiceServer,
+	accountServers ...azdext.AccountServiceServer,
 ) string {
 	t.Helper()
 
@@ -976,6 +1115,9 @@ func newInvokeRemoteContextTestAzdServer(
 	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
 	azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServer)
 	azdext.RegisterUserConfigServiceServer(grpcServer, newInvokeUserConfigServer())
+	if len(accountServers) > 0 {
+		azdext.RegisterAccountServiceServer(grpcServer, accountServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -2306,7 +2448,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, false)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, false, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -2559,7 +2701,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil, false)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil, false, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -2655,6 +2797,7 @@ func captureInvocationLROPollRequests(
 		"",
 		options,
 		false,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

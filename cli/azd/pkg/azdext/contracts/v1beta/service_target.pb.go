@@ -691,7 +691,7 @@ func (x *ServiceTargetOptions) GetConfig() *structpb.Struct {
 type RegisterServiceTargetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Host  string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"` // unique identifier for the provider
-	// Explicit opt-in; stable extensions do not support deployment preview.
+	// Explicit opt-in; older extensions do not support deployment preview.
 	SupportsPreview bool `protobuf:"varint,2,opt,name=supports_preview,json=supportsPreview,proto3" json:"supports_preview,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache

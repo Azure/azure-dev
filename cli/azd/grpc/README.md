@@ -12,9 +12,9 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CopilotService`, and `TelemetryService` are currently beta-only. Removing or
-renumbering fields, changing field types, and reusing reserved names or
-numbers remain breaking changes in either channel.
+`CommandResultService`, `CopilotService`, and `TelemetryService` are currently
+beta-only. Removing or renumbering fields, changing field types, and reusing
+reserved names or numbers remain breaking changes in either channel.
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
@@ -69,6 +69,17 @@ The Go contract tests add a cross-channel rule that Buf does not express:
 stable must remain a wire-compatible subset of beta. Additive beta fields and
 methods and beta-only services are allowed, but shared field and method shapes
 must remain compatible with the generated adapters.
+
+Run this cross-channel check directly with:
+
+```console
+make proto-version-compatibility
+```
+
+The check names the first missing or incompatible message, field, enum,
+service, or method. CI runs it as a dedicated gate after regenerating the
+contracts, so a `v1beta` change cannot silently break the shape inherited from
+stable `v1`.
 
 The first versioned source-contract change is intentionally incompatible with
 the old unversioned package, while the temporary runtime bridge preserves its

@@ -25,6 +25,7 @@ import (
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/terminal"
@@ -115,6 +116,47 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 	return instance, nil
 }
 
+// newCommandConsole lets you create a new command console targeted at a given instance of cobra.Command.
+// Useful if you need to ensure you use the same streams and console formatting as a command, from the
+// outside.
+func newCommandConsole(
+	rootOptions *internal.GlobalCommandOptions,
+	formatter output.Formatter,
+	cmd *cobra.Command,
+) input.Console {
+	writer := cmd.OutOrStdout()
+	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
+	if formatter != nil && formatter.Kind() == output.JsonFormat {
+		writer = cmd.ErrOrStderr()
+	}
+
+	if os.Getenv("NO_COLOR") != "" {
+		writer = colorable.NewNonColorable(writer)
+	}
+
+	isTerminal := cmd.OutOrStdout() == os.Stdout &&
+		cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
+
+	// Check for external prompt configuration from environment variables
+	var externalPromptCfg *input.ExternalPromptConfiguration
+	if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
+		if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
+			externalPromptCfg = &input.ExternalPromptConfiguration{
+				Endpoint:       endpoint,
+				Key:            key,
+				Transporter:    http.DefaultClient,
+				NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
+			}
+		}
+	}
+
+	return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
+		Stdin:  cmd.InOrStdin(),
+		Stdout: cmd.OutOrStdout(),
+		Stderr: cmd.ErrOrStderr(),
+	}, formatter, externalPromptCfg)
+}
+
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
@@ -124,42 +166,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)
 
-	container.MustRegisterScoped(func(
-		rootOptions *internal.GlobalCommandOptions,
-		formatter output.Formatter,
-		cmd *cobra.Command) input.Console {
-		writer := cmd.OutOrStdout()
-		// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-		if formatter != nil && formatter.Kind() == output.JsonFormat {
-			writer = cmd.ErrOrStderr()
-		}
-
-		if os.Getenv("NO_COLOR") != "" {
-			writer = colorable.NewNonColorable(writer)
-		}
-
-		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
-
-		// Check for external prompt configuration from environment variables
-		var externalPromptCfg *input.ExternalPromptConfiguration
-		if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
-			if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
-				externalPromptCfg = &input.ExternalPromptConfiguration{
-					Endpoint:       endpoint,
-					Key:            key,
-					Transporter:    http.DefaultClient,
-					NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
-				}
-			}
-		}
-
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
-			Stdin:  cmd.InOrStdin(),
-			Stdout: cmd.OutOrStdout(),
-			Stderr: cmd.ErrOrStderr(),
-		}, formatter, externalPromptCfg)
-	})
+	container.MustRegisterScoped(newCommandConsole)
 
 	container.MustRegisterSingleton(
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
@@ -237,10 +244,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	// Scoped registration is required since the value of the azd context can change through the lifetime of a command
-	// Example: Within extensions multiple workflows can be dispatched which can cause the azd context to be updated.
-	// A specific example is within AI builder. It invokes `init` command when project is not found.
-	container.MustRegisterScoped(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	//
+	// Using Transient for the scope here is important - the underlying container will cache
+	// a failed result (nil), preventing Lazy from retrying and basically _never_ being
+	// updatable. We have explicit flows where the project isn't defined until after some
+	// code has run, which means each time we inject the AzdContext it MUST run
+	// GetValue() _each_ time.
+	container.MustRegisterTransient(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})
 
@@ -319,16 +329,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(serviceLocator ioc.ServiceLocator,
 			azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
-				azdCtx, err := azdContext.GetValue()
-				if err != nil {
+				if _, err := azdContext.GetValue(); err != nil {
 					return nil, err
 				}
 
-				// Register the Azd context instance as a singleton in the container if now available
-				ioc.RegisterInstance(container, azdCtx)
-
 				var envManager environment.Manager
-				err = serviceLocator.Resolve(&envManager)
+				err := serviceLocator.Resolve(&envManager)
 				if err != nil {
 					return nil, err
 				}
@@ -375,7 +381,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			lazyEnvManager *lazy.Lazy[environment.Manager],
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 			envFlags internal.EnvFlag,
-			command *cobra.Command,
 		) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -396,9 +401,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
-				if isDeploymentPreview(command) {
-					return envManager.GetReadOnly(ctx, environmentName)
-				}
 				env, err := envManager.Get(ctx, environmentName)
 				if err != nil {
 					return nil, err
@@ -581,10 +583,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
-	container.MustRegisterScoped(func(importManager *project.ImportManager) project.DeclaredServiceResolver {
-		return importManager
-	})
-	container.MustRegisterScoped(project.NewServiceTargetResolver)
 	container.MustRegisterScoped(project.NewServiceManager)
 
 	// Unified up action: the exegraph-backed `azd up` entry point that
@@ -952,6 +950,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(func(manager *extensions.Manager) grpcserver.ExtensionLookup {
+		return manager
+	})
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterScoped(middleware.NewExtensionActivator)
@@ -1004,10 +1005,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)
 	container.MustRegisterScoped(grpcserver.NewProjectService)
-	container.MustRegisterScoped(newCommandEnvironmentService)
+	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
+	container.MustRegisterScoped(grpcserver.NewFollowUpManager)
 	container.MustRegisterScoped(grpcserver.NewEventService)
+	container.MustRegisterScoped(grpcserver.NewCommandResultService)
 	container.MustRegisterScoped(grpcserver.NewContainerService)
 	container.MustRegisterSingleton(grpcserver.NewAccountService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
@@ -1059,6 +1062,7 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	// Cancel the child context when the step completes so that any event handlers
 	// registered during this step (e.g. by service target Initialize methods) are
 	// marked as expired and cleaned up on the next RaiseEvent call.
+	ctx = commandresult.EnsureFollowUpCommandOrder(ctx)
 	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
 	defer cancel()
 

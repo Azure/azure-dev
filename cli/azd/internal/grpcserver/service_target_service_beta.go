@@ -11,103 +11,152 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+type betaServiceTargetStream = grpc.BidiStreamingServer[v1beta.ServiceTargetMessage, v1beta.ServiceTargetMessage]
+
+// serviceTargetPreviewRegistration is the v1beta deployment preview stream for an extension-provided host.
+type serviceTargetPreviewRegistration struct {
+	extensionId string
+	broker      *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage]
+}
+
+// betaServiceTargetServiceOverride serves the dedicated v1beta deployment preview stream.
+// Any other v1beta stream is forwarded to the stable service target service through the generated adapter,
+// so ordinary service target lifecycle requests never depend on beta-only fields.
 type betaServiceTargetServiceOverride struct {
 	service *ServiceTargetService
 }
 
 var _ BetaServiceTargetServiceStreamOverride = (*betaServiceTargetServiceOverride)(nil)
 
-func (o *betaServiceTargetServiceOverride) Stream(
-	stream grpc.BidiStreamingServer[v1beta.ServiceTargetMessage, v1beta.ServiceTargetMessage],
-) error {
-	ctx := stream.Context()
-	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
+func (o *betaServiceTargetServiceOverride) Stream(stream betaServiceTargetStream) error {
+	first, err := stream.Recv()
 	if err != nil {
-		return fmt.Errorf("failed to get extension claims: %w", err)
-	}
-	extension, err := o.service.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionClaims.Subject})
-	if err != nil {
-		return status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
-	}
-	if !extension.HasCapability(extensions.ServiceTargetProviderCapability) {
-		return status.Errorf(codes.PermissionDenied, "extension does not support service-target-provider capability")
+		return err
 	}
 
-	broker := grpcbroker.NewMessageBroker(stream, azdext.NewBetaServiceTargetEnvelope(), extension.Id, log.Default())
-	var registeredHostType string
-	if err := broker.On(func(
+	replay := &replayServiceTargetStream{betaServiceTargetStream: stream, first: first}
+	if !first.GetRegisterServiceTargetRequest().GetSupportsPreview() {
+		return (&betaServiceTargetServiceAdapter{stable: o.service}).Stream(replay)
+	}
+
+	return o.service.previewStream(replay)
+}
+
+// replayServiceTargetStream returns an already received first message before reading from the stream.
+type replayServiceTargetStream struct {
+	betaServiceTargetStream
+	first *v1beta.ServiceTargetMessage
+}
+
+func (s *replayServiceTargetStream) Recv() (*v1beta.ServiceTargetMessage, error) {
+	if first := s.first; first != nil {
+		s.first = nil
+		return first, nil
+	}
+
+	return s.betaServiceTargetStream.Recv()
+}
+
+// previewStream accepts deployment preview registrations for hosts provided by the calling extension.
+func (s *ServiceTargetService) previewStream(stream betaServiceTargetStream) error {
+	ctx := stream.Context()
+	extension, err := s.serviceTargetExtension(ctx)
+	if err != nil {
+		return err
+	}
+
+	broker := grpcbroker.NewMessageBroker(stream, azdext.NewServiceTargetPreviewEnvelope(), extension.Id, log.Default())
+
+	var registeredHosts []string
+	err = broker.On(func(
 		ctx context.Context,
-		request *v1beta.RegisterServiceTargetRequest,
+		req *v1beta.RegisterServiceTargetRequest,
 	) (*v1beta.ServiceTargetMessage, error) {
-		return o.onRegisterRequest(ctx, request, extension, broker, &registeredHostType)
-	}); err != nil {
+		hostType := req.GetHost()
+		if !req.GetSupportsPreview() {
+			return nil, status.Errorf(
+				codes.InvalidArgument, "service target preview registration for %s must set supports_preview", hostType)
+		}
+
+		s.providerMapMu.Lock()
+		defer s.providerMapMu.Unlock()
+
+		if _, has := s.previewMap[hostType]; has {
+			return nil, status.Errorf(codes.AlreadyExists, "preview provider %s already registered", hostType)
+		}
+
+		s.previewMap[hostType] = &serviceTargetPreviewRegistration{extensionId: extension.Id, broker: broker}
+		registeredHosts = append(registeredHosts, hostType)
+		log.Printf("Registered service target preview: %s", hostType)
+
+		return &v1beta.ServiceTargetMessage{
+			MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetResponse{
+				RegisterServiceTargetResponse: &v1beta.RegisterServiceTargetResponse{},
+			},
+		}, nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to register handler: %w", err)
 	}
 
-	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("Broker error for provider %s: %v", registeredHostType, err)
-		return fmt.Errorf("broker error: %w", err)
+	runErr := broker.Run(ctx)
+
+	s.providerMapMu.Lock()
+	for _, hostType := range registeredHosts {
+		delete(s.previewMap, hostType)
 	}
-	o.service.providerMapMu.Lock()
-	delete(o.service.providerMap, registeredHostType)
-	o.service.providerMapMu.Unlock()
+	s.providerMapMu.Unlock()
+
+	if runErr != nil && !errors.Is(runErr, context.Canceled) {
+		log.Printf("Preview broker error for extension %s: %v", extension.Id, runErr)
+		return fmt.Errorf("broker error: %w", runErr)
+	}
+
 	return nil
 }
 
-func (o *betaServiceTargetServiceOverride) onRegisterRequest(
-	ctx context.Context,
-	request *v1beta.RegisterServiceTargetRequest,
-	extension *extensions.Extension,
-	broker *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage],
-	registeredHostType *string,
-) (*v1beta.ServiceTargetMessage, error) {
-	hostType := request.GetHost()
-	o.service.providerMapMu.Lock()
-	defer o.service.providerMapMu.Unlock()
-	if _, exists := o.service.providerMap[hostType]; exists {
-		return nil, status.Errorf(codes.AlreadyExists, "provider %s already registered", hostType)
-	}
-	if !request.GetSupportsPreview() {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"beta service target registration must advertise deployment preview support",
-		)
-	}
+// previewFunc forwards deployment previews for hostType to the preview stream registered by the same extension.
+func (s *ServiceTargetService) previewFunc(hostType string, extensionId string) project.ExternalPreviewFunc {
+	return func(ctx context.Context, serviceConfig *azdext.ServiceConfig) (*project.ServiceDeployPreviewResult, error) {
+		s.providerMapMu.Lock()
+		registration := s.previewMap[hostType]
+		s.providerMapMu.Unlock()
 
-	err := o.service.container.RegisterNamedSingleton(hostType, func(
-		console input.Console,
-		prompter prompt.Prompter,
-	) project.ServiceTarget {
-		return project.NewBetaExternalServiceTarget(
-			hostType,
-			project.ServiceTargetKind(hostType),
-			extension,
-			broker,
-			console,
-			prompter,
-			o.service.lazyEnv,
-		)
-	})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to register service target: %s", err.Error())
-	}
+		if registration == nil || registration.extensionId != extensionId {
+			return nil, project.ErrDeployPreviewNotSupported
+		}
 
-	o.service.providerMap[hostType] = struct{}{}
-	*registeredHostType = hostType
-	log.Printf("Registered beta service target: %s", hostType)
-	return &v1beta.ServiceTargetMessage{
-		MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetResponse{
-			RegisterServiceTargetResponse: &v1beta.RegisterServiceTargetResponse{},
-		},
-	}, nil
+		betaConfig := &v1beta.ServiceConfig{}
+		if err := transcodeVersionedMessage(serviceConfig, betaConfig, false); err != nil {
+			return nil, err
+		}
+
+		resp, err := registration.broker.SendAndWait(ctx, &v1beta.ServiceTargetMessage{
+			RequestId: uuid.NewString(),
+			MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
+				PreviewRequest: &v1beta.ServiceTargetPreviewRequest{ServiceConfig: betaConfig},
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		result := resp.GetPreviewResponse().GetResult()
+		if result == nil {
+			return nil, errors.New("invalid preview response: missing preview result")
+		}
+
+		return &project.ServiceDeployPreviewResult{
+			Message: result.GetMessage(),
+			Data:    result.GetData().AsMap(),
+		}, nil
+	}
 }

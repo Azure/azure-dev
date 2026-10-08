@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# The shape `azd ai eval init` writes: the eval body lives in its own file, and
+# relative paths inside that file resolve against the file, not the project root.
+name: support-agent-app
+
+services:
+  support-agent-evals:
+    host: azure.ai.eval
+    uses: [ai-project, support-agent]
+    $ref: ./evals/azure.eval.yaml

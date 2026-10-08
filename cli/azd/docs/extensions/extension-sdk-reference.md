@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
   - [NewListenCommand](#newlistencommand)
+  - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
   - [NewVersionCommand](#newversioncommand)
 - [MCP Server Builder](#mcp-server-builder)
@@ -34,6 +35,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewMCPSecurityPolicy](#newmcpsecuritypolicy)
   - [DefaultMCPSecurityPolicy](#defaultmcpsecuritypolicy)
   - [MCPSecurityPolicy Methods](#mcpsecuritypolicy-methods)
+  - [SSRFSafeRedirect](#ssrfsaferedirect)
 - [Service Target Providers](#service-target-providers)
   - [ServiceTargetProvider Interface](#servicetargetprovider-interface)
   - [BaseServiceTargetProvider](#baseservicetargetprovider)
@@ -206,6 +208,71 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 }))
 ```
 
+### Project lifecycle follow-up
+
+The preview API exposes generated clients rather than a project handler
+wrapper. Use `client.EventsBeta().EventStream(ctx)` to open the beta
+bidirectional stream, send a `SubscribeProjectEvent` message for a project
+`post*` event, and wait for a matching `SubscribeProjectEventResponse`
+before signaling `Extension().Ready`. A subscription error must prevent the
+extension from becoming ready. Process each `InvokeProjectHandler` with its
+`invocation_id`; while the handler is active, call:
+
+```go
+_, err := client.CommandResult().SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
+    InvocationId: invocation.GetInvocationId(),
+    Text:         "Next: azd show",
+})
+```
+
+Use an authenticated context for both RPCs. Handle the returned error before
+replying with `ProjectHandlerStatus` on the stream, using the invocation
+message's `request_id` for correlation. Handle stream errors and cancellation;
+send status `completed` only when processing succeeds.
+
+The first subscription selects the beta event stream mode. New clients must
+set a nonempty `request_id` on that subscription, retain request IDs on later
+subscriptions, and echo each project invocation's ID in its status message.
+Request-ID mode rejects later subscriptions or project statuses without an
+ID; service statuses continue to use service and event correlation. A first
+subscription without `request_id` uses legacy stable-event behavior for
+compatibility; that mode has no beta subscription acknowledgement or invocation
+ID and cannot use the beta follow-up API.
+
+The host stages the latest contribution for that invocation and commits it
+only after a successful handler status. Failed, cancelled, disconnected, or
+incomplete invocations are discarded. Call `SetFollowUp` with empty `Text`
+to clear a contribution. Calls outside a project `post*` invocation return
+an error. Stable `Events()` handlers and default language scaffolds do not
+expose this preview capability.
+
+This preview API requires an azd host that provides beta
+`CommandResultService` and invocation IDs. For a published extension that uses
+it, set `requiredAzdVersion` to the first released azd version containing
+`CommandResultService`. For the current release line, use:
+
+```yaml
+requiredAzdVersion: ">=1.35.0"
+```
+
+This filters extension versions during install and update. It does not prevent
+already-installed extensions or extensions from non-registry sources from
+running on an older host. The beta subscription response confirms that the
+host installed the handler; extensions using the raw beta client must wait
+for that response before signaling `Ready`. A missing acknowledgement can
+also indicate a slow host or connection; it does not by itself prove that
+the host lacks support. See [Extension Resolution and
+Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
+for the compatibility behavior.
+
+The host appends committed text to the parent command's human-readable
+completion message and combines contributions from multiple extensions in a
+deterministic order. The text is not included in JSON output. Within a custom
+workflow, a later command step replaces an earlier result from that extension.
+Within one command, lifecycle events use the stable order restore, build,
+package, provision, publish, deploy. Concurrent layers of the same event
+resolve by stable layer identity, not completion time.
+
 ### NewMetadataCommand
 
 ```go
@@ -247,7 +314,7 @@ policies, and instructions.
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `WithRateLimit` | `(burst int, refillRate float64) *MCPServerBuilder` | Configure a token-bucket rate limiter. `burst` = max concurrent requests; `refillRate` = tokens/second. |
-| `WithSecurityPolicy` | `(policy *MCPSecurityPolicy) *MCPServerBuilder` | Attach a security policy for URL/path validation on tool calls. |
+| `WithSecurityPolicy` | `(policy *MCPSecurityPolicy) *MCPServerBuilder` | Attach a security policy and expose it through `SecurityPolicy`. Handlers must explicitly validate relevant arguments. |
 | `WithInstructions` | `(instructions string) *MCPServerBuilder` | Set system instructions that guide AI clients on how to use the server's tools. |
 | `WithResourceCapabilities` | `(subscribe, listChanged bool) *MCPServerBuilder` | Enable resource support. |
 | `WithPromptCapabilities` | `(listChanged bool) *MCPServerBuilder` | Enable prompt support. |
@@ -256,6 +323,11 @@ policies, and instructions.
 | `AddResources` | `(resources ...server.ServerResource) *MCPServerBuilder` | Register static resources. |
 | `Build` | `() *server.MCPServer` | Create the configured MCP server. |
 | `SecurityPolicy` | `() *MCPSecurityPolicy` | Return the configured security policy, or `nil`. |
+
+`WithSecurityPolicy` does not automatically validate tool arguments. The
+builder cannot identify which arguments contain URLs or file paths, so each
+handler must retrieve the policy through `SecurityPolicy()` and explicitly call
+`CheckURL` or `CheckPath` for every relevant argument.
 
 **Usage:**
 
@@ -286,9 +358,21 @@ tool arguments (see [ToolArgs](#toolargs)).
 
 ```go
 type MCPToolOptions struct {
-    Description string // Human-readable tool description
+    Description string
+    Title       string
+    ReadOnly    bool
+    Idempotent  bool
+    Destructive bool
 }
 ```
+
+| Field | Description |
+|-------|-------------|
+| `Description` | Human-readable description of what the tool does. |
+| `Title` | Display title exposed through the MCP title annotation. |
+| `ReadOnly` | Sets the MCP read-only hint, indicating that the tool does not modify its environment. |
+| `Idempotent` | Sets the MCP idempotent hint, indicating that repeated calls with the same arguments have no additional effect. |
+| `Destructive` | Sets the MCP destructive hint, indicating that the tool may perform destructive updates. |
 
 ---
 
@@ -370,7 +454,9 @@ Creates an error `CallToolResult` with `IsError` set to `true`.
 ## MCP Security Policy
 
 The `MCPSecurityPolicy` validates URLs and file paths used by MCP tool calls to
-prevent SSRF, directory traversal, and data exfiltration.
+help mitigate SSRF, directory traversal, and data exfiltration. Handlers must
+invoke the checks explicitly; attaching a policy does not inspect arguments or
+configure an HTTP transport.
 
 ### NewMCPSecurityPolicy
 
@@ -391,7 +477,8 @@ Returns a policy with recommended defaults:
 - Cloud metadata endpoints blocked (AWS, GCP, Azure IMDS).
 - RFC 1918 private networks blocked.
 - HTTPS required (except localhost/127.0.0.1).
-- Common sensitive headers redacted (`Authorization`, `Cookie`, `X-Api-Key`, etc.).
+- Common sensitive header names marked for callers to block or redact
+  (`Authorization`, `Cookie`, `X-Api-Key`, etc.); the policy does not modify requests.
 
 ### MCPSecurityPolicy Methods
 
@@ -400,8 +487,9 @@ Returns a policy with recommended defaults:
 | `BlockMetadataEndpoints` | `() *MCPSecurityPolicy` | Block cloud metadata service endpoints (`169.254.169.254`, `fd00:ec2::254`, `metadata.google.internal`, etc.). |
 | `BlockPrivateNetworks` | `() *MCPSecurityPolicy` | Block RFC 1918 private networks, loopback, link-local, CGNAT (RFC 6598), and deprecated IPv6 transition mechanisms. |
 | `RequireHTTPS` | `() *MCPSecurityPolicy` | Require HTTPS for all URLs except `localhost`/`127.0.0.1`. |
-| `RedactHeaders` | `(headers ...string) *MCPSecurityPolicy` | Mark headers that should be blocked/redacted in outgoing requests. |
+| `RedactHeaders` | `(headers ...string) *MCPSecurityPolicy` | Mark header names for `IsHeaderBlocked`; callers must enforce blocking/redaction. |
 | `ValidatePathsWithinBase` | `(basePaths ...string) *MCPSecurityPolicy` | Restrict file paths to the given base directories. Resolves symlinks and blocks `../` traversal. |
+| `OnBlocked` | `(fn func(violation string)) *MCPSecurityPolicy` | Register a callback for blocked URL or path checks. The callback receives a human-readable violation for audit logging and must not block. |
 | `CheckURL` | `(rawURL string) error` | Validate a URL against the policy. Returns `nil` if allowed. |
 | `CheckPath` | `(path string) error` | Validate a file path against the policy. |
 | `IsHeaderBlocked` | `(header string) bool` | Check if a header name is in the redacted set. |
@@ -417,9 +505,46 @@ policy := azdext.NewMCPSecurityPolicy().
     ValidatePathsWithinBase("/home/user/project")
 
 if err := policy.CheckURL(userProvidedURL); err != nil {
-    return azdext.MCPErrorResult("blocked URL: %v", err), nil
+    return azdext.MCPErrorResult("URL blocked by security policy"), nil
 }
 ```
+
+`CheckURL` resolves DNS at validation time, but does not validate or pin the
+address used by a later HTTP connection. A hostname can resolve to a public
+address during validation and a private address during dialing (DNS rebinding).
+For requests, restrict destinations to fixed hosts whose service and DNS
+administration you trust and prevent redirects from escaping that trust
+boundary, as in the [walkthrough](extension-e2e-walkthrough.md#step-4-build-an-mcp-server-with-tools).
+If arbitrary untrusted hosts must be supported, use a transport that validates
+the actual dial addresses and connects only to those validated addresses;
+`CheckURL` alone is insufficient. Policy errors can contain raw URLs, so do not
+return or log them without removing embedded credentials, query strings, and
+fragments.
+
+### SSRFSafeRedirect
+
+```go
+func SSRFSafeRedirect(req *http.Request, via []*http.Request) error
+```
+
+An `http.Client.CheckRedirect` helper that checks redirect targets for SSRF. It
+rejects redirects to cloud metadata endpoints, localhost, private or loopback
+IP addresses, and hostnames that resolve to blocked addresses. It also rejects
+HTTPS-to-HTTP downgrades, DNS resolution failures, and redirect chains of 10 or
+more requests.
+
+```go
+client := &http.Client{
+    Timeout:       10 * time.Second,
+    CheckRedirect: azdext.SSRFSafeRedirect,
+}
+```
+
+This helper neither checks the initial request nor pins dial addresses. Its DNS
+checks have the same validation-to-dial race as `CheckURL`, and it does not enforce
+a caller's trusted-host allowlist. It is not complete SSRF protection for
+attacker-controlled hosts; use the same trusted-destination or validated-dial
+transport boundary described above, including on every redirect.
 
 ---
 
@@ -502,7 +627,7 @@ func NewAzdClient(opts ...AzdClientOption) (*AzdClient, error)
 ```
 
 gRPC client connecting to the azd framework. Auto-discovers the socket via
-`AZD_RPC_SERVER_ENDPOINT`. Provides typed accessors for all framework services:
+`AZD_SERVER`. Provides typed accessors for all framework services:
 
 | Accessor | Returns |
 |----------|---------|
@@ -512,6 +637,8 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
+| `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
+| `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
@@ -519,24 +646,41 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Container()` | `ContainerServiceClient` |
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
+| `AccountBeta()` | `v1beta.AccountServiceClient` (preview) |
 | `Ai()` | `AiModelServiceClient` |
 | `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
 | `Telemetry()` | `v1beta.TelemetryServiceClient` (preview) |
 
 Always call `defer client.Close()` after creation.
 
-`Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import
+`AccountBeta()`, `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`,
+and `Telemetry()` are preview accessors. Import
 `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
-request, response, and enum types. They are intentionally excluded from the
-stable `azdext` contract facade until those services graduate to `v1`.
+request, response, and enum types. Beta-only methods and types are not
+exposed through the stable `azdext` contract facade. `Account()` still
+provides the existing stable account methods.
+
+#### AccountService
+
+`AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for these preview types. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed. The stable `Account()` client remains unchanged and does not expose this method.
+
+See [GetCurrentPrincipal](extension-framework.md#getcurrentprincipal) for the enum mapping, guest-user behavior, and host compatibility requirements.
 
 #### TelemetryService
 
 `Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`
-lets an authenticated extension report a named usage event with an arbitrary
-`map[string]string` of attributes. Telemetry is a service `azd` offers to
-extensions whose configured source matches the verified official registry
-name, type, and normalized URL.
+lets an authenticated extension report a named usage event. The runtime request
+contains a bounded `map[string]string` of attributes and does not carry
+classification, purpose, or endpoint metadata. Telemetry is available to
+eligible official-registry installations.
+
+For first-party extensions in this repository, that runtime wire shape does not
+permit ad hoc attribute keys. Every attribute must be statically discoverable,
+and its final `ext.*` name must have a reviewed `fields.AttributeKey`
+declaration in `cli/azd/extensions/telemetry/fields.go`. The declaration supplies
+the classification, purpose, and endpoint metadata enforced during repository
+validation. See
+[Declare and validate attributes](./extension-telemetry.md#declare-and-validate-attributes).
 
 The host writes `extension.id`, `extension.version`, and `extension.source`
 from the signed claims and the installed record, and `extension.event` from the
@@ -544,8 +688,9 @@ caller's event name, so an extension cannot assert which extension it is. Every
 caller-supplied key is prefixed with `ext.` and can never overwrite a host
 field. Accepted events are recorded on a dedicated `ext.usage` span that shares
 the command's trace, so downstream queries join it to the originating command
-on `operation_Id`. Extensions cannot choose the span, classification, purpose,
-hashing, or aggregation.
+on `operation_Id`. The runtime request cannot choose the span, classification,
+purpose, hashing, or aggregation; first-party classification and purpose come
+from the reviewed source declaration instead.
 
 Two outcomes are not errors: a report from an extension installed from any
 other source, and a report past the limit of 100 recorded events per `azd`

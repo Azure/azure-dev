@@ -21,6 +21,7 @@ trigger:
       - cli/azd/go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/stages/build-and-test.yml
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
       - /eng/pipelines/templates/variables/image.yml
@@ -34,6 +35,8 @@ pr:
       - cli/azd/go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/stages/build-and-test.yml
+      - /eng/pipelines/templates/jobs/build-cli.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
       - cli/azd/docs/**
@@ -47,6 +50,30 @@ extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
     stages:
+    - ${{ if eq(parameters.DoPublish, true) }}:
+      - stage: ValidateReleaseMetadata
+        displayName: Validate release metadata
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+        jobs:
+          - job: ValidateReleaseMetadata
+            displayName: Validate release metadata
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            steps:
+              - checkout: self
+                fetchDepth: 1
+                fetchTags: false
+
+              - task: PowerShell@2
+                displayName: Validate CLI release readiness
+                inputs:
+                  pwsh: true
+                  targetType: filePath
+                  filePath: eng/scripts/Test-CliReleaseReadiness.ps1
+
     - template: /eng/pipelines/templates/stages/build-and-test.yml
       parameters:
         # Scheduled and manual runs use 'live' mode by default for validation against real Azure resources.

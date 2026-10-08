@@ -98,7 +98,8 @@ type Console interface {
 	MessageUxItem(ctx context.Context, item ux.UxItem)
 	WarnForFeature(ctx context.Context, id alpha.FeatureId)
 	// Prints progress spinner with the given title.
-	// If a previous spinner is running, the title is updated.
+	// If a previous spinner is running, the title is updated only when it changes.
+	// Repeating the current title is a no-op while running, but resumes a paused spinner or starts a stopped one.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
 	// Stop the current spinner from the console and change the spinner bar for the lastMessage
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
@@ -113,8 +114,8 @@ type Console interface {
 	// Determines if there is a current spinner running.
 	IsSpinnerRunning(ctx context.Context) bool
 	// Determines if the current spinner is an interactive spinner, where messages are updated periodically.
-	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
-	// call to ShowSpinner, even when the title is unchanged.
+	// If false, the spinner is non-interactive: starting, resuming, or changing its title prints a console message.
+	// Repeating an unchanged title while running does not print another message.
 	IsSpinnerInteractive() bool
 	// IsNoPromptMode returns true when --no-prompt is active and interactive prompts are disabled.
 	IsNoPromptMode() bool
@@ -501,6 +502,11 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 
 	c.spinnerLineMu.Lock()
+	defer c.spinnerLineMu.Unlock()
+
+	if c.spinner.Status() == yacspin.SpinnerRunning && c.spinnerCurrentTitle == title {
+		return
+	}
 	c.spinnerCurrentTitle = title
 
 	indentPrefix := c.getIndent()
@@ -517,7 +523,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		// calling Start may result in an additional line of output being written in non-tty scenarios
 		_ = c.spinner.Start()
 	}
-	c.spinnerLineMu.Unlock()
 }
 
 // spinnerTerminalMode determines the appropriate terminal mode.

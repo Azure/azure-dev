@@ -279,7 +279,7 @@ func showCumulativeMetrics(
 	}
 
 	usage := metricsResp.Usage
-	if usage == nil || (usage.InputTokens == 0 && usage.OutputTokens == 0) {
+	if !hasUsageMetrics(usage) {
 		return
 	}
 
@@ -294,16 +294,18 @@ func showCumulativeMetrics(
 		color.HiBlackString("•"), formatTokens(usage.OutputTokens))
 	fmt.Printf("  %s Total tokens:     %s\n",
 		color.HiBlackString("•"), formatTokens(usage.TotalTokens))
-	if usage.BillingRate > 0 {
-		fmt.Printf("  %s Billing rate:     %.0fx per request\n",
-			color.HiBlackString("•"), usage.BillingRate)
+	if usage.AiCredits > 0 {
+		fmt.Printf("  %s AI credits:       %s\n",
+			color.HiBlackString("•"), fmt.Sprintf("%.2f", usage.AiCredits))
 	}
-	fmt.Printf("  %s Premium requests: %.0f\n",
-		color.HiBlackString("•"), usage.PremiumRequests)
 	if usage.DurationMs > 0 {
 		fmt.Printf("  %s API duration:     %s\n",
 			color.HiBlackString("•"), formatDuration(usage.DurationMs))
 	}
+}
+
+func hasUsageMetrics(usage *v1beta.CopilotUsageMetrics) bool {
+	return usage != nil && (usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.AiCredits != 0)
 }
 
 // showFileChanges displays accumulated file changes from the session.

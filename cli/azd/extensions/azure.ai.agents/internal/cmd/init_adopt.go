@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,26 +15,28 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	osExec "os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/fatih/color"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +47,112 @@ type azureYamlManifestInfo struct {
 	hasPromptAgent    bool
 	hasNonPromptAgent bool
 	hasUnresolvedRefs bool
+}
+
+type authenticatedManifestReader func(context.Context, string) ([]byte, error)
+
+type initSourceKind int
+
+const (
+	initSourceLocal initSourceKind = iota
+	initSourceHTTP
+)
+
+var windowsDrivePathPattern = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
+
+func classifyInitSource(source string) (initSourceKind, error) {
+	if windowsDrivePathPattern.MatchString(source) || strings.HasPrefix(source, `\\`) {
+		return initSourceLocal, nil
+	}
+
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return initSourceLocal, nil
+	}
+	if parsed.Scheme == "" {
+		return initSourceLocal, nil
+	}
+	if strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https") {
+		return initSourceHTTP, nil
+	}
+
+	return initSourceLocal, exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf("unsupported manifest URI scheme %q", parsed.Scheme),
+		"Use an existing local azure.yaml path or an HTTP(S) URL.",
+	)
+}
+
+func safeInitSourceDisplay(source string) string {
+	kind, err := classifyInitSource(source)
+	if err != nil || kind == initSourceLocal {
+		return source
+	}
+
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return "provided URL"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func redactURLFromText(text, rawURL string) string {
+	if rawURL == "" {
+		return text
+	}
+	text = strings.ReplaceAll(text, rawURL, safeInitSourceDisplay(rawURL))
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return text
+	}
+	if parsed.User != nil {
+		if password, ok := parsed.User.Password(); ok && password != "" {
+			text = strings.ReplaceAll(text, password, "[redacted]")
+		}
+		if username := parsed.User.Username(); username != "" {
+			text = strings.ReplaceAll(text, username, "[redacted]")
+		}
+	}
+	for key, values := range parsed.Query() {
+		text = strings.ReplaceAll(text, key, "[redacted]")
+		for _, value := range values {
+			if value != "" {
+				text = strings.ReplaceAll(text, value, "[redacted]")
+			}
+		}
+	}
+	if parsed.Fragment != "" {
+		text = strings.ReplaceAll(text, parsed.Fragment, "[redacted]")
+	}
+	return text
+}
+
+func redactNestedErrorURLs(text string, err error, depth int) string {
+	if err == nil || depth > 64 {
+		return text
+	}
+
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
+		text = redactURLFromText(text, urlErr.URL)
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, nested := range multi.Unwrap() {
+			text = redactNestedErrorURLs(text, nested, depth+1)
+		}
+		return text
+	}
+	return redactNestedErrorURLs(text, errors.Unwrap(err), depth+1)
+}
+
+func safeInitSourceError(err error, source string) string {
+	if err == nil {
+		return ""
+	}
+	text := redactURLFromText(err.Error(), source)
+	return redactNestedErrorURLs(text, err, 0)
 }
 
 func (i azureYamlManifestInfo) promptOnly() bool {
@@ -73,6 +182,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			continue
 		}
 
+		host, _ := svcMap["host"].(string)
 		if hasAzureYamlFileRef(svcMap) {
 			if projectRoot == "" {
 				info.hasUnresolvedRefs = true
@@ -89,7 +199,6 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			}
 		}
 
-		host, _ := svcMap["host"].(string)
 		if host == AiAgentHost {
 			info.hasAgentService = true
 			kind, _ := svcMap["kind"].(string)
@@ -125,6 +234,7 @@ func hasAzureYamlFileRef(value any) bool {
 }
 
 func missingAgentServiceError(manifestPointer string) error {
+	manifestPointer = safeInitSourceDisplay(manifestPointer)
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
 		fmt.Sprintf(
@@ -132,10 +242,275 @@ func missingAgentServiceError(manifestPointer string) error {
 			manifestPointer,
 		),
 		fmt.Sprintf(
-			"add a service with host: %s, or pass an agent manifest",
+			"add a service with host: %s directly in azure.yaml, or use a root $ref from that service",
 			AiAgentHost,
 		),
 	)
+}
+
+func loadExplicitAzureYaml(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	httpClient *http.Client,
+) ([]byte, error) {
+	if err := checkNotDirectory(flags.manifestPointer); err != nil {
+		return nil, err
+	}
+
+	content, err := readExplicitManifestContent(
+		ctx,
+		flags.manifestPointer,
+		httpClient,
+		func(ctx context.Context, pointer string) ([]byte, error) {
+			return readAuthenticatedManifestContent(ctx, azdClient, pointer)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return validateExplicitAzureYamlContent(flags.manifestPointer, content)
+}
+
+func validateExplicitAzureYamlContent(manifestPointer string, content []byte) ([]byte, error) {
+	display := safeInitSourceDisplay(manifestPointer)
+	projectRoot := ""
+	if isLocalFilePath(manifestPointer) {
+		projectRoot = filepath.Dir(manifestPointer)
+	}
+	info, err := inspectAzureYaml(content, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if info.hasServices {
+		if !info.hasAgentService && !info.hasUnresolvedRefs {
+			return nil, missingAgentServiceError(manifestPointer)
+		}
+		return content, nil
+	}
+
+	var document map[string]any
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("parsing unified azure.yaml from %q: %s", display, err),
+			"Provide a valid azure.yaml project document with an azure.ai.agent service.",
+		)
+	}
+
+	if _, hasTemplate := document["template"]; hasTemplate {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"AgentManifest documents with a top-level 'template:' field are no longer accepted by init",
+			"Extract the template into an azure.ai.agent service in azure.yaml, "+
+				"or reference the direct definition from that service with $ref.",
+		)
+	}
+	if kind := strings.TrimSpace(fmt.Sprint(document["kind"])); kind != "" && kind != "<nil>" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("standalone agent definition with kind %q is no longer accepted by init", kind),
+			"Create an azure.yaml project document and place the definition on an azure.ai.agent service, "+
+				"or reference the direct definition from that service with $ref.",
+		)
+	}
+
+	return nil, exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("%q is not a unified azure.yaml project document", display),
+		"Provide an azure.yaml document with a services mapping and at least one azure.ai.agent service.",
+	)
+}
+
+func validateLocalExplicitAzureYaml(manifestPointer string) ([]byte, bool, error) {
+	kind, err := classifyInitSource(manifestPointer)
+	if err != nil {
+		return nil, false, err
+	}
+	if kind == initSourceHTTP {
+		return nil, false, nil
+	}
+	if err := checkNotDirectory(manifestPointer); err != nil {
+		return nil, false, err
+	}
+	//nolint:gosec // the path is an explicit user-provided init source
+	content, err := os.ReadFile(manifestPointer)
+	if err != nil {
+		return nil, false, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf(
+				"could not read unified azure.yaml from %q: %s",
+				safeInitSourceDisplay(manifestPointer),
+				err,
+			),
+			"Provide an existing local azure.yaml path.",
+		)
+	}
+	content, err = validateExplicitAzureYamlContent(manifestPointer, content)
+	if err != nil {
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
+func readExplicitManifestContent(
+	ctx context.Context,
+	manifestPointer string,
+	httpClient *http.Client,
+	readAuthenticated authenticatedManifestReader,
+) ([]byte, error) {
+	display := safeInitSourceDisplay(manifestPointer)
+	kind, err := classifyInitSource(manifestPointer)
+	if err != nil {
+		return nil, err
+	}
+	if kind == initSourceLocal {
+		//nolint:gosec // the path is an explicit user-provided init source
+		content, err := os.ReadFile(manifestPointer)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidManifestPointer,
+				fmt.Sprintf("could not read unified azure.yaml from %q: %s", display, err),
+				"Provide an existing local azure.yaml path.",
+			)
+		}
+		return content, nil
+	}
+
+	if content, cached := readCachedTemplateManifest(manifestPointer); cached {
+		return content, nil
+	}
+
+	if content, recognized, err := readPublicGitHubManifest(ctx, manifestPointer, httpClient); recognized && err == nil {
+		return content, nil
+	} else if exterrors.IsCancellation(err) {
+		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+	}
+
+	if readAuthenticated == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("could not download unified azure.yaml from %q", display),
+			"Verify the URL and authenticate with `gh auth login` if the repository is private.",
+		)
+	}
+	content, err := readAuthenticated(ctx, manifestPointer)
+	if err == nil {
+		return content, nil
+	}
+	if exterrors.IsCancellation(err) {
+		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return nil, localErr
+	}
+	return nil, exterrors.Dependency(
+		exterrors.CodeGitHubDownloadFailed,
+		fmt.Sprintf(
+			"could not download unified azure.yaml from %q: %s",
+			display,
+			safeInitSourceError(err, manifestPointer),
+		),
+		"Verify the URL, repository access, and GitHub CLI authentication with `gh auth status`.",
+	)
+}
+
+func readPublicGitHubManifest(
+	ctx context.Context,
+	manifestPointer string,
+	httpClient *http.Client,
+) ([]byte, bool, error) {
+	urlInfo := parseGitHubUrlNaive(manifestPointer)
+	if urlInfo == nil {
+		return nil, false, nil
+	}
+	if httpClient == nil {
+		return nil, true, errors.New("HTTP client is unavailable")
+	}
+
+	contentsURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	if urlInfo.Branch != "" {
+		contentsURL += "?ref=" + url.QueryEscape(urlInfo.Branch)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, contentsURL, nil)
+	if err != nil {
+		return nil, true, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3.raw")
+
+	//nolint:gosec // URL is constrained to the GitHub contents API
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, true, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, true, fmt.Errorf("GitHub returned HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	return body, true, err
+}
+
+func readAuthenticatedManifestContent(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	manifestPointer string,
+) ([]byte, error) {
+	if azdClient == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			"authenticated GitHub download is unavailable",
+			"Run this command through azd and authenticate with `gh auth login`.",
+		)
+	}
+	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
+	if err != nil {
+		return nil, err
+	}
+	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
+	console := input.NewConsole(
+		false,
+		true,
+		input.Writers{Output: io.Discard},
+		input.ConsoleHandles{Stderr: io.Discard, Stdin: os.Stdin, Stdout: io.Discard},
+		nil,
+		nil,
+	)
+	ghCli := github.NewGitHubCli(console, commandRunner)
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, err
+		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			"GitHub CLI is required to read a private azure.yaml",
+			"Install GitHub CLI from https://cli.github.com and run `gh auth login`.",
+		)
+	}
+
+	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	if urlInfo.Branch != "" {
+		apiPath += "?ref=" + url.QueryEscape(urlInfo.Branch)
+	}
+	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, err
+		}
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf(
+				"GitHub could not download the requested azure.yaml: %s",
+				safeInitSourceError(err, manifestPointer),
+			),
+			"Verify repository access and GitHub CLI authentication with `gh auth status`.",
+		)
+	}
+	return []byte(content), nil
 }
 
 func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
@@ -150,7 +525,73 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 	if err != nil {
 		return err
 	}
-	if !info.hasServices || !info.hasAgentService {
+	if !info.hasServices || (!info.hasAgentService && !info.hasUnresolvedRefs) {
+		return missingAgentServiceError(manifestPointer)
+	}
+
+	var document struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return fmt.Errorf("parsing staged azure.yaml: %w", err)
+	}
+	hasResolvedAgentService := false
+	for name, service := range document.Services {
+		inlineHost, _ := service["host"].(string)
+		resolvedService := service
+		if hasAzureYamlFileRef(service) {
+			resolvedService, err = foundry.ResolveFileRefs(service, stagingDir)
+			if err != nil {
+				return fmt.Errorf("resolving $ref includes for service %q: %w", name, err)
+			}
+		}
+
+		if strings.TrimSpace(inlineHost) != AiAgentHost {
+			continue
+		}
+		hasResolvedAgentService = true
+		if config, hasConfig := resolvedService["config"]; hasConfig && config != nil {
+			configMap, ok := config.(map[string]any)
+			if !ok {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("agent service %q has a malformed nested config value", name),
+					"Remove config or replace it with direct azure.ai.agent service properties.",
+				)
+			}
+			if len(configMap) > 0 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("agent service %q uses the unsupported nested config block", name),
+					"Move the direct agent definition to the azure.ai.agent service properties.",
+				)
+			}
+		}
+
+		// Let the runtime-compatible resolver validate agent services so
+		// implicit disk definitions cannot pass staging validation.
+		props, err := structpb.NewStruct(service)
+		if err != nil {
+			return fmt.Errorf("encoding agent service %q: %w", name, err)
+		}
+		svc := &azdext.ServiceConfig{
+			Name:                 name,
+			Host:                 inlineHost,
+			AdditionalProperties: props,
+		}
+		probe, err := probeAgentDefinitionForInit(svc, stagingDir)
+		if err != nil {
+			return fmt.Errorf("validating agent service %q: %w", name, err)
+		}
+		if !probe.found {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q does not contain a direct or root-$ref definition", name),
+				"Put the agent definition directly on the azure.ai.agent service or use a root $ref.",
+			)
+		}
+	}
+	if !hasResolvedAgentService {
 		return missingAgentServiceError(manifestPointer)
 	}
 
@@ -169,561 +610,6 @@ func foundryProjectName(content []byte) string {
 		return strings.TrimSpace(name)
 	}
 	return ""
-}
-
-// foundryDeploymentEntry holds a parsed deployment along with the service key
-// it was declared in, so the azure.yaml can be updated after verification.
-type foundryDeploymentEntry struct {
-	ServiceName string
-	Deployment  project.Deployment
-}
-
-// azureYamlServices is the minimal typed structure for parsing deployments from
-// a unified azure.yaml. Only the fields needed for deployment verification are
-// declared; yaml.v3 ignores unrecognized keys.
-type azureYamlServices struct {
-	Services map[string]azureYamlService `yaml:"services"`
-}
-
-type azureYamlService struct {
-	Host        string               `yaml:"host"`
-	Deployments []project.Deployment `yaml:"deployments"`
-}
-
-// foundryDeployments parses the azure.yaml content and returns all model
-// deployments declared under services with `host: azure.ai.project`.
-func foundryDeployments(content []byte) []foundryDeploymentEntry {
-	var doc azureYamlServices
-	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return nil
-	}
-
-	var entries []foundryDeploymentEntry
-	for svcName, svc := range doc.Services {
-		if svc.Host != "azure.ai.project" {
-			continue
-		}
-		for _, dep := range svc.Deployments {
-			entries = append(entries, foundryDeploymentEntry{
-				ServiceName: svcName,
-				Deployment:  dep,
-			})
-		}
-	}
-	return entries
-}
-
-// verifyAzureYamlDeployments checks each model deployment declared in the
-// unified azure.yaml against the selected Foundry project's existing
-// deployments. It prompts the user for each deployment and returns the filtered
-// list of deployments that should remain in the azure.yaml (i.e. those that
-// need provisioning) and the full list of referenced deployments (for env var).
-func verifyAzureYamlDeployments(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	credential azcore.TokenCredential,
-	azureContext *azdext.AzureContext,
-	envName string,
-	entries []foundryDeploymentEntry,
-	noPrompt bool,
-	modelDeploymentFlag string,
-	modelFlag string,
-) (keptEntries []foundryDeploymentEntry, referencedDeployments []project.Deployment, modified bool, err error) {
-	// Get the Foundry project ID from the environment.
-	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZURE_AI_PROJECT_ID",
-	})
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("failed to get AZURE_AI_PROJECT_ID: %w", err)
-	}
-
-	var allDeployments []FoundryDeploymentInfo
-	foundryProjectId := resp.Value
-	if foundryProjectId != "" {
-		parts := strings.Split(foundryProjectId, "/")
-		if len(parts) < 9 {
-			return nil, nil, false, fmt.Errorf(
-				"invalid AZURE_AI_PROJECT_ID format: expected at least 9 path segments, got %d", len(parts))
-		}
-
-		subscription := parts[2]
-		resourceGroup := parts[4]
-		accountName := parts[8]
-
-		allDeployments, err = listProjectDeployments(ctx, credential, subscription, resourceGroup, accountName)
-		if err != nil {
-			return nil, nil, false, fmt.Errorf("failed to list deployments in Foundry project: %w", err)
-		}
-	}
-
-	// --model-deployment flag: auto-select the named deployment, skip interactive loop.
-	if modelDeploymentFlag != "" {
-		for _, d := range allDeployments {
-			if strings.EqualFold(d.Name, modelDeploymentFlag) {
-				log.Printf("--model-deployment: using existing deployment '%s' (model: %s, version: %s)",
-					d.Name, d.ModelName, d.Version)
-				referencedDeployments = append(referencedDeployments, project.Deployment{
-					Name: d.Name,
-					Model: project.DeploymentModel{
-						Name:    d.ModelName,
-						Format:  d.ModelFormat,
-						Version: d.Version,
-					},
-					Sku: project.DeploymentSku{
-						Name:     d.SkuName,
-						Capacity: d.SkuCapacity,
-					},
-				})
-				// All azure.yaml deployments are removed (existing deployment is used instead).
-				return nil, referencedDeployments, true, nil
-			}
-		}
-		return nil, nil, false, exterrors.Validation(
-			exterrors.CodeModelDeploymentNotFound,
-			fmt.Sprintf("model deployment %q not found in Foundry project", modelDeploymentFlag),
-			"verify the deployment name or omit --model-deployment to select interactively",
-		)
-	}
-	for _, entry := range entries {
-		dep := entry.Deployment
-
-		// Find matching deployments by model name.
-		matchingDeployments := make(map[string]*FoundryDeploymentInfo)
-		for i := range allDeployments {
-			d := &allDeployments[i]
-			if d.ModelName == dep.Model.Name {
-				matchingDeployments[d.Name] = d
-			}
-		}
-
-		if len(matchingDeployments) > 0 {
-			// Sort for deterministic selection.
-			sortedNames := make([]string, 0, len(matchingDeployments))
-			for name := range matchingDeployments {
-				sortedNames = append(sortedNames, name)
-			}
-			slices.Sort(sortedNames)
-
-			if noPrompt {
-				// Auto-use the first matching deployment.
-				name := sortedNames[0]
-				existing := matchingDeployments[name]
-				log.Printf(
-					"--no-prompt: using existing deployment '%s' (version: %s) for model '%s'",
-					name, existing.Version, dep.Model.Name,
-				)
-				referencedDeployments = append(referencedDeployments, project.Deployment{
-					Name: name,
-					Model: project.DeploymentModel{
-						Name:    dep.Model.Name,
-						Format:  existing.ModelFormat,
-						Version: existing.Version,
-					},
-					Sku: project.DeploymentSku{
-						Name:     existing.SkuName,
-						Capacity: existing.SkuCapacity,
-					},
-				})
-				modified = true
-				continue
-			}
-
-			// Show deployment details and prompt.
-			fmt.Printf("\nModel deployment %s is defined in the azure.yaml:\n", output.WithHighLightFormat("'%s'", dep.Name))
-			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
-			fmt.Printf("  SKU: %s, capacity %d\n", dep.Sku.Name, dep.Sku.Capacity)
-			fmt.Println()
-
-			fmt.Println("Existing deployment(s) using the same model were found in your Foundry project:")
-			for _, name := range sortedNames {
-				d := matchingDeployments[name]
-				fmt.Printf("  • %s — version %s, SKU: %s (capacity %d)\n",
-					name, d.Version, d.SkuName, d.SkuCapacity)
-			}
-			fmt.Println()
-
-			// Build prompt choices: use each existing + optionally deploy as specified + choose different + skip
-			choices := make([]*azdext.SelectChoice, 0, len(sortedNames)+3)
-			for _, name := range sortedNames {
-				d := matchingDeployments[name]
-				choices = append(choices, &azdext.SelectChoice{
-					Value: "use:" + name,
-					Label: fmt.Sprintf("Use existing deployment '%s' (version: %s, SKU: %s)",
-						name, d.Version, d.SkuName),
-				})
-			}
-			// Only offer "deploy as specified" if no existing deployment is an exact match.
-			hasExactMatch := false
-			for _, d := range matchingDeployments {
-				if d.Name == dep.Name &&
-					d.Version == dep.Model.Version &&
-					d.SkuName == dep.Sku.Name &&
-					d.SkuCapacity == dep.Sku.Capacity {
-					hasExactMatch = true
-					break
-				}
-			}
-			if !hasExactMatch {
-				choices = append(choices, &azdext.SelectChoice{
-					Value: "deploy",
-					Label: "Deploy as specified in azure.yaml",
-				})
-			}
-			choices = append(choices,
-				&azdext.SelectChoice{Value: "change", Label: "Choose a different model"},
-				&azdext.SelectChoice{Value: "skip", Label: "Skip this model entirely (remove from azure.yaml)"},
-			)
-
-			defaultIdx := int32(0)
-			selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-				Options: &azdext.SelectOptions{
-					Message:       "How would you like to proceed?",
-					Choices:       choices,
-					SelectedIndex: &defaultIdx,
-				},
-			})
-			if err != nil {
-				if exterrors.IsCancellation(err) {
-					return nil, nil, false, exterrors.Cancelled("model deployment verification was cancelled")
-				}
-				return nil, nil, false, fmt.Errorf("failed to prompt for deployment choice: %w", err)
-			}
-
-			selected := choices[*selectResp.Value].Value
-			switch {
-			case strings.HasPrefix(selected, "use:"):
-				name := strings.TrimPrefix(selected, "use:")
-				existing := matchingDeployments[name]
-				referencedDeployments = append(referencedDeployments, project.Deployment{
-					Name: name,
-					Model: project.DeploymentModel{
-						Name:    dep.Model.Name,
-						Format:  existing.ModelFormat,
-						Version: existing.Version,
-					},
-					Sku: project.DeploymentSku{
-						Name:     existing.SkuName,
-						Capacity: existing.SkuCapacity,
-					},
-				})
-				modified = true
-				fmt.Printf("Using existing deployment '%s'.\n", name)
-
-			case selected == "deploy":
-				keptEntries = append(keptEntries, foundryDeploymentEntry{
-					ServiceName: entry.ServiceName,
-					Deployment:  dep,
-				})
-				referencedDeployments = append(referencedDeployments, dep)
-
-			case selected == "change":
-				newDep, isExisting, err := promptAlternativeDeployment(
-					ctx, azdClient, azureContext, allDeployments, modelFlag,
-				)
-				if err != nil {
-					return nil, nil, false, err
-				}
-				if newDep != nil {
-					if !isExisting {
-						keptEntries = append(keptEntries, foundryDeploymentEntry{
-							ServiceName: entry.ServiceName,
-							Deployment:  *newDep,
-						})
-					}
-					referencedDeployments = append(referencedDeployments, *newDep)
-				}
-				modified = true
-
-			case selected == "skip":
-				modified = true
-				fmt.Println(output.WithWarningFormat(
-					"Skipped model '%s'. It will be removed from the azure.yaml.", dep.Model.Name))
-			}
-
-		} else {
-			// No matching deployment in the project (or no project yet).
-			if noPrompt {
-				// Auto-deploy as specified.
-				log.Printf("--no-prompt: no matching deployment for model '%s', will deploy as specified",
-					dep.Model.Name)
-				keptEntries = append(keptEntries, foundryDeploymentEntry{
-					ServiceName: entry.ServiceName,
-					Deployment:  dep,
-				})
-				referencedDeployments = append(referencedDeployments, dep)
-				continue
-			}
-
-			if foundryProjectId == "" {
-				fmt.Printf("\nModel deployment %s is defined in the azure.yaml:\n",
-					output.WithHighLightFormat("'%s'", dep.Name))
-			} else {
-				color.Yellow(
-					"\nNo existing deployment for model '%s' was found in your Foundry project.\n",
-					dep.Model.Name,
-				)
-				fmt.Printf("Model deployment %s is defined in the azure.yaml:\n",
-					output.WithHighLightFormat("'%s'", dep.Name))
-			}
-			fmt.Printf("  Model: %s (%s), version %s\n", dep.Model.Name, dep.Model.Format, dep.Model.Version)
-			fmt.Printf("  SKU: %s, capacity %d\n\n", dep.Sku.Name, dep.Sku.Capacity)
-
-			noMatchChoices := []*azdext.SelectChoice{
-				{Value: "deploy", Label: "Deploy as specified in azure.yaml"},
-				{Value: "change", Label: "Choose a different model"},
-				{Value: "skip", Label: "Skip this model entirely (remove from azure.yaml)"},
-			}
-
-			defaultIdx := int32(0)
-			selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-				Options: &azdext.SelectOptions{
-					Message:       "How would you like to proceed?",
-					Choices:       noMatchChoices,
-					SelectedIndex: &defaultIdx,
-				},
-			})
-			if err != nil {
-				if exterrors.IsCancellation(err) {
-					return nil, nil, false, exterrors.Cancelled("model deployment verification was cancelled")
-				}
-				return nil, nil, false, fmt.Errorf("failed to prompt for deployment choice: %w", err)
-			}
-
-			switch noMatchChoices[*selectResp.Value].Value {
-			case "deploy":
-				keptEntries = append(keptEntries, foundryDeploymentEntry{
-					ServiceName: entry.ServiceName,
-					Deployment:  dep,
-				})
-				referencedDeployments = append(referencedDeployments, dep)
-
-			case "change":
-				newDep, isExisting, err := promptAlternativeDeployment(
-					ctx, azdClient, azureContext, allDeployments, modelFlag,
-				)
-				if err != nil {
-					return nil, nil, false, err
-				}
-				if newDep != nil {
-					if !isExisting {
-						keptEntries = append(keptEntries, foundryDeploymentEntry{
-							ServiceName: entry.ServiceName,
-							Deployment:  *newDep,
-						})
-					}
-					referencedDeployments = append(referencedDeployments, *newDep)
-				}
-				modified = true
-
-			case "skip":
-				modified = true
-				fmt.Println(output.WithWarningFormat(
-					"Skipped model '%s'. It will be removed from the azure.yaml.", dep.Model.Name))
-			}
-		}
-	}
-
-	return keptEntries, referencedDeployments, modified, nil
-}
-
-// promptAlternativeDeployment lets the user browse the model catalog or pick an
-// existing deployment from the project. It returns the chosen deployment, or nil
-// if no selection was made. The isExisting flag indicates whether the user picked
-// an already-deployed model (true) or a new one from the catalog (false).
-func promptAlternativeDeployment(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	azureContext *azdext.AzureContext,
-	allDeployments []FoundryDeploymentInfo,
-	modelFlag string,
-) (dep *project.Deployment, isExisting bool, err error) {
-	// Determine whether to prompt for catalog vs existing, or skip straight to catalog.
-	useCatalog := true
-	if len(allDeployments) > 0 {
-		altChoices := []*azdext.SelectChoice{
-			{Value: "catalog", Label: "Browse the model catalog"},
-			{Value: "existing", Label: "Use an existing deployment from this project"},
-		}
-
-		defaultIdx := int32(0)
-		altResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How would you like to choose a model?",
-				Choices:       altChoices,
-				SelectedIndex: &defaultIdx,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, false, exterrors.Cancelled("model selection was cancelled")
-			}
-			return nil, false, fmt.Errorf("failed to prompt for alternative model choice: %w", err)
-		}
-		useCatalog = altChoices[*altResp.Value].Value == "catalog"
-	}
-
-	if useCatalog {
-		// Use the full model + deployment prompt which handles version,
-		// SKU, and capacity selection (same as manifest path).
-		defaultModel := defaultAgentModel
-		if modelFlag != "" {
-			defaultModel = modelFlag
-		}
-		promptReq := &azdext.PromptAiModelRequest{
-			AzureContext: azureContext,
-			Filter:       agentModelFilter([]string{azureContext.Scope.Location}, nil),
-			SelectOptions: &azdext.SelectOptions{
-				Message: "Select a model",
-			},
-			DefaultValue: defaultModel,
-		}
-
-		modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, false, exterrors.Cancelled("model selection was cancelled")
-			}
-			return nil, false, fmt.Errorf("failed to prompt for model selection: %w", err)
-		}
-
-		model := modelResp.Model
-
-		var defaultCap int32 = 50
-		deploymentResp, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
-			AzureContext: azureContext,
-			ModelName:    model.Name,
-			Options: &azdext.AiModelDeploymentOptions{
-				Locations: []string{azureContext.Scope.Location},
-				Capacity:  &defaultCap,
-			},
-			Quota: &azdext.QuotaCheckOptions{
-				MinRemainingCapacity: 1,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, false, exterrors.Cancelled("deployment configuration was cancelled")
-			}
-			return nil, false, fmt.Errorf("failed to prompt for deployment details: %w", err)
-		}
-
-		d := deploymentResp.Deployment
-		skuName := "GlobalStandard"
-		if d.Sku != nil && d.Sku.Name != "" {
-			skuName = d.Sku.Name
-		}
-
-		return &project.Deployment{
-			Name: d.ModelName,
-			Model: project.DeploymentModel{
-				Name:    d.ModelName,
-				Format:  d.Format,
-				Version: d.Version,
-			},
-			Sku: project.DeploymentSku{
-				Name:     skuName,
-				Capacity: int(d.Capacity),
-			},
-		}, false, nil
-	}
-
-	// Let user pick from all deployments in the project.
-	type labeledDep struct {
-		label string
-		info  *FoundryDeploymentInfo
-	}
-	items := make([]labeledDep, 0, len(allDeployments))
-	for i := range allDeployments {
-		d := &allDeployments[i]
-		items = append(items, labeledDep{
-			label: fmt.Sprintf("%s (%s, version %s)", d.Name, d.ModelName, d.Version),
-			info:  d,
-		})
-	}
-	slices.SortFunc(items, func(a, b labeledDep) int {
-		return strings.Compare(a.label, b.label)
-	})
-
-	choices := make([]*azdext.SelectChoice, len(items))
-	for i, item := range items {
-		choices[i] = &azdext.SelectChoice{
-			Value: item.label,
-			Label: item.label,
-		}
-	}
-
-	defaultIdx := int32(0)
-	selResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "Select a deployment",
-			Choices:       choices,
-			SelectedIndex: &defaultIdx,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, false, exterrors.Cancelled("deployment selection was cancelled")
-		}
-		return nil, false, fmt.Errorf("failed to select existing deployment: %w", err)
-	}
-
-	selected := items[*selResp.Value]
-	d := selected.info
-	return &project.Deployment{
-		Name: d.Name,
-		Model: project.DeploymentModel{
-			Name:    d.ModelName,
-			Format:  d.ModelFormat,
-			Version: d.Version,
-		},
-		Sku: project.DeploymentSku{
-			Name:     d.SkuName,
-			Capacity: d.SkuCapacity,
-		},
-	}, true, nil
-}
-
-// updateAzureYamlDeployments writes the filtered deployment list back to the
-// azure.yaml project service. Deployments the user chose to "use existing" or
-// "skip" are excluded, leaving only those that need provisioning.
-func updateAzureYamlDeployments(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	serviceName string,
-	deployments []project.Deployment,
-) error {
-	// Convert deployments to a structpb-compatible value.
-	depSlice := make([]any, 0, len(deployments))
-	for _, d := range deployments {
-		depSlice = append(depSlice, map[string]any{
-			"name": d.Name,
-			"model": map[string]any{
-				"format":  d.Model.Format,
-				"name":    d.Model.Name,
-				"version": d.Model.Version,
-			},
-			"sku": map[string]any{
-				"name":     d.Sku.Name,
-				"capacity": d.Sku.Capacity,
-			},
-		})
-	}
-
-	val, err := structpb.NewValue(depSlice)
-	if err != nil {
-		return fmt.Errorf("encoding deployments for service %q: %w", serviceName, err)
-	}
-
-	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
-		ServiceName: serviceName,
-		Path:        "deployments",
-		Value:       val,
-	}); err != nil {
-		return fmt.Errorf("updating deployments in azure.yaml for service %q: %w", serviceName, err)
-	}
-
-	return nil
 }
 
 type adoptedAgentNameResolver func(context.Context, string) (string, error)
@@ -779,7 +665,20 @@ func updateAdoptedAgentNames(
 	slices.Sort(serviceNames)
 
 	for _, serviceName := range serviceNames {
-		agentName, configPath := adoptedAgentNameConfig(services[serviceName])
+		agentName, configPath, err := adoptedAgentNameConfig(
+			services[serviceName],
+			resp.GetProject().GetPath(),
+		)
+		if err != nil {
+			if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+				return localErr
+			}
+			return fmt.Errorf(
+				"resolving adopted agent name for service %q: %w",
+				serviceName,
+				err,
+			)
+		}
 		if agentName == "" {
 			continue
 		}
@@ -837,7 +736,7 @@ func applyAdoptedAgentNameOverride(
 			)
 		}
 		serviceName = name
-		configPath = adoptedAgentNameOverrideConfigPath(svc)
+		configPath = "name"
 	}
 	if serviceName == "" {
 		return exterrors.Validation(
@@ -862,110 +761,43 @@ func applyAdoptedAgentNameOverride(
 	return nil
 }
 
-func adoptedAgentNameOverrideConfigPath(svc *azdext.ServiceConfig) string {
+// adoptedAgentNameConfig returns the Foundry agent name and the service-level
+// path where a replacement must be written. Root $refs are resolved only to
+// read the effective name; replacements remain service-level overrides so the
+// referenced definition is not mutated.
+func adoptedAgentNameConfig(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (string, string, error) {
 	if svc == nil {
-		return "name"
-	}
-	if legacy := svc.GetConfig(); legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
-		return "config.name"
-	}
-	return "name"
-}
-
-// adoptedAgentNameConfig returns the Foundry agent name and its service-relative
-// config path for the unified inline shape or deprecated config-nested shape.
-func adoptedAgentNameConfig(svc *azdext.ServiceConfig) (string, string) {
-	if svc == nil {
-		return "", ""
+		return "", "", nil
 	}
 
-	inline := svc.GetAdditionalProperties()
-	if inline != nil && inline.GetFields()["kind"].GetStringValue() != "" {
-		return strings.TrimSpace(inline.GetFields()["name"].GetStringValue()), "name"
+	properties := svc.GetAdditionalProperties()
+	if properties == nil {
+		return "", "", nil
 	}
 
-	legacy := svc.GetConfig()
-	if legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
-		return strings.TrimSpace(legacy.GetFields()["name"].GetStringValue()), "config.name"
+	values := properties.AsMap()
+	if _, hasRef := values["$ref"]; hasRef {
+		resolved, err := foundry.ResolveFileRefs(values, projectRoot)
+		if err != nil {
+			return "", "", err
+		}
+		values = resolved
 	}
 
-	return "", ""
-}
-
-// readManifestContentForInitDetection returns the pointed-at YAML content for
-// init-mode routing. It first uses the cheap peek path; when that cannot read a
-// GitHub URL (for example, a private repository), it falls back to the
-// authenticated GitHub CLI download path so private unified azure.yaml samples
-// can still be classified and adopted.
-func readManifestContentForInitDetection(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	manifestPointer string,
-	httpClient *http.Client,
-) ([]byte, bool) {
-	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
-		return content, true
-	}
-	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
-	if cached {
-		return cachedContent, true
-	}
-	if templateCacheRoot() != "" {
-		return nil, false
-	}
-	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
-		return nil, false
+	kind, _ := values["kind"].(string)
+	if strings.TrimSpace(kind) == "" {
+		return "", "", nil
 	}
 
-	parsedURL, err := url.Parse(manifestPointer)
-	if err != nil || !strings.Contains(parsedURL.Hostname(), "github") {
-		return nil, false
-	}
-
-	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-	})
-	console := input.NewConsole(
-		false, // noPrompt
-		true,  // isTerminal
-		input.Writers{Output: io.Discard},
-		input.ConsoleHandles{
-			Stderr: os.Stderr,
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-		},
-		nil, // formatter
-		nil, // externalPromptCfg
-	)
-	ghCli := github.NewGitHubCli(console, commandRunner)
-	if err := ghCli.EnsureInstalled(ctx); err != nil {
-		log.Printf("detect unified azure.yaml: ensuring gh is installed: %v", err)
-		return nil, false
-	}
-
-	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
-	if err != nil {
-		log.Printf("detect unified azure.yaml: parsing GitHub URL: %v", err)
-		return nil, false
-	}
-
-	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
-	if urlInfo.Branch != "" {
-		apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
-	}
-	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
-	if err != nil {
-		log.Printf("detect unified azure.yaml: downloading GitHub file: %v", err)
-		return nil, false
-	}
-
-	return []byte(content), true
+	name, _ := values["name"].(string)
+	return strings.TrimSpace(name), "name", nil
 }
 
 // runInitFromAzureYaml adopts a sample's unified Foundry `azure.yaml` as the
-// project-root manifest instead of generating one from an agent manifest
-// (#8798). The sample's `azure.yaml` and the files it references are placed at
+// project-root manifest (#8798). The sample's `azure.yaml` and referenced files are placed at
 // the project root via azd-core's native template adoption; the services it
 // already declares (project, connections, toolboxes, agents) are not
 // re-derived. `content` is the already-fetched azure.yaml used to derive the
@@ -978,6 +810,7 @@ func runInitFromAzureYaml(
 	content []byte,
 ) error {
 	projectName := foundryProjectName(content)
+	recordInitProjectContent(ctx, content)
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
 	if err != nil {
 		return err
@@ -998,8 +831,7 @@ func runInitFromAzureYaml(
 			fmt.Sprintf("a project azure.yaml already exists in %q, so the sample's "+
 				"unified azure.yaml cannot be adopted there", targetDir),
 			"run this command in an empty directory (or pass a new target directory) to "+
-				"adopt the sample, or add an individual agent to this project with "+
-				"'azd ai agent init -m <agent.manifest.yaml>'",
+				"adopt the sample, or add the agent service directly to this project's azure.yaml",
 		)
 	}
 	// Stage the sample as a local template directory (azure.yaml at its root
@@ -1022,6 +854,7 @@ func runInitFromAzureYaml(
 		return err
 	}
 	promptOnly := stagedInfo.promptOnly()
+	recordInitProjectContent(ctx, stagedContent)
 	if agentNameOverride != "" {
 		// Validate against the fully staged template so services whose host lives
 		// inside a local $ref are counted the same way azd-core will load them.
@@ -1037,12 +870,371 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	return finalizeAdoptedProject(
+		ctx,
+		flags,
+		azdClient,
+		envName,
+		folderDisplay,
+		promptOnly,
+		agentNameOverride,
+		TemplateTypeAzureYaml,
+	)
+}
+
+func runInitFromAzdTemplate(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
+	selectedTemplate *AgentTemplate,
+) error {
+	targetDir := strings.TrimSpace(flags.src)
+	if targetDir == "" {
+		targetDir = folderNameStrippingParenSuffix(selectedTemplate.Title)
+	}
+	if targetDir == "" {
+		targetDir = "."
+	}
+	if projectManifestExists(targetDir) {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("a project azure.yaml already exists in %q", targetDir),
+			"Choose an empty target directory for the repository template.",
+		)
+	}
+
+	folderDisplay := ""
+	if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
+		folderDisplay = filepath.ToSlash(targetDir)
+	}
+	envName := deriveEnvName(flags, targetDir)
+	if err := scaffoldAzdTemplateProject(
+		ctx,
+		azdClient,
+		httpClient,
+		targetDir,
+		selectedTemplate.Source,
+		envName,
+	); err != nil {
+		return err
+	}
+	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
+		return err
+	}
+	content, err := os.ReadFile("azure.yaml")
+	if err != nil {
+		return fmt.Errorf("reading scaffolded azure.yaml: %w", err)
+	}
+	info, err := inspectAzureYaml(content, ".")
+	if err != nil {
+		return err
+	}
+
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		if err := validateAdoptedAgentNameOverride(content, "."); err != nil {
+			return err
+		}
+	}
+
+	return finalizeAdoptedProject(
+		ctx,
+		flags,
+		azdClient,
+		envName,
+		folderDisplay,
+		info.promptOnly(),
+		agentNameOverride,
+		TemplateTypeAzd,
+	)
+}
+
+func scaffoldAzdTemplateProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
+	targetDir string,
+	templateSource string,
+	envName string,
+) error {
+	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
+		return err
+	}
+	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
+}
+
+type azdTemplateRepositoryParser func(context.Context, string) (*GitHubUrlInfo, error)
+type azdTemplateRepositoryDownloader func(context.Context, *GitHubUrlInfo, string) error
+
+func preflightAzdTemplate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
+	templateSource string,
+) error {
+	stagingDir, cleanup, err := stageAzdTemplateRepository(
+		ctx,
+		templateSource,
+		func(ctx context.Context, source string) (*GitHubUrlInfo, error) {
+			return parseGitHubRepositorySource(ctx, azdClient, source)
+		},
+		func(ctx context.Context, source *GitHubUrlInfo, stagingDir string) error {
+			return downloadAzdTemplateRepository(ctx, httpClient, source, stagingDir)
+		},
+	)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+}
+
+func stageAzdTemplateRepository(
+	ctx context.Context,
+	templateSource string,
+	parseSource azdTemplateRepositoryParser,
+	downloadSource azdTemplateRepositoryDownloader,
+) (string, func(), error) {
+	noop := func() {}
+	if !strings.Contains(templateSource, "://") {
+		info, statErr := os.Stat(templateSource)
+		if statErr == nil {
+			if !info.IsDir() {
+				return "", noop, exterrors.Validation(
+					exterrors.CodeInvalidManifestPointer,
+					fmt.Sprintf("full repository template source %q is not a directory", templateSource),
+					"Provide a local template directory or a supported GitHub repository source.",
+				)
+			}
+			return templateSource, noop, nil
+		}
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			return "", noop, fmt.Errorf("inspecting repository template source: %w", statErr)
+		}
+	}
+	if parseSource == nil || downloadSource == nil {
+		return "", noop, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("unsupported full repository template source %q", safeInitSourceDisplay(templateSource)),
+			"Provide a local template directory or a supported GitHub repository source.",
+		)
+	}
+
+	source, err := parseSource(ctx, templateSource)
+	if err != nil {
+		return "", noop, err
+	}
+	if source == nil || strings.TrimSpace(source.RepoSlug) == "" {
+		return "", noop, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("unsupported full repository template source %q", safeInitSourceDisplay(templateSource)),
+			"Provide a local template directory or a supported GitHub repository source.",
+		)
+	}
+	if base := strings.ToLower(filepath.Base(source.FilePath)); base == "azure.yaml" || base == "azure.yml" {
+		return "", noop, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("%q points to a file, not a full repository template", safeInitSourceDisplay(templateSource)),
+			"Use -m for a unified azure.yaml file, or choose a full repository template source.",
+		)
+	}
+
+	stagingDir, err := os.MkdirTemp("", "azd-agent-template-preflight-*")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating repository template staging directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(stagingDir) }
+	if err := downloadSource(ctx, source, stagingDir); err != nil {
+		cleanup()
+		return "", noop, err
+	}
+	return stagingDir, cleanup, nil
+}
+
+func parseGitHubRepositorySource(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	templateSource string,
+) (*GitHubUrlInfo, error) {
+	if azdClient == nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			"GitHub repository parsing is unavailable",
+			"Run this command through azd and retry.",
+		)
+	}
+	source, err := azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
+		Url: templateSource,
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("repository template parsing was cancelled")
+		}
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf(
+				"could not parse repository template source %q: %s",
+				safeInitSourceDisplay(templateSource),
+				safeInitSourceError(err, templateSource),
+			),
+			"Provide a local template directory or a supported GitHub repository source.",
+		)
+	}
+	return &GitHubUrlInfo{
+		RepoSlug: source.RepoSlug,
+		Branch:   source.Branch,
+		FilePath: strings.Trim(source.FilePath, "/"),
+		Hostname: source.Hostname,
+	}, nil
+}
+
+func downloadAzdTemplateRepository(
+	ctx context.Context,
+	httpClient *http.Client,
+	source *GitHubUrlInfo,
+	stagingDir string,
+) error {
+	dirPath := strings.Trim(source.FilePath, "/")
+	if strings.EqualFold(source.Hostname, "github.com") && httpClient != nil {
+		err := downloadDirectoryContentsWithoutGhCli(
+			ctx,
+			source.RepoSlug,
+			dirPath,
+			dirPath,
+			source.Branch,
+			stagingDir,
+			httpClient,
+		)
+		if err == nil {
+			return nil
+		}
+		if exterrors.IsCancellation(err) || errors.Is(err, context.Canceled) {
+			return exterrors.Cancelled("repository template download was cancelled")
+		}
+		if err := clearStagingDirectory(stagingDir); err != nil {
+			return err
+		}
+	}
+
+	ghCli, err := newInstalledGitHubContentAPI()
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("an installed GitHub CLI is required to stage the repository template: %s", err),
+			"Install GitHub CLI from https://cli.github.com and run `gh auth login`.",
+		)
+	}
+	console := input.NewConsole(
+		false,
+		true,
+		input.Writers{Output: io.Discard},
+		input.ConsoleHandles{Stderr: io.Discard, Stdin: os.Stdin, Stdout: io.Discard},
+		nil,
+		nil,
+	)
+	if err := downloadDirectoryContents(
+		ctx,
+		source.Hostname,
+		source.RepoSlug,
+		dirPath,
+		dirPath,
+		source.Branch,
+		stagingDir,
+		ghCli,
+		console,
+	); err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("repository template download was cancelled")
+		}
+		return exterrors.Dependency(
+			exterrors.CodeGitHubDownloadFailed,
+			fmt.Sprintf("could not download repository template: %s", err),
+			"Verify repository access and GitHub CLI authentication with `gh auth status`.",
+		)
+	}
+	return nil
+}
+
+type installedGitHubContentAPI struct {
+	path string
+}
+
+func newInstalledGitHubContentAPI() (*installedGitHubContentAPI, error) {
+	if override := strings.TrimSpace(os.Getenv("AZD_GH_TOOL_PATH")); override != "" {
+		//nolint:gosec // the explicit tool override is an established user-controlled executable path
+		if info, err := os.Stat(override); err == nil && !info.IsDir() {
+			return &installedGitHubContentAPI{path: override}, nil
+		}
+	}
+
+	executable := "gh"
+	if runtime.GOOS == "windows" {
+		executable += ".exe"
+	}
+	if configDir, err := config.GetUserConfigDir(); err == nil {
+		bundled := filepath.Join(configDir, "bin", executable)
+		if info, statErr := os.Stat(bundled); statErr == nil && !info.IsDir() {
+			return &installedGitHubContentAPI{path: bundled}, nil
+		}
+	}
+	if path, err := osExec.LookPath("gh"); err == nil {
+		return &installedGitHubContentAPI{path: path}, nil
+	}
+	return nil, errors.New("gh executable was not found")
+}
+
+func (c *installedGitHubContentAPI) ApiCall(
+	ctx context.Context,
+	hostname string,
+	apiPath string,
+	options github.ApiCallOptions,
+) (string, error) {
+	args := []string{"api", "--hostname", hostname, apiPath}
+	for _, header := range options.Headers {
+		args = append(args, "-H", header)
+	}
+	command := osExec.CommandContext(ctx, c.path, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return "", context.Canceled
+		}
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			return "", fmt.Errorf("gh api failed: %w", err)
+		}
+		return "", fmt.Errorf("gh api failed: %w: %s", err, message)
+	}
+	return stdout.String(), nil
+}
+
+func finalizeAdoptedProject(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	envName string,
+	folderDisplay string,
+	promptOnly bool,
+	agentNameOverride string,
+	templateType string,
+) error {
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
-	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
-		return err
+	if shouldEnsureFoundryProvider(templateType) {
+		if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
+			return err
+		}
 	}
+
 	if agentNameOverride != "" {
 		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
 			return err
@@ -1051,11 +1243,12 @@ func runInitFromAzureYaml(
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
 	// The scaffolding created an environment; load it and run the same Foundry
-	// project selection flow as the agent-manifest path so the user ends up
+	// project selection flow as the generated-agent path so the user ends up
 	// with a provision-ready environment.
 	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		// Environment should exist after scaffoldProject; if not, create one.
+		var err error
 		env, err = createNewEnvironment(ctx, azdClient, envName)
 		if err != nil {
 			return err
@@ -1090,12 +1283,30 @@ func runInitFromAzureYaml(
 	// Hosted-region filtering is independent from ACR setup. Prompt agents are
 	// managed by Foundry and must not inherit hosted-agent region constraints.
 	filterHostedRegions := true
+	projectRoot := resolveProjectPath(ctx, azdClient)
+	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
+	if err != nil {
+		return fmt.Errorf("reading environment values: %w", err)
+	}
+	preserveDeferredProjectState, err := projectServiceHasEndpoint(
+		ctx,
+		azdClient,
+		projectRoot,
+		environmentValues,
+	)
+	if err != nil {
+		return err
+	}
+	deferredAzureContext := shouldDeferAdoptedModelAuthoring(
+		flags, azureContext,
+	)
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.acrConnection, flags.noPrompt,
 		skipACR,
 		filterHostedRegions && !promptOnly,
+		preserveDeferredProjectState,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1103,14 +1314,49 @@ func runInitFromAzureYaml(
 		}
 		return err
 	}
+	if deferredAzureContext && strings.TrimSpace(flags.model) != "" {
+		fmt.Printf("%s", output.WithWarningFormat(
+			"Model configuration was deferred because Azure environment values are missing.\n",
+		))
+		fmt.Println(output.WithGrayFormat(
+			"Set the missing values, then re-run init to author the model deployment.",
+		))
+	}
+	if err := validateAdoptedModelDeploymentTarget(
+		flags,
+		result.FoundryProject,
+	); err != nil {
+		return err
+	}
+	projectRoot, err = os.Getwd()
+	if err != nil {
+		return fmt.Errorf(
+			"resolving the adopted project directory: %w",
+			err,
+		)
+	}
 
 	// When an existing project was selected, record its endpoint in the azd
-	// environment and stamp the portable reference onto the azure.ai.project
-	// service so the provisioning provider recognizes the brownfield signal and
-	// reuses the project instead of creating a new one.
+	// environment, then let the projects extension reconcile the project
+	// service. Agents preserve that service but do not author its shape.
 	if result.FoundryProject != nil {
-		endpointRef, err := recordFoundryProjectEnv(ctx, azdClient, env.Name, result.FoundryProject)
-		if err != nil {
+		if err := recordFoundryProjectEnv(
+			ctx,
+			azdClient,
+			env.Name,
+			result.FoundryProject,
+		); err != nil {
+			return err
+		}
+		if err := authorSelectedFoundryProject(
+			ctx,
+			azdClient,
+			env.Name,
+			result.FoundryProject,
+			projectRoot,
+			projectAuthoringExisting,
+			flags.noPrompt,
+		); err != nil {
 			return err
 		}
 		if err := finalizeAdoptedSourceContainerNetwork(
@@ -1141,9 +1387,6 @@ func runInitFromAzureYaml(
 				return err
 			}
 		}
-		if err := stampProjectEndpoint(ctx, azdClient, endpointRef); err != nil {
-			return err
-		}
 		if err := confirmAdoptedAgentNameConflicts(
 			ctx,
 			azdClient,
@@ -1154,57 +1397,49 @@ func runInitFromAzureYaml(
 			return err
 		}
 	}
+	if result.FoundryProject == nil {
+		if err := authorSelectedFoundryProject(
+			ctx,
+			azdClient,
+			env.Name,
+			nil,
+			projectRoot,
+			result.AuthoringMode,
+			flags.noPrompt,
+		); err != nil {
+			return err
+		}
+	}
+	if err := wireAdoptedProjectDependency(ctx, azdClient); err != nil {
+		return err
+	}
 
-	// --- Model deployment verification ---
-	// Parse deployments from the azure.yaml and verify them against the
-	// selected Foundry project. If the user opts to use existing deployments
-	// or skip, we update the on-disk azure.yaml accordingly.
-	deploymentEntries := foundryDeployments(content)
-	if (len(deploymentEntries) > 0 || flags.modelDeployment != "") &&
-		result != nil && result.Credential != nil {
-		keptEntries, referencedDeployments, deploymentsModified, err := verifyAzureYamlDeployments(
-			ctx, azdClient, result.Credential, azureContext, env.Name,
-			deploymentEntries, flags.noPrompt, flags.modelDeployment, flags.model,
-		)
-		if err != nil {
+	// The projects extension owns project deployments. When the user
+	// names a model, delegate its authoring. Existing deployment lookup
+	// remains limited to --model-deployment.
+	if !deferredAzureContext {
+		if err := configureAdoptedModel(
+			ctx,
+			azdClient,
+			projectRoot,
+			flags,
+		); err != nil {
+			return err
+		}
+	}
+	if result.FoundryProject != nil && result.Credential != nil {
+		if err := configureAdoptedExistingDeployment(
+			ctx,
+			azdClient,
+			env.Name,
+			result.Credential,
+			result.FoundryProject,
+			flags,
+		); err != nil {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("initialization was cancelled")
 			}
 			return err
-		}
-
-		// Update the azure.yaml if deployments were modified.
-		if deploymentsModified {
-			// Group kept deployments by their originating service name.
-			byService := make(map[string][]project.Deployment)
-			for _, entry := range deploymentEntries {
-				// Initialize to empty — ensures services with all removed get an empty list.
-				if _, ok := byService[entry.ServiceName]; !ok {
-					byService[entry.ServiceName] = nil
-				}
-			}
-			for _, kept := range keptEntries {
-				byService[kept.ServiceName] = append(byService[kept.ServiceName], kept.Deployment)
-			}
-
-			for svcName, deps := range byService {
-				if err := updateAzureYamlDeployments(ctx, azdClient, svcName, deps); err != nil {
-					return err
-				}
-			}
-		}
-
-		// Persist the first referenced deployment name as AZURE_AI_MODEL_DEPLOYMENT_NAME.
-		setEnv := func(ctx context.Context, key, value string) error {
-			return setEnvValue(ctx, azdClient, env.Name, key, value)
-		}
-		if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-			return fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
-		}
-		if err := updatePendingModelDeploymentSignal(
-			ctx, azdClient, env.Name, true, len(keptEntries) > 0,
-		); err != nil {
-			log.Printf("warning: failed to update model_deployment provision signal: %v", err)
 		}
 	}
 
@@ -1225,6 +1460,155 @@ func runInitFromAzureYaml(
 	)
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
+	return nil
+}
+
+func shouldEnsureFoundryProvider(templateType string) bool {
+	return templateType == TemplateTypeAzureYaml
+}
+
+func wireAdoptedProjectDependency(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) error {
+	projectServiceName, err := resolveProjectServiceKey(ctx, azdClient)
+	if err != nil {
+		return err
+	}
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted agent services: %w", err)
+	}
+	if response.GetProject() == nil {
+		return missingServiceDependencyError(projectServiceName, AiProjectHost)
+	}
+	services := response.GetProject().GetServices()
+	for _, name := range slices.Sorted(maps.Keys(services)) {
+		if services[name].GetHost() != AiAgentHost {
+			continue
+		}
+		if _, err := addAgentServiceDependency(
+			ctx, azdClient, name, projectServiceName, "project", AiProjectHost,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAdoptedModelDeploymentTarget(
+	flags *initFlags,
+	projectInfo *FoundryProjectInfo,
+) error {
+	if strings.TrimSpace(flags.modelDeployment) == "" ||
+		projectInfo != nil {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"--model-deployment requires an existing Foundry project",
+		"select an existing project or use --model to deploy a new model",
+	)
+}
+
+func configureAdoptedModel(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectRoot string,
+	flags *initFlags,
+) error {
+	if strings.TrimSpace(flags.modelDeployment) != "" {
+		return nil
+	}
+	model := strings.TrimSpace(flags.model)
+	if model == "" {
+		return nil
+	}
+	return authorFoundryDeployments(
+		ctx,
+		azdClient,
+		projectRoot,
+		[]project.Deployment{
+			{Model: project.DeploymentModel{Name: model}},
+		},
+	)
+}
+
+func shouldDeferAdoptedModelAuthoring(
+	flags *initFlags,
+	azureContext *azdext.AzureContext,
+) bool {
+	return flags.projectResourceId == "" &&
+		shouldDeferInitAzureContext(flags.noPrompt, azureContext)
+}
+
+func configureAdoptedExistingDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	credential azcore.TokenCredential,
+	projectInfo *FoundryProjectInfo,
+	flags *initFlags,
+) error {
+	requested := strings.TrimSpace(flags.modelDeployment)
+	if requested == "" {
+		return nil
+	}
+
+	deployments, err := listProjectDeployments(
+		ctx,
+		credential,
+		projectInfo.SubscriptionId,
+		projectInfo.ResourceGroupName,
+		projectInfo.AccountName,
+	)
+	if err != nil {
+		return fmt.Errorf("listing model deployments for Foundry project: %w", err)
+	}
+
+	var selected *FoundryDeploymentInfo
+	for i := range deployments {
+		deployment := &deployments[i]
+		if requested != "" &&
+			strings.EqualFold(deployment.Name, requested) {
+			selected = deployment
+			break
+		}
+	}
+	if selected == nil {
+		return exterrors.Validation(
+			exterrors.CodeModelDeploymentNotFound,
+			fmt.Sprintf(
+				"model deployment %q not found in Foundry project",
+				requested,
+			),
+			"verify the deployment name or omit --model-deployment",
+		)
+	}
+	if err := setEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+		selected.Name,
+	); err != nil {
+		return fmt.Errorf(
+			"storing AZURE_AI_MODEL_DEPLOYMENT_NAME: %w",
+			err,
+		)
+	}
+	if err := updatePendingModelDeploymentSignal(
+		ctx,
+		azdClient,
+		envName,
+		true,
+		false,
+	); err != nil {
+		log.Printf(
+			"warning: failed to update model_deployment provision signal: %v",
+			err,
+		)
+	}
 	return nil
 }
 
@@ -1331,11 +1715,11 @@ func projectManifestExists(dir string) bool {
 
 // stageAzureYamlTemplate produces a local directory that azd-core can adopt as a
 // template (`azd init -t <dir>`): it contains the sample's azure.yaml at its
-// root alongside the sibling files/dirs the manifest references.
+// root alongside the sibling files/dirs the project file references.
 //
 // For a local pointer the pointer's parent directory is used directly when the
 // file is already named azure.yaml(.yml); otherwise a temp copy of the
-// directory is staged with the manifest written as azure.yaml. For a remote
+// directory is staged with the project file written as azure.yaml. For a remote
 // GitHub pointer the azure.yaml's containing directory is downloaded into a temp
 // staging dir. The returned cleanup removes any temp directory created.
 func stageAzureYamlTemplate(
@@ -1442,7 +1826,7 @@ func clearStagingDirectory(staging string) error {
 // stageRemoteAzureYaml downloads the directory containing the remote azure.yaml
 // into staging. It first tries an unauthenticated public download (no gh CLI),
 // then falls back to the GitHub CLI for private repositories or URL forms the
-// naive parser can't handle — mirroring downloadAgentYaml's resolution order.
+// naive parser cannot handle.
 func stageRemoteAzureYaml(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -1550,10 +1934,17 @@ func parseGitHubUrlForAdopt(
 		Url: pointer,
 	})
 	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, err
+		}
 		return nil, exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
-			fmt.Sprintf("parsing GitHub URL: %s", err),
-			"verify the URL points to a file in a GitHub repository",
+			fmt.Sprintf(
+				"could not parse GitHub source %q: %s",
+				safeInitSourceDisplay(pointer),
+				safeInitSourceError(err, pointer),
+			),
+			"verify the URL points to an azure.yaml file in a GitHub repository",
 		)
 	}
 	return &GitHubUrlInfo{
@@ -1703,11 +2094,11 @@ func applyDeployModeToAdoptedProjectWithSources(
 }
 
 func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
-	kind, err := agentkind.Kind(svc, projectRoot, "")
+	kind, err := probeAgentKindForInit(svc, projectRoot)
 	if err != nil {
 		return "", fmt.Errorf("resolving adopted agent kind for service %q: %w", svc.GetName(), err)
 	}
-	return kind, nil
+	return string(kind), nil
 }
 
 func finalizeAdoptedSourceContainerNetwork(
@@ -1777,15 +2168,14 @@ func adoptedExternalRegistryConnections(
 		}
 		connectionRef := flagConnection
 		if connectionRef == "" {
-			resolvedAgent, _, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(
-				service, projectConfig.GetPath(),
-			)
+			probe, err := probeAgentDefinitionForInit(service, projectConfig.GetPath())
 			if err != nil {
 				return nil, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
 			}
-			if hasDefinition {
-				connectionRef = strings.TrimSpace(resolvedAgent.RegistryConnectionID)
+			if !probe.found {
+				return nil, fmt.Errorf("reading adopted agent service %q: agent definition not found", serviceName)
 			}
+			connectionRef = strings.TrimSpace(probe.definition.RegistryConnectionID)
 		}
 		if connectionRef == "" {
 			continue
@@ -1808,19 +2198,19 @@ func applyDeployModeToService(
 	serviceName string,
 	svc *azdext.ServiceConfig,
 ) (bool, error) {
-	resolvedAgent, isHosted, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(svc, projectPath)
+	probe, err := probeAgentDefinitionForInit(svc, projectPath)
 	if err != nil {
 		return false, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
 	}
 	hasCodeConfig := adoptedServiceHasCodeConfig(svc) ||
-		(hasDefinition && resolvedAgent.CodeConfiguration != nil)
+		(probe.found && probe.definition.CodeConfiguration != nil)
 
 	effectiveImage := strings.TrimSpace(flags.image)
 	if effectiveImage == "" {
 		effectiveImage = strings.TrimSpace(svc.GetImage())
 	}
-	if effectiveImage == "" && hasDefinition {
-		effectiveImage = strings.TrimSpace(resolvedAgent.Image)
+	if effectiveImage == "" && probe.found {
+		effectiveImage = strings.TrimSpace(probe.definition.Image)
 	}
 
 	connectionRef := strings.TrimSpace(flags.registryConnection)
@@ -1832,7 +2222,7 @@ func applyDeployModeToService(
 				"provide the name or ID of an existing Foundry project connection",
 			)
 		}
-		if hasDefinition && !isHosted {
+		if probe.found && !probe.isHosted {
 			return false, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"a registry connection is only valid for hosted container agents",
@@ -1852,7 +2242,7 @@ func applyDeployModeToService(
 			return false, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"a registry connection requires a pre-built image",
-				"pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
+				"pass --image <registry/image:tag> or provide an image on the hosted agent service",
 			)
 		}
 		if err := validateHostedContainerImage(effectiveImage); err != nil {
@@ -1961,7 +2351,7 @@ func applyDeployModeToService(
 		)
 	}
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
-	// userProvidedManifest is true: -m was explicitly provided.
+	// The final argument is true because -m supplied unified project input.
 	deployMode, err := promptDeployMode(
 		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
 	)
@@ -2035,7 +2425,7 @@ func applyCodeDeployToService(
 		runtime:       flags.runtime,
 		entryPoint:    flags.entryPoint,
 		depResolution: flags.depResolution,
-	}, true) // userProvidedManifest=true since -m was provided
+	}, true)
 	if err != nil {
 		return fmt.Errorf("resolving code configuration for adopted project: %w", err)
 	}

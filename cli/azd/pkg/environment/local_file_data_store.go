@@ -138,16 +138,6 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 
 // Get returns the environment instance for the specified environment name
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
-	return fs.get(ctx, name, false)
-}
-
-// GetReadOnly returns a detached environment snapshot without creating lock files or persisting normalization changes.
-// Environment saves use atomic replacement, so reading the files directly cannot observe a partially written .env.
-func (fs *LocalFileDataStore) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
-	return fs.get(ctx, name, true)
-}
-
-func (fs *LocalFileDataStore) get(ctx context.Context, name string, readOnly bool) (*Environment, error) {
 	root := fs.azdContext.EnvironmentRoot(name)
 	_, err := os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -157,13 +147,10 @@ func (fs *LocalFileDataStore) get(ctx context.Context, name string, readOnly boo
 	}
 
 	env := New(name)
-	load := fs.Reload
-	if readOnly {
-		load = fs.load
-	}
-	if err := load(ctx, env); err != nil {
+	if err := fs.Reload(ctx, env); err != nil {
 		return nil, err
 	}
+
 	return env, nil
 }
 
@@ -184,10 +171,6 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 // reloadLocked performs the actual reload work. Caller MUST hold the env
 // file lock.
 func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment) error {
-	return fs.load(ctx, env)
-}
-
-func (fs *LocalFileDataStore) load(_ context.Context, env *Environment) error {
 	// Reload env values
 	var newDotenv map[string]string
 	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
@@ -197,16 +180,15 @@ func (fs *LocalFileDataStore) load(_ context.Context, env *Environment) error {
 	} else {
 		newDotenv = envMap
 	}
-	env.replaceState(newDotenv, make(map[string]struct{}))
-
-	// Reload env config
-	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewEmptyConfig()
+	// Load both files before changing the live environment.
+	cfg, err := fs.configManager.Load(fs.ConfigPath(env))
+	if errors.Is(err, os.ErrNotExist) {
+		cfg = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
 	}
+	env.replaceState(newDotenv, make(map[string]struct{}))
+	env.Config = cfg
 
 	if env.Name() != "" {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

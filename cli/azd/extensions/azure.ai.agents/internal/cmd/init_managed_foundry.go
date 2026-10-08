@@ -63,10 +63,12 @@ func resolvePromptHarnessTarget(
 	// scaffold has already been written, mirror the hosted flow: finish the
 	// scaffold, warn, and print exactly which values to set before
 	// `azd provision`. The agent's model still comes from --model /
-	// --model-deployment / the manifest, so agent.yaml is complete.
+	// --model-deployment / adopted service, so the definition is complete.
 	if strings.TrimSpace(flags.projectResourceId) == "" &&
 		shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
-		if err := configureDeferredInitAzureContext(ctx, azdClient, env.Name, azureContext, true); err != nil {
+		if err := configureDeferredInitAzureContext(
+			ctx, azdClient, env.Name, azureContext, true, false,
+		); err != nil {
 			return nil, false, nil, nil, err
 		}
 		return nil, false, nil, nil, nil

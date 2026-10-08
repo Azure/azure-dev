@@ -27,9 +27,30 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	require.Len(t, stable, 17)
-	require.GreaterOrEqual(t, len(beta), len(stable))
-	require.NoError(t, validateStableSubset(stable, beta))
+	require.NotEmpty(t, stable)
+	require.NoError(
+		t,
+		validateStableSubset(stable, beta),
+		"v1beta must preserve every v1 symbol and wire shape; add preview APIs without changing the inherited v1 contract",
+	)
+}
+
+func TestServiceTargetPreviewIsBetaOnly(t *testing.T) {
+	t.Parallel()
+	stable := v1.File_azd_extensions_v1_service_target_proto
+	beta := v1beta.File_azd_extensions_v1beta_service_target_proto
+	for _, name := range []protoreflect.Name{
+		"ServiceTargetPreviewRequest", "ServiceTargetPreviewResponse", "ServiceDeployPreviewResult",
+	} {
+		require.Nil(t, stable.Messages().ByName(name), "%s must not graduate to v1 yet", name)
+		require.NotNil(t, beta.Messages().ByName(name))
+	}
+	for _, name := range []protoreflect.Name{"preview_request", "preview_response"} {
+		require.Nil(t, stable.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
+		require.NotNil(t, beta.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
+	}
+	require.Nil(t, stable.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
+	require.NotNil(t, beta.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
 }
 
 func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
@@ -38,11 +59,55 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	for _, fileName := range []string{"compose.proto", "copilot.proto", "telemetry.proto"} {
+	for _, fileName := range []string{
+		"compose.proto",
+		"command_result.proto",
+		"copilot.proto",
+		"telemetry.proto",
+	} {
 		require.NotContains(t, stable, fileName)
 		require.Contains(t, beta, fileName)
 		require.NotEmpty(t, beta[fileName].Services())
 	}
+}
+
+func TestCommandResultContractIsBetaOnly(t *testing.T) {
+	t.Parallel()
+
+	stable := contractFiles(t, "azd.extensions.v1")
+	beta := contractFiles(t, "azd.extensions.v1beta")
+
+	require.NotContains(t, stable, "command_result.proto")
+	commandResultFile := beta["command_result.proto"]
+	require.NotNil(t, commandResultFile)
+	commandResult := commandResultFile.Services().ByName("CommandResultService")
+	require.NotNil(t, commandResult)
+	require.NotNil(t, commandResult.Methods().ByName("SetFollowUp"))
+
+	stableInvocation := stable["event.proto"].
+		Messages().ByName("InvokeProjectHandler").
+		Fields().ByName("invocation_id")
+	betaInvocation := beta["event.proto"].
+		Messages().ByName("InvokeProjectHandler").
+		Fields().ByName("invocation_id")
+	require.Nil(t, stableInvocation)
+	require.NotNil(t, betaInvocation)
+	require.Equal(t, protoreflect.FieldNumber(3), betaInvocation.Number())
+}
+
+func TestCurrentPrincipalIsBetaOnly(t *testing.T) {
+	t.Parallel()
+
+	stable := v1.File_azd_extensions_v1_account_proto
+	beta := v1beta.File_azd_extensions_v1beta_account_proto
+	require.Nil(t, stable.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal"))
+	require.NotNil(t, beta.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal"))
+	for _, name := range []protoreflect.Name{"GetCurrentPrincipalRequest", "GetCurrentPrincipalResponse"} {
+		require.Nil(t, stable.Messages().ByName(name))
+		require.NotNil(t, beta.Messages().ByName(name))
+	}
+	require.Nil(t, stable.Enums().ByName("PrincipalType"))
+	require.NotNil(t, beta.Enums().ByName("PrincipalType"))
 }
 
 func TestStableSubsetAllowsAdditiveBetaFieldsAndMethods(t *testing.T) {

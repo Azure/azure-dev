@@ -24,31 +24,103 @@ connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
-[Agent context telemetry](#agent-context-telemetry) and
+[Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers),
+[Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
 ### Agent context telemetry
 
 When azd telemetry is enabled, the extension reports `agent.context.resolved`
 for each distinct agent classification involved in an invocation. The event
-contains only bounded classifications:
+contains only bounded classifications (including a container mode for hosted agents):
 
 | Attribute | Values | Description |
 |---|---|---|
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
+| `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
-reports one row for each classification. The event never includes agent names,
-service keys, paths, URLs, prompts, or other customer content.
+reports one row for each distinct kind, harness, and container mode; it does
+not count individual agents or prove a deployment succeeded. `build` includes
+both azd-created and existing ACR destinations. Ambiguous legacy or invalid
+hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
+are reported as `unknown`. The event never includes agent names, service keys,
+registry connections, image references, paths, URLs, prompts, or other customer content.
+
+### Remote invoke adoption telemetry
+
+`agent.invoke.selected` reports the selected mode once a remote invoke has
+resolved its protocol and target. For project-backed routes, only hosted-agent
+services are counted; an explicit `--agent-endpoint` has no project service kind
+to verify. The event runs before the invoke request, not necessarily before
+authentication: protocol or target resolution can check whether a brownfield
+agent exists in Foundry. Failures before resolution are not counted, while
+later request failures do not prevent the usage report. Local and non-hosted
+project routes (prompt, voice, workflow) are excluded.
+
+| Attribute | Values | Description |
+|---|---|---|
+| `ext.agent.invoke.protocol` | `responses`, `invocations`, `a2a` (currently) | Resolved invocable protocol. |
+| `ext.agent.invoke.long_running` | `true`, `false` | String-encoded choice of `--long-running`; supported for remote Responses only. |
+| `ext.agent.invoke.no_wait` | `true`, `false` | String-encoded choice of `--no-wait`; requires `--long-running`. |
+
+This records command-path adoption, not whether the service accepted or
+completed work. No prompt, agent name, endpoint, or service response is sent.
+
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
 
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
+
+## Project storage diagnostics
+
+Run `azd ai agent doctor` to check project managed identity permissions for the
+Storage connections named in the project capability host's `storageConnections`.
+The `Project storage permissions` check resolves those names from project
+connections or account connections shared with the project, using Storage
+resource IDs rather than probing arbitrary endpoints. Unbound connections are
+ignored. Projects without a capability host or Storage bindings are skipped.
+Unreadable or incomplete capability host metadata produces a warning. See
+[capability hosts](https://learn.microsoft.com/azure/foundry/agents/concepts/capability-hosts)
+for the project storage binding model.
+
+The check recognizes direct assignments of Storage Blob Data Contributor,
+Storage Blob Data Owner, and equivalent built-in roles with Blob read, write,
+and delete data permissions, accounting for `NotDataActions`. Assignments can
+be inherited from an ancestor scope. Supported project-identity authentication
+includes AAD and ProjectManagedIdentity connections.
+
+Connections using account keys, SAS, or a separate service principal are skipped.
+Missing metadata, unsupported identity selection, unreadable assignments, and
+unresolved custom or conditional permissions produce a warning instead
+of a missing-permission claim. Container-scoped Blob grants also produce a warning
+when the project's exact container access cannot be verified; the check does not
+recommend expanding those grants to the entire account. Unrecognized role
+definitions are read as needed. Managed identity group memberships are not
+resolved by this check: when sufficient direct permissions are absent, it warns
+that group access remains unverified instead of claiming permissions are missing.
+Invalid bound connection or identity configuration still fails the check.
+
+The check never reads connection secrets, accesses
+blob data, or creates role assignments. A pass does not verify network access.
+
+Use `--debug` for per-connection findings and `--unredacted` to include identity
+and resource identifiers when sharing them is safe. `--local-only` skips this
+remote check along with the other remote diagnostics.
 
 ## Choosing a Foundry project name
 
@@ -68,211 +140,6 @@ azd env set AZURE_AI_PROJECT_NAME my-foundry-project
 An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
 interactive new-project setup. `--no-prompt` remains non-interactive and keeps
 its existing automatic environment-name fallback.
-
-## Previewing an Agent Deployment
-
-Use `azd deploy --preview` from an azd project to compare each selected hosted
-agent's local definition with its latest deployed version:
-
-```bash
-azd deploy --preview
-azd deploy my-agent --preview
-azd deploy --all --preview --output json
-```
-
-Text output shows the standard azd spinner while preparing the preview and
-comparing each supported service. Progress stops before the configuration diff
-is printed, and also stops on errors or cancellation.
-Redirected output uses non-animated progress messages; `--output json` omits
-progress and command headings.
-
-For a project created by `azd ai agent init`, the agent definition is normally
-inline in `azure.yaml`; deployment does not generate a separate `agent.yaml`.
-Preview supports both layouts without migrating or editing user files:
-
-- **Legacy split files:** reads `agent.yaml` and its companion `agent.manifest.yaml`
-  in the definition directory. Manifest-level metadata and its `template` settings
-  participate in the preview, including tags that exist only in the manifest.
-- **Manifest-only service:** discovers a manifest in the service directory when
-  no materialized agent definition is present. Deployment uses the same discovery.
-- **Project configuration:** reads the selected agent service in `azure.yaml`,
-  including legacy definitions/manifests in that service's source directory.
-- **Explicit definition override:** `AGENT_DEFINITION_PATH` selects the same single
-  YAML definition for preview and deployment. It takes precedence over inline and
-  convention-based definitions; companion files are not merged into an override.
-  Missing, invalid, or non-file overrides fail rather than falling back to another agent.
-
-The `.yml` spellings are also accepted; `.yaml` takes precedence when both exist.
-Like normal `azd deploy`, preview requires
-an `azure.yaml` project; a bare sample directory must first be part of a configured
-azd project. No previous agent deployment is required.
-
-Use the service name as a positional argument to select one service. From the
-project root, omitting it previews enabled services; `--all` explicitly selects
-all enabled services. Preview never invokes deployment hooks, framework
-initialization, builds, packages, publishing, deployment, or environment-cache
-updates. Core skips targets that do not advertise preview support before sending
-any preview request. Skipped services are silent in terminal output and listed
-under `skippedServices` in JSON (service name to host name); they are not reported
-as unchanged. Errors from supported preview targets still fail the command.
-If no selected service supports preview, the command returns an error.
-`--from-package` cannot be combined with preview; `--timeout` bounds each preview.
-Preview never creates an azd environment or changes the project's default
-environment. `--environment` uses only the named existing environment; a missing
-explicit name is an error. Without a selected/default environment, preview can
-use project or process configuration in memory. `azd deploy --preview` uses the
-normal deployment login check and offers interactive login when needed. In CI or
-with `--no-prompt`, authenticate before running preview.
-
-Materialized `agent.yaml` settings
-override companion manifest defaults field by field. An inline project service
-is authoritative when selected. The preview lists its sources in precedence
-order using normalized paths. The main diff compares the remote agent with the
-effective configuration once: `+` adds a value, `~` replaces it, and `-` removes it.
-Lower-priority overrides are summarized rather than printed as additional remote
-changes. JSON `sourceConflicts` retains those local differences for diagnostics;
-they do not set `hasChanges` when the effective configuration matches the remote.
-
-Legacy `environment_variables` entries merge by name. The selected definition
-overrides the value of a same-named manifest entry; unique entries are retained.
-An explicit empty list (`environment_variables: []`) or `null` clears the
-inherited list. To remove an inherited variable individually, remove it from
-all participating legacy definitions. Variables absent from the resulting
-configuration are reported as removals from the remote agent. Duplicate names
-within one list are rejected. Tag lists use replacement, not union, so tags
-omitted from the selected tag list disappear from the next version.
-
-The source directory is the service's configured `project` path, or the directory
-containing the explicit `AGENT_DEFINITION_PATH` override when one is set.
-
-Preview and deployment use the selected agent's `azure.ai.project` dependency endpoint
-when configured, then the active azd environment's `FOUNDRY_PROJECT_ENDPOINT`
-or its process-environment fallback when the key is absent from the azd environment.
-A persisted empty value takes precedence over a shell value and is reported as
-missing configuration. Resolved shell/dependency endpoints are not persisted.
-Configure the target in the project instead of passing a `--project-endpoint` flag
-to `azd deploy`. Authentication and
-permission to read the agent are required. Missing configuration or denied access
-is an error, not evidence that a new agent would be created.
-
-The preview groups changes by metadata (name, description, and tags), protocols, CPU/memory, environment
-variables, model deployment reference (`AZURE_AI_MODEL_DEPLOYMENT_NAME`), and code
-configuration. It also includes authored container-image settings on the existing
-version, session/content-safety settings, and explicitly configured endpoint or
-agent-card fields. Environment-variable values are redacted in both text and
-JSON output, except for the separately reported model deployment name. Changes
-are detected before redaction. Credentials, query strings, and fragments in
-displayed URLs are removed. The preview's API client disables response-body
-logging so `--debug` does not log the deployed environment's secrets.
-
-- **New agent:** a not-found response reports that the agent would be created.
-  The preview lists its intended configuration without creating the agent.
-- **Existing agent:** the preview compares configuration with its latest version,
-  ignoring generated IDs, timestamps, protocol ordering, and equivalent defaults.
-- **No configuration changes:** prints `No changes to agent configuration.` and
-  exits successfully. Changes also exit successfully; only errors fail the command.
-- **JSON:** core returns a timestamp and a `services` map. Each service's `data`
-  includes `name`, `service`, `currentVersion` (when deployed), `operation`
-  (`create` or `create_version`), `hasChanges`, grouped `changes`, `sourcePath`,
-  `sources`, `image`, `sourceConflicts`, and `notes`. Each changed field has a `kind` (`add`, `remove`, `modify`, or
-  `pending`) and known `before`/`after` values. `hasChanges` describes the
-  effective configuration comparison, not whether a normal deploy would create a
-  version or whether ignored local values differ.
-- **Project environment:** values already resolved by azd are preserved.
-  Unavailable environment-variable inputs are marked `pending`, including a
-  model deployment reference that has not been resolved yet. Unrelated azd
-  environment values are not injected into the agent.
-- **Manifest parameters:** declared defaults and available environment values
-  resolve template placeholders without prompting. Unresolved comparison values
-  remain `pending`; an unresolved agent name is an error because it cannot
-  identify the remote agent.
-- **Dependencies:** preview does not deploy toolboxes, connections, projects or
-  model deployments. Unresolved generated environment values are reported as pending.
-
-Preview does not build, package, or upload source, deploy toolboxes, create agent
-versions, patch endpoints, or change local deployment state. Source contents and
-build outputs are **not compared**. A normal source-code deployment still packages and
-uploads source and creates a new version, even when the configuration matches.
-
-### Container image planning
-
-The `image` result reports `mode`, `build`, `push`, and whether the final image
-reference is `known`. JSON retains this planning data. Terminal output shows the
-image plan only when an image changes, a build/push is needed, or the image
-reference is pending; unchanged code-mode and prebuilt-image plans are omitted.
-
-- **Code deployment:** Foundry manages the artifact; no local container image
-  would be built or pushed.
-- **Prebuilt image:** compares the configured reference, with no build or push.
-- **Container build:** reports that an image would be built and pushed. Explicit
-  image/tag/registry settings are resolved using azd's image naming rules.
-  Default tags use `azd-deploy-<timestamp>`, so a future tag or a registry that
-  has not been provisioned is reported as pending, not as a made-up image reference.
-
-For a project with a configured image but no explicit passthrough/registry
-connection, preview follows the non-interactive default of building an image
-and notes that interactive deployment can choose the prebuilt alternative.
-Legacy projects with `AZD_AGENT_SKIP_ACR=true` use the configured prebuilt image.
-Preview and deployment both read the azd environment first (including empty values),
-then the process environment if the key is absent. The marker accepts the complete
-word `true`, ignoring case and surrounding whitespace; `1` and `t` do not enable it.
-Source contents and mutable image digests are not compared.
-
-Preview covers hosted code and container agents, not infrastructure or dependency
-creation. The unmodified Foundry projects extension does not advertise deployment
-preview, so core skips its services. Use `azd provision --preview` to inspect
-infrastructure changes. The standalone `azd ai agent deploy` command has been
-removed. Use `azd deploy` for deployment and `azd deploy --preview` to inspect
-the planned agent changes.
-
-### Metadata tags
-
-Tags are read from `metadata.tags` in a legacy manifest or standalone definition,
-or `services.<agent>.metadata.tags` in `azure.yaml`. No manual copying is required:
-
-```yaml
-metadata:
-  tags:
-    - Streaming
-    - Test
-```
-
-Deploy and preview use the same metadata mapping. Tag lists are preserved in
-the Foundry request as a JSON-encoded string because the service metadata API
-accepts only string values. The preview displays them as lists under Metadata.
-Adding or removing a tag produces a change; reordering or repeating tags does
-not. Tags are case-sensitive, and an empty list removes previously deployed
-tags. Existing scalar-string tags remain supported without interpreting commas
-as tag separators. Invalid list entries or encoded values longer than the
-service's 512-character limit produce a validation error.
-
-Legacy project deployment and preview loaders share the companion metadata
-resolution so the preview does not report manifest-only tags that deployment
-would drop. Neither preview nor deployment rewrites those definitions.
-
-### Building the preview integration from this checkout
-
-Deployment preview adds an azd core/SDK contract. Rebuilding only the agents
-extension against an older published SDK is not sufficient. For local development,
-create a Go workspace at the repository root that includes core and the agents
-extension (add these modules to an existing workspace rather than replacing it):
-
-```powershell
-go work init .\cli\azd .\cli\azd\extensions\azure.ai.agents
-New-Item -ItemType Directory -Force .\bin | Out-Null
-cmd /d /c "set GOWORK=off&& go -C .\cli\azd build -o ..\..\bin\azd.exe ."
-```
-
-Use that rebuilt core binary while building/installing the agents extension with the
-developer extension, and while running `deploy --preview`. Keep the local workspace
-out of release commits. For release, land/publish the core SDK contract first, then
-update the agents extension to that SDK version; do not commit a local
-`replace` directive.
-
-No changes or rebuild are required for the published `azure.ai.projects` extension.
-If a local projects binary from the earlier preview prototype is installed, restore
-the published binary or rebuild its restored source once; an already installed
-binary can still advertise the capability until it is replaced.
 
 ## Composing Agent Dependencies
 
@@ -311,10 +178,9 @@ to `azure.ai.connection` services and attach them through `uses`. Agent
 remain unsupported. To reuse an external toolbox, set `endpoint` on
 its split toolbox service instead of setting a legacy MCP environment marker.
 Run `azd deploy --all` to reconcile these dependencies before their agents;
-`azd provision` does not create Connections or Toolboxes. Agent manifest
-Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
-which generates split services. Agent runtime `toolConnections` and environment
-references remain agent-owned.
+`azd provision` does not create Connections or Toolboxes. Unified projects must
+declare Connection and Toolbox resources as sibling services. Agent runtime
+`toolConnections` and environment references remain agent-owned.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 sibling `azure.ai.connection` service names. These are references, not resource
@@ -334,15 +200,53 @@ still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration
 path in the Agent command tree.
 
-For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
-project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
-directory and deployment settings. The definition can be inline or referenced
-using `$ref`, following the service schema; declare core-owned fields such as
-`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
-not by a definition-file path. A sibling `toolbox.yaml` is not automatically
-deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
-first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
-dependencies automatically.
+For an existing agent source project, declare an `azure.ai.agent` service in
+`azure.yaml` with its source directory and deployment settings. The definition
+can be inline or referenced using `$ref`, following the service schema; declare
+core-owned fields such as `host`, `project`, `language`, and `uses` in
+`azure.yaml`. Deploy by **service name**, not by a definition-file path. A
+sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
+and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
+targeted Agent deployment does not deploy its dependencies automatically.
+
+## Invoke latency diagnostics
+
+Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations
+request platform latency diagnostics by default. Successful calls show a compact
+summary after the client timing line, for example:
+
+```text
+Client elapsed: 9.172s
+Platform latency (cold): response headers 8859 ms
+  preprocess 178 ms | infra 1439 ms | readiness 4493 ms | container 2749 ms
+```
+
+Use `azd ai agent invoke --debug-latency=false "Hello"` to disable collection and
+the summary. The setting is independent of the global `--debug` logging flag.
+`--output raw` includes the returned HTTP headers without adding a formatted
+summary. Local, prompt-agent, and A2A invokes do not request platform diagnostics.
+Explicitly enabling diagnostics with `--debug-latency` or `--debug-latency=true`
+on these routes is rejected after route resolution. Omit the flag or use
+`--debug-latency=false` to invoke them without platform diagnostics.
+
+`Client elapsed` measures the client-observed invocation duration, including
+response reading. It replaces the previous `Server responded in ... (first byte: ...)`
+line and remains available when platform diagnostics are disabled or unavailable.
+Neither timing includes CLI startup, token acquisition, or separate
+conversation/session creation. The platform values describe the original
+invocation up to response headers. Response headers are not
+the first response body byte or the first model token. Container response time
+also includes request forwarding, connections, retries, and policy buffering; it
+is not a model-only inference measurement.
+
+Warm requests omit infrastructure setup and container readiness instead of
+reporting zero. Missing fields are not synthesized. Background Responses
+(`--long-running`, including `--no-wait`) and `202` Invocations show platform
+overhead only. With `--no-wait`, the summary describes request setup, not completion
+of background work. Existing invocation polling can pick up the original POST's
+persisted metrics, without an additional request. Unavailable or invalid diagnostics
+do not turn a successful agent call into an error. This summary does not wait for
+trailers or change SSE termination.
 
 ## Running Local Agents
 
@@ -457,28 +361,11 @@ launch.
 
 New Foundry agent projects keep the agent definition directly on the
 `azure.ai.agent` service entry in `azure.yaml`. Older projects may still have the
-definition in an `agent.yaml` file or under the service's `config:` block. Those
-legacy shapes continue to work during the migration window, but azd prints a
-deprecation warning when it loads them.
+definition in an `agent.yaml`/`agent.yml` file, an AgentManifest file, or under
+the service's `config:` block. Runtime commands reject those implicit and nested
+sources with migration guidance.
 
-To migrate, re-run `azd ai agent init` from the project root and keep the
-generated `azure.yaml` service entry. After confirming `azd deploy` still works,
-remove the old `agent.yaml` or nested `config:` definition.
-
-Before:
-
-```yaml
-services:
-  my-agent:
-    host: azure.ai.agent
-    project: .
-    config:
-      kind: hosted
-      name: my-agent
-      description: My hosted agent
-```
-
-After:
+Move a direct agent definition to service-level properties in `azure.yaml`:
 
 ```yaml
 services:
@@ -490,13 +377,20 @@ services:
     description: My hosted agent
 ```
 
+Alternatively, keep a direct definition in a separate file and reference it
+explicitly from the service with a root `$ref`. The basename can be anything,
+including a legacy-looking name such as `agent.yaml`, but prompt-agent references
+must use a `.yaml` or `.yml` extension. The file content must be a supported
+direct agent definition. An `agent.manifest.yaml` template wrapper must first be
+converted or extracted.
+
 ### Environment variables under `config:`
 
 Older projects could also set environment variables in an `env:` block nested
 under the service's `config:`. That position is no longer read: azd takes the
-service environment only from the service-level `env:`. A service that still
-carries `config: env:` gets a warning naming the affected variables on both
-`azd ai agent run` and `azd deploy`.
+service environment only from the service-level `env:`. Runtime commands fail
+when an agent service still carries a non-empty `config:` block. Move those
+environment values to the service-level `env:` before running the agent.
 
 Move them up one level to fix it:
 
@@ -532,9 +426,13 @@ services:
     instructions: Use web research when requested.
     harness:
       type: github_copilot_preview
+    skills:
+      - local-review
+      - name: published-review
+        version: "2"
     tools:
       - type: github_copilot_toolset_preview
-        default_config:
+        defaultConfig:
           enabled: false
         configs:
           - name: web
@@ -542,9 +440,17 @@ services:
 ```
 
 Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
-and `subagents`. `default_config.enabled` applies to every built-in; entries in
+and `subagents`. `defaultConfig.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
+
+The string form (`local-review`) requires a matching locally deployed skill;
+deploy the local skill dependency with `azd deploy --all` to supply its version.
+The object form (`published-review`) pins an existing Foundry skill to the
+specified published version. Authored pins take precedence over locally resolved
+versions. azd does not automatically resolve remote default versions, and rejects
+conflicting authored versions for the same skill. You do not need to specify a
+`type` field: azd adds the API discriminator automatically.
 
 Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
 Foundry API's snake_case fields during deployment:
@@ -566,6 +472,34 @@ structuredInputs:
 
 Nested tool definitions remain API-owned and use the field names documented by
 the corresponding Foundry tool contract.
+
+## Prompt agent memory
+
+Prompt agents can declare one memory store for azd to provision and attach
+through a memory-search tool. Prompt memory properties use camelCase:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: my-agent
+    model: gpt-5-mini
+    instructions: Remember useful details from earlier conversations.
+    memory:
+      store: conversation-memory
+      chatModel: gpt-5-mini
+      embeddingModel: text-embedding-3-small
+      scope: "{{$userId}}"
+      updateDelay: 300
+      maxMemories: 5
+      options:
+        chatSummaryEnabled: true
+        userProfileEnabled: true
+        proceduralMemoryEnabled: false
+        defaultTtlSeconds: 2592000
+        userProfileDetails: Remember stable preferences.
+```
 
 ## Content safety policies
 
@@ -613,11 +547,6 @@ Details:
   policy, it only associates the agent with an existing one. For prompt and
   managed agents, `azd ai agent init` lists the policies on the selected account
   and can bind one for you; see `--rai-policy`.
-
-> **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
-> (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
-> the other inline agent properties such as `codeConfiguration` and
-> `environmentVariables`.
 
 ## Voice agents (public preview)
 
@@ -800,7 +729,7 @@ services:
             - $.output
           streamSelectors:
             - eventType: response.output_text.delta
-              textField: $.delta
+              textField: delta
 ```
 
 Fields:
@@ -810,9 +739,35 @@ Fields:
 | `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
-| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
-| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
-| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. See [Selectors and field names](#selectors-and-field-names). |
+
+#### Selectors and field names
+
+`inputPaths` and `outputPaths` are **selector expressions**. They support `$` for
+the document root, dotted members, array indexes, and `[*]` wildcards — for
+example `$.messages[*].content`. They are not a full JSONPath implementation.
+
+`textField` is **not** a selector: when provided, it is the non-empty, exact
+**name of a field** on the matched event payload, with no surrounding whitespace.
+Write `delta`, not `$.delta`, `""`, or `" delta"`. It defaults to `delta` when
+omitted.
+
+`eventType` is matched exactly, with no surrounding whitespace, against the value
+of the `type` field *inside* the event's `data:` payload, not against the SSE
+`event:` line. So for a frame like
+
+```text
+data: {"type": "response.output_text.delta", "delta": "Hi"}
+```
+
+the selector is `eventType: response.output_text.delta` with `textField: delta`.
+
+> **Why this matters:** a `textField` that names no field on the payload yields no
+> text, so that event contributes nothing to moderation. A `$.`-prefixed or
+> whitespace-padded value therefore silently disables screening for every frame it
+> applies to. azd rejects those values for this reason.
 
 `invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
 includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
@@ -829,11 +784,6 @@ proxy — fails validation rather than silently deploying a policy that never ru
 
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
-
-As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
-keys throughout this block (`invocations_moderation`, `response_mode`,
-`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
-(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
 
 ### Hosted voice wrapper (preview)
 
@@ -932,12 +882,19 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
-- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
-  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
-  camelCase, like the other inline agent properties.
+
+## State Stores
+
+Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,
+replace, or delete their JSON object items. Select a store once, or supply `--store`
+for a one-off item operation. Store creation, updates, and deletion are not included.
+
+See [State Store commands and examples](docs/state-stores.md) for selection,
+conditional writes with ETags, and pagination. Editing state does not resume or
+stop agent work.
 
 ## Session carry-over across deploys
 

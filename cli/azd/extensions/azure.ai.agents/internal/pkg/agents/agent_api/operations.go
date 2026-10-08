@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 )
 
@@ -63,36 +63,28 @@ func (o *SessionRequestOptions) ApplyHeaders(headers http.Header) {
 
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
-	return NewAgentClientWithOptions(endpoint, cred, &policy.ClientOptions{
+	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
 			// Agent bodies contain customer-authored instructions, tool inputs, and
 			// model output. Keep them out of debug logs.
 			IncludeBody: false,
 		},
-	})
-}
-
-// NewAgentClientWithOptions creates an AgentClient with caller-supplied pipeline options.
-func NewAgentClientWithOptions(
-	endpoint string, cred azcore.TokenCredential, options *policy.ClientOptions,
-) *AgentClient {
-	var clientOptions policy.ClientOptions
-	if options != nil {
-		clientOptions = *options
+		PerCallPolicies: []policy.Policy{
+			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+			azsdk.NewMsCorrelationPolicy(),
+			azsdk.NewUserAgentPolicy(useragent.Default()),
+		},
 	}
-	clientOptions.Logging.AllowedHeaders = append(slices.Clone(clientOptions.Logging.AllowedHeaders),
-		"X-Ms-Correlation-Request-Id", "X-Request-Id")
-	clientOptions.PerCallPolicies = append(slices.Clone(clientOptions.PerCallPolicies),
-		runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
-		azsdk.NewMsCorrelationPolicy(),
-		azsdk.NewUserAgentPolicy(useragent.Default()))
+	if recordproxy.Transport != nil {
+		clientOptions.Transport = &http.Client{Transport: recordproxy.Transport}
+	}
 
 	pipeline := runtime.NewPipeline(
 		"azure-ai-agents",
 		"v1.0.0",
 		runtime.PipelineOptions{},
-		&clientOptions,
+		clientOptions,
 	)
 
 	return &AgentClient{
@@ -105,6 +97,13 @@ func NewAgentClientWithOptions(
 // DigitalWorkerPreviewFeature opts agent definition operations into the
 // preview Digital Worker contract.
 const DigitalWorkerPreviewFeature = "DigitalWorker=V1Preview"
+
+// GitHubCopilotPreviewFeature opts managed prompt agent operations into the
+// preview GitHub Copilot harness contract.
+const GitHubCopilotPreviewFeature = "GitHubCopilot=V1Preview"
+
+// SkillsPreviewFeature opts prompt agent operations into the preview skills contract.
+const SkillsPreviewFeature = "Skills=V1Preview"
 
 func setDigitalWorkerPreviewFeature(req *policy.Request) {
 	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
@@ -655,7 +654,12 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 }
 
 // CreateAgentVersion creates a new version of an agent
-func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, request *CreateAgentVersionRequest, apiVersion string) (*AgentVersionObject, error) {
+func (c *AgentClient) CreateAgentVersion(
+	ctx context.Context,
+	agentName string,
+	request *CreateAgentVersionRequest,
+	apiVersion string,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)

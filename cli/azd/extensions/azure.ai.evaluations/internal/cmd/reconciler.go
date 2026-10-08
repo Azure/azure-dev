@@ -1,0 +1,1408 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"maps"
+	"math/big"
+	"os"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
+)
+
+// evalReconciler applies the eval configuration to the data plane. It is the
+// deploy half of the provider; the provider owns ordering, this owns the calls.
+type evalReconciler struct {
+	ec *evalContext
+
+	// Requests prepared by the side-effect-free validation pass. The published
+	// contract is resolved per reference, including explicit version pins.
+	prepared map[string]preparedEval
+
+	// Reconciled service versions identify contracts, not authored identity pins.
+	evaluatorVersions map[string]string
+
+	// Registered dataset versions whose content was inspected by preflight.
+	datasetVersions map[string]string
+	localDatasets   map[string]preparedLocalDataset
+
+	// claimedBy maps each eval this deploy has settled on to the declaration
+	// that settled it, so a second declaration cannot take the same one.
+	// A substance key left behind by an edit can still point at a live eval.
+	// Adopting it without ownership checks would rename that eval and leave
+	// both declarations sharing its runs.
+	//
+	// The owner is recorded rather than a bare flag because every declaration
+	// reserves its own id up front: "already claimed" is the normal case, and
+	// only "claimed by someone else" is the collision.
+	claimedBy map[string]string
+
+	// decided holds each declaration's digests, so reservation and
+	// reconciliation cannot answer the question differently.
+	decided map[string]evalDecision
+
+	// scope is the configuration these ids belong to. Empty outside a deploy,
+	// where there is one configuration in play and nothing to tell apart.
+	scope string
+}
+
+var _ project.Reconciler = (*evalReconciler)(nil)
+
+func newEvalReconciler(ctx context.Context, scope string) (project.Reconciler, error) {
+	ec, err := newEvalContext(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return &evalReconciler{ec: ec, scope: scope}, nil
+}
+
+// claim records an eval this deploy has settled on, and which declaration
+// settled it. Built lazily, because the reconciler is also constructed
+// literally in a few places.
+//
+// First claim wins. Two declarations reaching one id is the collision this
+// exists to catch, and letting the second overwrite the first would hide it.
+func (r *evalReconciler) claim(id, owner string) {
+	if id == "" {
+		return
+	}
+	if r.claimedBy == nil {
+		r.claimedBy = map[string]string{}
+	}
+	if _, taken := r.claimedBy[id]; !taken {
+		r.claimedBy[id] = owner
+	}
+}
+
+// ownedByAnother reports an eval a different declaration has already settled
+// on.
+//
+// Not "is it claimed": a declaration reserves its own id before reconciling, so
+// finding its own claim is what reuse looks like when it is working.
+func (r *evalReconciler) ownedByAnother(id, name string) bool {
+	owner, taken := r.claimedBy[id]
+	return taken && owner != name
+}
+
+// ReserveDeclared marks the evals these declarations already resolve to as
+// spoken for.
+//
+// Claiming only as each declaration finished made adoption depend on file
+// order: a declaration listed above the one that owns an eval would adopt it,
+// rename it, and end up sharing its runs. Reserving up front is the same guard
+// without the ordering. A name the environment holds no id for reserves
+// nothing, which is what leaves a genuine rename free to adopt.
+//
+// A declaration that is going to be recreated reserves nothing either: it is
+// about to abandon that eval, and holding it back would refuse the rename that
+// legitimately continues it.
+//
+// An explicit `id:` is reserved before any of that, by reserveExplicitIDs.
+func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
+	r.reserveExplicitIDs(groups)
+	for i := range groups {
+		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		if _, selected := r.prepared[groups[i].Name]; len(r.prepared) > 0 && !selected {
+			// Targeted create cannot release an unselected sibling's history:
+			// that sibling will not be reconciled, even if its pin changed.
+			r.claim(id, groups[i].Name)
+			continue
+		}
+		decision, err := r.decide(ctx, groups[i])
+		if err != nil {
+			// An unreadable decision is not evidence that an owner abandoned
+			// its eval. EnsureEval still reports the error for this declaration.
+			r.claim(id, groups[i].Name)
+			continue
+		}
+		if id == "" || decision.recreate {
+			continue
+		}
+		r.claim(id, groups[i].Name)
+	}
+}
+
+// reserveExplicitIDs claims every eval an author named outright.
+//
+// Separate, and first, because it reads nothing: an explicit `id:` is the
+// author naming the eval, so there is no decision to make and nothing that
+// could release it. The loop below consults the recorded environment, and a
+// read that fails skips its entry -- a reservation that can be skipped is not a
+// reservation.
+//
+// Without this, a pinned id was claimed only once its own declaration was
+// reached, so file order decided the outcome: a declaration listed above it
+// could reach the same eval through digestIDKey first, and the two ended up
+// sharing one eval and one run history. That is the collision this pre-pass
+// exists to prevent, and the pinned declaration was the one that lost it.
+func (r *evalReconciler) reserveExplicitIDs(groups []project.Eval) {
+	for i := range groups {
+		if groups[i].ID != "" {
+			r.claim(groups[i].ID, groups[i].Name)
+		}
+	}
+}
+
+// evalDecision is what one declaration's digests settled.
+type evalDecision struct {
+	digest     string
+	definition string
+	recreate   bool
+}
+
+// decide hashes a declaration both ways and says whether its substance changed
+// since the last deploy, answering the same way every time it is asked.
+//
+// Remembered per name because two callers ask: reservation, before anything is
+// reconciled, and EnsureEval itself. The recorded baseline is read over gRPC
+// and a read that failed answers "", so asking twice let one transient failure
+// leave an eval unreserved and then reused -- two declarations on one id, which
+// is the collision reservation exists to stop.
+//
+// digest identifies the declaration and keys the id a rename looks up.
+// definition is what the service stores, and is what the recreate comparison is
+// made against. The recorded baseline is the definition from the build that
+// split them on, and the full digest from every build before: equality with
+// either says the declaration is what was deployed.
+func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDecision, error) {
+	if decided, ok := r.decided[group.Name]; ok {
+		return decided, nil
+	}
+	prepared, validated := r.prepared[group.Name]
+	if validated {
+		group = prepared.group
+	}
+
+	digest, err := project.FingerprintGroup(group)
+	if err != nil {
+		return evalDecision{}, err
+	}
+	definition, err := project.FingerprintDefinition(group)
+	if err != nil {
+		return evalDecision{}, err
+	}
+	// Only the baseline carries the tag. The digest is also an identity key --
+	// digestIDKey slices it to name the entry a rename looks up -- so changing
+	// its text would point every one of those somewhere else and read a rename
+	// as a delete plus an add.
+	definition = fingerprintEra + definition
+	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
+
+	recreate := substanceChanged(prior, definition, digest)
+	if recreate && group.Source != nil {
+		legacy := group
+		legacy.Source = nil
+		legacyDefinition, err := project.FingerprintDefinition(legacy)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
+			recreate = false
+		}
+	}
+	if recreate && validated {
+		legacyDigest, err := project.FingerprintGroup(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		legacyDefinition, err := project.FingerprintDefinition(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		legacyUnchanged := !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest)
+		if !legacyUnchanged && prepared.declared.Source != nil {
+			legacy := prepared.declared
+			legacy.Source = nil
+			sourceStripped, err := project.FingerprintDefinition(legacy)
+			if err != nil {
+				return evalDecision{}, err
+			}
+			legacyUnchanged = prior == sourceStripped || prior == fingerprintEra+sourceStripped
+		}
+		if digest != legacyDigest && legacyUnchanged {
+			// Some earlier lifecycle builds sent catalog pins but omitted them
+			// from fingerprints. Older builds ignored catalog pins entirely;
+			// those unpinned criteria must be recreated to honor the pin.
+			id := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
+			if id != "" {
+				remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
+				if err != nil && !eval_api.IsNotFound(err) {
+					return evalDecision{}, err
+				}
+				if err == nil {
+					recreate = !matchingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
+				}
+			}
+		}
+	}
+
+	decided := evalDecision{
+		digest:     digest,
+		definition: definition,
+		recreate:   recreate,
+	}
+	if r.decided == nil {
+		r.decided = map[string]evalDecision{}
+	}
+	r.decided[group.Name] = decided
+	return decided, nil
+}
+
+// fingerprintEra tags a recorded baseline with the hashing that produced it.
+//
+// Recreating an eval is not free: it is a new eval, so every run taken against
+// the old one stops being comparable with the ones taken after. The baseline
+// exists to decide that, and it can only decide it against a hash of the same
+// shape. When the shape changed, an unchanged declaration hashed differently
+// and every eval in the file was recreated by an upgrade nobody asked for.
+const fingerprintEra = "v2:"
+
+// substanceChanged reports whether the declaration differs from what was
+// deployed, or says no when it cannot tell.
+//
+// A baseline written by different hashing says nothing about this declaration,
+// and "cannot tell" is not "changed": duplicating an eval on no evidence is the
+// worse of the two mistakes, and the deploy re-baselines so the next one can
+// compare.
+//
+// Only a baseline carrying a different tag is unreadable. An untagged one
+// predates the tag and was written by this same hashing, so it is still
+// compared by value -- treating it as unreadable would stop every existing
+// environment noticing a real edit, which is the opposite defect.
+func substanceChanged(prior, definition, digest string) bool {
+	if prior == "" {
+		return false
+	}
+	if slices.Contains([]string{
+		definition, digest,
+		strings.TrimPrefix(definition, fingerprintEra),
+	}, prior) {
+		return false
+	}
+	if era := fingerprintEraOf(prior); era != "" && era != fingerprintEraOf(definition) {
+		return false
+	}
+	return true
+}
+
+// fingerprintEraOf reads the tag a baseline was written with, or "" for the
+// untagged values the shipped build produced.
+func fingerprintEraOf(fingerprint string) string {
+	colon := strings.Index(fingerprint, ":")
+	// Only a version tag counts. A hash is hex, so it carries no colon, but a
+	// value from somewhere else might.
+	if colon < 1 || fingerprint[0] != 'v' {
+		return ""
+	}
+	return fingerprint[:colon+1]
+}
+
+// evalDigests hashes a declaration both ways and says whether its substance
+// changed since the last deploy.
+//
+// digest identifies the declaration and keys the id a rename looks up.
+// definition is what the service stores, and is what the recreate comparison
+// is made against. The recorded baseline is the definition from the build that
+// split them on, and the full digest from every build before: equality with
+// either says the declaration is what was deployed.
+func (r *evalReconciler) evalDigests(
+	ctx context.Context,
+	group project.Eval,
+) (digest, definition string, recreate bool, err error) {
+	decided, err := r.decide(ctx, group)
+	if err != nil {
+		return "", "", false, err
+	}
+	return decided.digest, decided.definition, decided.recreate, nil
+}
+
+// EnsureDataset registers a new version only when the local content changed.
+//
+// The dataset API exposes no content hash, so comparing against the service
+// would mean downloading the blob on every deploy. Instead the local file is
+// hashed and the digest kept in the azd environment.
+func (r *evalReconciler) EnsureDataset(
+	ctx context.Context,
+	decl project.DatasetDecl,
+	localPath string,
+) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	// No local source means the dataset is already registered; just confirm it.
+	if localPath == "" {
+		version := r.datasetVersions[decl.Name]
+		if version == "" || (decl.Version != "" && version != decl.Version) {
+			var err error
+			version, err = r.datasetReference(ctx, decl)
+			if err != nil {
+				return "", false, err
+			}
+		}
+
+		// Recorded so a run reads the version reconciliation settled on. Without
+		// this a pin is honoured at deploy and then ignored at run time, which
+		// scores different rows than the ones the author asked for.
+		r.ec.remember(ctx, versionKey("dataset", decl.Name), version)
+		return version, false, nil
+	}
+
+	if _, err := os.Stat(localPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", false, messages.DatasetNotGeneratedYet(decl.Name, localPath)
+		}
+		return "", false, messages.DatasetSource(localPath, err)
+	}
+
+	// A malformed row is only noticed once the service tries to evaluate it,
+	// by which point a version has been published and the eval points at
+	// it. Reading the file here costs nothing and names the offending line.
+	if _, err := inspectJSONL(ctx, localPath, nil); err != nil {
+		return "", false, messages.DatasetProblem(decl.Name, err)
+	}
+
+	digest, err := project.Fingerprint(localPath)
+	if err != nil {
+		return "", false, err
+	}
+
+	key := project.FingerprintKey("dataset", decl.Name)
+	selected, validated := r.localDatasets[decl.Name]
+	if validated {
+		if selected.digest != digest || selected.pin != decl.Version {
+			return "", false, fmt.Errorf("dataset %q changed after validation; retry the command", decl.Name)
+		}
+	} else {
+		selected.version, err = r.localDatasetReuse(ctx, decl, digest)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if selected.version != "" {
+		if decl.Version == "" {
+			if validated {
+				if err := r.checkDatasetDrift(ctx, decl.Name, selected.version); err != nil {
+					return "", false, err
+				}
+			}
+			if err := r.applyDatasetTags(ctx, decl, selected.version); err != nil {
+				return "", false, err
+			}
+		} else if validated {
+			// A version selected by preflight must not become an upload if it
+			// disappears. The inspected rows, not the local file, were validated.
+			if _, err := r.datasetReference(ctx, decl); err != nil {
+				return "", false, err
+			}
+		}
+		// Preserve the file-to-published-version baseline when a pin is reused.
+		return selected.version, false, nil
+	}
+
+	// Uploaded by the path the author declared. Collapsing a file to its
+	// directory would upload whichever .jsonl sorts first, while the
+	// fingerprint below still describes the declared one.
+	dir := localPath
+
+	// A declared version is the version to publish, not one to count from.
+	// Reaching here means the content differs from what that version holds, so
+	// republishing over it would change a version the author pinned.
+	if decl.Version != "" {
+		ds, err := r.ec.datasetClient.UploadVersionTagged(
+			ctx, decl.Name, decl.Version, dir, decl.Tags, ProjectEndpointAPIVersion,
+		)
+		if err != nil {
+			if dataset_api.IsVersionConflict(err) {
+				return "", false, messages.DatasetVersionConflict(decl.Name, decl.Version)
+			}
+			return "", false, err
+		}
+		r.ec.remember(ctx, key, digest)
+		r.ec.remember(ctx, versionKey("dataset", decl.Name), ds.Version)
+		return ds.Version, true, nil
+	}
+
+	// UploadNextVersion discovers the currently registered version when none is
+	// declared, so the upload does not restart at 1.0 and collide.
+	ds, err := r.ec.datasetClient.UploadNextVersionTagged(
+		ctx, decl.Name, decl.Version, dir, decl.Tags, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		return "", false, err
+	}
+
+	r.ec.remember(ctx, key, digest)
+	r.ec.remember(ctx, versionKey("dataset", decl.Name), ds.Version)
+
+	return ds.Version, true, nil
+}
+
+// applyDatasetTags brings a published version's tags up to the declaration.
+//
+// A tag-only edit is not a new dataset, so it does not publish one: renumbering
+// the version would move every reference to it for a change to a label. Only a
+// declaration carrying `file:` is updated -- without one the dataset belongs
+// to somebody else and this configuration only refers to it.
+func (r *evalReconciler) applyDatasetTags(
+	ctx context.Context,
+	decl project.DatasetDecl,
+	version string,
+) error {
+	if len(decl.Tags) == 0 || decl.File == "" {
+		return nil
+	}
+	current, err := r.ec.datasetClient.GetDataset(
+		ctx, decl.Name, version, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		// Not fatal: the deploy has a working dataset and a stale label, and
+		// failing here would block an eval over a tag nobody reads at run time.
+		return nil
+	}
+	if tagsAlreadyApplied(current.Tags, decl.Tags) {
+		return nil
+	}
+	// Merged, not replaced. The service records what produced a dataset here,
+	// and a declaration that named two tags would otherwise delete that.
+	merged := make(map[string]string, len(current.Tags)+len(decl.Tags))
+	maps.Copy(merged, current.Tags)
+	maps.Copy(merged, decl.Tags)
+
+	if _, err := r.ec.datasetClient.UpdateVersionTags(
+		ctx, decl.Name, version, merged, ProjectEndpointAPIVersion,
+	); err != nil {
+		return messages.TaggingDataset(decl.Name, version, err)
+	}
+	return nil
+}
+
+// tagsAlreadyApplied reports whether every declared tag is already recorded.
+func tagsAlreadyApplied(have, want map[string]string) bool {
+	for key, value := range want {
+		if have[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+// validateJSONL checks that every row is a JSON object before the file is
+// published.
+//
+// The service accepts the upload whatever the bytes are, so a typo becomes a
+// registered version, an eval bound to it, and a run that fails on a row
+// nobody has looked at. Blank lines are skipped: they are not rows.
+func validateJSONL(path string) error {
+	_, err := inspectJSONL(context.Background(), path, nil)
+	return err
+}
+
+// inspectJSONL validates every row and returns the columns every row supplies.
+func inspectJSONL(
+	ctx context.Context, path string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	// #nosec G304 -- path is the dataset file the eval config declares.
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, messages.ReadingPath(path, err)
+	}
+	defer f.Close()
+
+	return inspectJSONLContent(ctx, path, f, validateRow)
+}
+
+func inspectJSONLContent(
+	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	scanner := bufio.NewScanner(content)
+	// A row carrying a whole conversation runs well past the 64KB default.
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+
+	rows := 0
+	var columns map[string]bool
+	for line := 1; scanner.Scan(); line++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		text := scanner.Text()
+		if line == 1 {
+			// PowerShell's `>` and Set-Content write a byte order mark, so a
+			// file a reader produced by redirecting output starts with bytes
+			// that are not JSON. The upload path already drops it, and refusing
+			// here what deploy would accept sends them hunting a row that is
+			// fine.
+			text = project.TrimBOM(text)
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(text), &row); err != nil {
+			return nil, messages.JSONLRowInvalid(source, line, err)
+		}
+		if len(row) == 0 {
+			return nil, messages.JSONLRowEmpty(source, line)
+		}
+		if validateRow != nil {
+			if err := validateRow(row, rows); err != nil {
+				return nil, err
+			}
+		}
+		if columns == nil {
+			columns = make(map[string]bool, len(row))
+			for field := range row {
+				columns[field] = true
+			}
+		} else {
+			for field := range columns {
+				if _, ok := row[field]; !ok {
+					delete(columns, field)
+				}
+			}
+		}
+		rows++
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, messages.ReadingPath(source, err)
+	}
+	if rows == 0 {
+		return nil, messages.JSONLNoRows(source)
+	}
+	return columns, ctx.Err()
+}
+
+func (r *evalReconciler) checkDatasetDrift(
+	ctx context.Context,
+	name, recorded string,
+) error {
+	latest, err := r.latestDatasetVersion(ctx, name)
+	if err != nil {
+		// The whole point of this check is to catch a version published behind
+		// our back. A listing we could not read is not evidence there was none.
+		return err
+	}
+	if latest == "" {
+		// An empty listing is not proof the recorded version is gone: it is
+		// equally what a listing that has not caught up reports, and what a
+		// project the state does not belong to reports. The point read settles
+		// it: only a successful read establishes that the version is usable.
+		if _, getErr := r.ec.datasetClient.GetDataset(
+			ctx, name, recorded, ProjectEndpointAPIVersion,
+		); getErr != nil {
+			if dataset_api.IsNotFound(getErr) {
+				return messages.DatasetVersionNotFoundWithHint(name, recorded)
+			}
+			return messages.ReadingDatasetVersion(name, recorded, getErr)
+		}
+		return nil
+	}
+	if latest == recorded {
+		return nil
+	}
+	if !dataset_api.VersionGreater(latest, recorded) {
+		return nil
+	}
+	return messages.DatasetDrifted(name, latest, recorded)
+}
+
+// latestDatasetVersion reports the newest registered version. A dataset the
+// service does not know, and a listing that has not caught up, both report an
+// empty version and no error; anything else is returned.
+func (r *evalReconciler) latestDatasetVersion(ctx context.Context, name string) (string, error) {
+	list, err := r.ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if err != nil {
+		if dataset_api.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if list == nil || len(list.Value) == 0 {
+		return "", nil
+	}
+	return dataset_api.LatestVersion(list.Value), nil
+}
+
+// EnsureEvaluator publishes a new version when the local definition differs
+// from what the service holds.
+//
+// A definition reaches this three ways: written in the configuration, named as
+// a file, or neither -- in which case the evaluator has to already exist on the
+// service. The first two are the same publish once the rubric is in hand; they
+// differ only in what there is to hash.
+func (r *evalReconciler) EnsureEvaluator(
+	ctx context.Context,
+	decl project.EvaluatorDecl,
+	localPath string,
+) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if r.evaluatorVersions == nil {
+		r.evaluatorVersions = map[string]string{}
+	}
+	if !decl.CarriesItsRubric() && localPath == "" {
+		raw, err := r.ec.evalClient.GetEvaluatorRaw(
+			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
+		)
+		if err != nil {
+			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
+		}
+		version := versionFromRaw(raw, decl.Version)
+		r.evaluatorVersions[decl.Name] = version
+		return version, false, nil
+	}
+	body, digest, err := localEvaluator(decl, localPath)
+	if err != nil {
+		return "", false, err
+	}
+
+	// The author's own definition decides whether there is anything to publish.
+	// Comparing against the service cannot: it enriches a definition with
+	// fields nobody authored, so sameDefinition only looks for authored keys on
+	// the service and a key the author *deleted* — a pass_threshold, say — is
+	// still there to be found, and the deletion never publishes.
+	digestKey := project.FingerprintKey("evaluator", decl.Name)
+	prior := r.ec.privateValue(ctx, digestKey)
+
+	// Compare against the definition already on the service.
+	var known json.RawMessage
+	existing, err := r.ec.evalClient.GetEvaluatorRaw(
+		ctx, decl.Name, "", ProjectEndpointAPIVersion,
+	)
+	// A read that failed is not a read that found nothing: falling through
+	// publishes a new version with no drift check, over whatever is already
+	// there. A 404 or a complete, valid empty version list permits first publish.
+	if err != nil && !eval_api.IsEvaluatorAbsent(err) {
+		return "", false, messages.CheckingEvaluatorExists(decl.Name, err)
+	}
+	if err == nil {
+		if _, err := evaluatorContract(existing); err != nil {
+			return "", false, messages.EvaluatorProblem(decl.Name, err)
+		}
+		remote := versionFromRaw(existing, "")
+		if canReuseEvaluator(prior, digest, existing, body) {
+			// Nothing to publish, but the version is still worth recording:
+			// it is what a later deploy compares against to notice that
+			// someone moved the evaluator on from here.
+			if remote != "" {
+				r.ec.remember(ctx, versionKey("evaluator", decl.Name), remote)
+			}
+			r.ec.remember(ctx, digestKey, digest)
+			version := versionFromRaw(existing, decl.Version)
+			r.evaluatorVersions[decl.Name] = version
+			return version, false, nil
+		}
+
+		// The definitions differ, which means either the local file changed
+		// or someone published a version outside the repo. The version
+		// recorded at the last deploy is what tells them apart, and
+		// publishing over the second case would bury an intentional change
+		// under one nobody asked for.
+		if recorded := r.ec.privateValue(ctx, versionKey("evaluator", decl.Name)); recorded != "" {
+			if err := checkEvaluatorDrift(decl.Name, recorded, remote); err != nil {
+				return "", false, err
+			}
+		}
+
+		// What that read saw is what keeps the publish from being answered
+		// with it again.
+		known = existing
+	}
+
+	// Applied here rather than when body was built: the digest and the
+	// drift comparison are taken from the authored definition, and
+	// folding catalog metadata in earlier would make every existing
+	// evaluator look edited and publish a version nobody asked for.
+	published, err := evaluatorPublishBody(body, decl, known)
+	if err != nil {
+		return "", false, messages.EvaluatorProblem(decl.Name, err)
+	}
+
+	created, err := r.ec.evalClient.CreateEvaluatorVersion(
+		ctx, decl.Name, published, known, ProjectEndpointAPIVersion,
+	)
+	if err != nil {
+		return "", false, err
+	}
+	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
+	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
+	r.ec.remember(ctx, digestKey, digest)
+	r.evaluatorVersions[decl.Name] = created.Version
+	return created.Version, true, nil
+}
+
+// checkEvaluatorDrift fails when the service holds a newer version than the
+// one recorded at the last deploy.
+//
+// It is asked only when the local definition and the remote one disagree,
+// which on its own says nothing about who moved: the author may have edited
+// the file, or someone may have published a version from outside the repo.
+// The recorded version settles it, and the difference matters because
+// publishing is how this reconciler resolves a disagreement — doing that over
+// a version somebody deliberately published would bury their change under one
+// nobody asked for, with `azd up` reporting success.
+//
+// The remote version is passed in rather than listed, because the version
+// listing lags a publish and would report an evaluator as un-drifted for the
+// first seconds of its newest version's life.
+func checkEvaluatorDrift(name, recorded, remote string) error {
+	recordedNumber, err := strconv.Atoi(recorded)
+	if err != nil {
+		return nil
+	}
+	remoteNumber, err := strconv.Atoi(remote)
+	if err != nil || remoteNumber <= recordedNumber {
+		return nil
+	}
+	return messages.EvaluatorDrifted(name, remote, recorded)
+}
+
+// evaluatorPropagation bounds the wait for a freshly published evaluator to
+// become usable.
+//
+// A create returns before the version is resolvable everywhere, and the very
+// next step of a deploy is EnsureEval, which names the evaluator in a testing
+// criterion. Creating the eval inside that window fails with "The evaluator X
+// was not found" — a confusing error, because the evaluator was published
+// seconds earlier and is plainly there by the time anyone looks. The observed
+// gap is under a second, so the poll is frequent and the cap is generous
+// enough to absorb a slow day without stalling a deploy on an evaluator that
+// is genuinely missing.
+const (
+	evaluatorPropagationTimeout  = 30 * time.Second
+	evaluatorPropagationInterval = 250 * time.Millisecond
+)
+
+// awaitEvaluatorReadable polls until a published version is resolvable, or the
+// cap passes.
+//
+// Two reads have to agree, because they are not backed by the same view. The
+// direct read goes consistent almost immediately; the version listing lags it
+// by seconds, the same way the dataset listing does. A live publish was
+// observed reading back at 03:06:58 and still failing eval creation at
+// 03:06:59, so waiting on the direct read alone leaves exactly the race this
+// exists to close. The listing is the slower of the two and therefore the one
+// worth waiting on.
+//
+// A timeout is not an error. The wait is a courtesy that makes the common case
+// reliable; if it never succeeds, the create that follows will report the real
+// problem with far more context than a wait that gave up could.
+func (r *evalReconciler) awaitEvaluatorReadable(ctx context.Context, name, version string) {
+	if version == "" {
+		return
+	}
+	deadline := time.Now().Add(evaluatorPropagationTimeout)
+	for {
+		if r.evaluatorVersionResolvable(ctx, name, version) {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(evaluatorPropagationInterval):
+		}
+	}
+}
+
+// evaluatorVersionResolvable reports whether a version can be both read
+// directly and found in the listing.
+func (r *evalReconciler) evaluatorVersionResolvable(
+	ctx context.Context,
+	name, version string,
+) bool {
+	if _, err := r.ec.evalClient.GetEvaluatorRaw(
+		ctx, name, version, ProjectEndpointAPIVersion,
+	); err != nil {
+		return false
+	}
+
+	list, err := r.ec.evalClient.ListEvaluatorVersions(
+		ctx, name, ProjectEndpointAPIVersion,
+	)
+	if err != nil || list == nil {
+		return false
+	}
+	for _, entry := range list.Value {
+		if entry.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsureEval creates the eval when it has never been deployed, or when its own
+// declaration changed. Evals are immutable, so a declaration change means a new
+// eval and a new id.
+//
+// What an eval's references *resolve to* is deliberately not a reason to
+// recreate it: an evaluator tracking latest that publishes a new version leaves
+// every eval that runs it alone, which is what keeps a rubric edit comparable
+// against the runs taken before it.
+func (r *evalReconciler) EnsureEval(
+	ctx context.Context,
+	group project.Eval,
+	datasetPath string,
+) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if group.ID != "" {
+		// An explicit id skips every read below, so nothing here noticed when it
+		// named an eval that had been deleted or was simply mistyped: the deploy
+		// reported success and the first run against it answered 404. One point
+		// read settles it, and it is the same confirmation an external dataset
+		// or evaluator reference gets.
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
+			if eval_api.IsNotFound(err) {
+				return "", false, messages.EvalNotFound(group.ID)
+			}
+			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if !responseSchemaMatches(&group, remote) {
+			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
+		}
+		if prepared, validated := r.prepared[group.Name]; validated &&
+			conflictingSourceContract(prepared.group, remote, prepared.request) {
+			return "", false, incompatibleSourceContract(group.ID)
+		}
+		r.claim(group.ID, group.Name)
+		return group.ID, false, nil
+	}
+
+	// Evals are immutable, so a change to the eval's own substance — evaluators,
+	// dataset, target, level, source mode — needs a new eval. Name and description are
+	// excluded from the digest and pushed in place instead, and so are
+	// max_samples and source filters, which the run carries rather than the eval.
+	digest, definition, recreate, err := r.evalDigests(ctx, group)
+	if err != nil {
+		return "", false, err
+	}
+	key := project.FingerprintKey("eval", group.Name)
+
+	// Building the request is also what checks the declaration against the
+	// dataset's columns, so it happens before the reuse decision: a dataset can
+	// lose a column an evaluator needs without the eval's own declaration
+	// changing, and reusing the eval would let that reach a run unreported.
+	prepared, validated := r.prepared[group.Name]
+	req := prepared.request
+	columns := prepared.columns
+	if !validated {
+		columns = datasetColumnsFromPath(datasetPath)
+	}
+	if validated && len(prepared.localEvaluators) > 0 {
+		// Publishing a rubric can add a schema that the authored file does not
+		// carry. Refresh only these local, unpinned references; every other
+		// contract, including version pins, stays the one validated earlier.
+		schemas := maps.Clone(prepared.schemas)
+		for _, name := range prepared.localEvaluators {
+			version := r.evaluatorVersions[name]
+			if version == "" {
+				return "", false, fmt.Errorf("evaluator %q has no reconciled version to read", name)
+			}
+			raw, err := r.ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
+			if err != nil {
+				return "", false, messages.ReadingEvaluator(name, err)
+			}
+			schema, err := evaluatorContract(raw)
+			if err != nil {
+				return "", false, messages.EvaluatorProblem(name, err)
+			}
+			schemas[name] = schema
+		}
+		req, err = buildEvalRequest(&prepared.group, schemas, prepared.columns)
+		if err != nil {
+			return "", false, err
+		}
+	} else if !validated {
+		req, err = buildEvalRequest(
+			&group,
+			r.ec.evaluatorSchemas(ctx),
+			columns,
+		)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if err := validateDatasetInteractions(&group, req, columns); err != nil {
+		return "", false, err
+	}
+
+	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
+	// A rename records the id under the new name and leaves the old name's entry
+	// pointing at it. Reintroducing that old name then found a live id here and
+	// took it, without ever passing the ownership check adoption makes -- so two
+	// declarations resolved to one eval, renamed it past each other on every
+	// deploy, and shared a run history. The declaration that got there first is
+	// the one that keeps it; this one creates its own.
+	if r.ownedByAnother(cached, group.Name) {
+		cached = ""
+	}
+	if cached == "" && !recreate {
+		// Nothing recorded under this name, but the substance may already be
+		// deployed under the name it had before. The environment records the id
+		// against the digest as well, which is what recognizes a rename rather
+		// than reading it as a delete plus an add.
+		adopted, err := r.adoptRenamed(ctx, group, digest, req)
+		if err != nil {
+			return "", false, err
+		}
+		if adopted != "" {
+			cached = adopted
+		}
+	}
+	if cached != "" && !recreate {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, cached)
+		if err != nil && !eval_api.IsNotFound(err) {
+			// A read that failed is not an eval that is gone. Falling through
+			// on a 429, a 503 or an expired token would create a second eval
+			// and overwrite the recorded id, forking for good the run history
+			// this lookup exists to keep.
+			return "", false, err
+		}
+		if err == nil &&
+			(!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) &&
+			responseSchemaMatches(&group, remote) && !conflictingSourceContract(group, remote, req) {
+			// Reusing the eval is not the same as leaving it alone: name and
+			// description are excluded from the digest because they must not
+			// split a history, which makes this the only place an edit to
+			// either of them can reach the service.
+			r.pushMutable(ctx, cached, group, remote)
+
+			// Record the definition on reuse as well, otherwise an eval deployed
+			// before fingerprinting existed never establishes a baseline and
+			// later edits go undetected. The identity digest is recorded beside
+			// it, which is what recognizes this declaration after a rename.
+			r.ec.remember(ctx, key, definition)
+			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
+			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
+			r.claim(cached, group.Name)
+			return cached, false, nil
+		}
+	}
+
+	created, err := r.ec.evalClient.CreateOpenAIEval(ctx, req)
+	if err != nil {
+		return "", false, err
+	}
+	r.ec.remember(ctx, key, definition)
+	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
+	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
+	r.claim(created.ID, group.Name)
+	return created.ID, true, nil
+}
+
+// conflictingEvaluatorPins repairs state from builds that sent inherited pins
+// but omitted them from fingerprints. Only an actual stored pin disagreement
+// is evidence to recreate; unrelated server enrichment is not compared.
+func conflictingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	pin := func(version string) string {
+		if version == "latest" {
+			return ""
+		}
+		return version
+	}
+	for _, desired := range want {
+		for _, stored := range have {
+			if stored.Name == desired.Name && stored.EvaluatorName == desired.EvaluatorName &&
+				pin(stored.EvaluatorVersion) != pin(desired.EvaluatorVersion) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchingEvaluatorPins requires positive evidence before a legacy digest can
+// adopt an eval: that index did not distinguish inherited catalog versions.
+func matchingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	if len(want) == 0 || len(have) != len(want) || conflictingEvaluatorPins(have, want) {
+		return false
+	}
+	for _, desired := range want {
+		if !slices.ContainsFunc(have, func(stored eval_api.TestingCriterion) bool {
+			return stored.Type == desired.Type && stored.Name == desired.Name &&
+				stored.EvaluatorName == desired.EvaluatorName
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
+// conflictingSourceContract detects positive evidence that stored mappings read
+// a different source or disagree with authored bindings. Missing inferred
+// mappings and unrelated enrichment are not edits.
+func conflictingSourceContract(
+	group project.Eval, have *eval_api.OpenAIEval, want *eval_api.CreateOpenAIEvalRequest,
+) bool {
+	if group.Source == nil || have == nil || want == nil || want.DataSourceConfig == nil {
+		return false
+	}
+	if group.Source.Type != project.SourceTypeTraces && group.Source.Type != project.SourceTypeResponses {
+		return false
+	}
+	switch have.DataSourceConfig["scenario"] {
+	case "responses":
+		if group.Source.Type == project.SourceTypeTraces {
+			return true
+		}
+	case "traces", "traces_preview":
+		if group.Source.Type == project.SourceTypeResponses {
+			return true
+		}
+	}
+	// Service-defined scenarios omit this field; enrichment is not a custom contract.
+	if want.DataSourceConfig.Type == "custom" && have.DataSourceConfig["type"] == "custom" {
+		if sampled, known := have.DataSourceConfig["include_sample_schema"].(bool); known &&
+			sampled != want.DataSourceConfig.IncludeSampleSchema {
+			return true
+		}
+	}
+	namespace := func(binding string) string {
+		for _, prefix := range []string{"{{item.", "{{sample."} {
+			if strings.HasPrefix(binding, prefix) && strings.HasSuffix(binding, "}}") {
+				return prefix
+			}
+		}
+		return ""
+	}
+	for _, desired := range want.TestingCriteria {
+		matched := false
+		for _, stored := range have.TestingCriteria {
+			if stored.Name != desired.Name || stored.EvaluatorName != desired.EvaluatorName {
+				continue
+			}
+			matched = true
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() != desired.Name || ref.Evaluator != desired.EvaluatorName {
+					continue
+				}
+				for field, binding := range ref.DataMapping {
+					if held, present := stored.DataMapping[field]; !present || held != binding {
+						return true
+					}
+				}
+			}
+			for _, field := range []string{"query", "response", "messages", "tool_calls", "tool_definitions"} {
+				from, to := namespace(stored.DataMapping[field]), namespace(desired.DataMapping[field])
+				if from != "" && to != "" && from != to {
+					return true
+				}
+			}
+			if group.Source.Type == project.SourceTypeResponses {
+				outputs := []string{"{{sample.output_items}}", "{{sample.output_text}}"}
+				from, to := stored.DataMapping["response"], desired.DataMapping["response"]
+				if from != to && slices.Contains(outputs, from) && slices.Contains(outputs, to) {
+					return true
+				}
+			}
+		}
+		if !matched {
+			for _, ref := range group.Evaluators {
+				if ref.CriterionName() == desired.Name && ref.Evaluator == desired.EvaluatorName &&
+					len(ref.DataMapping) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// adoptRenamed reclaims the eval this declaration used to be called, so a
+// rename keeps the id and every run under it rather than forking the history.
+//
+// The name is what UpdateEvalParametersBody reaches, so the new one is pushed
+// to the service.
+func (r *evalReconciler) adoptRenamed(
+	ctx context.Context,
+	group project.Eval,
+	digest string,
+	request *eval_api.CreateOpenAIEvalRequest,
+) (string, error) {
+	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
+	legacy := false
+	if id == "" {
+		if prepared, ok := r.prepared[group.Name]; ok {
+			legacyDigest, err := project.FingerprintGroup(prepared.declared)
+			if err != nil {
+				return "", err
+			}
+			if legacyDigest != digest {
+				id = r.ec.scopedValue(ctx, digestIDKey(legacyDigest), r.scope)
+				legacy = id != ""
+			}
+		}
+	}
+	if id == "" {
+		return "", nil
+	}
+	if r.ownedByAnother(id, group.Name) {
+		// Another declaration in this same file already settled on it. Adopting
+		// it here would rename that eval and leave both declarations sharing
+		// one id and one run history, which is worse than creating a second.
+		return "", nil
+	}
+	remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
+	if err != nil {
+		if eval_api.IsNotFound(err) {
+			// The eval it used to be called is genuinely gone, so there is
+			// nothing to adopt and the caller creates one.
+			return "", nil
+		}
+		return "", err
+	}
+	if conflictingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria)) ||
+		!responseSchemaMatches(&group, remote) || conflictingSourceContract(group, remote, request) {
+		return "", nil
+	}
+	r.pushMutable(ctx, id, group, remote)
+	return id, nil
+}
+
+// pushMutable sends the half of a declaration the service treats as mutable.
+//
+// Substance never travels this way — an edit that touches it is a new eval.
+// Name and description are left out of the fingerprint precisely because they
+// cost nothing to change and must not split a run history, so they are
+// reconciled here rather than ignored, and the eval keeps its id and every run
+// under it.
+//
+// A failure is not fatal. The eval is still the right one and the declaration
+// still resolves; it just reads under its old wording in the portal until the
+// next deploy.
+func (r *evalReconciler) pushMutable(
+	ctx context.Context,
+	id string,
+	group project.Eval,
+	remote *eval_api.OpenAIEval,
+) {
+	if remote == nil {
+		return
+	}
+	desired := withDescription(remote.Metadata, group.Description)
+	if remote.Name == group.Name && maps.Equal(remote.Metadata, desired) {
+		return
+	}
+	if _, err := r.ec.evalClient.UpdateOpenAIEval(ctx, id, &eval_api.UpdateOpenAIEvalRequest{
+		Name:     group.Name,
+		Metadata: desired,
+	}); err != nil {
+		// Deliberately not fatal: a name or description that did not travel
+		// leaves the eval usable, and failing the deploy over it would be
+		// worse. It still has to be findable, so --debug can see it.
+		log.Printf("[reconcile] updating eval %s name/description: %v", id, err)
+	}
+}
+
+// withDescription applies the declaration's description to the metadata the
+// service already holds, leaving every other key alone — including any the
+// service added itself, which a replacing update would otherwise drop.
+func withDescription(held map[string]string, description string) map[string]string {
+	merged := make(map[string]string, len(held)+1)
+	maps.Copy(merged, held)
+	if description == "" {
+		delete(merged, metaDescription)
+	} else {
+		merged[metaDescription] = description
+	}
+	return merged
+}
+
+// canReuseEvaluator is shared with preflight so authored metadata cannot mask
+// the published contract of a version that reconciliation will leave unchanged.
+func canReuseEvaluator(prior, digest string, existing, body []byte) bool {
+	return (prior == "" || prior == digest) && sameDefinition(existing, body)
+}
+
+// sameDefinition reports whether the locally authored definition already
+// matches what the service holds.
+//
+// Only the keys the candidate declares are compared. The service enriches a
+// definition when it is created — a rubric of nothing but `type` and
+// `dimensions` comes back carrying data_schema, init_parameters and metrics it
+// was never given — so comparing whole documents never matches and every
+// deploy publishes a redundant version.
+func sameDefinition(existing, candidate []byte) bool {
+	extract := func(raw []byte) map[string]json.RawMessage {
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return nil
+		}
+		def, ok := doc["definition"]
+		if !ok {
+			return nil
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(def, &fields); err != nil {
+			return nil
+		}
+		return fields
+	}
+
+	onService, authored := extract(existing), extract(candidate)
+	if onService == nil || authored == nil {
+		return false
+	}
+
+	for key, want := range authored {
+		got, ok := onService[key]
+		if !ok {
+			return false
+		}
+		if key == "dimensions" && equalJSON(authored["type"], []byte(`"rubric"`)) {
+			if !sameAuthoredDimensions(got, want) {
+				return false
+			}
+		} else if !equalJSON(got, want) {
+			return false
+		}
+	}
+	return true
+}
+
+// sameAuthoredDimensions ignores service-added fields without ignoring authored
+// edits, dimension order, or removals detected by the persisted file digest.
+func sameAuthoredDimensions(existing, candidate json.RawMessage) bool {
+	var have, want []map[string]json.RawMessage
+	if json.Unmarshal(existing, &have) != nil || json.Unmarshal(candidate, &want) != nil || len(have) != len(want) {
+		return false
+	}
+	if have == nil || want == nil {
+		return have == nil && want == nil
+	}
+	for i, dimension := range want {
+		if dimension == nil || have[i] == nil {
+			return false
+		}
+		for key, value := range dimension {
+			if !equalJSON(have[i][key], value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// equalJSON compares two JSON values structurally, so key order and
+// whitespace do not register as a change. Numbers retain exact values while
+// equivalent decimal and exponent spellings compare equal.
+func equalJSON(a, b json.RawMessage) bool {
+	if !json.Valid(a) || !json.Valid(b) {
+		return false
+	}
+	var left, right any
+	leftDecoder, rightDecoder := json.NewDecoder(bytes.NewReader(a)), json.NewDecoder(bytes.NewReader(b))
+	leftDecoder.UseNumber()
+	rightDecoder.UseNumber()
+	if err := leftDecoder.Decode(&left); err != nil {
+		return false
+	}
+	if err := rightDecoder.Decode(&right); err != nil {
+		return false
+	}
+	return equalJSONValue(left, right)
+}
+
+func equalJSONValue(left, right any) bool {
+	switch left := left.(type) {
+	case json.Number:
+		right, ok := right.(json.Number)
+		if !ok {
+			return false
+		}
+		if left == right {
+			return true
+		}
+		leftNumber, leftOK := new(big.Rat).SetString(string(left))
+		rightNumber, rightOK := new(big.Rat).SetString(string(right))
+		return leftOK && rightOK && leftNumber.Cmp(rightNumber) == 0
+	case []any:
+		right, ok := right.([]any)
+		return ok && slices.EqualFunc(left, right, equalJSONValue)
+	case map[string]any:
+		right, ok := right.(map[string]any)
+		return ok && maps.EqualFunc(left, right, equalJSONValue)
+	}
+	return reflect.DeepEqual(left, right)
+}
+
+func versionFromRaw(raw []byte, fallback string) string {
+	var doc struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &doc); err == nil && doc.Version != "" {
+		return doc.Version
+	}
+	return fallback
+}
+
+// versionKey holds the version resolved for an artifact at the last deploy.
+func versionKey(kind, name string) string {
+	return project.FingerprintKey(kind, name) + "_VERSION"
+}
+
+// recordDeployedDataset records the state a deploy would have left behind for a
+// dataset that the service has already registered and that already has a local
+// copy.
+//
+// `azd up` decides whether to publish by comparing the local file against a
+// fingerprint held in the environment. A generated dataset arrives with no such
+// fingerprint, so without this the first deploy after `generate` reads the file
+// as new and publishes a second version identical to the one the job just
+// registered. Only a local edit should produce version 2.
+//
+// Best effort: failing to record costs a redundant version, not correctness.
+func (ec *evalContext) recordDeployedDataset(
+	ctx context.Context,
+	name, localPath, version string,
+) {
+	digest, err := project.Fingerprint(localPath)
+	if err != nil {
+		return
+	}
+	ec.remember(ctx, project.FingerprintKey("dataset", name), digest)
+	if version != "" {
+		ec.remember(ctx, versionKey("dataset", name), version)
+	}
+}
+
+// idKey names the env entry holding a resolved id.
+//
+// Ids are per declaration. A single shared key works only while a config has
+// one group: with two, the second deploy finds the first's id cached, confirms
+// it exists, and hands it back for the wrong group.
+func idKey(kind, name string) string {
+	return project.FingerprintKey(kind, name) + "_ID"
+}
+
+// digestIDKey records an eval's id against its substance, which is what lets a
+// renamed declaration find the eval it already deployed. Keyed by a prefix of
+// the digest, because the whole hash makes an unreadable environment variable.
+func digestIDKey(digest string) string {
+	return "EVAL_SUBSTANCE_" + strings.ToUpper(digest[:16]) + "_ID"
+}

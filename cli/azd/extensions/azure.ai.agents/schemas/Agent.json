@@ -45,15 +45,6 @@
         "metadata": {
           "type": "object",
           "description": "Free-form metadata key-value pairs.",
-          "properties": {
-            "tags": {
-              "description": "Agent tags. Lists are stored as a JSON-encoded string in Foundry metadata; the encoded value must not exceed 512 characters.",
-              "oneOf": [
-                { "type": "string", "maxLength": 512 },
-                { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
-              ]
-            }
-          },
           "additionalProperties": true
         }
       }
@@ -148,9 +139,9 @@
               "properties": {
                 "idleTimeoutSeconds": {
                   "type": "integer",
-                  "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+                  "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–14400 (inclusive). Defaults to 900 when omitted.",
                   "minimum": 120,
-                  "maximum": 3600
+                  "maximum": 14400
                 }
               }
             }

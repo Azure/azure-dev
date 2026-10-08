@@ -1,0 +1,290 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+
+	"azureaieval/internal/pkg/eval_api"
+
+	"github.com/fatih/color"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// The portal link is the last line of a detail view, and it is the one thing a
+// user clicks to see the run they just waited for.
+func TestWritePortalLink(t *testing.T) {
+	var buf bytes.Buffer
+	writePortalLink(&buf, "https://ai.azure.com/nextgen/r/x,y,,z,p/build/evaluations/e/run/r")
+
+	out := buf.String()
+	assert.Contains(t, out, "Portal: ")
+	assert.Contains(t, out, "/build/evaluations/e/run/r")
+	assert.True(t, strings.HasSuffix(out, "\n"), "it closes the view, so it ends the line")
+}
+
+// Resolution is best effort: the link is a convenience on top of work already
+// done, so having none must print nothing rather than an empty label that
+// reads like a failure.
+func TestWritePortalLink_SilentWithoutAURL(t *testing.T) {
+	var buf bytes.Buffer
+	writePortalLink(&buf, "")
+
+	assert.Empty(t, buf.String())
+}
+
+// Color is pinned off for the rest of the package, which leaves nothing
+// exercising the branch that actually runs in a terminal. The escape codes have
+// to wrap the URL and nothing else: one leaking into the label, or past the
+// newline, follows the link into whatever a reader pastes it in.
+func TestWritePortalLink_WrapsOnlyTheURL(t *testing.T) {
+	// fatih/color caches NO_COLOR on each color's first use. A fresh process
+	// keeps this assertion independent of earlier tests and the caller's env.
+	const helper = "AZD_TEST_PORTAL_COLOR"
+	if os.Getenv(helper) != "1" {
+		binary, err := os.Executable()
+		require.NoError(t, err)
+		child := exec.CommandContext(t.Context(), binary, "-test.run=^TestWritePortalLink_WrapsOnlyTheURL$")
+		child.Env = append(os.Environ(), "NO_COLOR=", helper+"=1")
+		output, err := child.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return
+	}
+	restore := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = restore })
+
+	var buf bytes.Buffer
+	writePortalLink(&buf, "https://ai.azure.com/x")
+
+	assert.Equal(t, "Portal: \x1b[36mhttps://ai.azure.com/x\x1b[0m\n", buf.String())
+}
+
+// `-o json` carries the same link the terminal prints, so a pipeline reading
+// JSON is not the one consumer that cannot find the run in the portal.
+func TestRunPortalURLTravelsInJSON(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID:        "evalrun_1",
+		Status:    "completed",
+		PortalURL: "https://ai.azure.com/nextgen/r/x,y,,z,p/build/evaluations/eval_1/run/evalrun_1",
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, emitJSON(&buf, run))
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &decoded))
+	assert.Equal(t, run.PortalURL, decoded["portal_url"],
+		"the key is portal_url, which is what the spec tells consumers to read")
+}
+
+// A run with no portal link must not carry an empty key, or a consumer cannot
+// tell "no link" from "link is the empty string".
+func TestRunWithoutPortalURLOmitsTheKey(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, emitJSON(&buf, &eval_api.OpenAIEvalRun{ID: "evalrun_1"}))
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &decoded))
+	assert.NotContains(t, decoded, "portal_url")
+}
+
+// The portal URL is built from the eval and run ids, which is what makes the
+// link land on the run rather than the eval's list of them.
+func TestPortalRunURLShape(t *testing.T) {
+	prefix, err := eval_api.NewPortalPrefix(
+		"/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg/" +
+			"providers/Microsoft.CognitiveServices/accounts/acct/projects/proj")
+	require.NoError(t, err)
+
+	assert.True(t, strings.HasSuffix(
+		prefix.EvalRunURL("eval_1", "evalrun_9"),
+		"/build/evaluations/eval_1/run/evalrun_9"))
+}
+
+// A run has one destination. The service's report_url and the portal URL the
+// extension builds resolve to the same page, and printing both put two labels
+// on it with no rule a reader could infer. One label, and it is the one every
+// other view uses.
+func TestRenderRunPrintsOneLink(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID:        "evalrun_1",
+		Status:    "completed",
+		ReportURL: "https://service.example/report/1",
+		PortalURL: "https://ai.azure.com/nextgen/r/x,y,,z,p/build/evaluations/e/run/r",
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, renderRun(&buf, run, nil))
+
+	out := buf.String()
+	assert.Contains(t, out, "Portal: https://service.example/report/1",
+		"the service's url wins where it sent one")
+	assert.Equal(t, 1, strings.Count(out, "Portal: "),
+		"a second label would name the same destination")
+	assert.NotContains(t, out, run.PortalURL)
+}
+
+// Ours is the fallback, so a service that sends no report_url does not leave
+// the reader with no way to open the run.
+func TestRenderRunFallsBackToTheBuiltLink(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID:        "evalrun_1",
+		Status:    "completed",
+		PortalURL: "https://ai.azure.com/nextgen/r/x,y,,z,p/build/evaluations/e/run/r",
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, renderRun(&buf, run, nil))
+
+	assert.Contains(t, buf.String(), "Portal: "+run.PortalURL)
+}
+
+// A run with neither prints no link rather than an empty label.
+func TestRenderRunOmitsAnAbsentLink(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, renderRun(&buf, &eval_api.OpenAIEvalRun{
+		ID: "evalrun_1", Status: "completed",
+	}, nil))
+
+	assert.NotContains(t, buf.String(), "Report:")
+}
+
+func TestHumanRunLinksRedactCredentialsOnInjectedWriter(t *testing.T) {
+	for _, raw := range []string{
+		"https://fixture-user:fixture-password@service.example/report?sig=fixture-signature#fixture-fragment",
+		"https:/fixture-user:fixture-password@service.example/report?sig=fixture-signature#fixture-fragment",
+	} {
+		for _, field := range []string{"report", "portal"} {
+			run := &eval_api.OpenAIEvalRun{ID: "run_link", EvalID: "eval_link", Status: "completed"}
+			if field == "report" {
+				run.ReportURL = raw
+			} else {
+				run.PortalURL = raw
+			}
+			for _, render := range []func(io.Writer) error{
+				func(w io.Writer) error { writePortalLink(w, raw); return nil },
+				func(w io.Writer) error { return renderRun(w, run, nil) },
+				func(w io.Writer) error { return renderRunDetail(w, run) },
+				func(w io.Writer) error { return renderResults(w, run.EvalID, run, nil, resultListView{}) },
+			} {
+				var out bytes.Buffer
+				require.NoError(t, render(&out))
+				assert.Contains(t, out.String(), "Portal")
+				for _, secret := range []string{
+					"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
+				} {
+					assert.NotContains(t, out.String(), secret)
+				}
+			}
+			assert.Equal(t, raw, runLink(run.ReportURL, run.PortalURL), "display must not change service data")
+		}
+	}
+}
+
+func TestRunLinkCallersRejectInvalidWholeURLsWithoutRewritingJSON(t *testing.T) {
+	for _, link := range []struct {
+		name, raw, display string
+	}{
+		{"safe", "https://example.test/report", "https://example.test/report"},
+		{"credentials", "https://fixture-secret@example.test/report?sig=fixture-secret#fixture-secret",
+			"https://example.test/report"},
+		{"query routing", "https://platform.openai.com/evaluations/eval_1?run_id=run_link",
+			"https://platform.openai.com/evaluations/eval_1"},
+		{"newline", "https://example.test/report?sig=\nfixture-secret", "<redacted-url>"},
+		{"space", "https://example.test/report?sig= fixture-secret", "<redacted-url>"},
+		{"tab", "https://example.test/report?sig=\tfixture-secret", "<redacted-url>"},
+		{"carriage return", "https://example.test/report?sig=\rfixture-secret", "<redacted-url>"},
+		{"escape", "https://example.test/report\n\x1b[31mfixture-secret", "<redacted-url>"},
+		{"unicode whitespace", "https://example.test/report?sig=\u2028fixture-secret", "<redacted-url>"},
+		{"control", "https://example.test/report?sig=\u0085fixture-secret", "<redacted-url>"},
+		{"malformed", "https:/fixture-secret@example.test/report", "<redacted-url>"},
+		{"not a URL", "fixture-secret", "<redacted-url>"},
+		{"adjacent", "https://example.test/report,https://fixture-secret@example.test/other", "<redacted-url>"},
+	} {
+		t.Run(link.name, func(t *testing.T) {
+			label := "Portal: "
+			if link.name == "credentials" || link.name == "query routing" {
+				label = "Portal (redacted link; may open a general page): "
+			}
+			var direct bytes.Buffer
+			writePortalLink(&direct, link.raw)
+			assert.Equal(t, label+link.display+"\n", direct.String())
+			encoded, err := json.Marshal(link.raw)
+			require.NoError(t, err)
+			response := `{"id":"run_link","status":"completed","report_url":` + string(encoded) +
+				`,"unknown":9007199254740993}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/runs/run_link"):
+					_, _ = io.WriteString(w, response)
+				case strings.HasSuffix(r.URL.Path, "/output_items"):
+					_, _ = io.WriteString(w, `{"data":[]}`)
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			for _, caller := range []string{"show human", "list human", "show JSON", "export JSON"} {
+				t.Run(caller, func(t *testing.T) {
+					format := "table"
+					if strings.HasSuffix(caller, "JSON") {
+						format = "json"
+					}
+					command := jsonCmd(t, format)
+					command.SetContext(t.Context())
+					var out, stderr bytes.Buffer
+					command.SetOut(&out)
+					command.SetErr(&stderr)
+					ec := evalContextFor(srv)
+					switch caller {
+					case "list human":
+						action := &runOutputListAction{cmd: command, runID: "run_link", flags: &runOutputListFlags{}}
+						require.NoError(t, action.list(t.Context(), ec, "eval_link"))
+					case "export JSON":
+						action := &runOutputExportAction{cmd: command, runID: "run_link", flags: &runOutputExportFlags{}}
+						require.NoError(t, action.export(t.Context(), ec, "eval_link", exportToStdout))
+					default:
+						action := &runShowAction{cmd: command, runID: "run_link", flags: &runShowFlags{}}
+						require.NoError(t, action.show(t.Context(), ec, "eval_link", gate{}))
+					}
+					assert.Empty(t, stderr.String())
+					if format == "table" {
+						assert.Contains(t, out.String(), label+link.display+"\n")
+						assert.NotContains(t, out.String(), "fixture-secret")
+						assert.NotContains(t, out.String(), "\x1b")
+						assert.NotContains(t, out.String(), "\r")
+						assert.NotContains(t, out.String(), "\u2028")
+						assert.NotContains(t, out.String(), "\u0085")
+						return
+					}
+					body := out.Bytes()
+					if caller == "export JSON" {
+						var doc exportDocument
+						require.NoError(t, json.Unmarshal(body, &doc))
+						body = doc.Run
+					}
+					var doc struct {
+						ReportURL string          `json:"report_url"`
+						Unknown   json.RawMessage `json:"unknown"`
+					}
+					require.NoError(t, json.Unmarshal(body, &doc))
+					assert.Equal(t, link.raw, doc.ReportURL, "human validation must not rewrite the raw-data contract")
+					assert.Equal(t, "9007199254740993", string(doc.Unknown))
+				})
+			}
+		})
+	}
+}

@@ -95,7 +95,9 @@ func (s *Server) registerServices() error {
 			service:  extensionService,
 			override: betaServiceOverrides[BetaExtensionService],
 		}
-		if serviceTargetService, ok := s.serviceTargetService.(*ServiceTargetService); ok {
+	}
+	if serviceTargetService, ok := s.serviceTargetService.(*ServiceTargetService); ok {
+		if _, supplied := betaServiceOverrides[BetaServiceTargetService]; !supplied {
 			betaServiceOverrides[BetaServiceTargetService] = &betaServiceTargetServiceOverride{
 				service: serviceTargetService,
 			}
@@ -119,6 +121,7 @@ func (s *Server) registerServices() error {
 			BetaUserConfigService:    s.userConfigService,
 			BetaDeploymentService:    s.deploymentService,
 			BetaEventService:         s.eventService,
+			BetaCommandResultService: s.commandResultService,
 			BetaComposeService:       s.composeService,
 			BetaWorkflowService:      s.workflowService,
 			BetaExtensionService:     s.extensionService,

@@ -17,15 +17,14 @@ var spelledFourRe = regexp.MustCompile(`(?i)\bfour\b`)
 
 // agentLineRe matches the start of an agent reply line, which invoke prints as
 // "[<agentName>] <text>" (invoke.go printf "[%s] %s"). responseEndRe matches the
-// green footer invoke prints after the reply, "Server responded in ..." — the
-// region between them is exactly the model's answer, with no surrounding noise.
+// timing footer. Accept the previous footer too when testing older releases.
 var (
 	agentLineRe   = regexp.MustCompile(`(?m)^\[[^\]]+\] `)
-	responseEndRe = regexp.MustCompile(`Server responded in`)
+	responseEndRe = regexp.MustCompile(`(?m)^(?:Client elapsed:|Server responded in)`)
 )
 
 // agentResponseRegion returns just the agent's printed answer, sliced from the
-// first "[<agent>] " line to the "Server responded in" footer. Scoping the
+// first "[<agent>] " line to the client timing footer. Scoping the
 // 2+2 check to this region keeps stray "4"s from the rest of the CLI output
 // (model names, versions, status codes) from passing the test. If either marker
 // is missing the format changed, so it returns the full text and lets the

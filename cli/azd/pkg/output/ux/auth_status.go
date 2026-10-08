@@ -38,9 +38,11 @@ func (v *AuthStatusView) ToString(currentIndentation string) string {
 			currentIndentation,
 			output.WithBold("%s", v.Result.Email))
 	case contracts.AccountTypeServicePrincipal:
-		return fmt.Sprintf("%sLogged in to Azure as (%s)",
-			currentIndentation,
-			output.WithGrayFormat("%s", v.Result.ClientID))
+		if v.Result.ClientID != "" {
+			return fmt.Sprintf("%sLogged in to Azure as (%s)",
+				currentIndentation,
+				output.WithGrayFormat("%s", v.Result.ClientID))
+		}
 	}
 
 	return fmt.Sprintf("%sLogged in to Azure", currentIndentation)

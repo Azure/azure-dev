@@ -30,6 +30,12 @@ pre:
       fi
     cwd: "~/working"
     name: "assert tier 1 scaffold is complete"
+  - run: |
+      bash "{fixtures_dir}/scripts/override-model-deployment.sh" \
+        "{model}" "{model_version}" "{model_sku}"
+    cwd: "{prerequisite_scaffold_dir}"
+    name: "override and verify managed model deployment"
+    timeout: 300
 
 post:
   - run: "azd down --force --purge"

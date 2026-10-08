@@ -6,13 +6,14 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
@@ -28,13 +29,14 @@ type projectAgentService struct {
 	AgentName   string
 	// RelativePath is the configured service source directory. It lets a
 	// positional `.` from that directory reuse the owning service rather than
-	// falling through to bare agent.yaml reuse.
+	// treating the source path as a request to add another service.
 	RelativePath string
 }
 
 type projectAgentDetection struct {
 	services    []projectAgentService
 	projectRoot string
+	project     *azdext.ProjectConfig
 }
 
 // detectProjectAgentServices returns the agent services the azd host reports for
@@ -45,64 +47,85 @@ type projectAgentDetection struct {
 // sees exactly the manifest every other azd command does, including when init
 // runs from a subdirectory of the project.
 //
-// The agent definition is carried inline on the service entry in the unified
-// format and nested under config: in older projects; adoptedAgentNameConfig
-// resolves the name from either shape.
+// The agent definition is carried directly on the service entry or through an
+// explicit root $ref.
 //
 // A project that cannot be loaded (none present, or a manifest azd rejects)
 // yields no detections, so init falls through to its normal prompts rather than
-// hard-failing on a file the user has not been asked about yet. The cause is
-// logged so --debug still surfaces a typo'd manifest.
-func detectProjectAgentServices(ctx context.Context, azdClient *azdext.AzdClient) projectAgentDetection {
+// hard-failing on a file the user has not been asked about yet.
+func detectProjectAgentServices(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (projectAgentDetection, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		log.Printf("agent reuse: project config unavailable, continuing with normal init: %v", err)
-		return projectAgentDetection{}
+		return projectAgentDetection{}, nil
 	}
 
 	project := projectResponse.GetProject()
-	services, diagnostics := projectAgentServicesFrom(project.GetServices(), project.GetPath())
-	for _, diagnostic := range diagnostics {
-		log.Printf("agent reuse: configured service is not reusable: %s", diagnostic)
+	services, err := projectAgentServicesFrom(project.GetServices(), project.GetPath())
+	if err != nil {
+		return projectAgentDetection{}, err
 	}
 
 	return projectAgentDetection{
+		project:     project,
 		services:    services,
 		projectRoot: project.GetPath(),
-	}
+	}, nil
 }
 
-// projectAgentServicesFrom selects the agent services out of a project's service
-// map only when their definitions resolve successfully. Invalid or missing
-// definitions are returned as diagnostics so no-prompt reuse cannot report
-// success for an incomplete service.
+func validateExistingProjectAgentServices(project *azdext.ProjectConfig) error {
+	if project == nil {
+		return nil
+	}
+	_, err := projectAgentServicesFrom(project.GetServices(), project.GetPath())
+	return err
+}
+
+// projectAgentServicesFrom validates and selects configured agent services in
+// service-name order so every init route rejects legacy or malformed sources
+// deterministically before prompting or mutating the project.
 func projectAgentServicesFrom(
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
-) ([]projectAgentService, []string) {
+) ([]projectAgentService, error) {
 	var found []projectAgentService
-	var diagnostics []string
-	for serviceName, svc := range services {
+	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
+		svc := services[serviceName]
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
 
 		if _, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath()); err != nil {
-			diagnostics = append(diagnostics,
-				fmt.Sprintf("service %q has invalid project path: %v", serviceName, err))
-			continue
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("service %q has invalid project path: %s", serviceName, err),
+				"update azure.yaml so the agent service path stays within the project directory",
+			)
 		}
 
-		definition, _, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
+		validation, err := projectpkg.ValidateAgentServiceDefinition(svc, projectRoot)
 		if err != nil {
-			diagnostics = append(diagnostics,
-				fmt.Sprintf("service %q: %v", serviceName, err))
-			continue
+			return nil, exterrors.ValidationFromError(
+				err,
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q is not valid", serviceName),
+				"Move the agent definition onto the azure.ai.agent service or use a valid service-level root $ref.",
+			)
 		}
 
-		agentName, _ := adoptedAgentNameConfig(svc)
+		agentName, _, err := adoptedAgentNameConfig(svc, projectRoot)
+		if err != nil {
+			return nil, exterrors.ValidationFromError(
+				err,
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q is not valid", serviceName),
+				"Move the agent definition onto the azure.ai.agent service or use a valid service-level root $ref.",
+			)
+		}
 		if agentName == "" {
-			agentName = definition.Name
+			agentName = validation.Name
 		}
 		if agentName == "" {
 			agentName = serviceName
@@ -115,11 +138,7 @@ func projectAgentServicesFrom(
 		})
 	}
 
-	slices.SortFunc(found, func(a, b projectAgentService) int {
-		return strings.Compare(a.ServiceName, b.ServiceName)
-	})
-
-	return found, diagnostics
+	return found, nil
 }
 
 // positionalSourceOptsOutOfReuse reports whether a positional source directory
@@ -200,9 +219,7 @@ func describeProjectAgentServices(services []projectAgentService) string {
 //
 // The definitions already live in the project manifest, so there is nothing to
 // write: this ensures an azd environment exists and then hands off to the shared
-// next-step resolver. It mirrors runReuseDefinition (issue #7268), which does
-// the same for a bare on-disk agent.yaml; the unified format moved the
-// definition inline, and this is the inline equivalent.
+// next-step resolver.
 //
 // The caller reaches this function only after detectProjectAgentServices has
 // loaded the project through the azd host, so no project setup is needed here.

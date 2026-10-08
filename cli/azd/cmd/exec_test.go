@@ -348,6 +348,7 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"explicit shell path", "./missing.ps1", "pwsh", true},
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
+		{"explicit shell operator without separator", "cat<deploy.sh", "bash", false},
 	}
 
 	for _, tt := range tests {

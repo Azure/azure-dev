@@ -8875,7 +8875,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['--shell', '-s'],
-					description: 'Shell to use (bash, sh, zsh, pwsh, powershell, cmd). Auto-detected if not specified.',
+					description: 'Shell to use (bash, sh, zsh, pwsh, powershell, cmd). Auto-detected if not specified. Also disambiguates inline commands that contain script-like path arguments.',
 					args: [
 						{
 							name: 'shell',

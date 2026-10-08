@@ -44,7 +44,9 @@ func newExecCmd() *cobra.Command {
 
 Commands are run with the azd environment loaded into the child process.
 Multiple arguments use direct process execution (no shell wrapping).
-A single quoted argument uses shell inline execution.
+A single quoted argument uses shell inline execution unless it is ambiguous
+with a missing script path. Use --shell to make inline intent explicit when
+the command contains script-like path arguments.
 
 Examples:
   azd exec python script.py                     # Direct exec (exact argv)
@@ -85,7 +87,8 @@ func (f *execFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 
 	local.StringVarP(&f.shell, "shell", "s", "",
 		"Shell to use (bash, sh, zsh, pwsh, powershell, cmd). "+
-			"Auto-detected if not specified.")
+			"Auto-detected if not specified. Also disambiguates inline commands "+
+			"that contain script-like path arguments.")
 	local.BoolVarP(&f.interactive, "interactive", "i", false,
 		"Run in interactive mode (connect stdin)")
 }
@@ -193,7 +196,7 @@ var scriptExtensions = map[string]bool{
 }
 
 func shouldFailOnMissingScript(input, shell string) bool {
-	if shell != "" && hasShellSyntaxBeforeSeparator(input) {
+	if shell != "" && hasShellSyntaxBeforePathBoundary(input) {
 		return false
 	}
 	if !looksLikeFilePath(input) {
@@ -209,10 +212,13 @@ func shouldFailOnMissingScript(input, shell string) bool {
 	return firstWhitespace == -1 || (firstSeparator >= 0 && firstSeparator < firstWhitespace)
 }
 
-func hasShellSyntaxBeforeSeparator(input string) bool {
+func hasShellSyntaxBeforePathBoundary(input string) bool {
 	firstShellSyntax := strings.IndexAny(input, "'\"`$<>()|&;")
+	if firstShellSyntax < 0 {
+		return false
+	}
 	firstSeparator := strings.IndexAny(input, "/\\")
-	return firstShellSyntax >= 0 && firstSeparator >= 0 && firstShellSyntax < firstSeparator
+	return firstSeparator < 0 || firstShellSyntax < firstSeparator
 }
 
 // looksLikeFilePath reports whether input appears to be a file path rather
@@ -227,7 +233,7 @@ func looksLikeFilePath(input string) bool {
 	if firstSeparator >= 0 {
 		// Shell syntax before a separator indicates that the separator belongs
 		// to an inline expression rather than a script path.
-		if hasShellSyntaxBeforeSeparator(input) && !hasScriptExtension {
+		if hasShellSyntaxBeforePathBoundary(input) && !hasScriptExtension {
 			return false
 		}
 		if firstWhitespace >= 0 && firstWhitespace < firstSeparator {

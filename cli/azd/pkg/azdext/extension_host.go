@@ -555,6 +555,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		return nil // Context cancellation is expected, not an error
 	case err := <-receiverErrors:
 		if err != nil {
+			if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+				log.Println("Extension host context cancelled, shutting down")
+				return nil
+			}
 			return err
 		}
 		// Continue waiting for more errors or completion

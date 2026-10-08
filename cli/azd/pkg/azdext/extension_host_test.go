@@ -243,7 +243,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 		ctx := args.Get(0).(context.Context)
 		close(receiveStarted)
 		<-ctx.Done()
-	}).Return(nil)
+	}).Return(context.Canceled)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	// Setup extension host

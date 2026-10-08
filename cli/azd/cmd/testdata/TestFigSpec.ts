@@ -1022,6 +1022,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--manifest', '-m'],
+									description: 'Path or supported GitHub URI to a unified azure.yaml project document',
+									args: [
+										{
+											name: 'manifest',
+										},
+									],
+								},
+								{
 									name: ['--model'],
 									description: 'For hosted and prompt agents, name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.',
 									args: [
@@ -1060,7 +1069,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--rai-policy'],
-									description: 'Responsible AI policy for a prompt or managed agent: \'none\' to inherit the account\'s default content filters, a policy name on the selected Foundry account, or a policy\'s full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an azure.yaml project document or a full repository template; declare policies in azure.yaml instead.',
+									description: 'Responsible AI policy for a prompt or managed agent: \'none\' to inherit the account\'s default content filters, a policy name on the selected Foundry account, or a policy\'s full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents. Explicit --rai-policy is rejected when adopting unified azure.yaml or a full repository template; declare policies in azure.yaml instead.',
 									args: [
 										{
 											name: 'rai-policy',
@@ -1087,19 +1096,10 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--src', '-s'],
-									description: 'Source directory for generated agents, or target directory when adopting an azure.yaml project',
+									description: 'Source directory for generated agents, or target directory when adopting a unified project',
 									args: [
 										{
 											name: 'src',
-										},
-									],
-								},
-								{
-									name: ['--template', '-t'],
-									description: 'Path or supported GitHub URI to an azure.yaml project document',
-									args: [
-										{
-											name: 'template',
 										},
 									],
 								},
@@ -1958,7 +1958,7 @@ const completionSpec: Fig.Spec = {
 							subcommands: [
 								{
 									name: ['list', 'ls'],
-									description: 'List available agent samples that can be used with `azd ai agent init -t`.',
+									description: 'List available agent samples that can be used with `azd ai agent init -m`.',
 									options: [
 										{
 											name: ['--featured-only'],
@@ -10052,3 +10052,4 @@ const completionSpec: Fig.Spec = {
 };
 
 export default completionSpec;
+

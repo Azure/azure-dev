@@ -162,7 +162,7 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Try file execution first; fall back based on argument shape.
 	err = exec.Execute(ctx, scriptInput)
 	if _, notFound := errors.AsType[*scripting.ScriptNotFoundError](err); notFound ||
-		isFileProbeFallbackError(err) {
+		isValidationFileProbeFallbackError(err) {
 		// Guard ambiguous path-like input unless --shell explicitly
 		// indicates inline execution.
 		if shouldFailOnMissingScript(scriptInput, a.flags.shell) {
@@ -196,7 +196,7 @@ var scriptExtensions = map[string]bool{
 }
 
 const shellSyntaxCharacters = "'\"`$<>()|&;"
-const explicitShellSyntaxCharacters = shellSyntaxCharacters + "*?[]{}~^%!"
+const explicitShellSyntaxCharacters = shellSyntaxCharacters + "*?[]{}~^%!="
 
 func shouldFailOnMissingScript(input, shell string) bool {
 	if shell != "" {
@@ -219,6 +219,11 @@ func looksLikeClearScriptPath(input string) bool {
 
 	ext := strings.ToLower(filepath.Ext(input))
 	return scriptExtensions[ext]
+}
+
+func isValidationFileProbeFallbackError(err error) bool {
+	validationErr, ok := errors.AsType[*scripting.ValidationError](err)
+	return ok && isFileProbeFallbackError(validationErr.Err)
 }
 
 func hasShellSyntaxBeforePathBoundary(input string) bool {

@@ -5,6 +5,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -69,4 +70,21 @@ func TestIsFileProbeFallbackError(t *testing.T) {
 	t.Run("script not found", func(t *testing.T) {
 		assert.False(t, isFileProbeFallbackError(&scripting.ScriptNotFoundError{Path: "deploy.cmd"}))
 	})
+}
+
+func TestIsValidationFileProbeFallbackError(t *testing.T) {
+	cause := windows.ERROR_FILENAME_EXCED_RANGE
+	validationErr := &scripting.ValidationError{
+		Field: "scriptPath",
+		Err: &os.PathError{
+			Op:   "CreateFile",
+			Path: "long.cmd",
+			Err:  cause,
+		},
+	}
+
+	assert.True(t, isValidationFileProbeFallbackError(validationErr))
+	assert.False(t, isValidationFileProbeFallbackError(
+		fmt.Errorf("failed to execute script: %w", cause),
+	))
 }

@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
 	"testing"
@@ -31,4 +32,21 @@ func TestIsFileProbeFallbackError(t *testing.T) {
 	t.Run("other error", func(t *testing.T) {
 		assert.False(t, isFileProbeFallbackError(errors.New("invalid filename")))
 	})
+}
+
+func TestIsValidationFileProbeFallbackError(t *testing.T) {
+	cause := syscall.ENAMETOOLONG
+	validationErr := &scripting.ValidationError{
+		Field: "scriptPath",
+		Err: &os.PathError{
+			Op:   "stat",
+			Path: "long.sh",
+			Err:  cause,
+		},
+	}
+
+	assert.True(t, isValidationFileProbeFallbackError(validationErr))
+	assert.False(t, isValidationFileProbeFallbackError(
+		fmt.Errorf("failed to execute script: %w", cause),
+	))
 }

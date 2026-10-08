@@ -381,9 +381,11 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		{"explicit cmd environment expansion", "%TEMP%\\deploy.cmd", "cmd", false},
 		{"explicit cmd delayed expansion", "!SCRIPT!", "cmd", false},
 		{"explicit cmd escape", "^deploy.cmd", "cmd", false},
+		{"explicit shell assignment", "PATH=./bin", "bash", false},
 		{"glob without explicit shell", "./scripts/*.sh", "", true},
 		{"home path without explicit shell", "~/scripts/deploy", "", true},
 		{"environment path without explicit shell", "%TEMP%\\deploy", "", true},
+		{"assignment path without explicit shell", "PATH=./bin", "", true},
 		{
 			"compact pipeline with extensionless leading path",
 			".\\deploy|.\\cleanup.ps1",
@@ -548,6 +550,28 @@ func TestExecAction_ExplicitShellLeadingPathExpansionFallsBackInline(t *testing.
 	}
 }
 
+func TestExecAction_ExplicitShellAssignmentWithPathFallsBackInline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bare assignment syntax is POSIX-shell specific")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is required for assignment coverage")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "bash",
+		},
+		args: []string{"PATH=./bin"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
 func TestExecAction_ExplicitShellPreservesExistingFilePrecedence(t *testing.T) {
 	shell := "bash"
 	extension := ".sh"
@@ -710,4 +734,30 @@ func TestExecAction_ExplicitShellLongCommandBypassesPathProbe(t *testing.T) {
 		_, inline := errors.AsType[*internal.ExitCodeError](err)
 		assert.False(t, inline, "clear long script paths must not fall back to inline execution")
 	})
+}
+
+func TestExecAction_ExecutionErrorDoesNotFallbackInline(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows command-line length errors are platform-specific")
+	}
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	scriptName := "deploy & test.cmd"
+	require.NoError(t, os.WriteFile(scriptName, []byte("@exit /b 0\r\n"), 0o600))
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{scriptName, strings.Repeat("x", 40_000)},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to execute script")
+	assert.NotContains(t, err.Error(), "inline script")
 }

@@ -48,9 +48,7 @@ type InitFromCodeAction struct {
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
-<<<<<<< HEAD
 	recordInitProperties(ctx, map[string]any{"kind": "hosted"})
-=======
 	if !a.sourceValidated && a.flags.src != "" {
 		if err := validateExplicitInitSource(ctx, a.azdClient, a.flags.src); err != nil {
 			return err
@@ -82,7 +80,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 	}
 
->>>>>>> refs/rewritten/onto
 	var err error
 	a.projectConfig, err = a.ensureProject(ctx)
 	if err != nil {
@@ -129,9 +126,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
-<<<<<<< HEAD
 		recordInitDefinition(ctx, localDefinition)
-=======
 		if strings.TrimSpace(localDefinition.Image) != "" {
 			resolver := &InitAction{
 				azdClient:     a.azdClient,
@@ -148,7 +143,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			}
 			a.serviceNameOverride = serviceName
 		}
->>>>>>> refs/rewritten/onto
 
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.

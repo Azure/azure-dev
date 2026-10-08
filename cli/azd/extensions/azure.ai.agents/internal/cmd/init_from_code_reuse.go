@@ -73,26 +73,7 @@ func validateExplicitInitSource(
 		return nil
 	}
 
-<<<<<<< HEAD
-	def, err := loadAgentDefinitionFile(existingPath)
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent definition in %s is invalid: %s", displayPath, err),
-			fmt.Sprintf("Fix %s and retry, or remove the file to start a fresh init.", displayPath),
-		)
-	}
-	recordInitDefinition(ctx, def)
-
-	fmt.Println(color.HiBlackString(
-		"Detected existing agent definition: %s (name: %s).",
-		displayPath, def.Name,
-	))
-
-	projectConfig, err := ensureProject(ctx, flags, azdClient, ".")
-=======
 	legacyPath, err := findExistingAgentYaml(sourceDir)
->>>>>>> refs/rewritten/onto
 	if err != nil {
 		return err
 	}

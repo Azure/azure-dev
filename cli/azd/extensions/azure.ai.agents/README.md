@@ -25,7 +25,7 @@ for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
 [Agent context telemetry](#agent-context-telemetry),
-[Operation classification markers](#operation-classification-markers), and
+[Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 

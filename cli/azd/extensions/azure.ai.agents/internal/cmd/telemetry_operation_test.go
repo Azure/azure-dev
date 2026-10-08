@@ -145,8 +145,10 @@ func TestInitOperationProjectContentPropertyPrecedence(t *testing.T) {
 	for _, tt := range []struct {
 		name, service, want string
 	}{
-		{"legacy", "config: {kind: voice, modelType: self_deployed}", "voice_byom"},
-		{"legacy-with-unrelated-inline", "custom: private-value\n    config: {kind: prompt}", "prompt"},
+		{"retired-config", "config: {kind: voice, modelType: self_deployed}", "unknown"},
+		{"retired-config-with-unrelated-inline", "custom: private-value\n    config: {kind: prompt}", "unknown"},
+		{"direct-voice", "kind: voice\n    modelType: self_deployed", "voice_byom"},
+		{"direct-prompt", "kind: prompt", "prompt"},
 		{"inline-wins", "kind: hosted\n    config: {kind: voice}", "hosted"},
 		{"missing-kind", "custom: private-value", "unknown"},
 		{"unresolved-ref", "kind: voice\n    $ref: private-path", "unknown"},
@@ -207,11 +209,13 @@ func TestOperationServiceClassPropertyPrecedence(t *testing.T) {
 		inline, legacy map[string]any
 		want           string
 	}{
-		{"legacy-with-unrelated-inline", map[string]any{"custom": "private-value"},
-			map[string]any{"kind": "voice", "modelType": "self_deployed"}, "voice_byom"},
+		{"retired-config-with-unrelated-inline", map[string]any{"custom": "private-value"},
+			map[string]any{"kind": "voice", "modelType": "self_deployed"}, "unknown"},
 		{"inline-kind-wins", map[string]any{"kind": "hosted"},
 			map[string]any{"kind": "voice"}, "hosted"},
-		{"legacy-only", nil, map[string]any{"kind": "prompt"}, "prompt"},
+		{"retired-config-only", nil, map[string]any{"kind": "prompt"}, "unknown"},
+		{"direct-voice", map[string]any{"kind": "voice", "modelType": "self_deployed"}, nil, "voice_byom"},
+		{"direct-prompt", map[string]any{"kind": "prompt"}, nil, "prompt"},
 		{"no-kind", map[string]any{"custom": "private-value"}, nil, "unknown"},
 		{"unresolved-ref", map[string]any{"kind": "voice", "$ref": "private-path"},
 			map[string]any{"kind": "prompt"}, "unknown"},

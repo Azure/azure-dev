@@ -306,9 +306,12 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"scripts/deploy.sh", true},
 		{"scripts/my script.sh", true},
 		{"my scripts/deploy.sh", true},
+		{"\\\\server\\share\\deploy.ps1", true},
 		{"C:\\scripts\\deploy.ps1", true},
 		{"C:\\Program Files\\deploy.ps1", true},
 		{"deploy.sh", true},
+		{"deploy.PS1", true},
+		{"  deploy.sh  ", true},
 		{"build.ps1", true},
 		{"run.cmd", true},
 		{"setup.bat", true},
@@ -326,7 +329,10 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"cat<scripts/deploy.sh", true},
 		{"Write-Output 'config\\settings.json'", false},
 		{"echo 'scripts/deploy.sh'", false},
+		{`echo "scripts/deploy.sh"`, false},
 		{"echo scripts/deploy.sh", true},
+		{"echo scripts/deploy.SH", true},
+		{"$HOME/scripts/deploy.sh", true},
 		{"tool --config config\\settings.json", false},
 	}
 
@@ -345,7 +351,11 @@ func TestShouldFailOnMissingScript(t *testing.T) {
 		want  bool
 	}{
 		{"missing path", "my scripts/deploy.sh", "", true},
+		{"missing UNC path", "\\\\server\\share\\deploy.ps1", "", true},
 		{"explicit inline shell", "echo scripts/deploy.sh", "pwsh", false},
+		{"explicit shell path with spaces", "my scripts/deploy.sh", "bash", false},
+		{"explicit shell environment path", "$HOME/scripts/deploy.sh", "bash", false},
+		{"explicit shell quoted path", `echo "scripts/deploy.sh"`, "bash", false},
 		{"explicit shell path", "./missing.ps1", "pwsh", true},
 		{"inline redirection", "cat<config/settings.json", "", false},
 		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
@@ -364,18 +374,19 @@ func TestExecAction_FileNotFoundNoInlineFallback(t *testing.T) {
 	env := environment.NewWithValues("test", nil)
 	kvMock := &mockExecKeyVaultService{}
 
-	tests := []string{
-		"nonexistent.sh",
-		"my scripts/deploy.sh",
+	tests := [][]string{
+		{"nonexistent.sh"},
+		{"nonexistent.sh", "--verbose"},
+		{"my scripts/deploy.sh"},
 	}
 
-	for _, scriptPath := range tests {
-		t.Run(scriptPath, func(t *testing.T) {
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			action := &execAction{
 				env:             env,
 				keyvaultService: kvMock,
 				flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
-				args:            []string{scriptPath},
+				args:            args,
 			}
 
 			_, err := action.Run(t.Context())
@@ -405,25 +416,99 @@ func TestExecAction_ExplicitShellExpressionBypassesInvalidPathProbe(t *testing.T
 }
 
 func TestExecAction_ExplicitShellPreservesExistingFilePrecedence(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("Windows permits ampersands in filenames")
+	shell := "bash"
+	extension := ".sh"
+	content := []byte("exit 0\n")
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		extension = ".cmd"
+		content = []byte("@exit /b 0\r\n")
 	}
 
 	tempDir := t.TempDir()
-	scriptPath := filepath.Join(tempDir, "deploy&test.cmd")
-	require.NoError(t, os.WriteFile(scriptPath, []byte("@exit /b 0\r\n"), 0o600))
 	t.Chdir(tempDir)
+
+	filenameCharacters := []string{"&", "(", ")", ";", "$", "'", "`", "^", "!"}
+	if runtime.GOOS != "windows" {
+		// cmd file execution intentionally neutralizes %VAR% expansion, so a
+		// percent sign is not a supported Windows filename case.
+		filenameCharacters = append(filenameCharacters, "<", ">", "|", `"`, "%")
+	}
+
+	tests := []string{
+		"deploy test" + extension,
+		filepath.Join("scripts&tools", "deploy"+extension),
+		filepath.Join("scripts(test)", "deploy"+extension),
+		filepath.Join("scripts tools", "deploy"+extension),
+	}
+	for _, character := range filenameCharacters {
+		tests = append(tests, "deploy"+character+"test"+extension)
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			scriptPath := filepath.Join(tempDir, input)
+			require.NoError(t, os.MkdirAll(filepath.Dir(scriptPath), 0o750))
+			require.NoError(t, os.WriteFile(scriptPath, content, 0o600))
+
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags: &execFlags{
+					global: &internal.GlobalCommandOptions{},
+					shell:  shell,
+				},
+				args: []string{input},
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestExecAction_ExplicitShellPreservesDirectoryError(t *testing.T) {
+	shell := "bash"
+	directoryName := "deploy&test.sh"
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		directoryName = "deploy&test.cmd"
+	}
+
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir(directoryName, 0o750))
 
 	action := &execAction{
 		env:             environment.NewWithValues("test", nil),
 		keyvaultService: &mockExecKeyVaultService{},
 		flags: &execFlags{
 			global: &internal.GlobalCommandOptions{},
-			shell:  "cmd",
+			shell:  shell,
 		},
-		args: []string{filepath.Base(scriptPath)},
+		args: []string{directoryName},
 	}
 
 	_, err := action.Run(t.Context())
-	require.NoError(t, err)
+	require.Error(t, err)
+	valErr, ok := errors.AsType[*scripting.ValidationError](err)
+	require.True(t, ok)
+	assert.Contains(t, valErr.Reason, "must be a file")
+}
+
+func TestExecAction_InvalidFilenameRequiresExplicitShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+		args:            []string{"cat<deploy.sh"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	_, ok := errors.AsType[*scripting.ValidationError](err)
+	require.True(t, ok)
 }

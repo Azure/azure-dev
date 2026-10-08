@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -239,6 +240,26 @@ func TestCancellationMiddleware_FirstInterruptCancelsCommandContext(t *testing.T
 		t.Fatal("command did not stop after cancellation")
 	}
 
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+}
+
+func TestCancellationMiddleware_NestedInterruptDoesNotRetainGlobalHandler(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	t.Cleanup(func() {
+		for len(input.SnapshotInterruptStack()) > initialHandlers {
+			handlers := input.SnapshotInterruptStack()
+			handlers[len(handlers)-1]()
+			if len(input.SnapshotInterruptStack()) >= len(handlers) {
+				return
+			}
+		}
+	})
+
+	_, err := NewCancellationMiddleware().Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, errors.Join(interruptedTestError{}, context.Canceled)
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
 	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
 }
 

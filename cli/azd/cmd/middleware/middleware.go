@@ -45,7 +45,12 @@ func (m *CancellationMiddleware) Run(
 	defer controller.close()
 
 	result, err := nextFn(commandCtx)
-	controller.finish(processWasInterrupted(err))
+	// A nested controller includes its context termination cause after it owns
+	// the interrupt, so only a bare interrupted exit can have a host signal pending.
+	awaitHostInterrupt := processWasInterrupted(err) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
+	controller.finish(awaitHostInterrupt)
 	ctxErr := commandCtx.Err()
 
 	if ctxErr == nil || errors.Is(err, ctxErr) {
@@ -92,10 +97,10 @@ func (c *commandInterruptController) handle() bool {
 	}
 }
 
-func (c *commandInterruptController) finish(processInterrupted bool) {
+func (c *commandInterruptController) finish(awaitHostInterrupt bool) {
 	c.mu.Lock()
 	c.finished = true
-	if processInterrupted && !c.cancellationRequested {
+	if awaitHostInterrupt && !c.cancellationRequested {
 		// A console child can exit before azd's signal goroutine runs. Keep the
 		// handler registered until that pending host interrupt is consumed.
 		c.cancellationRequested = true

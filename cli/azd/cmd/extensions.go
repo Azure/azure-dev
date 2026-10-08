@@ -476,7 +476,9 @@ func (c *extensionInterruptController) finish(invokeErr error, extension *extens
 	}
 	cancellationRequested := c.cancellationRequested
 	interrupted := cancellationRequested || processInterrupted
-	if processInterrupted && !cancellationRequested {
+	contextTerminationObserved := errors.Is(invokeErr, context.Canceled) ||
+		errors.Is(invokeErr, context.DeadlineExceeded)
+	if processInterrupted && !cancellationRequested && !contextTerminationObserved {
 		// The child can be reaped before azd's signal goroutine invokes the
 		// scoped handler, including after an earlier interrupt that the child
 		// handled. Keep the handler registered until the pending SIGINT is
@@ -533,7 +535,8 @@ func isExtensionInterruptExit(err error) bool {
 
 func markExtensionRunCanceled(invokeErr error, extension *extensions.Extension) error {
 	if runErr, ok := errors.AsType[*extensions.ExtensionRunError](invokeErr); ok {
-		if errors.Is(runErr.Err, context.Canceled) {
+		if errors.Is(runErr.Err, context.Canceled) ||
+			errors.Is(runErr.Err, context.DeadlineExceeded) {
 			return invokeErr
 		}
 

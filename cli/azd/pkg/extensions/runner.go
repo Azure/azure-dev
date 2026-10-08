@@ -91,10 +91,10 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 
 	runResult, runErr := r.commandRunner.Run(ctx, runArgs)
 	// A canceled Windows process tree can surface as exit code 0 with no
-	// process error, so retain the invocation context as the authoritative cause.
+	// process error, so retain the invocation context cause as authoritative.
 	// TODO(#10035): Remove this fallback once the shared process wrapper
 	// resolves process completion and context cancellation atomically.
-	if ctxErr := ctx.Err(); ctxErr != nil {
+	if ctxErr := context.Cause(ctx); ctxErr != nil {
 		switch {
 		case runErr == nil:
 			runErr = ctxErr

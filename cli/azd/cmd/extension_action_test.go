@@ -424,6 +424,28 @@ func TestExtensionInterruptController_InterruptExitAfterHandledSignalPopsHandler
 	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
 }
 
+func TestExtensionInterruptController_InterruptedDeadlinePreservesDeadline(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	_, controller, cleanup := installExtensionInterruptHandler(t.Context())
+	defer cleanup()
+
+	err := controller.finish(&extensions.ExtensionRunError{
+		ExtensionId:      "test.ext",
+		ExtensionVersion: "1.0.0",
+		Err: errors.Join(
+			&exec.ExitError{ExitCode: 130},
+			context.DeadlineExceeded,
+		),
+	}, &extensions.Extension{
+		Id:      "test.ext",
+		Version: "1.0.0",
+	})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotErrorIs(t, err, context.Canceled)
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+}
+
 func TestExtensionInterruptController_FinishedHandlerClaimsOnlyInFlightSignal(t *testing.T) {
 	_, cancel := context.WithCancel(t.Context())
 	defer cancel()

@@ -496,13 +496,6 @@ func mapFunctionApp(
 	expectedStack := ""
 	switch {
 	case svcConfig.Language.IsDotNet():
-		projectPath := svcConfig.RelativePath
-		if !filepath.IsAbs(projectPath) {
-			projectPath = filepath.Join(prj.Path, projectPath)
-		}
-		if err := ValidateDotNetFunctionProject(projectPath); err != nil {
-			return fmt.Errorf("resources.%s: %w", res.Name, err)
-		}
 		expectedStack = "dotnet-isolated"
 	case svcConfig.Language == ServiceLanguagePython:
 		expectedStack = "python"
@@ -565,6 +558,13 @@ func mapFunctionApp(
 			name == "AZURE_CLIENT_ID" {
 			return fmt.Errorf("resources.%s.env cannot override required Function App setting %s", res.Name, env.Name)
 		}
+	}
+	projectPath := svcConfig.RelativePath
+	if !filepath.IsAbs(projectPath) {
+		projectPath = filepath.Join(prj.Path, projectPath)
+	}
+	if err := ValidateFunctionProject(projectPath, svcConfig.Language); err != nil {
+		return fmt.Errorf("resources.%s: %w", res.Name, err)
 	}
 	return mapHostEnv(res, svcSpec, infraSpec, props.Env)
 }

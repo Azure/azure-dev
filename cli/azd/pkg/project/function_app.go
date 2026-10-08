@@ -4,11 +4,28 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// ValidateFunctionProject checks required source files for a Flex Consumption Function App.
+func ValidateFunctionProject(projectPath string, language ServiceLanguageKind) error {
+	if info, err := os.Stat(filepath.Join(projectPath, "host.json")); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no host.json found in Function App project %q", projectPath)
+		}
+		return fmt.Errorf("checking Function App project: %w", err)
+	} else if info.IsDir() {
+		return fmt.Errorf("host.json must be a file in Function App project %q", projectPath)
+	}
+	if language.IsDotNet() {
+		return ValidateDotNetFunctionProject(projectPath)
+	}
+	return nil
+}
 
 // ValidateDotNetFunctionProject rejects in-process .NET projects, which Flex Consumption cannot host.
 func ValidateDotNetFunctionProject(projectPath string) error {

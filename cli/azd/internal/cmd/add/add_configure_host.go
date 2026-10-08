@@ -302,18 +302,7 @@ func validateFunctionCodeProject(prj *appdetect.Project) error {
 	if _, ok := functionRuntimeByLanguage[LanguageMap[prj.Language]]; !ok {
 		return fmt.Errorf("unsupported Function App language: %s", prj.Language)
 	}
-	if info, err := os.Stat(filepath.Join(prj.Path, "host.json")); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("no host.json found in Function App project %q", prj.Path)
-		}
-		return fmt.Errorf("checking Function App project: %w", err)
-	} else if info.IsDir() {
-		return fmt.Errorf("host.json must be a file in Function App project %q", prj.Path)
-	}
-	if prj.Language == appdetect.DotNet {
-		return project.ValidateDotNetFunctionProject(prj.Path)
-	}
-	return nil
+	return project.ValidateFunctionProject(prj.Path, LanguageMap[prj.Language])
 }
 
 func addServiceAsResource(

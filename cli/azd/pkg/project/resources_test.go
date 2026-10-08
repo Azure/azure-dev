@@ -338,6 +338,79 @@ env:
 	assert.Equal(t, resource.Uses, restored.Uses)
 }
 
+func functionProjectDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte(`{"version":"2.0"}`), 0o600))
+	return dir
+}
+
+func Test_infraFs_FunctionHostJson(t *testing.T) {
+	for _, runtime := range []struct {
+		language ServiceLanguageKind
+		stack    string
+		version  string
+	}{
+		{ServiceLanguagePython, "python", "3.12"},
+		{ServiceLanguageJavaScript, "node", "22"},
+		{ServiceLanguageTypeScript, "node", "22"},
+		{ServiceLanguageDotNet, "dotnet-isolated", "8.0"},
+		{ServiceLanguageCsharp, "dotnet-isolated", "8.0"},
+		{ServiceLanguageFsharp, "dotnet-isolated", "8.0"},
+		{ServiceLanguageJava, "java", "21"},
+		{ServiceLanguageGo, "go", "1.0"},
+	} {
+		for _, state := range []string{"missing", "directory", "file"} {
+			for _, absolutePath := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/absolute=%t", runtime.language, state, absolutePath), func(t *testing.T) {
+					dir := t.TempDir()
+					sourceDir := filepath.Join(dir, "api")
+					require.NoError(t, os.Mkdir(sourceDir, 0o700))
+					// A root-level host.json must not satisfy validation for the service source directory.
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte(`{}`), 0o600))
+					hostPath := filepath.Join(sourceDir, "host.json")
+					switch state {
+					case "directory":
+						require.NoError(t, os.Mkdir(hostPath, 0o700))
+					case "file":
+						require.NoError(t, os.WriteFile(hostPath, []byte(`{"version":"2.0"}`), 0o600))
+					}
+					servicePath := "api"
+					if absolutePath {
+						servicePath = sourceDir
+					}
+					cfg := &ProjectConfig{
+						Path: dir,
+						Resources: map[string]*ResourceConfig{
+							"api": {
+								Name: "api", Type: ResourceTypeHostFunctionApp,
+								Props: FunctionAppProps{
+									Runtime: FunctionAppRuntime{Stack: runtime.stack, Version: runtime.version},
+								},
+							},
+						},
+						Services: map[string]*ServiceConfig{
+							"api": {
+								Name: "api", Host: AzureFunctionTarget, Language: runtime.language,
+								RelativePath: servicePath,
+							},
+						},
+					}
+					_, err := infraFs(t.Context(), cfg)
+					switch state {
+					case "missing":
+						require.ErrorContains(t, err, "no host.json found")
+					case "directory":
+						require.ErrorContains(t, err, "host.json must be a file")
+					case "file":
+						require.NoError(t, err)
+					}
+				})
+			}
+		}
+	}
+}
+
 func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -370,6 +443,7 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &ProjectConfig{
+				Path: functionProjectDir(t),
 				Resources: map[string]*ResourceConfig{
 					"api": {
 						Name: "api", Type: ResourceTypeHostFunctionApp, Uses: tt.uses,
@@ -432,7 +506,7 @@ func Test_infraSpec_FunctionAppRuntimeByLanguage(t *testing.T) {
 	} {
 		t.Run(string(tt.language), func(t *testing.T) {
 			cfg := &ProjectConfig{
-				Path: t.TempDir(),
+				Path: functionProjectDir(t),
 				Resources: map[string]*ResourceConfig{
 					"api": {
 						Name: "api", Type: ResourceTypeHostFunctionApp,
@@ -472,6 +546,7 @@ func Test_infraSpec_FunctionAppRuntimeByLanguage(t *testing.T) {
 
 func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
 	cfg := &ProjectConfig{
+		Path: functionProjectDir(t),
 		Resources: map[string]*ResourceConfig{
 			"api": {
 				Name: "api", Type: ResourceTypeHostFunctionApp,
@@ -514,6 +589,7 @@ func Test_infraSpec_FunctionAppsShareImplicitStorage(t *testing.T) {
 
 func Test_infraSpec_FunctionAppEscapedSettings(t *testing.T) {
 	cfg := &ProjectConfig{
+		Path: functionProjectDir(t),
 		Resources: map[string]*ResourceConfig{
 			"api": {
 				Name: "api", Type: ResourceTypeHostFunctionApp,
@@ -556,6 +632,7 @@ func Test_infraFs_DotNetFunctionProject(t *testing.T) {
 				dir := t.TempDir()
 				sourceDir := filepath.Join(dir, "api")
 				require.NoError(t, os.Mkdir(sourceDir, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "host.json"), []byte(`{"version":"2.0"}`), 0o600))
 				contents := `<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>` +
 					`<PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.0.0" />` +
 					`</ItemGroup></Project>`
@@ -701,6 +778,7 @@ func Test_infraSpec_FunctionAppRejectsUnsupportedSettings(t *testing.T) {
 
 func Test_infraSpec_FunctionAppRejectsUnsupportedUse(t *testing.T) {
 	cfg := &ProjectConfig{
+		Path: functionProjectDir(t),
 		Resources: map[string]*ResourceConfig{
 			"api": {
 				Name: "api", Type: ResourceTypeHostFunctionApp, Uses: []string{"unsupported"},
@@ -718,6 +796,7 @@ func Test_infraSpec_FunctionAppRejectsUnsupportedUse(t *testing.T) {
 
 func Test_infraSpec_FunctionAppUsesResources(t *testing.T) {
 	cfg := &ProjectConfig{
+		Path: functionProjectDir(t),
 		Resources: map[string]*ResourceConfig{
 			"api": {
 				Name: "api", Type: ResourceTypeHostFunctionApp,

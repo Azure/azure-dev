@@ -1,0 +1,154 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package grpcserver
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
+)
+
+type foundryPreviewProject struct {
+	azdext.UnimplementedProjectServiceServer
+	project *azdext.ProjectConfig
+}
+
+func (s *foundryPreviewProject) Get(context.Context, *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+type foundryPreviewEnvironment struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *foundryPreviewEnvironment) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "selected"}}, nil
+}
+
+func (s *foundryPreviewEnvironment) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{KeyValues: []*azdext.KeyValue{
+		{Key: "AZURE_SUBSCRIPTION_ID", Value: "subscription"},
+		{Key: "FOUNDRY_PROJECT_ENDPOINT", Value: "https://account.services.ai.azure.com/api/projects/project"},
+	}}, nil
+}
+
+type foundryPreviewAccount struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *foundryPreviewAccount) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "user-access-tenant"}, nil
+}
+
+type foundryPreviewExtension struct {
+	azdext.UnimplementedExtensionServiceServer
+}
+
+func (s *foundryPreviewExtension) Ready(
+	context.Context, *azdext.ReadyRequest,
+) (*azdext.ReadyResponse, error) {
+	return &azdext.ReadyResponse{}, nil
+}
+
+func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
+	binary := os.Getenv("AZD_PREVIEW_EXTENSION_TEST_BINARY")
+	require.NotEmpty(t, binary)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"name: preview\nservices:\n  agent:\n    host: azure.ai.agent\n"+
+			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n",
+	), 0600))
+	services := map[string]*azdext.ServiceConfig{}
+	for _, name := range []string{"agent", "create", "update", "unknown", "legacy"} {
+		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
+		require.NoError(t, err)
+		services[name] = &azdext.ServiceConfig{
+			Name: name, Host: "azure.ai.agent", AdditionalProperties: props,
+			Image: "registry.example.com/agent:v1", Docker: &azdext.DockerProjectOptions{ImagePassthrough: true},
+		}
+	}
+	services["update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
+	})
+	services["unknown"].Environment = map[string]string{"VALUE": ""}
+	services["legacy"].Config = services["legacy"].AdditionalProperties
+	services["legacy"].AdditionalProperties = nil
+	extension := &extensions.Extension{
+		Id:           "test.foundry.preview",
+		Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+	}
+	service := NewServiceTargetService(
+		ioc.NewNestedContainer(nil), newStreamTestExtensionManager(t, extension), nil,
+	).(*ServiceTargetService)
+	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
+	server.serviceTargetService = service
+	server.projectService = &foundryPreviewProject{project: &azdext.ProjectConfig{Path: root, Services: services}}
+	server.environmentService = &foundryPreviewEnvironment{}
+	server.accountService = &foundryPreviewAccount{}
+	server.extensionService = &foundryPreviewExtension{}
+	info, err := server.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.Stop()) })
+	token, err := GenerateExtensionToken(extension, info)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	//nolint:gosec // Test binary is built by the extension-local integration runner.
+	process := exec.CommandContext(ctx, binary, "-test.run=^TestPreviewExtensionProcess$", "-test.v")
+	process.Env = append(os.Environ(),
+		"AZD_SERVER="+info.Address, "AZD_ACCESS_TOKEN="+token,
+		"AZD_PREVIEW_EXTENSION_PROCESS=true", "AZD_EXTENSION_ID="+extension.Id,
+		"AGENT_DEFINITION_PATH=", "AZD_EXT_DEBUG=false", "AZD_DEBUG=false",
+	)
+	var processOutput bytes.Buffer
+	process.Stdout = &processOutput
+	process.Stderr = &processOutput
+	require.NoError(t, process.Start())
+	t.Cleanup(func() {
+		cancel()
+		_ = process.Wait()
+		if t.Failed() {
+			t.Log(processOutput.String())
+		}
+	})
+	require.Eventually(t, func() bool {
+		service.providerMapMu.Lock()
+		defer service.providerMapMu.Unlock()
+		return service.previewMap["azure.ai.agent"] != nil && service.providerMap["azure.ai.agent"] != nil
+	}, 10*time.Second, 10*time.Millisecond)
+	preview := service.previewFunc("azure.ai.agent", extension.Id)
+	for _, tc := range []struct{ name, status string }{
+		{"agent", "noChange"}, {"create", "create"}, {"update", "update"}, {"unknown", "unknown"},
+	} {
+		result, err := preview(ctx, services[tc.name])
+		require.NoError(t, err)
+		require.Equal(t, tc.status, result.Data["status"])
+		require.NotEmpty(t, result.Message)
+	}
+	_, err = preview(ctx, services["legacy"])
+	require.ErrorContains(t, err, "unsupported for legacy")
+	unsupported := service.previewFunc("not-registered", extension.Id)
+	_, err = unsupported(ctx, services["agent"])
+	require.ErrorIs(t, err, project.ErrDeployPreviewNotSupported)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "preview must not create extension state")
+}

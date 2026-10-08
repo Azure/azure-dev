@@ -196,6 +196,7 @@ type AgentServiceTargetProvider struct {
 	dependencyEnabled          dependencyEnabled
 	dependencyEnv              map[string]string
 	promptAgentVersionResolver PromptAgentVersionResolver
+	previewReader             func(endpoint, tenantID string) (agentPreviewReader, error)
 }
 
 const (
@@ -2270,6 +2271,18 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		}
 	}
 
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
+	return prepareDeployRequest(serviceConfig, agentDef, resolvedEnvVars, extraOptions)
+}
+
+// prepareDeployRequest normalizes the request without output, I/O, or state changes.
+func prepareDeployRequest(
+	serviceConfig *azdext.ServiceConfig,
+	agentDef agent_yaml.ContainerAgent,
+	resolvedEnvVars map[string]string,
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
 	// Parse service config for container resource overrides
 	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -2279,9 +2292,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
-	WarnOrphanedConfigEnv(serviceConfig)
-
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu

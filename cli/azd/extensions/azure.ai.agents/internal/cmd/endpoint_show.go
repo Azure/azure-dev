@@ -100,9 +100,9 @@ func runEndpointShow(
 	case agent_yaml.AgentKindHosted:
 		return runHostedEndpointShow(ctx, validation.Name, flags.output)
 	case agent_yaml.AgentKindPrompt:
-		return runPromptEndpointShow(ctx, azdClient, svc, validation, flags.output)
+		return runPromptEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output)
 	case agent_yaml.AgentKindPromptVoice, agent_yaml.AgentKindVoice:
-		return runVoiceEndpointShow(ctx, azdClient, svc, validation, flags.output)
+		return runVoiceEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output)
 	default:
 		return exterrors.Internal(
 			exterrors.CodeUnsupportedAgentKind,
@@ -141,9 +141,10 @@ func runPromptEndpointShow(
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	validation project.AgentDefinitionValidation,
+	environmentName string,
 	outputFormat string,
 ) error {
-	envValues, err := promptEnvValues(ctx, azdClient)
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
 	if err != nil {
 		return fmt.Errorf("reading the azd environment: %w", err)
 	}
@@ -166,9 +167,10 @@ func runVoiceEndpointShow(
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	validation project.AgentDefinitionValidation,
+	environmentName string,
 	outputFormat string,
 ) error {
-	envValues, err := promptEnvValues(ctx, azdClient)
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
 	if err != nil {
 		return fmt.Errorf("reading the azd environment: %w", err)
 	}

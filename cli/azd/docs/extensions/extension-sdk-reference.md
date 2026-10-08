@@ -118,6 +118,14 @@ host.WithBetaServiceEventHandler(
 )
 ```
 
+Extensions that adopt this API must set `requiredAzdVersion` in their
+extension manifest to require at least the first azd release that supports
+both subscription acknowledgements and `ServiceHandlerStatus.messages`.
+Set the minimum to that release once its version is known; do not publish
+an adopting extension with an older minimum. Older hosts can time out
+during registration or acknowledge the subscription but ignore returned
+messages. An acknowledgement alone does not establish message support.
+
 The beta event stream must begin with a subscription that includes a
 `request_id` and waits for its acknowledgement. A service status that contains
 messages must echo the invocation's request ID. Legacy beta streams without

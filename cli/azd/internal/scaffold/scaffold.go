@@ -27,16 +27,21 @@ const templateRoot = "scaffold/templates"
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
 	funcMap := template.FuncMap{
-		"bicepName":        BicepName,
-		"containerAppName": ContainerAppName,
-		"upper":            strings.ToUpper,
-		"lower":            strings.ToLower,
-		"alphaSnakeUpper":  AlphaSnakeUpper,
-		"formatParam":      FormatParameter,
-		"hasACA":           HasACA,
-		"hasAppService":    HasAppService,
-		"isACA":            IsACA,
-		"isAppService":     IsAppService,
+		"bicepName":                BicepName,
+		"containerAppName":         ContainerAppName,
+		"functionAppContainerName": FunctionAppContainerName,
+		"functionAppName":          FunctionAppName,
+		"bicepPropertyKey":         BicepPropertyKey,
+		"upper":                    strings.ToUpper,
+		"lower":                    strings.ToLower,
+		"alphaSnakeUpper":          AlphaSnakeUpper,
+		"formatParam":              FormatParameter,
+		"hasACA":                   HasACA,
+		"hasAppService":            HasAppService,
+		"hasFunctionApp":           HasFunctionApp,
+		"isACA":                    IsACA,
+		"isAppService":             IsAppService,
+		"isFunctionApp":            IsFunctionApp,
 	}
 
 	t, err := template.New("templates").
@@ -83,6 +88,10 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files,
 			"/modules/role-assignment.bicep",
 			"/modules/role-assignment.json")
+	}
+
+	if HasFunctionApp(spec.Services) {
+		files = append(files, "/modules/function-storage.bicep")
 	}
 
 	if spec.AiFoundryProject != nil && spec.AISearch != nil {

@@ -1003,7 +1003,8 @@ func TestLanguageMap(t *testing.T) {
 		project.ServiceLanguageTypeScript,
 		LanguageMap[appdetect.TypeScript],
 	)
-	assert.Len(t, LanguageMap, 5)
+	assert.Equal(t, project.ServiceLanguageGo, LanguageMap[appdetect.Go])
+	assert.Len(t, LanguageMap, 6)
 }
 
 // ---------------------------------------------------------------------------
@@ -1022,7 +1023,8 @@ func TestHostMap(t *testing.T) {
 		project.ContainerAppTarget,
 		HostMap[project.ResourceTypeHostContainerApp],
 	)
-	assert.Len(t, HostMap, 2)
+	assert.Equal(t, project.AzureFunctionTarget, HostMap[project.ResourceTypeHostFunctionApp])
+	assert.Len(t, HostMap, 3)
 }
 
 // ---------------------------------------------------------------------------

@@ -861,6 +861,7 @@
                             "ai.search",
                             "host.containerapp",
                             "host.appservice",
+                            "host.functionapp",
                             "messaging.eventhubs",
                             "messaging.servicebus",
                             "storage",
@@ -905,6 +906,18 @@
                         },
                         "then": {
                             "$ref": "#/definitions/containerAppResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "host.functionapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/functionAppResource"
                         }
                     },
                     {
@@ -2260,6 +2273,42 @@
                 }
             }
         },
+        "serviceEnv": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name of the environment variable"
+                    },
+                    "value": {
+                        "type": "string",
+                        "title": "Value of the environment variable. Supports environment variable substitution."
+                    },
+                    "secret": {
+                        "type": "string",
+                        "title": "Secret value of the environment variable. Supports environment variable substitution."
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "value"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "secret"
+                        ]
+                    }
+                ]
+            }
+        },
         "appServiceResource": {
             "type": "object",
             "description": "An Azure App Service web app.",
@@ -2287,29 +2336,9 @@
                     "description": "Optional. The port that the web app listens on. (Default: 80)"
                 },
                 "env": {
-                    "type": "array",
+                    "$ref": "#/definitions/serviceEnv",
                     "title": "Environment variables to set for the web app",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "name"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Name of the environment variable"
-                            },
-                            "value": {
-                                "type": "string",
-                                "title": "Value of the environment variable. Supports environment variable substitution."
-                            },
-                            "secret": {
-                                "type": "string",
-                                "title": "Secret value of the environment variable. Supports environment variable substitution."
-                            }
-                        }
-                    }
+                    "description": "Optional. Environment variables to set for the App Service web app."
                 },
                 "runtime": {
                     "type": "object",
@@ -2343,6 +2372,62 @@
                 }
             }
         },
+        "functionAppResource": {
+            "type": "object",
+            "description": "A Linux Azure Function App on the Flex Consumption (FC1) plan.",
+            "additionalProperties": false,
+            "required": [
+                "runtime"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "host.functionapp"
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "Other resources that the Function App uses",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "runtime": {
+                    "type": "object",
+                    "title": "Flex Consumption runtime",
+                    "required": [
+                        "stack",
+                        "version"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "stack": {
+                            "type": "string",
+                            "title": "Function runtime stack",
+                            "description": "Required. Must match the service language: python for Python, node for JavaScript/TypeScript, dotnet-isolated for .NET isolated (C#/F#), java for Java, or go for Go.",
+                            "enum": [
+                                "python",
+                                "node",
+                                "dotnet-isolated",
+                                "java",
+                                "go"
+                            ]
+                        },
+                        "version": {
+                            "type": "string",
+                            "title": "Function runtime version",
+                            "description": "Required. Numeric runtime version supported by Flex Consumption. App Service suffixes such as '22-lts' are not supported. (Example: '3.12' for python, '22' for node, '8.0' for dotnet-isolated, '21' for java, '1.0' for go)",
+                            "pattern": "^[0-9]+(\\.[0-9]+)?$"
+                        }
+                    }
+                },
+                "env": {
+                    "$ref": "#/definitions/serviceEnv",
+                    "title": "Additional Function App settings",
+                    "description": "Optional. Additional application settings for the Function App."
+                }
+            }
+        },
         "containerAppResource": {
             "type": "object",
             "description": "A Docker-based container app.",
@@ -2369,29 +2454,9 @@
                     "description": "Optional. The port that the container app listens on. (Default: 80)"
                 },
                 "env": {
-                    "type": "array",
+                    "$ref": "#/definitions/serviceEnv",
                     "title": "Environment variables to set for the container app",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "name"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Name of the environment variable"
-                            },
-                            "value": {
-                                "type": "string",
-                                "title": "Value of the environment variable. Supports environment variable substitution."
-                            },
-                            "secret": {
-                                "type": "string",
-                                "title": "Secret value of the environment variable. Supports environment variable substitution."
-                            }
-                        }
-                    }
+                    "description": "Optional. Environment variables to set for the container app."
                 }
             }
         },

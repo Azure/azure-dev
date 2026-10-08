@@ -897,6 +897,169 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
 }
 {{- end}}
 
+{{- if isFunctionApp .Host}}
+module {{bicepName .Name}}Plan 'br/public:avm/res/web/serverfarm:0.7.0' = {
+  name: '{{functionAppName (bicepName .Name)}}-plan'
+  params: {
+    name: '${abbrs.webServerFarms}func-${take(uniqueString('{{.Name}}'), 6)}-${resourceToken}'
+    location: location
+    tags: tags
+    kind: 'functionApp'
+    skuName: 'FC1'
+    reserved: true
+  }
+}
+
+module {{bicepName .Name}}FunctionStorage 'modules/function-storage.bicep' = {
+  name: '{{functionAppName (bicepName .Name)}}-function-storage'
+  {{- if .FunctionStorage.ExistingName}}
+  scope: resourceGroup({{.FunctionStorage.ExistingName}}IdSegments[2], {{.FunctionStorage.ExistingName}}IdSegments[4])
+  {{- end}}
+  params: {
+    storageAccountName: {{if .FunctionStorage.ExistingName}}{{.FunctionStorage.ExistingName}}.name{{else}}storageAccountName{{end}}
+    containerName: '{{functionAppContainerName .Name}}-${take(uniqueString('{{.Name}}'), 6)}-${take(resourceToken, 7)}'
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+  }
+  {{- if not .FunctionStorage.ExistingName}}
+  dependsOn: [
+    storageAccount
+  ]
+  {{- end}}
+}
+
+module {{bicepName .Name}} 'br/public:avm/res/web/site:0.24.0' = {
+  name: 'function-app-{{functionAppName (bicepName .Name)}}'
+  params: {
+    name: '${abbrs.webSitesFunctions}{{functionAppName .Name}}-${resourceToken}'
+    location: location
+    tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+    kind: 'functionapp,linux'
+    serverFarmResourceId: {{bicepName .Name}}Plan.outputs.resourceId
+    keyVaultAccessIdentityResourceId: {{bicepName .Name}}Identity.outputs.resourceId
+    managedIdentities: {
+      systemAssigned: true
+      userAssignedResourceIds: [{{bicepName .Name}}Identity.outputs.resourceId]
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: {{bicepName .Name}}FunctionStorage.outputs.containerUri
+          authentication: {
+            type: 'UserAssignedIdentity'
+            userAssignedIdentityResourceId: {{bicepName .Name}}Identity.outputs.resourceId
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 100
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: '{{.Runtime.Type}}'
+        version: '{{.Runtime.Version}}'
+      }
+    }
+    siteConfig: {
+      alwaysOn: false
+      cors: {
+        allowedOrigins: [
+          'https://portal.azure.com'
+        ]
+      }
+      {{- if eq .Runtime.Type "go"}}
+      http20Enabled: false
+      {{- end}}
+    }
+    configs: [{
+      name: 'appsettings'
+      properties: {
+        AzureWebJobsStorage__credential: 'managedidentity'
+        AzureWebJobsStorage__clientId: {{bicepName .Name}}Identity.outputs.clientId
+        AzureWebJobsStorage__blobServiceUri: {{bicepName .Name}}FunctionStorage.outputs.blobEndpoint
+        AzureWebJobsStorage__queueServiceUri: {{bicepName .Name}}FunctionStorage.outputs.queueEndpoint
+        AzureWebJobsStorage__tableServiceUri: {{bicepName .Name}}FunctionStorage.outputs.tableEndpoint
+        AzureFunctionsWebHost__hostid: 'azd-${uniqueString(resourceGroup().id, '{{.Name}}')}'
+        APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
+        APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'Authorization=AAD'
+        AZURE_CLIENT_ID: {{bicepName .Name}}Identity.outputs.clientId
+        {{- if .DbCosmos}}
+        AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
+        {{- end}}
+        {{- if .DbCosmosMongo}}
+        MONGODB_URL: '@Microsoft.KeyVault(SecretUri=${cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri})'
+        {{- end}}
+        {{- if .DbPostgres}}
+        POSTGRES_HOST: postgresServer.outputs.fqdn
+        POSTGRES_USERNAME: postgresDatabaseUser
+        POSTGRES_DATABASE: postgresDatabaseName
+        POSTGRES_PORT: '5432'
+        POSTGRES_PASSWORD: postgresDatabasePassword
+        POSTGRES_URL: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
+        {{- end}}
+        {{- if .DbMySql}}
+        MYSQL_HOST: mysqlServer.outputs.fqdn
+        MYSQL_USERNAME: mysqlDatabaseUser
+        MYSQL_DATABASE: mysqlDatabaseName
+        MYSQL_PORT: '3306'
+        MYSQL_PASSWORD: mysqlDatabasePassword
+        MYSQL_URL: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
+        {{- end}}
+        {{- if .DbRedis}}
+        REDIS_HOST: redis.outputs.hostName
+        REDIS_PORT: string(redis.outputs.sslPort)
+        REDIS_ENDPOINT: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+        REDIS_PASSWORD: '@Microsoft.KeyVault(SecretUri=${redis.outputs.exportedSecrets['redis-password'].secretUri})'
+        REDIS_URL: '@Microsoft.KeyVault(SecretUri=${redis.outputs.exportedSecrets['redis-url'].secretUri})'
+        {{- end}}
+        {{- if .EventHubs}}
+        AZURE_EVENT_HUBS_NAME: eventHubNamespace.outputs.name
+        AZURE_EVENT_HUBS_HOST: '${eventHubNamespace.outputs.name}.servicebus.windows.net'
+        {{- end}}
+        {{- if .ServiceBus}}
+        AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name
+        AZURE_SERVICE_BUS_HOST: '${serviceBusNamespace.outputs.name}.servicebus.windows.net'
+        {{- end}}
+        {{- if .StorageAccount}}
+        AZURE_STORAGE_ACCOUNT_NAME: {{bicepName .Name}}FunctionStorage.outputs.storageAccountName
+        AZURE_STORAGE_BLOB_ENDPOINT: {{bicepName .Name}}FunctionStorage.outputs.blobEndpoint
+        {{- end}}
+        {{- if $infra.KeyVault}}
+        AZURE_KEY_VAULT_NAME: keyVault.outputs.name
+        AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
+        {{- end}}
+        {{- if .AIModels}}
+        AZURE_OPENAI_ENDPOINT: account.outputs.endpoint
+        {{- end}}
+        {{- if .AISearch}}
+        AZURE_AI_SEARCH_ENDPOINT: search.outputs.endpoint
+        {{- end}}
+        {{- if .AiFoundryProject}}
+        AZURE_AI_PROJECT_ENDPOINT: aiFoundryProjectEndpoint
+        {{- end}}
+        {{- range $key, $value := .Env}}
+        {{ bicepPropertyKey $key }}: {{ $value }}
+        {{- end}}
+      }
+    }]
+  }
+}
+
+resource {{bicepName .Name}}Insights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: '${abbrs.insightsComponents}${resourceToken}'
+}
+
+resource {{bicepName .Name}}InsightsMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName .Name}}Insights.id, '{{.Name}}', '3913510d-42f4-4e42-8a64-420c390055eb')
+  scope: {{bicepName .Name}}Insights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+    principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end}}
+
 {{- if .AiFoundryProject}}
 
 resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {

@@ -289,7 +289,12 @@ overrides:
       - templating
   - filename: pkg/project/scaffold_gen.go
     words:
+      - CONTENTAZUREFILECONNECTIONSTRING
+      - CONTENTSHARE
+      - AZUREFUNCTIONSWEBHOST
+      - AZUREWEBJOBSSTORAGE
       - GUNICORN
+      - HOSTID
       - MULTIWORKERS
   - filename: pkg/extensions/command_resolver.go
     words:

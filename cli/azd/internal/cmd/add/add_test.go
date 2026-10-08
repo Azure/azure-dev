@@ -503,6 +503,7 @@ func TestConfigure_HostTypes_EmptyResources(t *testing.T) {
 	}{
 		{"container app", project.ResourceTypeHostContainerApp},
 		{"app service", project.ResourceTypeHostAppService},
+		{"function app", project.ResourceTypeHostFunctionApp},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

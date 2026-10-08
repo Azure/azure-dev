@@ -1188,12 +1188,12 @@ func knownProtocolNames() string {
 // When deployModeFlag is set, it is used directly (for --no-prompt with explicit flag).
 // When noPrompt is true and no flag is provided, defaults to "code".
 // When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
-func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedManifest bool) (string, error) {
+func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedTemplate bool) (string, error) {
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
-	//   3. userProvidedManifest — auto-select "code" (opinionated default;
-	//      triggered by -m flag OR interactive template selection)
+	//   3. userProvidedTemplate — auto-select "code" (opinionated default;
+	//      triggered by -t flag OR interactive template selection)
 	//   4. noPrompt — "code" (default deploy mode)
 	//   5. Interactive prompt
 
@@ -1209,10 +1209,10 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 		return "container", nil
 	}
 
-	// When the user provided a manifest explicitly (-m), auto-select the
+	// When the user provided a template explicitly (-t), auto-select the
 	// opinionated default (code) without prompting. Users who want
-	// container deploy with -m can pass --deploy-mode container explicitly.
-	if userProvidedManifest {
+	// container deploy with -t can pass --deploy-mode container explicitly.
+	if userProvidedTemplate {
 		log.Printf("Auto-selected deploy mode: code (use --deploy-mode container for container deploy)")
 		return "code", nil
 	}
@@ -1305,7 +1305,7 @@ type codeDeployOptions struct {
 
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
 // dependency resolution). When noPrompt is true, flags or defaults are used without prompting.
-func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions, userProvidedManifest bool) (*agent_yaml.CodeConfiguration, error) {
+func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions, userProvidedTemplate bool) (*agent_yaml.CodeConfiguration, error) {
 	if srcDir == "" {
 		srcDir = "."
 	}
@@ -1336,7 +1336,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var runtime string
 	if opts.runtime != "" {
 		runtime = opts.runtime
-	} else if noPrompt || userProvidedManifest {
+	} else if noPrompt || userProvidedTemplate {
 		if isDotnet && !isPython {
 			runtime = "dotnet_10"
 		} else {
@@ -1367,7 +1367,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var entryPoint string
 	if opts.entryPoint != "" {
 		entryPoint = opts.entryPoint
-	} else if noPrompt || userProvidedManifest {
+	} else if noPrompt || userProvidedTemplate {
 		entryPoint = defaultEntryPoint
 		log.Printf("Auto-detected entry point: %s", entryPoint)
 	} else {
@@ -1395,7 +1395,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	var depResolution string
 	if opts.depResolution != "" {
 		depResolution = opts.depResolution
-	} else if noPrompt || userProvidedManifest {
+	} else if noPrompt || userProvidedTemplate {
 		depResolution = "remote_build"
 		log.Printf("Defaulted dependency resolution to remote_build")
 	} else {

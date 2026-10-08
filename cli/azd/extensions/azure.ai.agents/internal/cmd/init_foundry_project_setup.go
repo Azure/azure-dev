@@ -56,9 +56,7 @@ func validateAcrConnectionInput(acrConnection string, skipACR, createsNewProject
 //  3. --no-prompt with Azure context present: configure new project without prompts.
 //  4. Interactive: prompt "Use an existing Foundry project" vs "Create new".
 //
-// This is the shared core extracted from configureModelChoice's
-// !hasModelResources branch so both the agent-manifest and unified azure.yaml
-// adoption paths can reuse it.
+// Generated-agent and unified azure.yaml adoption paths share this setup.
 func configureFoundryProject(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

@@ -1,26 +1,228 @@
 parameters:
-  - name: GitHubToken
+  - name: Operation
     type: string
-    default: $(azuresdk-github-pat)
-    displayName: GitHub token
+    default: Prepare
+    values:
+      - Prepare
+      - Publish
+  - name: WingetCreateVersion
+    type: string
+    default: v1.12.13.0
+  - name: WingetCreateSha256
+    type: string
+    default: '24042bd37915805615e6cf969ac57c6439124c3fe85823327f5f3fb24bd9ffea'
 
 steps:
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+    parameters:
+      Use1ESArtifactTask: ${{ eq(parameters.Operation, 'Publish') }}
 
-  - pwsh: |
-      $PSNativeCommandArgumentPassing = 'Legacy'
-      Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+  - ${{ if eq(parameters.Operation, 'Prepare') }}:
+    - template: /eng/common/pipelines/templates/steps/login-to-github.yml
 
-      $AdditionalArgs = ""
-      if ($$(SubmitWinGetPackage)) {
-          $AdditionalArgs = "--submit"
-      }
+    - pwsh: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandArgumentPassing = 'Legacy'
+        if ([string]::IsNullOrWhiteSpace($env:WINGET_CREATE_GITHUB_TOKEN) -or
+            $env:WINGET_CREATE_GITHUB_TOKEN -match '^\$\(.+\)$') {
+          throw "GitHub token is required to generate the WinGet manifest."
+        }
+        $wingetCreateVersion = '${{ parameters.WingetCreateVersion }}'
+        $wingetCreateUrl = "https://github.com/microsoft/winget-create/releases/download/$wingetCreateVersion/wingetcreate.exe"
+        Invoke-WebRequest $wingetCreateUrl -OutFile wingetcreate.exe
+        $wingetCreateSha256 = (Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($wingetCreateSha256 -ne '${{ parameters.WingetCreateSha256 }}') {
+          throw "WingetCreate checksum verification failed."
+        }
+        ./wingetcreate.exe --version
 
-      ./wingetcreate.exe update `
+        $outputRoot = "winget"
+        $manifestPath = "winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
+
+        ./wingetcreate.exe update `
           Microsoft.Azd `
           --version '$(MSI_VERSION)' `
           --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
-          --token ${{ parameters.GitHubToken }} `
-          --out winget `
-          $AdditionalArgs
-    displayName: Submit to WinGet
+          --out $outputRoot
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to generate the WinGet manifest."
+        }
+
+        if (!(Test-Path -Path $manifestPath -PathType Container)) {
+          throw "WingetCreate did not generate the expected manifest directory: $manifestPath"
+        }
+      displayName: Generate and validate WinGet manifest
+      env:
+        WINGET_CREATE_GITHUB_TOKEN: $(GH_TOKEN)
+
+  - ${{ if eq(parameters.Operation, 'Publish') }}:
+    - pwsh: |
+        $manifestPath = "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
+        if (!(Test-Path -Path $manifestPath -PathType Container)) {
+          throw "WinGet manifest artifact was not downloaded to the expected directory: $manifestPath"
+        }
+        $expectedManifestFiles = @(
+          'Microsoft.Azd.yaml',
+          'Microsoft.Azd.installer.yaml',
+          'Microsoft.Azd.locale.en-US.yaml'
+        )
+        foreach ($manifestFile in $expectedManifestFiles) {
+          $manifestFilePath = Join-Path $manifestPath $manifestFile
+          if (!(Test-Path -Path $manifestFilePath -PathType Leaf)) {
+            throw "WinGet manifest artifact is missing required file: $manifestFilePath"
+          }
+          $manifestContent = Get-Content -Path $manifestFilePath -Raw
+          if ($manifestContent -notmatch '(?m)^PackageIdentifier:\s+Microsoft\.Azd\s*$') {
+            throw "WinGet manifest has an unexpected package identifier: $manifestFilePath"
+          }
+          if ($manifestContent -notmatch ('(?m)^PackageVersion:\s+{0}\s*$' -f [regex]::Escape('$(MSI_VERSION)'))) {
+            throw "WinGet manifest has an unexpected package version: $manifestFilePath"
+          }
+        }
+        $installerManifestPath = Join-Path $manifestPath 'Microsoft.Azd.installer.yaml'
+        $installerManifestContent = Get-Content -Path $installerManifestPath -Raw
+        $expectedInstallerUrl = "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi"
+        if ($installerManifestContent -notmatch "(?m)^  InstallerUrl:\s+$([regex]::Escape($expectedInstallerUrl))\s*$") {
+          throw "WinGet installer manifest does not reference the expected release asset."
+        }
+        Get-ChildItem -Path $manifestPath
+      displayName: Validate downloaded WinGet manifest
+
+    - task: EsrpRelease@12
+      displayName: Generate WinGet CDN download link
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+      inputs:
+        connectedservicename: Azure SDK PME Managed Identity
+        usemanagedidentity: true
+        keyvaultname: kv-azuresdk-codesign
+        signcertname: azure-sdk-esrp-release-certificate
+        clientid: 5f81938c-2544-4f1f-9251-dd9de5b8a81b
+        intent: filedownloadlinkgeneration
+        contenttype: WingetExternal
+        contentsource: Folder
+        folderlocation: $(Pipeline.Workspace)/winget
+        waitforreleasecompletion: true
+        owners: chononiw@microsoft.com
+        approvers: chononiw@microsoft.com
+        serviceendpointurl: https://api.esrp.microsoft.com
+        mainpublisher: ESRPRELPACMANTEST
+        domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346
+
+    - pwsh: |
+        $ErrorActionPreference = 'Stop'
+        if ([string]::IsNullOrWhiteSpace($env:ESRP_RELEASE_DETAILS)) {
+          throw 'ESRP_RELEASE_DETAILS is not set or empty.'
+        }
+
+        $releaseDetails = $env:ESRP_RELEASE_DETAILS | ConvertFrom-Json
+        if ($releaseDetails.status -ne 'pass') {
+          throw "ESRP CDN link generation did not pass. Status: '$($releaseDetails.status)'."
+        }
+
+        $downloadUrls = @(
+          foreach ($file in $releaseDetails.files) {
+            foreach ($downloadDetail in $file.fileDownloadDetails) {
+              if (![string]::IsNullOrWhiteSpace($downloadDetail.downloadUrl)) {
+                $downloadDetail.downloadUrl
+              }
+            }
+          }
+        )
+        $installerUrls = @(
+          foreach ($downloadUrl in $downloadUrls) {
+            $uri = [Uri]$downloadUrl
+            if ([IO.Path]::GetFileName($uri.AbsolutePath) -eq 'azd-windows-amd64.msi') {
+              $uri
+            }
+          }
+        )
+        if ($installerUrls.Count -ne 1) {
+          throw "Expected one azd MSI download URL from ESRP, but found $($installerUrls.Count)."
+        }
+        $installerUri = $installerUrls[0]
+        if ($installerUri.Scheme -ne 'https' -or $installerUri.Host -ne 'download.microsoft.com') {
+          throw "ESRP returned an azd MSI URL on an unexpected host: $($installerUri.Host)"
+        }
+        if ($installerUri.UserInfo -or $installerUri.Query -or $installerUri.Fragment) {
+          throw 'ESRP returned an azd MSI URL containing unexpected credentials, query parameters, or a fragment.'
+        }
+        $installerManifestPath = "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)/Microsoft.Azd.installer.yaml"
+        $installerManifestContent = Get-Content -Path $installerManifestPath -Raw
+        $installerUrlPattern = '(?m)^(\s*InstallerUrl:\s*).+$'
+        if ([regex]::Matches($installerManifestContent, $installerUrlPattern).Count -ne 1) {
+          throw "Expected one InstallerUrl in the WinGet installer manifest: $installerManifestPath"
+        }
+        $installerManifestContent = [regex]::Replace(
+          $installerManifestContent,
+          $installerUrlPattern,
+          { param($match) "$($match.Groups[1].Value)$($installerUri.AbsoluteUri)" }
+        )
+        $installerManifestContent = $installerManifestContent `
+          -replace "`r`n", "`n" `
+          -replace "`r", "`n" `
+          -replace "`n", "`r`n"
+        [IO.File]::WriteAllText(
+          $installerManifestPath,
+          $installerManifestContent,
+          [Text.UTF8Encoding]::new($false)
+        )
+        $updatedManifestContent = Get-Content -Path $installerManifestPath -Raw
+        if ($updatedManifestContent -notmatch '(?m)^\s*InstallerUrl:\s*https://download\.microsoft\.com/') {
+          throw 'Failed to update the WinGet manifest with the ESRP download URL.'
+        }
+      displayName: Apply ESRP CDN link to WinGet manifest
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+      env:
+        ESRP_RELEASE_DETAILS: $(ESRP_RELEASE_DETAILS)
+    
+    - pwsh: |
+        $manifestPath = "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
+        $manifestFiles = Get-ChildItem -Path $manifestPath -Filter '*.yaml' -File
+        if ($manifestFiles.Count -lt 3) {
+          throw "Expected at least three WinGet manifest files in: $manifestPath"
+        }
+        foreach ($manifestFile in $manifestFiles) {
+          $manifestContent = [IO.File]::ReadAllText($manifestFile.FullName)
+          if ($manifestContent -match '(?<!\r)\n' -or $manifestContent -match '\r(?!\n)') {
+            throw "WinGet manifest contains unsupported line endings: $($manifestFile.FullName)"
+          }
+        }
+        $manifestFiles
+      displayName: Validate manifests for WinGet submission
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+
+    - task: EsrpRelease@12
+      displayName: Publish WinGet manifest
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+      inputs:
+        connectedservicename: Azure SDK PME Managed Identity
+        usemanagedidentity: true
+        keyvaultname: kv-azuresdk-codesign
+        signcertname: azure-sdk-esrp-release-certificate
+        clientid: 5f81938c-2544-4f1f-9251-dd9de5b8a81b
+        intent: Winget
+        contenttype: manifest
+        contentsource: Folder
+        folderlocation: $(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)
+        waitforreleasecompletion: true
+        owners: chononiw@microsoft.com
+        approvers: chononiw@microsoft.com
+        serviceendpointurl: https://api.esrp.microsoft.com
+        mainpublisher: ESRPRELPACMANTEST
+        domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346

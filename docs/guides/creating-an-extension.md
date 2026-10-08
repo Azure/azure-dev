@@ -51,6 +51,8 @@ Implement the required interfaces for your declared capabilities. See the extens
 
 If your Go extension creates role assignments, use the preview [`AccountBeta().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `contracts/v1beta`. The host resolves the resource-tenant object ID and principal type without returning an access token. Consume an SDK and host release containing this method before replacing an existing lookup.
 
+Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
+
 ### 4. Build
 
 ```bash
@@ -82,6 +84,19 @@ For extensions that are still in development or preview, consider publishing to 
 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
+
+## Command-level lifecycle follow-up
+
+Beta project `post*` handlers can contribute next-step guidance to the
+parent command's human-readable completion message. Use the preview
+`EventsBeta()` client to subscribe and receive an invocation ID, then call
+`CommandResult().SetFollowUp` while processing that invocation.
+
+For published extensions using this preview API, set `requiredAzdVersion`
+to `>=1.35.0` for the current release line. See the
+[SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
+for host compatibility, subscription errors, and how contributions from
+multiple handlers and workflow steps are resolved.
 
 ## Extension Design Guidelines
 

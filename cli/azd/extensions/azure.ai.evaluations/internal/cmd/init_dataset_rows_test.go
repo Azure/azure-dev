@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azureaieval/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -77,6 +81,25 @@ func TestInitScaffold_RefusesLocalDatasetFilesItCannotUse(t *testing.T) {
 
 			require.Error(t, err, "init must refuse this before writing a declaration")
 			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+// ADO 5572140: a malformed or empty JSONL row used to reach -o json with a
+// message and no code at all.
+func TestInitScaffold_LocalDatasetValidationCarriesAStableCode(t *testing.T) {
+	for _, tt := range []struct{ name, contents, wantErr string }{
+		{"a line that is not JSON", "not-json\n", "is not valid JSON"},
+		{"an object row that carries nothing", "{}\n", "is an empty object"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateJSONL(writeLocalDataset(t, "rows.jsonl", tt.contents))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "a local dataset validation failure must carry a structured code")
+			assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 		})
 	}
 }

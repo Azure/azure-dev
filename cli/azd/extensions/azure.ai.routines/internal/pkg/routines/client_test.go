@@ -88,7 +88,6 @@ func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 
 func TestGetRoutine_Success(t *testing.T) {
 	t.Parallel()
-	routine := Routine{Name: "my-routine", Description: "test routine", Enabled: new(true)}
 
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
@@ -97,7 +96,25 @@ func TestGetRoutine_Success(t *testing.T) {
 		assert.Equal(t, "read", r.Header.Get("X-Test-Pipeline"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(routine)
+		_, _ = w.Write([]byte(`{
+			"name":"my-routine",
+			"description":"test routine",
+			"enabled":true,
+			"triggers":{"default":{
+				"type":"github_issue",
+				"cron_expression":"0 9 * * *",
+				"time_zone":"UTC",
+				"connection_id":"connection",
+				"issue_event":"opened",
+				"event_name":"event.created"
+			}},
+			"action":{
+				"type":"invoke_agent_invocations_api",
+				"agent_name":"agent",
+				"agent_endpoint_id":"endpoint",
+				"session_id":"session"
+			}
+		}`))
 	}))
 
 	got, err := client.GetRoutine(t.Context(), "my-routine")
@@ -105,6 +122,15 @@ func TestGetRoutine_Success(t *testing.T) {
 	assert.Equal(t, "my-routine", got.Name)
 	assert.Equal(t, "test routine", got.Description)
 	assert.True(t, *got.Enabled)
+	assert.Equal(t, "0 9 * * *", got.Triggers["default"].CronExpression)
+	assert.Equal(t, "UTC", got.Triggers["default"].TimeZone)
+	assert.Equal(t, "connection", got.Triggers["default"].ConnectionID)
+	assert.Equal(t, "opened", got.Triggers["default"].IssueEvent)
+	assert.Equal(t, "event.created", got.Triggers["default"].EventName)
+	require.NotNil(t, got.Action)
+	assert.Equal(t, "agent", got.Action.AgentName)
+	assert.Equal(t, "endpoint", got.Action.AgentEndpointID)
+	assert.Equal(t, "session", got.Action.SessionID)
 }
 
 func TestGetRoutine_NotFound(t *testing.T) {
@@ -140,8 +166,8 @@ func TestGetRoutine_ContextCancellation(t *testing.T) {
 
 func TestListRoutines_SinglePage(t *testing.T) {
 	t.Parallel()
-	page := PagedRoutine{
-		Value: []Routine{
+	page := pagedRoutineAPI{
+		Value: []routineAPI{
 			{Name: "r1"},
 			{Name: "r2"},
 		},
@@ -171,15 +197,15 @@ func TestListRoutines_MultiPage(t *testing.T) {
 		switch call {
 		case 1:
 			// First page has a continuation token
-			_ = json.NewEncoder(w).Encode(PagedRoutine{
-				Value:             []Routine{{Name: "r1"}},
+			_ = json.NewEncoder(w).Encode(pagedRoutineAPI{
+				Value:             []routineAPI{{Name: "r1"}},
 				ContinuationToken: "token-page2",
 			})
 		case 2:
 			// Second page: verify "after" query param is passed
 			assert.Contains(t, r.URL.RawQuery, "after=token-page2")
-			_ = json.NewEncoder(w).Encode(PagedRoutine{
-				Value: []Routine{{Name: "r2"}},
+			_ = json.NewEncoder(w).Encode(pagedRoutineAPI{
+				Value: []routineAPI{{Name: "r2"}},
 			})
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
@@ -213,20 +239,69 @@ func TestPutRoutine_Created(t *testing.T) {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Equal(t, "write", r.Header.Get("X-Test-Pipeline"))
 
-		var body Routine
+		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		assert.Equal(t, "new-routine", body.Name)
+		assert.Equal(t, "new-routine", body["name"])
+		triggers, ok := body["triggers"].(map[string]any)
+		if !assert.True(t, ok) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		trigger, ok := triggers["default"].(map[string]any)
+		if !assert.True(t, ok) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		assert.Equal(t, "0 9 * * *", trigger["cron_expression"])
+		assert.Equal(t, "UTC", trigger["time_zone"])
+		assert.Equal(t, "connection", trigger["connection_id"])
+		assert.Equal(t, "opened", trigger["issue_event"])
+		assert.Equal(t, "event.created", trigger["event_name"])
+		assert.NotContains(t, trigger, "cronExpression")
+		assert.NotContains(t, trigger, "timeZone")
+		assert.Equal(t, map[string]any{
+			"snake_case_parameter": "preserved",
+		}, trigger["parameters"])
+
+		action, ok := body["action"].(map[string]any)
+		if !assert.True(t, ok) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		assert.Equal(t, "agent", action["agent_name"])
+		assert.Equal(t, "endpoint", action["agent_endpoint_id"])
+		assert.Equal(t, "session", action["session_id"])
+		assert.NotContains(t, action, "agentName")
+		assert.NotContains(t, action, "agentEndpointId")
+		assert.NotContains(t, action, "sessionId")
+		assert.Equal(t, map[string]any{
+			"snake_case_input": "preserved",
+		}, action["input"])
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		body.CreatedAt = "2025-01-01T00:00:00Z"
+		body["created_at"] = "2025-01-01T00:00:00Z"
 		_ = json.NewEncoder(w).Encode(body)
 	}))
 
-	input := &Routine{Name: "new-routine", Description: "desc"}
+	input := &Routine{
+		Name: "new-routine", Description: "desc",
+		Triggers: map[string]RoutineTrigger{
+			"default": {
+				Type: "schedule", CronExpression: "0 9 * * *", TimeZone: "UTC",
+				ConnectionID: "connection", IssueEvent: "opened", EventName: "event.created",
+				Parameters: &map[string]any{"snake_case_parameter": "preserved"},
+			},
+		},
+		Action: &RoutineAction{
+			Type: "invoke_agent_invocations_api", AgentName: "agent",
+			AgentEndpointID: "endpoint", SessionID: "session",
+			Input: map[string]any{"snake_case_input": "preserved"},
+		},
+	}
 	got, err := client.PutRoutine(t.Context(), "new-routine", input)
 	require.NoError(t, err)
 	assert.Equal(t, "new-routine", got.Name)

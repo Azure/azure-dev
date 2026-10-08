@@ -91,7 +91,7 @@ func TestAFailedRestoreSaysWhereTheOriginalIsBeingHeld(t *testing.T) {
 	}
 	t.Cleanup(func() { renameFunc = prev })
 
-	err := replaceDir(filepath.Join(root, "staging"), dest)
+	err := replaceDir(filepath.Join(root, "staging"), dest, true)
 
 	require.Error(t, err)
 	assert.Equal(t, 3, calls, "the restore has to be attempted before giving up")
@@ -108,7 +108,7 @@ func TestARestoreThatWorksReportsOnlyTheInstallFailure(t *testing.T) {
 	dest := filepath.Join(root, "golden")
 	require.NoError(t, os.MkdirAll(dest, 0o750))
 
-	err := replaceDir(filepath.Join(root, "no-such-staging"), dest)
+	err := replaceDir(filepath.Join(root, "no-such-staging"), dest, true)
 
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), ".azd-replaced-",
@@ -122,7 +122,7 @@ func TestAFailedInstallWithNothingToRestoreReadsAsAPlainWriteFailure(t *testing.
 	t.Parallel()
 
 	root := t.TempDir()
-	err := replaceDir(filepath.Join(root, "no-such-staging"), filepath.Join(root, "golden"))
+	err := replaceDir(filepath.Join(root, "no-such-staging"), filepath.Join(root, "golden"), false)
 
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), ".azd-replaced-",
@@ -142,7 +142,7 @@ func TestAReplaceThatWorksLeavesNothingBehind(t *testing.T) {
 	require.NoError(t, os.MkdirAll(staging, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(staging, "new.jsonl"), []byte("new"), 0o600))
 
-	require.NoError(t, replaceDir(staging, dest))
+	require.NoError(t, replaceDir(staging, dest, true))
 
 	assert.FileExists(t, filepath.Join(dest, "new.jsonl"))
 	assert.NoFileExists(t, filepath.Join(dest, "old.jsonl"))

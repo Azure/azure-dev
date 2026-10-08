@@ -184,10 +184,14 @@ func saveLocalToolboxDefinition(path string, toolbox *definition.Definition) err
 }
 
 func classifyLocalDefinitionError(path string, err error) error {
+	suggestion := legacyToolboxKeySuggestion(err.Error())
+	if suggestion == "" {
+		suggestion = "fix the toolbox definition and retry"
+	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		fmt.Sprintf("toolbox definition %q is invalid: %s", path, err),
-		"fix the toolbox definition and retry",
+		suggestion,
 	)
 }
 

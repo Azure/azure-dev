@@ -9,14 +9,162 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
+
+func Test_CLI_Env_Unset(t *testing.T) {
+	secretRef := "akvs://sub-id/vault-name/secret-name" //nolint:gosec // G101: test fixture, not a credential
+	tests := []struct {
+		name               string
+		args               []string
+		defaultEnvironment string
+		processEnvironment string
+		targetEnvironment  string
+		errorContains      string
+	}{
+		{
+			name:               "DefaultEnvironment",
+			args:               []string{"KEY1", "KEY2", "SECRET", "KEY1", "MISSING"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env1",
+		},
+		{
+			name:               "LongEnvironmentFlag",
+			args:               []string{"KEY1", "KEY2", "SECRET", "--environment", "env2"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env2",
+		},
+		{
+			name:               "ShortEnvironmentFlag",
+			args:               []string{"KEY1", "KEY2", "SECRET", "-e", "env2"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env2",
+		},
+		{
+			name:               "ProcessEnvironment",
+			args:               []string{"KEY1", "KEY2", "SECRET"},
+			defaultEnvironment: "env1",
+			processEnvironment: "env2",
+			targetEnvironment:  "env2",
+		},
+		{
+			name:               "FlagOverridesProcessEnvironment",
+			args:               []string{"KEY1", "KEY2", "SECRET", "-e", "env1"},
+			defaultEnvironment: "env1",
+			processEnvironment: "env2",
+			targetEnvironment:  "env1",
+		},
+		{
+			name:              "ExplicitEnvironmentWithoutDefault",
+			args:              []string{"KEY1", "KEY2", "SECRET", "-e", "env2"},
+			targetEnvironment: "env2",
+		},
+		{
+			name:               "MissingEnvironment",
+			args:               []string{"KEY1", "-e", "missing"},
+			defaultEnvironment: "env1",
+			errorContains:      environment.ErrNotFound.Error(),
+		},
+		{
+			name:          "NoEnvironmentSelected",
+			args:          []string{"KEY1"},
+			errorContains: environment.ErrNameNotSpecified.Error(),
+		},
+		{
+			name:          "NoKeys",
+			errorContains: "requires at least 1 arg(s)",
+		},
+		{
+			name:               "EmptyKeyAfterValidKey",
+			args:               []string{"KEY1", ""},
+			defaultEnvironment: "env1",
+			errorContains:      "key must not be empty",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newTestContext(t)
+			defer cancel()
+			dir := tempDirWithDiagnostics(t)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte("name: test\n"), 0600))
+			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+			store := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+			valuesBefore := make(map[string]map[string]string)
+			configBefore := make(map[string][]byte)
+			for _, name := range []string{"env1", "env2"} {
+				valuesBefore[name] = map[string]string{
+					environment.EnvNameEnvVarName: name,
+					"KEY1":                        "value1",
+					"KEY2":                        "value2",
+					"SECRET":                      secretRef,
+					"KEEP":                        "unchanged",
+				}
+				env := environment.NewWithValues(name, valuesBefore[name])
+				require.NoError(t, env.Config.Set("KEY1", "config-value"))
+				require.NoError(t, store.Save(ctx, env, &environment.SaveOptions{IsNew: true}))
+				var err error
+				configBefore[name], err = os.ReadFile(store.ConfigPath(env))
+				require.NoError(t, err)
+			}
+			require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{
+				DefaultEnvironment: tt.defaultEnvironment,
+			}))
+
+			cli := azdcli.NewCLI(t)
+			cli.WorkingDirectory = dir
+			cli.Env = append(os.Environ(), cli.Env...)
+			cli.Env = append(cli.Env,
+				"AZD_CONFIG_DIR="+tempDirWithDiagnostics(t),
+				"AZURE_DEV_COLLECT_TELEMETRY=no",
+				"AZD_SKIP_FIRST_RUN=true",
+				"AZD_FORCE_TTY=false",
+				"NO_COLOR=1",
+				"AZURE_ENV_NAME="+tt.processEnvironment,
+			)
+			args := append([]string{"env", "unset", "--no-prompt"}, tt.args...)
+			result, err := cli.RunCommand(ctx, args...)
+			require.NotNil(t, result)
+			if tt.errorContains != "" {
+				require.Error(t, err)
+				require.Contains(t, result.Stdout+result.Stderr, tt.errorContains)
+			} else {
+				require.NoError(t, err)
+				require.Empty(t, result.Stdout)
+			}
+
+			for _, name := range []string{"env1", "env2"} {
+				env := environment.New(name)
+				persisted, err := godotenv.Read(store.EnvPath(env))
+				require.NoError(t, err)
+				want := valuesBefore[name]
+				if name == tt.targetEnvironment {
+					want = map[string]string{
+						environment.EnvNameEnvVarName: name,
+						"KEEP":                        "unchanged",
+					}
+				}
+				require.Equal(t, want, persisted)
+				configAfter, err := os.ReadFile(store.ConfigPath(env))
+				require.NoError(t, err)
+				require.JSONEq(t, string(configBefore[name]), string(configAfter))
+			}
+			require.NoDirExists(t, azdCtx.EnvironmentRoot("missing"))
+			defaultEnvironment, err := azdCtx.GetDefaultEnvironmentName()
+			require.NoError(t, err)
+			require.Equal(t, tt.defaultEnvironment, defaultEnvironment)
+		})
+	}
+}
 
 func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	ctx, cancel := newTestContext(t)

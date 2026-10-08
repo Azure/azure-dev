@@ -50,7 +50,7 @@ These commands emit attributes or events beyond the global middleware span.
 | **Config** | | | | | |
 | `config` | `show`, `list`, `get`, `set`, `unset`, `reset`, `list-alpha`, `options` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
 | **Environment** | | | | | |
-| `env` | `set`, `set-secret`, `select`, `new`, `remove`, `refresh`, `get-values`, `get-value` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
+| `env` | `set`, `unset`, `set-secret`, `select`, `new`, `remove`, `refresh`, `get-values`, `get-value` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
 | `env list` | — | ✅ | ✅ | ❌ | `env.count` (measurement — number of environments) |
 | `env config` | `get`, `set`, `unset` | ✅ | ❌ | ❌ | Thin wrappers — global telemetry sufficient |
 | **Hooks** | | | | | |

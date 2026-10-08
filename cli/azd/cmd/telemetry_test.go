@@ -1382,6 +1382,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"env select",        // Global telemetry sufficient — command name captures operation
 		"env set",           // Global telemetry sufficient — command name captures operation
 		"env set-secret",    // Global telemetry sufficient — command name captures operation
+		"env unset",         // Global telemetry sufficient — command name captures operation
 		// Global telemetry is sufficient because configured values are not emitted.
 		"extension source list",
 		"extension source remove",

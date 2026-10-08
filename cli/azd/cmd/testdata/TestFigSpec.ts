@@ -8863,6 +8863,15 @@ const completionSpec: Fig.Spec = {
 						name: 'name',
 					},
 				},
+				{
+					name: ['unset'],
+					description: 'Remove one or more environment values.',
+					args: {
+						name: 'key',
+						isVariadic: true,
+						generators: azdGenerators.listEnvironmentVariables,
+					},
+				},
 			],
 		},
 		{

@@ -8,6 +8,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Command      | deploy                   | Stable    |
 | Command      | down                     | Stable    |
 | Command      | env                      | Stable    |
+| Command      | env unset                | Stable    |
 | Command      | help                     | Stable    |
 | Command      | init                     | Stable    |
 | Command      | auth                     | Stable    |

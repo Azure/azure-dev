@@ -23,6 +23,8 @@ func TestCustomizations_GetCommandArgGenerator(t *testing.T) {
 	}{
 		{"env_get_value", "azd env get-value", "keyName", FigGenListEnvironmentVariables},
 		{"env_get_value_other", "azd env get-value", "other", ""},
+		{"env_unset", "azd env unset", "key", FigGenListEnvironmentVariables},
+		{"env_unset_other", "azd env unset", "other", ""},
 		{"env_select", "azd env select", "environment", FigGenListEnvironments},
 		{"template_show", "azd template show", "template", FigGenListTemplates},
 		// install is handled via GetCommandArgs (combined id|zip arg), not here.
@@ -80,6 +82,18 @@ func TestGenerateCommandArgs_CustomArgsWithGenerators(t *testing.T) {
 	require.Len(t, args, 1)
 	require.Equal(t, "keyName", args[0].Name)
 	require.Equal(t, FigGenListEnvironmentVariables, args[0].Generator)
+}
+
+func TestGenerateCommandArgs_EnvUnset(t *testing.T) {
+	cmd := &cobra.Command{Use: "unset <key...>"}
+	sb := newTestSpecBuilder(false)
+	ctx := &CommandContext{Command: cmd, CommandPath: "azd env unset"}
+
+	require.Equal(t, []Arg{{
+		Name:       "key",
+		IsVariadic: true,
+		Generator:  FigGenListEnvironmentVariables,
+	}}, sb.generateCommandArgs(cmd, ctx))
 }
 
 func TestGeneratorConstants(t *testing.T) {

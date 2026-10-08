@@ -303,7 +303,9 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"npm", false},
 		{"./script.sh", true},
 		{"scripts/deploy.sh", true},
+		{"scripts/my script.sh", true},
 		{"C:\\scripts\\deploy.ps1", true},
+		{"C:\\Program Files\\deploy.ps1", true},
 		{"deploy.sh", true},
 		{"build.ps1", true},
 		{"run.cmd", true},
@@ -315,6 +317,11 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"mycommand", false},
 		{"echo $HOME", false},
 		{"ls -la", false},
+		{"python script.py", false},
+		{"echo path/to/file", false},
+		{"cat ./config/settings.json", false},
+		{"Write-Output 'config\\settings.json'", false},
+		{"tool --config config\\settings.json", false},
 	}
 
 	for _, tt := range tests {

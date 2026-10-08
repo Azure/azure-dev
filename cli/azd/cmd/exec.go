@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -196,8 +197,16 @@ var scriptExtensions = map[string]bool{
 // than a bare command or inline script. Used to prevent falling through to
 // inline execution when a user typos a script name (F15 security fix).
 func looksLikeFilePath(input string) bool {
-	if strings.ContainsAny(input, "/\\") {
-		return true
+	input = strings.TrimSpace(input)
+	firstWhitespace := strings.IndexFunc(input, unicode.IsSpace)
+	firstSeparator := strings.IndexAny(input, "/\\")
+	if firstSeparator >= 0 {
+		// Inline commands commonly contain paths in later arguments. A path
+		// separator identifies a script path only when it is in the first token.
+		return firstWhitespace == -1 || firstSeparator < firstWhitespace
+	}
+	if firstWhitespace >= 0 {
+		return false
 	}
 	ext := strings.ToLower(filepath.Ext(input))
 	return ext != "" && scriptExtensions[ext]

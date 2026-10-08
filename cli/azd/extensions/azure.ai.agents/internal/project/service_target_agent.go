@@ -729,17 +729,13 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceKey := agentServiceKey(serviceConfig.Name)
 	agentNameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
-	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 
 	if agent_yaml.IsVoiceAgentKind(validation.Kind) {
-		if endpoint := strings.TrimSpace(azdEnv[agentEndpointKey]); endpoint != "" {
-			return []string{endpoint}, nil
+		endpoint, err := ResolveVoiceAgentDeploymentEndpoint(azdEnv, serviceConfig.Name)
+		if err != nil {
+			return nil, err
 		}
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAgentEnvVars,
-			fmt.Sprintf("%s environment variable is required", agentEndpointKey),
-			"run 'azd deploy' to deploy the voice agent and set its callable endpoint",
-		)
+		return []string{endpoint}, nil
 	}
 
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
@@ -776,6 +772,45 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	return endpoints, nil
+}
+
+// ResolveVoiceAgentDeploymentEndpoint returns a persisted voice WebSocket endpoint
+// only when the deployment state has the shape written by a voice deployment.
+func ResolveVoiceAgentDeploymentEndpoint(envValues map[string]string, serviceName string) (string, error) {
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", agentServiceKey(serviceName))
+	endpoint := strings.TrimSpace(envValues[endpointKey])
+	if endpoint == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("%s environment variable is required", endpointKey),
+			"run `azd deploy` to deploy the voice agent and set its callable endpoint",
+		)
+	}
+
+	parsed, err := url.Parse(endpoint)
+	if err != nil ||
+		!strings.EqualFold(parsed.Scheme, "wss") ||
+		parsed.Hostname() == "" ||
+		!strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/endpoint/protocols/voice") {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"voice",
+			"run `azd deploy` to deploy the voice agent and refresh its callable endpoint",
+		)
+	}
+	return endpoint, nil
+}
+
+func invalidAgentEndpointState(serviceName, kind, suggestion string) error {
+	return exterrors.Dependency(
+		exterrors.CodeMissingAgentEnvVars,
+		fmt.Sprintf(
+			"persisted deployment state for service %q does not contain a %s agent endpoint",
+			serviceName,
+			kind,
+		),
+		suggestion,
+	)
 }
 
 func (p *AgentServiceTargetProvider) endpointEnvironmentValues(ctx context.Context) (map[string]string, error) {
@@ -2648,8 +2683,13 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 	serviceKey := agentServiceKey(serviceConfig.Name)
 	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
-	keysToClear := []string{protocolVersionKey}
+	keysToClear := []string{
+		protocolVersionKey,
+		envkey.AgentPromptEndpointVersion(serviceConfig.Name),
+		versionKey,
+	}
 	for _, dp := range displayableProtocols {
 		keysToClear = append(
 			keysToClear,
@@ -2667,7 +2707,6 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 		}
 	}
 
-	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	for _, envVar := range []struct{ key, value string }{
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, agentObject.Versions.Latest.Version},
@@ -4052,6 +4091,9 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
 		{EnvName: p.env.Name, Key: protocolVersionKey, Value: ""},
+		{EnvName: p.env.Name, Key: envkey.AgentPromptEndpointVersion(serviceConfig.Name), Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), Value: ""},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityClientID(serviceConfig.Name), Value: identityClientID},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityPrincipalID(serviceConfig.Name), Value: identityPrincipalID},

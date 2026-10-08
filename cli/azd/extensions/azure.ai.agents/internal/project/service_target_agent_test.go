@@ -1438,6 +1438,10 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	require.Empty(t, envStub.writes[0].Value)
 	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[1].Key)
 	require.Empty(t, envStub.writes[1].Value)
+	require.Equal(t, "AGENT_MY_SVC_PROMPT_ENDPOINT_VERSION", envStub.writes[2].Key)
+	require.Empty(t, envStub.writes[2].Value)
+	require.Empty(t, envStub.values["AGENT_MY_SVC_VOICE_TARGET_NAME"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_VOICE_TARGET_VERSION"])
 	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-2].Key)
 	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-2].Value)
 	require.Equal(
@@ -1453,6 +1457,7 @@ func TestRegisterVoiceAgentEnvironmentVariablesClearsProtocolSnapshot(t *testing
 
 	envStub := &stubEnvServer{values: map[string]string{
 		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION": "1",
+		"AGENT_MY_SVC_PROMPT_ENDPOINT_VERSION":    promptEndpointSnapshotVersion,
 		"AGENT_MY_SVC_ENDPOINT":                   "https://old.example/agent",
 		"AGENT_MY_SVC_RESPONSES_ENDPOINT":         "https://old.example/responses",
 		"AGENT_MY_SVC_INVOCATIONS_ENDPOINT":       "https://old.example/invocations",
@@ -1490,15 +1495,19 @@ func TestRegisterVoiceAgentEnvironmentVariablesClearsProtocolSnapshot(t *testing
 
 	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[0].Key)
 	require.Empty(t, envStub.writes[0].Value)
+	require.Equal(t, "AGENT_MY_SVC_PROMPT_ENDPOINT_VERSION", envStub.writes[1].Key)
+	require.Empty(t, envStub.writes[1].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[2].Key)
+	require.Empty(t, envStub.writes[2].Value)
 	for i, dp := range displayableProtocols {
 		require.Equal(
 			t,
 			fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix),
-			envStub.writes[i+1].Key,
+			envStub.writes[i+3].Key,
 		)
-		require.Empty(t, envStub.writes[i+1].Value)
+		require.Empty(t, envStub.writes[i+3].Value)
 	}
-	baseClearIndex := len(displayableProtocols) + 1
+	baseClearIndex := len(displayableProtocols) + 3
 	require.Equal(t, "AGENT_MY_SVC_ENDPOINT", envStub.writes[baseClearIndex].Key)
 	require.Empty(t, envStub.writes[baseClearIndex].Value)
 	require.Equal(
@@ -4254,9 +4263,10 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 		0o600,
 	))
 
-	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
+	const endpoint = "wss://proj.services.ai.azure.com/api/projects/project/agents/my-voice/" +
+		"endpoint/protocols/voice?api-version=v1"
 	client, projectServer := newEndpointsTestClientWithProjectServer(t, projectRoot, map[string]string{
-		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/project",
 		"AGENT_VOICE_NAME":         "my-voice",
 		"AGENT_VOICE_ENDPOINT":     endpoint,
 		// Deliberately model a legacy persisted environment with no VERSION.
@@ -4328,9 +4338,13 @@ func TestEndpoints_RootRefPreservesSiblingKindOverride(t *testing.T) {
 		0o600,
 	))
 
+	const projectEndpoint = "https://deployed.example/api/projects/project"
+	const endpoint = projectEndpoint + "/openai/v1/responses"
 	client := newEndpointsTestClient(t, projectRoot, map[string]string{
-		"AGENT_PROMPT_ENDPOINT": "https://deployed.example/responses",
-		"AGENT_PROMPT_VERSION":  "1",
+		"AGENT_PROMPT_ENDPOINT":                endpoint,
+		"AGENT_PROMPT_PROJECT_ENDPOINT":        projectEndpoint,
+		"AGENT_PROMPT_PROMPT_ENDPOINT_VERSION": promptEndpointSnapshotVersion,
+		"AGENT_PROMPT_VERSION":                 "1",
 	})
 	service := &azdext.ServiceConfig{
 		Name: "prompt", Host: foundryAgentHost, RelativePath: ".",
@@ -4349,7 +4363,7 @@ func TestEndpoints_RootRefPreservesSiblingKindOverride(t *testing.T) {
 
 	got, err := provider.Endpoints(t.Context(), service, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"https://deployed.example/responses"}, got)
+	require.Equal(t, []string{endpoint}, got)
 }
 
 func TestEndpointsRejectsAgentDefinitionPath(t *testing.T) {
@@ -4421,9 +4435,12 @@ func TestEndpoints_PromptUsesPersistedEndpointDespiteDefinitionChanges(t *testin
 
 	projectRoot := t.TempDir()
 	client, projectServer := newEndpointsTestClientWithProjectServer(t, projectRoot, map[string]string{
-		"AGENT_RAI_AGENT_NAME":     "deployed-agent",
-		"AGENT_RAI_AGENT_ENDPOINT": "https://deployed.example/agents/deployed-agent/responses",
-		"AGENT_RAI_AGENT_VERSION":  "3",
+		"AGENT_RAI_AGENT_NAME": "deployed-agent",
+		"AGENT_RAI_AGENT_ENDPOINT": "https://deployed.example/api/projects/project/agents/deployed-agent/" +
+			"endpoint/protocols/openai/responses?api-version=v1",
+		"AGENT_RAI_AGENT_PROJECT_ENDPOINT":        "https://deployed.example/api/projects/project",
+		"AGENT_RAI_AGENT_PROMPT_ENDPOINT_VERSION": promptEndpointSnapshotVersion,
+		"AGENT_RAI_AGENT_VERSION":                 "3",
 	})
 	service := inlineAgentService(t, map[string]any{
 		"kind":         "prompt",
@@ -4447,7 +4464,12 @@ func TestEndpoints_PromptUsesPersistedEndpointDespiteDefinitionChanges(t *testin
 
 	got, err := provider.Endpoints(t.Context(), service, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"https://deployed.example/agents/deployed-agent/responses"}, got)
+	require.Equal(
+		t,
+		[]string{"https://deployed.example/api/projects/project/agents/deployed-agent/" +
+			"endpoint/protocols/openai/responses?api-version=v1"},
+		got,
+	)
 	require.Equal(t, projectRoot, provider.projectPath)
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
 	require.EqualValues(t, 0, versionLookups.Load())
@@ -4599,6 +4621,104 @@ func TestEndpoints_PromptRequiresCompleteDeployment(t *testing.T) {
 			require.Contains(t, localErr.Suggestion, "azd deploy")
 		})
 	}
+}
+
+func TestEndpointsRejectsCrossKindEndpointState(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition map[string]any
+		values     map[string]string
+		wantKind   string
+	}{
+		{
+			name: "hosted endpoint is not prompt endpoint",
+			definition: map[string]any{
+				"kind":         "prompt",
+				"name":         "prompt-agent",
+				"model":        "gpt-5-mini",
+				"instructions": "Be helpful.",
+			},
+			values: map[string]string{
+				"AGENT_RAI_AGENT_NAME":             "hosted-agent",
+				"AGENT_RAI_AGENT_ENDPOINT":         "https://acct.example/api/projects/project/agents/hosted/versions/1",
+				"AGENT_RAI_AGENT_PROJECT_ENDPOINT": "https://acct.example/api/projects/project",
+				"AGENT_RAI_AGENT_VERSION":          "1",
+			},
+			wantKind: "prompt",
+		},
+		{
+			name: "prompt endpoint is not voice endpoint",
+			definition: map[string]any{
+				"kind":  "voice",
+				"name":  "voice-agent",
+				"model": map[string]any{"id": "gpt-realtime"},
+			},
+			values: map[string]string{
+				"AGENT_RAI_AGENT_ENDPOINT": "https://acct.example/api/projects/project/openai/v1/responses",
+			},
+			wantKind: "voice",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			client := newEndpointsTestClient(t, projectRoot, test.values)
+			service := inlineAgentService(t, test.definition)
+			provider := &AgentServiceTargetProvider{azdClient: client}
+
+			_, err := provider.Endpoints(t.Context(), service, nil)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+			require.Contains(t, localErr.Message, test.wantKind+" agent endpoint")
+			require.Contains(t, localErr.Suggestion, "azd deploy")
+		})
+	}
+}
+
+func TestResolvePromptAgentDeploymentEndpointClassifiesResolverError(t *testing.T) {
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	envValues := map[string]string{
+		"AGENT_RAI_AGENT_NAME":             "deployed-agent",
+		"AGENT_RAI_AGENT_ENDPOINT":         projectEndpoint + "/openai/v1/responses",
+		"AGENT_RAI_AGENT_PROJECT_ENDPOINT": projectEndpoint,
+		"AGENT_RAI_AGENT_VERSION":          "3",
+	}
+
+	t.Run("structured error is preserved", func(t *testing.T) {
+		structured := exterrors.Dependency("test_code", "test message", "test suggestion")
+		_, err := ResolvePromptAgentDeploymentEndpoint(
+			t.Context(),
+			nil,
+			envValues,
+			"rai-agent",
+			func(context.Context, string, string, string) (*agent_api.AgentVersionObject, error) {
+				return nil, structured
+			},
+		)
+
+		require.Same(t, structured, err)
+	})
+
+	t.Run("plain error gains operation context", func(t *testing.T) {
+		_, err := ResolvePromptAgentDeploymentEndpoint(
+			t.Context(),
+			nil,
+			envValues,
+			"rai-agent",
+			func(context.Context, string, string, string) (*agent_api.AgentVersionObject, error) {
+				return nil, errors.New("resolver failed")
+			},
+		)
+
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+		require.Contains(t, localErr.Message, `resolving the deployed prompt endpoint for agent "deployed-agent" version "3"`)
+		require.Contains(t, localErr.Message, "resolver failed")
+	})
 }
 
 func TestEndpoints_VoiceDoesNotRequireHostedEnvironmentValues(t *testing.T) {

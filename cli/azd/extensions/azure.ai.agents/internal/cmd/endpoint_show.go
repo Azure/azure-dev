@@ -247,15 +247,9 @@ func runVoiceEndpointShow(
 		return fmt.Errorf("reading the azd environment: %w", err)
 	}
 
-	serviceKey := toServiceKey(svc.GetName())
-	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	endpoint := strings.TrimSpace(envValues[endpointKey])
-	if endpoint == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAgentEnvVars,
-			fmt.Sprintf("%s environment variable is required", endpointKey),
-			"run `azd deploy` to deploy the voice agent and set its callable endpoint",
-		)
+	endpoint, err := project.ResolveVoiceAgentDeploymentEndpoint(envValues, svc.GetName())
+	if err != nil {
+		return err
 	}
 
 	result := endpointShowResult{

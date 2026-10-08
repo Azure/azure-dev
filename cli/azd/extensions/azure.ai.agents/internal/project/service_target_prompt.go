@@ -658,9 +658,29 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
 		{EnvName: p.env.Name, Key: endpointVersionKey, Value: ""},
-		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentName},
-		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), Value: endpoint},
+		{EnvName: p.env.Name, Key: envkey.AgentProtocolEndpointsVersion(serviceConfig.Name), Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), Value: ""},
 	}
+	for _, protocol := range displayableProtocols {
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.EnvSuffix),
+			Value:   "",
+		})
+	}
+	envVars = append(envVars,
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+			Value:   agentName,
+		},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+			Value:   endpoint,
+		},
+	)
 	if storeName, ok := bindings[memoryStoreBindingKey].(string); ok && strings.TrimSpace(storeName) != "" {
 		envVars = append(envVars, azdext.SetEnvRequest{
 			EnvName: p.env.Name,
@@ -758,21 +778,44 @@ func ResolvePromptAgentDeploymentEndpoint(
 		)
 	}
 
-	if strings.TrimSpace(envValues[envkey.AgentPromptEndpointVersion(serviceName)]) ==
-		promptEndpointSnapshotVersion {
-		return endpoint, nil
-	}
-
 	projectEndpoint := strings.TrimRight(
 		strings.TrimSpace(envValues[envkey.AgentProjectEndpoint(serviceName)]),
 		"/",
 	)
 	legacyEndpoint := projectEndpoint + "/openai/v1/responses"
-	if projectEndpoint == "" || endpoint != legacyEndpoint {
-		return endpoint, nil
+	agentName := strings.TrimSpace(envValues[nameKey])
+	harnessEndpoint := ""
+	if projectEndpoint != "" && agentName != "" {
+		harnessEndpoint = buildResponsesProtocolURL(projectEndpoint, agentName)
 	}
 
-	agentName := strings.TrimSpace(envValues[nameKey])
+	snapshotVersion := strings.TrimSpace(envValues[envkey.AgentPromptEndpointVersion(serviceName)])
+	if snapshotVersion == promptEndpointSnapshotVersion {
+		if projectEndpoint != "" && (endpoint == legacyEndpoint || endpoint == harnessEndpoint) {
+			return endpoint, nil
+		}
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"prompt",
+			"run `azd deploy` to deploy the prompt agent and refresh its callable endpoint",
+		)
+	}
+	if snapshotVersion != "" {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"prompt",
+			"run `azd deploy` to refresh the prompt agent deployment state",
+		)
+	}
+
+	if projectEndpoint == "" || endpoint != legacyEndpoint {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"prompt",
+			"run `azd deploy` to deploy the prompt agent and set its callable endpoint",
+		)
+	}
+
 	if agentName == "" {
 		return "", exterrors.Dependency(
 			exterrors.CodeMissingAgentEnvVars,
@@ -790,11 +833,14 @@ func ResolvePromptAgentDeploymentEndpoint(
 	}
 	deployedVersion, err := resolveVersion(ctx, projectEndpoint, agentName, agentVersion)
 	if err != nil {
-		return "", fmt.Errorf(
-			"resolving the deployed prompt endpoint for agent %q version %q: %w",
-			agentName,
-			agentVersion,
+		return "", exterrors.InternalFromError(
 			err,
+			exterrors.CodeInvalidResponseState,
+			fmt.Sprintf(
+				"resolving the deployed prompt endpoint for agent %q version %q",
+				agentName,
+				agentVersion,
+			),
 		)
 	}
 	harnessed, err := deployedPromptAgentIsHarnessed(deployedVersion)

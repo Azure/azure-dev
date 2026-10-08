@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"testing"
 
 	"azureaiagent/internal/pkg/envkey"
@@ -53,8 +54,17 @@ func TestRegisterPromptAgentEnvVarsWritesOwnershipBeforeReady(t *testing.T) {
 			require.Empty(t, requests[0].Value)
 			require.Equal(t, envkey.AgentPromptEndpointVersion(service.Name), requests[1].Key)
 			require.Empty(t, requests[1].Value)
-			require.Equal(t, "AGENT_PROMPT_AGENT_ENDPOINT", requests[3].Key)
-			require.Equal(t, test.wantTarget, requests[3].Value)
+			require.Equal(t, envkey.AgentProtocolEndpointsVersion(service.Name), requests[2].Key)
+			require.Empty(t, requests[2].Value)
+			require.Equal(t, test.wantTarget, envServer.values["AGENT_PROMPT_AGENT_ENDPOINT"])
+			require.Empty(t, envServer.values["AGENT_PROMPT_AGENT_VOICE_TARGET_NAME"])
+			require.Empty(t, envServer.values["AGENT_PROMPT_AGENT_VOICE_TARGET_VERSION"])
+			for _, protocol := range displayableProtocols {
+				require.Empty(
+					t,
+					envServer.values[fmt.Sprintf("AGENT_PROMPT_AGENT_%s_ENDPOINT", protocol.EnvSuffix)],
+				)
+			}
 			require.Equal(t, envkey.AgentProjectEndpoint(service.Name), requests[len(requests)-3].Key)
 			require.Equal(
 				t,

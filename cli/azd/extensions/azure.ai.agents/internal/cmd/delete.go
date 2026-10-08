@@ -271,6 +271,7 @@ func (a *DeleteAction) cleanupEnvVars(
 	serviceKey := toServiceKey(serviceName)
 	keys := []string{
 		envkey.AgentProtocolEndpointsVersion(serviceName),
+		envkey.AgentPromptEndpointVersion(serviceName),
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
@@ -314,6 +315,7 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	serviceKey := toServiceKey(serviceName)
 	keys := []string{
 		envkey.AgentProtocolEndpointsVersion(serviceName),
+		envkey.AgentPromptEndpointVersion(serviceName),
 		versionKey,
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
 		fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey),

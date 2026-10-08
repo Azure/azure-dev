@@ -144,6 +144,9 @@ func TestPrintEndpointJSON(t *testing.T) {
 }
 
 func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
+	const projectEndpoint = "https://deployed.example/api/projects/project"
+	const deploymentEndpoint = projectEndpoint +
+		"/agents/deployed-name/endpoint/protocols/openai/responses?api-version=v1"
 	props, err := structpb.NewStruct(map[string]any{
 		"kind":         "prompt",
 		"name":         "locally-edited-name",
@@ -159,9 +162,11 @@ func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 	env := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "dev"},
 		values: map[string]map[string]string{"dev": {
-			"AGENT_ASSISTANT_NAME":     "deployed-name",
-			"AGENT_ASSISTANT_ENDPOINT": "https://deployed.example/responses",
-			"AGENT_ASSISTANT_VERSION":  "3",
+			"AGENT_ASSISTANT_NAME":                    "deployed-name",
+			"AGENT_ASSISTANT_ENDPOINT":                deploymentEndpoint,
+			"AGENT_ASSISTANT_PROJECT_ENDPOINT":        projectEndpoint,
+			"AGENT_ASSISTANT_PROMPT_ENDPOINT_VERSION": "1",
+			"AGENT_ASSISTANT_VERSION":                 "3",
 		}},
 	}
 	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
@@ -187,7 +192,7 @@ func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
 	assert.Contains(
 		t,
 		output,
-		`"responses": "https://deployed.example/responses"`,
+		`"responses": "`+deploymentEndpoint+`"`,
 	)
 	assert.NotContains(t, output, `"agent_endpoint"`)
 	require.Equal(t, 0, versionLookups)
@@ -294,11 +299,13 @@ func TestRunPromptEndpointShowRequiresCompleteDeployment(t *testing.T) {
 }
 
 func TestRunVoiceEndpointShowUsesDeployedVoiceEndpoint(t *testing.T) {
+	const voiceEndpoint = "wss://acct.example/api/projects/project/agents/deployed-voice/" +
+		"endpoint/protocols/voice?api-version=v1"
 	env := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "dev"},
 		values: map[string]map[string]string{"dev": {
 			"AGENT_VOICE_NAME":     "deployed-voice",
-			"AGENT_VOICE_ENDPOINT": "wss://acct.example/voice",
+			"AGENT_VOICE_ENDPOINT": voiceEndpoint,
 		}},
 	}
 	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
@@ -319,8 +326,33 @@ func TestRunVoiceEndpointShowUsesDeployedVoiceEndpoint(t *testing.T) {
 	assert.Contains(t, output, "deployed-voice")
 	assert.Contains(t, output, "Kind:")
 	assert.Contains(t, output, "voice")
-	assert.Contains(t, output, "wss://acct.example/voice")
+	assert.Contains(t, output, voiceEndpoint)
 	assert.NotContains(t, output, "Version Selector")
+}
+
+func TestRunVoiceEndpointShowRejectsCrossKindEndpoint(t *testing.T) {
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_VOICE_ENDPOINT": "https://acct.example/api/projects/project/openai/v1/responses",
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+
+	err := runVoiceEndpointShow(
+		t.Context(),
+		client,
+		&azdext.ServiceConfig{Name: "voice", Host: AiAgentHost},
+		project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindVoice, Name: "voice-agent"},
+		"",
+		"json",
+	)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+	require.Contains(t, localErr.Message, "voice agent endpoint")
+	require.Contains(t, localErr.Suggestion, "azd deploy")
 }
 
 func TestRunVoiceEndpointShowRequiresDeployedVoiceEndpoint(t *testing.T) {
@@ -406,15 +438,19 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 				"instructions": "Help.",
 			},
 			defaultValues: map[string]string{
-				"AGENT_ASSISTANT_ENDPOINT": "https://default.example/responses",
-				"AGENT_ASSISTANT_VERSION":  "1",
+				"AGENT_ASSISTANT_ENDPOINT":                "https://default.example/api/projects/default/openai/v1/responses",
+				"AGENT_ASSISTANT_PROJECT_ENDPOINT":        "https://default.example/api/projects/default",
+				"AGENT_ASSISTANT_PROMPT_ENDPOINT_VERSION": "1",
+				"AGENT_ASSISTANT_VERSION":                 "1",
 			},
 			selectedValues: map[string]string{
-				"AGENT_ASSISTANT_ENDPOINT": "https://staging.example/responses",
-				"AGENT_ASSISTANT_VERSION":  "2",
+				"AGENT_ASSISTANT_ENDPOINT":                "https://staging.example/api/projects/staging/openai/v1/responses",
+				"AGENT_ASSISTANT_PROJECT_ENDPOINT":        "https://staging.example/api/projects/staging",
+				"AGENT_ASSISTANT_PROMPT_ENDPOINT_VERSION": "1",
+				"AGENT_ASSISTANT_VERSION":                 "2",
 			},
-			wantEndpoint:    "https://staging.example/responses",
-			defaultEndpoint: "https://default.example/responses",
+			wantEndpoint:    "https://staging.example/api/projects/staging/openai/v1/responses",
+			defaultEndpoint: "https://default.example/api/projects/default/openai/v1/responses",
 		},
 		{
 			name:        "voice",
@@ -425,13 +461,17 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 				"model": map[string]any{"id": "gpt-realtime"},
 			},
 			defaultValues: map[string]string{
-				"AGENT_VOICE_ENDPOINT": "wss://default.example/voice",
+				"AGENT_VOICE_ENDPOINT": "wss://default.example/api/projects/default/agents/voice/" +
+					"endpoint/protocols/voice?api-version=v1",
 			},
 			selectedValues: map[string]string{
-				"AGENT_VOICE_ENDPOINT": "wss://staging.example/voice",
+				"AGENT_VOICE_ENDPOINT": "wss://staging.example/api/projects/staging/agents/voice/" +
+					"endpoint/protocols/voice?api-version=v1",
 			},
-			wantEndpoint:    "wss://staging.example/voice",
-			defaultEndpoint: "wss://default.example/voice",
+			wantEndpoint: "wss://staging.example/api/projects/staging/agents/voice/" +
+				"endpoint/protocols/voice?api-version=v1",
+			defaultEndpoint: "wss://default.example/api/projects/default/agents/voice/" +
+				"endpoint/protocols/voice?api-version=v1",
 		},
 	}
 

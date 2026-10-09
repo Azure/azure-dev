@@ -218,12 +218,14 @@ func (e *Executor) runCommand(
 
 	if err != nil {
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			exitCode := exitErr.ExitCode()
+			if exitCode == -1 && isInterruptExit(exitErr) {
+				exitCode = 130
+			}
 			return &ExecutionError{
-				ExitCode: exitErr.ExitCode(),
+				ExitCode: exitCode,
 				Shell:    shell,
 				IsInline: isInline,
-
-				interrupted: isInterruptExit(exitErr),
 			}
 		}
 		return e.wrapError(err, scriptOrPath, shell, isInline)

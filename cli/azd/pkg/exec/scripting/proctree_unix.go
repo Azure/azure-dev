@@ -40,3 +40,7 @@ func isInterruptExit(exitErr *exec.ExitError) bool {
 	status, ok := exitErr.Sys().(syscall.WaitStatus)
 	return ok && status.Signaled() && status.Signal() == syscall.SIGINT
 }
+
+func isInterruptExitCode(exitCode int) bool {
+	return exitCode == 130
+}

@@ -98,6 +98,10 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 
 func isInterruptExit(exitErr *exec.ExitError) bool {
 	exitCode := exitErr.ExitCode()
+	return isInterruptExitCode(exitCode)
+}
+
+func isInterruptExitCode(exitCode int) bool {
 	return exitCode == 130 ||
 		uint32(exitCode) == windowsControlCExitCode //nolint:gosec // preserve the Windows exit code bit pattern
 }

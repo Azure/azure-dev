@@ -37,8 +37,13 @@ func TestEventMessageEnvelope_NoOps(t *testing.T) {
 	require.Nil(t, env.CreateCancellationMessage(t.Context(), nil, nil))
 }
 
+func TestNewEventMessageEnvelope_FunctionValueCompatibility(t *testing.T) {
+	var constructor func() *EventMessageEnvelope = NewEventMessageEnvelope
+	require.NotNil(t, constructor())
+}
+
 func TestEventMessageEnvelope_CancellationMessage(t *testing.T) {
-	env := NewEventMessageEnvelope("test.extension")
+	env := NewEventMessageEnvelopeWithExtensionId("test.extension")
 	request := &EventMessage{
 		MessageType: &EventMessage_InvokeProjectHandler{
 			InvokeProjectHandler: &InvokeProjectHandler{EventName: "prepackage"},
@@ -53,7 +58,7 @@ func TestEventMessageEnvelope_CancellationMessage(t *testing.T) {
 }
 
 func TestEventMessageEnvelope_UsesConfiguredExtensionIdWithoutClaims(t *testing.T) {
-	env := NewEventMessageEnvelope("test.extension")
+	env := NewEventMessageEnvelopeWithExtensionId("test.extension")
 	msg := &EventMessage{
 		MessageType: &EventMessage_InvokeServiceHandler{
 			InvokeServiceHandler: &InvokeServiceHandler{
@@ -67,7 +72,7 @@ func TestEventMessageEnvelope_UsesConfiguredExtensionIdWithoutClaims(t *testing.
 }
 
 func TestEventMessageEnvelope_UsesConfiguredExtensionIdForEmptyClaims(t *testing.T) {
-	env := NewEventMessageEnvelope("test.extension")
+	env := NewEventMessageEnvelopeWithExtensionId("test.extension")
 	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{})
 	msg := &EventMessage{
 		MessageType: &EventMessage_InvokeProjectHandler{

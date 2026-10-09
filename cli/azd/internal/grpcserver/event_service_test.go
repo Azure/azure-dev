@@ -269,7 +269,12 @@ func createBrokerForEventHandler(
 	}
 
 	brokerCtx, cancel := context.WithCancel(streamCtx)
-	broker := grpcbroker.NewMessageBroker(stream, azdext.NewEventMessageEnvelope(extensionID), extensionID, nil)
+	broker := grpcbroker.NewMessageBroker(
+		stream,
+		azdext.NewEventMessageEnvelopeWithExtensionId(extensionID),
+		extensionID,
+		nil,
+	)
 
 	go func() {
 		_ = broker.Run(brokerCtx)

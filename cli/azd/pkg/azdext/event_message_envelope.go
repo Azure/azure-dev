@@ -20,12 +20,13 @@ type EventMessageEnvelope struct {
 }
 
 // NewEventMessageEnvelope creates a new EventMessageEnvelope instance.
-func NewEventMessageEnvelope(extensionId ...string) *EventMessageEnvelope {
-	envelope := &EventMessageEnvelope{}
-	if len(extensionId) > 0 {
-		envelope.extensionId = extensionId[0]
-	}
-	return envelope
+func NewEventMessageEnvelope() *EventMessageEnvelope {
+	return &EventMessageEnvelope{}
+}
+
+// NewEventMessageEnvelopeWithExtensionId creates an EventMessageEnvelope with an extension ID fallback.
+func NewEventMessageEnvelopeWithExtensionId(extensionId string) *EventMessageEnvelope {
+	return &EventMessageEnvelope{extensionId: extensionId}
 }
 
 // Verify interface implementation at compile time

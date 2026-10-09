@@ -12,7 +12,7 @@ import (
 
 func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
 	t.Run("event", func(t *testing.T) {
-		envelope := NewEventMessageEnvelope("test.extension")
+		envelope := NewEventMessageEnvelopeWithExtensionId("test.extension")
 		require.True(t, envelope.PreserveHandlerContext(t.Context(), &EventMessage{
 			MessageType: &EventMessage_SubscribeProjectEvent{
 				SubscribeProjectEvent: &SubscribeProjectEvent{EventNames: []string{"prepackage"}},

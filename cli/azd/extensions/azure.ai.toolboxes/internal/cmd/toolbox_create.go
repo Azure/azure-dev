@@ -286,8 +286,8 @@ func buildToolboxPolicies(spec *toolboxPoliciesSpec) (*azure.ToolboxPolicies, er
 	if name == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"policies.rai_config requires a policy name",
-			"set policies.rai_config.rai_policy_name (or 'name') to the RAI policy to apply",
+			"policies.raiConfig requires a policy name",
+			"set policies.raiConfig.raiPolicyName (or 'name') to the RAI policy to apply",
 		)
 	}
 	return &azure.ToolboxPolicies{

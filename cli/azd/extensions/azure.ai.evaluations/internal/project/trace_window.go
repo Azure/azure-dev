@@ -9,7 +9,7 @@ import (
 	"azureaieval/internal/messages"
 )
 
-// MaxLookbackHours bounds `lookback_hours` at ten years.
+// MaxLookbackHours bounds `lookbackHours` at ten years.
 //
 // Ten years is a policy bound, not an arithmetic one: the hours become a
 // time.Duration in nanoseconds, which does not overflow until about 2,562,047
@@ -19,7 +19,7 @@ const MaxLookbackHours = 24 * 365 * 10
 
 // TraceAgentName says whose conversations a trace eval reads.
 //
-// `agent_name` is the filter; an eval that leaves it off and names a target
+// `agentName` is the filter; an eval that leaves it off and names a target
 // still means "this agent's traces". A model target is not an agent: it names a
 // deployment, and filtering spans by a deployment name matches nothing, so the
 // run comes back empty with no reason given. `target.type` is optional, and an
@@ -63,7 +63,7 @@ func ValidateSource(source *SourceDecl) (start, end time.Time, err error) {
 // validateSourceFields refuses fields the declared source type does not read.
 //
 // A field that is quietly ignored is how a file comes to say something it does
-// not do: a `lookback_hours` under `type: responses` looks like it bounds the
+// not do: a `lookbackHours` under `type: responses` looks like it bounds the
 // run and never has, and nothing about the run it produces says otherwise.
 func validateSourceFields(source *SourceDecl) error {
 	var inert []string
@@ -71,8 +71,8 @@ func validateSourceFields(source *SourceDecl) error {
 	case SourceTypeTraces:
 		inert = namesOfSet(
 			sourceField{"file", source.File != ""},
-			sourceField{"response_ids", len(source.ResponseIDs) > 0},
-			sourceField{"max_turns", source.MaxTurns != 0},
+			sourceField{"responseIds", len(source.ResponseIDs) > 0},
+			sourceField{"maxTurns", source.MaxTurns != 0},
 		)
 	case SourceTypeResponses:
 		if source.MaxTurns < 0 {
@@ -80,23 +80,23 @@ func validateSourceFields(source *SourceDecl) error {
 		}
 		inert = namesOfSet(
 			sourceField{"file", source.File != ""},
-			sourceField{"start_time", source.StartTime != ""},
-			sourceField{"end_time", source.EndTime != ""},
-			sourceField{"lookback_hours", source.LookbackHours != 0},
-			sourceField{"max_traces", source.MaxTraces != 0},
-			sourceField{"agent_name", source.AgentName != ""},
-			sourceField{"agent_version", source.AgentVersion != ""},
+			sourceField{"startTime", source.StartTime != ""},
+			sourceField{"endTime", source.EndTime != ""},
+			sourceField{"lookbackHours", source.LookbackHours != 0},
+			sourceField{"maxTraces", source.MaxTraces != 0},
+			sourceField{"agentName", source.AgentName != ""},
+			sourceField{"agentVersion", source.AgentVersion != ""},
 		)
 	case SourceTypeLocal:
 		inert = namesOfSet(
-			sourceField{"start_time", source.StartTime != ""},
-			sourceField{"end_time", source.EndTime != ""},
-			sourceField{"lookback_hours", source.LookbackHours != 0},
-			sourceField{"max_traces", source.MaxTraces != 0},
-			sourceField{"agent_name", source.AgentName != ""},
-			sourceField{"agent_version", source.AgentVersion != ""},
-			sourceField{"response_ids", len(source.ResponseIDs) > 0},
-			sourceField{"max_turns", source.MaxTurns != 0},
+			sourceField{"startTime", source.StartTime != ""},
+			sourceField{"endTime", source.EndTime != ""},
+			sourceField{"lookbackHours", source.LookbackHours != 0},
+			sourceField{"maxTraces", source.MaxTraces != 0},
+			sourceField{"agentName", source.AgentName != ""},
+			sourceField{"agentVersion", source.AgentVersion != ""},
+			sourceField{"responseIds", len(source.ResponseIDs) > 0},
+			sourceField{"maxTurns", source.MaxTurns != 0},
 		)
 	default:
 		// An unsupported type is reported by the caller, which knows how to
@@ -127,16 +127,16 @@ func namesOfSet(fields ...sourceField) []string {
 // resolveTraceWindow reads the span of traces an eval grades.
 //
 // The sole enforcement point for the sign and size of a lookback, the sign of
-// max_traces, a window declared twice over, and the pre-epoch rule for both a
+// maxTraces, a window declared twice over, and the pre-epoch rule for both a
 // written bound and a derived one. A new rule about the window belongs here.
 func resolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
 	// Parsed first, so a file that is wrong in two ways names the value that
 	// cannot be read at all rather than the pair it also got wrong.
-	start, err = traceBound("start_time", source.StartTime)
+	start, err = traceBound("startTime", source.StartTime)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
-	end, err = traceBound("end_time", source.EndTime)
+	end, err = traceBound("endTime", source.EndTime)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
@@ -159,7 +159,7 @@ func resolveTraceWindow(source *SourceDecl) (start, end time.Time, err error) {
 
 	// The lookback is measured back from where the window closes, which is now
 	// when nothing closed it. Measuring from now regardless made the window a
-	// function of the clock: `lookback_hours` beside an `end_time` validated
+	// function of the clock: `lookbackHours` beside an `endTime` validated
 	// today and failed tomorrow, with the file unchanged.
 	if start.IsZero() && source.LookbackHours > 0 {
 		from := end

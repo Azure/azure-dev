@@ -182,7 +182,7 @@ func (a *AuthoredConfig) SimulationModels() []string {
 }
 
 func authoredEvaluationLevels(item *yaml.Node) []string {
-	node := nodeUnder(item, "supported_evaluation_levels")
+	node := nodeUnder(item, "supportedEvaluationLevels")
 	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil
 	}

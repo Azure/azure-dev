@@ -221,14 +221,14 @@ func TestRefuseUnusableSeedRows_PerRowTurnsRespectTheCeiling(t *testing.T) {
 	err := refuseUnusableSeedRows(group, pastBound)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "asks for 6 turns")
-	assert.Contains(t, err.Error(), "max_turns is 5")
+	assert.Contains(t, err.Error(), "maxTurns is 5")
 
 	group.Simulation.MaxTurns = 0
 	assert.NoError(t, refuseUnusableSeedRows(group, pastBound))
 	pastDefault := []map[string]any{{
 		"test_case_description": "A delayed order.", "simulation_configuration": map[string]any{"desired_num_turns": 21.0},
 	}}
-	require.ErrorContains(t, refuseUnusableSeedRows(group, pastDefault), "max_turns is 20")
+	require.ErrorContains(t, refuseUnusableSeedRows(group, pastDefault), "maxTurns is 20")
 
 	group.Simulation.MaxTurns = 5
 	overridden := []map[string]any{{
@@ -252,17 +252,17 @@ func TestSimulationTurnLimitGuidance(t *testing.T) {
 	}{
 		{"above authored maximum", 20, 0, 21,
 			"Lower simulation_configuration.desired_num_turns to at most 20 on that row. " +
-				"simulation.max_turns accepts 1 to 20."},
+				"simulation.maxTurns accepts 1 to 20."},
 		{"above authored maximum with lower cap", 5, 0, 21,
 			"Lower simulation_configuration.desired_num_turns to at most 5 on that row. " +
-				"simulation.max_turns accepts 1 to 20."},
+				"simulation.maxTurns accepts 1 to 20."},
 		{"above effective default", 0, 0, 21,
 			"Lower simulation_configuration.desired_num_turns to at most 20 on that row. " +
-				"simulation.max_turns accepts 1 to 20."},
+				"simulation.maxTurns accepts 1 to 20."},
 		{"within authored bounds", 5, 0, 6,
-			"Raise simulation.max_turns to at least 6, or lower simulation_configuration.desired_num_turns on that row."},
+			"Raise simulation.maxTurns to at least 6, or lower simulation_configuration.desired_num_turns on that row."},
 		{"at authored maximum", 19, 0, 20,
-			"Raise simulation.max_turns to at least 20, or lower simulation_configuration.desired_num_turns on that row."},
+			"Raise simulation.maxTurns to at least 20, or lower simulation_configuration.desired_num_turns on that row."},
 		{"per-case bounds remain independent", 20, 21, 22,
 			"Raise simulation_configuration.max_num_turns to at least 22, " +
 				"or lower simulation_configuration.desired_num_turns on that row."},

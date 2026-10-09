@@ -330,7 +330,7 @@ func TestInitValidatesFinalSelectionNotProvisionalDefaults(t *testing.T) {
 			dir := filepath.Join(h.dir, project.DefaultEvalDir)
 			require.NoError(t, os.MkdirAll(dir, 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"),
-				[]byte("evaluators:\n  - name: custom\n    supported_evaluation_levels: [turn]\n"), 0o600))
+				[]byte("evaluators:\n  - name: custom\n    supportedEvaluationLevels: [turn]\n"), 0o600))
 			before := initFileSnapshot(t, h.dir)
 			cmd := &cobra.Command{}
 			cmd.Flags().Bool("no-prompt", tc.unattended, "")

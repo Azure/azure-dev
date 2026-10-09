@@ -270,13 +270,8 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 		progress(fmt.Sprintf("Prompt graph nodes: %s", strings.Join(kinds, ", ")))
 	}
 
-	for _, n := range g.nodes {
-		if n.Validate == nil {
-			continue
-		}
-		if err := n.Validate(); err != nil {
-			return err
-		}
+	if err := g.validate(); err != nil {
+		return err
 	}
 
 	// Reported after validation and before any node injects its own tools, so
@@ -303,6 +298,25 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 		}
 	}
 
+	return nil
+}
+
+func (g *promptGraph) validate() error {
+	if err := g.managed.ValidateAuthoredSkills(); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			err.Error(),
+			"specify only one version for each skill under 'skills:'",
+		)
+	}
+	for _, n := range g.nodes {
+		if n.Validate == nil {
+			continue
+		}
+		if err := n.Validate(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

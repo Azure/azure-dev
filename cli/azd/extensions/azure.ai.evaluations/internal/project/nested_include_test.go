@@ -126,7 +126,7 @@ func writeNestedRefFixture(t *testing.T, body string) string {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "source.yaml"),
-		[]byte("type: traces\nlookback_hours: 24\n"), 0o600))
+		[]byte("type: traces\nlookbackHours: 24\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "target.yaml"),
 		[]byte("type: agent\nname: support-agent\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "evaluator.yaml"),

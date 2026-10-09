@@ -33,7 +33,7 @@ func TestSimulationSchemaRejectsAllUnicodeControlsAndWhitespace(t *testing.T) {
 				instance := map[string]any{
 					"datasets": []any{map[string]any{"name": "seeds"}},
 					"evals": []any{map[string]any{
-						"name": "simulated", "dataset": "seeds", "evaluation_level": "conversation",
+						"name": "simulated", "dataset": "seeds", "evaluationLevel": "conversation",
 						"target":     map[string]any{"type": "agent", "name": "agent"},
 						"simulation": map[string]any{"model": model},
 						"evaluators": []any{map[string]any{"evaluator": "builtin.task_completion"}},
@@ -66,7 +66,7 @@ func TestTheSchemaRefusesWhatValidateSimulationRefuses(t *testing.T) {
 	require.True(t, ok, "the simulation conditional constrains no properties")
 
 	// A simulation has no turn to score before the conversation exists.
-	assert.Equal(t, map[string]any{"const": "conversation"}, properties["evaluation_level"],
+	assert.Equal(t, map[string]any{"const": "conversation"}, properties["evaluationLevel"],
 		"the schema has to pin the only level a simulation can run at")
 
 	// And nothing to hold the conversation with if the target is a model.
@@ -90,12 +90,14 @@ func TestTheSchemaRefusesWhatValidateSimulationRefuses(t *testing.T) {
 
 	// The run references the registered seed dataset by id, so a cap cannot be
 	// applied to it.
-	assert.Equal(t, map[string]any{"const": float64(0)}, properties["max_samples"],
+	assert.Equal(t, map[string]any{"const": float64(0)}, properties["maxSamples"],
 		"positive caps are refused, but zero means uncapped")
 
-	required, ok := then["required"].([]any)
+	inline, ok := then["then"].(map[string]any)
+	require.True(t, ok, "the simulation conditional does not distinguish inline definitions from overlays")
+	required, ok := inline["required"].([]any)
 	require.True(t, ok, "the simulation conditional requires nothing")
-	for _, key := range []string{"dataset", "target", "evaluation_level"} {
+	for _, key := range []string{"dataset", "target", "evaluationLevel"} {
 		assert.Contains(t, required, key, "a simulation cannot run without %s:", key)
 	}
 }
@@ -151,13 +153,13 @@ func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
 				simulation = map[string]any{"model": "connection/simulator"}
 			}
 			eval := map[string]any{
-				"name": "simulated", "dataset": "seeds", "evaluation_level": "conversation",
+				"name": "simulated", "dataset": "seeds", "evaluationLevel": "conversation",
 				"target":     map[string]any{"type": "agent", "name": "agent"},
 				"simulation": simulation,
 				"evaluators": []any{map[string]any{"evaluator": "builtin.task_completion"}},
 			}
 			if !tc.omit {
-				eval["max_samples"] = tc.cap
+				eval["maxSamples"] = tc.cap
 			}
 			body, err := json.Marshal(map[string]any{
 				"datasets": []any{map[string]any{"name": "seeds"}},

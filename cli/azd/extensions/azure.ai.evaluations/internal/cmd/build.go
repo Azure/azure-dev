@@ -104,7 +104,7 @@ type criterionPlan struct {
 // mapping that pairs it with the turn-level fields:
 //
 //	Evaluator 'builtin.task_completion' has both 'messages' and
-//	'query'/'response' in data_mapping. Use 'messages' for conversation-level
+//	'query'/'response' in dataMapping. Use 'messages' for conversation-level
 //	evaluation or 'query'/'response' for turn-level evaluation, but not both.
 const conversationField = "messages"
 
@@ -149,7 +149,7 @@ func planCriterion(
 	_, explicitResponse := ref.DataMapping["response"]
 	if explicitMessages && (explicitQuery || explicitResponse) {
 		return nil, exterrors.Validation(exterrors.CodeConflictingArguments,
-			fmt.Sprintf("evaluator %q: data_mapping combines messages with query or response", ref.Evaluator),
+			fmt.Sprintf("evaluator %q: dataMapping combines messages with query or response", ref.Evaluator),
 			"Map messages for a complete interaction, or query and response separately, but not both.")
 	}
 	mappingLevel := level
@@ -181,7 +181,7 @@ func planCriterion(
 		binding := ref.DataMapping[field]
 		if strings.TrimSpace(binding) == "" {
 			return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
-				fmt.Sprintf("evaluator %q: data_mapping for %q is empty", ref.Evaluator, field),
+				fmt.Sprintf("evaluator %q: dataMapping for %q is empty", ref.Evaluator, field),
 				"Supply a dataset or sample binding, or remove the entry to use its default.")
 		}
 		plan.dataMapping[field] = binding
@@ -221,7 +221,7 @@ func planCriterion(
 		return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
 			fmt.Sprintf("evaluator %q requires mapped inputs %s that the selected source does not provide",
 				ref.Evaluator, quotedList(missing)),
-			"Add data_mapping entries for these inputs that reference actual source columns, "+
+			"Add dataMapping entries for these inputs that reference actual source columns, "+
 				"and include those columns in every dataset row. "+
 				"Context and ground_truth are not inferred from the catalog.")
 	}

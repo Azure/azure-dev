@@ -28,7 +28,7 @@ func TestAuthoredEvaluatorLevelsAreLocalMetadataOnly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			body := "evaluators:\n  - name: rubric\n    $ref: ./does-not-exist.yaml\n" +
-				"    future_setting: untouched\n    supported_evaluation_levels: " + tc.value + "\n"
+				"    future_setting: untouched\n    supportedEvaluationLevels: " + tc.value + "\n"
 			path := filepath.Join(dir, "azure.eval.yaml")
 			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 			cfg, err := ReadAuthoredConfig(dir)
@@ -56,7 +56,7 @@ func TestAuthoredSimulationModelsAreLocalStringMetadataOnly(t *testing.T) {
 		"  - name: null\n    simulation: {model: null}\n" +
 		"  - name: sequence\n    simulation: {model: [connection/model]}\n" +
 		"  - name: wrong-shape\n    simulation: [connection/model]\n" +
-		"  - name: unknown-count\n    simulation: {model: connection/model, max_turns: future}\n" +
+		"  - name: unknown-count\n    simulation: {model: connection/model, maxTurns: future}\n" +
 		"evaluators:\n  - name: not-an-eval\n    simulation: {model: hidden/model}\n"
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	cfg, err := ReadAuthoredConfig(path)

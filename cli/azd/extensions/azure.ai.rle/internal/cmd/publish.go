@@ -311,7 +311,8 @@ func validLimeProjectPath(path string) bool {
 }
 
 var limeCredentialPattern = regexp.MustCompile(
-	`(?i)\b(?:authorization|token|secret|password|sig|api[_-]?key)\s*[:=]\s*` +
+	`(?i)\b(?:authorization|(?:access|refresh|id)[_-]?token|client[_-]?secret|` +
+		`api[_-]?key|token|secret|password|sig)\b\s*[:=]\s*` +
 		`(?:(?:bearer|basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;}"']+)|` +
 		`\b(?:bearer|basic)\s+(?:"[^"]*"|'[^']*'|[^\s,;}"']+)`,
 )

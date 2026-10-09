@@ -53,8 +53,20 @@ func (ec *evalContext) scopedValue(ctx context.Context, base, scope string) stri
 }
 
 // scopedValueOwnedBy reads what this configuration recorded under a name whose
-// unmarked value follows the ownership of ownerBase.
+// unmarked value would follow the ownership of ownerBase.
+//
+// Before scoping every configuration wrote the same unqualified value, so an
+// unmarked one is whichever configuration wrote last, not necessarily the
+// owner of the id beside it. When that owner is all there is to go on, the
+// value is unknown: it reads as absent, the next deploy records a baseline
+// instead of comparing against another configuration's definition and
+// recreating an unchanged eval.
 func (ec *evalContext) scopedValueOwnedBy(ctx context.Context, base, ownerBase, scope string) string {
+	if scope != "" && ownerBase != "" &&
+		ec.privateValue(ctx, base+project.EvalScopeSuffix) == "" &&
+		ec.privateValue(ctx, ownerBase+project.EvalScopeSuffix) != "" {
+		return ""
+	}
 	return ec.privateValue(ctx, ec.scopedKeyOwnedBy(ctx, base, ownerBase, scope))
 }
 

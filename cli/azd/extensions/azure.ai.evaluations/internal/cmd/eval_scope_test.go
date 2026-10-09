@@ -208,29 +208,31 @@ func TestCaseIsFoldedOnlyWhereTheFilesystemFoldsIt(t *testing.T) {
 		"two files are two configurations, and must not share recorded ids")
 }
 
-// A fingerprint recorded before it was scoped has no owner marker, but the id
-// beside it may already belong to one configuration. The unmarked fingerprint
-// is that configuration's baseline: another configuration must not read it, and
-// must not overwrite it.
-func TestAnUnmarkedFingerprintFollowsTheOwnerOfItsID(t *testing.T) {
+// A fingerprint recorded before it was scoped has no owner marker. Every
+// configuration wrote the same key, so it holds whichever wrote last: here
+// B's definition, while the id beside it is owned by A. Neither configuration
+// may compare against it; both record a fresh baseline, and A's goes where the
+// unqualified key was while B's goes beside it.
+func TestAnUnmarkedFingerprintIsUnknownWhenOnlyTheIDHasAnOwner(t *testing.T) {
 	fingerprint := project.FingerprintKey("eval", "quality")
 	id := idKey("eval", "quality")
 	env := &testEnvServer{state: map[string]string{
-		fingerprint:                  "v2:baseline-a",
+		fingerprint:                  "v2:last-written-by-b",
 		id:                           "evalgroup_a",
 		id + project.EvalScopeSuffix: scopeA,
 	}}
 	ctx := t.Context()
 
-	assert.Equal(t, "v2:baseline-a", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
-	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB),
-		"another configuration's baseline is not this one's")
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA),
+		"the unqualified value may be B's last write, not A's baseline")
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+	assert.False(t, substanceChanged(reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA),
+		"v2:definition-a", "digest-a"), "an unknown baseline is recorded, not read as an edit")
 
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeA, "v2:baseline-a")
 	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:baseline-b")
 
 	after := reader(t, env)
-	assert.Equal(t, "v2:baseline-a", after.privateValue(ctx, fingerprint),
-		"the owner's baseline is left where it was")
 	assert.Equal(t, "v2:baseline-a", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
 	assert.Equal(t, "v2:baseline-b", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
 }

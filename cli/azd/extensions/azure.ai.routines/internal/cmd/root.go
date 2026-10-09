@@ -45,7 +45,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL for remote operations only (not add, context, or version)")
 	rootCmd.PersistentFlags().String("tenant-id", "",
-		"Tenant ID for Azure authentication (overrides the azd context)")
+		"Tenant ID for Azure authentication on remote routine commands (overrides azd context)")
 	rootCmd.PersistentFlags().String(routineHTTPTimeoutFlag, "",
 		fmt.Sprintf("HTTP request timeout override (for example, 2m or 90s). "+
 			"Defaults to %s for reads and %s for writes. Not supported by add, context, or version.",

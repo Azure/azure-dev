@@ -1,15 +1,21 @@
 name: cli-ci
-# cspell:ignore bufbuild
+# cspell:ignore bufbuild tmpl
 
 on:
   pull_request:
     paths:
       - "cli/**"
       - "!cli/azd/extensions/**"
+      - "cli/azd/extensions/*/ci-build.ps1"
+      - "cli/azd/extensions/scripts/ci-build.ps1"
+      - "cli/azd/extensions/microsoft.azd.extensions/internal/resources/internal/go/extension/ci-build.ps1.tmpl"
+      - "cli/azd/extensions/microsoft.azd.extensions/internal/resources/internal/go/pipelines/release-ext.yml.tmpl"
+      - "cli/azd/extensions/microsoft.azd.extensions/internal/cmd/init_test.go"
       - ".github/workflows/cli-ci.yml"
       - "eng/scripts/Get-CoverageDiff*.ps1"
       - "eng/scripts/Set-ExtensionVersionVariable*.ps1"
       - "eng/scripts/Test-CliReleaseReadiness*.ps1"
+      - "eng/scripts/Test-ExtensionBuildScripts*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -66,10 +72,30 @@ jobs:
             './eng/scripts/Get-CoverageDiff.Tests.ps1'
             './eng/scripts/Set-ExtensionVersionVariable.Tests.ps1'
             './eng/scripts/Test-CliReleaseReadiness.Tests.ps1'
+            './eng/scripts/Test-ExtensionBuildScripts.Tests.ps1'
           )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
+
+  extension-build-script-tests:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Validate native extension build arguments
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 5.7.1
+          Invoke-Pester -Path ./eng/scripts/Test-ExtensionBuildScripts.Tests.ps1 -CI
 
   magefile-tests:
     runs-on: ubuntu-latest

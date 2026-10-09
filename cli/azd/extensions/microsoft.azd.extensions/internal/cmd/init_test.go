@@ -586,12 +586,23 @@ func TestCreateInternalExtensionScaffold(t *testing.T) {
 		"SanitizedExtensionId: azure-ai-example",
 		"/eng/pipelines/templates/stages/publish-extension-pr.yml",
 		"/eng/scripts/Set-ExtensionVersionVariable.ps1",
+		"cli/azd/extensions/scripts/ci-build.ps1",
 	)
 	assertFileContains(
 		t,
 		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "ci-build.ps1"),
-		"azure.ai.example/internal/cmd.Version=$Version",
+		`"$PSScriptRoot/../scripts/ci-build.ps1"`,
+		`-VersionPackages @("azure.ai.example/internal/cmd")`,
+		"-CodeCoverageEnabled:$CodeCoverageEnabled",
+		"-BuildRecordMode:$BuildRecordMode",
+		"exit $LASTEXITCODE",
 	)
+	buildScript, err := os.ReadFile(
+		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "ci-build.ps1"),
+	)
+	require.NoError(t, err)
+	require.NotContains(t, string(buildScript), "$env:GOEXPERIMENT")
+	require.NotContains(t, string(buildScript), "go build")
 	assertFileContains(
 		t,
 		filepath.Join(repoRoot, "cli", "azd", "extensions", "azure.ai.example", "ci-test.ps1"),

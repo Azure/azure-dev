@@ -53,6 +53,23 @@ If your Go extension creates role assignments, use the preview [`AccountBeta().G
 
 Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
+For untrusted includes, opt into project-root confinement:
+
+```go
+resolved, err := foundry.ResolveFileRefs(
+    selectedConfig,
+    projectRoot,
+    foundry.WithProjectRootConfinement(),
+    foundry.WithPathKeys("source"),
+)
+```
+
+`WithProjectRootConfinement()` restricts every `$ref`, including nested and overlay references, to regular files under the supplied project root. Relative and absolute file paths inside the project are accepted. Reads use Go's `os.Root` so a symlink replacement cannot turn a validated path into an out-of-root read. Relative symlinks targeting files or directories inside the project are supported; absolute symlinks are rejected even when their target is inside the project. Remote URLs remain unsupported, and URL credentials are not echoed in rejection errors. Errors retain the `invalid_file_ref` validation classification.
+
+Without this option, resolution continues to treat includes as trusted input and allows files outside the project root. Both modes retain single-object validation, shallow overlays, containing-file-relative references, cycle/depth checks, and `WithPathKeys` rebasing. Confinement applies only to files opened for `$ref`: it does not validate or read `project`, `instructions`, or other path-bearing values, and does not confine the caller's initial configuration read or write operations. It is not a general filesystem sandbox: `os.Root` does not prevent access through mounted filesystems or hard links. The option rejects JavaScript and Plan 9 platforms, where `os.Root` does not provide the required handle-based guarantees.
+
+Consumers must wait for an SDK release containing `WithProjectRootConfinement()` before opting in. Adding this core API does not change existing extension binaries.
+
 ### 4. Build
 
 ```bash

@@ -126,6 +126,10 @@ for registration and provider requirements.
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
 
+## Local Foundry Includes
+
+The Go SDK's `foundry.ResolveFileRefs` resolves local YAML/JSON `$ref` objects in extension configuration. `foundry.WithProjectRootConfinement()` opts into regular-file reads confined to the caller's project root using `os.Root`, including all nested references. Default resolution remains trusted-input mode, including support for out-of-root files. This is an SDK helper, not a new gRPC capability or a host-enforced policy; consumers must adopt an SDK release containing the option. See [Creating an Extension](../guides/creating-an-extension.md#3-implement-the-extension) for usage, symlink semantics, and confinement limits.
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

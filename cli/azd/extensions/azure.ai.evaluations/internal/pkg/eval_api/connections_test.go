@@ -14,20 +14,22 @@ import (
 )
 
 func TestListConnectionsReadsEveryPage(t *testing.T) {
+	const apiVersion = "2025-11-15-preview"
 	var hits int32
 	client, _ := clientAndServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
 		assert.Equal(t, "/connections", r.URL.Path)
-		assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
+		assert.Equal(t, apiVersion, r.URL.Query().Get("api-version"))
 		if r.URL.Query().Get("page") == "2" {
 			fmt.Fprint(w, `{"value":[{"name":"second","type":"AzureOpenAI"}]}`)
 			return
 		}
 		fmt.Fprint(w,
-			`{"value":[{"name":"first","type":"AzureOpenAI"}],"nextLink":"/connections?page=2\u0026api-version=v1"}`)
+			`{"value":[{"name":"first","type":"AzureOpenAI"}],`+
+				`"nextLink":"/connections?page=2\u0026api-version=2025-11-15-preview"}`)
 	})
 
-	got, err := client.ListConnections(t.Context(), "v1")
+	got, err := client.ListConnections(t.Context(), apiVersion)
 
 	require.NoError(t, err)
 	require.NotNil(t, got)
@@ -40,6 +42,7 @@ func TestListConnectionsReadsEveryPage(t *testing.T) {
 }
 
 func TestListConnectionsDoesNotReturnAPartialCatalog(t *testing.T) {
+	const apiVersion = "2025-11-15-preview"
 	client, _ := clientAndServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("page") == "2" {
 			http.Error(w, `{"error":{"message":"catalog unavailable"}}`, http.StatusServiceUnavailable)
@@ -48,7 +51,7 @@ func TestListConnectionsDoesNotReturnAPartialCatalog(t *testing.T) {
 		fmt.Fprint(w, `{"value":[{"name":"first","type":"AzureOpenAI"}],"nextLink":"/connections?page=2"}`)
 	})
 
-	got, err := client.ListConnections(t.Context(), "v1")
+	got, err := client.ListConnections(t.Context(), apiVersion)
 
 	require.Error(t, err)
 	assert.Nil(t, got, "a partial catalog must never be usable")

@@ -34,6 +34,12 @@ func TestPrepareUpgradeRecoveryWindowsTransientLock(t *testing.T) {
 
 	// Verify the real sharing lock before releasing it during the retry backoff.
 	probeErr := os.Rename(extensionDir, extensionDir+".probe")
+	require.Error(t, probeErr)
+	require.True(t, errors.Is(probeErr, windows.ERROR_SHARING_VIOLATION) ||
+		errors.Is(probeErr, windows.ERROR_ACCESS_DENIED))
+	manager := &Manager{}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
 	closed := make(chan error, 1)
 	go func() {
 		// justified: release an actual Windows filesystem lock during the existing one-second retry.
@@ -41,16 +47,12 @@ func TestPrepareUpgradeRecoveryWindowsTransientLock(t *testing.T) {
 		closed <- windows.CloseHandle(handle)
 	}()
 	t.Cleanup(func() { require.NoError(t, <-closed) })
-	require.Error(t, probeErr)
-	require.True(t, errors.Is(probeErr, windows.ERROR_SHARING_VIOLATION) ||
-		errors.Is(probeErr, windows.ERROR_ACCESS_DENIED))
-	manager := &Manager{}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+	start := time.Now()
 	finish, err := manager.prepareUpgradeRecovery(
 		ctx, &Extension{Id: "test.lock", Version: "1.0.0"}, "test.lock",
 	)
 	require.NoError(t, err)
+	require.GreaterOrEqual(t, time.Since(start), 900*time.Millisecond, "recovery must wait for the rename retry")
 	backups, err := filepath.Glob(filepath.Join(configDir, "extensions", ".upgrade-backup-*"))
 	require.NoError(t, err)
 	require.Len(t, backups, 1)

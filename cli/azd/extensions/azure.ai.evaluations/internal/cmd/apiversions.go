@@ -13,7 +13,7 @@ const (
 	DataGenerationAPIVersion = "v1"
 
 	// ProjectConnectionsAPIVersion covers the Foundry project connection catalog.
-	ProjectConnectionsAPIVersion = "v1"
+	ProjectConnectionsAPIVersion = ProjectEndpointAPIVersion
 
 	// OpenAI-compatible eval and run calls send no api-version, so there
 	// is deliberately no constant for them.

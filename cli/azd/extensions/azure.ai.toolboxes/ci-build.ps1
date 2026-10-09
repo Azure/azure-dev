@@ -37,6 +37,9 @@ if ($IsWindows) {
 }
 elseif ($IsLinux) {
     Write-Host "Building for linux"
+    if ($env:GOARCH -ne "arm64") {
+        $env:CGO_ENABLED = "0"
+    }
 }
 elseif ($IsMacOS) {
     Write-Host "Building for macOS"

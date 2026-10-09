@@ -87,6 +87,36 @@ func TestGateBreach(t *testing.T) {
 	})
 }
 
+func TestGateRejectsContradictoryTerminalCounts(t *testing.T) {
+	runs := map[string]*eval_api.OpenAIEvalRun{
+		"sum exceeds total": {
+			ResultCounts: &eval_api.EvalRunResultCounts{Total: 1, Passed: 1, Errored: 1},
+		},
+		"negative passed": {
+			ResultCounts: &eval_api.EvalRunResultCounts{Total: 1, Passed: -1},
+		},
+		"negative failed": {
+			ResultCounts: &eval_api.EvalRunResultCounts{Total: 1, Failed: -1},
+		},
+		"negative errored": {
+			ResultCounts: &eval_api.EvalRunResultCounts{Total: 1, Errored: -1},
+		},
+		"negative skipped": {
+			ResultCounts: &eval_api.EvalRunResultCounts{Total: 1, Skipped: -1},
+		},
+	}
+	for name, run := range runs {
+		for _, spec := range []string{"any-failure", "pass-rate=0.8"} {
+			t.Run(name+"/"+spec, func(t *testing.T) {
+				g, err := parseGate(spec)
+				require.NoError(t, err)
+				_, err = g.evaluate(run)
+				require.ErrorContains(t, err, "indeterminate")
+			})
+		}
+	}
+}
+
 func TestRunPassRateCountsEveryTerminalOutcome(t *testing.T) {
 	eighty, err := parseGate("pass-rate=0.8")
 	require.NoError(t, err)

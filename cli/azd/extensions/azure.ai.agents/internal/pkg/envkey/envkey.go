@@ -68,6 +68,13 @@ func AgentProjectEndpoint(agentName string) string {
 	return fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", sanitized)
 }
 
+// AgentPromptEndpointVersion marks a prompt endpoint snapshot written with
+// kind-aware endpoint routing.
+func AgentPromptEndpointVersion(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_PROMPT_ENDPOINT_VERSION", sanitized)
+}
+
 // AgentProtocolEndpointsVersion marks a complete protocol endpoint snapshot.
 func AgentProtocolEndpointsVersion(agentName string) string {
 	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))

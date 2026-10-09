@@ -67,7 +67,7 @@ func TestScaffoldingCannotRemoveAnEval(t *testing.T) {
     dataset: golden
   - name: nightly
     dataset: stale
-    max_samples: 5
+    maxSamples: 5
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EvalConfigBase), []byte(original), 0o600))
 
@@ -115,30 +115,30 @@ evaluators:
 evals:
   - name: authored-quality
     dataset: fixture-rows
-    evaluation_level: turn
+    evaluationLevel: turn
     evaluators:
       - evaluator: builtin.output_quality
         name: output-strict
         version: "17"
-        initialization_parameters:
+        initializationParameters:
           model: fixture-judge
-        data_mapping:
+        dataMapping:
           query: "{{item.original_query}}"
           response: "{{item.original_response}}"
       # Deliberately retained by the author, even though covered by the composite.
       - evaluator: builtin.coherence
         name: coherence-strict
         version: "3"
-        initialization_parameters:
+        initializationParameters:
           model: fixture-judge
           threshold: 4
       - evaluator: fixture-quality
         name: custom-policy
         version: "7"
-        initialization_parameters:
+        initializationParameters:
           model: fixture-judge
           threshold: 0.85
-        data_mapping:
+        dataMapping:
           query: "{{item.original_query}}"
           response: "{{item.original_response}}"
 `

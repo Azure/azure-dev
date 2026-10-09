@@ -32,10 +32,10 @@ func TestAnAnchorSharedBetweenEvaluatorsResolves(t *testing.T) {
 	list, err := decodeEvaluators(t, `
 evaluators:
   - evaluator: builtin.relevance
-    initialization_parameters: &judge
+    initializationParameters: &judge
       deployment_name: gpt-4o
   - evaluator: builtin.coherence
-    initialization_parameters: *judge
+    initializationParameters: *judge
 `)
 
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestAMergeKeyInheritsTheEntryItNames(t *testing.T) {
 evaluators:
   - &base
     evaluator: builtin.relevance
-    initialization_parameters:
+    initializationParameters:
       deployment_name: gpt-4o
   - <<: *base
     evaluator: builtin.coherence
@@ -105,7 +105,7 @@ func TestAnEntryThatIsItselfAnAliasResolves(t *testing.T) {
 anchors:
   - &shared
     evaluator: builtin.relevance
-    initialization_parameters:
+    initializationParameters:
       deployment_name: gpt-4o
 evaluators:
   - *shared
@@ -139,12 +139,12 @@ evaluators:
 func TestAMisspeltKeyPointsAtTheEntryAndNotPastIt(t *testing.T) {
 	doc := `evaluators:
   - evaluator: builtin.relevance
-    initialization_parameters: &judge
+    initializationParameters: &judge
       deployment_name: gpt-4o
       api_version: "2026-01-01"
       temperature: 0
   - evaluator: builtin.coherence
-    initialization_parameters: *judge
+    initializationParameters: *judge
     verison: 3
   - evaluator: builtin.fluency
   - evaluator: builtin.groundedness
@@ -191,7 +191,7 @@ func TestAnAnchorThatContainsItselfIsRefused(t *testing.T) {
 	_, err := decodeEvaluators(t, `
 evaluators:
   - evaluator: builtin.relevance
-    data_mapping: &loop
+    dataMapping: &loop
       query: *loop
 `)
 

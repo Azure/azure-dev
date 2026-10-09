@@ -552,7 +552,7 @@ func TestRunToolboxCreateWith_NoEntriesRejected(t *testing.T) {
 	assert.Empty(t, client.createVersionCalls)
 }
 
-// policies.rai_config in --from-file is forwarded to the data-plane request
+// policies.raiConfig in --from-file is forwarded to the data-plane request
 // as ToolboxPolicies.RaiConfig.RaiPolicyName.
 func TestRunToolboxCreateWith_ForwardsRaiPolicy(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
@@ -568,8 +568,8 @@ description: tb with rai
 connections:
   - name: mcp
 policies:
-  rai_config:
-    rai_policy_name: Microsoft.Default
+  raiConfig:
+    raiPolicyName: Microsoft.Default
 `), 0o600))
 
 	err := runToolboxCreateWith(
@@ -584,7 +584,7 @@ policies:
 	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
 }
 
-// policies.rai_config with an empty/whitespace name is rejected locally with a
+// policies.raiConfig with an empty/whitespace name is rejected locally with a
 // fix-it suggestion rather than forwarded to the data plane.
 func TestRunToolboxCreateWith_EmptyRaiPolicyNameRejected(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
@@ -599,8 +599,8 @@ func TestRunToolboxCreateWith_EmptyRaiPolicyNameRejected(t *testing.T) {
 connections:
   - name: mcp
 policies:
-  rai_config:
-    rai_policy_name: "   "
+  raiConfig:
+    raiPolicyName: "   "
 `), 0o600))
 
 	err := runToolboxCreateWith(

@@ -54,6 +54,41 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	const telemetryService = "azd.extensions.v1beta.TelemetryService"
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
 	require.IsType(t, v1beta.UnimplementedTelemetryServiceServer{}, registrar.implementations[telemetryService])
+
+	const commandResultService = "azd.extensions.v1beta.CommandResultService"
+	require.Same(t, &v1beta.CommandResultService_ServiceDesc, registrar.services[commandResultService])
+	require.IsType(
+		t,
+		v1beta.UnimplementedCommandResultServiceServer{},
+		registrar.implementations[commandResultService],
+	)
+	require.Implements(
+		t,
+		(*v1beta.CommandResultServiceServer)(nil),
+		registrar.implementations[commandResultService],
+	)
+}
+
+func TestBetaEventServiceUsesFocusedOverride(t *testing.T) {
+	t.Parallel()
+
+	service := &betaEventService{}
+	require.Implements(t, (*BetaEventServiceEventStreamOverride)(nil), service)
+	require.NotImplements(t, (*v1beta.EventServiceServer)(nil), service)
+
+	registrar := &recordingRegistrar{
+		services:        map[string]*grpc.ServiceDesc{},
+		implementations: map[string]any{},
+	}
+	require.NoError(t, registerBetaServices(
+		registrar,
+		stableServiceImplementations(),
+		map[BetaService]any{BetaEventService: service},
+	))
+	implementation := registrar.implementations["azd.extensions.v1beta.EventService"]
+	adapter, ok := implementation.(*betaEventServiceAdapter)
+	require.True(t, ok)
+	require.Same(t, service, adapter.override)
 }
 
 func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
@@ -323,6 +358,7 @@ func stableServiceImplementations() map[BetaService]any {
 		BetaEnvironmentService:   v1.UnimplementedEnvironmentServiceServer{},
 		BetaEventService:         v1.UnimplementedEventServiceServer{},
 		BetaExtensionService:     v1.UnimplementedExtensionServiceServer{},
+		BetaCommandResultService: v1beta.UnimplementedCommandResultServiceServer{},
 		BetaFrameworkService:     v1.UnimplementedFrameworkServiceServer{},
 		BetaProjectService:       v1.UnimplementedProjectServiceServer{},
 		BetaPromptService:        v1.UnimplementedPromptServiceServer{},

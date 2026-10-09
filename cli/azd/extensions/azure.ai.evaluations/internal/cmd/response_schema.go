@@ -139,7 +139,7 @@ func incompatibleSourceContract(id string) error {
 func invalidResponsesSource(reason string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
 		"the stored-responses run source is incompatible with response retrieval: "+reason,
-		"Run the declared eval by name with source.response_ids. "+
+		"Run the declared eval by name with source.responseIds. "+
 			"Response retrieval supports file_content only, with a nested response_id mapping to {{item.<field>}} "+
 			"and a non-blank string ID at that field in every item object.")
 }

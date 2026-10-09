@@ -73,7 +73,7 @@ func TestDatasetInteractionValidationUsesFinalMappings(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tc.missing)
-				assert.Contains(t, err.Error(), "data_mapping")
+				assert.Contains(t, err.Error(), "dataMapping")
 			}
 			assert.Equal(t, before, request.TestingCriteria[0].DataMapping,
 				"validation must not remove exact optional default mappings")
@@ -171,7 +171,7 @@ func TestDatasetInteractionValidationRejectsMalformedValues(t *testing.T) {
 			err := validateDatasetInteractions(&project.Eval{}, request, columns, map[string]bool{field: true})
 			require.ErrorContains(t, err, `"`+field+`"`)
 			assert.Contains(t, err.Error(), "non-empty")
-			assert.Contains(t, err.Error(), "data_mapping")
+			assert.Contains(t, err.Error(), "dataMapping")
 		})
 	}
 }
@@ -196,6 +196,9 @@ func TestMalformedTextValue(t *testing.T) {
 	}{
 		{"non-empty string", "hello", false},
 		{"non-empty array", []any{map[string]any{"role": "user", "content": "hi"}}, false},
+		{"string array", []any{"not-a-message"}, true},
+		{"number array", []any{float64(1)}, true},
+		{"mixed array", []any{map[string]any{"role": "user"}, "not-a-message"}, true},
 		{"whitespace string", " \t\n", true},
 		{"empty string", "", true},
 		{"empty array", []any{}, false},

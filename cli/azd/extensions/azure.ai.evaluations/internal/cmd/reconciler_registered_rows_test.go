@@ -56,6 +56,40 @@ func TestRegisteredDatasetBindingsAreValidatedBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestRegisteredDatasetRejectsNonObjectInteractionArrays(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, tc := range []struct {
+			name         string
+			rows         string
+			conversation bool
+		}{
+			{name: "turn query", rows: `{"query":[1],"response":"answer"}`},
+			{name: "conversation messages", rows: `{"messages":["not-a-message"]}`, conversation: true},
+		} {
+			t.Run(caller+"/"+tc.name, func(t *testing.T) {
+				ec, env, service, cfg, dir := validationFixture(t)
+				cfg.Datasets[0].File = ""
+				cfg.Datasets[0].Version = "1.0"
+				service.dataset = true
+				service.registeredRows = tc.rows
+				if tc.conversation {
+					cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+					service.definition = `{"name":"builtin.valid","version":"1","definition":{"data_schema":` +
+						`{"properties":{"messages":{"type":"array"}},"required":["messages"]},` +
+						`"supported_evaluation_levels":["conversation"]}}`
+				}
+
+				err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
+
+				require.ErrorContains(t, err, "non-empty string or an array of message objects")
+				assert.Zero(t, service.createCount)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.values)
+			})
+		}
+	}
+}
+
 func TestRegisteredDatasetValidationKeepsTheSettledVersion(t *testing.T) {
 	for _, caller := range []string{"create", "up"} {
 		t.Run(caller, func(t *testing.T) {

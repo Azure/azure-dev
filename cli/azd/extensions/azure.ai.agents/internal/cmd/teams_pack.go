@@ -123,7 +123,7 @@ func resolveTeamsPackContext(
 	if err != nil {
 		return nil, err
 	}
-	ca, isHosted, _, err := project.LoadAgentDefinition(effectiveSvc, proj.Path)
+	ca, isHosted, _, err := project.LoadHostedAgentDefinition(effectiveSvc, proj.Path)
 	if err != nil {
 		return nil, err
 	}

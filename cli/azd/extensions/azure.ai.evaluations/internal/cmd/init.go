@@ -158,11 +158,11 @@ func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "",
 		"Path to a local .jsonl, or the name of a registered dataset.")
 	cmd.Flags().IntVar(&flags.maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
-		"Cap on traces read by a --source traces eval. Delete max_traces from the "+
+		"Cap on traces read by a --source traces eval. Delete maxTraces from the "+
 			"file to take the service default instead.")
 	cmd.Flags().IntVar(&flags.traceDays, "trace-days", defaultTraceWindowDays,
 		"How far back a --source traces eval reads: 1, 7, or 30 days. Set "+
-			"lookback_hours in the file for any other window.")
+			"lookbackHours in the file for any other window.")
 	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
 		"What one evaluated sample is: turn for a single request and response, "+
 			"conversation for the whole multi-turn interaction. Defaults to turn.")

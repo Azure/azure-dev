@@ -24,11 +24,11 @@ func TestExplicitLocalPrimaryInteractionsMatchDatasetValidation(t *testing.T) {
 					dir := localSourceConfig(t, rows, 1)
 					editLocalSourceConfig(t, dir, func(eval map[string]any) {
 						eval["evaluators"] = []any{map[string]any{
-							"evaluator":    "builtin.relevance",
-							"data_mapping": map[string]string{field: "{{item.input}}"},
+							"evaluator":   "builtin.relevance",
+							"dataMapping": map[string]string{field: "{{item.input}}"},
 						}}
 						if field == "messages" {
-							eval["evaluation_level"] = project.EvaluationLevelConversation
+							eval["evaluationLevel"] = project.EvaluationLevelConversation
 						}
 					})
 					ec, requests := localSourceContext(t, func(definition map[string]any) {

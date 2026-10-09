@@ -92,7 +92,7 @@ func TestExplicitLocalPublishedTypesReachCreateAndRun(t *testing.T) {
 			t.Run(operation+"/"+tc.name, func(t *testing.T) {
 				dir := localSourceConfig(t, valid+"\n"+tc.tail+"\n", 1)
 				editLocalSourceConfig(t, dir, func(eval map[string]any) {
-					eval["evaluators"] = []any{map[string]any{"evaluator": "builtin.typed", "data_mapping": mapping}}
+					eval["evaluators"] = []any{map[string]any{"evaluator": "builtin.typed", "dataMapping": mapping}}
 				})
 				ec, requests := localSourceContext(t, func(definition map[string]any) {
 					definition["data_source_config"] = map[string]any{
@@ -162,18 +162,18 @@ func localPublicationConfig(t *testing.T, badTail, mixed bool) (string, map[stri
 	config["evaluators"] = []any{map[string]any{"name": "quality-custom", "definition": definition}}
 	local := map[string]any{
 		"name": "local-quality", "source": map[string]any{"type": "local", "file": "./local rows.jsonl"},
-		"max_samples": 1, "evaluators": []any{map[string]any{
-			"evaluator": "quality-custom", "data_mapping": map[string]any{"context": "{{item.context}}"},
-			"initialization_parameters": map[string]any{"fresh_contract": "confirmed"},
+		"maxSamples": 1, "evaluators": []any{map[string]any{
+			"evaluator": "quality-custom", "dataMapping": map[string]any{"context": "{{item.context}}"},
+			"initializationParameters": map[string]any{"fresh_contract": "confirmed"},
 		}},
 	}
 	evals := []any{local}
 	if mixed {
 		evals = append(evals, map[string]any{
-			"name": "remote-quality", "source": map[string]any{"type": "responses", "response_ids": []any{"response"}},
+			"name": "remote-quality", "source": map[string]any{"type": "responses", "responseIds": []any{"response"}},
 			"evaluators": []any{map[string]any{
-				"evaluator": "quality-custom", "data_mapping": map[string]any{"context": "{{item.context}}"},
-				"initialization_parameters": map[string]any{"fresh_contract": "confirmed"},
+				"evaluator": "quality-custom", "dataMapping": map[string]any{"context": "{{item.context}}"},
+				"initializationParameters": map[string]any{"fresh_contract": "confirmed"},
 			}},
 		})
 	}
@@ -318,8 +318,8 @@ func TestExplicitLocalSharedColumnKeepsEveryConstraint(t *testing.T) {
 			dir := localSourceConfig(t, fmt.Sprintf("{\"count\":%d}\n", value), 0)
 			editLocalSourceConfig(t, dir, func(eval map[string]any) {
 				eval["evaluators"] = []any{
-					map[string]any{"evaluator": "builtin.lower", "data_mapping": map[string]string{"n": "{{item.count}}"}},
-					map[string]any{"evaluator": "builtin.upper", "data_mapping": map[string]string{"n": "{{item.count}}"}},
+					map[string]any{"evaluator": "builtin.lower", "dataMapping": map[string]string{"n": "{{item.count}}"}},
+					map[string]any{"evaluator": "builtin.upper", "dataMapping": map[string]string{"n": "{{item.count}}"}},
 				}
 			})
 			ec, requests := localSourceContext(t)

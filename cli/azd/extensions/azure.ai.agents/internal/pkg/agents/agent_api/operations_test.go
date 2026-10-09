@@ -941,6 +941,32 @@ func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T)
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
 
+func TestGetPromptAgentVersionContract(t *testing.T) {
+	t.Parallel()
+
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"name":"prompt","version":"7","definition":{"kind":"prompt",`+
+			`"harness":{"type":"github_copilot_preview"}}}`,
+	)
+	version, err := client.GetPromptAgentVersion(t.Context(), "prompt", "7", AgentEndpointAPIVersion)
+	require.NoError(t, err)
+	require.Equal(t, "7", version.Version)
+	require.Len(t, transport.requests, 1)
+
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/prompt/versions/7", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, GitHubCopilotPreviewFeature, req.Header.Get("Foundry-Features"))
+
+	definition, ok := version.Definition.(map[string]any)
+	require.True(t, ok)
+	harness, ok := definition["harness"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, ManagedAgentHarnessGitHubCopilot, harness["type"])
+}
+
 func TestGetVoiceAgentVersionContract(t *testing.T) {
 	t.Parallel()
 	client, transport := newCaptureClient(http.StatusOK, `{"name":"voice","version":"7","status":"active"}`)

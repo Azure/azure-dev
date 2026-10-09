@@ -51,7 +51,7 @@ func newEvalCreateCommand() *cobra.Command {
 			"for a project that is not deployed as a whole — or, with --from-file, " +
 			"for no project at all.\n\n" +
 			"The name is optional while the configuration declares exactly one eval.\n\n" +
-			"Evaluator inputs receive explicit default data mappings. Override them with data_mapping " +
+			"Evaluator inputs receive explicit default data mappings. Override them with dataMapping " +
 			"in the evaluator reference. Map messages or separate query/response fields, never both. " +
 			"Defaults retain tool_definitions and, at turn level, tool_calls. " +
 			"Explicit local sources omit optional default item bindings absent from the file; " +

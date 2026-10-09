@@ -107,6 +107,8 @@ jobs:
         name: ${{ parameters.ValidateVm.PoolName }}
         image: ${{ parameters.ValidateVm.ImageName }}
         os: ${{ parameters.ValidateVm.Os }}
+        ${{ if parameters.ValidateVm.HostArchitecture }}:
+          hostArchitecture: ${{ parameters.ValidateVm.HostArchitecture }}
 
       steps:
         - checkout: none

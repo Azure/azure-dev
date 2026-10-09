@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"azure.ai.rle/internal/project"
@@ -309,14 +310,31 @@ func validLimeProjectPath(path string) bool {
 	return true
 }
 
+var limeCredentialPattern = regexp.MustCompile(
+	`(?i)\b(?:authorization|token|secret|password|sig|api[_-]?key)\s*[:=]\s*` +
+		`(?:(?:bearer|basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;}"']+)|` +
+		`\b(?:bearer|basic)\s+(?:"[^"]*"|'[^']*'|[^\s,;}"']+)`,
+)
+
 func redactLimeEndpointError(err error, endpoint string) error {
 	if endpoint == "" {
 		return err
 	}
-	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
-		return newRleHTTPError(httpErr.statusCode, []byte(`{"message":"The RLE publish request failed."}`))
+	redact := func(text string) string {
+		return limeCredentialPattern.ReplaceAllString(
+			strings.ReplaceAll(text, endpoint, "[redacted Lime endpoint]"),
+			"[redacted credential]",
+		)
 	}
-	return errors.New("The RLE publish request failed before receiving a response.")
+	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
+		details := rleErrorBody{Code: redact(httpErr.code()), Message: redact(httpErr.message())}
+		body, marshalErr := json.Marshal(details)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		return newRleHTTPError(httpErr.statusCode, body)
+	}
+	return errors.New(redact(err.Error()))
 }
 
 func normalizeVersionBumpFlag(value string) (string, error) {

@@ -330,3 +330,66 @@ func TestPublishRoutingFailedRequestPreservesLegacyState(t *testing.T) {
 		t.Fatalf("failed publish changed legacy state: %s (%v)", state, err)
 	}
 }
+
+func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
+	tests := []struct {
+		name          string
+		response      string
+		expectedCode  string
+		expectedText  string
+		forbiddenText []string
+	}{
+		{
+			name:         "endpoint-free rejection",
+			response:     `{"code":"InvalidLimeConfiguration","message":"Lime project is not enabled."}`,
+			expectedCode: "InvalidLimeConfiguration",
+			expectedText: "Lime project is not enabled.",
+		},
+		{
+			name: "endpoint and credentials in diagnostic",
+			response: `{"error":{"code":"InvalidLimeConfiguration",` +
+				`"message":"Cannot access ` + testLimeProjectEndpoint +
+				` token=secret api_key=\"quoted-secret\" Authorization: Bearer private-token; check project access."}}`,
+			expectedCode: "InvalidLimeConfiguration",
+			expectedText: "check project access.",
+			forbiddenText: []string{
+				testLimeProjectEndpoint, "token=secret", "quoted-secret", "private-token",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			serviceErr := serviceError(redactLimeEndpointError(
+				newRleHTTPError(http.StatusBadRequest, []byte(tc.response)),
+				testLimeProjectEndpoint,
+			))
+			typed, ok := errors.AsType[*azdext.ServiceError](serviceErr)
+			if !ok {
+				t.Fatalf("expected ServiceError, got %T", serviceErr)
+			}
+			if typed.StatusCode != http.StatusBadRequest || typed.ErrorCode != tc.expectedCode {
+				t.Fatalf("lost service status/code: %#v", typed)
+			}
+			if !strings.Contains(typed.Message, tc.expectedText) {
+				t.Fatalf("lost safe service diagnostic: %q", typed.Message)
+			}
+			for _, forbidden := range tc.forbiddenText {
+				if strings.Contains(typed.Message, forbidden) {
+					t.Fatalf("service diagnostic exposed %q: %q", forbidden, typed.Message)
+				}
+			}
+		})
+	}
+}
+
+func TestRedactLimeEndpointErrorPreservesSafeTransportDiagnostics(t *testing.T) {
+	err := redactLimeEndpointError(
+		errors.New("retry to "+testLimeProjectEndpoint+" failed: TLS handshake timeout"),
+		testLimeProjectEndpoint,
+	)
+	if !strings.Contains(err.Error(), "TLS handshake timeout") ||
+		strings.Contains(err.Error(), testLimeProjectEndpoint) {
+		t.Fatalf("unsafe or missing transport diagnostic: %v", err)
+	}
+}

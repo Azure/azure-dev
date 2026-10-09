@@ -28,15 +28,15 @@ func TestExplicitLocalSourceConfiguration(t *testing.T) {
 		{"blank file", map[string]any{"type": "local", "file": " "}, 0, false},
 		// #nosec G101 -- synthetic credential-bearing URL is rejected before any file or network access.
 		{"URL", map[string]any{"type": "local", "file": "https://user:secret@example.test/data?sig=secret"}, 0, false},
-		{"trace field zero", map[string]any{"type": "local", "file": "rows", "max_traces": 0}, 0, false},
-		{"responses empty", map[string]any{"type": "local", "file": "rows", "response_ids": []string{}}, 0, false},
+		{"trace field zero", map[string]any{"type": "local", "file": "rows", "maxTraces": 0}, 0, false},
+		{"responses empty", map[string]any{"type": "local", "file": "rows", "responseIds": []string{}}, 0, false},
 		{"version pin", map[string]any{"type": "local", "file": "rows", "version": "7"}, 0, false},
-		{"trace file", map[string]any{"type": "traces", "agent_name": "agent", "file": ""}, 0, false},
-		{"response file", map[string]any{"type": "responses", "response_ids": []string{"one"}, "file": "rows"}, 0, false},
+		{"trace file", map[string]any{"type": "traces", "agentName": "agent", "file": ""}, 0, false},
+		{"response file", map[string]any{"type": "responses", "responseIds": []string{"one"}, "file": "rows"}, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, err := json.Marshal(map[string]any{"evals": []any{map[string]any{
-				"name": "quality", "source": tc.source, "max_samples": tc.cap,
+				"name": "quality", "source": tc.source, "maxSamples": tc.cap,
 				"evaluators": []any{map[string]any{"evaluator": "builtin.relevance"}},
 			}}})
 			require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestExplicitLocalSourceNestedRefsShareCLIAndDeployBase(t *testing.T) {
   - name: quality
     source:
       $ref: ./sources/local.yaml
-    max_samples: 2
+    maxSamples: 2
     evaluators:
       - evaluator: builtin.relevance
 `), 0o600))

@@ -8,8 +8,9 @@ const routineHelpFooter = `Environments & Environment Variables:
   Use 'azd env select <name>' to select the environment for endpoint lookup.
   --environment (-e) does not override that persisted selection; use
   --project-endpoint <endpoint> to override endpoint discovery for remote
-  routine operations. --project-endpoint and --timeout are not supported by
-  local add, context, or version commands.
+  routine operations. --project-endpoint, --tenant-id, and --timeout are
+  only supported by remote routine commands. Local commands such as add,
+  context, and version reject these flags.
   Values may contain secrets; do not share the output of
   'azd env get-values' or commit .azure to source control.
 

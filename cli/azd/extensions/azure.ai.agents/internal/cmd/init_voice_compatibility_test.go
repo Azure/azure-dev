@@ -37,7 +37,8 @@ func TestHostedVoiceStandaloneInitRejected(t *testing.T) {
 				local, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok)
 				require.Equal(t,
-					"use a unified azure.yaml that declares both the hosted target and the voice wrapper", local.Suggestion)
+					"use an azure.yaml project document that declares both the hosted target and the voice wrapper",
+					local.Suggestion)
 			})
 		}
 	}

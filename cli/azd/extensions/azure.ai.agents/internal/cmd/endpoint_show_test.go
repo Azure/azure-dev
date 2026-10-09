@@ -5,13 +5,20 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestPrintEndpointTable_FullConfig(t *testing.T) {
@@ -129,10 +136,439 @@ func TestPrintEndpointJSON(t *testing.T) {
 	output := buf.String()
 
 	assert.Contains(t, output, `"name": "json-test-agent"`)
+	assert.Contains(t, output, `"kind": "hosted"`)
 	assert.Contains(t, output, `"protocols"`)
 	assert.Contains(t, output, `"responses"`)
 
 	t.Logf("=== endpoint show --output json ===\n%s", output)
+}
+
+func TestRunPromptEndpointShowUsesPersistedDeploymentEndpoint(t *testing.T) {
+	const projectEndpoint = "https://deployed.example/api/projects/project"
+	const deploymentEndpoint = projectEndpoint +
+		"/agents/deployed-name/endpoint/protocols/openai/responses?api-version=v1"
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "locally-edited-name",
+		"model":        "gpt-5-mini",
+		"instructions": "Help.",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "assistant",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_ASSISTANT_NAME":                    "deployed-name",
+			"AGENT_ASSISTANT_ENDPOINT":                deploymentEndpoint,
+			"AGENT_ASSISTANT_PROJECT_ENDPOINT":        projectEndpoint,
+			"AGENT_ASSISTANT_PROMPT_ENDPOINT_VERSION": "1",
+			"AGENT_ASSISTANT_VERSION":                 "3",
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	versionLookups := 0
+
+	output := captureEndpointOutput(t, func() error {
+		return runPromptEndpointShow(
+			t.Context(),
+			client,
+			svc,
+			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "locally-edited-name"},
+			"",
+			"json",
+			func(context.Context, string, string, string) (*agent_api.AgentVersionObject, error) {
+				versionLookups++
+				return nil, errors.New("unexpected prompt version lookup")
+			},
+		)
+	})
+
+	assert.Contains(t, output, `"name": "deployed-name"`)
+	assert.Contains(t, output, `"kind": "prompt"`)
+	assert.Contains(
+		t,
+		output,
+		`"responses": "`+deploymentEndpoint+`"`,
+	)
+	assert.NotContains(t, output, `"agent_endpoint"`)
+	require.Equal(t, 0, versionLookups)
+}
+
+func TestRunPromptEndpointShowRepairsLegacyHarnessedEndpoint(t *testing.T) {
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost}
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_ASSISTANT_NAME":             "deployed-name",
+			"AGENT_ASSISTANT_ENDPOINT":         projectEndpoint + "/openai/v1/responses",
+			"AGENT_ASSISTANT_PROJECT_ENDPOINT": projectEndpoint,
+			"AGENT_ASSISTANT_VERSION":          "3",
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	versionLookups := 0
+
+	output := captureEndpointOutput(t, func() error {
+		return runPromptEndpointShow(
+			t.Context(),
+			client,
+			svc,
+			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "locally-edited-name"},
+			"",
+			"json",
+			func(
+				_ context.Context,
+				gotProjectEndpoint, gotAgentName, gotAgentVersion string,
+			) (*agent_api.AgentVersionObject, error) {
+				versionLookups++
+				require.Equal(t, projectEndpoint, gotProjectEndpoint)
+				require.Equal(t, "deployed-name", gotAgentName)
+				require.Equal(t, "3", gotAgentVersion)
+				return &agent_api.AgentVersionObject{Definition: map[string]any{
+					"kind": "prompt",
+					"harness": map[string]any{
+						"type": agent_api.ManagedAgentHarnessGitHubCopilot,
+					},
+				}}, nil
+			},
+		)
+	})
+
+	require.Contains(t, output, `"name": "deployed-name"`)
+	require.Contains(
+		t,
+		output,
+		`"responses": "`+projectEndpoint+
+			`/agents/deployed-name/endpoint/protocols/openai/responses?api-version=v1"`,
+	)
+	require.Equal(t, 1, versionLookups)
+}
+
+func TestRunPromptEndpointShowRequiresCompleteDeployment(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]string
+		missing string
+	}{
+		{
+			name: "missing endpoint",
+			values: map[string]string{
+				"AGENT_ASSISTANT_VERSION": "3",
+			},
+			missing: "AGENT_ASSISTANT_ENDPOINT",
+		},
+		{
+			name: "missing version",
+			values: map[string]string{
+				"AGENT_ASSISTANT_ENDPOINT": "https://deployed.example/responses",
+			},
+			missing: "AGENT_ASSISTANT_VERSION",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values:  map[string]map[string]string{"dev": test.values},
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+
+			err := runPromptEndpointShow(
+				t.Context(),
+				client,
+				&azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost},
+				project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPrompt, Name: "prompt-agent"},
+				"",
+				"json",
+				nil,
+			)
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+			require.Contains(t, localErr.Message, test.missing)
+			require.Contains(t, localErr.Suggestion, "azd deploy")
+		})
+	}
+}
+
+func TestRunVoiceEndpointShowUsesDeployedVoiceEndpoint(t *testing.T) {
+	const voiceEndpoint = "wss://acct.example/api/projects/project/agents/deployed-voice/" +
+		"endpoint/protocols/voice?api-version=v1"
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_VOICE_NAME":     "deployed-voice",
+			"AGENT_VOICE_ENDPOINT": voiceEndpoint,
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	svc := &azdext.ServiceConfig{Name: "voice", Host: AiAgentHost}
+
+	output := captureEndpointOutput(t, func() error {
+		return runVoiceEndpointShow(
+			t.Context(),
+			client,
+			svc,
+			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindVoice, Name: "authored-voice"},
+			"",
+			"table",
+		)
+	})
+
+	assert.Contains(t, output, "Agent:")
+	assert.Contains(t, output, "deployed-voice")
+	assert.Contains(t, output, "Kind:")
+	assert.Contains(t, output, "voice")
+	assert.Contains(t, output, voiceEndpoint)
+	assert.NotContains(t, output, "Version Selector")
+}
+
+func TestRunVoiceEndpointShowRejectsCrossKindEndpoint(t *testing.T) {
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_VOICE_ENDPOINT": "https://acct.example/api/projects/project/openai/v1/responses",
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+
+	err := runVoiceEndpointShow(
+		t.Context(),
+		client,
+		&azdext.ServiceConfig{Name: "voice", Host: AiAgentHost},
+		project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindVoice, Name: "voice-agent"},
+		"",
+		"json",
+	)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+	require.Contains(t, localErr.Message, "voice agent endpoint")
+	require.Contains(t, localErr.Suggestion, "azd deploy")
+}
+
+func TestRunVoiceEndpointShowRequiresDeployedVoiceEndpoint(t *testing.T) {
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values:  map[string]map[string]string{"dev": {}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	svc := &azdext.ServiceConfig{Name: "voice", Host: AiAgentHost}
+
+	err := runVoiceEndpointShow(
+		t.Context(),
+		client,
+		svc,
+		project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindPromptVoice, Name: "voice-agent"},
+		"",
+		"json",
+	)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+	require.Contains(t, localErr.Message, "AGENT_VOICE_ENDPOINT")
+	require.Contains(t, localErr.Suggestion, "azd deploy")
+}
+
+func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
+	t.Run("hosted", func(t *testing.T) {
+		const defaultEndpoint = "https://default.services.ai.azure.com/api/projects/default"
+		const selectedEndpoint = "https://staging.services.ai.azure.com/api/projects/staging"
+		env := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "default"},
+			values: map[string]map[string]string{
+				"default": {"FOUNDRY_PROJECT_ENDPOINT": defaultEndpoint},
+				"staging": {"FOUNDRY_PROJECT_ENDPOINT": selectedEndpoint},
+			},
+		}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+		resolverCalls := 0
+
+		output := captureEndpointOutput(t, func() error {
+			return runHostedEndpointShow(
+				t.Context(),
+				client,
+				"hosted-agent",
+				"staging",
+				"json",
+				func(
+					_ context.Context,
+					projectEndpoint, agentName string,
+				) (*agent_api.AgentObject, error) {
+					resolverCalls++
+					require.Equal(t, selectedEndpoint, projectEndpoint)
+					require.Equal(t, "hosted-agent", agentName)
+					return &agent_api.AgentObject{Name: agentName}, nil
+				},
+			)
+		})
+
+		require.Contains(t, output, `"name": "hosted-agent"`)
+		require.NotContains(t, output, defaultEndpoint)
+		require.Equal(t, 1, resolverCalls)
+		require.Equal(t, 0, env.getCurrentCalls)
+		require.Equal(t, 1, env.getValuesCalls)
+	})
+
+	tests := []struct {
+		name            string
+		serviceName     string
+		definition      map[string]any
+		defaultValues   map[string]string
+		selectedValues  map[string]string
+		wantEndpoint    string
+		defaultEndpoint string
+	}{
+		{
+			name:        "prompt",
+			serviceName: "assistant",
+			definition: map[string]any{
+				"kind":         "prompt",
+				"name":         "assistant",
+				"model":        "gpt-5-mini",
+				"instructions": "Help.",
+			},
+			defaultValues: map[string]string{
+				"AGENT_ASSISTANT_ENDPOINT":                "https://default.example/api/projects/default/openai/v1/responses",
+				"AGENT_ASSISTANT_PROJECT_ENDPOINT":        "https://default.example/api/projects/default",
+				"AGENT_ASSISTANT_PROMPT_ENDPOINT_VERSION": "1",
+				"AGENT_ASSISTANT_VERSION":                 "1",
+			},
+			selectedValues: map[string]string{
+				"AGENT_ASSISTANT_ENDPOINT":                "https://staging.example/api/projects/staging/openai/v1/responses",
+				"AGENT_ASSISTANT_PROJECT_ENDPOINT":        "https://staging.example/api/projects/staging",
+				"AGENT_ASSISTANT_PROMPT_ENDPOINT_VERSION": "1",
+				"AGENT_ASSISTANT_VERSION":                 "2",
+			},
+			wantEndpoint:    "https://staging.example/api/projects/staging/openai/v1/responses",
+			defaultEndpoint: "https://default.example/api/projects/default/openai/v1/responses",
+		},
+		{
+			name:        "voice",
+			serviceName: "voice",
+			definition: map[string]any{
+				"kind":  "voice",
+				"name":  "voice",
+				"model": map[string]any{"id": "gpt-realtime"},
+			},
+			defaultValues: map[string]string{
+				"AGENT_VOICE_ENDPOINT": "wss://default.example/api/projects/default/agents/voice/" +
+					"endpoint/protocols/voice?api-version=v1",
+			},
+			selectedValues: map[string]string{
+				"AGENT_VOICE_ENDPOINT": "wss://staging.example/api/projects/staging/agents/voice/" +
+					"endpoint/protocols/voice?api-version=v1",
+			},
+			wantEndpoint: "wss://staging.example/api/projects/staging/agents/voice/" +
+				"endpoint/protocols/voice?api-version=v1",
+			defaultEndpoint: "wss://default.example/api/projects/default/agents/voice/" +
+				"endpoint/protocols/voice?api-version=v1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			props, err := structpb.NewStruct(test.definition)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name:                 test.serviceName,
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			}
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "default"},
+				values: map[string]map[string]string{
+					"default": test.defaultValues,
+					"staging": test.selectedValues,
+				},
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					svc.Name: svc,
+				},
+			}}, &helpersPromptServer{}, env)
+
+			output := captureEndpointOutput(t, func() error {
+				return runEndpointShow(
+					t.Context(),
+					client,
+					&endpointShowFlags{name: svc.Name, output: "json"},
+					&azdext.ExtensionContext{Environment: "staging", NoPrompt: true},
+				)
+			})
+
+			require.Contains(t, output, test.wantEndpoint)
+			require.NotContains(t, output, test.defaultEndpoint)
+			require.Equal(t, 0, env.getCurrentCalls)
+			require.Equal(t, 1, env.getValuesCalls)
+		})
+	}
+}
+
+func TestRunEndpointShowRejectsWorkflowKind(t *testing.T) {
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "workflow",
+		"name": "workflow-agent",
+	})
+	require.NoError(t, err)
+	root := t.TempDir()
+	svc := &azdext.ServiceConfig{
+		Name:                 "workflow",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			svc.Name: svc,
+		},
+	}}, &helpersPromptServer{})
+
+	err = runEndpointShow(
+		t.Context(),
+		client,
+		&endpointShowFlags{name: svc.Name},
+		&azdext.ExtensionContext{NoPrompt: true},
+	)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeUnsupportedAgentKind, localErr.Code)
+	require.Contains(t, localErr.Message, "unsupported kind")
+	require.Contains(t, localErr.Suggestion, "set kind")
+}
+
+func captureEndpointOutput(t *testing.T, run func() error) string {
+	t.Helper()
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = old
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	require.NoError(t, run())
+	require.NoError(t, w.Close())
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+	return buf.String()
 }
 
 func TestPrintEndpointTable_ProtocolConfiguration(t *testing.T) {

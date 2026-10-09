@@ -28,13 +28,13 @@ evals:
   - name: first
     source:
       type: traces
-      max_traces: 20
+      maxTraces: 20
     target:
       type: agent
       name: support-agent
     evaluators:
       - evaluator: builtin.task_adherence
-        initialization_parameters:
+        initializationParameters:
           model: gpt-4.1-nano
 `
 

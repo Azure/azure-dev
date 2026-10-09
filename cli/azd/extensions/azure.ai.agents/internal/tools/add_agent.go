@@ -19,13 +19,13 @@ func NewAddAgentTool() server.ServerTool {
 		Tool: mcp.NewTool(
 			"add_agent",
 			mcp.WithDescription(
-				"Guide initialization of a Microsoft Foundry agent from a unified azure.yaml; this tool does not modify files",
+				"Guide initialization of a Microsoft Foundry agent from an azure.yaml project document; this tool does not modify files",
 			),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithString("azure_yaml_location",
-				mcp.Description("The file path or URL to a unified azure.yaml project document"),
+				mcp.Description("The file path or URL to an azure.yaml project document"),
 				mcp.Required(),
 			),
 		),
@@ -68,8 +68,8 @@ func NewAddAgentTool() server.ServerTool {
 
 func unifiedInitGuidance(azureYamlLocation string) string {
 	return fmt.Sprintf(
-		"No files or resources were changed. To initialize this project from the unified azure.yaml, run:\n\n"+
-			"azd ai agent init -m %q",
+		"No files or resources were changed. To initialize this project from azure.yaml, run:\n\n"+
+			"azd ai agent init -t %q",
 		azureYamlLocation,
 	)
 }

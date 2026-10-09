@@ -855,7 +855,7 @@ func TraceWindowChoice(days int) string {
 //
 // The three are what the prompt offers, so the flag accepts the same three: a
 // flag that took any number would make `--no-prompt` and the wizard able to
-// write configurations the other could not. Anything else is `lookback_hours`
+// write configurations the other could not. Anything else is `lookbackHours`
 // in the file, which is where an arbitrary window belongs.
 func TraceDaysNotAChoice(given int, days []int) error {
 	offered := make([]string, 0, len(days))
@@ -864,7 +864,7 @@ func TraceDaysNotAChoice(given int, days []int) error {
 	}
 	return fmt.Errorf(
 		"--trace-days %d is not one of the offered windows (%s); for any other window "+
-			"set lookback_hours on the eval's source in the configuration",
+			"set lookbackHours on the eval's source in the configuration",
 		given, strings.Join(offered, ", "))
 }
 
@@ -2171,7 +2171,7 @@ func DatasetHasNoFile(dataset string) error {
 func EvaluatorNeedsFields(evaluator string, missing []string) error {
 	return fmt.Errorf(
 		"evaluator %q requires %s, which the dataset does not provide; "+
-			"add %s to the dataset, or bind it with `data_mapping`",
+			"add %s to the dataset, or bind it with `dataMapping`",
 		evaluator, quoteList(missing), pluralColumns(missing))
 }
 
@@ -2179,7 +2179,7 @@ func EvaluatorNeedsFields(evaluator string, missing []string) error {
 func EvaluatorFieldMalformed(evaluator string, columns []string) error {
 	return fmt.Errorf(
 		"evaluator %q requires %s to be a non-empty string or an array on every row; "+
-			"fix the value in the dataset, or rebind %s with `data_mapping`",
+			"fix the value in the dataset, or rebind %s with `dataMapping`",
 		evaluator, quoteList(columns), pluralColumns(columns))
 }
 
@@ -2194,7 +2194,7 @@ func EvaluatorLevelUnsupported(evaluator, level string, supported []string) erro
 func EvaluatorNeedsInitParams(evaluator string, missing []string) error {
 	return fmt.Errorf(
 		"evaluator %q requires %s; set it under the evaluator's "+
-			"`initialization_parameters` in the eval config",
+			"`initializationParameters` in the eval config",
 		evaluator, quoteList(missing))
 }
 
@@ -2896,25 +2896,25 @@ func TraceWindowBoundUnusable(field, value string) error {
 // TraceWindowEndsBeforeItStarts reports a window that can hold no traces.
 func TraceWindowEndsBeforeItStarts(start, end string) error {
 	return fmt.Errorf(
-		"source.end_time %q is not after source.start_time %q, "+
+		"source.endTime %q is not after source.startTime %q, "+
 			"so the window holds no traces",
 		end, start)
 }
 
 // TraceWindowOverSpecified reports a window declared twice over.
 //
-// lookback_hours measures back from where the window closes and start_time is
+// lookbackHours measures back from where the window closes and startTime is
 // an absolute bound, so a file carrying both does not say which was meant.
 func TraceWindowOverSpecified() error {
 	return errors.New(
-		"source declares both start_time and lookback_hours, which are two ways " +
+		"source declares both startTime and lookbackHours, which are two ways " +
 			"of saying where the window opens: keep one")
 }
 
 // NegativeLookbackHours reports a lookback that is not a length.
 func NegativeLookbackHours(hours int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, and how far back to look cannot be "+
+		"source.lookbackHours is %d, and how far back to look cannot be "+
 			"negative: give the hours to look back",
 		hours)
 }
@@ -2922,8 +2922,8 @@ func NegativeLookbackHours(hours int) error {
 // LookbackTooLarge reports a lookback beyond the span a window may cover.
 func LookbackTooLarge(hours, limit int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, which is beyond the %d hours a window can "+
-			"reach back: give a shorter lookback, or replace it with a start_time",
+		"source.lookbackHours is %d, which is beyond the %d hours a window can "+
+			"reach back: give a shorter lookback, or replace it with a startTime",
 		hours, limit)
 }
 
@@ -2934,7 +2934,7 @@ func LookbackTooLarge(hours, limit int) error {
 // back empty.
 func MaxTracesUnusable(maxTraces int) error {
 	return fmt.Errorf(
-		"source.max_traces is %d: give a positive cap, or leave it out to use "+
+		"source.maxTraces is %d: give a positive cap, or leave it out to use "+
 			"the service's default",
 		maxTraces)
 }
@@ -2956,7 +2956,7 @@ func SourceFieldsNotRead(sourceType string, fields []string) error {
 // MaxTurnsUnusable reports a turn cap a run could not apply.
 func MaxTurnsUnusable(maxTurns int) error {
 	return fmt.Errorf(
-		"source.max_turns is %d: give a positive cap, or leave it out to use "+
+		"source.maxTurns is %d: give a positive cap, or leave it out to use "+
 			"the service's default",
 		maxTurns)
 }
@@ -2964,7 +2964,7 @@ func MaxTurnsUnusable(maxTurns int) error {
 // LookbackReachesTooFarBack reports a lookback that lands on an unusable start.
 func LookbackReachesTooFarBack(hours int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, which opens the window before any trace "+
+		"source.lookbackHours is %d, which opens the window before any trace "+
 			"was recorded: give a shorter lookback",
 		hours)
 }
@@ -3289,18 +3289,18 @@ func LocalSourceDatasetConflict(name string) error {
 // no spans, so it is not an answer to whose conversations to read.
 func TraceSourceNeedsAnAgent() error {
 	return errors.New(
-		"source.agent_name is required for a trace source, " +
+		"source.agentName is required for a trace source, " +
 			"or declare an agent target.name")
 }
 
 // ResponsesSourceNeedsResponseIDs reports it where there is no index.
 func ResponsesSourceNeedsResponseIDs() error {
-	return errors.New("source.response_ids is required for a responses source")
+	return errors.New("source.responseIds is required for a responses source")
 }
 
 // ResponsesSourceBlankResponseID identifies an invalid entry without printing stored response IDs.
 func ResponsesSourceBlankResponseID(index int) error {
-	return fmt.Errorf("source.response_ids[%d] must not be blank; supply a stored response ID or remove this entry", index)
+	return fmt.Errorf("source.responseIds[%d] must not be blank; supply a stored response ID or remove this entry", index)
 }
 
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
@@ -3334,7 +3334,7 @@ func TargetTypeNotSupported(got, agent, model string) error {
 
 // EvaluationLevelNotSupported reports it where there is no index.
 func EvaluationLevelNotSupported(got, turn, conversation string) error {
-	return fmt.Errorf("evaluation_level %q is invalid; expected %q or %q", got, turn, conversation)
+	return fmt.Errorf("evaluationLevel %q is invalid; expected %q or %q", got, turn, conversation)
 }
 
 // TraceSourceCannotReadAModelTarget reports a trace eval pointed at a deployment.
@@ -3344,7 +3344,7 @@ func EvaluationLevelNotSupported(got, turn, conversation string) error {
 // filter that matches no spans and a run that reports nothing.
 func TraceSourceCannotReadAModelTarget(name string) error {
 	return fmt.Errorf(
-		"source.agent_name is required for a trace source: target %q is a model "+
+		"source.agentName is required for a trace source: target %q is a model "+
 			"deployment, and traces are recorded against an agent, not a deployment",
 		name)
 }
@@ -3365,8 +3365,8 @@ func SimulationNeedsConversationLevel(declared, conversation string) error {
 		declared = "unset"
 	}
 	return fmt.Errorf(
-		"evaluation_level is %q, but a simulation produces conversations; "+
-			"set evaluation_level: %s, or remove the simulation: block to score rows as they stand",
+		"evaluationLevel is %q, but a simulation produces conversations; "+
+			"set evaluationLevel: %s, or remove the simulation: block to score rows as they stand",
 		declared, conversation)
 }
 
@@ -3412,13 +3412,13 @@ func SimulationNeedsSeedDataset() error {
 //
 // A simulation is bound to its registered seed dataset as a whole -- the run
 // carries the dataset's id, not a copy of some of its rows -- so there is no
-// row count to cap. Accepting max_samples here would report a bounded run and
+// row count to cap. Accepting maxSamples here would report a bounded run and
 // then create, and bill for, a conversation per seed in the whole dataset.
 func SimulationCannotBeSampled(got int) error {
 	return fmt.Errorf(
-		"max_samples is %d, but a simulation run is bound to its whole registered seed dataset "+
-			"and has no row count to cap. Remove max_samples and register a smaller seed dataset, "+
-			"or use simulation.num_conversations to bound the conversations created per seed",
+		"maxSamples is %d, but a simulation run is bound to its whole registered seed dataset "+
+			"and has no row count to cap. Remove maxSamples and register a smaller seed dataset, "+
+			"or use simulation.numConversations to bound the conversations created per seed",
 		got)
 }
 
@@ -3696,7 +3696,7 @@ func SampleSizeOutOfRange(min, max, got int) error {
 // for, and silent.
 func MaxSamplesNegative(got int) error {
 	return fmt.Errorf(
-		"max_samples cannot be negative, got %d. "+
+		"maxSamples cannot be negative, got %d. "+
 			"Remove it to send every row, or set the number of rows to send", got)
 }
 
@@ -3704,15 +3704,15 @@ func MaxSamplesNegative(got int) error {
 func SourceSampleFlagConflict(evalName string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
 		fmt.Sprintf("--max-samples is not supported for source-backed eval %q, including an explicit value of 0", evalName),
-		"Omit --max-samples. For traces, use source.max_traces; for responses, select source.response_ids.")
+		"Omit --max-samples. For traces, use source.maxTraces; for responses, select source.responseIds.")
 }
 
 // SourceSampleConflict reports a positive dataset cap applied to a trace or response source.
 func SourceSampleConflict(evalName string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
-		fmt.Sprintf("max_samples cannot cap source-backed eval %q", evalName),
-		"Remove the positive max_samples value. "+
-			"For traces, use source.max_traces; for responses, select source.response_ids.")
+		fmt.Sprintf("maxSamples cannot cap source-backed eval %q", evalName),
+		"Remove the positive maxSamples value. "+
+			"For traces, use source.maxTraces; for responses, select source.responseIds.")
 }
 
 // NegativeMaxSamplesFlag reports a row cap below zero given on the command line.

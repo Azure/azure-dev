@@ -13,7 +13,7 @@ import (
 )
 
 // resolveMaxSamples reads anything not above zero as "no cap", so a negative
-// max_samples used to send the WHOLE dataset to a run that is billed per row --
+// maxSamples used to send the WHOLE dataset to a run that is billed per row --
 // the opposite of what a cap asks for, and with nothing said about it.
 func TestNegativeMaxSamplesIsRefused(t *testing.T) {
 	cfg := &EvalConfig{
@@ -30,7 +30,7 @@ func TestNegativeMaxSamplesIsRefused(t *testing.T) {
 	err := cfg.Validate()
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "max_samples")
+	assert.Contains(t, err.Error(), "maxSamples")
 	assert.Contains(t, err.Error(), "support-quality", "the eval that carries it")
 	assert.Contains(t, err.Error(), "-1", "and the value that was rejected")
 }

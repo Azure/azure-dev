@@ -452,3 +452,52 @@ func TestFormatNext_HighlightsOnlyAzdCommands(t *testing.T) {
 	// Descriptions are never highlighted.
 	assert.Contains(t, got, bodyIndent+"verify it's running")
 }
+
+// TestFormatNext_HighlightsCdCommand verifies that the post-init
+// "cd <folder>" step is highlighted like the azd commands that follow it,
+// while its description and non-command pointers stay plain.
+func TestFormatNext_HighlightsCdCommand(t *testing.T) {
+	// Not parallel: toggles the process-global color.NoColor.
+	prev := color.NoColor
+	color.NoColor = false
+	defer func() { color.NoColor = prev }()
+
+	suggestions := []Suggestion{
+		{Command: "cd my-agent", Description: "enter your new project folder", Priority: 0},
+		{Command: "edit azure.yaml: enable the toolbox", Description: "fix the toolbox", Priority: 5},
+		{Command: "azd deploy", Description: "deploy to Azure", Priority: 10, Trailing: true},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, PrintAllNext(&buf, suggestions))
+	got := buf.String()
+
+	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "cd my-agent")+"\n")
+	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "azd deploy")+"\n")
+	// The description stays plain.
+	assert.Contains(t, got, bodyIndent+"enter your new project folder\n")
+	assert.NotContains(t, got, output.WithHighLightFormat("%s", "enter your new project folder"))
+	// Non-command instructions stay plain.
+	assert.Contains(t, got, bodyIndent+"edit azure.yaml: enable the toolbox\n")
+	assert.NotContains(t, got, output.WithHighLightFormat("%s", "edit azure.yaml: enable the toolbox"))
+}
+
+// TestFormatNext_CdCommandPlainWhenNoColor verifies that the "cd <folder>"
+// step carries no escape sequences when color is disabled.
+func TestFormatNext_CdCommandPlainWhenNoColor(t *testing.T) {
+	// Not parallel: toggles the process-global color.NoColor.
+	prev := color.NoColor
+	color.NoColor = true
+	defer func() { color.NoColor = prev }()
+
+	var buf bytes.Buffer
+	require.NoError(t, PrintAllNext(&buf, []Suggestion{
+		{Command: "cd my-agent", Description: "enter your new project folder", Priority: 0},
+	}))
+
+	want := "\n" +
+		"Next:\n" +
+		"  cd my-agent\n" +
+		"  enter your new project folder\n"
+	assert.Equal(t, want, buf.String())
+}

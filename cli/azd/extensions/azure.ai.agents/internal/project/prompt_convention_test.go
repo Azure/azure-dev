@@ -233,6 +233,29 @@ func TestResolvePromptAgentGraph_ValidatesModelAndInstructions(t *testing.T) {
 	}
 }
 
+func TestResolvePromptAgentGraph_ClassifiesAuthoredSkillConflicts(t *testing.T) {
+	p := &AgentServiceTargetProvider{}
+	agent := &agent_yaml.PromptAgent{
+		Model:        "gpt-4.1-mini",
+		Instructions: "ok",
+		Skills: []agent_yaml.HarnessSkillRef{
+			{Name: " Research ", Version: "1"},
+			{Name: "research", Version: "2"},
+		},
+	}
+	agent.Name = "x"
+
+	_, err := p.resolvePromptAgentGraph(t.Context(), agent, nil, nil, nil)
+
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+	require.Contains(t, localErr.Message, `conflicting authored versions "1" and "2"`)
+	require.Contains(t, localErr.Suggestion, "only one version")
+	require.Contains(t, localErr.Suggestion, "skills:")
+}
+
 func TestResolvePromptAgentGraph_ValidatesName(t *testing.T) {
 	p := &AgentServiceTargetProvider{}
 	agent := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "ok"}

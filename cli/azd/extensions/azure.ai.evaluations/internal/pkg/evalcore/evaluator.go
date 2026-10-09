@@ -27,13 +27,13 @@ const BuiltinPrefix = "builtin."
 //
 //	evaluators:
 //	  - evaluator: builtin.task_adherence
-//	    initialization_parameters:
+//	    initializationParameters:
 //	      model: gpt-5.6-luna
 //	      threshold: 3
 //	  - evaluator: support-agent-quality
 //	    name: quality_strict
 //	    version: "2"
-//	    data_mapping:
+//	    dataMapping:
 //	      query: "{{item.customer_message}}"
 type EvaluatorRef struct {
 	// Evaluator is the evaluator to run: a catalog name or builtin.<name>.
@@ -47,10 +47,10 @@ type EvaluatorRef struct {
 	// numeric threshold. They are bound against the evaluator's published
 	// contract rather than forwarded as written.
 	//nolint:lll // a struct tag is one token and cannot be wrapped
-	InitializationParameters map[string]any `yaml:"initialization_parameters,omitempty" json:"initialization_parameters,omitempty"`
+	InitializationParameters map[string]any `yaml:"initializationParameters,omitempty" json:"initialization_parameters,omitempty"`
 	// DataMapping overrides default bindings to dataset or sample fields.
 	// Map messages or separate query/response inputs, never both.
-	DataMapping map[string]string `yaml:"data_mapping,omitempty" json:"data_mapping,omitempty"`
+	DataMapping map[string]string `yaml:"dataMapping,omitempty" json:"data_mapping,omitempty"`
 }
 
 // IsBuiltin reports whether the reference names a platform evaluator, which

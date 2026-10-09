@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,24 +32,32 @@ func Test_CLI_Env_Unset(t *testing.T) {
 		processEnvironment string
 		targetEnvironment  string
 		errorContains      string
+		removedKeys        []string
+		withoutForce       bool
+		stdin              string
+		outputContains     []string
 	}{
 		{
 			name:               "DefaultEnvironment",
 			args:               []string{"KEY1", "KEY2", "SECRET", "KEY1", "MISSING"},
 			defaultEnvironment: "env1",
 			targetEnvironment:  "env1",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
+			outputContains:     []string{`Environment value "MISSING"`, `"env1"`, "was ignored"},
 		},
 		{
 			name:               "LongEnvironmentFlag",
 			args:               []string{"KEY1", "KEY2", "SECRET", "--environment", "env2"},
 			defaultEnvironment: "env1",
 			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
 		},
 		{
 			name:               "ShortEnvironmentFlag",
 			args:               []string{"KEY1", "KEY2", "SECRET", "-e", "env2"},
 			defaultEnvironment: "env1",
 			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
 		},
 		{
 			name:               "ProcessEnvironment",
@@ -56,6 +65,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			defaultEnvironment: "env1",
 			processEnvironment: "env2",
 			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
 		},
 		{
 			name:               "FlagOverridesProcessEnvironment",
@@ -63,11 +73,71 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			defaultEnvironment: "env1",
 			processEnvironment: "env2",
 			targetEnvironment:  "env1",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
 		},
 		{
 			name:              "ExplicitEnvironmentWithoutDefault",
 			args:              []string{"KEY1", "KEY2", "SECRET", "-e", "env2"},
 			targetEnvironment: "env2",
+			removedKeys:       []string{"KEY1", "KEY2", "SECRET"},
+		},
+		{
+			name:               "ExplicitRicardoEnvironment",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
+		},
+		{
+			name:               "ConfirmedSingleValue",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
+			withoutForce:       true,
+			stdin:              "y\n",
+			outputContains:     []string{`Environment value "foo"`, `environment "ricardo"`, "Do you want to continue?"},
+		},
+		{
+			name:               "ConfirmedMultipleValues",
+			args:               []string{"KEY1", "KEY2", "-e", "env2"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2"},
+			withoutForce:       true,
+			stdin:              "y\n",
+			outputContains:     []string{`Environment values "KEY1", "KEY2"`, `environment "env2"`},
+		},
+		{
+			name:               "DeclinedConfirmation",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			stdin:              "n\n",
+			outputContains:     []string{"No environment values were removed."},
+		},
+		{
+			name:               "ConfirmationDefaultsToNo",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			stdin:              "\n",
+			outputContains:     []string{"No environment values were removed."},
+		},
+		{
+			name:               "NoPromptRequiresForce",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			errorContains:      "requires confirmation",
+			outputContains:     []string{"--force"},
+		},
+		{
+			name:               "MissingOnlyWithoutForce",
+			args:               []string{"MISSING", "MISSING", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			outputContains:     []string{`Environment value "MISSING"`, `"ricardo"`, "was ignored"},
 		},
 		{
 			name:               "MissingEnvironment",
@@ -101,13 +171,15 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			store := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 			valuesBefore := make(map[string]map[string]string)
 			configBefore := make(map[string][]byte)
-			for _, name := range []string{"env1", "env2"} {
+			for _, name := range []string{"env1", "env2", "ricardo"} {
 				valuesBefore[name] = map[string]string{
 					environment.EnvNameEnvVarName: name,
 					"KEY1":                        "value1",
 					"KEY2":                        "value2",
 					"SECRET":                      secretRef,
 					"KEEP":                        "unchanged",
+					"foo":                         "foo-value",
+					"Foo":                         "different-case-value",
 				}
 				env := environment.NewWithValues(name, valuesBefore[name])
 				require.NoError(t, env.Config.Set("KEY1", "config-value"))
@@ -131,26 +203,39 @@ func Test_CLI_Env_Unset(t *testing.T) {
 				"NO_COLOR=1",
 				"AZURE_ENV_NAME="+tt.processEnvironment,
 			)
-			args := append([]string{"env", "unset", "--no-prompt"}, tt.args...)
-			result, err := cli.RunCommand(ctx, args...)
+			args := []string{"env", "unset"}
+			if tt.stdin != "" {
+				args = append(args, "--no-prompt=false")
+			} else {
+				args = append(args, "--no-prompt")
+			}
+			if !tt.withoutForce {
+				args = append(args, "--force")
+			}
+			args = append(args, tt.args...)
+			result, err := cli.RunCommandWithStdIn(ctx, tt.stdin, args...)
 			require.NotNil(t, result)
 			if tt.errorContains != "" {
 				require.Error(t, err)
 				require.Contains(t, result.Stdout+result.Stderr, tt.errorContains)
 			} else {
 				require.NoError(t, err)
-				require.Empty(t, result.Stdout)
+				if tt.stdin == "" && len(tt.outputContains) == 0 {
+					require.Empty(t, result.Stdout)
+				}
+			}
+			for _, message := range tt.outputContains {
+				require.Contains(t, result.Stdout+result.Stderr, message)
 			}
 
-			for _, name := range []string{"env1", "env2"} {
+			for _, name := range []string{"env1", "env2", "ricardo"} {
 				env := environment.New(name)
 				persisted, err := godotenv.Read(store.EnvPath(env))
 				require.NoError(t, err)
-				want := valuesBefore[name]
+				want := maps.Clone(valuesBefore[name])
 				if name == tt.targetEnvironment {
-					want = map[string]string{
-						environment.EnvNameEnvVarName: name,
-						"KEEP":                        "unchanged",
+					for _, key := range tt.removedKeys {
+						delete(want, key)
 					}
 				}
 				require.Equal(t, want, persisted)

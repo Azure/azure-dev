@@ -8866,6 +8866,13 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['unset'],
 					description: 'Remove one or more environment values.',
+					options: [
+						{
+							name: ['--force'],
+							description: 'Skips removal confirmation and automatically attempts restoration if saving fails.',
+							isDangerous: true,
+						},
+					],
 					args: {
 						name: 'key',
 						isVariadic: true,

@@ -1,15 +1,19 @@
 
 Remove one or more values from the selected environment's .env file.
 
-Keys are case-sensitive. Missing keys are ignored.
+Keys are case-sensitive. Missing keys are ignored with a warning.
+You are prompted to confirm removal. Use --force to skip this confirmation.
+If saving fails after local values change, you can choose to restore the previous values.
+With --force, restoration is attempted automatically without prompting.
 Removing a Key Vault secret reference does not delete the secret.
-Process environment variables and configuration values in config.json are not removed.
+Configuration values in config.json are not removed.
 
 Usage
   azd env unset <key...> [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.
+        --force              	: Skips removal confirmation and automatically attempts restoration if saving fails.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

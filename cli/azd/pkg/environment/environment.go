@@ -188,10 +188,7 @@ func CleanName(name string) string {
 // Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
 // first.
 func (e *Environment) Getenv(key string) string {
-	e.mu.RLock()
-	v, has := e.dotenv[key]
-	e.mu.RUnlock()
-	if has {
+	if v, has := e.LookupDotenv(key); has {
 		return v
 	}
 
@@ -201,14 +198,20 @@ func (e *Environment) Getenv(key string) string {
 // LookupEnv behaves like os.LookupEnv, except that any keys in the `.env` file associated with this environment are
 // considered first.
 func (e *Environment) LookupEnv(key string) (string, bool) {
-	e.mu.RLock()
-	v, has := e.dotenv[key]
-	e.mu.RUnlock()
-	if has {
+	if v, has := e.LookupDotenv(key); has {
 		return v, true
 	}
 
 	return os.LookupEnv(key)
+}
+
+// LookupDotenv looks up a key only in this environment's .env values, without falling back to process values.
+// Unlike [Environment.Dotenv], it can inspect individual reserved loader-control keys for state management.
+func (e *Environment) LookupDotenv(key string) (string, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	value, exists := e.dotenv[key]
+	return value, exists
 }
 
 // DotenvDelete removes the given key from the .env file in the environment, it is a no-op if the key

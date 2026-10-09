@@ -66,9 +66,10 @@ func (a *showAction) Run() error {
 
 	if a.versionSet && strings.TrimSpace(a.version) == "" {
 		return &azdext.LocalError{
-			Message:  "An exact environment version is required for --version.",
-			Code:     "rle_environment_version_required",
-			Category: azdext.LocalErrorCategoryUser,
+			Message:    "An exact environment version is required for --version.",
+			Code:       "rle_environment_version_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Provide a semantic version, for example --version 2.1.0.",
 		}
 	}
 	environmentName, client, err := a.resolveTarget()

@@ -27,7 +27,8 @@ func TestShowTelemetryIdentity(t *testing.T) {
 	}{
 		{"readable environment", `{"run_scope":"Environment","lime_run_id":"rle-v1|p=one|e=two|v=1.0","run_id_format":"readable"}`,
 			"Environment", "rle-v1|p=one|e=two|v=1.0", "readable"},
-		{"opaque environment", `{"run_scope":"Environment","lime_run_id":"rle-v1-sha256|h=abcdef","run_id_format":"opaque"}`,
+		{"opaque environment", `{"run_scope":"Environment",` +
+			`"lime_run_id":"rle-v1-sha256|h=abcdef","run_id_format":"opaque"}`,
 			"Environment", "rle-v1-sha256|h=abcdef", "opaque"},
 		{"rollout", `{"run_scope":"Rollout"}`, "Rollout", "Per rollout", "Unavailable"},
 		{"disabled", `{"run_scope":"Disabled"}`, "Disabled", "Disabled", "Unavailable"},
@@ -274,6 +275,9 @@ func TestShowRejectsEmptyExplicitVersion(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok || localErr.Code != "rle_environment_version_required" {
 		t.Fatalf("expected version validation error, got %v", err)
+	}
+	if localErr.Suggestion != "Provide a semantic version, for example --version 2.1.0." {
+		t.Fatalf("expected actionable version suggestion, got %q", localErr.Suggestion)
 	}
 }
 

@@ -6,6 +6,7 @@ on:
       - "cli/azd/extensions/azure.ai.agents/**"
       - "cli/azd/extensions/azure.ai.inspector/**"
       - "cli/azd/extensions/azure.ai.projects/**"
+      - "cli/azd/extensions/scripts/ci-build.ps1"
       - "cli/azd/test/functional/ai_agents/**"
       - ".github/workflows/test-ext-azure-ai-agents.yml"
     branches: [main]
@@ -140,8 +141,8 @@ jobs:
       - name: Build extension (ci-build.ps1)
         working-directory: cli/azd/extensions/azure.ai.agents
         run: |
-          # Use the canonical ci-build.ps1 which includes security flags
-          # (trimpath, pie, cfi, cfg, osusergo) matching release builds.
+          # The wrapper delegates to the shared build script with the same
+          # flags as release builds.
           # -BuildRecordMode produces both a production and a record-tagged binary.
           pwsh -File ci-build.ps1 -BuildRecordMode -OutputFileName azure-ai-agents-linux-amd64 -Version "$(cat version.txt | tr -d '\r\n')"
           # Move production binary to bin/ where azd x pack expects it.

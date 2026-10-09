@@ -144,6 +144,10 @@ overrides:
           - stdlib
           - unhashed
           - vsrpc
+    - filename: docs/guides/creating-an-extension.md
+      words:
+          - GOARCH
+          - GOEXPERIMENT
     - filename: docs/reference/**/*.md
       words:
           - apphost

@@ -123,10 +123,10 @@ silently ignoring it. Omit the flag to repeat a previous run's source; use
 `source.maxTraces` to limit a declared trace source. Simulation declarations
 with a positive configured cap remain invalid even when the flag is zero.
 
-Genuinely unregistered local files still run inline and support a cap, but only
-after a complete empty version listing (or a not-found response) and not-found
-first-version probes confirm absence. Permissions, transient failures, and
-malformed listings fail the run instead of silently selecting local data.
+A local dataset file with no registered version runs inline and supports a cap,
+once a complete empty version listing (or a not-found response) and not-found
+first-version probes confirm that no version exists. Permissions, transient
+failures, and malformed listings fail the run instead of selecting local data.
 
 `job show --dataset` recovers the registered evaluation level even when the local
 artifact already exists. It preserves edited bytes unless `--force` is given,

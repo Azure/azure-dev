@@ -87,7 +87,7 @@ func TestPartialZeroRunCountsDoNotRenderAPassRate(t *testing.T) {
 		call func(io.Writer) error
 	}{
 		{"counts", func(out io.Writer) error {
-			renderReportedRunCounts(out, "RESULTS", run.ReportedResultCounts())
+			renderReportedRunCounts(out, "RESULTS", run.ReportedResultCounts(), run.ResultCounts)
 			return nil
 		}},
 		{"summary", func(out io.Writer) error { return renderRun(out, &run, nil) }},
@@ -107,7 +107,12 @@ func TestPartialZeroRunCountsDoNotRenderAPassRate(t *testing.T) {
 		})
 	}
 	var out bytes.Buffer
-	renderReportedRunCounts(&out, "RESULTS", map[string]int{"total": 2, "passed": 0})
+	renderReportedRunCounts(
+		&out,
+		"RESULTS",
+		map[string]int{"total": 2, "passed": 0},
+		&eval_api.EvalRunResultCounts{Total: 2},
+	)
 	assert.Contains(t, out.String(), "0.0% (0 passed / 2 total test cases)")
 }
 

@@ -693,7 +693,7 @@ func (ec *evalContext) buildRunDataSource(
 		if maxSamples > 0 {
 			return nil, "", exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				fmt.Sprintf("eval %q: --max-samples or max_samples (%d) conflicts with registered dataset %q version %q",
+				fmt.Sprintf("eval %q: --max-samples or maxSamples (%d) conflicts with registered dataset %q version %q",
 					group.Name, maxSamples, group.Dataset, version),
 				"Registered datasets retain their version identity; this run API has no supported row-subset option. "+
 					"Remove the cap, or publish a smaller dataset and select it.",
@@ -788,7 +788,7 @@ func quotedList(values []string) string {
 //
 // The service reads them from Application Insights, so the agent has to be
 // emitting gen_ai.input.messages / gen_ai.output.messages for anything to be
-// found. `agent_name` filters the traces; it is not a target, because a trace
+// found. `agentName` filters the traces; it is not a target, because a trace
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	// runnableEval has already refused an empty one; read rather than assumed,
@@ -1042,7 +1042,7 @@ func resolveLevel(group *project.Eval) string {
 // resolveMaxSamples prefers a positive flag value, then the declared cap.
 // runMaxSamples separately handles an explicitly supplied zero.
 //
-// Without this, max_samples parsed and did nothing: an eval that caps its
+// Without this, maxSamples parsed and did nothing: an eval that caps its
 // sample count in config would send the whole dataset, and only a flag on every
 // invocation would honour the cap.
 func resolveMaxSamples(flag int, group *project.Eval) int {

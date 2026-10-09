@@ -218,14 +218,14 @@ func TestRefuseUnusableSeedRows_PerRowTurnsRespectTheCeiling(t *testing.T) {
 	err := refuseUnusableSeedRows(group, pastBound)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "asks for 6 turns")
-	assert.Contains(t, err.Error(), "max_turns is 5")
+	assert.Contains(t, err.Error(), "maxTurns is 5")
 
 	group.Simulation.MaxTurns = 0
 	assert.NoError(t, refuseUnusableSeedRows(group, pastBound))
 	pastDefault := []map[string]any{{
 		"test_case_description": "A delayed order.", "simulation_configuration": map[string]any{"desired_num_turns": 21.0},
 	}}
-	require.ErrorContains(t, refuseUnusableSeedRows(group, pastDefault), "max_turns is 20")
+	require.ErrorContains(t, refuseUnusableSeedRows(group, pastDefault), "maxTurns is 20")
 
 	group.Simulation.MaxTurns = 5
 	overridden := []map[string]any{{

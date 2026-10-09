@@ -87,8 +87,8 @@ evals:
     id: eval_1
     description: grades support answers
     dataset: golden
-    evaluation_level: turn
-    max_samples: 15
+    evaluationLevel: turn
+    maxSamples: 15
     evaluators:
       - evaluator: builtin.task_adherence
     target:

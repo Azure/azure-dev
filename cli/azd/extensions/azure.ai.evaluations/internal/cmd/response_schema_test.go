@@ -558,10 +558,10 @@ func TestResponseSourceSchemaAndRuntimeAgree(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := map[string]any{"type": "responses"}
 			if !tc.omitIDs {
-				source["response_ids"] = tc.ids
+				source["responseIds"] = tc.ids
 			}
 			if tc.traces {
-				source = map[string]any{"type": "traces", "agent_name": "agent"}
+				source = map[string]any{"type": "traces", "agentName": "agent"}
 			}
 			dir := t.TempDir()
 			if tc.ref {
@@ -575,7 +575,7 @@ func TestResponseSourceSchemaAndRuntimeAgree(t *testing.T) {
 				"evaluators": []any{map[string]any{"evaluator": "builtin.coherence"}},
 			}
 			if tc.cap != nil {
-				eval["max_samples"] = *tc.cap
+				eval["maxSamples"] = *tc.cap
 			}
 			body, err := json.Marshal(map[string]any{"evals": []any{eval}})
 			require.NoError(t, err)
@@ -609,11 +609,11 @@ func TestResponseBuilderRejectsEmptyIDsAndCaps(t *testing.T) {
 		group := responseGroup()
 		group.Source.ResponseIDs = ids
 		_, _, err := (&evalContext{}).buildRunDataSource(t.Context(), &group, "", 0)
-		require.ErrorContains(t, err, "source.response_ids")
+		require.ErrorContains(t, err, "source.responseIds")
 	}
 	group := responseGroup()
 	_, _, err := (&evalContext{}).buildRunDataSource(t.Context(), &group, "", 1)
-	require.ErrorContains(t, err, "max_samples")
+	require.ErrorContains(t, err, "maxSamples")
 	_, _, err = (&evalContext{}).buildRunDataSource(t.Context(), nil, "", 0)
 	require.Error(t, err)
 }
@@ -624,9 +624,9 @@ func TestResponseBuilderBlankIDNamesEntry(t *testing.T) {
 		ids  []string
 		want string
 	}{
-		{"empty first", []string{""}, "source.response_ids[0]"},
-		{"blank first", []string{" \t"}, "source.response_ids[0]"},
-		{"blank later", []string{"resp_keep", "\u0085\u00a0\u2003"}, "source.response_ids[1]"},
+		{"empty first", []string{""}, "source.responseIds[0]"},
+		{"blank first", []string{" \t"}, "source.responseIds[0]"},
+		{"blank later", []string{"resp_keep", "\u0085\u00a0\u2003"}, "source.responseIds[1]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			group := responseGroup()

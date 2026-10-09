@@ -60,6 +60,22 @@ func TestExplicitLocalRowsRejectNonRegularFiles(t *testing.T) {
 	}
 }
 
+func TestExplicitLocalSparseOptionalColumnsRemainMapped(t *testing.T) {
+	dir := localSourceConfig(t,
+		"{\"query\":\"first\",\"tool_calls\":[{\"name\":\"lookup\"}]}\n{\"query\":\"second\"}\n", 0)
+	cfg, err := project.OpenEvalConfig(dir)
+	require.NoError(t, err)
+	group := &cfg.Evals[0]
+	input, err := openLocalInput(t.Context(), group, group.LocalSourcePath(dir))
+	require.NoError(t, err)
+	defer input.file.Close()
+
+	req, err := buildLocalEvalRequest(group, input.columns, input.availableColumns, nil)
+	require.NoError(t, err)
+	require.Len(t, req.TestingCriteria, 1)
+	assert.Equal(t, "{{item.tool_calls}}", req.TestingCriteria[0].DataMapping["tool_calls"])
+}
+
 func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (*evalContext, <-chan identityRequest) {
 	t.Helper()
 	requests := make(chan identityRequest, 20)

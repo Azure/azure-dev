@@ -76,7 +76,7 @@ func (r *evalReconciler) preparedLocalRequest(
 		return nil, err
 	}
 	defer input.file.Close()
-	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	req, err := buildLocalEvalRequest(group, input.columns, input.availableColumns, schemas)
 	if err != nil {
 		return nil, err
 	}

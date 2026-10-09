@@ -23,6 +23,8 @@ func TestInvalidRunCountsAreIndeterminateAndNotDisplayedAsRates(t *testing.T) {
 		`{"total":0,"passed":-1}`,
 		`{"total":-1,"passed":0}`,
 		`{"total":1,"passed":2,"failed":0,"errored":0,"skipped":0}`,
+		`{"total":1,"passed":1,"failed":0,"errored":1,"skipped":0}`,
+		`{"total":2,"passed":1,"failed":2,"errored":0,"skipped":0}`,
 	} {
 		t.Run(raw, func(t *testing.T) {
 			var run eval_api.OpenAIEvalRun

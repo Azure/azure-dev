@@ -121,19 +121,20 @@ func TestPrepareUpgradeRecoveryRejectsUnsafeReplacementIDs(t *testing.T) {
 
 func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 	tests := []struct {
-		name             string
-		artifact         string
-		entry            string
-		checksum         ExtensionChecksum
-		cancel           bool
-		cancelOnDownload bool
-		mutateInstalled  bool
-		failSave         int
-		version          string
-		wantError        string
-		replacementID    string
-		recoverySave     bool
-		partialSave      bool
+		name              string
+		artifact          string
+		entry             string
+		checksum          ExtensionChecksum
+		cancel            bool
+		cancelOnDownload  bool
+		mutateInstalled   bool
+		installDependency bool
+		failSave          int
+		version           string
+		wantError         string
+		replacementID     string
+		recoverySave      bool
+		partialSave       bool
 	}{
 		{name: "missing artifact", artifact: "missing", wantError: "failed to download artifact"},
 		{
@@ -149,6 +150,10 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 		{
 			name: "download mutation", artifact: "cancel", cancelOnDownload: true,
 			mutateInstalled: true, wantError: "context canceled",
+		},
+		{
+			name: "dependency install", artifact: "missing", installDependency: true,
+			wantError: "failed to download artifact",
 		},
 		{name: "uninstall save", artifact: "replacement", failSave: 1, wantError: "injected save failure"},
 		{name: "install save", artifact: "replacement", failSave: 2, wantError: "injected save failure"},
@@ -224,9 +229,24 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			if entry == "" {
 				entry = filepath.Base(newPath)
 			}
+			dependencies := []ExtensionDependency(nil)
+			if test.installDependency {
+				dependencyPath := filepath.Join(artifactDir, "dependency")
+				require.NoError(t, os.WriteFile(dependencyPath, []byte("dependency bytes"), 0o600))
+				dependency := &ExtensionMetadata{
+					Id: "test.dependency", Source: metadata.Source,
+					Versions: []ExtensionVersion{{
+						Version: "2.0.0", EntryPoint: filepath.Base(dependencyPath),
+						Artifacts: map[string]ExtensionArtifact{platform: {URL: dependencyPath}},
+					}},
+				}
+				manager.sources = []Source{&mockSource{name: metadata.Source, extensions: []*ExtensionMetadata{dependency}}}
+				dependencies = []ExtensionDependency{{Id: dependency.Id, Version: dependency.Versions[0].Version}}
+			}
 			metadata.Versions = []ExtensionVersion{{
 				Version: "1.1.0", EntryPoint: entry,
-				Artifacts: map[string]ExtensionArtifact{platform: {URL: newPath, Checksum: test.checksum}},
+				Artifacts:    map[string]ExtensionArtifact{platform: {URL: newPath, Checksum: test.checksum}},
+				Dependencies: dependencies,
 			}}
 			if test.replacementID != "" {
 				metadata.Id = test.replacementID
@@ -321,7 +341,15 @@ func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 			require.JSONEq(t, string(before), string(after))
 			records, err := manager.ListInstalled()
 			require.NoError(t, err)
-			require.Len(t, records, 1)
+			wantRecords := 1
+			if test.installDependency {
+				wantRecords++
+				dependency := records["test.dependency"]
+				require.NotNil(t, dependency)
+				require.Equal(t, "2.0.0", dependency.Version)
+				require.True(t, dependency.InstalledAsDependency)
+			}
+			require.Len(t, records, wantRecords)
 			require.Contains(t, records, installed.Id)
 			if test.replacementID != "" {
 				entries, err := os.ReadDir(filepath.Join(configDir, "extensions"))

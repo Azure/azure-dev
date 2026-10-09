@@ -137,6 +137,7 @@ func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 	for _, entryKind := range []string{
 		"invalid-name", "directory-link", "dangling-link", "lock-directory-link",
 		"env-directory", "config-directory", "lock-directory",
+		"cache-directory", "cache-directory-link", ".state.json",
 		DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock",
 	} {
 		t.Run(entryKind, func(t *testing.T) {
@@ -168,6 +169,14 @@ func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 					fileName += ".lock"
 				}
 				require.NoError(t, os.MkdirAll(filepath.Join(ctx.EnvironmentDirectory(), "invalid", fileName), 0700))
+			case "cache-directory", "cache-directory-link":
+				root := filepath.Join(ctx.EnvironmentDirectory(), "invalid")
+				require.NoError(t, os.Mkdir(root, 0700))
+				if entryKind == "cache-directory" {
+					require.NoError(t, os.Mkdir(filepath.Join(root, ".state.json"), 0700))
+				} else {
+					ostest.DirectoryLink(t, t.TempDir(), filepath.Join(root, ".state.json"))
+				}
 			default:
 				root := filepath.Join(ctx.EnvironmentDirectory(), "linked")
 				require.NoError(t, os.Mkdir(root, 0700))
@@ -182,7 +191,7 @@ func TestLocalFileDataStore_ListSkipsInvalidEntries(t *testing.T) {
 			require.True(t, envs[0].IsDefault)
 			if entryKind == "dangling-link" {
 				require.NoDirExists(t, target)
-			} else if entryKind == DotEnvFileName || entryKind == ConfigFileName ||
+			} else if entryKind == DotEnvFileName || entryKind == ConfigFileName || entryKind == ".state.json" ||
 				entryKind == DotEnvFileName+".lock" || entryKind == "lock-directory-link" {
 				raw, err := os.ReadFile(target)
 				require.NoError(t, err)

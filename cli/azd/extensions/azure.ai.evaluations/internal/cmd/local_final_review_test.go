@@ -61,7 +61,7 @@ func TestRunRejectsEmptyDatasetOverrideAcrossSources(t *testing.T) {
 				_, err := startLocalSource(t, ec, dir, name, map[string]string{"dataset": value})
 				local, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok)
-				assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
+				assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
 				assert.Contains(t, local.Message, "--dataset")
 				assert.Empty(t, recordedIdentityRequests(requests))
 			})

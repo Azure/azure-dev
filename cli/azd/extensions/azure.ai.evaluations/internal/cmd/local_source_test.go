@@ -296,14 +296,10 @@ func TestExplicitLocalInvalidInputsNeverSubmitOrWriteState(t *testing.T) {
 			assert.Equal(t, initial, ec.state)
 			assert.Equal(t, rawState, env.config[privateStatePath])
 			assert.Empty(t, recordedIdentityRequests(requests), "local validation precedes any service call")
-			if value, explicit := tc.flag["dataset"]; explicit {
+			if _, explicit := tc.flag["dataset"]; explicit {
 				local, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok)
-				want := exterrors.CodeConflictingArguments
-				if value == "" {
-					want = exterrors.CodeInvalidParameter
-				}
-				assert.Equal(t, want, local.Code)
+				assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
 			}
 		})
 	}

@@ -83,7 +83,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n",
 	), 0600))
 	services := map[string]*azdext.ServiceConfig{}
-	for _, name := range []string{"agent", "create", "update", "unknown", "legacy", "code", "build"} {
+	for _, name := range []string{"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update"} {
 		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
 		require.NoError(t, err)
 		services[name] = &azdext.ServiceConfig{
@@ -94,6 +94,12 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	services["create"].Environment = map[string]string{
 		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1", "API_KEY": "private-create-secret",
 	}
+	services["create"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"cpu": "0.5", "memory": "1Gi"},
+	})
+	services["create"].AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+		map[string]any{"protocol": "responses", "version": "2.0.0"},
+	})
 	services["update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
 		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
 	})
@@ -104,8 +110,10 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	services["code"].AdditionalProperties.Fields["sessionConfiguration"], _ = structpb.NewValue(map[string]any{
 		"idleTimeoutSeconds": 123,
 	})
+	services["code"].Image, services["code"].Docker = "", nil
 	services["build"].Image = ""
 	services["build"].Docker.ImagePassthrough = false
+	services["image-update"].Image = "registry.example.com/agent:v2"
 	services["legacy"].Config = services["legacy"].AdditionalProperties
 	services["legacy"].AdditionalProperties = nil
 	extension := &extensions.Extension{
@@ -154,15 +162,20 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	preview := service.previewFunc("azure.ai.agent", extension.Id)
 	for _, tc := range []struct{ name, status string }{
 		{"agent", "noChange"}, {"create", "create"}, {"update", "update"}, {"unknown", "unknown"},
-		{"code", "noChange"}, {"build", "noChange"},
+		{"code", "noChange"}, {"build", "noChange"}, {"image-update", "update"},
 	} {
 		result, err := preview(ctx, services[tc.name])
 		require.NoError(t, err)
 		require.Equal(t, tc.status, result.Data["status"])
 		require.NotEmpty(t, result.Message)
 		require.NotContains(t, result.Message, "private-create-secret")
-		require.Equal(t, map[string]any{"build": tc.name == "build", "push": tc.name == "build"},
-			result.Data["containerImage"])
+		if tc.name == "create" || tc.name == "image-update" {
+			require.Equal(t, map[string]any{"build": false, "push": false}, result.Data["containerImage"])
+		} else {
+			require.NotContains(t, result.Data, "containerImage")
+			require.NotContains(t, result.Message, "  Container image:")
+		}
+		require.NotContains(t, result.Message, "metadata.enableVnextExperience")
 		encoded, err := json.Marshal(result.Data)
 		require.NoError(t, err)
 		for _, excluded := range []string{
@@ -174,6 +187,11 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		if tc.name == "code" || tc.name == "build" {
 			require.Empty(t, result.Data["changes"])
 			require.Empty(t, result.Data["unknown"])
+		}
+		if tc.name == "image-update" {
+			require.Contains(t, result.Message,
+				`update: definition.container_configuration.image: "registry.example.com/agent:v1" -> `+
+					`"registry.example.com/agent:v2"`)
 		}
 		if tc.name == "create" || tc.name == "update" {
 			changes, ok := result.Data["changes"].([]any)

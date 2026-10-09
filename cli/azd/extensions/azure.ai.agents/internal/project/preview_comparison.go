@@ -48,9 +48,12 @@ type previewContainerImage struct {
 }
 
 type previewInputs struct {
-	Unknown        []string
-	ContainerImage *previewContainerImage
-	IgnoreImage    bool
+	Unknown          []string
+	ContainerImage   *previewContainerImage
+	IgnoreImage      bool
+	Declared         map[string]bool
+	Description      *string
+	ProtocolVersions map[string]bool
 }
 
 func comparePreviewRequest(
@@ -77,6 +80,24 @@ func comparePreviewRequest(
 		}
 		secrets = append(secrets, remoteSecrets...)
 	}
+	if inputs.Description != nil {
+		after["description"] = *inputs.Description
+	}
+	if err := previewProtocolPresence(after, inputs.ProtocolVersions); err != nil {
+		return nil, previewConfigurationError()
+	}
+	if err := previewProtocolPresence(before, inputs.ProtocolVersions); err != nil {
+		return nil, fmt.Errorf("Foundry returned an invalid protocol definition; preview cannot compare it")
+	}
+	if inputs.Declared != nil {
+		for path := range after {
+			if !inputs.Declared[path] {
+				// Normalization-only defaults are neither additions nor removals.
+				delete(after, path)
+				delete(before, path)
+			}
+		}
+	}
 	if inputs.IgnoreImage {
 		delete(before, previewImagePath)
 		delete(after, previewImagePath)
@@ -99,7 +120,6 @@ func comparePreviewRequest(
 	result := agentPreviewResult{
 		Service: clean(service), Agent: clean(desired.Name),
 		Status: "noChange", Changes: []previewChange{}, Unknown: []string{},
-		ContainerImage: inputs.ContainerImage,
 		Notes: []string{
 			"Read-only comparison of the latest agent version; infrastructure and dependencies are not previewed.",
 			"Sensitive values are redacted; known configuration values are shown.",
@@ -136,7 +156,19 @@ func comparePreviewRequest(
 		}
 		result.Changes = append(result.Changes, change)
 	}
+	containerChanged := existing == nil && inputs.ContainerImage != nil
+	for _, change := range result.Changes {
+		if change.Group == "containerImage" {
+			containerChanged = true
+		}
+	}
+	if containerChanged {
+		result.ContainerImage = inputs.ContainerImage
+	}
 	for _, path := range inputs.Unknown {
+		if !containerChanged && (path == "containerImage.build" || path == "containerImage.push") {
+			continue
+		}
 		if previewFieldGroup(path) != "" {
 			result.Unknown = append(result.Unknown, clean(path))
 		}
@@ -156,6 +188,31 @@ func comparePreviewRequest(
 			"Resolve missing configuration inputs or select an image deployment strategy to compare these fields.")
 	}
 	return previewResponse(result)
+}
+
+func previewProtocolPresence(state map[string]any, versions map[string]bool) error {
+	raw, exists := state["definition.protocol_versions"]
+	if !exists || versions == nil {
+		return nil
+	}
+	records, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("invalid protocol records")
+	}
+	for _, record := range records {
+		fields, ok := record.(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid protocol record")
+		}
+		protocol, ok := fields["protocol"].(string)
+		if !ok {
+			return fmt.Errorf("invalid protocol name")
+		}
+		if declared, tracked := versions[protocol]; tracked && !declared && fields["version"] == "" {
+			delete(fields, "version")
+		}
+	}
+	return nil
 }
 
 func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any, []string, error) {
@@ -196,9 +253,6 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 	}
 	clone := *request
 	clone.Definition = definition
-	if clone.Description != nil && *clone.Description == "" {
-		clone.Description = nil
-	}
 	clone.AgentEndpoint = nil
 	clone.AgentCard = nil
 	data, err = json.Marshal(clone)
@@ -230,6 +284,9 @@ var (
 // previewDisplayValue is deny-by-default: new API fields must opt in before their
 // values can reach either terminal or JSON output. Free-form text stays redacted.
 func previewDisplayValue(path string, value any, clean func(string) string) any {
+	if text, ok := value.(string); ok && text == "" && previewFieldGroup(path) != "" {
+		return text
+	}
 	switch path {
 	case "definition.cpu", "definition.memory":
 		if text, ok := value.(string); ok && previewQuantity.MatchString(text) {
@@ -240,7 +297,7 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 			return value
 		}
 	case "definition.protocol_versions.version":
-		if text, ok := value.(string); ok && previewVersion.MatchString(text) {
+		if text, ok := value.(string); ok && (text == "" || previewVersion.MatchString(text)) {
 			return text
 		}
 	case "definition.protocol_versions.protocol":
@@ -398,7 +455,8 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 				fmt.Fprintf(&message, "%s -> %s\n", before, after)
 			}
 		}
-		if group.key == "containerImage" && result.ContainerImage != nil {
+		if group.key == "containerImage" && result.ContainerImage != nil &&
+			(result.ContainerImage.Build != nil || result.ContainerImage.Push != nil) {
 			if !shown {
 				fmt.Fprintf(&message, "  %s:\n", group.label)
 			}

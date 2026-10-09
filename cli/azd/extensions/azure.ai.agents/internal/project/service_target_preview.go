@@ -180,25 +180,34 @@ func preparePreviewRequest(
 		return nil, previewInputs{}, previewConfigurationError()
 	}
 	inputs := previewInputs{
-		Unknown: slices.Clone(pending), ContainerImage: &previewContainerImage{},
+		Unknown: slices.Clone(pending), Declared: previewDeclaredFields(service, definition),
+		Description: definition.Description, ProtocolVersions: map[string]bool{},
+	}
+	for _, protocol := range service.GetAdditionalProperties().GetFields()["protocols"].GetListValue().GetValues() {
+		fields := protocol.GetStructValue().GetFields()
+		if fields["version"].GetStringValue() == "" {
+			name := fields["protocol"].GetStringValue()
+			_, declared := fields["version"]
+			inputs.ProtocolVersions[name] = inputs.ProtocolVersions[name] || declared
+		}
 	}
 	prebuilt := definition.Image != "" && (service.GetDocker().GetImagePassthrough() ||
 		definition.RegistryConnectionID != "" ||
 		strings.EqualFold(strings.TrimSpace(environment["AZD_AGENT_SKIP_ACR"]), "true"))
 	switch {
 	case definition.CodeConfiguration != nil:
-		inputs.IgnoreImage = true
-		inputs.ContainerImage.Build, inputs.ContainerImage.Push = new(false), new(false)
+		// The code path has no azd container build/push intent or authored image.
 	case prebuilt || service.GetDocker().GetImagePassthrough():
-		inputs.ContainerImage.Build, inputs.ContainerImage.Push = new(false), new(false)
+		inputs.ContainerImage = &previewContainerImage{Build: new(false), Push: new(false)}
 	case definition.Image != "" && !azdext.DetectInteractive().NoPrompt:
 		inputs.IgnoreImage = true
+		inputs.ContainerImage = &previewContainerImage{}
 		inputs.Unknown = append(inputs.Unknown, "containerImage.build", "containerImage.push")
 	default:
 		inputs.IgnoreImage = true
-		inputs.ContainerImage.Build, inputs.ContainerImage.Push = new(true), new(true)
+		inputs.ContainerImage = &previewContainerImage{Build: new(true), Push: new(true)}
 	}
-	if inputs.IgnoreImage {
+	if inputs.IgnoreImage || definition.CodeConfiguration != nil {
 		inputs.Unknown = slices.DeleteFunc(inputs.Unknown, func(path string) bool { return path == previewImagePath })
 	}
 	unknown := inputs.Unknown
@@ -269,7 +278,51 @@ func preparePreviewRequest(
 	// Deploy applies endpoint auth normalization after creating the agent version.
 	ensureActivityEndpointAuthSchemeForProfile(prepared.request, profile)
 	inputs.Unknown = unknown
+	for _, path := range unknown {
+		inputs.Declared[path] = true
+	}
 	return prepared.request, inputs, nil
+}
+
+func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.ContainerAgent) map[string]bool {
+	props := service.GetAdditionalProperties().GetFields()
+	fields := map[string]bool{}
+	for _, path := range []string{"name", "description"} {
+		if _, declared := props[path]; declared {
+			fields[path] = true
+		}
+	}
+	if definition.Metadata != nil {
+		for name := range *definition.Metadata {
+			fields["metadata."+name] = true
+		}
+	}
+	if _, declared := props["protocols"]; declared {
+		fields["definition.protocol_versions"] = true
+	}
+	resources := props["container"].GetStructValue().GetFields()["resources"].GetStructValue().GetFields()
+	for _, name := range []string{"cpu", "memory"} {
+		if _, declared := resources[name]; declared {
+			fields["definition."+name] = true
+		}
+	}
+	for name := range service.GetEnvironment() {
+		fields["definition.environment_variables."+name] = true
+	}
+	if definition.EnvironmentVariables != nil {
+		for _, variable := range *definition.EnvironmentVariables {
+			fields["definition.environment_variables."+variable.Name] = true
+		}
+	}
+	if definition.CodeConfiguration == nil {
+		if definition.Image != "" {
+			fields[previewImagePath] = true
+		}
+		if _, declared := props["registryConnectionId"]; declared {
+			fields["definition.container_configuration.registry_connection_id"] = true
+		}
+	}
+	return fields
 }
 
 func previewPendingInputs(

@@ -217,8 +217,12 @@ func TestPreviewRequestDeploymentParity(t *testing.T) {
 			require.Equal(t, "4Gi", hosted.Memory)
 			require.Equal(t, "true", request.Metadata["enableVnextExperience"])
 			require.Empty(t, unknown.Unknown)
-			require.Equal(t, mode == "build", *unknown.ContainerImage.Build)
-			require.Equal(t, mode == "build", *unknown.ContainerImage.Push)
+			if mode == "code" {
+				require.Nil(t, unknown.ContainerImage)
+			} else {
+				require.Equal(t, mode == "build", *unknown.ContainerImage.Build)
+				require.Equal(t, mode == "build", *unknown.ContainerImage.Push)
+			}
 		})
 	}
 }
@@ -330,8 +334,19 @@ func TestPreviewGroupedChangesAndNonDisclosure(t *testing.T) {
 
 func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	service := previewService(t)
+	service.Image, service.Docker = "", nil
 	service.AdditionalProperties.Fields["codeConfiguration"], _ = structpb.NewValue(map[string]any{
 		"runtime": "python_3_13", "entryPoint": "app.py",
+	})
+	service.AdditionalProperties.Fields["description"] = structpb.NewStringValue("private-description")
+	service.AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
+		"arbitrary": "private-metadata", "tags": "private-tags",
+	})
+	service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"cpu": "0.5", "memory": "1Gi"},
+	})
+	service.AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+		map[string]any{"protocol": "responses", "version": "2.0.0"},
 	})
 	service.Environment = map[string]string{
 		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1", "API_KEY": "private-secret",
@@ -341,9 +356,6 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.NoError(t, err)
 	request, unknown, err := preparePreviewRequest(service, definition, nil, nil)
 	require.NoError(t, err)
-	request.Description = new("private-description")
-	request.Metadata["arbitrary"] = "private-metadata"
-	request.Metadata["tags"] = "private-tags"
 	request.AgentEndpoint = &agent_api.AgentEndpoint{
 		ProtocolConfiguration: &agent_api.ProtocolConfiguration{
 			Activity: &agent_api.ActivityProtocolConfiguration{EnableM365PublicEndpoint: new(false)},
@@ -357,7 +369,6 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.Equal(t, "create", result.Data.AsMap()["status"])
 	for _, line := range []string{
 		`add: name: "example-agent"`,
-		`add: metadata.enableVnextExperience: "true"`,
 		`add: definition.cpu: "0.5"`,
 		`add: definition.memory: "1Gi"`,
 		`add: definition.protocol_versions: [{"protocol":"responses","version":"2.0.0"}]`,
@@ -367,8 +378,6 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 		`add: description: "[redacted]"`,
 		`add: metadata.arbitrary: "[redacted]"`,
 		`add: metadata.tags: "[redacted]"`,
-		`build: false`,
-		`push: false`,
 	} {
 		require.Contains(t, result.Message, line)
 	}
@@ -391,7 +400,9 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "private-")
 	require.NotContains(t, string(encoded), "preview.invalid")
-	require.Equal(t, map[string]any{"build": false, "push": false}, data["containerImage"])
+	require.NotContains(t, data, "containerImage")
+	require.NotContains(t, result.Message, "Container image:")
+	require.NotContains(t, result.Message, "metadata.enableVnextExperience")
 	for _, excluded := range []string{
 		"codeArtifact", "code_configuration", "session_configuration", "agent_endpoint", "agent_card", "definition.kind",
 	} {
@@ -587,7 +598,7 @@ func TestPreviewContainerImageIntentAndIgnoredArtifacts(t *testing.T) {
 		{mode: "build", wantBuild: true, status: "noChange"},
 		{mode: "remote build", wantBuild: true, status: "noChange"},
 		{mode: "configured image default build", noPrompt: true, wantBuild: true, status: "noChange"},
-		{mode: "configured image selection", status: "unknown"},
+		{mode: "configured image selection", status: "noChange"},
 		{mode: "passthrough", status: "update"},
 		{mode: "legacy prebuilt", status: "update"},
 		{mode: "private registry", status: "update"},
@@ -634,13 +645,14 @@ func TestPreviewContainerImageIntentAndIgnoredArtifacts(t *testing.T) {
 			require.NoError(t, err)
 			data := result.Data.AsMap()
 			require.Equal(t, tc.status, data["status"])
-			if tc.mode == "configured image selection" {
-				require.Equal(t, map[string]any{"build": nil, "push": nil}, data["containerImage"])
-				require.ElementsMatch(t, []any{"containerImage.build", "containerImage.push"}, data["unknown"])
-			} else {
+			if tc.status == "update" {
 				require.Equal(t, map[string]any{"build": tc.wantBuild, "push": tc.wantBuild}, data["containerImage"])
 				require.Contains(t, result.Message, fmt.Sprintf("build: %t", tc.wantBuild))
 				require.Contains(t, result.Message, fmt.Sprintf("push: %t", tc.wantBuild))
+			} else {
+				require.NotContains(t, data, "containerImage")
+				require.NotContains(t, result.Message, "Container image:")
+				require.Empty(t, data["unknown"])
 			}
 			if tc.status != "update" {
 				require.Empty(t, data["changes"])

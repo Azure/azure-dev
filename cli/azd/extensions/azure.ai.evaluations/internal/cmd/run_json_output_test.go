@@ -376,7 +376,14 @@ func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
 }
 
 func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testing.T) {
-	for _, raw := range []string{`null`, `{}`, `{"error":null}`, `{"error":{}}`, `{"error":{"message":null}}`} {
+	for _, raw := range []string{
+		`null`,
+		`{}`,
+		`{"error":null}`,
+		`{"error":{}}`,
+		`{"error":{"message":null}}`,
+		`{"error":{"code":429,"message":"numeric code","target":true}}`,
+	} {
 		projected, err := redactExportRunError(json.RawMessage(raw))
 		require.NoError(t, err)
 		assert.Equal(t, raw, string(projected))
@@ -388,6 +395,18 @@ func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testi
 	projected, err := runForJSON(nil)
 	require.NoError(t, err)
 	assert.Nil(t, projected)
+}
+
+func TestRunJSONPreservesScalarDiagnosticFields(t *testing.T) {
+	const response = `{"id":"run_scalar","error":{"code":429,"message":"numeric code","target":true}}`
+	var run eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(response), &run))
+
+	projected, err := runForJSON(&run)
+	require.NoError(t, err)
+	raw, err := json.Marshal(projected)
+	require.NoError(t, err)
+	assert.JSONEq(t, response, string(raw))
 }
 
 func TestRunJSONCallersPreserveInlineSourceNumbers(t *testing.T) {

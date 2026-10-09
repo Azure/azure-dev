@@ -117,8 +117,15 @@ func redactDiagnosticObject(diagnostic map[string]json.RawMessage) (json.RawMess
 }
 
 func redactDiagnosticText(key string, value json.RawMessage) (json.RawMessage, bool, error) {
-	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+	trimmed := bytes.TrimSpace(value)
+	if bytes.Equal(trimmed, []byte("null")) {
 		return value, false, nil
+	}
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		if len(trimmed) > 0 && trimmed[0] != '{' && trimmed[0] != '[' {
+			return value, false, nil
+		}
+		return nil, false, fmt.Errorf("reading exported run error %s: expected text or scalar", key)
 	}
 	var text string
 	if err := json.Unmarshal(value, &text); err != nil {

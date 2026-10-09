@@ -15,6 +15,9 @@ import (
 type ProvisionValidationReportItem struct {
 	// IsError is true for blocking errors, false for warnings.
 	IsError bool
+	// IsCritical marks a warning that defaults confirmation to No.
+	// It is ignored for blocking errors.
+	IsCritical bool
 	// DiagnosticID is a unique, stable identifier for this finding type (e.g.
 	// "role_assignment_missing"). Used in telemetry for error correlation.
 	DiagnosticID string
@@ -36,7 +39,8 @@ type ProvisionValidationReportLink struct {
 }
 
 // ProvisionValidationReport displays the results of local provision validation.
-// Warnings are shown first, followed by errors. Each entry is separated by a blank line.
+// Warnings are shown first, with indented details and bold critical warning headings.
+// Warning-only reports end with a warning total; blocking errors follow warnings without a total.
 type ProvisionValidationReport struct {
 	Items []ProvisionValidationReportItem
 }
@@ -51,13 +55,13 @@ func (r *ProvisionValidationReport) ToString(currentIndentation string) string {
 
 	for i, w := range warnings {
 		if i > 0 {
-			sb.WriteString("\n")
+			sb.WriteString("\n\n")
 		}
 		writeItem(&sb, currentIndentation, warningPrefix, w)
 	}
 
 	if len(warnings) > 0 && len(errors) > 0 {
-		sb.WriteString("\n")
+		sb.WriteString("\n\n")
 	}
 
 	for i, e := range errors {
@@ -67,12 +71,25 @@ func (r *ProvisionValidationReport) ToString(currentIndentation string) string {
 		writeItem(&sb, currentIndentation, failedPrefix, e)
 	}
 
+	if len(warnings) > 0 && len(errors) == 0 {
+		noun := "warnings"
+		if len(warnings) == 1 {
+			noun = "warning"
+		}
+		summary := fmt.Sprintf("%d %s found", len(warnings), noun)
+		if criticalCount := r.CriticalWarningCount(); criticalCount > 0 {
+			summary += fmt.Sprintf(" (%d critical)", criticalCount)
+		}
+		sb.WriteString(fmt.Sprintf("\n\n%s%s",
+			currentIndentation, output.WithWarningFormat("%s.", summary)))
+	}
+
 	return sb.String()
 }
 
 // writeItem renders a single report item with multi-line support.
-// The first line is prefixed with the status indicator (e.g. "(!) Warning:").
-// Continuation lines in the message are indented at the same level as the prefix.
+// Warning details are indented four spaces beyond the heading, with a blank line before suggestions.
+// Critical warnings have a bold yellow heading; blocking errors retain their existing layout.
 func writeItem(
 	sb *strings.Builder, indent string, prefix string, item ProvisionValidationReportItem,
 ) {
@@ -80,25 +97,46 @@ func writeItem(
 		return
 	}
 	lines := strings.Split(item.Message, "\n")
-	sb.WriteString(fmt.Sprintf("%s%s %s", indent, prefix, lines[0]))
+	detailIndent := indent
+	if !item.IsError {
+		detailIndent += "    "
+	}
+
+	if !item.IsError && item.IsCritical {
+		sb.WriteString(indent)
+		sb.WriteString(output.WithBold("%s",
+			output.WithWarningFormat("(!) Critical warning: %s", lines[0])))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s%s %s", indent, prefix, lines[0]))
+	}
+
 	for _, line := range lines[1:] {
-		sb.WriteString(fmt.Sprintf("\n%s%s", indent, line))
+		sb.WriteString("\n")
+		if line != "" {
+			sb.WriteString(detailIndent)
+			sb.WriteString(line)
+		}
 	}
 
 	if item.Suggestion != "" {
+		suggestion := item.Suggestion
+		if !item.IsError {
+			sb.WriteString("\n")
+			suggestion = strings.ReplaceAll(suggestion, "\n", "\n"+detailIndent)
+		}
 		sb.WriteString(fmt.Sprintf("\n%s%s %s",
-			indent,
+			detailIndent,
 			output.WithHighLightFormat("Suggestion:"),
-			item.Suggestion))
+			suggestion))
 	}
 	for _, link := range item.Links {
 		if link.Title != "" {
 			sb.WriteString(fmt.Sprintf("\n%s• %s",
-				indent,
+				detailIndent,
 				output.WithHyperlink(link.URL, link.Title)))
 		} else {
 			sb.WriteString(fmt.Sprintf("\n%s• %s",
-				indent,
+				detailIndent,
 				output.WithLinkFormat(link.URL)))
 		}
 	}
@@ -130,6 +168,17 @@ func (r *ProvisionValidationReport) HasWarnings() bool {
 		}
 	}
 	return false
+}
+
+// CriticalWarningCount returns the number of critical warning-level items.
+func (r *ProvisionValidationReport) CriticalWarningCount() int {
+	count := 0
+	for _, item := range r.Items {
+		if !item.IsError && item.IsCritical {
+			count++
+		}
+	}
+	return count
 }
 
 // partition splits items into warnings and errors, preserving order within each group.

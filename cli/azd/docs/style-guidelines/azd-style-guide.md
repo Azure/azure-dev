@@ -144,6 +144,26 @@ ERROR: Unable to complete provisioning of Azure resources, 'azd up' failed
 
 > Colors: Title → `WithBold`. `(✓) Done:` → `WithSuccessFormat`. `(x) Failed:` and error detail → `WithErrorFormat`. `ERROR:` line → `WithErrorFormat`.
 
+### Provision Validation Warnings
+
+Provision validation reports use `(!) Warning:` for regular findings and a bold yellow
+`(!) Critical warning:` heading for the built-in missing-role-permission finding.
+Critical warnings are advisory, not blocking errors. The failure-likelihood line is
+yellow; principal, subscription, and required-permission labels are gray.
+
+Indent warning details, suggestions, and reference links four spaces beyond the heading
+indentation. Separate warning blocks and suggestion paragraphs with a blank line. Place
+a yellow `N warnings found.` summary directly above confirmation; include `(M critical)`
+when applicable and use `1 warning found.` for one finding. Totals count findings in
+that report, including critical warnings.
+
+Use `Proceed with deployment anyway?` for deployment confirmation and
+`Proceed with the preview anyway?` for preview confirmation. Regular-only reports
+default to Yes; reports containing a critical warning default to No, including with
+`--no-prompt`. Users can explicitly choose Yes to continue despite a critical warning.
+Keep this pattern scoped to provision validation rather than changing global warning
+or error prefixes.
+
 ### Success / Error / Warning Logs
 
 These logs represent the final outcome of a command, displayed after execution completes. Standard logs (Success, Error, Warning) use an **all-caps prefix** followed by a colon to separate the log type from the message.

@@ -277,7 +277,7 @@ type BicepProvider struct {
 	curPrincipal        provisioning.CurrentPrincipalIdProvider
 	portalUrlBase       string
 	keyvaultService     keyvault.KeyVaultService
-	subscriptionManager *account.SubscriptionsManager
+	subscriptionManager account.SubscriptionResolver
 	aiModelService      *ai.AiModelService
 	serviceLocator      ioc.ServiceLocator
 
@@ -2825,6 +2825,7 @@ func (p *BicepProvider) runLocalProvisionValidation(
 		for _, result := range results {
 			report.Items = append(report.Items, ux.ProvisionValidationReportItem{
 				IsError:      result.Severity == ProvisionValidationCheckError,
+				IsCritical:   result.IsCritical,
 				DiagnosticID: result.DiagnosticID,
 				Message:      result.Message,
 				Suggestion:   result.Suggestion,
@@ -2843,10 +2844,9 @@ func (p *BicepProvider) runLocalProvisionValidation(
 		}
 
 		if report.HasWarnings() {
-			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Proceed with provisioning despite the warnings above?",
-				DefaultValue: true,
+				Message:      "Proceed with deployment anyway?",
+				DefaultValue: report.CriticalWarningCount() == 0,
 			})
 			if promptErr != nil {
 				p.setProvisionValidationOutcome(
@@ -2941,27 +2941,17 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	if !hasPermission.HasPermission {
 		return []ProvisionValidationCheckResult{{
 			Severity:     ProvisionValidationCheckWarning,
+			IsCritical:   true,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
-				"Principal %s lacks role assignment"+
-					" permissions on subscription %s\n"+
-					"The deployment includes role assignments"+
-					" and will fail without %s permission.",
-				output.WithHighLightFormat(
-					"(%s)", principalId),
-				output.WithHighLightFormat(subscriptionId),
-				output.WithGrayFormat(
-					"Microsoft.Authorization/"+
-						"roleAssignments/write"),
+				"Missing role assignment permissions\n%s\n%s %s\n%s %s\n%s %s",
+				output.WithWarningFormat("Deployment will likely fail."),
+				output.WithGrayFormat("Principal ID:"), principalId,
+				output.WithGrayFormat("Subscription:"), subscriptionId,
+				output.WithGrayFormat("Required permission:"), requiredActions[0],
 			),
-			Suggestion: "Ensure you have the" +
-				" 'Role Based Access Control" +
-				" Administrator'," +
-				" 'User Access Administrator'," +
-				" 'Owner', or a custom role with" +
-				" 'Microsoft.Authorization/" +
-				"roleAssignments/write' assigned" +
-				" to your account.",
+			Suggestion: "Ask for Owner, User Access Administrator, or " +
+				"Role Based Access Control Administrator on this subscription.",
 		}}, nil
 	}
 

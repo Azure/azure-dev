@@ -267,6 +267,8 @@ const (
 type ProvisionValidationCheckResult struct {
 	// Severity indicates whether this result is a warning or a blocking error.
 	Severity ProvisionValidationCheckSeverity
+	// IsCritical marks a non-blocking warning that defaults confirmation to No.
+	IsCritical bool
 	// DiagnosticID is a unique, stable identifier for this specific finding type
 	// (e.g. "role_assignment_missing"). Used in telemetry to correlate actioned
 	// warnings with deployment outcomes and to track error frequency over time.

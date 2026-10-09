@@ -4,6 +4,7 @@
 package messages
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,9 +22,51 @@ func TestShellArgRefusesToInlineWhatItCannotMakeLiteral(t *testing.T) {
 		"a`whoami`b",
 		`say "hi"`,
 		"${HOME}",
+		"%TEMP%/custom.yaml",
+		"!TEMP!/custom.yaml",
+		"a\nb",
+		`a\b`,
+		"a^b",
+		`C:\Users\Me\quality`,
 	} {
 		assert.Equal(t, "VALUE_NEEDS_QUOTING", ShellArg(v),
 			"%q expands or breaks the quoting, so it must not be inlined", v)
+	}
+}
+
+func TestShellArgRejectsEveryUnicodeControl(t *testing.T) {
+	for _, block := range []struct {
+		name        string
+		first, last rune
+	}{
+		{"C0", 0x00, 0x1f},
+		{"DEL", 0x7f, 0x7f},
+		{"C1", 0x80, 0x9f},
+	} {
+		for control := block.first; control <= block.last; control++ {
+			t.Run(fmt.Sprintf("%s/%U", block.name, control), func(t *testing.T) {
+				value := "before" + string(control) + "after"
+				assert.False(t, CanInlineShellArg(value), "terminal controls cannot be inlined")
+				assert.Equal(t, shellArgNeedsQuoting, ShellArg(value))
+			})
+		}
+	}
+}
+
+func TestShellArgPreservesSafeUnicode(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  string
+	}{
+		{"caf\u00e9", "caf\u00e9"},
+		{"\u8a55\u4fa1", "\u8a55\u4fa1"},
+		{"quality-\U0001f9ea", "quality-\U0001f9ea"},
+		{"caf\u00e9 \u8a55\u4fa1", "\"caf\u00e9 \u8a55\u4fa1\""},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			assert.True(t, CanInlineShellArg(tc.value))
+			assert.Equal(t, tc.want, ShellArg(tc.value))
+		})
 	}
 }
 
@@ -36,7 +79,9 @@ func TestShellArgStillQuotesWhatQuotingFixes(t *testing.T) {
 		"a|b":                  `"a|b"`,
 		"a&b":                  `"a&b"`,
 		"a(b)":                 `"a(b)"`,
-		`C:\Users\Me\My Evals`: `"C:\Users\Me\My Evals"`,
+		"C:/Users/Me/My Evals": `"C:/Users/Me/My Evals"`,
+		"a{b,c}":               `"a{b,c}"`,
+		"@quality":             `"@quality"`,
 	}
 	for in, want := range cases {
 		assert.Equal(t, want, ShellArg(in), "%q is made safe by wrapping", in)
@@ -47,9 +92,10 @@ func TestShellArgStillQuotesWhatQuotingFixes(t *testing.T) {
 // readable.
 func TestShellArgLeavesAPlainValueAlone(t *testing.T) {
 	assert.Equal(t, "./quality", ShellArg("./quality"))
-	assert.Equal(t, `C:\Users\Me\quality`, ShellArg(`C:\Users\Me\quality`))
+	assert.Equal(t, "C:/Users/Me/quality", ShellArg("C:/Users/Me/quality"))
 	assert.Equal(t, "an-eval", ShellArg("an-eval"))
 	assert.Equal(t, `""`, ShellArg(""))
+	assert.True(t, CanInlineShellArg(shellArgNeedsQuoting), "a literal filename matching the placeholder is still safe")
 }
 
 // The placeholder itself has to be inert: a reader who pastes without noticing

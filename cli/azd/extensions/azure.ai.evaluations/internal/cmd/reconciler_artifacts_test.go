@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -291,5 +293,45 @@ func TestReconciliationHonorsPerRowTurnOverride(t *testing.T) {
 			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
 			assert.Equal(t, 1, service.createCount)
 		})
+	}
+}
+
+func TestReconciliationTurnLimitGuidanceEditsExistingConfig(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, tc := range []struct {
+			name       string
+			turns      string
+			suggestion string
+		}{
+			{"within authored bounds", "6",
+				"Raise simulation.maxTurns to at least 6, or lower " +
+					"simulation_configuration.desired_num_turns on that row."},
+			{"above authored maximum", "21",
+				"Lower simulation_configuration.desired_num_turns to at most 5 on that row. " +
+					"simulation.maxTurns accepts 1 to 20."},
+		} {
+			t.Run(caller+"/"+tc.name, func(t *testing.T) {
+				ec, env, service, cfg, dir := validationFixture(t)
+				group := &cfg.Evals[0]
+				group.EvaluationLevel = project.EvaluationLevelConversation
+				group.Target = &project.Target{Type: project.TargetTypeAgent, Name: "target"}
+				group.Simulation = &project.Simulation{Model: "connection/simulator", MaxTurns: 5}
+				rows := `{"test_case_description":"A longer scenario.",` +
+					`"simulation_configuration":{"desired_num_turns":` + tc.turns + `}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
+
+				err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
+				local, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "turn-limit errors must remain structured: %v", err)
+				assert.Equal(t, tc.suggestion, local.Suggestion)
+				assert.NotContains(t, local.Suggestion, "init")
+				assert.NotContains(t, local.Suggestion, "--max-turns")
+				assert.Empty(t, service.requests, "invalid local rows must fail before service work")
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.values)
+				_, err = os.Stat(filepath.Join(dir, ".azure"))
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
 	}
 }

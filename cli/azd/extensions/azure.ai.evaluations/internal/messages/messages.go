@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -132,7 +133,7 @@ func GateOutlivedTheWait(runID string, budget time.Duration) error {
 	return fmt.Errorf(
 		"run %s outlived the %s wait, so --fail-on never got a result to judge. "+
 			"The run is still going: reattach with `azd ai eval run show %s "+
-			"--wait --fail-on <gate>`", runID, budget, shellArg(runID))
+			"--wait --fail-on <gate>`", terminalValue(runID), budget, shellArg(runID))
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
@@ -191,7 +192,7 @@ func WaitInterrupted(runID string, err error) error {
 	return fmt.Errorf(
 		"stopped waiting on run %s, which is still running: %w. "+
 			"Pick it back up with `azd ai eval run show %s`",
-		runID, err, shellArg(runID))
+		terminalValue(runID), err, shellArg(runID))
 }
 
 // WaitingForRun says a run has started and this command is now watching it.
@@ -353,7 +354,7 @@ func RunMustBeNamed(evalID string) error {
 		"name the run to act on: this environment has no run recorded for eval %s, "+
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
-		evalID, shellArg(evalID))
+		terminalValue(evalID), shellArg(evalID))
 }
 
 // ListedRunMissingID refuses to guess an identifier omitted by the service.
@@ -689,6 +690,16 @@ func EnterDatasetHelp() string {
 // DatasetIsRequired refuses an empty answer to that prompt.
 func DatasetIsRequired() string {
 	return "A dataset-backed evaluation needs a dataset to grade."
+}
+
+// InitDatasetRejected explains how to correct an unusable local dataset.
+func InitDatasetRejected(why error) string {
+	detail := why.Error()
+	if local, ok := errors.AsType[*azdext.LocalError](why); ok && local.Suggestion != "" {
+		detail += "\n  " + local.Suggestion
+	}
+	return fmt.Sprintf("\n  %s\n  Correct the dataset file and enter its path or dataset name again, "+
+		"or choose another dataset. Press Ctrl+C to cancel before rerunning init with different flags.\n", detail)
 }
 
 // SelectingDataset reports a failed dataset prompt.
@@ -1095,6 +1106,19 @@ func GeneratedNameNeedsATarget(kind string) error {
 			"pass --%s-name, or --target", kind, kind)
 }
 
+// GeneratedDatasetNameTooLong preserves an explicit name by refusing it, not truncating it.
+func GeneratedDatasetNameTooLong(name string, maximum int) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--dataset-name %q exceeds the generation limit of %d characters", name, maximum),
+		"Choose a shorter --dataset-name, or omit it to use a bounded default derived from the deployed agent.")
+}
+
+// GenerationNameTargetUnresolved refuses to derive default names from an unverified local key.
+func GenerationNameTargetUnresolved(err error) error {
+	return fmt.Errorf("resolving the deployed agent name for default artifact names: %w; "+
+		"retry the project lookup, or provide explicit --dataset-name and --evaluator-name for the artifacts selected", err)
+}
+
 // GenerationFailed labels one half of a composite generate that did not finish.
 //
 // The label goes inside a structured error rather than around it: azd
@@ -1183,19 +1207,22 @@ func ReadingInstructions(named string, err error) error {
 	return fmt.Errorf("reading instructions %q: %w", named, err)
 }
 
-// InstructionSourceFile names the local file generation was seeded from.
+// InstructionSourceFile displays only the basename of the local instruction file.
 //
 // A fragment, not a sentence: it is read twice, once in the detection line and
 // once in the confirmation, and a sentence would only fit the first.
 func InstructionSourceFile(path string) string {
-	return filepath.ToSlash(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
 
 // InstructionSourceFlag names instructions the caller supplied themselves,
-// preferring the file they named over the flag that named it.
+// displaying only the basename when they supplied a file.
 func InstructionSourceFlag(path string) string {
 	if path != "" {
-		return filepath.ToSlash(path)
+		return InstructionSourceFile(path)
 	}
 	return "--agent-instruction"
 }
@@ -1229,6 +1256,31 @@ func InstructionSourceTyped() string {
 // generation context.
 func InstructionsNotDetected() string {
 	return "Agent instructions: not detected\n"
+}
+
+// SelectInstructionSourcePrompt asks how to supply missing generation context.
+func SelectInstructionSourcePrompt() string {
+	return "How would you like to provide agent instructions?"
+}
+
+// TypeInstructionsChoice selects direct instruction entry.
+func TypeInstructionsChoice() string { return "Type instructions" }
+
+// LoadInstructionsChoice selects an existing local instruction file.
+func LoadInstructionsChoice() string { return "Load from file" }
+
+// EnterInstructionFilePrompt asks for the file to read, not its contents.
+func EnterInstructionFilePrompt() string { return "Path to the agent instructions file:" }
+
+// EnterInstructionFileHelp describes the same input as --agent-instruction-file.
+func EnterInstructionFileHelp() string {
+	return "Path to a non-empty local text file, relative to the current directory or absolute. " +
+		"Enter the path without shell quotes; spaces are supported."
+}
+
+// InstructionFileRejected asks for a corrected path without restarting generation.
+func InstructionFileRejected(err error) string {
+	return fmt.Sprintf("\n  %v\n  Enter a corrected file path, or press Ctrl+C to cancel.\n", err)
 }
 
 // EnterAgentInstructionPrompt asks what the agent is for.
@@ -1280,7 +1332,9 @@ func GenerationJobLine(kind, jobID string) string {
 }
 
 // InitHandoffCommand is the `eval init` that turns generated artifacts into an
-// eval, with every value already filled in.
+// eval, carrying the known artifact choices. Conversation generation produces
+// seeds, so its handoff selects simulation. The simulation model is deliberately
+// omitted: generation does not establish which deployment should play the user.
 //
 // Printed resolved rather than as a shape. A reader who has just watched the
 // command choose a name, a level and an evaluator should not have to retype
@@ -1294,7 +1348,10 @@ func InitHandoffCommand(agent, dataset, level, evaluator string) string {
 	if dataset != "" {
 		cmd += " --source dataset --dataset " + ShellArg(dataset)
 		if level != "" {
-			cmd += " --evaluation-level " + level
+			cmd += " --evaluation-level " + ShellArg(level)
+		}
+		if level == "conversation" {
+			cmd += " --conversation-mode simulation"
 		}
 	}
 	if evaluator != "" {
@@ -1498,13 +1555,13 @@ func ArtifactAppearedDuringGeneration(path, jobID string) error {
 		return fmt.Errorf(
 			"%s was created while the job was running; "+
 				"pass --force to overwrite it, or --output-dir to write elsewhere",
-			path)
+			terminalValue(path))
 	}
 	return fmt.Errorf(
 		"%s was created while the job was running, so it was left alone; "+
 			"the generated output is ready — collect it with "+
 			"`azd ai eval job show %s --force`, or to a different place with --output-dir",
-		path, shellArg(jobID))
+		terminalValue(path), shellArg(jobID))
 }
 
 // ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
@@ -2026,7 +2083,7 @@ func DatasetNotGeneratedYet(dataset, path string) error {
 			"If this entry came from a `$ref`, note that a relative `file:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- write the path relative to the configuration instead",
-		filepath.ToSlash(path), shellArg(dataset))
+		terminalValue(filepath.ToSlash(path)), shellArg(dataset))
 }
 
 // DatasetNotLocalNorFound reports a source-less dataset the project rejected.
@@ -2194,7 +2251,7 @@ func EvaluatorNotGeneratedYet(evaluator, path string) error {
 			"If this entry came from a `$ref`, note that a relative `source:` inside "+
 			"the referenced file resolves against azure.eval.yaml rather than against "+
 			"that file -- carry the rubric under `definition:` instead",
-		filepath.ToSlash(path), shellArg(evaluator))
+		terminalValue(filepath.ToSlash(path)), shellArg(evaluator))
 }
 
 // RubricBelongsUnderDefinition reports a rubric written at evaluator entry
@@ -2321,7 +2378,7 @@ func EvaluatorDrifted(evaluator, remote, recorded string) error {
 			"behind, so read it with `azd ai eval evaluator show %s --version %s "+
 			"--output-file <path>` and bring it into the declared source before "+
 			"deploying again, or delete that version if it was a mistake",
-		evaluator, remote, recorded, shellArg(evaluator), shellArg(remote))
+		evaluator, terminalValue(remote), terminalValue(recorded), shellArg(evaluator), shellArg(remote))
 }
 
 // EvaluatorVersionNotAdvancing reports a publish the service kept answering with
@@ -2657,7 +2714,7 @@ func SourceNotADataSource(source, dataset, traces string) error {
 
 // TracesTakesNoDataset reports --dataset paired with a trace-backed eval.
 func TracesTakesNoDataset() error {
-	return errors.New("--source traces reads production traces, so it takes no --dataset")
+	return InitFlagConflict("dataset", "cannot be used with --source traces, which reads production traces")
 }
 
 // MaxTracesNeedsTraceSource reports --max-traces without a trace-backed eval.
@@ -4463,17 +4520,16 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // carried one of those characters would run it when pasted. They are named
 // rather than inlined: the command stops being copy-and-run for that argument,
 // which is the honest outcome, because it cannot be made both runnable and
-// safe here. Backslashes are left alone, so a Windows path comes back as itself.
+// safe here. Native path separators should be normalized by path-aware callers.
 func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	// The three that cannot survive being wrapped: two expand, one breaks the
-	// quoting itself.
-	if strings.ContainsAny(v, "$`\"") {
+	// Expansion syntax, embedded quotes and terminal controls cannot be safely inlined.
+	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
-	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
+	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]{}#~!@") {
 		return v
 	}
 	return `"` + v + `"`
@@ -4490,6 +4546,19 @@ const shellArgNeedsQuoting = "VALUE_NEEDS_QUOTING"
 // rule decides how every printed command quotes what it carries.
 func ShellArg(v string) string {
 	return shellArg(v)
+}
+
+// CanInlineShellArg reports whether ShellArg can preserve v without shell expansion or terminal control characters.
+func CanInlineShellArg(v string) bool {
+	return !strings.ContainsAny(v, "$`\"%!\\^") && strings.IndexFunc(v, unicode.IsControl) == -1
+}
+
+// terminalValue preserves ordinary display text and escapes embedded terminal controls.
+func terminalValue(v string) string {
+	if strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 // ConfirmDelete asks before removing something published.

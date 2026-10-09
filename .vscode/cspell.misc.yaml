@@ -16,6 +16,9 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: docs/architecture/extension-framework.md
+      words:
+          - generateprojectclient
     - filename: ./SECURITY.md
       words:
           - MSRC

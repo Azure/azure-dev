@@ -25,6 +25,11 @@ Stable event handlers and default language scaffolds do not expose follow-up API
 See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
 for the preview SDK contract.
 
+`AzdClient.ProjectBeta()` exposes the generated preview project client
+alongside the stable `Project()` accessor. Clients whose SDK exposes it use
+`ProjectBeta().GetAddServiceCapabilities` before opting into
+typed `AddService` completion acknowledgments.
+
 ## Channel policy
 
 `v1` is the compatibility-protected stable contract. Changes must be additive:
@@ -116,6 +121,19 @@ make host registration fail. Wire the override through the existing
 `NewServer` options rather than adding another constructor dependency. After
 the capability graduates to stable, the regenerated adapter automatically
 uses stable business logic when no override is configured.
+
+Built-in focused project overrides compose with caller overrides per method.
+A caller override for `Get`, for example, does not suppress the built-in
+`AddService` acknowledgment or read-only capability handler. Custom `AddService`
+implementations must explicitly supply their own capability response to advertise
+acknowledgment support.
+
+For preview fields absent from released SDKs, the evaluations extension snapshots
+canonical descriptors with `grpc/generateprojectclient` during `make proto` and
+uses a private dynamic registry. This avoids duplicate global registration and
+does not introduce a second schema. The private client selects the stable
+host path when the read-only beta capability RPC explicitly reports unsupported
+or returns `Unimplemented`.
 
 Stable handlers can return gRPC statuses containing stable contract messages
 in `Any` details. Before a beta response is sent, the host translates every

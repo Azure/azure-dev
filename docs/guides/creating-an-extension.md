@@ -115,6 +115,19 @@ multiple handlers and workflow steps are resolved.
 
 ## Detailed Reference
 
+Treat failed mutating RPCs as uncertain unless the host confirms completion.
+For `Project.AddService`, use the optional
+[save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),
+the read-only beta `GetAddServiceCapabilities` RPC, a fresh typed operation ID,
+and local ownership checks before compensating local edits. Only an explicit
+unsupported response or `Unimplemented` from the capability RPC selects the stable
+host path. Never retry a failed mutating RPC on another channel. Unacknowledged failures
+require retention and explicit inspection guidance rather than status-code-based
+rollback; do not trust custom metadata/trailers as a substitute for the typed API.
+The acknowledgment covers completed pre-save rejections only on host builds
+that implement that behavior. It proves that the operation cannot write later;
+it does not replace a root-file comparison or ownership checks.
+
 For comprehensive extension development documentation, see:
 
 - [Extension Framework](../../cli/azd/docs/extensions/extension-framework.md) — Full framework guide

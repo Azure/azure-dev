@@ -1,3 +1,5 @@
+# cspell:ignore generateadapters generatefacade generateprojectclient hostproject libprotoc
+
 PROTO_ROOT := grpc/proto
 PROTO_INCLUDE := grpc/include
 PROTO_V1_DIR := $(PROTO_ROOT)/azd/extensions/v1
@@ -6,6 +8,7 @@ CONTRACTS_V1_DIR := pkg/azdext/contracts/v1
 CONTRACTS_V1BETA_DIR := pkg/azdext/contracts/v1beta
 FACADE_FILE := pkg/azdext/contracts_v1_aliases.go
 ADAPTER_FILE := internal/grpcserver/versioned_services_generated.go
+PROJECT_CLIENT_FILE := extensions/azure.ai.evaluations/internal/hostproject/descriptors_generated.go
 GO_MODULE := github.com/azure/azure-dev/cli/azd
 
 PROTOC_VERSION := libprotoc 32.1
@@ -31,6 +34,8 @@ proto: proto-check-tools
 		-stable-source $(CONTRACTS_V1_DIR) \
 		-beta-source $(CONTRACTS_V1BETA_DIR) \
 		-output $(ADAPTER_FILE)
+	go run ./grpc/generateprojectclient \
+		-output $(PROJECT_CLIENT_FILE)
 
 proto-check-tools:
 	@test "$$(protoc --version)" = "$(PROTOC_VERSION)" || \
@@ -52,4 +57,5 @@ proto-breaking:
 	$(BUF) breaking grpc --against "$(BUF_BREAKING_AGAINST)"
 
 clean:
-	rm -f $(CONTRACTS_V1_DIR)/*.pb.go $(CONTRACTS_V1BETA_DIR)/*.pb.go $(FACADE_FILE) $(ADAPTER_FILE)
+	rm -f $(CONTRACTS_V1_DIR)/*.pb.go $(CONTRACTS_V1BETA_DIR)/*.pb.go $(FACADE_FILE) $(ADAPTER_FILE) \
+		$(PROJECT_CLIENT_FILE)

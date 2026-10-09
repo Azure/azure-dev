@@ -55,9 +55,7 @@ func TestHasBuiltinRef(t *testing.T) {
 func TestHasBuiltinRefAgreesWithWhatTheCatalogueCheckLooksAt(t *testing.T) {
 	t.Parallel()
 
-	// A catalogue that answered, and does not offer this name. An empty
-	// catalogue means "nothing could be reached" and deliberately refuses
-	// nothing, so it cannot be used to show the gate matters.
+	// A catalogue that answered and does not offer this name.
 	catalogue := []string{
 		evalcore.BuiltinPrefix + "coherence",
 		evalcore.BuiltinPrefix + "groundedness",
@@ -89,5 +87,4 @@ func TestAnUnreachableCatalogueRefusesNothing(t *testing.T) {
 
 	refs := []string{evalcore.BuiltinPrefix + "does_not_exist"}
 	assert.NoError(t, refuseUnknownBuiltins(refs, nil))
-	assert.NoError(t, refuseUnknownBuiltins(refs, []string{}))
 }

@@ -264,7 +264,7 @@ func TestSimulationReportingDistinguishesAbsentNullAndZeroCounts(t *testing.T) {
 	assert.Contains(t, out.String(), "Failed     not reported")
 	assert.Contains(t, out.String(), "Errored       1")
 	assert.Contains(t, out.String(), "Skipped    not reported")
-	assert.Contains(t, out.String(), "Pass rate  not reported")
+	assert.Contains(t, out.String(), "Pass rate  0.0% (0 passed / 2 total test cases)")
 }
 
 func TestSimulationSeedCountComesFromValidatedDatasetRows(t *testing.T) {

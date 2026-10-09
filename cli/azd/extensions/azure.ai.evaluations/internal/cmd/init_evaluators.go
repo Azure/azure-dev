@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
@@ -19,13 +21,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// builtinEvaluators are the four `init` offers, and they judge at either
-// evaluation level, so Turn and Conversation share one picker.
-//
-// A hardcoded list drifts from the service's full catalogue, which is why this
-// is deliberately the offered set rather than a copy of it: anything outside
-// these four is still reachable with --evaluator, and the catalogue lookup is
-// what checks such a reference when the project can be reached.
+// builtinEvaluators is the offline picker shortlist, not a catalog allowlist.
+// Other built-ins remain available through explicit --evaluator references.
 var builtinEvaluators = []string{
 	evalcore.BuiltinPrefix + "task_completion",
 	evalcore.BuiltinPrefix + "customer_satisfaction",
@@ -104,14 +101,14 @@ func readBuiltinEvaluatorCatalogue(ctx context.Context) []string {
 
 // refuseUnknownBuiltins refuses a builtin.<name> the catalogue does not offer.
 //
-// An empty catalogue is not an empty answer: it means the listing was never
-// read, and refusing on it would turn every offline init into a failure.
+// A nil catalogue means the listing was not read; a non-nil empty list means
+// the project returned no built-in names.
 //
 // Names are matched with and without the prefix. The service returns them
 // prefixed today, and a reference that matches either spelling is a reference
 // to something real -- which is the question being asked.
 func refuseUnknownBuiltins(refs []string, known []string) error {
-	if len(known) == 0 {
+	if known == nil {
 		return nil
 	}
 
@@ -138,25 +135,19 @@ func refuseUnknownBuiltins(refs []string, known []string) error {
 	return nil
 }
 
-// defaultEvaluators is what `init` proposes: one built-in that judges whether
-// the agent did what was asked.
-//
-// It used to add a rubric generated from the agent's instructions, which meant
-// init declared an evaluator file nothing had produced. The eval then referred
-// to a rubric that did not exist until a separate generate ran, and `azd up`
-// failed on it. Generation is its own command; init writes only what is there.
+// defaultEvaluators proposes the existing task-completion default.
 func defaultEvaluators() []string {
 	return []string{builtinEvaluators[0]}
 }
 
 // evaluatorChoices are the references `init` can offer.
 //
-// The picker is built without a service call, so the service's full built-in
-// catalogue is not listed here; offering a hardcoded copy of it would drift.
-// What is knowable offline is the pair init proposes and whatever this
-// configuration already declares. Anything else is reachable with --evaluator,
-// which is checked against the catalogue when the project can be reached.
-func evaluatorChoices(cfg *project.EvalConfig) []string {
+// Initial choices use the offline shortlist and this configuration's declarations,
+// not an enumeration of the service's full built-in catalogue.
+// resolveEvaluators filters these choices against the catalogue when it was read.
+// Other built-ins remain reachable with --evaluator, which is checked against the
+// catalogue when the project can be reached.
+func evaluatorChoices(cfg *project.EvalConfig, level string) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(ref string) {
@@ -172,7 +163,9 @@ func evaluatorChoices(cfg *project.EvalConfig) []string {
 	}
 	if cfg != nil {
 		for _, decl := range cfg.Evaluators {
-			add(decl.Name)
+			if initEvaluatorSupportsLevel(&decl, level) {
+				add(decl.Name)
+			}
 		}
 	}
 	return out
@@ -191,16 +184,53 @@ func evaluatorChoices(cfg *project.EvalConfig) []string {
 func resolveEvaluators(
 	cmd *cobra.Command,
 	cfg *project.EvalConfig,
+	level string,
+	knownBuiltins []string,
 ) ([]string, bool, error) {
 	defaults := defaultEvaluators()
 	if noPrompt(cmd) {
+		if err := refuseUnknownBuiltins(defaults, knownBuiltins); err != nil {
+			return nil, false, err
+		}
 		return defaults, false, nil
 	}
-	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg), defaults)
+	choices := evaluatorChoices(cfg, level)
+	choices = slices.DeleteFunc(choices, func(ref string) bool {
+		return refuseUnknownBuiltins([]string{ref}, knownBuiltins) != nil
+	})
+	chosen, err := promptEvaluators(cmd, choices, defaults)
 	if err != nil {
 		return nil, false, err
 	}
+	if err := refuseUnknownBuiltins(chosen, knownBuiltins); err != nil {
+		return nil, false, err
+	}
+	if cfg != nil {
+		if err := validateInitEvaluatorLevels(cfg, chosen, level); err != nil {
+			return nil, false, err
+		}
+	}
 	return chosen, true, nil
+}
+
+// initEvaluatorSupportsLevel applies the same compatibility contract as
+// reconciliation: an empty list is unconstrained; a nonempty list must match.
+func initEvaluatorSupportsLevel(decl *project.EvaluatorDecl, level string) bool {
+	schema := eval_api.EvaluatorSummary{SupportedEvaluationLevels: decl.SupportedEvaluationLevels}
+	return schema.SupportsLevel(level)
+}
+
+func validateInitEvaluatorLevels(cfg *project.EvalConfig, refs []string, level string) error {
+	for _, ref := range refs {
+		decl, ok := cfg.EvaluatorDeclaration(ref)
+		if ok && !initEvaluatorSupportsLevel(decl, level) {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				fmt.Sprintf("--evaluator %s declares support for %s, not --evaluation-level %s",
+					ref, strings.Join(decl.SupportedEvaluationLevels, ", "), level),
+				"Choose an evaluator that supports the selected level, or change --evaluation-level.")
+		}
+	}
+	return nil
 }
 
 // promptEvaluators asks which references to grade with, defaults ticked.

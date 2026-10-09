@@ -35,6 +35,8 @@ type evalCreateAction struct {
 	cmd   *cobra.Command
 	flags *evalCreateFlags
 	name  string
+	// Instance-scoped context construction keeps the action usable with injected clients.
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 // newEvalCreateCommand creates one declared eval without deploying the rest.
@@ -48,7 +50,13 @@ func newEvalCreateCommand() *cobra.Command {
 			"`azd up` reconciles every eval in the file. This creates a single one, " +
 			"for a project that is not deployed as a whole — or, with --from-file, " +
 			"for no project at all.\n\n" +
-			"The name is optional while the configuration declares exactly one eval.",
+			"The name is optional while the configuration declares exactly one eval.\n\n" +
+			"Evaluator inputs receive explicit default data mappings. Override them with dataMapping " +
+			"in the evaluator reference. Map messages or separate query/response fields, never both. " +
+			"Defaults retain tool_definitions and, at turn level, tool_calls. " +
+			"Explicit local sources omit optional default item bindings absent from the file; " +
+			"authored bindings and required evaluator inputs are still validated. " +
+			"Map context or ground_truth explicitly when needed; catalog properties do not supply missing data.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evalCreateAction{cmd: cmd, flags: flags, name: firstArg(args)}).Run()
@@ -58,7 +66,8 @@ func newEvalCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.fromFile, "from-file", "",
 		"Read the configuration from this path instead of the eval directory.")
 	cmd.Flags().StringVar(&flags.evalDir, "path", "",
-		"Directory holding the evaluation configuration. Defaults to the directory "+
+		"Configuration file or directory to read from. New .yaml or .yml paths are "+
+			"files; existing directories remain directories. Defaults to the directory "+
 			"init scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&flags.endpoint, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
@@ -99,7 +108,11 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	contextFactory := a.newContext
+	if contextFactory == nil {
+		contextFactory = newEvalContext
+	}
+	ec, err := contextFactory(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -129,6 +142,9 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	datasetPath := ""
 	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 		datasetPath = project.ResolveSource(baseDir, decl.File)
+	}
+	if eval.IsLocalSource() {
+		datasetPath = eval.LocalSourcePath(baseDir)
 	}
 
 	reconciler := &evalReconciler{ec: ec}

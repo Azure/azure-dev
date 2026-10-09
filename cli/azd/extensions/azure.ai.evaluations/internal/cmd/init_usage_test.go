@@ -13,6 +13,9 @@ import (
 	"sync"
 	"testing"
 
+	"azureaieval/internal/pkg/eval_api"
+	"azureaieval/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +68,7 @@ type initProjectServer struct {
 
 	dir           string
 	addServiceErr error
+	onAddService  func(context.Context, *azdext.AddServiceRequest) error
 
 	mu         sync.Mutex
 	addCalls   int
@@ -82,17 +86,22 @@ func (s *initProjectServer) Get(
 }
 
 func (s *initProjectServer) AddService(
-	_ context.Context, request *azdext.AddServiceRequest,
+	ctx context.Context, request *azdext.AddServiceRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	s.addCalls++
 	if request.GetService() != nil {
 		s.addService = append(s.addService, request.GetService().GetName())
 	}
+	onAddService := s.onAddService
 	s.mu.Unlock()
 
-	if s.addServiceErr != nil {
-		return nil, s.addServiceErr
+	err := s.addServiceErr
+	if onAddService != nil {
+		err = onAddService(ctx, request)
+	}
+	if err != nil {
+		return nil, err
 	}
 	return &azdext.EmptyResponse{}, nil
 }
@@ -124,9 +133,15 @@ type initHarness struct {
 // AZD_SERVER is what azdext.NewAzdClient reads, so the command under test
 // opens its own connection exactly as it does in production rather than being
 // handed one the test built.
-func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
+func newInitHarness(t *testing.T, addServiceErr error, prompts ...azdext.PromptServiceServer) *initHarness {
 	t.Helper()
+	return newInitHarnessWithOptions(t, addServiceErr, nil, prompts...)
+}
 
+func newInitHarnessWithOptions(
+	t *testing.T, addServiceErr error, options []grpc.ServerOption, prompts ...azdext.PromptServiceServer,
+) *initHarness {
+	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "azure.yaml"), []byte(usageAzureYaml), 0o600))
@@ -142,9 +157,12 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 		seedRows: seed,
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(options...)
 	azdext.RegisterProjectServiceServer(server, harness.project)
 	azdext.RegisterTelemetryServiceServer(server, harness.usage)
+	if len(prompts) > 0 {
+		azdext.RegisterPromptServiceServer(server, prompts[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -164,7 +182,11 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 func (h *initHarness) runInit(t *testing.T, args ...string) error {
 	t.Helper()
 
-	cmd := newInitCommand()
+	cmd := newInitCommandWithOptions(initCommandOptions{
+		listModelConnections: func(context.Context) ([]eval_api.Connection, error) {
+			return []eval_api.Connection{{Name: "connection", Type: modelConnectionType}}, nil
+		},
+	})
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	// Global flags azd would have supplied.
@@ -213,22 +235,25 @@ func TestInitReportsADatasetScaffold(t *testing.T) {
 	assertOneInitCompleted(t, h, "dataset")
 }
 
-// The report follows the wiring, so a scaffold azd never accepted is not an
-// init that completed.
+// The report follows the wiring, so an uncertain project-save outcome is not
+// an init that completed.
 //
 // This is the placement guard: move the call above ensureRootEvalService and
 // this is the test that notices, because the files are on disk by then and
-// only the wiring failed.
-func TestInitReportsNothingWhenTheWiringFails(t *testing.T) {
+// only the wiring outcome is unknown.
+func TestInitReportsNothingWhenTheWiringOutcomeIsUncertain(t *testing.T) {
 	h := newInitHarness(t, errors.New("azure.yaml is read-only"))
 
 	err := h.runInit(t,
 		"--name", "unwired", "--target", "agent", "--source", "traces",
 		"--judge-model", "gpt-4.1-nano")
 
-	require.Error(t, err, "a scaffold azd cannot see is a failure")
+	require.Error(t, err, "an uncertain project save is a failure")
+	assert.ErrorContains(t, err, "project-save outcome is uncertain")
+	assert.ErrorContains(t, err, "was retained")
 	assert.Positive(t, h.project.wiringAttempts(),
 		"the test is worthless if the command never got as far as wiring")
+	assert.FileExists(t, filepath.Join(h.dir, project.DefaultEvalDir, project.EvalConfigBase))
 	assert.Empty(t, h.usage.reported(),
 		"nothing completed, so nothing is reported")
 }

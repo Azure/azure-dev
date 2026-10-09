@@ -155,7 +155,7 @@ type jsonError struct {
 
 type jsonErrorBody struct {
 	Message    string `json:"message"`
-	Code       string `json:"code,omitempty"`
+	Code       string `json:"code"`
 	Suggestion string `json:"suggestion,omitempty"`
 }
 

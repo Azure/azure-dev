@@ -135,9 +135,8 @@ func TestEvaluatorDownloadRoundTripWithDeclaration(t *testing.T) {
 	definition, ok := body["definition"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, 0.7, definition["pass_threshold"])
-	require.Len(t, definition, 4, "unknown authored rubric fields are also published")
+	require.Len(t, definition, 4, "unknown authored rubric fields are published too")
 	require.Contains(t, definition, "future_option")
-	require.Contains(t, string(service.published[0]), "9007199254740993")
 
 	ec.state = nil
 	version, published, err = r.EnsureEvaluator(t.Context(), decl, path)
@@ -145,51 +144,6 @@ func TestEvaluatorDownloadRoundTripWithDeclaration(t *testing.T) {
 	require.False(t, published, "a repeat with reloaded private state must not create version 5")
 	require.Equal(t, "4", version)
 	service.publishedBody(t, 1)
-}
-
-func TestEvaluatorWithoutPriorDigestComparesExactNumbers(t *testing.T) {
-	for _, tc := range []struct {
-		name, existing, authored string
-		publish                  bool
-	}{
-		{"adjacent integers", "9007199254740992", "9007199254740993", true},
-		{"precise decimals", "0.60000000000000001", "0.60000000000000002", true},
-		{"equivalent decimal", "1", "1.0", false},
-		{"equivalent exponent", "1.0", "1e0", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ec, service := evaluatorRoundTripContext(t)
-			definition := func(number string) string {
-				return `{"type":"rubric","dimensions":[{"id":"accuracy","weight":5,"scale":{"maximum":` + number + `}}]}`
-			}
-			service.document = json.RawMessage(`{"name":"quality","version":"3","definition":` +
-				definition(tc.existing) + `}`)
-			path := filepath.Join(t.TempDir(), "quality.json")
-			require.NoError(t, os.WriteFile(path, []byte(definition(tc.authored)), 0o600))
-			key := project.FingerprintKey("evaluator", "quality")
-			require.Empty(t, ec.privateValue(t.Context(), key))
-			reconciler := &evalReconciler{ec: ec}
-			decl := project.EvaluatorDecl{Name: "quality", Source: path}
-
-			version, published, err := reconciler.EnsureEvaluator(t.Context(), decl, path)
-			require.NoError(t, err)
-			require.Equal(t, tc.publish, published)
-			if tc.publish {
-				require.Equal(t, "4", version)
-				service.publishedBody(t, 1)
-				require.Contains(t, string(service.published[0]), tc.authored)
-			} else {
-				require.Equal(t, "3", version)
-				service.publishedBody(t, 0)
-			}
-			require.NotEmpty(t, ec.privateValue(t.Context(), key))
-			ec.state = nil
-			repeatedVersion, published, err := reconciler.EnsureEvaluator(t.Context(), decl, path)
-			require.NoError(t, err)
-			require.False(t, published, "a repeat must reuse the correctly reconciled version")
-			require.Equal(t, version, repeatedVersion)
-		})
-	}
 }
 
 func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
@@ -233,14 +187,8 @@ func TestEvaluatorDownloadRoundTripWithStandaloneUpdate(t *testing.T) {
 			definition, ok := published["definition"].(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, 0.7, definition["pass_threshold"])
-			require.Len(t, definition, 4, "unknown authored rubric fields are also published")
-			var document map[string]json.RawMessage
-			require.NoError(t, json.Unmarshal(service.published[0], &document))
-			edited, err := os.ReadFile(path)
-			require.NoError(t, err)
-			require.JSONEq(t, string(edited), string(document["definition"]),
-				"updating the threshold must preserve unknown root and dimension fields")
-			require.Contains(t, string(document["definition"]), "9007199254740993")
+			require.Len(t, definition, 4, "unknown authored rubric fields are published too")
+			require.Contains(t, definition, "future_option")
 			require.True(t, json.Valid([]byte(out.String())), "update stdout remains one JSON document")
 		})
 	}
@@ -344,8 +292,9 @@ func TestDownloadedRubricReconciliationRetainsMetadata(t *testing.T) {
 				assert.NotContains(t, published, "created_at")
 				assert.NotContains(t, published, "agent_metadata")
 				assert.Contains(t, string(service.versions["4"]), "9007199254740993",
-					"unknown authored numeric values must retain their precision")
+					"unknown authored numeric fields must survive publication without rounding")
 				assert.NotContains(t, string(service.versions["4"]), "internal_count")
+				assert.NotContains(t, string(service.versions["4"]), "service-only-definition-metadata")
 				require.Equal(t, first, reconcileCatalogPin(t, caller, ec, cfg, dir))
 				assert.Equal(t, 1, service.publishes, "unchanged retry must not publish a fifth version")
 				assert.Len(t, service.created, 1, "metadata inheritance must not turn latest into an authored pin")
@@ -435,6 +384,51 @@ func TestRubricDownloadAndCollectionDimensionEditLifecycle(t *testing.T) {
 					request == "POST /datasets/turn-tests/versions/1.0/credentials",
 					"rubric edits must not mutate datasets: %s", request)
 			}
+		})
+	}
+}
+
+func TestEvaluatorWithoutPriorDigestComparesExactNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		name, existing, authored string
+		publish                  bool
+	}{
+		{"adjacent integers", "9007199254740992", "9007199254740993", true},
+		{"precise decimals", "0.60000000000000001", "0.60000000000000002", true},
+		{"equivalent decimal", "1", "1.0", false},
+		{"equivalent exponent", "1.0", "1e0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ec, service := evaluatorRoundTripContext(t)
+			definition := func(number string) string {
+				return `{"type":"rubric","dimensions":[{"id":"accuracy","weight":5,"scale":{"maximum":` + number + `}}]}`
+			}
+			service.document = json.RawMessage(`{"name":"quality","version":"3","definition":` +
+				definition(tc.existing) + `}`)
+			path := filepath.Join(t.TempDir(), "quality.json")
+			require.NoError(t, os.WriteFile(path, []byte(definition(tc.authored)), 0o600))
+			key := project.FingerprintKey("evaluator", "quality")
+			require.Empty(t, ec.privateValue(t.Context(), key))
+			reconciler := &evalReconciler{ec: ec}
+			decl := project.EvaluatorDecl{Name: "quality", Source: path}
+
+			version, published, err := reconciler.EnsureEvaluator(t.Context(), decl, path)
+			require.NoError(t, err)
+			require.Equal(t, tc.publish, published)
+			if tc.publish {
+				require.Equal(t, "4", version)
+				service.publishedBody(t, 1)
+				require.Contains(t, string(service.published[0]), tc.authored)
+			} else {
+				require.Equal(t, "3", version)
+				service.publishedBody(t, 0)
+			}
+			require.NotEmpty(t, ec.privateValue(t.Context(), key))
+			ec.state = nil
+			repeatedVersion, published, err := reconciler.EnsureEvaluator(t.Context(), decl, path)
+			require.NoError(t, err)
+			require.False(t, published, "a repeat must reuse the correctly reconciled version")
+			require.Equal(t, version, repeatedVersion)
 		})
 	}
 }

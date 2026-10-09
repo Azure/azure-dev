@@ -48,28 +48,14 @@ func TestSampleBindingsFor_UnknownTargetBindsNothing(t *testing.T) {
 		"an unrecognized target must bind nothing rather than guess at agent fields")
 }
 
-// The level filter is what keeps a conversation evaluator from being sent turn
-// fields and the reverse. Both directions matter.
-func TestSelectLevelFields_KeepsOnlyTheLevelsShape(t *testing.T) {
-	accepted := []string{"query", "response", "messages", "tool_definitions"}
-
-	conv := selectLevelFields(accepted, nil, project.EvaluationLevelConversation)
-	assert.Contains(t, conv, "messages")
-	assert.NotContains(t, conv, "query")
-	assert.NotContains(t, conv, "response")
-	assert.Contains(t, conv, "tool_definitions", "fields outside the split are untouched")
-
-	turn := selectLevelFields(accepted, nil, project.EvaluationLevelTurn)
-	assert.Contains(t, turn, "query")
-	assert.Contains(t, turn, "response")
-	assert.NotContains(t, turn, "messages")
-
-	// An evaluator offering only one shape is left alone, whatever the level.
-	only := []string{"query", "response"}
-	assert.Equal(t, only, selectLevelFields(only, nil, project.EvaluationLevelConversation))
-
-	// A required field is never dropped: a genuine conflict has to surface as a
-	// missing-field error rather than being reshaped away.
-	kept := selectLevelFields(accepted, []string{"query"}, project.EvaluationLevelConversation)
-	assert.Contains(t, kept, "query", "a required field survives the level filter")
+func TestDefaultCriterionMappingMatchesEvaluationLevel(t *testing.T) {
+	assert.Equal(t, map[string]string{
+		"messages": "{{item.messages}}", "tool_definitions": "{{item.tool_definitions}}",
+	}, defaultCriterionMapping(project.EvaluationLevelConversation))
+	for _, level := range []string{"", project.EvaluationLevelTurn} {
+		assert.Equal(t, map[string]string{
+			"query": "{{item.query}}", "response": "{{item.response}}",
+			"tool_calls": "{{item.tool_calls}}", "tool_definitions": "{{item.tool_definitions}}",
+		}, defaultCriterionMapping(level))
+	}
 }

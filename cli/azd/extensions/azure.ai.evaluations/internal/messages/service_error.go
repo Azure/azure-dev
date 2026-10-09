@@ -10,6 +10,8 @@ import (
 	"io"
 	"strings"
 
+	"azureaieval/internal/urlsafe"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -30,8 +32,19 @@ func conciseServiceError(err error) error {
 		return err
 	}
 
-	message := serviceMessageFrom(respErr)
-	code := strings.TrimSpace(respErr.ErrorCode)
+	diagnostic := serviceDiagnosticFrom(respErr)
+	message := urlsafe.Text(diagnostic.message)
+	code := stableServiceCode(respErr.ErrorCode)
+	if code == "" {
+		code = stableServiceCode(diagnostic.code)
+	}
+	if code == "" {
+		code = fmt.Sprintf("http_%d", respErr.StatusCode)
+	}
+	if message == "" {
+		message = serviceStatusMessage(respErr.StatusCode)
+	}
+
 	var sentence string
 	switch {
 	case message != "" && code != "":
@@ -52,11 +65,7 @@ func conciseServiceError(err error) error {
 	if target := refusedTarget(respErr); target != "" {
 		text += " from " + target
 	}
-	stableCode := code
-	if stableCode == "" {
-		stableCode = fmt.Sprintf("http_%d", respErr.StatusCode)
-	}
-	return &serviceError{text: text, safe: sentence, code: stableCode, cause: err}
+	return &serviceError{text: text, safe: sentence, code: code, cause: err}
 }
 
 // refusedTarget names which service refused, and nothing else about the call.
@@ -72,7 +81,7 @@ func refusedTarget(respErr *azcore.ResponseError) string {
 	if u == nil || u.Host == "" {
 		return ""
 	}
-	return u.Scheme + "://" + u.Host + u.Path
+	return urlsafe.URL(u)
 }
 
 // serviceError says the sentence and carries the response underneath.
@@ -93,76 +102,85 @@ func (e *serviceError) Error() string { return e.text }
 // error by type, and it is still in the chain.
 func (e *serviceError) Unwrap() error { return e.cause }
 
-// SafeMessage is read instead of Error() when serializing to -o json, so the
-// JSON document never discloses the full internal service endpoint.
+// SafeMessage is read instead of Error when serializing JSON, so a machine
+// response does not disclose which project endpoint backed the refused call.
 func (e *serviceError) SafeMessage() string { return e.safe }
 
-// Code is read alongside SafeMessage so a refused request's JSON document
-// carries something stable to branch on, as every other validation failure
-// already does.
+// Code reports the stable service code used by the JSON error envelope.
 func (e *serviceError) Code() string { return e.code }
 
-// authServiceError pairs an auth-classified LocalError with a safe message
-// that omits the service endpoint, mirroring serviceError's JSON/human split
-// for the 401/403 range ServiceRefused reclassifies. Without this, the
-// endpoint-bearing concise sentence ServiceRefused formats into the
-// LocalError's own Message would reach -o json without redaction, since
-// LocalError does not otherwise satisfy safeJSONError.
+// authServiceError preserves auth classification while providing an
+// endpoint-free JSON message.
 type authServiceError struct {
 	*azdext.LocalError
 	safe string
 }
 
-// Unwrap keeps azdext.ErrorSuggestion and other LocalError lookups working.
+// Unwrap keeps LocalError classification and suggestions reachable.
 func (e *authServiceError) Unwrap() error { return e.LocalError }
 
-// SafeMessage is read instead of Error() when serializing to -o json.
+// SafeMessage is read instead of Error when serializing JSON.
 func (e *authServiceError) SafeMessage() string { return e.safe }
 
-// Code satisfies the same JSON-safety contract as serviceError.Code; the
-// embedded LocalError already carries the classification exterrors.Auth
-// assigned.
+// Code reports the stable auth error code.
 func (e *authServiceError) Code() string { return e.LocalError.Code }
 
-// serviceMessageFrom digs the human sentence out of an error response body.
+type serviceDiagnostic struct {
+	message string
+	code    string
+}
+
+// serviceDiagnosticFrom digs the human sentence and stable code out of an
+// error response body.
 //
 // Azure wraps it as {"error":{"message":...}}, sometimes nested another level
-// under innererror, and sometimes sends the sentence at the root. Reading only
-// the outermost shape produced an empty message for exactly the responses worth
-// reading, so all of them are tried.
-func serviceMessageFrom(respErr *azcore.ResponseError) string {
+// under innererror. Some evaluation endpoints put another serialized resource
+// envelope in the message itself. Reading only the outermost shape exposed that
+// whole backend object instead of the useful message inside it.
+func serviceDiagnosticFrom(respErr *azcore.ResponseError) serviceDiagnostic {
 	if respErr.RawResponse == nil || respErr.RawResponse.Body == nil {
-		return ""
+		return serviceDiagnostic{}
 	}
 	// Bounded: this is a diagnostic, and a service that answers an error with
 	// megabytes is not owed the memory to hold them.
 	body, err := io.ReadAll(io.LimitReader(respErr.RawResponse.Body, 1<<20))
 	if err != nil || len(body) == 0 {
-		return ""
+		return serviceDiagnostic{}
 	}
 
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return ""
+		return serviceDiagnostic{}
 	}
-	return deepestMessage(envelope, 0)
+	return deepestDiagnostic(envelope, 0)
 }
 
-// deepestMessage returns the most specific message the envelope carries.
+// deepestDiagnostic returns the most specific message and code the envelope carries.
 //
 // The inner one is the specific complaint and the outer one is usually "the
 // request is invalid", so the innermost wins.
-func deepestMessage(envelope map[string]json.RawMessage, depth int) string {
+func deepestDiagnostic(envelope map[string]json.RawMessage, depth int) serviceDiagnostic {
 	// Bounded because the shape is the service's, not ours, and a document that
 	// nests into itself would otherwise not terminate.
 	if depth > 8 {
-		return ""
+		return serviceDiagnostic{}
 	}
-	found := ""
+
+	found := serviceDiagnostic{}
+	if raw, ok := envelope["code"]; ok {
+		var code string
+		if err := json.Unmarshal(raw, &code); err == nil {
+			found.code = strings.TrimSpace(code)
+		}
+	}
 	if raw, ok := envelope["message"]; ok {
-		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
-			found = strings.TrimSpace(s)
+		var message string
+		if err := json.Unmarshal(raw, &message); err == nil {
+			embedded := diagnosticFromMessage(message, depth+1)
+			found.message = embedded.message
+			if embedded.code != "" {
+				found.code = embedded.code
+			}
 		}
 	}
 	for _, key := range []string{"error", "innererror", "innerError"} {
@@ -174,9 +192,71 @@ func deepestMessage(envelope map[string]json.RawMessage, depth int) string {
 		if err := json.Unmarshal(raw, &nested); err != nil {
 			continue
 		}
-		if deeper := deepestMessage(nested, depth+1); deeper != "" {
-			found = deeper
+		deeper := deepestDiagnostic(nested, depth+1)
+		if deeper.message != "" {
+			found.message = deeper.message
+		}
+		if deeper.code != "" {
+			found.code = deeper.code
 		}
 	}
 	return found
+}
+
+// diagnosticFromMessage unwraps a serialized resource envelope carried inside
+// a message. If a backend object is recognizable but malformed, it is omitted
+// rather than echoed as user-facing prose.
+func diagnosticFromMessage(message string, depth int) serviceDiagnostic {
+	message = strings.TrimSpace(message)
+	if message == "" || depth > 8 {
+		return serviceDiagnostic{}
+	}
+
+	start := strings.IndexByte(message, '{')
+	end := strings.LastIndexByte(message, '}')
+	if start >= 0 && end > start {
+		var nested map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(message[start:end+1]), &nested); err == nil {
+			if diagnostic := deepestDiagnostic(nested, depth+1); diagnostic.message != "" ||
+				diagnostic.code != "" {
+				return diagnostic
+			}
+		}
+	}
+
+	lower := strings.ToLower(message)
+	if strings.HasPrefix(lower, "resource") &&
+		strings.Contains(lower, "{") &&
+		strings.Contains(lower, "error") {
+		return serviceDiagnostic{}
+	}
+	return serviceDiagnostic{message: message}
+}
+
+func stableServiceCode(code string) string {
+	code = strings.TrimSpace(code)
+	if code == "" || len(code) > 128 {
+		return ""
+	}
+	for _, c := range code {
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '.' || c == '_' || c == '-' {
+			continue
+		}
+		return ""
+	}
+	return code
+}
+
+func serviceStatusMessage(status int) string {
+	switch status {
+	case 404:
+		return "the requested resource was not found"
+	case 409:
+		return "the requested resource cannot be changed in its current state"
+	default:
+		return ""
+	}
 }

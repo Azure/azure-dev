@@ -78,6 +78,44 @@ func TestHumanRunViewsKeepExplicitZeroCounts(t *testing.T) {
 	assert.Contains(t, out.String(), "0 test cases: 0 passed, 0 failed, 0 errored, 0 skipped")
 }
 
+func TestPartialZeroRunCountsDoNotRenderAPassRate(t *testing.T) {
+	var run eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"run_partial","status":"completed",
+		"result_counts":{"total":0,"passed":0}}`), &run))
+	for _, render := range []struct {
+		name string
+		call func(io.Writer) error
+	}{
+		{"counts", func(out io.Writer) error {
+			renderReportedRunCounts(out, "RESULTS", run.ReportedResultCounts(), run.ResultCounts)
+			return nil
+		}},
+		{"summary", func(out io.Writer) error { return renderRun(out, &run, nil) }},
+		{"output", func(out io.Writer) error {
+			return renderResults(out, "eval_partial", &run, nil, resultListView{})
+		}},
+		{"simulation", func(out io.Writer) error {
+			renderConversationResults(out, &run)
+			return nil
+		}},
+	} {
+		t.Run(render.name, func(t *testing.T) {
+			var out bytes.Buffer
+			require.NoError(t, render.call(&out))
+			assert.Contains(t, out.String(), "Pass rate  not reported")
+			assert.NotContains(t, out.String(), "0 passed / 0 total")
+		})
+	}
+	var out bytes.Buffer
+	renderReportedRunCounts(
+		&out,
+		"RESULTS",
+		map[string]int{"total": 2, "passed": 0},
+		&eval_api.EvalRunResultCounts{Total: 2},
+	)
+	assert.Contains(t, out.String(), "0.0% (0 passed / 2 total test cases)")
+}
+
 func TestWaitedRunStartDistinguishesZeroAndUnreportedCounts(t *testing.T) {
 	for _, counts := range []struct {
 		name string
@@ -95,7 +133,7 @@ func TestWaitedRunStartDistinguishesZeroAndUnreportedCounts(t *testing.T) {
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
-						case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_zero":
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_zero"):
 							_, _ = io.WriteString(w, `{"id":"eval_zero","data_source_config":{"type":"custom"}}`)
 						case strings.HasSuffix(r.URL.Path, "/output_items"):
 							_, _ = io.WriteString(w, `{"data":[]}`)
@@ -157,7 +195,7 @@ func TestRunCallersRenderMissingCountMembersAsUnreported(t *testing.T) {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					switch {
-					case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_partial":
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_partial"):
 						_, _ = io.WriteString(w, `{"id":"eval_partial","data_source_config":{"type":"custom"}}`)
 					case strings.HasSuffix(r.URL.Path, "/output_items"):
 						_, _ = io.WriteString(w, `{"data":[]}`)
@@ -231,7 +269,7 @@ func TestRunListFieldsUseReportedCounts(t *testing.T) {
 	assert.Equal(t, "not reported", reportedSampleCount(&run))
 	assert.Equal(t, "not reported", reportedRunPassRate(&run))
 	require.NoError(t, json.Unmarshal([]byte(`{
-		"id":"run_partial","result_counts":{"total":2,"passed":2,"failed":0}}`), &run))
+		"id":"run_partial","result_counts":{"total":2,"passed":2}}`), &run))
 	assert.Equal(t, "2", reportedSampleCount(&run))
 	assert.Equal(t, "100.0%", reportedRunPassRate(&run))
 }
@@ -282,7 +320,8 @@ func TestRunGateWithOnlyUnaccountedRowsStillFails(t *testing.T) {
 					stderr, err := os.ReadFile(filepath.Join(dir, "stderr.txt"))
 					require.NoError(t, err)
 					assert.Contains(t, string(stderr),
-						"3 of 3 rows are not accounted for by the reported counts; the pass-rate gate covers 0 scored rows")
+						"3 of 3 rows are not accounted for by the reported outcome counts; "+
+							"the pass-rate denominator still includes all 3 rows")
 					assert.Contains(t, string(stderr), "ERROR: evaluation quality gate not met.")
 					assert.NotContains(t, string(stderr), "3 errored")
 					if format == "json" {
@@ -308,7 +347,7 @@ func TestRunGateWithOnlyUnaccountedRowsStillFails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_counts":
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_counts"):
 			_, _ = io.WriteString(w, `{"id":"eval_counts","data_source_config":{"type":"custom"}}`)
 		case strings.HasSuffix(r.URL.Path, "/runs/run_counts"):
 			_, _ = io.WriteString(w, response)
@@ -339,21 +378,25 @@ func TestRunGateWithOnlyUnaccountedRowsStillFails(t *testing.T) {
 		action := &runShowAction{cmd: command, runID: "run_counts", flags: &runShowFlags{}}
 		require.NoError(t, action.show(t.Context(), evalContextFor(srv), "eval_counts", threshold))
 	}
-	t.Fatal("a run with no scored rows must not pass the gate")
+	t.Fatal("a run with no passing rows must not pass the gate")
 }
 
-func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
+func TestRunGateWarningsRespectReportedOutcomeCounts(t *testing.T) {
 	for _, counts := range []struct {
 		name, raw, warning string
 	}{
 		{"explicit zero", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":0}`,
-			"3 of 10 rows are not accounted for by the reported counts; the pass-rate gate covers 7 scored rows"},
+			"3 of 10 rows are not accounted for by the reported outcome counts; " +
+				"the pass-rate denominator still includes all 10 rows"},
 		{"reported errors", `{"total":10,"passed":5,"failed":2,"errored":1,"skipped":0}`,
-			"2 of 10 rows are not accounted for by the reported counts; the pass-rate gate covers 7 scored rows"},
+			"2 of 10 rows are not accounted for by the reported outcome counts; " +
+				"the pass-rate denominator still includes all 10 rows"},
 		{"reported skips", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":1}`,
-			"2 of 10 rows are not accounted for by the reported counts; the pass-rate gate covers 7 scored rows"},
-		{"legacy remainder", `{"total":10,"passed":5,"failed":2,"skipped":0}`, "3 errored of 10"},
-		{"consistent errors", `{"total":10,"passed":5,"failed":2,"errored":3,"skipped":0}`, "3 errored of 10"},
+			"2 of 10 rows are not accounted for by the reported outcome counts; " +
+				"the pass-rate denominator still includes all 10 rows"},
+		{"legacy remainder", `{"total":10,"passed":5,"failed":2,"skipped":0}`, ""},
+		{"consistent errors", `{"total":10,"passed":5,"failed":2,"errored":3,"skipped":0}`, ""},
+		{"consistent skips", `{"total":10,"passed":5,"failed":2,"errored":0,"skipped":3}`, ""},
 		{"consistent scored", `{"total":7,"passed":5,"failed":2,"errored":0,"skipped":0}`, ""},
 	} {
 		for _, caller := range []string{"start", "show"} {
@@ -363,7 +406,7 @@ func TestRunGateWarningsRespectReportedErrorCounts(t *testing.T) {
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
-						case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_counts":
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_counts"):
 							_, _ = io.WriteString(w, `{"id":"eval_counts","data_source_config":{"type":"custom"}}`)
 						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
 							_, _ = io.WriteString(w, `{"id":"run_counts","status":"queued"}`)

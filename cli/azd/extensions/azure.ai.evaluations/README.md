@@ -414,7 +414,7 @@ text/items response bindings require a compatible eval, retaining the original
 eval and its runs. Missing inferred mappings and unrelated service enrichment do not
 require replacement. An explicit `id:` with conflicting response or trace
 source contracts is refused before dependency publication; remove the `id:` and deploy the
-declaration to migrate. Each explicitly authored `dataMapping` field must match the
+declaration to create a compatible eval. Each explicitly authored `dataMapping` field must match the
 stored criterion exactly, including the column name, not just the item/sample namespace.
 Missing authored bindings or a missing/renamed stored criterion for those bindings
 are also conflicts; inferred defaults retain the narrower source-compatibility checks.

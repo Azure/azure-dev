@@ -18,7 +18,6 @@ import (
 	"unicode"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/containerref"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
@@ -34,16 +33,28 @@ type previewChange struct {
 }
 
 type agentPreviewResult struct {
-	Service string          `json:"service"`
-	Agent   string          `json:"agent"`
-	Status  string          `json:"status"`
-	Changes []previewChange `json:"changes"`
-	Unknown []string        `json:"unknown"`
-	Notes   []string        `json:"notes"`
+	Service        string                 `json:"service"`
+	Agent          string                 `json:"agent"`
+	Status         string                 `json:"status"`
+	Changes        []previewChange        `json:"changes"`
+	Unknown        []string               `json:"unknown"`
+	Notes          []string               `json:"notes"`
+	ContainerImage *previewContainerImage `json:"containerImage,omitempty"`
+}
+
+type previewContainerImage struct {
+	Build *bool `json:"build"`
+	Push  *bool `json:"push"`
+}
+
+type previewInputs struct {
+	Unknown        []string
+	ContainerImage *previewContainerImage
+	IgnoreImage    bool
 }
 
 func comparePreviewRequest(
-	service string, desired *agent_api.CreateAgentRequest, existing *agent_api.AgentObject, unknown []string,
+	service string, desired *agent_api.CreateAgentRequest, existing *agent_api.AgentObject, inputs previewInputs,
 ) (*v1beta.ServiceDeployPreviewResult, error) {
 	after, secrets, err := previewRequestState(desired)
 	if err != nil {
@@ -59,18 +70,16 @@ func comparePreviewRequest(
 				DigitalWorkerType: existing.DigitalWorkerType,
 			},
 		}
-		if desired.AgentEndpoint != nil {
-			remote.AgentEndpoint = existing.AgentEndpoint
-		}
-		if desired.AgentCard != nil {
-			remote.AgentCard = existing.AgentCard
-		}
 		var remoteSecrets []string
 		before, remoteSecrets, err = previewRequestState(remote)
 		if err != nil {
 			return nil, fmt.Errorf("Foundry returned an invalid hosted-agent definition; preview cannot compare it")
 		}
 		secrets = append(secrets, remoteSecrets...)
+	}
+	if inputs.IgnoreImage {
+		delete(before, previewImagePath)
+		delete(after, previewImagePath)
 	}
 	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
 	clean := func(value string) string {
@@ -90,24 +99,23 @@ func comparePreviewRequest(
 	result := agentPreviewResult{
 		Service: clean(service), Agent: clean(desired.Name),
 		Status: "noChange", Changes: []previewChange{}, Unknown: []string{},
+		ContainerImage: inputs.ContainerImage,
 		Notes: []string{
 			"Read-only comparison of the latest agent version; infrastructure and dependencies are not previewed.",
 			"Sensitive values are redacted; known configuration values are shown.",
+			"Comparison is limited to metadata, protocols, resources, environment, model reference, " +
+				"and container image intent.",
 			"Deploy creates a new agent version even when configuration has no changes.",
 		},
 	}
 	keys := maps.Clone(before)
 	maps.Copy(keys, after)
 	for _, path := range slices.Sorted(maps.Keys(keys)) {
-		if slices.Contains(unknown, path) {
+		if slices.Contains(inputs.Unknown, path) {
 			continue
 		}
 		oldValue, oldExists := before[path]
 		newValue, newExists := after[path]
-		if !newExists && (strings.HasPrefix(path, "agent_endpoint.") || strings.HasPrefix(path, "agent_card.")) {
-			// Endpoint/card PATCH preserves unmentioned fields.
-			continue
-		}
 		if oldExists == newExists && reflect.DeepEqual(oldValue, newValue) {
 			continue
 		}
@@ -128,8 +136,10 @@ func comparePreviewRequest(
 		}
 		result.Changes = append(result.Changes, change)
 	}
-	for _, path := range unknown {
-		result.Unknown = append(result.Unknown, clean(path))
+	for _, path := range inputs.Unknown {
+		if previewFieldGroup(path) != "" {
+			result.Unknown = append(result.Unknown, clean(path))
+		}
 	}
 	slices.Sort(result.Unknown)
 	result.Unknown = slices.Compact(result.Unknown)
@@ -143,7 +153,7 @@ func comparePreviewRequest(
 	}
 	if len(result.Unknown) > 0 {
 		result.Notes = append(result.Notes,
-			"Unknown fields require build/upload or unresolved inputs; preview does not build, push, or upload artifacts.")
+			"Resolve missing configuration inputs or select an image deployment strategy to compare these fields.")
 	}
 	return previewResponse(result)
 }
@@ -167,14 +177,8 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 		}
 		// The service can expose its built image alongside the source code config.
 		definition.ContainerConfiguration = nil
-		if definition.CodeConfiguration.DependencyResolution == "" {
-			definition.CodeConfiguration.DependencyResolution = agent_yaml.DefaultDependencyResolution
-		}
 	} else if definition.ContainerConfiguration.Image == "" {
 		return nil, nil, fmt.Errorf("invalid container configuration")
-	}
-	if definition.SessionConfiguration == nil {
-		definition.SessionConfiguration = &agent_api.SessionConfigurationAPI{IdleTimeoutSeconds: 900}
 	}
 	if cpu, err := strconv.ParseFloat(definition.CPU, 64); err == nil {
 		definition.CPU = strconv.FormatFloat(cpu, 'f', -1, 64)
@@ -195,13 +199,8 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 	if clone.Description != nil && *clone.Description == "" {
 		clone.Description = nil
 	}
-	if clone.AgentEndpoint != nil {
-		endpoint := *clone.AgentEndpoint
-		endpoint.Protocols = slices.Clone(endpoint.Protocols)
-		slices.Sort(endpoint.Protocols)
-		endpoint.Protocols = slices.Compact(endpoint.Protocols)
-		clone.AgentEndpoint = &endpoint
-	}
+	clone.AgentEndpoint = nil
+	clone.AgentCard = nil
 	data, err = json.Marshal(clone)
 	if err != nil {
 		return nil, nil, err
@@ -212,6 +211,11 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 	}
 	result := map[string]any{}
 	flattenPreviewState("", object, result)
+	for path := range result {
+		if previewFieldGroup(path) == "" {
+			delete(result, path)
+		}
+	}
 	return result, secrets, nil
 }
 
@@ -220,7 +224,6 @@ const previewRedactedValue = "[redacted]"
 var (
 	previewIdentifier = regexp.MustCompile(`^[A-Za-z0-9_.:/\\-]+$`)
 	previewQuantity   = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?(?:(?:K|M|G|T)i?)?$`)
-	previewRuntime    = regexp.MustCompile(`^(?:python|dotnet)_[0-9]+(?:_[0-9]+)?$`)
 	previewVersion    = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*$`)
 )
 
@@ -236,49 +239,18 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 		if value == "true" || value == "false" {
 			return value
 		}
-	case "definition.code_configuration.runtime":
-		if text, ok := value.(string); ok && previewRuntime.MatchString(text) {
-			return text
-		}
 	case "definition.protocol_versions.version":
 		if text, ok := value.(string); ok && previewVersion.MatchString(text) {
 			return text
 		}
-	case "definition.kind":
-		if value == "hosted" {
-			return value
-		}
-	case "digital_worker_type":
-		if value == "m365" {
-			return value
-		}
-	case "definition.code_configuration.dependency_resolution":
-		if value == "remote_build" || value == "bundled" {
-			return value
-		}
-	case "definition.protocol_versions.protocol", "agent_endpoint.protocols":
+	case "definition.protocol_versions.protocol":
 		if text, ok := value.(string); ok && slices.Contains([]string{
 			"responses", "invocations", "invocations_ws", "activity", "activity_protocol", "a2a", "mcp",
 		}, text) {
 			return text
 		}
-	case "agent_endpoint.authorization_schemes.type":
-		if text, ok := value.(string); ok && slices.Contains([]string{
-			"Entra", "BotService", "BotServiceRbac", "BotServiceTenant",
-		}, text) {
-			return text
-		}
-	case "agent_endpoint.authorization_schemes.isolation_key_source.kind":
-		if value == "Entra" || value == "Header" {
-			return value
-		}
-	case "agent_endpoint.version_selector.version_selection_rules.type":
-		if value == "FixedRatio" {
-			return value
-		}
 	case "name", "definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		"definition.container_configuration.registry_connection_id", "definition.rai_config.rai_policy_name",
-		"agent_endpoint.version_selector.version_selection_rules.agent_version", "agent_card.version":
+		"definition.container_configuration.registry_connection_id":
 		if text, ok := value.(string); ok && (text == "" || previewIdentifier.MatchString(text)) {
 			return clean(text)
 		}
@@ -289,30 +261,9 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 				return text
 			}
 		}
-	case "definition.session_configuration.idle_timeout_seconds",
-		"agent_endpoint.version_selector.version_selection_rules.traffic_percentage":
-		if number, ok := value.(float64); ok {
-			return number
-		}
-	case "agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint":
-		if flag, ok := value.(bool); ok {
-			return flag
-		}
-	case "definition.code_configuration.entry_point":
-		// The normal request contains an interpreter and a file, not shell text.
-		// Remote commands may carry inline credentials or arguments; hide those.
-		if items, ok := value.([]any); ok && len(items) == 2 {
-			command, commandOK := items[0].(string)
-			file, fileOK := items[1].(string)
-			if commandOK && fileOK && (command == "python" || command == "dotnet") &&
-				previewIdentifier.MatchString(file) && (strings.HasSuffix(file, ".py") || strings.HasSuffix(file, ".dll")) {
-				return []any{command, clean(file)}
-			}
-		}
 	}
 	switch path {
-	case "definition.protocol_versions", "agent_endpoint.protocols", "agent_endpoint.authorization_schemes",
-		"agent_endpoint.version_selector.version_selection_rules":
+	case "definition.protocol_versions":
 		if items, ok := value.([]any); ok {
 			result := make([]any, len(items))
 			for i, item := range items {
@@ -326,10 +277,6 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 				result[key] = previewDisplayValue(path+"."+key, item, clean)
 			}
 			return result
-		}
-	case "agent_endpoint.authorization_schemes.isolation_key_source":
-		if object, ok := value.(map[string]any); ok {
-			return map[string]any{"kind": previewDisplayValue(path+".kind", object["kind"], clean)}
 		}
 	}
 	return previewRedactedValue
@@ -345,22 +292,13 @@ func previewFieldGroup(path string) string {
 		return "resources"
 	case path == "definition.protocol_versions":
 		return "protocols"
-	case strings.HasPrefix(path, "definition.container_configuration."):
+	case path == previewImagePath || path == "definition.container_configuration.registry_connection_id" ||
+		path == "containerImage.build" || path == "containerImage.push":
 		return "containerImage"
-	case strings.HasPrefix(path, "definition.code_configuration."):
-		return "code"
-	case strings.HasPrefix(path, "definition.session_configuration."):
-		return "session"
-	case strings.HasPrefix(path, "agent_endpoint."):
-		return "endpoint"
-	case strings.HasPrefix(path, "agent_card."):
-		return "agentCard"
-	case path == "definition.kind":
+	case path == "name" || path == "description" || strings.HasPrefix(path, "metadata."):
 		return "metadata"
-	case strings.HasPrefix(path, "definition."):
-		return "contentSafety"
 	default:
-		return "metadata"
+		return ""
 	}
 }
 
@@ -424,15 +362,14 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 	case "update":
 		message.WriteString("Would update the hosted agent.\n")
 	case "unknown":
-		message.WriteString("Known configuration matches; artifact or input changes are unknown.\n")
+		message.WriteString("Known configuration matches; some preview inputs are unresolved.\n")
 	default:
 		message.WriteString("No deployment configuration changes.\n")
 	}
 	for _, group := range []struct{ key, label string }{
 		{"metadata", "Metadata"}, {"protocols", "Protocols"}, {"resources", "Resources"},
 		{"environmentVariables", "Environment variables"}, {"modelDeployment", "Model deployment"},
-		{"containerImage", "Container image"}, {"code", "Code"}, {"session", "Session"},
-		{"contentSafety", "Content safety"}, {"endpoint", "Endpoint"}, {"agentCard", "Agent card"},
+		{"containerImage", "Container image"},
 	} {
 		shown := false
 		for _, change := range result.Changes {
@@ -459,6 +396,19 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 				fmt.Fprintf(&message, "%s -> (removed)\n", before)
 			default:
 				fmt.Fprintf(&message, "%s -> %s\n", before, after)
+			}
+		}
+		if group.key == "containerImage" && result.ContainerImage != nil {
+			if !shown {
+				fmt.Fprintf(&message, "  %s:\n", group.label)
+			}
+			for _, operation := range []struct {
+				label string
+				value *bool
+			}{{"build", result.ContainerImage.Build}, {"push", result.ContainerImage.Push}} {
+				if operation.value != nil {
+					fmt.Fprintf(&message, "    %s: %t\n", operation.label, *operation.value)
+				}
 			}
 		}
 	}

@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -60,11 +62,15 @@ func (s *foundryPreviewAccount) LookupTenant(
 
 type foundryPreviewExtension struct {
 	azdext.UnimplementedExtensionServiceServer
+	ready chan struct{}
 }
 
 func (s *foundryPreviewExtension) Ready(
 	context.Context, *azdext.ReadyRequest,
 ) (*azdext.ReadyResponse, error) {
+	if s.ready != nil {
+		close(s.ready)
+	}
 	return &azdext.ReadyResponse{}, nil
 }
 
@@ -77,7 +83,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n",
 	), 0600))
 	services := map[string]*azdext.ServiceConfig{}
-	for _, name := range []string{"agent", "create", "update", "unknown", "legacy"} {
+	for _, name := range []string{"agent", "create", "update", "unknown", "legacy", "code", "build"} {
 		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
 		require.NoError(t, err)
 		services[name] = &azdext.ServiceConfig{
@@ -92,6 +98,14 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
 	})
 	services["unknown"].Environment = map[string]string{"VALUE": ""}
+	services["code"].AdditionalProperties.Fields["codeConfiguration"], _ = structpb.NewValue(map[string]any{
+		"runtime": "python_3_13", "entryPoint": "app.py",
+	})
+	services["code"].AdditionalProperties.Fields["sessionConfiguration"], _ = structpb.NewValue(map[string]any{
+		"idleTimeoutSeconds": 123,
+	})
+	services["build"].Image = ""
+	services["build"].Docker.ImagePassthrough = false
 	services["legacy"].Config = services["legacy"].AdditionalProperties
 	services["legacy"].AdditionalProperties = nil
 	extension := &extensions.Extension{
@@ -140,12 +154,27 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	preview := service.previewFunc("azure.ai.agent", extension.Id)
 	for _, tc := range []struct{ name, status string }{
 		{"agent", "noChange"}, {"create", "create"}, {"update", "update"}, {"unknown", "unknown"},
+		{"code", "noChange"}, {"build", "noChange"},
 	} {
 		result, err := preview(ctx, services[tc.name])
 		require.NoError(t, err)
 		require.Equal(t, tc.status, result.Data["status"])
 		require.NotEmpty(t, result.Message)
 		require.NotContains(t, result.Message, "private-create-secret")
+		require.Equal(t, map[string]any{"build": tc.name == "build", "push": tc.name == "build"},
+			result.Data["containerImage"])
+		encoded, err := json.Marshal(result.Data)
+		require.NoError(t, err)
+		for _, excluded := range []string{
+			"codeArtifact", "code_configuration", "session_configuration", "agent_endpoint", "agent_card", "build/upload",
+		} {
+			require.NotContains(t, result.Message, excluded)
+			require.NotContains(t, string(encoded), excluded)
+		}
+		if tc.name == "code" || tc.name == "build" {
+			require.Empty(t, result.Data["changes"])
+			require.Empty(t, result.Data["unknown"])
+		}
 		if tc.name == "create" || tc.name == "update" {
 			changes, ok := result.Data["changes"].([]any)
 			require.True(t, ok)
@@ -180,4 +209,79 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	entries, err := os.ReadDir(root)
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "preview must not create extension state")
+}
+
+func TestFoundryProjectPreviewAgainstMainHost(t *testing.T) {
+	binary := os.Getenv("AZD_PROJECT_PREVIEW_EXTENSION_TEST_BINARY")
+	require.NotEmpty(t, binary)
+	root := t.TempDir()
+	config, err := project.Parse(t.Context(), "name: preview\nservices:\n  ai-project:\n    host: azure.ai.project\n")
+	require.NoError(t, err)
+	config.Path = root
+	extension := &extensions.Extension{
+		Id: "test.foundry.project.preview",
+		Capabilities: []extensions.CapabilityType{
+			extensions.ServiceTargetProviderCapability, extensions.ProvisioningProviderCapability,
+			extensions.ValidationProviderCapability, extensions.LifecycleEventsCapability,
+		},
+	}
+	container := ioc.NewNestedContainer(nil)
+	manager := newStreamTestExtensionManager(t, extension)
+	service := NewServiceTargetService(container, manager, nil).(*ServiceTargetService)
+	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
+	server.serviceTargetService = service
+	server.provisioningService = NewProvisioningService(container, manager)
+	server.validationService = NewValidationService(manager)
+	server.eventService = NewEventService(manager, nil, lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return config, nil
+	}), nil, nil, nil)
+	ready := make(chan struct{})
+	server.extensionService = &foundryPreviewExtension{ready: ready}
+	info, err := server.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.Stop()) })
+	token, err := GenerateExtensionToken(extension, info)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	//nolint:gosec // Test binary is built by the extension-local integration runner.
+	process := exec.CommandContext(ctx, binary, "-test.run=^TestProjectPreviewExtensionProcess$", "-test.v")
+	process.Env = append(os.Environ(),
+		"AZD_SERVER="+info.Address, "AZD_ACCESS_TOKEN="+token, "AZD_EXTENSION_ID="+extension.Id,
+		"AZD_PROJECT_PREVIEW_EXTENSION_PROCESS=true", "AZD_EXT_DEBUG=false", "AZD_DEBUG=false",
+	)
+	var processOutput bytes.Buffer
+	process.Stdout = &processOutput
+	process.Stderr = &processOutput
+	require.NoError(t, process.Start())
+	t.Cleanup(func() {
+		cancel()
+		_ = process.Wait()
+		if t.Failed() {
+			t.Log(processOutput.String())
+		}
+	})
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("project extension did not finish production provider registration")
+	}
+	result, err := service.previewFunc("azure.ai.project", extension.Id)(ctx, &azdext.ServiceConfig{
+		Name: "ai-project", Host: "azure.ai.project",
+	})
+	require.NoError(t, err, "registered no-op preview must not return the unsupported-preview error")
+	require.NotNil(t, result)
+	require.Empty(t, result.Message)
+	require.Equal(t, map[string]any{
+		"status": "noOp", "scope": "deployment", "infrastructurePreviewed": false,
+	}, result.Data)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Empty(t, entries, "preview must not create project state")
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	path := os.Getenv("AZD_PROJECT_PREVIEW_TEST_RESULT")
+	require.NotEmpty(t, path)
+	//nolint:gosec // Task-local result path is supplied by the integration runner.
+	require.NoError(t, os.WriteFile(path, encoded, 0600))
 }

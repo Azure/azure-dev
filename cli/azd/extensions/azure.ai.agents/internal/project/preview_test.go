@@ -216,11 +216,9 @@ func TestPreviewRequestDeploymentParity(t *testing.T) {
 			require.Equal(t, "2", hosted.CPU)
 			require.Equal(t, "4Gi", hosted.Memory)
 			require.Equal(t, "true", request.Metadata["enableVnextExperience"])
-			if mode == "build" || mode == "code" {
-				require.Len(t, unknown, 1)
-			} else {
-				require.Empty(t, unknown)
-			}
+			require.Empty(t, unknown.Unknown)
+			require.Equal(t, mode == "build", *unknown.ContainerImage.Build)
+			require.Equal(t, mode == "build", *unknown.ContainerImage.Push)
 		})
 	}
 }
@@ -237,7 +235,8 @@ func TestPreviewRemoteOutcomes(t *testing.T) {
 		{name: "create", err: &azcore.ResponseError{StatusCode: http.StatusNotFound}, status: "create"},
 		{name: "no change", agent: remotePreviewAgent(request), status: "noChange"},
 		{name: "unknown image", agent: remotePreviewAgent(request), status: "unknown", unknown: []string{previewImagePath}},
-		{name: "unknown code", agent: remotePreviewAgent(request), status: "unknown", unknown: []string{"codeArtifact"}},
+		{name: "ignored code artifact", agent: remotePreviewAgent(request), status: "noChange",
+			unknown: []string{"codeArtifact"}},
 		{name: "unauthorized", err: &azcore.ResponseError{StatusCode: http.StatusUnauthorized}},
 		{name: "forbidden", err: &azcore.ResponseError{
 			StatusCode: http.StatusForbidden, ErrorCode: "private-response-body",
@@ -252,7 +251,7 @@ func TestPreviewRemoteOutcomes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := &recordingPreviewReader{agent: tc.agent, err: tc.err}
-			result, err := previewAgentRequest(t.Context(), reader, "agent", request, tc.unknown)
+			result, err := previewAgentRequest(t.Context(), reader, "agent", request, previewInputs{Unknown: tc.unknown})
 			require.Equal(t, 1, reader.calls)
 			require.Equal(t, agent_api.AgentEndpointAPIVersion, reader.version)
 			if tc.status == "" {
@@ -263,7 +262,10 @@ func TestPreviewRemoteOutcomes(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.status, result.Data.AsMap()["status"])
-			if len(tc.unknown) > 0 {
+			require.NotContains(t, result.Message, "codeArtifact")
+			require.NotContains(t, result.Message, "build/upload")
+			require.NotContains(t, result.Data.AsMap()["unknown"], "codeArtifact")
+			if tc.status == "unknown" {
 				require.Contains(t, result.Message, "unknown")
 				require.NotContains(t, result.Message, "No deployment configuration changes")
 			}
@@ -290,7 +292,7 @@ func TestPreviewGroupedChangesAndNonDisclosure(t *testing.T) {
 		"REMOVED_SECRET": "private-remote-secret", "AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4o",
 	}
 	remote.Versions.Latest.Definition = oldHosted
-	result, err := comparePreviewRequest("agent", request, remote, nil)
+	result, err := comparePreviewRequest("agent", request, remote, previewInputs{})
 	require.NoError(t, err)
 	require.Equal(t, "update", result.Data.AsMap()["status"])
 	for _, label := range []string{
@@ -341,6 +343,7 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.NoError(t, err)
 	request.Description = new("private-description")
 	request.Metadata["arbitrary"] = "private-metadata"
+	request.Metadata["tags"] = "private-tags"
 	request.AgentEndpoint = &agent_api.AgentEndpoint{
 		ProtocolConfiguration: &agent_api.ProtocolConfiguration{
 			Activity: &agent_api.ActivityProtocolConfiguration{EnableM365PublicEndpoint: new(false)},
@@ -353,25 +356,19 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "create", result.Data.AsMap()["status"])
 	for _, line := range []string{
-		`add: definition.kind: "hosted"`,
 		`add: name: "example-agent"`,
 		`add: metadata.enableVnextExperience: "true"`,
 		`add: definition.cpu: "0.5"`,
 		`add: definition.memory: "1Gi"`,
 		`add: definition.protocol_versions: [{"protocol":"responses","version":"2.0.0"}]`,
-		`add: definition.code_configuration.runtime: "python_3_13"`,
-		`add: definition.code_configuration.entry_point: ["python","app.py"]`,
-		`add: definition.code_configuration.dependency_resolution: "remote_build"`,
-		`add: definition.session_configuration.idle_timeout_seconds: 900`,
 		`add: definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME: "gpt-4.1"`,
 		`add: definition.environment_variables.API_KEY: "[redacted]"`,
 		`add: definition.environment_variables.NUMBER: "[redacted]"`,
 		`add: description: "[redacted]"`,
 		`add: metadata.arbitrary: "[redacted]"`,
-		`add: agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint: false`,
-		`add: agent_endpoint.version_selector.version_selection_rules: ` +
-			`[{"agent_version":"1","traffic_percentage":0,"type":"FixedRatio"}]`,
-		`unknown: codeArtifact`,
+		`add: metadata.tags: "[redacted]"`,
+		`build: false`,
+		`push: false`,
 	} {
 		require.Contains(t, result.Message, line)
 	}
@@ -394,6 +391,23 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "private-")
 	require.NotContains(t, string(encoded), "preview.invalid")
+	require.Equal(t, map[string]any{"build": false, "push": false}, data["containerImage"])
+	for _, excluded := range []string{
+		"codeArtifact", "code_configuration", "session_configuration", "agent_endpoint", "agent_card", "definition.kind",
+	} {
+		require.NotContains(t, result.Message, excluded)
+		require.NotContains(t, string(encoded), excluded)
+	}
+}
+
+func TestPreviewRejectsConflictingContainerStrategy(t *testing.T) {
+	service := previewService(t)
+	service.Docker.RemoteBuild = true
+	definition, _, _, _, err := AgentDefinitionFromService(service)
+	require.NoError(t, err)
+	request, _, err := preparePreviewRequest(service, definition, nil, nil)
+	require.Error(t, err)
+	require.Nil(t, request)
 }
 
 func TestPreviewValueRedactionPolicy(t *testing.T) {
@@ -422,10 +436,11 @@ func TestPreviewValueRedactionPolicy(t *testing.T) {
 		}, want: []any{map[string]any{"protocol": "responses", "version": previewRedactedValue}}},
 		{path: "agent_endpoint.authorization_schemes", value: []any{
 			map[string]any{"type": "Entra", "isolation_key_source": map[string]any{"kind": "Header"}},
-		}, want: []any{map[string]any{"type": "Entra", "isolation_key_source": map[string]any{"kind": "Header"}}}},
-		{path: "agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint", value: false, want: false},
+		}, want: previewRedactedValue},
+		{path: "agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint", value: false,
+			want: previewRedactedValue},
 		{path: "agent_endpoint.version_selector.version_selection_rules.traffic_percentage", value: float64(0),
-			want: float64(0)},
+			want: previewRedactedValue},
 		{path: "definition.future_api_field", value: "private-future-value", want: previewRedactedValue},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
@@ -450,7 +465,7 @@ func TestPreviewSafeRemovalAndEmptyValue(t *testing.T) {
 	desired := request.Definition.(agent_api.HostedAgentDefinition)
 	desired.EnvironmentVariables = map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": ""}
 	request.Definition = desired
-	result, err := comparePreviewRequest("agent", request, remote, nil)
+	result, err := comparePreviewRequest("agent", request, remote, previewInputs{})
 	require.NoError(t, err)
 	require.Contains(t, result.Message,
 		`remove: definition.container_configuration.registry_connection_id: "registry-connection" -> (removed)`)
@@ -500,7 +515,7 @@ func TestPreviewNormalizationAndPatchPreservation(t *testing.T) {
 	}
 	before, err := json.Marshal(request)
 	require.NoError(t, err)
-	result, err := comparePreviewRequest("agent", request, remote, nil)
+	result, err := comparePreviewRequest("agent", request, remote, previewInputs{})
 	require.NoError(t, err)
 	require.Equal(t, "noChange", result.Data.AsMap()["status"])
 	after, err := json.Marshal(request)
@@ -508,36 +523,134 @@ func TestPreviewNormalizationAndPatchPreservation(t *testing.T) {
 	require.Equal(t, before, after)
 }
 
-func TestPreviewCodeAndBuildArtifactsUnknown(t *testing.T) {
-	for _, mode := range []string{"build", "ambiguous image", "code"} {
-		t.Run(mode, func(t *testing.T) {
+func TestPreviewExcludedFieldsDoNotAffectStatus(t *testing.T) {
+	for _, status := range []string{"create", "update", "noChange"} {
+		t.Run(status, func(t *testing.T) {
+			request := previewRequest(t)
+			remote := remotePreviewAgent(request)
+			hosted := request.Definition.(agent_api.HostedAgentDefinition)
+			hosted.SessionConfiguration = &agent_api.SessionConfigurationAPI{IdleTimeoutSeconds: 123}
+			hosted.RaiConfig = &agent_api.RaiConfig{RaiPolicyName: "private-policy"}
+			request.Definition = hosted
+			request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
+			request.AgentEndpoint = &agent_api.AgentEndpoint{
+				Protocols: []agent_api.AgentEndpointProtocol{"a2a"},
+			}
+			request.AgentCard = &agent_api.AgentCard{Version: new("private-card")}
+			switch status {
+			case "create":
+				remote = nil
+			case "update":
+				hosted.CPU = "2"
+				request.Definition = hosted
+			}
+			result, err := comparePreviewRequest("agent", request, remote, previewInputs{Unknown: []string{
+				"codeArtifact", "definition.code_configuration.runtime",
+				"definition.session_configuration.idle_timeout_seconds",
+			}})
+			require.NoError(t, err)
+			data := result.Data.AsMap()
+			require.Equal(t, status, data["status"])
+			require.Empty(t, data["unknown"])
+			if status == "noChange" {
+				require.Empty(t, data["changes"])
+			}
+			encoded, err := json.Marshal(data)
+			require.NoError(t, err)
+			for _, excluded := range []string{
+				"codeArtifact", "session_configuration", "rai_config", "agent_endpoint", "agent_card", "digital_worker",
+				"definition.kind", "private-", "build/upload",
+			} {
+				require.NotContains(t, string(encoded), excluded)
+				require.NotContains(t, result.Message, excluded)
+			}
+			changes, ok := data["changes"].([]any)
+			require.True(t, ok)
+			for _, item := range changes {
+				change, ok := item.(map[string]any)
+				require.True(t, ok)
+				require.Contains(t, []string{
+					"metadata", "protocols", "resources", "environmentVariables", "modelDeployment", "containerImage",
+				}, change["group"])
+			}
+		})
+	}
+}
+
+func TestPreviewContainerImageIntentAndIgnoredArtifacts(t *testing.T) {
+	for _, tc := range []struct {
+		mode      string
+		noPrompt  bool
+		wantBuild bool
+		status    string
+	}{
+		{mode: "build", wantBuild: true, status: "noChange"},
+		{mode: "remote build", wantBuild: true, status: "noChange"},
+		{mode: "configured image default build", noPrompt: true, wantBuild: true, status: "noChange"},
+		{mode: "configured image selection", status: "unknown"},
+		{mode: "passthrough", status: "update"},
+		{mode: "legacy prebuilt", status: "update"},
+		{mode: "private registry", status: "update"},
+		{mode: "code", status: "noChange"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", fmt.Sprint(tc.noPrompt))
 			service := previewService(t)
 			service.Docker.ImagePassthrough = false
-			if mode == "build" {
+			environment := map[string]string{}
+			switch tc.mode {
+			case "build", "remote build":
 				service.Image = ""
+				service.Docker.RemoteBuild = tc.mode == "remote build"
+			case "passthrough":
+				service.Docker.ImagePassthrough = true
+			case "legacy prebuilt":
+				environment["AZD_AGENT_SKIP_ACR"] = "true"
+			case "private registry":
+				service.Docker.ImagePassthrough = true
+				service.AdditionalProperties.Fields["registryConnectionId"] = structpb.NewStringValue("registry-connection")
 			}
-			if mode == "code" {
+			if tc.mode == "code" {
 				service.AdditionalProperties.Fields["codeConfiguration"], _ = structpb.NewValue(map[string]any{
 					"runtime": "python_3_13", "entryPoint": "app.py",
 				})
 			}
 			definition, _, _, _, err := AgentDefinitionFromService(service)
 			require.NoError(t, err)
-			request, unknown, err := preparePreviewRequest(service, definition, nil, nil)
+			request, inputs, err := preparePreviewRequest(service, definition, environment, nil)
 			require.NoError(t, err)
 			remote := remotePreviewAgent(request)
 			hosted := request.Definition.(agent_api.HostedAgentDefinition)
 			hosted.ContainerConfiguration = &agent_api.ContainerConfigurationAPI{Image: "registry.example.com/built:v9"}
-			if mode == "code" {
+			if tc.mode == "code" {
 				code := *hosted.CodeConfiguration
-				code.DependencyResolution = ""
+				code.Runtime = "python_3_12"
+				code.EntryPoint = []string{"python", "old.py"}
+				code.DependencyResolution = "bundled"
 				hosted.CodeConfiguration = &code
 			}
 			remote.Versions.Latest.Definition = hosted
-			result, err := comparePreviewRequest("agent", request, remote, unknown)
+			result, err := comparePreviewRequest("agent", request, remote, inputs)
 			require.NoError(t, err)
-			require.Equal(t, "unknown", result.Data.AsMap()["status"])
-			require.Empty(t, result.Data.AsMap()["changes"])
+			data := result.Data.AsMap()
+			require.Equal(t, tc.status, data["status"])
+			if tc.mode == "configured image selection" {
+				require.Equal(t, map[string]any{"build": nil, "push": nil}, data["containerImage"])
+				require.ElementsMatch(t, []any{"containerImage.build", "containerImage.push"}, data["unknown"])
+			} else {
+				require.Equal(t, map[string]any{"build": tc.wantBuild, "push": tc.wantBuild}, data["containerImage"])
+				require.Contains(t, result.Message, fmt.Sprintf("build: %t", tc.wantBuild))
+				require.Contains(t, result.Message, fmt.Sprintf("push: %t", tc.wantBuild))
+			}
+			if tc.status != "update" {
+				require.Empty(t, data["changes"])
+			}
+			encoded, err := json.Marshal(data)
+			require.NoError(t, err)
+			for _, excluded := range []string{"codeArtifact", "code_configuration", "build/upload", "preview.invalid"} {
+				require.NotContains(t, string(encoded), excluded)
+				require.NotContains(t, result.Message, excluded)
+			}
 			require.NotContains(t, result.Message, "preview.invalid")
 		})
 	}
@@ -569,7 +682,7 @@ services:
 	require.NoError(t, err)
 	request, unknown, err := preparePreviewRequest(service, definition, nil, pending)
 	require.NoError(t, err)
-	require.ElementsMatch(t, pending, unknown)
+	require.ElementsMatch(t, pending, unknown.Unknown)
 	result, err := comparePreviewRequest("agent", request, remotePreviewAgent(previewRequest(t)), unknown)
 	require.NoError(t, err)
 	require.Equal(t, "unknown", result.Data.AsMap()["status"])
@@ -602,7 +715,7 @@ func TestPreviewEnvironmentExpansion(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.unknown, len(unknown) > 0)
+			require.Equal(t, tc.unknown, len(unknown.Unknown) > 0)
 		})
 	}
 }
@@ -626,7 +739,7 @@ services:
 	request, unknown, err := preparePreviewRequest(service, definition, nil, pending)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(before, service))
-	require.Contains(t, unknown, previewImagePath)
+	require.Contains(t, unknown.Unknown, previewImagePath)
 	remote := remotePreviewAgent(request)
 	hosted := request.Definition.(agent_api.HostedAgentDefinition)
 	container := *hosted.ContainerConfiguration
@@ -657,7 +770,7 @@ func TestPreviewURLRedactionAndWriter(t *testing.T) {
 	}
 	request := previewRequest(t)
 	request.Metadata[raw] = "not emitted"
-	result, err := comparePreviewRequest("agent", request, nil, nil)
+	result, err := comparePreviewRequest("agent", request, nil, previewInputs{})
 	require.NoError(t, err)
 	require.NotContains(t, result.Message, "private-")
 	encoded, err := json.Marshal(result.Data.AsMap())
@@ -669,7 +782,7 @@ func TestPreviewURLRedactionAndWriter(t *testing.T) {
 	container.Image = raw
 	hosted.ContainerConfiguration = &container
 	remote.Versions.Latest.Definition = hosted
-	result, err = comparePreviewRequest("agent", request, remote, nil)
+	result, err = comparePreviewRequest("agent", request, remote, previewInputs{})
 	require.NoError(t, err)
 	require.Contains(t, result.Message,
 		`update: definition.container_configuration.image: "https://host/path" -> "registry.example.com/agent:v1"`)
@@ -678,7 +791,7 @@ func TestPreviewURLRedactionAndWriter(t *testing.T) {
 	require.NotContains(t, result.Message, "private-")
 	require.NotContains(t, string(encoded), "private-")
 	request.Metadata["escape\x1b[31m\u009b"] = "not emitted"
-	result, err = comparePreviewRequest("agent", request, nil, nil)
+	result, err = comparePreviewRequest("agent", request, nil, previewInputs{})
 	require.NoError(t, err)
 	require.NotContains(t, result.Message, "\x1b")
 	require.NotContains(t, result.Message, "\u009b")

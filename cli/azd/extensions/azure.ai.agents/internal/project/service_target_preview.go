@@ -112,7 +112,7 @@ func (p *AgentServiceTargetProvider) Preview(
 	if err != nil {
 		return nil, err
 	}
-	request, unknown, err := preparePreviewRequest(service, definition, environment, pending)
+	request, inputs, err := preparePreviewRequest(service, definition, environment, pending)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (p *AgentServiceTargetProvider) Preview(
 		return nil, exterrors.Auth(exterrors.CodeCredentialCreationFailed,
 			"Cannot create the preview credential.", "run 'azd auth login'")
 	}
-	return previewAgentRequest(ctx, reader, service.Name, request, unknown)
+	return previewAgentRequest(ctx, reader, service.Name, request, inputs)
 }
 
 func newAgentPreviewReader(endpoint, tenantID string) (agentPreviewReader, error) {
@@ -174,15 +174,41 @@ func previewProjectEndpoint(raw string) (string, error) {
 func preparePreviewRequest(
 	service *azdext.ServiceConfig, definition agent_yaml.ContainerAgent,
 	environment map[string]string, pending []string,
-) (*agent_api.CreateAgentRequest, []string, error) {
-	unknown := slices.Clone(pending)
+) (*agent_api.CreateAgentRequest, previewInputs, error) {
+	if definition.CodeConfiguration == nil &&
+		service.GetDocker().GetImagePassthrough() && service.GetDocker().GetRemoteBuild() {
+		return nil, previewInputs{}, previewConfigurationError()
+	}
+	inputs := previewInputs{
+		Unknown: slices.Clone(pending), ContainerImage: &previewContainerImage{},
+	}
+	prebuilt := definition.Image != "" && (service.GetDocker().GetImagePassthrough() ||
+		definition.RegistryConnectionID != "" ||
+		strings.EqualFold(strings.TrimSpace(environment["AZD_AGENT_SKIP_ACR"]), "true"))
+	switch {
+	case definition.CodeConfiguration != nil:
+		inputs.IgnoreImage = true
+		inputs.ContainerImage.Build, inputs.ContainerImage.Push = new(false), new(false)
+	case prebuilt || service.GetDocker().GetImagePassthrough():
+		inputs.ContainerImage.Build, inputs.ContainerImage.Push = new(false), new(false)
+	case definition.Image != "" && !azdext.DetectInteractive().NoPrompt:
+		inputs.IgnoreImage = true
+		inputs.Unknown = append(inputs.Unknown, "containerImage.build", "containerImage.push")
+	default:
+		inputs.IgnoreImage = true
+		inputs.ContainerImage.Build, inputs.ContainerImage.Push = new(true), new(true)
+	}
+	if inputs.IgnoreImage {
+		inputs.Unknown = slices.DeleteFunc(inputs.Unknown, func(path string) bool { return path == previewImagePath })
+	}
+	unknown := inputs.Unknown
 	validationService := service
 	if slices.Contains(unknown, previewImagePath) {
 		validationService = proto.CloneOf(service)
 		validationService.Image = "preview.invalid/unknown"
 	}
 	if err := validateRegistryConnectionServiceConfig(validationService); err != nil {
-		return nil, nil, previewConfigurationError()
+		return nil, previewInputs{}, previewConfigurationError()
 	}
 	resolved := maps.Clone(service.GetEnvironment())
 	if resolved == nil {
@@ -202,7 +228,7 @@ func preparePreviewRequest(
 			}
 			missing, err := previewEnvironmentInputUnknown(variable.Value, lookup)
 			if err != nil {
-				return nil, nil, previewConfigurationError()
+				return nil, previewInputs{}, previewConfigurationError()
 			}
 			if missing {
 				unknown = append(unknown, "definition.environment_variables."+variable.Name)
@@ -210,42 +236,40 @@ func preparePreviewRequest(
 			value, err := ResolveAgentEnvironmentVariable(variable.Name, variable.Value, service.Environment,
 				func(name string) string { value, _ := lookup(name); return value })
 			if err != nil {
-				return nil, nil, previewConfigurationError()
+				return nil, previewInputs{}, previewConfigurationError()
 			}
 			resolved[variable.Name] = value
 		}
 	}
 	var options []agent_yaml.AgentBuildOption
-	switch {
-	case definition.CodeConfiguration != nil:
-		unknown = append(unknown, "codeArtifact")
-	case slices.Contains(unknown, previewImagePath):
-		options = append(options, agent_yaml.WithImageURL("preview.invalid/unknown"))
-	case definition.Image != "" && (service.GetDocker().GetImagePassthrough() ||
-		definition.RegistryConnectionID != "" ||
-		strings.EqualFold(strings.TrimSpace(environment["AZD_AGENT_SKIP_ACR"]), "true")):
-		options = append(options, agent_yaml.WithImageURL(definition.Image))
-	case service.GetDocker().GetImagePassthrough():
-		return nil, nil, previewConfigurationError()
-	default:
-		options = append(options, agent_yaml.WithImageURL("preview.invalid/unknown"))
-		unknown = append(unknown, previewImagePath)
+	if definition.CodeConfiguration == nil {
+		switch {
+		case slices.Contains(unknown, previewImagePath):
+			options = append(options, agent_yaml.WithImageURL("preview.invalid/unknown"))
+		case prebuilt:
+			options = append(options, agent_yaml.WithImageURL(definition.Image))
+		case service.GetDocker().GetImagePassthrough():
+			return nil, previewInputs{}, previewConfigurationError()
+		default:
+			options = append(options, agent_yaml.WithImageURL("preview.invalid/unknown"))
+		}
 	}
 	prepared, err := prepareDeployRequest(service, definition, resolved, options)
 	if err != nil {
-		return nil, nil, previewConfigurationError()
+		return nil, previewInputs{}, previewConfigurationError()
 	}
 	config, err := LoadServiceTargetAgentConfig(service)
 	if err != nil {
-		return nil, nil, previewConfigurationError()
+		return nil, previewInputs{}, previewConfigurationError()
 	}
 	profile, err := ResolveActivityProfileForDeploy(definition, config.Activity)
 	if err != nil {
-		return nil, nil, previewConfigurationError()
+		return nil, previewInputs{}, previewConfigurationError()
 	}
 	// Deploy applies endpoint auth normalization after creating the agent version.
 	ensureActivityEndpointAuthSchemeForProfile(prepared.request, profile)
-	return prepared.request, unknown, nil
+	inputs.Unknown = unknown
+	return prepared.request, inputs, nil
 }
 
 func previewPendingInputs(
@@ -317,7 +341,7 @@ func previewEnvironmentInputUnknown(expression string, lookup func(string) (stri
 
 func previewAgentRequest(
 	ctx context.Context, reader agentPreviewReader, service string,
-	request *agent_api.CreateAgentRequest, unknown []string,
+	request *agent_api.CreateAgentRequest, inputs previewInputs,
 ) (*v1beta.ServiceDeployPreviewResult, error) {
 	existing, err := reader.GetAgent(ctx, request.Name, agent_api.AgentEndpointAPIVersion,
 		activityProfileFromCreateRequest(request).IsActivity)
@@ -342,5 +366,5 @@ func previewAgentRequest(
 		existing.Versions.Latest.Definition == nil {
 		return nil, fmt.Errorf("Foundry returned a malformed agent response; preview cannot compare it")
 	}
-	return comparePreviewRequest(service, request, existing, unknown)
+	return comparePreviewRequest(service, request, existing, inputs)
 }

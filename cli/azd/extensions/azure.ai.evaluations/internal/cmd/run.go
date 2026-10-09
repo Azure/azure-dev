@@ -1454,7 +1454,7 @@ func renderRun(
 	if isSimulationRun(run) {
 		renderConversationResults(out, run)
 	} else if c := run.ResultCounts; c != nil && (len(run.ReportedResultCounts()) < 5 || !validRunPassRateCounts(c)) {
-		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts())
+		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts(), c)
 	} else if c := run.ResultCounts; c != nil {
 		rate, _, available := runPassRateValue(c)
 		fmt.Fprint(out, messages.TestCaseResults(

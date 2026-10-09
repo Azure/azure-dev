@@ -35,17 +35,12 @@ func resultCountText(counts map[string]int, name string) string {
 	return "not reported"
 }
 
-func completeReportedRunCounts(counts map[string]int) *eval_api.EvalRunResultCounts {
-	return &eval_api.EvalRunResultCounts{
-		Total:   counts["total"],
-		Passed:  counts["passed"],
-		Failed:  counts["failed"],
-		Errored: counts["errored"],
-		Skipped: counts["skipped"],
-	}
-}
-
-func renderReportedRunCounts(out io.Writer, heading string, counts map[string]int) {
+func renderReportedRunCounts(
+	out io.Writer,
+	heading string,
+	counts map[string]int,
+	typedCounts *eval_api.EvalRunResultCounts,
+) {
 	fmt.Fprintf(out, "\n%s\n", heading)
 	if len(counts) == 0 {
 		fmt.Fprint(out, "Not reported by the service.\n")
@@ -60,7 +55,7 @@ func renderReportedRunCounts(out io.Writer, heading string, counts map[string]in
 	passed, passedKnown := counts["passed"]
 	total, totalKnown := counts["total"]
 	if passedKnown && totalKnown && total > 0 &&
-		validRunPassRateCounts(completeReportedRunCounts(counts)) {
+		validRunPassRateCounts(typedCounts) {
 		fmt.Fprintf(out, "%-10s %s (%d passed / %d total test cases)\n",
 			"Pass rate", formatRate(passed, total), passed, total)
 	} else {

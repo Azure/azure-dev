@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 
 	"azure.ai.rle/internal/project"
@@ -44,7 +43,7 @@ func newPublishCommand() *cobra.Command {
 		Short: "Build, push, and create or update the RLE environment",
 		Long: "Build and push an RLE image, then create or update its environment. " +
 			"Lime routing is optional and is requested only for this publish; omitting it preserves legacy behavior. " +
-			"The extension is preview-gated. Production public API mapping depends on Task 5717034.",
+			"The extension is preview-gated; hosted Lime routing requires server-side support that may not yet be deployed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&publishAction{cmd: cmd, flags: flags}).Run()
@@ -98,6 +97,10 @@ func (a *publishAction) Run() error {
 				foundryProjectEndpointEnvVar,
 			),
 		}
+	}
+	state.ProjectEndpoint, err = normalizeFoundryProjectEndpoint(state.ProjectEndpoint)
+	if err != nil {
+		return err
 	}
 	lime, err := publishLimeConfiguration(a.flags, state.ProjectEndpoint)
 	if err != nil {
@@ -264,8 +267,8 @@ func validateLimeProjectEndpoint(raw string, projectEndpoint string) error {
 			"with no credentials, query, fragment, port, or trailing slash.")
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery ||
-		u.Fragment != "" || strings.Contains(raw, "#") || u.Port() != "" ||
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.User != nil || u.RawQuery != "" ||
+		u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") || u.Port() != "" ||
 		u.Hostname() == "" || u.Opaque != "" || strings.HasSuffix(raw, "/") {
 		return invalid()
 	}
@@ -310,32 +313,17 @@ func validLimeProjectPath(path string) bool {
 	return true
 }
 
-var limeCredentialPattern = regexp.MustCompile(
-	`(?i)"?\b(?:authorization|(?:access|refresh|id)[_-]?token|client[_-]?secret|` +
-		`api[_-]?key|token|secret|password|sig)\b"?\s*[:=]\s*` +
-		`(?:(?:bearer|basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;}"']+)|` +
-		`\b(?:bearer|basic)\s+(?:"[^"]*"|'[^']*'|[^\s,;}"']+)`,
-)
-
 func redactLimeEndpointError(err error, endpoint string) error {
 	if endpoint == "" {
 		return err
 	}
-	redact := func(text string) string {
-		return limeCredentialPattern.ReplaceAllString(
-			strings.ReplaceAll(text, endpoint, "[redacted Lime endpoint]"),
-			"[redacted credential]",
-		)
-	}
+	// Service and transport diagnostics can contain normalized or partial endpoint and credential values.
 	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
-		details := rleErrorBody{Code: redact(httpErr.code()), Message: redact(httpErr.message())}
-		body, marshalErr := json.Marshal(details)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		return newRleHTTPError(httpErr.statusCode, body)
+		return newRleHTTPError(httpErr.statusCode, []byte(
+			`{"message":"Custom Lime routing request failed; check the destination project and access permissions."}`,
+		))
 	}
-	return errors.New(redact(err.Error()))
+	return errors.New("Custom Lime routing request failed; check the destination project and access permissions.")
 }
 
 func normalizeVersionBumpFlag(value string) (string, error) {

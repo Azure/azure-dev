@@ -120,6 +120,9 @@ func TestPublishLimeRoutingFlagsAndRequest(t *testing.T) {
 		{"custom", "custom", testLimeProjectEndpoint,
 			base + `,"lime_configuration":{"enabled":true,"project_mode":"custom","project_endpoint":"` +
 				testLimeProjectEndpoint + `"}}`, true, true},
+		{"uppercase scheme", "custom", "HTTPS://lime.services.ai.azure.com/api/projects/other",
+			base + `,"lime_configuration":{"enabled":true,"project_mode":"custom","project_endpoint":` +
+				`"HTTPS://lime.services.ai.azure.com/api/projects/other"}}`, true, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -331,20 +334,75 @@ func TestPublishRoutingFailedRequestPreservesLegacyState(t *testing.T) {
 	}
 }
 
-func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
+func TestPublishRejectsInvalidSavedEndpointBeforeBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, parent, lime string
+	}{
+		{"untrusted cloud", "legacy", "account.example.org", ""},
+		{"untrusted custom cloud", "custom", "account.example.org", "lime.example.org"},
+		{"spoofed cloud suffix", "custom", "account.services.ai.azure.com.evil",
+			"lime.services.ai.azure.com.evil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			t.Setenv(foundryProjectEndpointEnvVar, "")
+			t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "registry.azurecr.io")
+			state := `{"projectEndpoint":"https://` + tc.parent + `/api/projects/project","name":"echo"}`
+			if err := os.WriteFile(rleStateFile, []byte(state), 0600); err != nil {
+				t.Fatal(err)
+			}
+			originalBuild := buildPublishImage
+			t.Cleanup(func() { buildPublishImage = originalBuild })
+			buildPublishImage = func(context.Context, io.Writer, io.Writer, string, project.BuildOptions) error {
+				t.Fatal("invalid saved endpoint reached Docker build")
+				return nil
+			}
+			args := []string{"--lime-routing", tc.mode}
+			if tc.mode == "custom" {
+				args = append(args, "--lime-project-endpoint", "https://"+tc.lime+"/api/projects/other")
+			}
+			command := newPublishCommand()
+			command.SetArgs(args)
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			err := command.Execute()
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			if !ok || localErr.Code != "rle_invalid_project_endpoint" {
+				t.Fatalf("expected saved endpoint validation before build, got %v", err)
+			}
+		})
+	}
+}
+
+func TestRedactLimeEndpointErrorSuppressesCanonicalAndPartialEndpoint(t *testing.T) {
+	response := `{"error":{"code":"` + testLimeProjectEndpoint + `",` +
+		`"message":"Cannot access HTTPS://LIME.SERVICES.AI.AZURE.COM/api/projects/other ` +
+		`or lime.services.ai.azure.com or project other; access_token=private-access"}}`
+	serviceErr := serviceError(redactLimeEndpointError(
+		newRleHTTPError(http.StatusBadRequest, []byte(response)), testLimeProjectEndpoint,
+	))
+	typed, ok := errors.AsType[*azdext.ServiceError](serviceErr)
+	if !ok || typed.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected HTTP status and service error, got %v", serviceErr)
+	}
+	for _, forbidden := range []string{"lime.services.ai.azure.com", "LIME.SERVICES.AI.AZURE.COM",
+		"other", "private-access"} {
+		if strings.Contains(typed.Message+typed.ErrorCode, forbidden) {
+			t.Fatalf("service diagnostic exposed %q: %#v", forbidden, typed)
+		}
+	}
+}
+
+func TestRedactLimeEndpointErrorSuppressesCustomServiceDiagnostics(t *testing.T) {
 	tests := []struct {
 		name          string
 		response      string
-		expectedCode  string
-		expectedText  string
 		forbiddenText []string
 	}{
 		{
 			name: "endpoint-free rejection",
 			response: `{"code":"InvalidLimeConfiguration",` +
 				`"message":"Lime project is not enabled; access_token parameter is required."}`,
-			expectedCode: "InvalidLimeConfiguration",
-			expectedText: "Lime project is not enabled; access_token parameter is required.",
 		},
 		{
 			name: "endpoint and credentials in diagnostic",
@@ -352,8 +410,6 @@ func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
 				`"message":"Cannot access ` + testLimeProjectEndpoint +
 				` token=secret access_token=access-value client_secret=client-value` +
 				` api_key=\"quoted-secret\" Authorization: Bearer private-token; check project access."}}`,
-			expectedCode: "InvalidLimeConfiguration",
-			expectedText: "check project access.",
 			forbiddenText: []string{
 				testLimeProjectEndpoint, "token=secret", "access-value", "client-value",
 				"quoted-secret", "private-token",
@@ -366,8 +422,6 @@ func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
 				`\"api_key\":\"private-api\", \"authorization\":\"Bearer private-bearer\", ` +
 				`\"project_endpoint\":\"` + testLimeProjectEndpoint +
 				`\"}; verify permissions."}`,
-			expectedCode: "InvalidLimeConfiguration",
-			expectedText: "verify permissions.",
 			forbiddenText: []string{
 				"private-access", "private-client", "private-api", "private-bearer", testLimeProjectEndpoint,
 			},
@@ -384,11 +438,11 @@ func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected ServiceError, got %T", serviceErr)
 			}
-			if typed.StatusCode != http.StatusBadRequest || typed.ErrorCode != tc.expectedCode {
-				t.Fatalf("lost service status/code: %#v", typed)
+			if typed.StatusCode != http.StatusBadRequest || typed.ErrorCode != "" {
+				t.Fatalf("lost status or exposed untrusted code: %#v", typed)
 			}
-			if !strings.Contains(typed.Message, tc.expectedText) {
-				t.Fatalf("lost safe service diagnostic: %q", typed.Message)
+			if !strings.Contains(typed.Message, "destination project and access permissions") {
+				t.Fatalf("missing safe failure guidance: %q", typed.Message)
 			}
 			for _, forbidden := range tc.forbiddenText {
 				if strings.Contains(typed.Message, forbidden) {
@@ -399,12 +453,12 @@ func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
 	}
 }
 
-func TestRedactLimeEndpointErrorPreservesSafeTransportDiagnostics(t *testing.T) {
+func TestRedactLimeEndpointErrorSuppressesCustomTransportDiagnostics(t *testing.T) {
 	err := redactLimeEndpointError(
 		errors.New("retry to "+testLimeProjectEndpoint+" failed: TLS handshake timeout"),
 		testLimeProjectEndpoint,
 	)
-	if !strings.Contains(err.Error(), "TLS handshake timeout") ||
+	if !strings.Contains(err.Error(), "destination project and access permissions") ||
 		strings.Contains(err.Error(), testLimeProjectEndpoint) {
 		t.Fatalf("unsafe or missing transport diagnostic: %v", err)
 	}

@@ -176,6 +176,8 @@ azd ai rle publish --lime-routing custom --lime-project-endpoint "https://<accou
 
 This extension remains preview-gated by `AZD_AI_RLE_ENABLE=true`. Production public API mapping of `lime_configuration` is an external dependency tracked by [Task 5717034](https://dev.azure.com/msdata/Vienna/_workitems/edit/5717034); these CLI flags do not imply hosted RLE support is deployed.
 
+For custom routing failures, the command retains the HTTP status but does not display server-provided error codes or messages, which may contain the destination endpoint or credentials. Check the destination project and its access permissions.
+
 If needed, override the Dockerfile path the same way as local run:
 
 ```powershell

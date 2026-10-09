@@ -18,7 +18,7 @@ examples:
     usage: azd ai rle init
   - name: publish
     description: Build, push, and create or update the RLE environment; optionally request Lime routing (Preview).
-    usage: azd ai rle publish --version-bump major [--lime-routing legacy|disabled|same-project|custom] [--lime-project-endpoint <https-project-url>]
+    usage: azd ai rle publish --version-bump major --lime-routing same-project
   - name: run
     description: Build and run the local RLE environment container.
     usage: azd ai rle run

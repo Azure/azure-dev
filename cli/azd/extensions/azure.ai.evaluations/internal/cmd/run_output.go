@@ -966,7 +966,7 @@ func renderResults(
 			fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
 			fmt.Fprint(w, messages.RunPassRateLine(c.Passed, c.Total))
 		} else {
-			renderReportedRunCounts(w, "TEST CASE RESULTS", counts)
+			renderReportedRunCounts(w, "TEST CASE RESULTS", counts, c)
 		}
 		fmt.Fprintln(w)
 	}

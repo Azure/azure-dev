@@ -61,9 +61,11 @@ func TestDeployArtifacts_EvaluationGuidanceFollowsServiceManifest(t *testing.T) 
 			require.NotContains(t, note, "azd ai agent eval generate")
 			if tt.wantEvalGuidance {
 				require.Equal(t, 1, strings.Count(note, "azd ai eval init"))
+				require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations"))
 				require.Contains(t, note, "Set up an evaluation suite")
 			} else {
 				require.NotContains(t, note, "azd ai eval init")
+				require.NotContains(t, note, "azd extension install azure.ai.evaluations")
 				require.NotContains(t, note, "Set up an evaluation suite")
 			}
 		})
@@ -118,9 +120,11 @@ func TestAugmentDeployNote_EvaluationGuidanceSurvivesReadmeReplacement(t *testin
 				}
 				if declared {
 					require.NotContains(t, note, "azd ai eval init")
+					require.NotContains(t, note, "azd extension install azure.ai.evaluations")
 					require.NotContains(t, note, "Set up an evaluation suite")
 				} else {
 					require.Equal(t, 1, strings.Count(note, "azd ai eval init"))
+					require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations"))
 					require.Contains(t, note, "Set up an evaluation suite")
 				}
 			})

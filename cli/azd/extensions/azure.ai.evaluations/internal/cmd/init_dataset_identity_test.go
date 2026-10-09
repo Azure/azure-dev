@@ -199,6 +199,22 @@ func TestInitDatasetRegisteredNameUsesLookupRules(t *testing.T) {
 	}
 }
 
+func TestInitDatasetExistingLocalNameUsesCreateRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "seed data.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+	cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
+		Name: "seed data",
+		File: path,
+	}}}
+
+	_, err := resolveInitLocalDataset(dir, path, cfg)
+	require.ErrorContains(t, err, "invalid catalog name")
+	validation, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+}
+
 func TestInitDatasetCollisionCorrection(t *testing.T) {
 	for _, input := range []string{"explicit file", "declared dataset"} {
 		for _, cancel := range []bool{false, true} {

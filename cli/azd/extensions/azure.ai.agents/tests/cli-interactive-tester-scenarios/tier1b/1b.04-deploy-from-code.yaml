@@ -50,7 +50,7 @@ post:
 goals:
   - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold."
   - "After provision succeeds, run 'azd deploy' and wait for it to complete. This deploys the agent to the provisioned Foundry project."
-  - "In the deploy output, locate the informational note attached to the agent endpoint. Confirm it contains the exact phrase 'Set up an evaluation suite to measure quality and impact in one step with azd ai eval init', and confirm it does NOT contain 'azd ai agent eval' anywhere. This scaffold's azure.yaml declares no azure.ai.eval service, so the evaluation suggestion must always be present and must point only at the standalone 'azd ai eval init' command, never at a nested 'azd ai agent eval' subcommand."
+  - "In the deploy output, locate the informational note attached to the agent endpoint. Confirm it tells the user to run 'azd extension install azure.ai.evaluations' before 'azd ai eval init', and confirm it does NOT contain 'azd ai agent eval' anywhere. This scaffold's azure.yaml declares no azure.ai.eval service, so the evaluation suggestion must always include the standalone extension prerequisite and command, never a nested 'azd ai agent eval' subcommand."
   - "Run 'azd ai agent show' and verify the agent is accessible — confirm it reports an agent name and endpoint URL."
   - "Run `azd ai agent invoke \"Hello, are you there?\"` and confirm the agent responds with a non-empty reply containing no authentication or endpoint errors. This validates the agent is functional, not just deployed."
   - "Take a screenshot of the successful provision, deploy, show, and invoke output."

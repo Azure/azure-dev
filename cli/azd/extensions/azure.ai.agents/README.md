@@ -196,7 +196,8 @@ Deploy Agents through the normal azd project lifecycle:
 - `azd up` provisions and deploys the project.
 
 After a successful deployment, endpoint guidance recommends the standalone
-`azd ai eval init` (from the evaluations extension) when `azure.yaml` does not
+`azd extension install azure.ai.evaluations` followed by `azd ai eval init`
+when `azure.yaml` does not
 declare an `azure.ai.eval` service. When an evaluation service is already
 declared, the setup guidance is omitted. This note never recommends any
 nested `azd ai agent eval` subcommand. A service README replaces the invocation

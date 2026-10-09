@@ -3603,7 +3603,9 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 			note := "For information on invoking the agent, see " + output.WithLinkFormat(
 				"https://aka.ms/azd-agents-invoke")
 			if !p.projectDeclaresEvaluationService() {
-				note += "\n\nSet up an evaluation suite to measure quality and impact in one step with " +
+				note += "\n\nInstall the evaluations extension with " +
+					output.WithHighLightFormat("azd extension install azure.ai.evaluations") +
+					".\nSet up an evaluation suite to measure quality and impact with " +
 					output.WithHighLightFormat("azd ai eval init")
 			}
 			last.Metadata["note"] = note

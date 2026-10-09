@@ -170,6 +170,9 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 		return requested, nil
 	}
 	if existing.File != "" {
+		if !validAssetName(requested.Name) {
+			return project.DatasetDecl{}, messages.InitDatasetNameInvalid(filepath.ToSlash(path), requested.Name)
+		}
 		other, err := os.Stat(existing.File)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return project.DatasetDecl{}, messages.DatasetFileNotFound(existing.File, err)

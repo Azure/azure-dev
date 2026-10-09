@@ -226,7 +226,7 @@ func (a *envUnsetAction) handleSaveError(
 				"%w; local .env values changed and were not restored because confirmation is required", saveErr)
 		}
 
-		confirmed, err := a.console.Confirm(ctx, input.ConsoleOptions{
+		confirmed, err := a.console.Confirm(context.WithoutCancel(ctx), input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"Saving environment %q failed and its local .env values changed. Restore the previous values for %s?",
 				env.Name(), formatEnvUnsetKeys(keys)),

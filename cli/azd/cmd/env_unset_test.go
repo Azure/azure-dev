@@ -551,6 +551,18 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			noPrompt: true, cancelDuringSave: true, errorText: "previous local .env values were restored",
 		},
 		{
+			name: "RestoresAfterCancellationWithoutForce", persistedBeforeError: true, restore: true,
+			cancelDuringSave: true, errorText: "previous local .env values were restored",
+		},
+		{
+			name: "DeclinesRestorationAfterCancellation", persistedBeforeError: true,
+			cancelDuringSave: true, errorText: "local .env values changed and were not restored",
+		},
+		{
+			name: "RestorePromptFailureAfterCancellation", persistedBeforeError: true, promptErr: promptErr,
+			cancelDuringSave: true, errorText: "confirming restoration",
+		},
+		{
 			name: "InspectionFailure", persistedBeforeError: true, force: true, inspectionErr: inspectionErr,
 			errorText: "could not determine whether local .env values changed",
 		},
@@ -676,7 +688,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			}
 
 			result, err := newEnvUnsetAction(
-				lazy.From(env), manager, console, &envUnsetFlags{force: tt.force},
+				lazy.From(env), manager, envUnsetContextAwareConsole{Console: console}, &envUnsetFlags{force: tt.force},
 				[]string{"KEY", "EMPTY", "LD_TEST_UNSET"}).Run(runCtx)
 			require.Nil(t, result)
 			require.ErrorIs(t, err, initialErr)
@@ -718,10 +730,24 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 				require.NotContains(t, messages, "will be removed from environment")
 				require.NotContains(t, messages, "Restore the previous values")
 			}
+			if tt.persistedBeforeError && tt.inspectionErr == nil && !tt.force && !tt.noPrompt {
+				require.Contains(t, messages, "Restore the previous values")
+			}
 			require.NotContains(t, messages, "original-private-value")
 			require.NotContains(t, messages, "fresh-private-value")
 			require.NotContains(t, messages, "filtered-private-value")
 			manager.AssertExpectations(t)
 		})
 	}
+}
+
+type envUnsetContextAwareConsole struct {
+	input.Console
+}
+
+func (c envUnsetContextAwareConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return c.Console.Confirm(ctx, options)
 }

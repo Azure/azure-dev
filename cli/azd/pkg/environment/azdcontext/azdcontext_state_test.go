@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,7 +52,7 @@ func TestGetDefaultEnvironmentName_MalformedJSON(t *testing.T) {
 // path the user has to remove in order to recover the project.
 func TestMalformedConfig_ErrorNamesRecoveryPath(t *testing.T) {
 	t.Parallel()
-	tempDir := t.TempDir()
+	tempDir := filepath.Join(t.TempDir(), "project with spaces")
 	ctx := NewAzdContextWithDirectory(tempDir)
 
 	require.NoError(t, os.MkdirAll(ctx.EnvironmentDirectory(), 0755))
@@ -78,7 +79,7 @@ func TestMalformedConfig_ErrorNamesRecoveryPath(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := operation()
 			require.ErrorContains(t, err, "deserializing config file")
-			require.ErrorContains(t, err, resolved)
+			require.ErrorContains(t, err, "delete "+strconv.Quote(resolved)+" to reset the project state")
 			require.ErrorContains(t, err, "reset the project state")
 		})
 	}

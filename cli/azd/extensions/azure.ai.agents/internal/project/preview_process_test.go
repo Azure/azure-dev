@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +69,12 @@ func (p *previewProcessProvider) Preview(
 				Runtime: "python_3_12", EntryPoint: []string{"python", "old.py"}, DependencyResolution: "bundled",
 			}
 			request.Definition = hosted
+			return &recordingPreviewReader{agent: remotePreviewAgent(request)}, nil
+		}
+	} else if strings.HasPrefix(service.GetName(), "tags-") && service.GetName() != "tags-add" {
+		p.previewReader = func(string, string) (agentPreviewReader, error) {
+			request := previewRequest(p.t)
+			request.Metadata["tags"] = `["private-existing"]`
 			return &recordingPreviewReader{agent: remotePreviewAgent(request)}, nil
 		}
 	}

@@ -83,7 +83,10 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n",
 	), 0600))
 	services := map[string]*azdext.ServiceConfig{}
-	for _, name := range []string{"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update"} {
+	for _, name := range []string{
+		"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update",
+		"tags-add", "tags-update", "tags-remove", "tags-unchanged",
+	} {
 		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
 		require.NoError(t, err)
 		services[name] = &azdext.ServiceConfig{
@@ -100,6 +103,14 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	services["create"].AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
 		map[string]any{"protocol": "responses", "version": "2.0.0"},
 	})
+	services["create"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
+		"tags": []any{"private-create-tag"},
+	})
+	for name, tags := range map[string][]any{
+		"tags-add": {"private-added"}, "tags-update": {"private-updated"}, "tags-unchanged": {"private-existing"},
+	} {
+		services[name].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{"tags": tags})
+	}
 	services["update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
 		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
 	})
@@ -163,6 +174,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	for _, tc := range []struct{ name, status string }{
 		{"agent", "noChange"}, {"create", "create"}, {"update", "update"}, {"unknown", "unknown"},
 		{"code", "noChange"}, {"build", "noChange"}, {"image-update", "update"},
+		{"tags-add", "update"}, {"tags-update", "update"}, {"tags-remove", "update"}, {"tags-unchanged", "noChange"},
 	} {
 		result, err := preview(ctx, services[tc.name])
 		require.NoError(t, err)
@@ -176,8 +188,28 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 			require.NotContains(t, result.Message, "  Container image:")
 		}
 		require.NotContains(t, result.Message, "metadata.enableVnextExperience")
+		require.NotContains(t, result.Message, "private-")
 		encoded, err := json.Marshal(result.Data)
 		require.NoError(t, err)
+		require.NotContains(t, string(encoded), "private-")
+		if operation := map[string]string{
+			"create": "add", "tags-add": "add", "tags-update": "update", "tags-remove": "remove",
+		}[tc.name]; operation != "" {
+			require.Contains(t, result.Message, operation+`: metadata.tags: "[redacted]"`)
+			changes, ok := result.Data["changes"].([]any)
+			require.True(t, ok)
+			if tc.name != "create" {
+				require.Len(t, changes, 1)
+				change, ok := changes[0].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "metadata.tags", change["path"])
+				require.Equal(t, operation, change["operation"])
+			}
+		}
+		if tc.name == "tags-unchanged" {
+			require.Empty(t, result.Data["changes"])
+			require.NotContains(t, result.Message, "  Metadata:")
+		}
 		for _, excluded := range []string{
 			"codeArtifact", "code_configuration", "session_configuration", "agent_endpoint", "agent_card", "build/upload",
 		} {

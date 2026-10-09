@@ -97,5 +97,5 @@ func previewConfigurationError() error {
 	// Parser errors may contain authored secrets. Return guidance, not their values.
 	return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
 		"Invalid unified agent configuration for deployment preview.",
-		"check the service-level kind, name, image, container, env, and file references in azure.yaml")
+		"check the service-level kind, name, image, container, env, metadata.tags, and file references in azure.yaml")
 }

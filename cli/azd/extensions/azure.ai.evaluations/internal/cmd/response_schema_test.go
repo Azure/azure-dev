@@ -588,7 +588,15 @@ func TestResponseSourceSchemaAndRuntimeAgree(t *testing.T) {
 			require.NoError(t, err)
 			runtimeErr := cfg.Validate()
 			if tc.wantErr {
-				assert.Error(t, schemaErr)
+				if tc.ref && tc.cap != nil && *tc.cap > 0 {
+					// An unresolved $ref may turn out to be local, which does
+					// allow a cap; only the resolved runtime declaration can
+					// tell trace/response sources from a local one, so the
+					// schema does not flag this shape on its own.
+					assert.NoError(t, schemaErr)
+				} else {
+					assert.Error(t, schemaErr)
+				}
 				assert.Error(t, runtimeErr)
 				if tc.cap != nil && *tc.cap > 0 {
 					local, ok := errors.AsType[*azdext.LocalError](runtimeErr)

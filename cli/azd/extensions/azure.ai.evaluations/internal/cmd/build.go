@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -31,27 +32,40 @@ func (ec *evalContext) evaluatorSchemas(ctx context.Context) map[string]*eval_ap
 	if ec.schemas != nil {
 		return ec.schemas
 	}
+	index, err := ec.readEvaluatorSchemas(ctx)
+	if len(index) == 0 {
+		return nil
+	}
+	// Existing callers keep their best-effort behavior; explicit local sources
+	// use the reader's error to refuse validation against an incomplete catalog.
+	if err == nil {
+		ec.schemas = index
+	}
+	return index
+}
+
+func (ec *evalContext) readEvaluatorSchemas(
+	ctx context.Context,
+) (map[string]*eval_api.EvaluatorSummary, error) {
+	if ec.schemas != nil {
+		return ec.schemas, nil
+	}
 
 	index := map[string]*eval_api.EvaluatorSummary{}
-	complete := true
+	var lookupErr error
 	for _, filter := range []string{"", eval_api.EvaluatorTypeBuiltin} {
 		list, err := ec.evalClient.ListEvaluators(ctx, filter, ProjectEndpointAPIVersion)
 		if err != nil {
-			complete = false
+			lookupErr = errors.Join(lookupErr, err)
+			continue
+		}
+		if list == nil {
+			lookupErr = errors.Join(lookupErr, errors.New("the service returned no evaluator catalog"))
 			continue
 		}
 		maps.Copy(index, list.ByName())
 	}
-	if len(index) == 0 {
-		return nil
-	}
-	// Only a complete read is worth keeping. Caching a half of it would leave
-	// every later eval validating against legacyInputs, which accepts fields
-	// the evaluator never declared.
-	if complete {
-		ec.schemas = index
-	}
-	return index
+	return index, lookupErr
 }
 
 // sampleBindings are the fields an agent target produces at run time. Anything
@@ -416,7 +430,7 @@ func buildEvalRequest(
 
 	for _, ref := range group.Evaluators {
 		schema := schemas[evaluatorSchemaKey(ref.Evaluator, ref.Version)]
-		if schema == nil {
+		if schema == nil && (!group.IsLocalSource() || ref.Version == "") {
 			schema = schemas[ref.Evaluator]
 		}
 		if schema == nil {
@@ -480,6 +494,9 @@ func buildEvalRequest(
 		}
 	}
 
+	if group.IsLocalSource() {
+		req.DataSourceConfig.ItemSchema = localItemSchema(group, req.TestingCriteria, schemas)
+	}
 	return req, nil
 }
 

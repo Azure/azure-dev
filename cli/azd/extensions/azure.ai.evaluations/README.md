@@ -114,7 +114,10 @@ Run metadata records that same resolved version.
 
 Registered versions cannot be sampled by this run API. A positive `maxSamples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
-rows. Remove the cap, or publish and select a smaller dataset.
+rows. Remove the cap, pass `--max-samples 0` to override a configured cap on an
+ordinary dataset eval, or publish and select a smaller dataset. The CLI does not
+publish temporary subset datasets automatically. A simulation declaration must
+not contain a positive `maxSamples:` cap, even when the flag is zero.
 
 For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
 clears its configured cap. Trace/response sources and reruns selected by a bare
@@ -123,10 +126,28 @@ silently ignoring it. Omit the flag to repeat a previous run's source; use
 `source.maxTraces` to limit a declared trace source. Simulation declarations
 with a positive configured cap remain invalid even when the flag is zero.
 
-A local dataset file with no registered version runs inline and supports a cap,
-once a complete empty version listing (or a not-found response) and not-found
-first-version probes confirm that no version exists. Permissions, transient
-failures, and malformed listings fail the run instead of selecting local data.
+Genuinely unregistered local files still run inline and support a cap, but only
+after a typed not-found version-list response and not-found first-version probes
+confirm absence. A successful empty listing remains indeterminate when those
+probes find nothing: later registered versions may exist even if early versions
+were deleted. The run fails instead of selecting local data; retry after the
+registry catches up or declare a known dataset version. Permissions, transient
+failures, and malformed listings also fail the run without a local fallback.
+
+Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
+`--max-samples` flags; use `source.maxTraces` for trace limits or select
+`source.responseIds` explicitly. Reruns selected by eval ID also reject an
+explicit `--max-samples`, including zero, because they repeat the previous source.
+
+Reruns repeat the stored registered `file_id`. If the stored source contains inline
+rows attributed to a registered dataset, start the declared eval by name instead:
+replacing those possibly capped rows with a whole version would change what gets
+scored.
+
+The JSON handoff from `run start --no-wait -o json` retains the submitted dataset
+name and registered version even when the create response omits that metadata.
+Local unregistered runs do not invent a version, and anonymous reruns remain
+unattributed.
 
 `job show --dataset` recovers the registered evaluation level even when the local
 artifact already exists. It preserves edited bytes unless `--force` is given,
@@ -139,6 +160,115 @@ Within registered metadata, an explicit `evaluation_level` wins over a recognize
 This recovers older service/portal seed datasets without guessing from unknown tags.
 Echoed generation inputs remain internal to level recovery and are omitted from
 job JSON output, including source prompts and instructions.
+
+### Explicit local files without dataset publication
+
+To deliberately evaluate local bytes, author a separate eval with `source.type: local`.
+This is not a fallback for an absent or unreadable registry name:
+
+```yaml
+evals:
+  - name: quality-local
+    source:
+      type: local
+      file: ./datasets/local-rows.jsonl
+    maxSamples: 10
+    evaluationLevel: turn
+    evaluators:
+      - evaluator: builtin.relevance
+        initializationParameters:
+          model: gpt-4.1-nano
+```
+
+Use rows containing the fields the evaluator needs, for example:
+
+```jsonl
+{"query":"What is the return period?","response":"Returns are accepted within 30 days."}
+```
+
+Create the eval explicitly with `azd ai eval create quality-local`, then invoke
+`azd ai eval run start --eval quality-local`. Creation validates local input and
+creates or reuses the eval without registering a dataset. A run sends the selected
+rows as `file_content`; it does not publish a dataset or look up a dataset name.
+**This is not offline evaluation:** an explicitly invoked run uses the normal
+Foundry service and evaluation billing.
+
+`source.file` is a filesystem path, not a URL. It resolves relative to the
+configuration that contains it, including a nested `$ref` declaration. The local
+source is exclusive with `dataset`, `simulation`, trace/response fields, and any
+explicit `--dataset` flag. `init --dataset <file>` scaffolds a publishable catalog
+entry; it does not opt into local-only behavior. Declare the separate local eval
+in the configuration.
+
+All rows must be non-empty JSON objects and satisfy the target and evaluator
+mappings, even rows beyond a cap. An evaluator reference's explicit version wins
+over its catalog entry's version; both select that exact version's contract rather
+than latest. A failed pinned lookup never falls back to another version.
+A failed evaluator-contract lookup stops local preflight rather than using an
+incomplete catalog. Before run submission, the CLI also checks the
+registered eval's stored mappings and `item_schema`; an unreadable definition or
+unsupported external schema reference fails rather than submitting unchecked
+rows. Invalid run input causes no submission or dataset/state mutation.
+
+For `create` and `azd up`, preflight checks every local row against the prospective
+authored contracts of custom evaluators this operation will publish, as well as
+the selected contracts of already-published evaluators, before dependency writes.
+Available authored schemas take precedence over the published service catalog.
+**Service-added constraints that are absent from both the authored and existing
+published contract cannot be known before publication.** The CLI reads the exact
+new evaluator version and checks local rows again before creating the eval. If a
+new service-added constraint rejects them then, the evaluator version may already
+have been published, but no eval or run is submitted. Preflight does not promise
+zero publication for constraints the service has not yet disclosed.
+
+Mapped local columns retain the evaluator's published property constraints,
+including numeric, array, object, and nullable types. Constraints from multiple
+evaluators consuming the same column all apply; an absent type contract is not
+invented as a string type. Evaluator publication invalidates earlier catalog
+snapshots before subsequent eval creation.
+On local-source evals, positive `maxSamples` limits submitted rows and
+`--max-samples 0` overrides a configured cap. Trace/response caps, registered
+dataset pins, and indeterminate registry listings follow the constraints above.
+
+Validation streams the entire file, including rows beyond a cap, while retaining
+only the rows a capped run can submit. Create/deploy preflight retains no row set.
+Uncapped runs still retain every submitted row. Repeated scans use the same file
+handle and reject content changes detected during validation.
+
+A referenced evaluator missing from a successful catalog listing is read directly;
+an unreadable or absent referenced contract is not replaced with permissive
+defaults. Authored evaluators awaiting publication are validated from their
+prospective definition instead.
+
+Changes to immutable local-source criteria or item schema create a new eval
+instead of reusing stale mappings, including when an optional column becomes
+available in every row. Changing only the row cap does not recreate the eval.
+An unpinned criterion echoed by the service as `evaluator_version: latest`
+is equivalent to an omitted version; explicit versions and actual contract
+changes still require the corresponding immutable eval. When a local eval is
+renamed and its old name is reused for a different prepared contract, deployment
+preserves the original ID and run history for the rename and creates only the
+replacement. Targeted create continues reserving unselected siblings' IDs.
+
+An opaque source `$ref` may resolve to any source type, so its cap is validated
+after resolution by the CLI; the editor constrains caps when the source type is
+present in the same document.
+
+Local runs carry no registered dataset name/version, fabricated `file_id`, or
+source path in request metadata or the JSON handoff. Only normal run-ID bookkeeping
+is performed after submission; dataset publication versions/fingerprints are not
+changed. A rerun selected by eval ID repeats the stored inline snapshot, not a
+fresh read of the file. Run the declared eval by name to use edited bytes.
+
+The JSON start handoff treats dataset attribution as a name/version pair. A
+service version without a dataset name cannot replace the submitted pair. A
+complete returned pair takes precedence; a returned name alone inherits the
+submitted version only when the names match. Without a dataset name from either
+source, the handoff omits the version. Raw service metadata is not rewritten.
+
+An explicitly empty `--dataset` value is rejected for every run source and ID
+rerun. A configuration cannot declare both `dataset` and `source`, even when
+the dataset value is empty.
 
 ### Simulating multi-turn conversations
 

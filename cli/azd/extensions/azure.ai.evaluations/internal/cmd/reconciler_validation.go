@@ -48,6 +48,19 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	if err := effective.Validate(); err != nil {
 		return err
 	}
+	for i := range effective.Evals {
+		group := &effective.Evals[i]
+		if !group.IsLocalSource() {
+			continue
+		}
+		input, err := openLocalInput(ctx, group, group.LocalSourcePath(baseDir))
+		if err != nil {
+			return err
+		}
+		if err := input.file.Close(); err != nil {
+			return messages.ReadingPath(input.path, err)
+		}
+	}
 
 	columns := map[string]map[string]bool{}
 	datasetVersions := map[string]string{}
@@ -197,7 +210,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				}
 			}
 			key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
-			if schemas[key] != nil {
+			if readableContract(schemas[key]) {
 				continue
 			}
 			body, err := r.ec.evalClient.GetEvaluatorRaw(ctx, ref.Evaluator, ref.Version, ProjectEndpointAPIVersion)
@@ -210,11 +223,18 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			}
 			schemas[key] = schema
 		}
-		request, err := buildEvalRequest(&group, schemas, columns[group.Dataset])
+		groupColumns := columns[group.Dataset]
+		var request *eval_api.CreateOpenAIEvalRequest
+		var err error
+		if group.IsLocalSource() {
+			request, groupColumns, err = validateLocalFile(ctx, &group, group.LocalSourcePath(baseDir), schemas)
+		} else {
+			request, err = buildEvalRequest(&group, schemas, groupColumns)
+		}
 		if err != nil {
 			return messages.EvalProblem(group.Name, err)
 		}
-		if err := validateDatasetInteractions(&group, request, columns[group.Dataset]); err != nil {
+		if err := validateDatasetInteractions(&group, request, groupColumns); err != nil {
 			return messages.EvalProblem(group.Name, err)
 		}
 		if group.ID != "" && conflictingSourceContract(group, remote, request) {
@@ -222,7 +242,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		}
 		prepared[group.Name] = preparedEval{
 			declared: declared, group: group, request: request, schemas: schemas,
-			columns: columns[group.Dataset], localEvaluators: localEvaluators,
+			columns: groupColumns, localEvaluators: localEvaluators,
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -305,16 +325,7 @@ func (r *evalReconciler) inspectRegisteredDataset(
 // withCatalogEvaluatorPins resolves only authored pins. A service-resolved
 // latest version is not an edit and must never change an eval's identity.
 func withCatalogEvaluatorPins(group project.Eval, cfg *project.EvalConfig) project.Eval {
-	group.Evaluators = slices.Clone(group.Evaluators)
-	for i := range group.Evaluators {
-		ref := &group.Evaluators[i]
-		if ref.Version == "" {
-			if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok {
-				ref.Version = decl.Version
-			}
-		}
-	}
-	return group
+	return cfg.WithCatalogEvaluatorPins(group)
 }
 
 func validateDatasetTarget(group *project.Eval, available map[string]any) error {

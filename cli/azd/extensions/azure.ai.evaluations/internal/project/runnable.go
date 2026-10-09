@@ -60,7 +60,7 @@ func ValidateRunnable(eval *Eval) error {
 	}
 
 	if eval.Source != nil {
-		if eval.MaxSamples > 0 {
+		if eval.MaxSamples > 0 && !eval.IsLocalSource() {
 			return messages.SourceSampleConflict(eval.Name)
 		}
 		switch eval.Source.Type {
@@ -84,11 +84,15 @@ func ValidateRunnable(eval *Eval) error {
 					return messages.ResponsesSourceBlankResponseID(i)
 				}
 			}
+		case SourceTypeLocal:
+			if strings.TrimSpace(eval.Source.File) == "" || strings.Contains(eval.Source.File, "://") {
+				return messages.LocalSourceNeedsFile()
+			}
 		case "":
 			return messages.SourceTypeMissing()
 		default:
 			return messages.SourceTypeNotSupported(
-				eval.Source.Type, SourceTypeTraces, SourceTypeResponses)
+				eval.Source.Type, SourceTypeTraces, SourceTypeResponses, SourceTypeLocal)
 		}
 		if _, _, err := ValidateSource(eval.Source); err != nil {
 			return err

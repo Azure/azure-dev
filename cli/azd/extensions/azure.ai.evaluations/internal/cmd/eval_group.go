@@ -35,6 +35,8 @@ type evalCreateAction struct {
 	cmd   *cobra.Command
 	flags *evalCreateFlags
 	name  string
+	// Instance-scoped context construction keeps the action usable with injected clients.
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 // newEvalCreateCommand creates one declared eval without deploying the rest.
@@ -99,7 +101,11 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	contextFactory := a.newContext
+	if contextFactory == nil {
+		contextFactory = newEvalContext
+	}
+	ec, err := contextFactory(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
@@ -130,8 +136,15 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 		datasetPath = project.ResolveSource(baseDir, decl.File)
 	}
+	if eval.IsLocalSource() {
+		datasetPath = eval.LocalSourcePath(baseDir)
+	}
 
-	reconciler := &evalReconciler{ec: ec}
+	// Same scope a deploy of this configuration would use (EvalScopeOfService),
+	// so a direct create and the eventual `azd up` agree on whose id/baseline
+	// this is. Without it, two configurations sharing an eval name would write
+	// the same unqualified keys and overwrite each other's identity.
+	reconciler := &evalReconciler{ec: ec, scope: ec.evalScopeOf(ctx, path)}
 	if err := reconciler.Validate(ctx, selected, baseDir); err != nil {
 		return err
 	}

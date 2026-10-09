@@ -84,6 +84,9 @@ func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Scaffold evaluation config for an agent. Works offline.",
+		Long: "Scaffold evaluation config for an agent. Works offline.\n\n" +
+			"Dataset selections create catalog entries intended for publication. To evaluate local bytes without " +
+			"publishing a dataset, author a separate eval with source.type: local and source.file in the configuration.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

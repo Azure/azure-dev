@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -304,7 +305,7 @@ func TestRegisteredRunRejectsEffectiveCaps(t *testing.T) {
 				local, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok)
 				assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
-				assert.Contains(t, local.Message, "max_samples")
+				assert.Contains(t, local.Message, "maxSamples")
 				assert.Contains(t, local.Suggestion, "publish a smaller dataset")
 				assert.Empty(t, recordedIdentityRequests(requests), "cap refusal must not read rows or create anything")
 			})
@@ -901,7 +902,7 @@ func TestRunRerunRefusesLegacyRegisteredInlineRows(t *testing.T) {
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	assert.Contains(t, local.Suggestion, "--max-samples 0")
-	assert.Contains(t, local.Suggestion, "If that eval declares max_samples")
+	assert.Contains(t, local.Suggestion, "If that eval declares maxSamples")
 	assert.Contains(t, local.Suggestion, "ordinary dataset eval")
 	assert.Contains(t, local.Suggestion, "starting it by name")
 	for _, request := range recordedIdentityRequests(requests) {
@@ -1006,8 +1007,8 @@ func TestRunRejectsIgnoredCapFlags(t *testing.T) {
 				assert.Contains(t, local.Message, "including an explicit value of 0")
 				assert.Contains(t, local.Suggestion, "Omit --max-samples.")
 				assert.NotContains(t, local.Suggestion, "Remove the dataset cap")
-				assert.Contains(t, local.Suggestion, "source.max_traces")
-				assert.Contains(t, local.Suggestion, "source.response_ids")
+				assert.Contains(t, local.Suggestion, "source.maxTraces")
+				assert.Contains(t, local.Suggestion, "source.responseIds")
 			}
 		}
 	}
@@ -1065,7 +1066,7 @@ func TestSimulationConfiguredCapCannotBeOverriddenByZero(t *testing.T) {
 	assert.Zero(t, cap)
 	ec, requests := identityRunContext(t, identityService{id: "issued", rows: seedRows})
 	ds, _, err := ec.buildRunDataSource(t.Context(), group, writeCatalog(t, "", "1"), cap)
-	require.ErrorContains(t, err, "max_samples")
+	require.ErrorContains(t, err, "maxSamples")
 	assert.Nil(t, ds)
 	assert.Empty(t, recordedIdentityRequests(requests), "invalid simulation declarations fail before service calls")
 }
@@ -1078,11 +1079,11 @@ func TestRunRejectsConfiguredSourceCaps(t *testing.T) {
 		ec := &evalContext{}
 		group := &project.Eval{Name: "source", Source: source, MaxSamples: 1}
 		ds, _, err := ec.buildRunDataSource(t.Context(), group, "", resolveMaxSamples(0, group))
-		require.ErrorContains(t, err, "max_samples")
+		require.ErrorContains(t, err, "maxSamples")
 		assert.Nil(t, ds)
 		local, ok := errors.AsType[*azdext.LocalError](err)
 		require.True(t, ok)
-		assert.Contains(t, local.Suggestion, "Remove the positive max_samples value.")
+		assert.Contains(t, local.Suggestion, "Remove the positive maxSamples value.")
 		assert.NotContains(t, local.Message, "--max-samples")
 		assert.NotContains(t, local.Suggestion, "Omit --max-samples")
 	}
@@ -1150,6 +1151,16 @@ func TestRunTraceRerunRejectsExplicitDatasetCaps(t *testing.T) {
 						}}))
 					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/eval_trace/runs"):
 						posts++
+						var request eval_api.CreateOpenAIEvalRunRequest
+						assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+						if assert.NotNil(t, request.DataSource) && sourceType == "azure_ai_traces" {
+							assert.Equal(t, eval_api.EvalRunDataSourceTypeTracePreview, request.DataSource.Type)
+							if assert.NotNil(t, request.DataSource.TraceSource) {
+								assert.Equal(t, "agent", request.DataSource.TraceSource.AgentName)
+								assert.Equal(t, int64(24*60*60),
+									request.DataSource.TraceSource.EndTime-request.DataSource.TraceSource.StartTime)
+							}
+						}
 						_, err := io.WriteString(w, `{"id":"run_trace","status":"queued"}`)
 						assert.NoError(t, err)
 					default:
@@ -1226,14 +1237,13 @@ func TestRunStartSampleCapContracts(t *testing.T) {
 					group.Name, group.Dataset, group.MaxSamples = "quality", "golden", tc.cap
 					service.rows = seedRows
 				}
-				eval := struct {
-					project.Eval
-					MaxSamples int `json:"max_samples"`
-				}{group, tc.cap}
-				body, err := json.Marshal(map[string]any{
-					"datasets": []project.DatasetDecl{{Name: "golden", Version: "1"}},
-					"evals":    []any{eval},
+				values := authoredValues(t, &project.EvalConfig{
+					Datasets: []project.DatasetDecl{{Name: "golden", Version: "1"}},
+					Evals:    []project.Eval{group},
 				})
+				// An explicit zero is written out, which is what the case is about.
+				values["evals"].([]any)[0].(map[string]any)["maxSamples"] = tc.cap
+				body, err := yaml.Marshal(values)
 				require.NoError(t, err)
 				dir := t.TempDir()
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
@@ -1322,7 +1332,7 @@ func TestRunDatasetOverrideCanHonorExplicitCap(t *testing.T) {
 			Name: "quality", Source: &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent"},
 		}},
 	}
-	body, err := json.Marshal(cfg)
+	body, err := yaml.Marshal(authoredValues(t, &cfg))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(oneRow+oneRow), 0o600))

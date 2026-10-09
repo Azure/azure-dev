@@ -32,10 +32,10 @@ func localSourceConfig(t *testing.T, rows string, cap int) string {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"), []byte(rows), 0o600))
 	body, err := json.Marshal(map[string]any{"evals": []any{map[string]any{
-		"name":        "local-quality",
-		"source":      map[string]any{"type": "local", "file": "./local rows.jsonl"},
-		"max_samples": cap,
-		"evaluators": []any{map[string]any{"evaluator": "builtin.relevance", "data_mapping": map[string]string{
+		"name":       "local-quality",
+		"source":     map[string]any{"type": "local", "file": "./local rows.jsonl"},
+		"maxSamples": cap,
+		"evaluators": []any{map[string]any{"evaluator": "builtin.relevance", "dataMapping": map[string]string{
 			"query": "{{item.query}}",
 		}}},
 	}}})
@@ -270,7 +270,7 @@ func TestExplicitLocalInvalidInputsNeverSubmitOrWriteState(t *testing.T) {
 		}},
 		{name: "dataset flag", rows: oneRow, flag: map[string]string{"dataset": "golden"}},
 		{name: "empty dataset flag", rows: oneRow, flag: map[string]string{"dataset": ""}},
-		{name: "negative cap", rows: oneRow, edit: func(eval map[string]any) { eval["max_samples"] = -1 }},
+		{name: "negative cap", rows: oneRow, edit: func(eval map[string]any) { eval["maxSamples"] = -1 }},
 		{name: "target missing query", rows: "{\"response\":\"answer\"}\n", edit: func(eval map[string]any) {
 			eval["target"] = map[string]any{"type": "agent", "name": "agent"}
 		}},

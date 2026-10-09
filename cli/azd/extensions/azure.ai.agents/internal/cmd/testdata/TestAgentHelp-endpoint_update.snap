@@ -1,10 +1,11 @@
-Update an agent's endpoint and card configuration without deploying a new version.
+Update a hosted agent's endpoint and card configuration without deploying a new version.
 
 This command reads the agentEndpoint and agentCard fields from the azure.ai.agent
 service in azure.yaml, directly or through its explicit root $ref, and patches
 the existing agent with those values. No new agent version is created.
 
-The agent must already exist (i.e., it must have been previously deployed).
+The hosted agent must already exist (i.e., it must have been previously deployed).
+Prompt, voice, and workflow agents do not support endpoint/card updates.
 
 Usage
   azd ai agent endpoint update [name] [flags]

@@ -33,7 +33,7 @@ const recoveryEvalConfig = `evals:
   - name: existing-traces
     source:
       type: traces
-      agent_name: support-agent
+      agentName: support-agent
     evaluators:
       - evaluator: builtin.task_completion
 `
@@ -450,12 +450,12 @@ func TestEvaluatorRecollectionPreservesAuthoredCatalogMetadata(t *testing.T) {
 			require.NoError(t, err)
 			path := filepath.Join(dir, "azure.eval.yaml")
 			catalog := "evaluators:\n  - name: quality\n    source: ./evaluators/quality.json\n" +
-				"    display_name: Authored name # keep this comment\n"
+				"    displayName: Authored name # keep this comment\n"
 			switch existing {
 			case "authored values":
-				catalog += "    categories: [safety]\n    supported_evaluation_levels: [conversation]\n"
+				catalog += "    categories: [safety]\n    supportedEvaluationLevels: [conversation]\n"
 			case "explicit empty":
-				catalog += "    categories: []\n    supported_evaluation_levels: []\n"
+				catalog += "    categories: []\n    supportedEvaluationLevels: []\n"
 			}
 			require.NoError(t, os.WriteFile(path, []byte(catalog), 0o600))
 			artifact := filepath.Join(dir, "evaluators", "quality.json")

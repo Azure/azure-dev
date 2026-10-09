@@ -190,11 +190,7 @@ func deployValidationFixture(
 	t *testing.T, ctx context.Context, ec *evalContext, cfg *project.EvalConfig, dir string,
 ) (string, error) {
 	t.Helper()
-	raw, err := json.Marshal(cfg)
-	require.NoError(t, err)
-	var values map[string]any
-	require.NoError(t, json.Unmarshal(raw, &values))
-	props, err := structpb.NewStruct(values)
+	props, err := structpb.NewStruct(authoredValues(t, cfg))
 	require.NoError(t, err)
 	client := clientServing(t, &azdext.ProjectConfig{Path: dir})
 	provider := project.NewEvalServiceTargetProvider(client,

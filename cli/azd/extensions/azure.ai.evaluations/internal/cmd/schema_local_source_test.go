@@ -26,23 +26,23 @@ func TestExplicitLocalSourceSchemaMatchesRuntime(t *testing.T) {
 		valid bool
 	}{
 		{name: "local uncapped", valid: true},
-		{name: "local capped", edit: func(eval, _ map[string]any) { eval["max_samples"] = 3 }, valid: true},
+		{name: "local capped", edit: func(eval, _ map[string]any) { eval["maxSamples"] = 3 }, valid: true},
 		{name: "missing file", edit: func(_, source map[string]any) { delete(source, "file") }},
 		{name: "blank file", edit: func(_, source map[string]any) { source["file"] = " " }},
 		{name: "URL", edit: func(_, source map[string]any) { source["file"] = "https://example.test/rows.jsonl" }},
 		{name: "mixed dataset", edit: func(eval, _ map[string]any) { eval["dataset"] = "golden" }},
 		{name: "empty mixed dataset", edit: func(eval, _ map[string]any) { eval["dataset"] = "" }},
-		{name: "negative cap", edit: func(eval, _ map[string]any) { eval["max_samples"] = -1 }},
+		{name: "negative cap", edit: func(eval, _ map[string]any) { eval["maxSamples"] = -1 }},
 		{name: "simulation", edit: func(eval, _ map[string]any) {
 			eval["simulation"] = map[string]any{"model": "connection/model"}
 		}},
-		{name: "trace field zero", edit: func(_, source map[string]any) { source["max_traces"] = 0 }},
-		{name: "response field empty", edit: func(_, source map[string]any) { source["response_ids"] = []string{} }},
+		{name: "trace field zero", edit: func(_, source map[string]any) { source["maxTraces"] = 0 }},
+		{name: "response field empty", edit: func(_, source map[string]any) { source["responseIds"] = []string{} }},
 		{name: "file on traces", edit: func(_, source map[string]any) {
-			source["type"], source["agent_name"] = "traces", "agent"
+			source["type"], source["agentName"] = "traces", "agent"
 		}},
 		{name: "file on responses", edit: func(_, source map[string]any) {
-			source["type"], source["response_ids"] = "responses", []string{"one"}
+			source["type"], source["responseIds"] = "responses", []string{"one"}
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

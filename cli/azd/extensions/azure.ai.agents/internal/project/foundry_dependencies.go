@@ -507,7 +507,7 @@ func resolveHostedVoiceTarget(
 			"hosted voice target service %q must use host %q, got %q",
 			targetServiceName, foundryAgentHost, targetService.GetHost())
 	}
-	_, isHosted, _, err := LoadAgentDefinition(targetService, projectRoot)
+	_, isHosted, _, err := LoadHostedAgentDefinition(targetService, projectRoot)
 	if err != nil {
 		return nil, fmt.Errorf("loading hosted voice target service %q: %w", targetServiceName, err)
 	}

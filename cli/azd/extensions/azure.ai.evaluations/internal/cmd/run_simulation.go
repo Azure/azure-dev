@@ -164,7 +164,7 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int) erro
 	if maxTurns == 0 {
 		maxTurns = defaultSimulationTurns
 	}
-	maxField := "simulation.max_turns"
+	maxField := "simulation.maxTurns"
 	turns := 0
 	for _, field := range []string{"max_num_turns", seedTurnsField} {
 		value, present := config[field]

@@ -540,7 +540,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 		r.enter()
 
 	// Code-deploy prompts (promptCodeConfig). Auto-resolved under
-	// userProvidedManifest=true, so kept as defensive handlers only.
+	// userProvidedTemplate=true, so kept as defensive handlers only.
 	case has("select the runtime for your agent"):
 		r.enter() // default Python 3.13
 	case has("entry point"):

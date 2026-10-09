@@ -962,7 +962,7 @@ func (r *evalReconciler) EnsureEval(
 	// Evals are immutable, so a change to the eval's own substance — evaluators,
 	// dataset, target, level — needs a new eval. Name and description are
 	// excluded from the digest and pushed in place instead, and so are
-	// max_samples and source:, which the run carries rather than the eval.
+	// maxSamples and source:, which the run carries rather than the eval.
 	digest, definition, recreate, err := r.evalDigests(ctx, group)
 	if err != nil {
 		return "", false, err

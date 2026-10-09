@@ -14,10 +14,16 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`ComposeService`, `CopilotService`, and `TelemetryService` are beta-only and
-therefore do not have stable `v1` generated types or facade aliases. The
-corresponding `AzdClient` convenience accessors return generated `v1beta`
-clients, and their request and response types come from `contracts/v1beta`.
+`CommandResultService`, `ComposeService`, `CopilotService`, and
+`TelemetryService` are beta-only and therefore do not have stable `v1`
+generated types or facade aliases. The corresponding `AzdClient` convenience
+accessors return generated `v1beta` clients, and their request and response
+types come from `contracts/v1beta`. Preview project lifecycle events use
+`EventsBeta()` and `CommandResult()` with generated beta request and response
+types.
+Stable event handlers and default language scaffolds do not expose follow-up APIs.
+See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
+for the preview SDK contract.
 
 ## Channel policy
 
@@ -49,10 +55,11 @@ descriptors.
 
 A service that exists only in beta is implemented directly with the generated
 `v1beta` server interface and registered without a stable adapter.
-`ComposeService`, `CopilotService`, and `TelemetryService` currently use this
-model. Focused beta overrides apply only to beta additions on services that
-also exist in stable; registration rejects an override for a beta-only service
-because its native implementation already owns the full beta contract.
+`CommandResultService`, `ComposeService`, `CopilotService`, and
+`TelemetryService` currently use this model. Focused beta overrides apply
+only to beta additions on services that also exist in stable; registration
+rejects an override for a beta-only service because its native implementation
+already owns the full beta contract.
 
 For a method shared by both channels, the beta server:
 
@@ -76,6 +83,16 @@ beta messages to stable messages. Existing error decoding relies on that
 preservation, but the unknown fields are not exposed as typed fields on the
 stable message. Preview stream behavior that needs typed beta data therefore
 still requires a focused beta stream override.
+
+The beta lifecycle `EventStream` override selects compatibility behavior from
+the first subscription. A subscription without `request_id` is delegated to
+the stable event implementation, preserving legacy correlation for existing
+beta clients. This mode has no beta subscription acknowledgements or
+invocation IDs and cannot use beta-only follow-up APIs. A subscription with
+`request_id` selects the current beta mode; later subscriptions and project
+handler status messages must also carry IDs. Missing IDs on those messages
+are rejected; service handler statuses retain their existing service/event
+correlation. Stable `v1` behavior is unchanged.
 
 An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with

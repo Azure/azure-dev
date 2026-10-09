@@ -74,14 +74,14 @@ func localSelectedContractContext(t *testing.T, pinStatus int) (*evalContext, <-
 
 func writeLocalContractConfig(t *testing.T, dir string, cfg *project.EvalConfig) {
 	t.Helper()
-	body, err := json.Marshal(cfg)
+	body, err := json.Marshal(authoredValues(t, cfg))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 }
 
 func deployLocalContractConfig(t *testing.T, ec *evalContext, dir string, cfg *project.EvalConfig) error {
 	t.Helper()
-	body, err := json.Marshal(cfg)
+	body, err := json.Marshal(authoredValues(t, cfg))
 	require.NoError(t, err)
 	var values map[string]any
 	require.NoError(t, json.Unmarshal(body, &values))
@@ -159,7 +159,7 @@ func TestExplicitLocalPinnedEvaluatorFailureNeverFallsBack(t *testing.T) {
 			dir := localSourceConfig(t, "{\"count\":\"latest accepts this\"}\n", 0)
 			editLocalSourceConfig(t, dir, func(eval map[string]any) {
 				eval["evaluators"] = []any{map[string]any{
-					"evaluator": "custom.valid", "version": "7", "data_mapping": map[string]string{"n": "{{item.count}}"},
+					"evaluator": "custom.valid", "version": "7", "dataMapping": map[string]string{"n": "{{item.count}}"},
 				}}
 			})
 			ec, requests := localSelectedContractContext(t, status)
@@ -200,9 +200,9 @@ func TestExplicitLocalSameEvaluatorVersionsRemainDistinct(t *testing.T) {
 	editLocalSourceConfig(t, dir, func(eval map[string]any) {
 		eval["evaluators"] = []any{
 			map[string]any{"evaluator": "custom.valid", "version": "7", "name": "numeric",
-				"data_mapping": map[string]string{"n": "{{item.count}}"}},
+				"dataMapping": map[string]string{"n": "{{item.count}}"}},
 			map[string]any{"evaluator": "custom.valid", "version": "9", "name": "textual",
-				"data_mapping": map[string]string{"n": "{{item.label}}"}},
+				"dataMapping": map[string]string{"n": "{{item.label}}"}},
 		}
 	})
 	cfg, err := project.OpenEvalConfig(dir)

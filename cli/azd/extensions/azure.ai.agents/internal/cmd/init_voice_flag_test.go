@@ -57,7 +57,7 @@ func TestInitVoiceInputAllowsOnlySupportedNewVoiceFlows(t *testing.T) {
 		require.NoError(t, validateInitVoiceInput(flags, true))
 	}
 	// No --voice flag means existing inputs are unaffected, even if otherwise invalid.
-	require.NoError(t, validateInitVoiceInput(&initFlags{kind: "hosted", manifestPointer: "azure.yaml"}, false))
+	require.NoError(t, validateInitVoiceInput(&initFlags{kind: "hosted", templatePointer: "azure.yaml"}, false))
 }
 
 func TestVoiceDefinitionForInit(t *testing.T) {
@@ -236,7 +236,7 @@ func TestValidateFastPathAgentNameAppliesOnlyWithoutManifest(t *testing.T) {
 	t.Parallel()
 
 	require.NoError(t, validateFastPathAgentName(&initFlags{
-		manifestPointer: "azure.yaml",
+		templatePointer: "azure.yaml",
 		image:           "example.azurecr.io/agent:v1",
 	}, false))
 

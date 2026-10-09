@@ -121,7 +121,7 @@ func TestLocalMissingCatalogReadFailureMakesNoSubmission(t *testing.T) {
 			dir := localSourceConfig(t, "{\"count\":\"legacy would allow this\"}\n", 0)
 			editLocalSourceConfig(t, dir, func(eval map[string]any) {
 				eval["evaluators"] = []any{map[string]any{
-					"evaluator": "custom.valid", "data_mapping": map[string]string{"n": "{{item.count}}"},
+					"evaluator": "custom.valid", "dataMapping": map[string]string{"n": "{{item.count}}"},
 				}}
 			})
 			ec, requests := localSelectedContractContext(t, status)

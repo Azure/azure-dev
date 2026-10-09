@@ -448,7 +448,7 @@ func FingerprintGroup(group Eval) (string, error) {
 
 // FingerprintDefinition hashes only what the service stores.
 //
-// max_samples and source filters are applied per run. The source type affects
+// maxSamples and source filters are applied per run. The source type affects
 // the immutable mappings and data source configuration, so it remains part of
 // the definition while windows, response IDs and other filters do not.
 //

@@ -77,7 +77,7 @@ type EvaluatorDecl struct {
 	// DisplayName is what the catalog shows. Kept in the declaration rather than
 	// in the rubric file, which stays focused on what a human edits: type,
 	// dimensions and pass_threshold.
-	DisplayName string `yaml:"display_name,omitempty" json:"display_name,omitempty"`
+	DisplayName string `yaml:"displayName,omitempty" json:"display_name,omitempty"`
 	// Categories and SupportedEvaluationLevels are catalog and lifecycle
 	// metadata the service returned when the evaluator was generated. They are
 	// recorded so that publishing a later version keeps them: without them a new
@@ -89,7 +89,7 @@ type EvaluatorDecl struct {
 	// level and silently unusable at the other.
 	Categories []string `yaml:"categories,omitempty" json:"categories,omitzero"`
 	//nolint:lll // the key is the service's, and wrapping the tag hides it
-	SupportedEvaluationLevels []string       `yaml:"supported_evaluation_levels,omitempty" json:"supported_evaluation_levels,omitzero"`
+	SupportedEvaluationLevels []string       `yaml:"supportedEvaluationLevels,omitempty" json:"supported_evaluation_levels,omitzero"`
 	Version                   string         `yaml:"version,omitempty"    json:"version,omitempty"`
 	Definition                map[string]any `yaml:"definition,omitempty" json:"definition,omitempty"`
 }
@@ -105,8 +105,8 @@ type Eval struct {
 	Description     string                 `yaml:"description,omitempty"       json:"description,omitempty"`
 	Dataset         string                 `yaml:"dataset,omitempty"           json:"dataset,omitempty"`
 	Source          *SourceDecl            `yaml:"source,omitempty"            json:"source,omitempty"`
-	EvaluationLevel string                 `yaml:"evaluation_level,omitempty"  json:"evaluation_level,omitempty"`
-	MaxSamples      int                    `yaml:"max_samples,omitempty"       json:"max_samples,omitempty"`
+	EvaluationLevel string                 `yaml:"evaluationLevel,omitempty"  json:"evaluation_level,omitempty"`
+	MaxSamples      int                    `yaml:"maxSamples,omitempty"       json:"max_samples,omitempty"`
 	Evaluators      evalcore.EvaluatorList `yaml:"evaluators,omitempty"        json:"evaluators,omitempty"`
 	Target          *Target                `yaml:"target,omitempty"            json:"target,omitempty"`
 	// Simulation, when present, says the eval creates its conversations from
@@ -138,20 +138,20 @@ func (e *Eval) UnmarshalYAML(unmarshal func(any) error) error {
 type SourceDecl struct {
 	Type          string   `yaml:"type,omitempty"            json:"type,omitempty"`
 	File          string   `yaml:"file,omitempty"            json:"file,omitempty"`
-	LookbackHours int      `yaml:"lookback_hours,omitempty"  json:"lookback_hours,omitempty"`
-	MaxTraces     int      `yaml:"max_traces,omitempty"      json:"max_traces,omitempty"`
-	AgentName     string   `yaml:"agent_name,omitempty"      json:"agent_name,omitempty"`
-	ResponseIDs   []string `yaml:"response_ids,omitempty"    json:"response_ids,omitempty"`
-	MaxTurns      int      `yaml:"max_turns,omitempty"       json:"max_turns,omitempty"`
+	LookbackHours int      `yaml:"lookbackHours,omitempty"  json:"lookback_hours,omitempty"`
+	MaxTraces     int      `yaml:"maxTraces,omitempty"      json:"max_traces,omitempty"`
+	AgentName     string   `yaml:"agentName,omitempty"      json:"agent_name,omitempty"`
+	ResponseIDs   []string `yaml:"responseIds,omitempty"    json:"response_ids,omitempty"`
+	MaxTurns      int      `yaml:"maxTurns,omitempty"       json:"max_turns,omitempty"`
 	// AgentVersion pins which deployment's spans are read. Without it the
 	// service chooses, and a redeployed agent is evaluated against whichever
 	// version it picked.
-	AgentVersion string `yaml:"agent_version,omitempty"   json:"agent_version,omitempty"`
+	AgentVersion string `yaml:"agentVersion,omitempty"   json:"agent_version,omitempty"`
 	// StartTime and EndTime bound the window explicitly. LookbackHours stays
 	// supported, read as a start bound measured back from EndTime, or from now
 	// when nothing closes the window.
-	StartTime string `yaml:"start_time,omitempty"      json:"start_time,omitempty"`
-	EndTime   string `yaml:"end_time,omitempty"        json:"end_time,omitempty"`
+	StartTime string `yaml:"startTime,omitempty"      json:"start_time,omitempty"`
+	EndTime   string `yaml:"endTime,omitempty"        json:"end_time,omitempty"`
 }
 
 // Source types an eval can read rows from.
@@ -202,7 +202,7 @@ func (s *SourceDecl) UnmarshalYAML(unmarshal func(any) error) error {
 
 // DefaultScaffoldMaxTraces is the cap init writes on a trace-backed eval, so a
 // first run is bounded rather than taking the service's own default of 1000.
-// Deleting max_traces from the file restores that default.
+// Deleting maxTraces from the file restores that default.
 const DefaultScaffoldMaxTraces = 20
 
 // Target names what the run invokes.

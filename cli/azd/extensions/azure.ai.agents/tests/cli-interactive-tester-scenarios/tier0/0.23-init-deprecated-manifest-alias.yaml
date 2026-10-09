@@ -1,0 +1,23 @@
+# Tier 0 (offline) — deprecated -m/--manifest remains recognized and warns.
+name: "init-deprecated-manifest-alias"
+command: "azd ai agent init -m ./missing-azure.yaml --no-prompt"
+cwd: "~/working/azd-agents-deprecated-manifest-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Use an empty directory and a missing local path so validation cannot start
+# authentication, download a remote template, or create project state.
+pre:
+  - run: "rm -rf ~/working/azd-agents-deprecated-manifest-{instance}"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+
+goals:
+  - "Wait for init to recognize -m as the deprecated --manifest compatibility alias."
+  - "Confirm a visible runtime deprecation warning states that --manifest/-m is deprecated and directs users to --template/-t."
+  - "Confirm init then exits non-zero because the local ./missing-azure.yaml path does not exist."
+  - "Confirm there are no interactive prompts, authentication attempts, network requests, downloads, or created/modified project files."
+  - "Take a screenshot of the warning and final error output."
+  - "Report a finding if -m is unknown, no deprecation warning is shown, the warning does not direct users to --template/-t, or any auth, network, prompt, download, or project side effect starts."

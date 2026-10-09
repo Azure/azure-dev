@@ -279,7 +279,7 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 			agentVersion = info.Version
 			agentVersionSource = fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 		}
-		ca, _, source, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path)
+		ca, _, source, loadErr := projectpkg.LoadHostedAgentDefinition(svc, project.Path)
 		if loadErr != nil {
 			azdClient.Close()
 			return nil, exterrors.ValidationFromError(

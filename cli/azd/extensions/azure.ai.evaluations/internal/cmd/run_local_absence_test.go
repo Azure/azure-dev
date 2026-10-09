@@ -26,13 +26,14 @@ import (
 func TestRunStartDatasetOverridePreservesAttributionAndExplicitZero(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "azure.eval.yaml")
-	config, err := json.Marshal(project.EvalConfig{
+	cfg := project.EvalConfig{
 		Datasets: []project.DatasetDecl{
 			{Name: "original", File: "original.jsonl"},
 			{Name: "golden", File: "golden.jsonl"},
 		},
 		Evals: []project.Eval{{Name: "quality", Dataset: "original", MaxSamples: 1}},
-	})
+	}
+	config, err := json.Marshal(authoredValues(t, &cfg))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(configPath, config, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "original.jsonl"),
@@ -222,7 +223,7 @@ func TestEmptyDatasetListingBlocksRunsWithLaterVersions(t *testing.T) {
 					require.NoError(t, err)
 					cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: "original", File: "original.jsonl"})
 					cfg.Evals[0].Dataset = "original"
-					body, err := json.Marshal(cfg)
+					body, err := json.Marshal(authoredValues(t, cfg))
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(config, body, 0o600))
 					require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(config), "original.jsonl"),

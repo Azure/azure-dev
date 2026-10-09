@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Local development scaffold for Azure AI Search (Foundry IQ). Search operations are not implemented yet.
+displayName: Azure AI Search (Foundry IQ)
+id: azure.ai.search
+language: go
+namespace: ai.search
+requiredAzdVersion: ">=1.33.0"
+usage: azd ai search <command> [options]
+version: 0.0.1
+examples:
+    - name: version
+      description: Display the locally installed extension version.
+      usage: azd ai search version

@@ -15,6 +15,7 @@ braydonk
 briandowns
 buger
 cobey
+davidm00
 denormal
 dnaeon
 eerhardt
@@ -26,6 +27,7 @@ gofrs
 gimenete
 haoozhang
 hemarina
+hizixin
 huimiu
 hyoshis
 imatiach
@@ -35,6 +37,7 @@ joho
 karolz
 kitsiosk
 kristenwomack
+lc48t
 LianwMS
 Lunatico9
 mattn
@@ -42,6 +45,7 @@ Menghua1
 mikekistler
 Mstiekema
 multierr
+mulumbi
 Nathandrake
 nicksnyder
 otiai10
@@ -69,7 +73,9 @@ tidwall
 tmeschter
 tonybaloney
 v1212
+valangar
 vivazqu
+wangliwang
 weilim
 Yionse
 YoYoJa

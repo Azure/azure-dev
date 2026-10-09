@@ -160,6 +160,44 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			defaultEnvironment: "env1",
 			errorContains:      "key must not be empty",
 		},
+		{
+			name:               "ManagedKeyWithForce",
+			args:               []string{environment.EnvNameEnvVarName, "-e", "env2"},
+			defaultEnvironment: "env1",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "ManagedKeyWithoutForce",
+			args:               []string{environment.EnvNameEnvVarName},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			stdin:              "y\n",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "ManagedKeyAfterValidKey",
+			args:               []string{"KEY1", environment.EnvNameEnvVarName, "-e", "env2"},
+			defaultEnvironment: "env1",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "RepeatedManagedKeyBeforeValidKey",
+			args:               []string{environment.EnvNameEnvVarName, environment.EnvNameEnvVarName, "KEY1"},
+			defaultEnvironment: "env1",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:          "ManagedKeyWithoutEnvironment",
+			args:          []string{environment.EnvNameEnvVarName},
+			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "ManagedKeyDifferentCase",
+			args:               []string{"azure_env_name"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env1",
+			removedKeys:        []string{"azure_env_name"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -174,6 +212,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			for _, name := range []string{"env1", "env2", "ricardo"} {
 				valuesBefore[name] = map[string]string{
 					environment.EnvNameEnvVarName: name,
+					"azure_env_name":              "ordinary-value",
 					"KEY1":                        "value1",
 					"KEY2":                        "value2",
 					"SECRET":                      secretRef,

@@ -24,9 +24,10 @@ import (
 func newEnvUnsetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unset <key...>",
-		Short: "Remove one or more environment values.",
-		Long: "Remove one or more values from the selected environment's .env file.\n\n" +
+		Short: "Remove one or more keys from an environment.",
+		Long: "Remove one or more keys from the selected environment's .env file.\n\n" +
 			"Keys are case-sensitive. Missing keys are ignored with a warning.\n" +
+			environment.EnvNameEnvVarName + " identifies the environment and cannot be unset.\n" +
 			"You are prompted to confirm removal. Use --force to skip this confirmation.\n" +
 			"If saving fails after local values change, you can choose to restore the previous values.\n" +
 			"With --force, restoration is attempted automatically without prompting.\n" +
@@ -38,15 +39,23 @@ func newEnvUnsetCmd() *cobra.Command {
 			if err := cobra.MinimumNArgs(1)(cmd, args); err != nil {
 				return err
 			}
-			if slices.Contains(args, "") {
-				return errors.New("environment variable key must not be empty")
-			}
-			return nil
+			return validateEnvUnsetKeys(args)
 		},
 		Annotations: map[string]string{
 			"azdtest.use": "unset key",
 		},
 	}
+}
+
+func validateEnvUnsetKeys(args []string) error {
+	if slices.Contains(args, "") {
+		return errors.New("environment variable key must not be empty")
+	}
+	if slices.Contains(args, environment.EnvNameEnvVarName) {
+		return fmt.Errorf(
+			"cannot unset %s: this command removes .env keys, not the environment name", environment.EnvNameEnvVarName)
+	}
+	return nil
 }
 
 func getCmdEnvUnsetHelpDescription(cmd *cobra.Command) string {
@@ -97,6 +106,10 @@ func newEnvUnsetAction(
 }
 
 func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if err := validateEnvUnsetKeys(a.args); err != nil {
+		return nil, err
+	}
+
 	env, err := a.env.GetValue()
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
@@ -113,8 +126,9 @@ func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	if !a.flags.force {
 		if a.console.IsNoPromptMode() {
 			return nil, &internal.ErrorWithSuggestion{
-				Err:        errors.New("removing environment values requires confirmation"),
-				Message:    "Removing environment values requires confirmation. No values were removed.",
+				Err: fmt.Errorf(
+					"removing environment keys requires confirmation: %w", internal.ErrInteractiveRequired),
+				Message:    "Removing environment keys requires confirmation. No keys were removed.",
 				Suggestion: "Run the command again with --force to skip removal confirmation.",
 			}
 		}

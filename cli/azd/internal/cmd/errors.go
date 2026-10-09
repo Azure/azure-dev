@@ -502,6 +502,8 @@ func classifySentinel(err error) string {
 	case errors.Is(err, internal.ErrNoArgsProvided),
 		errors.Is(err, internal.ErrInvalidArgValue):
 		return "internal.invalid_args"
+	case errors.Is(err, internal.ErrInteractiveRequired):
+		return "internal.interactive_required"
 	case errors.Is(err, internal.ErrConfigKeyNotFound):
 		return "internal.config_key_not_found"
 	case errors.Is(err, internal.ErrExtensionNotFound):

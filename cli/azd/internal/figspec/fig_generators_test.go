@@ -23,7 +23,7 @@ func TestCustomizations_GetCommandArgGenerator(t *testing.T) {
 	}{
 		{"env_get_value", "azd env get-value", "keyName", FigGenListEnvironmentVariables},
 		{"env_get_value_other", "azd env get-value", "other", ""},
-		{"env_unset", "azd env unset", "key", FigGenListEnvironmentVariables},
+		{"env_unset", "azd env unset", "key", FigGenListEnvironmentVariablesForUnset},
 		{"env_unset_other", "azd env unset", "other", ""},
 		{"env_select", "azd env select", "environment", FigGenListEnvironments},
 		{"template_show", "azd template show", "template", FigGenListTemplates},
@@ -92,7 +92,7 @@ func TestGenerateCommandArgs_EnvUnset(t *testing.T) {
 	require.Equal(t, []Arg{{
 		Name:       "key",
 		IsVariadic: true,
-		Generator:  FigGenListEnvironmentVariables,
+		Generator:  FigGenListEnvironmentVariablesForUnset,
 	}}, sb.generateCommandArgs(cmd, ctx))
 }
 
@@ -101,6 +101,7 @@ func TestGeneratorConstants(t *testing.T) {
 	generators := []string{
 		FigGenListEnvironments,
 		FigGenListEnvironmentVariables,
+		FigGenListEnvironmentVariablesForUnset,
 		FigGenListTemplates,
 		FigGenListTemplateTags,
 		FigGenListTemplatesFiltered,
@@ -111,5 +112,5 @@ func TestGeneratorConstants(t *testing.T) {
 	for _, g := range generators {
 		require.True(t, strings.HasPrefix(g, "azdGenerators."), "generator %q should have azdGenerators. prefix", g)
 	}
-	require.Len(t, generators, 8, "verify we're testing all declared generators")
+	require.Len(t, generators, 9, "verify we're testing all declared generators")
 }

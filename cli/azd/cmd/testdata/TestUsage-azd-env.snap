@@ -20,7 +20,7 @@ Available Commands
   select    	: Set the default environment.
   set       	: Set one or more environment values.
   set-secret	: Set a name as a reference to a Key Vault secret in the environment.
-  unset     	: Remove one or more environment values.
+  unset     	: Remove one or more keys from an environment.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

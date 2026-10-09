@@ -82,7 +82,7 @@ func (c *Customizations) GetCommandArgGenerator(ctx *CommandContext, argName str
 		}
 	case "azd env unset":
 		if argName == "key" {
-			return FigGenListEnvironmentVariables
+			return FigGenListEnvironmentVariablesForUnset
 		}
 	case "azd env select":
 		if argName == "environment" {

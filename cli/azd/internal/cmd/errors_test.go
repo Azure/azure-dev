@@ -823,6 +823,19 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithErrInteractiveRequired",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"removing environment keys requires confirmation: %w", internal.ErrInteractiveRequired),
+				Message:    "Removing environment keys requires confirmation. No keys were removed.",
+				Suggestion: "Run the command again with --force to skip removal confirmation.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.interactive_required"),
+			},
+		},
+		{
 			name: "WithErrValidationFailed",
 			err: &internal.ErrorWithSuggestion{
 				Err:        internal.ErrValidationFailed,
@@ -1792,7 +1805,6 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrNoResourceSelected": "pkg/prompt: interactive prompt error, caught in command callers",
 
 		// Subscription filter errors surfaced as user-facing messages in sub-filter commands
-		"ErrInteractiveRequired":  "internal: sub-filter requires interactive mode, caught in command action",
 		"ErrNoSubscriptionsFound": "internal: no subscriptions available, caught in command action",
 		"ErrNoTenantsFound":       "internal: no tenants available, caught in command action",
 		"ErrNoFilterExists":       "internal: no filter to remove, caught in command action",

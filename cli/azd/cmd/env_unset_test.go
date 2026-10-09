@@ -37,17 +37,40 @@ func TestEnvUnsetCmd(t *testing.T) {
 		{name: "NoKeys", errorContains: "requires at least 1 arg(s)"},
 		{name: "EmptyKey", args: []string{""}, errorContains: "key must not be empty"},
 		{name: "EmptyKeyAfterValidKey", args: []string{"KEY", ""}, errorContains: "key must not be empty"},
+		{
+			name:          "ManagedKey",
+			args:          []string{environment.EnvNameEnvVarName},
+			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:          "ManagedKeyAfterValidKey",
+			args:          []string{"KEY", environment.EnvNameEnvVarName},
+			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:          "ManagedKeyBeforeValidKey",
+			args:          []string{environment.EnvNameEnvVarName, "KEY"},
+			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:          "RepeatedManagedKey",
+			args:          []string{environment.EnvNameEnvVarName, environment.EnvNameEnvVarName},
+			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{name: "ManagedKeyDifferentCase", args: []string{strings.ToLower(environment.EnvNameEnvVarName)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cmd := newEnvUnsetCmd()
 			require.Equal(t, "unset <key...>", cmd.Use)
-			require.NotEmpty(t, cmd.Short)
+			require.Equal(t, "Remove one or more keys from an environment.", cmd.Short)
 			require.NotEmpty(t, cmd.Example)
 			require.Contains(t, getCmdEnvUnsetHelpDescription(cmd), "config.json")
 			require.Contains(t, getCmdEnvUnsetHelpDescription(cmd), "does not delete the secret")
 			require.Contains(t, cmd.Long, "ignored with a warning")
+			require.Contains(t, cmd.Long, "AZURE_ENV_NAME identifies the environment and cannot be unset.")
+			require.NotContains(t, cmd.Long, "managed by azd")
 			require.Contains(t, cmd.Long, "--force")
 			require.Contains(t, cmd.Long, "restore the previous values")
 			require.Contains(t, cmd.Long, "With --force, restoration is attempted automatically without prompting.")
@@ -143,6 +166,15 @@ func TestEnvUnsetAction(t *testing.T) {
 			want:   map[string]string{"my_key": "lower"},
 		},
 		{
+			name: "ManagedKeyDifferentCase",
+			values: map[string]string{
+				environment.EnvNameEnvVarName: "test",
+				"azure_env_name":              "ordinary-value",
+			},
+			args: []string{"azure_env_name"},
+			want: map[string]string{environment.EnvNameEnvVarName: "test"},
+		},
+		{
 			name:   "SecretReference",
 			values: map[string]string{"SECRET": secretRef, "KEEP": "unchanged"},
 			args:   []string{"SECRET"},
@@ -184,6 +216,51 @@ func TestEnvUnsetAction(t *testing.T) {
 				require.Contains(t, console.Output()[0], "ignored")
 			} else {
 				require.Empty(t, console.Output())
+			}
+		})
+	}
+}
+
+func TestEnvUnsetActionRejectsManagedKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "Single", args: []string{environment.EnvNameEnvVarName}},
+		{name: "First", args: []string{environment.EnvNameEnvVarName, "KEY"}},
+		{name: "Last", args: []string{"KEY", environment.EnvNameEnvVarName}},
+		{name: "Repeated", args: []string{"KEY", environment.EnvNameEnvVarName, environment.EnvNameEnvVarName}},
+		{name: "AfterMissingKey", args: []string{"MISSING", environment.EnvNameEnvVarName}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			for _, mode := range []struct {
+				name  string
+				force bool
+			}{
+				{name: "Interactive"},
+				{name: "Force", force: true},
+			} {
+				t.Run(mode.name, func(t *testing.T) {
+					t.Parallel()
+					lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+						t.Fatal("invalid keys must be rejected before loading an environment")
+						return nil, nil
+					})
+					manager := newTestEnvManager()
+					console := mockinput.NewMockConsole()
+
+					result, err := newEnvUnsetAction(
+						lazyEnv, manager, console, &envUnsetFlags{force: mode.force}, tt.args).Run(t.Context())
+					require.Nil(t, result)
+					require.ErrorContains(t, err,
+						"cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name")
+					require.Empty(t, manager.Calls)
+					require.Empty(t, console.Output())
+				})
 			}
 		})
 	}
@@ -302,6 +379,7 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 		force        bool
 		promptErr    error
 		errorText    string
+		errorIs      error
 		disappeared  bool
 		wantPrompt   bool
 		wantModified bool
@@ -319,7 +397,7 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 		{name: "ForceSkipsPrompt", args: []string{"KEY"}, force: true, wantModified: true},
 		{
 			name: "NoPromptRequiresForce", args: []string{"KEY"}, noPrompt: true,
-			errorText: "requires confirmation",
+			errorText: "requires confirmation", errorIs: internal.ErrInteractiveRequired,
 		},
 		{name: "NoPromptWithForce", args: []string{"KEY"}, noPrompt: true, force: true, wantModified: true},
 		{
@@ -373,6 +451,9 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 				require.ErrorContains(t, err, tt.errorText)
 				if tt.promptErr != nil {
 					require.ErrorIs(t, err, tt.promptErr)
+				}
+				if tt.errorIs != nil {
+					require.ErrorIs(t, err, tt.errorIs)
 				}
 			} else {
 				require.NoError(t, err)

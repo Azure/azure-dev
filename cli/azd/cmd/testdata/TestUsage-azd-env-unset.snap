@@ -1,7 +1,8 @@
 
-Remove one or more values from the selected environment's .env file.
+Remove one or more keys from the selected environment's .env file.
 
 Keys are case-sensitive. Missing keys are ignored with a warning.
+AZURE_ENV_NAME identifies the environment and cannot be unset.
 You are prompted to confirm removal. Use --force to skip this confirmation.
 If saving fails after local values change, you can choose to restore the previous values.
 With --force, restoration is attempted automatically without prompting.

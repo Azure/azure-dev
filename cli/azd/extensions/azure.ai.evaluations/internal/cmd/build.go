@@ -368,6 +368,15 @@ func buildEvalRequest(
 	schemas map[string]*eval_api.EvaluatorSummary,
 	datasetColumns map[string]bool,
 ) (*eval_api.CreateOpenAIEvalRequest, error) {
+	return buildEvalRequestWithAvailableColumns(group, schemas, datasetColumns, datasetColumns)
+}
+
+func buildEvalRequestWithAvailableColumns(
+	group *project.Eval,
+	schemas map[string]*eval_api.EvaluatorSummary,
+	datasetColumns map[string]bool,
+	availableColumns map[string]bool,
+) (*eval_api.CreateOpenAIEvalRequest, error) {
 	metadata := map[string]string{}
 	hasTarget := group.Target != nil && group.Target.Name != ""
 	targetType := ""
@@ -403,6 +412,7 @@ func buildEvalRequest(
 	var explicitGeneratedColumns map[string]bool
 	if simulated {
 		datasetColumns = map[string]bool{conversationField: true}
+		availableColumns = datasetColumns
 		explicitGeneratedColumns = map[string]bool{"tool_definitions": true}
 		targetBindings = nil
 	}
@@ -458,7 +468,7 @@ func buildEvalRequest(
 				if !item {
 					continue
 				}
-				if _, explicit := ref.DataMapping[field]; !explicit && !datasetColumns[column] {
+				if _, explicit := ref.DataMapping[field]; !explicit && !availableColumns[column] {
 					delete(plan.dataMapping, field)
 					continue
 				}

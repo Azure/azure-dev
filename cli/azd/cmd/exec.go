@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -158,10 +159,9 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Try file execution first; fall back based on argument shape.
 	if err := exec.Execute(ctx, scriptInput); err != nil {
 		if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
-			// Guard: if the input looks like a file path (has path separators
-			// or a known script extension), don't fall through to inline/direct
-			// execution — the user intended to run a file that doesn't exist.
-			if looksLikeFilePath(scriptInput) {
+			// Guard ambiguous path-like input unless --shell explicitly
+			// indicates inline execution.
+			if shouldFailOnMissingScript(scriptInput, a.flags.shell) {
 				return nil, err
 			}
 			if len(scriptArgs) > 0 && a.flags.shell == "" {
@@ -192,13 +192,53 @@ var scriptExtensions = map[string]bool{
 	".py": true, ".rb": true, ".pl": true,
 }
 
+func shouldFailOnMissingScript(input, shell string) bool {
+	if shell != "" && hasShellSyntaxBeforeSeparator(input) {
+		return false
+	}
+	if !looksLikeFilePath(input) {
+		return false
+	}
+	if shell == "" {
+		return true
+	}
+
+	input = strings.TrimSpace(input)
+	firstWhitespace := strings.IndexFunc(input, unicode.IsSpace)
+	firstSeparator := strings.IndexAny(input, "/\\")
+	return firstWhitespace == -1 || (firstSeparator >= 0 && firstSeparator < firstWhitespace)
+}
+
+func hasShellSyntaxBeforeSeparator(input string) bool {
+	firstShellSyntax := strings.IndexAny(input, "'\"`$<>()|&;")
+	firstSeparator := strings.IndexAny(input, "/\\")
+	return firstShellSyntax >= 0 && firstSeparator >= 0 && firstShellSyntax < firstSeparator
+}
+
 // looksLikeFilePath reports whether input appears to be a file path rather
 // than a bare command or inline script. Used to prevent falling through to
 // inline execution when a user typos a script name (F15 security fix).
 func looksLikeFilePath(input string) bool {
-	if strings.ContainsAny(input, "/\\") {
+	input = strings.TrimSpace(input)
+	ext := strings.ToLower(filepath.Ext(input))
+	hasScriptExtension := ext != "" && scriptExtensions[ext]
+	firstWhitespace := strings.IndexFunc(input, unicode.IsSpace)
+	firstSeparator := strings.IndexAny(input, "/\\")
+	if firstSeparator >= 0 {
+		// Shell syntax before a separator indicates that the separator belongs
+		// to an inline expression rather than a script path.
+		if hasShellSyntaxBeforeSeparator(input) && !hasScriptExtension {
+			return false
+		}
+		if firstWhitespace >= 0 && firstWhitespace < firstSeparator {
+			// A single argument containing whitespace is ambiguous. Preserve
+			// fail-closed handling when the full input names a known script type.
+			return hasScriptExtension
+		}
 		return true
 	}
-	ext := strings.ToLower(filepath.Ext(input))
-	return ext != "" && scriptExtensions[ext]
+	if firstWhitespace >= 0 {
+		return false
+	}
+	return hasScriptExtension
 }

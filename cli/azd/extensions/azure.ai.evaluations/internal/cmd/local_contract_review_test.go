@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func localSelectedContractContext(
@@ -80,17 +81,17 @@ func localSelectedContractContext(
 
 func writeLocalContractConfig(t *testing.T, dir string, cfg *project.EvalConfig) {
 	t.Helper()
-	body, err := json.Marshal(cfg)
+	body, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 }
 
 func deployLocalContractConfig(t *testing.T, ec *evalContext, dir string, cfg *project.EvalConfig) error {
 	t.Helper()
-	body, err := json.Marshal(cfg)
+	body, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	var values map[string]any
-	require.NoError(t, json.Unmarshal(body, &values))
+	require.NoError(t, yaml.Unmarshal(body, &values))
 	client := projectServingClient(t, &azdext.ProjectConfig{Path: dir})
 	provider := project.NewEvalServiceTargetProvider(client, func(context.Context, string) (project.Reconciler, error) {
 		return &evalReconciler{ec: ec}, nil
@@ -165,7 +166,7 @@ func TestExplicitLocalPinnedEvaluatorFailureNeverFallsBack(t *testing.T) {
 			dir := localSourceConfig(t, "{\"count\":\"latest accepts this\"}\n", 0)
 			editLocalSourceConfig(t, dir, func(eval map[string]any) {
 				eval["evaluators"] = []any{map[string]any{
-					"evaluator": "custom.valid", "version": "7", "data_mapping": map[string]string{"n": "{{item.count}}"},
+					"evaluator": "custom.valid", "version": "7", "dataMapping": map[string]string{"n": "{{item.count}}"},
 				}}
 			})
 			ec, requests := localSelectedContractContext(t, status)
@@ -220,7 +221,7 @@ func TestExplicitLocalNewServiceConstraintCheckedAfterPublication(t *testing.T) 
 		require.True(t, ok)
 		reference, ok := references[0].(map[string]any)
 		require.True(t, ok)
-		delete(reference, "initialization_parameters")
+		delete(reference, "initializationParameters")
 	})
 	ec, requests, env := localPublicationContext(t, false, &eval_api.JSONSchema{
 		Type: "object", Required: []string{"context"},
@@ -245,9 +246,9 @@ func TestExplicitLocalSameEvaluatorVersionsRemainDistinct(t *testing.T) {
 	editLocalSourceConfig(t, dir, func(eval map[string]any) {
 		eval["evaluators"] = []any{
 			map[string]any{"evaluator": "custom.valid", "version": "7", "name": "numeric",
-				"data_mapping": map[string]string{"n": "{{item.count}}"}},
+				"dataMapping": map[string]string{"n": "{{item.count}}"}},
 			map[string]any{"evaluator": "custom.valid", "version": "9", "name": "textual",
-				"data_mapping": map[string]string{"n": "{{item.label}}"}},
+				"dataMapping": map[string]string{"n": "{{item.label}}"}},
 		}
 	})
 	cfg, err := project.OpenEvalConfig(dir)

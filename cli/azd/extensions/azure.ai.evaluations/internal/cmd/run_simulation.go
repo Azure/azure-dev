@@ -165,7 +165,7 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int, forI
 	if maxTurns == 0 {
 		maxTurns = defaultSimulationTurns
 	}
-	maxField := "simulation.max_turns"
+	maxField := "simulation.maxTurns"
 	turns := 0
 	for _, field := range []string{"max_num_turns", seedTurnsField} {
 		value, present := config[field]
@@ -190,11 +190,11 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int, forI
 	if turns > maxTurns {
 		suggestion := fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
 			maxField, turns, seedConfigField, seedTurnsField)
-		if maxField == "simulation.max_turns" && turns > project.MaxSimulationTurns {
-			suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. simulation.max_turns accepts %d to %d.",
+		if maxField == "simulation.maxTurns" && turns > project.MaxSimulationTurns {
+			suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. simulation.maxTurns accepts %d to %d.",
 				seedConfigField, seedTurnsField, maxTurns, project.MinSimulationTurns, project.MaxSimulationTurns)
 		}
-		if maxField == "simulation.max_turns" && forInit {
+		if maxField == "simulation.maxTurns" && forInit {
 			if turns <= project.MaxSimulationTurns {
 				suggestion = fmt.Sprintf("Rerun init with --max-turns %d (%d-%d), or lower %s.%s on that row.",
 					turns, project.MinSimulationTurns, project.MaxSimulationTurns, seedConfigField, seedTurnsField)

@@ -118,10 +118,11 @@ func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.Invo
 	}
 
 	for _, selector := range moderation.StreamSelectors {
-		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
-			EventType: selector.EventType,
-			TextField: selector.TextField,
-		})
+		mappedSelector := agent_api.SseTextSelector{EventType: selector.EventType}
+		if selector.TextField != nil {
+			mappedSelector.TextField = *selector.TextField
+		}
+		mapped.StreamSelectors = append(mapped.StreamSelectors, mappedSelector)
 	}
 
 	return mapped
@@ -611,20 +612,8 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidatePolicies(); err != nil {
 		return nil, err
 	}
-	authoredVersions := map[string]string{}
-	for _, skill := range promptAgent.Skills {
-		name := strings.ToLower(strings.TrimSpace(skill.Name))
-		version := strings.TrimSpace(skill.Version)
-		if version == "" {
-			continue
-		}
-		if previous, ok := authoredVersions[name]; ok && previous != version {
-			return nil, fmt.Errorf(
-				"prompt skill %q has conflicting authored versions %q and %q; specify only one version per skill",
-				name, previous, version,
-			)
-		}
-		authoredVersions[name] = version
+	if err := promptAgent.ValidateAuthoredSkills(); err != nil {
+		return nil, err
 	}
 	for _, skill := range PromptAgentSkillReferences(promptAgent) {
 		if strings.TrimSpace(skill.Version) == "" {

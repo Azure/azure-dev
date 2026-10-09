@@ -19,7 +19,7 @@ Available Commands
   connection   : Manage connection service dependencies for an agent.
   delete       : Delete a prompt, hosted, or voice agent.
   doctor       : Diagnose problems with an azd ai agent project.
-  endpoint     : Manage agent endpoint and card configuration.
+  endpoint     : Inspect agent endpoints and manage hosted endpoint/card configuration.
   eval         : Create and run quick evals for an agent.
   files        : Manage files in a hosted agent session.
   init         : Initialize a new prompt, hosted, or voice agent project. (Preview)

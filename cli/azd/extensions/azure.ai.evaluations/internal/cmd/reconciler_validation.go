@@ -359,7 +359,10 @@ func malformedTextValue(value any) bool {
 	case string:
 		return strings.TrimSpace(v) == ""
 	case []any:
-		return false
+		return slices.ContainsFunc(v, func(item any) bool {
+			_, ok := item.(map[string]any)
+			return !ok
+		})
 	default:
 		return true
 	}

@@ -132,7 +132,7 @@ func TestInitSimulationRefusesLocalRowsBeforeAnyWrites(t *testing.T) {
 		{"boolean turns", `{"test_case_description":"help",` +
 			`"simulation_configuration":{"desired_num_turns":true}}`, "positive whole number"},
 		{"over explicit cap", `{"test_case_description":"help",` +
-			`"simulation_configuration":{"desired_num_turns":21}}`, "max_turns is 20"},
+			`"simulation_configuration":{"desired_num_turns":21}}`, "maxTurns is 20"},
 		{"completed messages", `{"test_case_description":"help","messages":[]}`, `carries "messages"`},
 		{"query field", `{"test_case_description":"help","query":"hello"}`, `carries "query"`},
 		{"empty query", `{"test_case_description":"help","query":""}`, `carries "query"`},

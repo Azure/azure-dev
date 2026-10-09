@@ -19,7 +19,7 @@ func simulationLoaderConfig(simulation map[string]any) map[string]any {
 	return map[string]any{
 		"datasets": []any{map[string]any{"name": "seeds"}},
 		"evals": []any{map[string]any{
-			"name": "quality", "dataset": "seeds", "evaluation_level": "conversation",
+			"name": "quality", "dataset": "seeds", "evaluationLevel": "conversation",
 			"simulation": simulation,
 			"target":     map[string]any{"type": "agent", "name": "agent"},
 			"evaluators": []any{map[string]any{"evaluator": "builtin.task_completion"}},
@@ -28,7 +28,7 @@ func simulationLoaderConfig(simulation map[string]any) map[string]any {
 }
 
 func TestSimulationProductionLoadersRejectExplicitZero(t *testing.T) {
-	for _, field := range []string{"num_conversations", "max_turns"} {
+	for _, field := range []string{"numConversations", "maxTurns"} {
 		for _, value := range []any{0, nil} {
 			t.Run(fmt.Sprintf("%s/%v", field, value), func(t *testing.T) {
 				want := "simulation." + field + " is 0"
@@ -66,8 +66,8 @@ func TestSimulationProductionLoadersPreserveOmissionsAndBounds(t *testing.T) {
 		turns      int
 	}{
 		{"omitted", map[string]any{"model": "connection/simulator"}, 0, 0},
-		{"minimum", map[string]any{"model": "connection/simulator", "num_conversations": 1, "max_turns": 1}, 1, 1},
-		{"maximum", map[string]any{"model": "connection/simulator", "num_conversations": 5, "max_turns": 20}, 5, 20},
+		{"minimum", map[string]any{"model": "connection/simulator", "numConversations": 1, "maxTurns": 1}, 1, 1},
+		{"maximum", map[string]any{"model": "connection/simulator", "numConversations": 5, "maxTurns": 20}, 5, 20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := simulationLoaderConfig(tc.simulation)
@@ -96,21 +96,27 @@ func TestSimulationProductionLoadersPreserveOmissionsAndBounds(t *testing.T) {
 }
 
 func TestSimulationProductionDecoderRemainsStrict(t *testing.T) {
-	body := "evals:\n  - name: quality\n    simulation:\n      model: simulator\n      max_turn: 2\n"
+	body := "evals:\n  - name: quality\n    simulation:\n      model: simulator\n      maxTurn: 2\n"
 	_, err := DecodeEvalConfig([]byte(body), "azure.eval.yaml")
-	require.ErrorContains(t, err, `unknown key "max_turn"`)
-	assert.Contains(t, err.Error(), `did you mean "max_turns"`)
+	require.ErrorContains(t, err, `unknown key "maxTurn"`)
+	assert.Contains(t, err.Error(), `did you mean "maxTurns"`)
 	assert.Contains(t, err.Error(), "line 5")
 
 	_, err = EvalConfigFromService(serviceWith(t, simulationLoaderConfig(
-		map[string]any{"model": "simulator", "max_turn": 2})), "")
-	require.ErrorContains(t, err, `unknown key "max_turn"`)
-	_, err = DecodeEvalConfig([]byte(strings.ReplaceAll(body, "max_turn: 2",
-		"<<: &defaults {max_turn: 2}")), "azure.eval.yaml")
-	require.ErrorContains(t, err, `unknown key "max_turn"`)
+		map[string]any{"model": "simulator", "maxTurn": 2})), "")
+	require.ErrorContains(t, err, `unknown key "maxTurn"`)
+	_, err = DecodeEvalConfig([]byte(strings.ReplaceAll(body, "maxTurn: 2",
+		"<<: &defaults {maxTurn: 2}")), "azure.eval.yaml")
+	require.ErrorContains(t, err, `unknown key "maxTurn"`)
 
-	for _, field := range []string{"num_conversations", "max_turns"} {
-		_, err := DecodeEvalConfig([]byte(strings.ReplaceAll(body, "max_turn: 2", field+": null")), "azure.eval.yaml")
+	for _, field := range []string{"numConversations", "maxTurns"} {
+		_, err := DecodeEvalConfig([]byte(strings.ReplaceAll(body, "maxTurn: 2", field+": null")), "azure.eval.yaml")
 		require.ErrorContains(t, err, "simulation."+field+" is 0")
 	}
+}
+
+func TestProductionDecoderRejectsTrailingDocument(t *testing.T) {
+	body := []byte("evals:\n  - name: first\n---\nevals:\n  - name: ignored\n")
+	_, err := DecodeEvalConfig(body, "azure.eval.yaml")
+	require.ErrorContains(t, err, "multiple YAML documents are not supported")
 }

@@ -183,7 +183,7 @@ them reuse that session credential.
 ### GitHub login (remote azure.yaml scenarios)
 
 The remote project scenarios (`1.03-init-from-azure-yaml-url`,
-`1.05-init-flag-agent-name`) download a unified azure.yaml — and its sibling
+`1.05-init-flag-agent-name`) download an azure.yaml project document — and its sibling
 files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
 but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
 would otherwise drop into an **interactive GitHub login** mid-run. Like
@@ -313,13 +313,13 @@ in any order, any time.
 | File | Targets |
 |------|---------|
 | `tier0/0.01-version.yaml` | `version` |
-| `tier0/0.02-help-root.yaml` | root help / command discovery |
-| `tier0/0.03-sample-list-text.yaml` | `sample list` (text) |
-| `tier0/0.04-sample-list-json-filters.yaml` | `sample list` `--output json`, `--language`, `--type`, `--featured-only` |
+| `tier0/0.02-help-root.yaml` | Root/init help, including canonical `--template/-t` and the deprecated alias compatibility note |
+| `tier0/0.03-sample-list-text.yaml` | `sample list` (text) with canonical `azd ai agent init -t` guidance |
+| `tier0/0.04-sample-list-json-filters.yaml` | `sample list` JSON filters and canonical `initCommand` generation with `azd ai agent init -t` |
 | `tier0/0.05-doctor-empty-dir.yaml` | `doctor` in an empty dir (graceful skips) |
 | `tier0/0.06-doctor-local-only.yaml` | `doctor --local-only` |
 | `tier0/0.07-doctor-partial-failure.yaml` | `doctor` mixed PASS+FAIL (exit 1) on a name-only `azure.yaml` |
-| `tier0/0.08-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional manifest + `-m`) |
+| `tier0/0.08-init-validate-mutually-exclusive.yaml` | `init` arg validation (positional template + `-t`) |
 | `tier0/0.09-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
 | `tier0/0.10-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 | `tier0/0.11-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
@@ -337,6 +337,7 @@ in any order, any time.
 | `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
 | `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
 | `tier0/0.22-state-stores-help-validation.yaml` | State Store command discovery, forward-pagination help, input-size guidance, and offline validation |
+| `tier0/0.23-init-deprecated-manifest-alias.yaml` | Deprecated `init --manifest/-m` compatibility alias warning and local missing-file failure |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -356,9 +357,9 @@ and verifies the generated files, then stops before `azd provision`.
 |------|---------|
 | `tier1/1.01-init-template-python.yaml` | `init` new-from-template, Python |
 | `tier1/1.02-init-template-dotnet.yaml` | `init` new-from-template, C#/.NET |
-| `tier1/1.03-init-from-azure-yaml-url.yaml` | `init -m <manifest url>` (needs `gh auth login`) |
+| `tier1/1.03-init-from-azure-yaml-url.yaml` | `init -t <template url>` (needs `gh auth login`) |
 | `tier1/1.04-init-from-code.yaml` | `init` → pick "Use the code in the current directory" |
-| `tier1/1.05-init-flag-agent-name.yaml` | `init -m … --agent-name` (needs `gh auth login`) |
+| `tier1/1.05-init-flag-agent-name.yaml` | `init -t … --agent-name` (needs `gh auth login`) |
 | `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
@@ -638,7 +639,7 @@ How they're used here:
   (`1.04-init-from-code`, `1.06-init-deploy-mode-code`) also copy a committed Python
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
-- **`pre` gh-auth guard** — the remote unified azure.yaml scenarios (`1.03-init-from-azure-yaml-url`,
+- **`pre` gh-auth guard** — the remote azure.yaml project scenarios (`1.03-init-from-azure-yaml-url`,
   `1.05-init-flag-agent-name`) run `gh auth status` and fail fast if GitHub
   CLI isn't authenticated, because downloading the project file and its sibling
   files can fall back to the `gh` CLI (and an interactive login) when the anonymous GitHub API is

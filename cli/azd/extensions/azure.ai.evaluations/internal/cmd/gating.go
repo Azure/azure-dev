@@ -84,7 +84,17 @@ func runPassRateValue(counts *eval_api.EvalRunResultCounts) (rate float64, total
 }
 
 func validRunPassRateCounts(counts *eval_api.EvalRunResultCounts) bool {
-	return counts != nil && counts.Total >= 0 && counts.Passed >= 0 && counts.Passed <= counts.Total
+	if counts == nil || counts.Total < 0 {
+		return false
+	}
+	remaining := counts.Total
+	for _, count := range []int{counts.Passed, counts.Failed, counts.Errored, counts.Skipped} {
+		if count < 0 || count > remaining {
+			return false
+		}
+		remaining -= count
+	}
+	return true
 }
 
 // evaluate checks count presence before deciding whether the quality gate was

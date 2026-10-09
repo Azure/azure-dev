@@ -80,7 +80,7 @@ services:
 			require.NoError(t, os.WriteFile(path, []byte(tt.content), 0o600))
 
 			content, err := loadExplicitAzureYaml(
-				t.Context(), nil, &initFlags{manifestPointer: path}, http.DefaultClient,
+				t.Context(), nil, &initFlags{templatePointer: path}, http.DefaultClient,
 			)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestLoadExplicitAzureYamlRemote(t *testing.T) {
 	got, err := loadExplicitAzureYaml(
 		t.Context(),
 		nil,
-		&initFlags{manifestPointer: "https://github.com/example/repo/blob/main/azure.yaml"},
+		&initFlags{templatePointer: "https://github.com/example/repo/blob/main/azure.yaml"},
 		client,
 	)
 	require.NoError(t, err)
@@ -1215,7 +1215,7 @@ func TestStageAzureYamlTemplate_LocalAzureYaml(t *testing.T) {
 	azureYaml := filepath.Join(sampleDir, "azure.yaml")
 	require.NoError(t, os.WriteFile(azureYaml, []byte("name: foundry-simple\nservices: {}\n"), 0600))
 
-	flags := &initFlags{manifestPointer: azureYaml}
+	flags := &initFlags{templatePointer: azureYaml}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -1232,7 +1232,7 @@ func TestStageAzureYamlTemplate_LocalAzureYmlRenamed(t *testing.T) {
 	azureYml := filepath.Join(sampleDir, "azure.yml")
 	require.NoError(t, os.WriteFile(azureYml, []byte("name: foundry-simple\nservices: {}\n"), 0600))
 
-	flags := &initFlags{manifestPointer: azureYml}
+	flags := &initFlags{templatePointer: azureYml}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -1252,7 +1252,7 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(sampleDir, "agents"), 0750))
 	require.NoError(t, os.WriteFile(filepath.Join(sampleDir, "agents", "main.py"), []byte("print('x')\n"), 0600))
 
-	flags := &initFlags{manifestPointer: pointer}
+	flags := &initFlags{templatePointer: pointer}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -1280,7 +1280,7 @@ services:
 `
 	require.NoError(t, os.WriteFile(pointer, []byte(content), 0600))
 
-	flags := &initFlags{manifestPointer: pointer}
+	flags := &initFlags{templatePointer: pointer}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()

@@ -229,7 +229,7 @@ func TestPreviewMalformedRemoteDefinition(t *testing.T) {
 		"kind": "hosted", "cpu": "0.5", "memory": "1Gi",
 		"container_configuration": map[string]any{"image": map[string]any{"secret": "private-value"}},
 	}
-	_, err := previewAgentRequest(t.Context(), &recordingPreviewReader{agent: remote}, "agent", request, nil)
+	_, err := previewAgentRequest(t.Context(), &recordingPreviewReader{agent: remote}, "agent", request, previewInputs{})
 	require.ErrorContains(t, err, "invalid hosted-agent definition")
 	require.NotContains(t, err.Error(), "private-value")
 }

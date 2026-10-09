@@ -22,52 +22,63 @@ standalone `azd ai agent deploy` or `--dry-run` command.
 The provider reads the latest remote agent version and compares the desired
 deployment request, including extension defaults, with its configuration. It
 reports `create` on a missing agent, `update` for known differences, `noChange`
-for an equal fully known configuration, or `unknown` when known fields match
-but inputs/artifacts are unresolved. Changes are grouped by metadata, protocols,
-resources, environment variables, model deployment reference, container image,
-code, session settings, content safety, endpoint, and agent card. Additions show
-the desired value, updates show `before -> after`, and removals show the old
-value followed by `(removed)`.
+when the in-scope known configuration matches, or `unknown` when it matches but
+an in-scope input or image-source choice is unresolved.
 
-Known values include CPU/memory, protocol versions, runtime, interpreter/file
-entry points, dependency resolution, idle timeout, agent/model/registry/policy
-identifiers, and endpoint routing/authentication settings. Arbitrary environment
-values, metadata, descriptions, agent-card content, and non-file command arguments
-are `[redacted]`. The model deployment binding and extension-generated
-`enableVnextExperience` metadata are explicitly safe exceptions. Unknown/new API
-fields are redacted by default, and URL usernames/passwords, query strings, and
-fragments are removed from displayed references. Redaction affects display only,
-not comparison.
+Comparison and output are limited to six groups: metadata (name, description,
+and `metadata` tags), protocols, resources (CPU/memory), environment variables,
+model deployment reference, and container image/build-push intent. Code settings,
+session settings, content safety, endpoint settings, agent cards, and unavailable
+artifact contents are not compared or reported, and do not affect change counts
+or statuses. Additions show the desired value, updates show `before -> after`,
+and removals show the old value followed by `(removed)`.
+
+CPU/memory, protocol versions, and agent/model/registry identifiers are shown.
+Arbitrary environment values, metadata tags, and descriptions are `[redacted]`.
+The model deployment binding and extension-generated `enableVnextExperience`
+metadata are explicitly safe exceptions. New fields are excluded from comparison
+unless they are in scope, and displayed values are redacted by default. URL
+usernames/passwords, query strings, and fragments are removed from displayed
+references. Redaction affects display only, not comparison.
 
 For example:
 
 ```text
   Resources:
     update: definition.cpu: "0.5" -> "2"
-  Code:
-    add: definition.code_configuration.entry_point: ["python","app.py"]
   Environment variables:
     add: definition.environment_variables.API_KEY: "[redacted]"
-  unknown: codeArtifact
+  Container image:
+    build: true
+    push: true
 ```
 
 Image passthrough compares the configured image reference, including a private
-registry connection. A future build/push image and a future code ZIP upload are
-unknown: preview does not build or invent a final tag. Equal image tags do not
-prove their mutable content is unchanged. Unset `${VAR}` inputs in service `env`
-or `image` are unknown rather than empty-value changes; explicit empty values and
-`${VAR:-default}` retain their ordinary meanings. Foundry `${{...}}` expressions
-are preserved, not evaluated or resolved to credentials.
+registry connection, and reports `build: false` / `push: false`. Container builds
+report `build: true` / `push: true`, including remote builds, without building,
+pushing, or inventing a resulting tag/digest. Code-mode services do not perform
+azd container build/push operations and report both as false; code packaging and
+upload content are excluded. If normal interactive deployment would ask whether
+to build or use a configured image, those two intent fields are unknown. With
+`--no-prompt`, the normal default is build. The legacy `AZD_AGENT_SKIP_ACR=true`
+marker still selects a configured pre-built image.
+
+Equal image tags do not prove their mutable content is unchanged. Unset `${VAR}`
+inputs in service `env` or a selected passthrough `image` remain unknown rather
+than empty-value changes; explicit empty values and `${VAR:-default}` retain
+their ordinary meanings. Foundry `${{...}}` expressions are preserved, not
+evaluated or resolved to credentials.
 
 The existing host JSON envelope contains `timestamp` and `services`. Provider
 results are at `services.<service>.data`, with `service`, `agent`, `status`,
 `changes` (each has `group`, `path`, `operation` and the applicable sanitized
-`before`/`after` values), `unknown`, and `notes`. JSON preserves numeric, boolean,
-and array types and uses the same sanitized values as readable output.
+`before`/`after` values), `unknown`, `notes`, and `containerImage` with boolean
+`build`/`push` intent (null when the image-source choice is unresolved). JSON
+uses the same sanitized values as readable output.
 Create, update, no-change, and unknown previews succeed; configuration,
 authentication, permission, connectivity, and malformed-response errors fail.
-`noChange` describes configuration only: ordinary deploy still creates a new
-agent version.
+`noChange` describes only the six in-scope configuration groups, not artifact
+content equivalence: ordinary deploy still creates a new agent version.
 
 ### Read-only boundary and inherited host limitations
 
@@ -78,6 +89,11 @@ or extension-owned state persistence. Normal deployment remains on the stable
 service-target lifecycle. Sensitive provider values are redacted and
 credential-bearing URLs are sanitized; provider errors do not echo raw API bodies
 or authored values.
+
+The `azure.ai.project` provider returns a silent deployment no-op preview, so a
+project dependency does not produce an unsupported-preview warning. The host
+still displays its per-service progress line; project JSON explicitly marks
+deployment as a no-op, not an infrastructure comparison.
 
 The unchanged azd host skips package/publish/deploy and deployment hooks, but its
 ordinary project/environment-loading path still runs. Environment selection or

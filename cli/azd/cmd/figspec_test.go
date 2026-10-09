@@ -15,6 +15,8 @@ import (
 
 // TestFigSpec generates a Fig autocomplete spec for azd, powering VS Code terminal IntelliSense.
 // The generated TypeScript spec must be committed to the vscode repository to enable completions.
+// Extension snapshots use released versions from extensions/registry.json, not branch source.
+// Regenerate them only after the extension release is added to the registry.
 //
 // To update snapshots (assuming your current directory is cli/azd):
 //

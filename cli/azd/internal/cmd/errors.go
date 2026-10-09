@@ -133,6 +133,11 @@ func classify(err error) (string, []attribute.KeyValue) {
 		return "internal.timeout", nil
 	}
 	if isInterruptedProcessError(err) {
+		// Process interruption can be the mechanism used to enforce a deadline.
+		// Preserve the authoritative deadline cause instead of treating it as Ctrl+C.
+		if classifyCancellationCause(err) == "internal.timeout" {
+			return "internal.timeout", nil
+		}
 		return "user.canceled", nil
 	}
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {

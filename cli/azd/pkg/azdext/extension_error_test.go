@@ -178,13 +178,45 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 		{
 			name: "CancelledLocalError",
 			inputErr: &LocalError{
-				Message:  "operation cancelled",
-				Code:     "cancelled",
-				Category: LocalErrorCategoryUser,
+				Message:    "operation cancelled",
+				Code:       "cancelled",
+				Category:   LocalErrorCategoryUser,
+				Suggestion: "Retry the command when ready.",
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#cancelled",
+					Title: "Cancellation help",
+				}},
 			},
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, "cancelled", protoErr.GetLocalError().GetCode())
+				assert.Equal(t, "Retry the command when ready.", protoErr.GetSuggestion())
+				require.Len(t, protoErr.GetLinks(), 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#cancelled", protoErr.GetLinks()[0].GetUrl())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, "Retry the command when ready.", localErr.Suggestion)
+				require.Len(t, localErr.Links, 1)
+				assert.Equal(t, "Cancellation help", localErr.Links[0].Title)
 				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name: "DeadlineLocalError",
+			inputErr: &LocalError{
+				Message:    "operation timed out",
+				Code:       "deadline_exceeded",
+				Category:   LocalErrorCategoryInternal,
+				Suggestion: "Retry with a longer timeout.",
+			},
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, "deadline_exceeded", protoErr.GetLocalError().GetCode())
+				assert.Equal(t, "Retry with a longer timeout.", protoErr.GetSuggestion())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, "Retry with a longer timeout.", localErr.Suggestion)
+				require.ErrorIs(t, goErr, context.DeadlineExceeded)
 			},
 		},
 		{

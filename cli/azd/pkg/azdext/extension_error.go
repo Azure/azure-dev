@@ -37,8 +37,6 @@ type ServiceError struct {
 type LocalError struct {
 	// Message is the human-readable error message
 	Message string
-	// Err is the canonical local cause when one is available.
-	Err error
 	// Code is an extension-defined machine-readable error code (lowercase snake_case, e.g. "missing_subscription_id").
 	// It appears in telemetry as the last segment of ext.<category>.<code>.
 	Code string
@@ -93,7 +91,7 @@ func (e *LocalError) Unwrap() error {
 		return nil
 	}
 
-	return e.Err
+	return canonicalLocalErrorCause(NormalizeLocalErrorCategory(e.Category), e.Code)
 }
 
 // Error implements the error interface.
@@ -139,21 +137,33 @@ func WrapError(err error) *ExtensionError {
 	}
 
 	switch {
-	case errors.Is(err, context.Canceled):
-		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
-		extErr.Source = &ExtensionError_LocalError{
-			LocalError: &LocalErrorDetail{
-				Code:     "canceled",
-				Category: string(LocalErrorCategoryUser),
-			},
-		}
-		return extErr
 	case errors.Is(err, context.DeadlineExceeded):
+		if extLocalErr, ok := errors.AsType[*LocalError](err); ok &&
+			errors.Is(extLocalErr, context.DeadlineExceeded) {
+			populateExtensionErrorFromLocal(extErr, extLocalErr)
+			return extErr
+		}
+
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
 				Code:     "deadline_exceeded",
 				Category: string(LocalErrorCategoryInternal),
+			},
+		}
+		return extErr
+	case errors.Is(err, context.Canceled):
+		if extLocalErr, ok := errors.AsType[*LocalError](err); ok &&
+			errors.Is(extLocalErr, context.Canceled) {
+			populateExtensionErrorFromLocal(extErr, extLocalErr)
+			return extErr
+		}
+
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     "canceled",
+				Category: string(LocalErrorCategoryUser),
 			},
 		}
 		return extErr
@@ -177,17 +187,7 @@ func WrapError(err error) *ExtensionError {
 	}
 
 	if extLocalErr, ok := errors.AsType[*LocalError](err); ok {
-		normalizedCategory := NormalizeLocalErrorCategory(extLocalErr.Category)
-		extErr.Message = extLocalErr.Message
-		extErr.Suggestion = extLocalErr.Suggestion
-		extErr.Links = WrapErrorLinks(extLocalErr.Links)
-		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
-		extErr.Source = &ExtensionError_LocalError{
-			LocalError: &LocalErrorDetail{
-				Code:     extLocalErr.Code,
-				Category: string(normalizedCategory),
-			},
-		}
+		populateExtensionErrorFromLocal(extErr, extLocalErr)
 		return extErr
 	}
 
@@ -222,6 +222,20 @@ func WrapError(err error) *ExtensionError {
 	}
 
 	return extErr
+}
+
+func populateExtensionErrorFromLocal(extErr *ExtensionError, localErr *LocalError) {
+	normalizedCategory := NormalizeLocalErrorCategory(localErr.Category)
+	extErr.Message = localErr.Message
+	extErr.Suggestion = localErr.Suggestion
+	extErr.Links = WrapErrorLinks(localErr.Links)
+	extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+	extErr.Source = &ExtensionError_LocalError{
+		LocalError: &LocalErrorDetail{
+			Code:     localErr.Code,
+			Category: string(normalizedCategory),
+		},
+	}
 }
 
 // populateExtensionErrorFromStatus shapes extErr from a host-originated gRPC status.
@@ -468,7 +482,6 @@ func UnwrapError(msg *ExtensionError) error {
 
 		return &LocalError{
 			Message:    msg.GetMessage(),
-			Err:        canonicalLocalErrorCause(normalizedCategory, localErr.GetCode()),
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
 			Suggestion: msg.GetSuggestion(),
@@ -525,7 +538,6 @@ func unwrapPreviewErrorDetails(msg *ExtensionError, links []errorhandler.ErrorLi
 		category := ParseLocalErrorCategory(localErr.GetCategory())
 		return &LocalError{
 			Message:    preview.GetMessage(),
-			Err:        canonicalLocalErrorCause(category, localErr.GetCode()),
 			Code:       localErr.GetCode(),
 			Category:   category,
 			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),

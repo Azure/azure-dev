@@ -369,6 +369,25 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithInterruptedDeadlineExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err: errors.Join(
+					&exec.ExitError{
+						Cmd:      "test.ext",
+						ExitCode: 130,
+					},
+					context.DeadlineExceeded,
+				),
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
 			name: "WithReportedErrorAndCanceledExtensionRunError",
 			err: fmt.Errorf(
 				"%w: %w",
@@ -607,13 +626,8 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
-			name: "WithTransportedExtLocalErrorUserCanceled",
-			err: &azdext.LocalError{
-				Message:  "operation canceled",
-				Err:      context.Canceled,
-				Code:     "canceled",
-				Category: azdext.LocalErrorCategoryUser,
-			},
+			name:          "WithTransportedExtLocalErrorUserCanceled",
+			err:           azdext.UnwrapError(azdext.WrapError(context.Canceled)),
 			wantErrReason: "user.canceled",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
@@ -647,13 +661,8 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
-			name: "WithTransportedExtLocalErrorDeadlineExceeded",
-			err: &azdext.LocalError{
-				Message:  "operation timed out",
-				Err:      context.DeadlineExceeded,
-				Code:     "deadline_exceeded",
-				Category: azdext.LocalErrorCategoryInternal,
-			},
+			name:          "WithTransportedExtLocalErrorDeadlineExceeded",
+			err:           azdext.UnwrapError(azdext.WrapError(context.DeadlineExceeded)),
 			wantErrReason: "internal.timeout",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ErrCategory.Key).String("internal"),

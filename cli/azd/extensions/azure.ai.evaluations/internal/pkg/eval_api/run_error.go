@@ -81,6 +81,13 @@ func (e *JobError) UnmarshalJSON(data []byte) error {
 	if !blank(e.Message) {
 		return nil
 	}
+	if len(e.details) > 0 {
+		e.detail = e.details[0].Message
+		if blank(e.detail) {
+			e.detail = e.details[0].Code
+		}
+		return nil
+	}
 	for _, nested := range members.nested() {
 		if text := errorText(nested, 0); !blank(text) {
 			e.detail = text

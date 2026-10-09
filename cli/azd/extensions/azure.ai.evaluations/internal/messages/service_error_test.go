@@ -82,13 +82,16 @@ func TestARefusalNeverEchoesTheCredential(t *testing.T) {
 // them printed, in the human line or in the sentence `-o json` reads.
 func TestTheRefusalHeadlineIsRedactedOneLineAndBounded(t *testing.T) {
 	body := `{"error":{"message":"Cannot read https://acct.blob.core.windows.net/c/rows.jsonl?sig=SECRETSIGNATURE\n` +
-		`second line ` + strings.Repeat("x", 600) + `"}}`
+		`second line \u001b[2J\u0007\u009b31m` + strings.Repeat("x", 600) + `"}}`
 	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized} {
 		got := ServiceRefused(status, refusalFrom(t, status, "https://p.example/x", body))
 
 		text := got.Error()
 		assert.NotContains(t, text, "SECRETSIGNATURE", "status %d", status)
 		assert.NotContains(t, text, "\n", "status %d", status)
+		for _, control := range []string{"\x1b", "\x07", "\u009b"} {
+			assert.NotContains(t, text, control, "status %d", status)
+		}
 		assert.Contains(t, text, "Cannot read", "status %d", status)
 		assert.Less(t, len([]rune(text)), 500, "status %d", status)
 

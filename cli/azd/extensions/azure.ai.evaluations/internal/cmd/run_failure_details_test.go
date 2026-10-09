@@ -317,7 +317,8 @@ func TestDetailsBeyondTheStoredCapAreStillCounted(t *testing.T) {
 func TestAJobFailureReasonPrintsAsOneBoundedLine(t *testing.T) {
 	var job eval_api.GenerationJob
 	require.NoError(t, json.Unmarshal([]byte(
-		`{"id":"j","status":"failed","error":{"message":"first line\nsecond line `+strings.Repeat("x", 600)+`"}}`), &job))
+		`{"id":"j","status":"failed","error":{"message":"first line\nsecond line `+
+			`\u001b[2J\u0007\u009b31m`+strings.Repeat("x", 600)+`"}}`), &job))
 
 	var out bytes.Buffer
 	writeJobFailure(&out, &job)
@@ -325,5 +326,18 @@ func TestAJobFailureReasonPrintsAsOneBoundedLine(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 	assert.Len(t, lines, 1)
 	assert.Contains(t, out.String(), "first line second line")
+	for _, control := range []string{"\x1b", "\x07", "\u009b"} {
+		assert.NotContains(t, out.String(), control)
+	}
 	assert.Less(t, len([]rune(out.String())), 400)
+}
+
+func TestFailureDetailsWithoutATopLevelMessageCountRemainingCauses(t *testing.T) {
+	var failure eval_api.JobError
+	require.NoError(t, json.Unmarshal([]byte(`{"details":[
+		{"message":"first cause"},{"message":"second cause"},{"message":"third cause"}]}`), &failure))
+
+	lines, more := failureDetails(&failure, 1)
+	assert.Equal(t, []string{"second cause"}, lines)
+	assert.Equal(t, 1, more)
 }

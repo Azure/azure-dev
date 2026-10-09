@@ -24,7 +24,7 @@ func TestJobErrorReadsTheReasonWhereverTheServiceSentIt(t *testing.T) {
 		{"code only", `{"code":"Throttled"}`, "Throttled", "", ""},
 		{"numeric code is left to the service JSON", `{"code":429,"message":"slow down"}`, "", "slow down", "slow down"},
 		{"details array", `{"code":"x","message":"","details":[{"code":"d","message":"first"},{"message":"second"}]}`,
-			"x", "", "first; second"},
+			"x", "", "first"},
 		{"azure innererror", `{"code":"x","innererror":{"code":"i","message":"inner reason"}}`, "x", "", "inner reason"},
 		{"snake case inner_error", `{"inner_error":{"message":"snake reason"}}`, "", "", "snake reason"},
 		{"openai error wrapper", `{"message":"","error":{"message":"wrapped reason"}}`, "", "", "wrapped reason"},
@@ -214,6 +214,19 @@ func TestJobErrorDetailsAreBoundedAndCopied(t *testing.T) {
 
 	got[0].Message = "changed"
 	assert.Equal(t, "detail 0", decoded.Details()[0].Message, "a caller cannot rewrite what the error holds")
+}
+
+func TestJobErrorWithoutAMessageUsesOnlyTheFirstDetailAsItsReason(t *testing.T) {
+	var decoded JobError
+	require.NoError(t, json.Unmarshal([]byte(`{"details":[
+		{"message":"first cause"},{"message":"second cause"},{"message":"third cause"}]}`), &decoded))
+
+	assert.Equal(t, "first cause", decoded.Reason())
+	assert.Equal(t, []ErrorDetail{
+		{Message: "first cause"},
+		{Message: "second cause"},
+		{Message: "third cause"},
+	}, decoded.Details())
 }
 
 // Reading the details must not change what -o json emits for an error that has

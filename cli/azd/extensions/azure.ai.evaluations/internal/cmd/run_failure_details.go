@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"azureaieval/internal/failuretext"
 	"azureaieval/internal/messages"
@@ -34,10 +33,10 @@ const (
 // The shaping (redaction, one line, bounds, deduplication, count) is failuretext.Lines,
 // shared with every other place a service explains a failure.
 func failureDetails(failure *eval_api.JobError, limit int) (lines []string, more int) {
-	if failure == nil || strings.TrimSpace(failure.Message) == "" {
+	if failure == nil {
 		return nil, 0
 	}
-	lines, more = failuretext.Lines(failure.Message, failure.Details(), limit)
+	lines, more = failuretext.Lines(failure.Reason(), failure.Details(), limit)
 	return lines, more + failure.OmittedDetails()
 }
 

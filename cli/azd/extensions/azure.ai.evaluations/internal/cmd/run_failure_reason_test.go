@@ -69,7 +69,9 @@ func TestRunWithoutAReasonStillSaysItFailed(t *testing.T) {
 func TestRunFailureReasonInTheErrorLineIsRedactedAndBounded(t *testing.T) {
 	run := &eval_api.OpenAIEvalRun{
 		ID: "run_x", Status: "failed",
-		Error: &eval_api.JobError{Message: runFailureWithCredentials + "\n" + strings.Repeat("x", 1000)},
+		Error: &eval_api.JobError{
+			Message: runFailureWithCredentials + "\n\x1b[2J\x07\u009b31m" + strings.Repeat("x", 1000),
+		},
 	}
 	err := runCompleted(run)
 	require.Error(t, err)
@@ -79,6 +81,9 @@ func TestRunFailureReasonInTheErrorLineIsRedactedAndBounded(t *testing.T) {
 	}
 	assert.Contains(t, text, "Synthetic initialization failure.")
 	assert.NotContains(t, text, "\n", "the error is one line")
+	for _, control := range []string{"\x1b", "\x07", "\u009b"} {
+		assert.NotContains(t, text, control)
+	}
 	assert.LessOrEqual(t, len([]rune(text)), 400)
 	assert.True(t, strings.HasSuffix(text, "..."), "a reason that was cut says so")
 }

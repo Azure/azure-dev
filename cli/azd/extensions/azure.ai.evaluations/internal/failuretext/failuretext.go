@@ -10,6 +10,7 @@ package failuretext
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	"azureaieval/internal/urlsafe"
 )
@@ -28,7 +29,13 @@ type Detail struct {
 
 // Text makes a service-supplied reason safe to print on one line.
 func Text(text string) string {
-	collapsed := strings.Join(strings.Fields(urlsafe.Text(text)), " ")
+	safe := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && !unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, urlsafe.Text(text))
+	collapsed := strings.Join(strings.Fields(safe), " ")
 	runes := []rune(collapsed)
 	if len(runes) <= MaxRunes {
 		return collapsed

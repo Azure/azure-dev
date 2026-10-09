@@ -126,6 +126,17 @@ func TestRunJSONDropsEveryCaseVariantOfARedactedKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "SIGONE")
 	assert.NotContains(t, string(raw), "SIGTWO")
+
+	const reverseNull = `{"id":"run_dup","status":"failed",` +
+		`"Error":{"message":"Failed https://host/a?sig=REVERSEDSECRET"},"error":null}`
+	var reversed eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(reverseNull), &reversed))
+	require.Nil(t, reversed.Error)
+	projected, err = runForJSON(&reversed)
+	require.NoError(t, err)
+	raw, err = json.Marshal(projected)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "REVERSEDSECRET")
 }
 
 func TestReportingJSONCallersPreserveNestedResultPresence(t *testing.T) {
@@ -323,7 +334,8 @@ func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
 		`"target":"https://host/rows?sig=target-secret","unknown":9007199254740993,` +
 		`"details":[{"error":{"message":"nested https://host/rows?sig=deep-secret"}}]}],` +
 		`"innererror":{"inner_error":{"target":"https://host/rows?sig=inner-secret"}},` +
-		`"unknown":{"url":"https://host/rows?sig=keep-user-data"}}}`
+		`"unknown":{"url":"https://host/rows?sig=unknown-secret",` +
+		`"items":["plain",{"note":"retry https://host/rows?sig=array-secret"}]}}}`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -365,12 +377,12 @@ func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
 	for name, raw := range outputs {
 		for _, secret := range []string{
 			"fixture-user", "fixture-password", "detail-secret", "fragment-secret",
-			"target-secret", "deep-secret", "inner-secret",
+			"target-secret", "deep-secret", "inner-secret", "unknown-secret", "array-secret",
 		} {
 			assert.NotContains(t, raw, secret, name)
 		}
 		assert.Contains(t, raw, "9007199254740993", name)
-		assert.Contains(t, raw, "keep-user-data", name)
+		assert.Contains(t, raw, `"plain"`, name)
 	}
 	assert.Contains(t, response, "detail-secret", "copy-on-output leaves the source unchanged")
 }

@@ -13,10 +13,10 @@ import (
 	"azureaieval/internal/urlsafe"
 )
 
-// runForJSON sanitizes only known error diagnostics on a copy. Dataset values,
-// unknown service fields, and the original model remain untouched.
+// runForJSON sanitizes the error diagnostic tree on a copy. Dataset values,
+// top-level service fields, and the original model remain untouched.
 func runForJSON(run *eval_api.OpenAIEvalRun) (*eval_api.OpenAIEvalRun, error) {
-	if run == nil || run.Error == nil {
+	if run == nil {
 		return run, nil
 	}
 	raw, err := json.Marshal(run)
@@ -99,6 +99,15 @@ func redactDiagnosticObject(diagnostic map[string]json.RawMessage) (json.RawMess
 			strings.EqualFold(key, "innererror"),
 			strings.EqualFold(key, "inner_error"),
 			strings.EqualFold(key, "error"):
+			redacted, valueChanged, err := redactDiagnosticValue(value)
+			if err != nil {
+				return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
+			}
+			if valueChanged {
+				diagnostic[key] = redacted
+				changed = true
+			}
+		default:
 			redacted, valueChanged, err := redactDiagnosticValue(value)
 			if err != nil {
 				return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)

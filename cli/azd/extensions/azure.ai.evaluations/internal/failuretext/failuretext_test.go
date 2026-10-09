@@ -23,6 +23,15 @@ func TestTextIsOneRedactedBoundedLine(t *testing.T) {
 	assert.Equal(t, "plain", Text("  plain  "))
 }
 
+func TestTextDropsTerminalControlCharacters(t *testing.T) {
+	got := Text("before\x1b[2Jmiddle\x07after\u009b31m")
+
+	assert.Equal(t, "before[2Jmiddleafter31m", got)
+	assert.NotContains(t, got, "\x1b")
+	assert.NotContains(t, got, "\x07")
+	assert.NotContains(t, got, "\u009b")
+}
+
 func TestLinesDropRestatementsAndRepeatsKeepTargetsAndCountTheRest(t *testing.T) {
 	lines, more := Lines("Evaluation validation failed.", []Detail{
 		{Message: "evaluation validation failed"},     // inside the headline

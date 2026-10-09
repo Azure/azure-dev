@@ -22,11 +22,12 @@ func TestEventMessageEnvelope_NoOps(t *testing.T) {
 	// SetError is a no-op
 	env.SetError(msg, &LocalError{Message: "ignored"})
 
-	// Empty messages are not progress messages.
+	// IsProgressMessage always false
 	require.False(t, env.IsProgressMessage(msg))
 
-	// Empty messages have no progress text.
+	// GetProgressMessage always empty
 	require.Empty(t, env.GetProgressMessage(msg))
 
+	// CreateProgressMessage always nil
 	require.Nil(t, env.CreateProgressMessage("id", "msg"))
 }

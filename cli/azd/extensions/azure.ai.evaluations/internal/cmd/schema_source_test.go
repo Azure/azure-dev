@@ -26,8 +26,8 @@ func TestSourceEmptyDatasetKeySchemaRuntimeParity(t *testing.T) {
 	schema, err := compiler.Compile(uri)
 	require.NoError(t, err)
 	for name, source := range map[string]map[string]any{
-		"traces":    {"type": "traces", "agent_name": "agent"},
-		"responses": {"type": "responses", "response_ids": []string{"response"}},
+		"traces":    {"type": "traces", "agentName": "agent"},
+		"responses": {"type": "responses", "responseIds": []string{"response"}},
 		"local":     {"type": "local", "file": "rows.jsonl"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -55,8 +55,8 @@ func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 	require.NoError(t, err)
 
 	for name, source := range map[string]map[string]any{
-		"traces":     {"type": "traces", "agent_name": "agent", "max_traces": 2},
-		"responses":  {"type": "responses", "response_ids": []string{"response"}},
+		"traces":     {"type": "traces", "agentName": "agent", "maxTraces": 2},
+		"responses":  {"type": "responses", "responseIds": []string{"response"}},
 		"referenced": {"$ref": "source.yaml"},
 	} {
 		for _, tc := range []struct {
@@ -75,7 +75,7 @@ func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 				}
 
 				if tc.cap != nil {
-					eval["max_samples"] = *tc.cap
+					eval["maxSamples"] = *tc.cap
 				}
 				body, err := json.Marshal(map[string]any{"evals": []any{eval}})
 				require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 				path := filepath.Join(dir, "azure.eval.yaml")
 				require.NoError(t, os.WriteFile(path, body, 0o600))
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "source.yaml"),
-					[]byte("type: traces\nagent_name: agent\nmax_traces: 2\n"), 0o600))
+					[]byte("type: traces\nagentName: agent\nmaxTraces: 2\n"), 0o600))
 				cfg, err := project.LoadEvalConfig(path)
 				require.NoError(t, err)
 				require.NoError(t, cfg.ValidateForLookup(), "listing by name does not validate run settings")
@@ -101,15 +101,15 @@ func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
 					} else {
 						assert.Error(t, schemaErr)
 					}
-					require.ErrorContains(t, runtimeErr, "max_samples")
+					require.ErrorContains(t, runtimeErr, "maxSamples")
 					assert.Contains(t, runtimeErr.Error(), "quality")
 					if *tc.cap > 0 {
 						assert.Contains(t, azdext.WrapError(runtimeErr).GetMessage(), "quality")
 						local, ok := errors.AsType[*azdext.LocalError](runtimeErr)
 						require.True(t, ok)
 						assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
-						assert.Contains(t, local.Suggestion, "source.max_traces")
-						assert.Contains(t, local.Suggestion, "source.response_ids")
+						assert.Contains(t, local.Suggestion, "source.maxTraces")
+						assert.Contains(t, local.Suggestion, "source.responseIds")
 					}
 				} else {
 					assert.NoError(t, schemaErr)

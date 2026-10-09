@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestExplicitLocalComposedDefaultMappings(t *testing.T) {
@@ -155,7 +155,7 @@ func TestExplicitLocalRunInheritsCatalogPin(t *testing.T) {
 	cfg.Evals[0].Evaluators[0].Evaluator = "custom.valid"
 	cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"query": "{{item.query}}", "count": "{{item.count}}"}
 	cfg.Evaluators = []project.EvaluatorDecl{{Name: "custom.valid", Version: "7"}}
-	body, err := json.Marshal(cfg)
+	body, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 	latest, err := evaluatorContract([]byte(`{"definition":{"data_schema":` +
@@ -202,7 +202,7 @@ func TestExplicitLocalCatalogPinPreflightUsesSelectedContract(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"),
 				[]byte("{\"query\":\"local\",\"count\":42}\n"), 0o600))
 			if caller == "create" {
-				body, err := json.Marshal(cfg)
+				body, err := yaml.Marshal(cfg)
 				require.NoError(t, err)
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
 				require.NoError(t, runLocalCreate(t, ec, dir, group.Name))

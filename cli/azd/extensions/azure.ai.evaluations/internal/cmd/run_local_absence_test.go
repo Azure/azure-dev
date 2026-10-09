@@ -21,12 +21,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestRunStartDatasetOverridePreservesAttributionAndExplicitZero(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "azure.eval.yaml")
-	config, err := json.Marshal(project.EvalConfig{
+	config, err := yaml.Marshal(project.EvalConfig{
 		Datasets: []project.DatasetDecl{
 			{Name: "original", File: "original.jsonl"},
 			{Name: "golden", File: "golden.jsonl"},
@@ -224,7 +225,7 @@ func TestEmptyDatasetListingBlocksRunsWithLaterVersions(t *testing.T) {
 					require.NoError(t, err)
 					cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: "original", File: "original.jsonl"})
 					cfg.Evals[0].Dataset = "original"
-					body, err := json.Marshal(cfg)
+					body, err := yaml.Marshal(cfg)
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(config, body, 0o600))
 					require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(config), "original.jsonl"),

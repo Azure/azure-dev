@@ -94,7 +94,7 @@ func TestMappingRequiredAdditionalInputIsNeverInferred(t *testing.T) {
 		require.ErrorContains(t, err, "context")
 		local, ok := errors.AsType[*azdext.LocalError](err)
 		require.True(t, ok)
-		require.Contains(t, local.Suggestion, "data_mapping")
+		require.Contains(t, local.Suggestion, "dataMapping")
 		require.Contains(t, local.Suggestion, "actual source columns")
 	}
 }

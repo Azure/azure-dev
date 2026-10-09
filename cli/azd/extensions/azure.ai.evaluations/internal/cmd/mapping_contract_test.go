@@ -63,7 +63,7 @@ func TestMappingRejectsConflictingAndEmptyOverrides(t *testing.T) {
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.Equal(t, tc.code, local.Code)
-			require.Contains(t, local.Message, "data_mapping")
+			require.Contains(t, local.Message, "dataMapping")
 			require.NotEmpty(t, local.Suggestion)
 		})
 	}

@@ -188,8 +188,8 @@ the agent: trace mappings always use the completed `item` fields above.
 
 `messages` and separate `query`/`response` mappings are alternative interaction
 formats, never combined. To score a messages-only static dataset at turn level,
-explicitly set `data_mapping: {messages: "{{item.messages}}"}`. The run's
-`evaluation_level` still controls the scoring level.
+explicitly set `dataMapping: {messages: "{{item.messages}}"}`. The run's
+`evaluationLevel` still controls the scoring level.
 
 An explicit mapping overrides the corresponding default without changing the
 authored configuration. Mapping `messages` selects conversation-format defaults,
@@ -201,9 +201,9 @@ Renamed columns retain the standard evaluator input's type:
 ```yaml
 evaluators:
   - evaluator: builtin.groundedness
-    initialization_parameters:
+    initializationParameters:
       model: gpt-4.1-nano
-    data_mapping:
+    dataMapping:
       query: "{{item.question}}"
       response: "{{item.answer}}"
       context: "{{item.reference_text}}"
@@ -248,7 +248,7 @@ To deliberately apply the current mappings to an existing managed evaluation:
    you intend to update, or create a separate unpinned managed declaration.
    An explicit ID cannot change that existing definition; known incompatible
    response mappings are refused. Retain the recorded ID to inspect its history.
-3. Set the intended explicit `data_mapping` entries and change one evaluator
+3. Set the intended explicit `dataMapping` entries and change one evaluator
    reference's criterion `name`, for example `name: groundedness_mapped`. This
    changes the immutable definition. Changing only the eval group's name can
    rename or reuse it instead.
@@ -286,9 +286,9 @@ were deleted. The run fails instead of selecting local data; retry after the
 registry catches up or declare a known dataset version. Permissions, transient
 failures, and malformed listings also fail the run without a local fallback.
 
-Trace- and response-backed runs reject positive configured `max_samples:` and explicitly supplied
-`--max-samples` flags; use `source.max_traces` for trace limits or select
-`source.response_ids` explicitly. Reruns selected by eval ID also reject an
+Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
+`--max-samples` flags; use `source.maxTraces` for trace limits or select
+`source.responseIds` explicitly. Reruns selected by eval ID also reject an
 explicit `--max-samples`, including zero, because they repeat the previous source.
 
 Reruns repeat the stored registered `file_id`. If the stored source contains inline
@@ -324,11 +324,11 @@ evals:
     source:
       type: local
       file: ./datasets/local-rows.jsonl
-    max_samples: 10
-    evaluation_level: turn
+    maxSamples: 10
+    evaluationLevel: turn
     evaluators:
       - evaluator: builtin.relevance
-        initialization_parameters:
+        initializationParameters:
           model: gpt-4.1-nano
 ```
 
@@ -379,7 +379,7 @@ evaluators consuming the same column all apply; an absent type contract is not
 invented as a string type. Explicit evaluator version pins select the same contract
 for mapping construction and local type validation. Evaluator publication invalidates earlier catalog
 snapshots before subsequent eval creation.
-On local-source evals, positive `max_samples` limits submitted rows and
+On local-source evals, positive `maxSamples` limits submitted rows and
 `--max-samples 0` overrides a configured cap. Trace/response caps, registered
 dataset pins, and indeterminate registry listings follow the constraints above.
 
@@ -578,7 +578,7 @@ remain directories, even if their names end in `.yaml`.
 Init supports `--output default` for human-readable output and `--output json`
 for structured output. Unsupported formats are rejected before any authored writes.
 Registered datasets with no local file are not fetched or checked by init.
-For a nonempty local `supported_evaluation_levels` list, the evaluator picker
+For a nonempty local `supportedEvaluationLevels` list, the evaluator picker
 requires an exact case-insensitive match for the selected level; an explicit
 incompatible `--evaluator` is rejected. Unfamiliar entries do not grant support
 for other levels. Missing or empty lists remain unconstrained, with authoritative
@@ -991,7 +991,7 @@ authorization, and missing-ID errors stop the run rather than switching to inlin
 data. Registered rows are downloaded only to validate their shape before submission.
 
 The current run API exposes no supported row-subset option on a registered
-`file_id` source. A positive `--max-samples` or `max_samples:` therefore fails
+`file_id` source. A positive `--max-samples` or `maxSamples:` therefore fails
 explicitly for registered datasets. Remove the cap, pass `--max-samples 0` to
 override a configured cap, or deliberately publish and select a smaller dataset.
 The CLI does not publish temporary subset datasets automatically.
@@ -1003,8 +1003,8 @@ Malformed listings, incomplete pagination, and authorization or service failures
 stop the run.
 `--max-samples` is also rejected for trace- and response-backed runs
 and reruns selected by eval ID, where it cannot change the repeated source.
-Trace- and response-backed runs reject positive configured `max_samples:` too; use `source.max_traces`
-for trace limits or select `source.response_ids` explicitly.
+Trace- and response-backed runs reject positive configured `maxSamples:` too; use `source.maxTraces`
+for trace limits or select `source.responseIds` explicitly.
 
 Reruns repeat the stored registered `file_id`. If the stored source contains inline
 rows attributed to a registered dataset, start the declared eval by name instead:

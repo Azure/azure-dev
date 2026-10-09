@@ -59,7 +59,8 @@ func memoryNode(
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"memory requires a store name",
-					"set 'memory.store' in agent.yaml to the name of the memory store to use "+
+					"set 'memory.store' on the agent service in azure.yaml "+
+						"to the name of the memory store to use "+
 						"(e.g. store: conversation-memory)",
 				)
 			}
@@ -68,10 +69,10 @@ func memoryNode(
 			// model deployment and vector store have already been provisioned.
 			missing := make([]string, 0, 2)
 			if strings.TrimSpace(memory.ChatModel) == "" {
-				missing = append(missing, "memory.chat_model")
+				missing = append(missing, "memory.chatModel")
 			}
 			if strings.TrimSpace(memory.EmbeddingModel) == "" {
-				missing = append(missing, "memory.embedding_model")
+				missing = append(missing, "memory.embeddingModel")
 			}
 			if len(missing) > 0 {
 				return exterrors.Validation(
@@ -113,17 +114,18 @@ func memoryNode(
 }
 
 // reportMemoryStoreDrift warns when a reused store's live definition differs
-// from what agent.yaml declares.
+// from what the agent definition declares.
 //
 // Memory stores are created-if-missing and never updated, so editing
-// memory.chat_model in a manifest whose store already exists has no effect. The
-// deploy still succeeds, which is the problem: without this, the manifest and
+// memory.chatModel in a manifest whose store already exists has no effect. The
+// deploy still succeeds, which is the problem: without this, the definition and
 // the resource disagree silently and indefinitely. Warning rather than failing
-// keeps a store shared with another agent — whose definition this manifest does
+// keeps a store shared with another agent — whose definition this service does
 // not own — from blocking the deploy.
 //
-// The comparison is shared with the azure.yaml memoryStores: path. agent.yaml
-// keys match the wire field paths, so no label mapping is needed.
+// The comparison is shared with the azure.yaml memoryStores: path. Prompt-agent
+// authoring uses camelCase, so the wire field paths require label mapping before
+// they are shown to the user.
 func reportMemoryStoreDrift(
 	g *promptGraph,
 	storeName string,
@@ -132,7 +134,7 @@ func reportMemoryStoreDrift(
 ) {
 	drifted := describeMemoryStoreDrift(
 		diffMemoryStoreDefinition(memoryStoreDefinition(declared), live.Definition),
-		nil,
+		azureYamlMemoryStoreLabels,
 	)
 	if len(drifted) == 0 {
 		return
@@ -235,7 +237,7 @@ func newFoundryMemoryStoreEnsurer(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"a Foundry project endpoint is required to provision a memory store",
-			"run `azd up` to provision a Foundry project, or remove the 'memory:' block from agent.yaml",
+			"run `azd up` to provision a Foundry project, or remove the 'memory:' block from the agent definition",
 		)
 	}
 	return azure.NewFoundryMemoryStoreClient(settings.ProjectEndpoint, credential), nil

@@ -30,6 +30,9 @@ const (
 // Reconciler applies the eval configuration to the service. It is satisfied by
 // the command layer, which owns the data-plane clients.
 type Reconciler interface {
+	// Validate checks local artifacts and service references without publishing
+	// dependencies or changing reconciliation state.
+	Validate(ctx context.Context, cfg *EvalConfig, baseDir string) error
 	// EnsureDataset registers a new dataset version when the local content
 	// changed, returning the resolved version and whether anything was written.
 	EnsureDataset(ctx context.Context, decl DatasetDecl, localPath string) (version string, changed bool, err error)
@@ -172,6 +175,10 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// `evals/datasets/rows.jsonl` under `<root>/evals`, and every scaffolded
 	// dataset read as missing.
 	baseDir := projectRoot
+
+	if err := reconciler.Validate(ctx, cfg, baseDir); err != nil {
+		return nil, messages.EvalConfigInvalid(err)
+	}
 
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
@@ -437,11 +444,9 @@ func FingerprintGroup(group Eval) (string, error) {
 
 // FingerprintDefinition hashes only what the service stores.
 //
-// max_samples and source: are applied per run, not at creation --
-// CreateOpenAIEvalRequest carries neither and buildEvalRequest reads neither.
-// Recreating the eval when one of them changes points the declaration at a new
-// id and leaves every run taken before it reachable only through the old one,
-// for an edit the stored eval cannot even express.
+// max_samples and source filters are applied per run. The source type affects
+// the immutable mappings and data source configuration, so it remains part of
+// the definition while windows, response IDs and other filters do not.
 //
 // Kept separate from FingerprintGroup rather than folded into it, because that
 // digest also answers "which eval was this declaration before it was renamed".
@@ -455,7 +460,9 @@ func FingerprintGroup(group Eval) (string, error) {
 // conservative direction: the other way silently merges two.
 func FingerprintDefinition(group Eval) (string, error) {
 	group.MaxSamples = 0
-	group.Source = nil
+	if group.Source != nil {
+		group.Source = &SourceDecl{Type: group.Source.Type}
+	}
 	// Simulation settings are sent in the run's data source, not stored on the
 	// eval, so changing a model or a turn count would otherwise recreate an
 	// immutable eval and leave its earlier runs reachable only through the old

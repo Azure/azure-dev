@@ -1,5 +1,21 @@
 # Release History
 
+## 1.0.0-beta.10 (2026-10-08)
+
+### Breaking Changes
+
+- [[#10349]](https://github.com/Azure/azure-dev/pull/10349) Standardize Toolbox-owned authoring properties on camelCase to maintain consistency across properties and extensions, and reject the former snake_case spellings with replacement guidance.
+
+## 1.0.0-beta.9 (2026-09-30)
+
+### Bugs Fixed
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Reject explicitly supplied `--project-endpoint` flags on commands that do not use a project endpoint instead of silently ignoring them. Thanks @Siglud for the contribution!
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai toolbox` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
 ## 1.0.0-beta.8 (2026-09-24)
 
 ### Bugs Fixed

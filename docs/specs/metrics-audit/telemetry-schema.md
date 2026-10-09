@@ -299,6 +299,10 @@ declarations are:
 | `azure.ai.agents` | `ext.agent.kind` | SystemMetadata | FeatureInsight | `N/A` | No | No | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` on `agent.context.resolved` |
 | `azure.ai.agents` | `ext.agent.harness` | SystemMetadata | FeatureInsight | `N/A` | No | No | `none`, `github_copilot_preview`, or `other` on `agent.context.resolved` |
 | `azure.ai.agents` | `ext.agent.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | Fixed extension command path on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.container.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | Optional for hosted agents on `agent.context.resolved`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown` (including deployment-definition overrides that cannot be resolved in this project context); omitted for non-hosted agents |
+| `azure.ai.agents` | `ext.agent.invoke.protocol` | SystemMetadata | FeatureInsight | `N/A` | No | No | Currently `responses`, `invocations`, or `a2a` on `agent.invoke.selected`; emitted from the resolved invocable protocol, with no separate telemetry allowlist |
+| `azure.ai.agents` | `ext.agent.invoke.long_running` | SystemMetadata | FeatureInsight | `N/A` | No | No | String-encoded boolean `true` or `false` on `agent.invoke.selected` |
+| `azure.ai.agents` | `ext.agent.invoke.no_wait` | SystemMetadata | FeatureInsight | `N/A` | No | No | String-encoded boolean `true` or `false` on `agent.invoke.selected` |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
@@ -324,13 +328,17 @@ The following rules define the runtime and source-governance boundaries:
 | Repository validation | `go test ./extensions/telemetry` rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications before release |
 | Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
 
+<!-- cspell:ignore byom -->
+
 Reviewed first-party event contracts:
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
-| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness/container-mode classification in the invocation, before the corresponding operation completes | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional `ext.agent.container.mode` on hosted agents: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` does not distinguish ACR ownership; `passthrough` does not prove an image is public; `passthrough_auth` records a configured Foundry registry connection, not successful authentication. No identifiers or customer content |
+| `azure.ai.agents` | `agent.invoke.selected` | A remote `invoke` passes input and protocol validation and resolves its target; project-backed routes must resolve a hosted agent, while explicit `--agent-endpoint` routes have no project kind to verify. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe a brownfield agent first, so earlier failures are not counted. Local and non-hosted project routes are excluded | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running` and `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. Long-running/no-wait modes are remote Responses only; `no_wait=true` requires `long_running=true`. No names, IDs, endpoints, prompts, or outcomes |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.agents` | `agent.operation.v1.<operation>.<category>.<telephony>` | Extension init fails in RunE or succeeds in post-run after the original context report; also agent preprovision/predeploy hooks. Deduplicated by the complete operation/classification tuple | **No extension attributes.** Existing `extension.event` encodes operation (`init`, `provision`, `deploy`), category (`hosted`, `hosted_invocations_ws`, `prompt`, `workflow`, `voice_managed`, `voice_byom`, `voice_hosted_wrapper`, `unknown`) and telephony (`none`, `enabled`, `unknown`). All values are allowlisted. Join existing command results; marker success is not business success. |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 | `azure.ai.evaluations` | `init.completed` | `azd ai eval init` has written an eval scaffold to disk; one event per successful init | `ext.source`: fixed enum `traces`, `dataset`, or `unknown`, where `unknown` absorbs an unrecognized source so the attribute cannot widen into an open set; carries no eval names, dataset identifiers, paths, or trace content |
 | `azure.ai.dataset` | `dataset.published` | `azd ai dataset create` or `azd ai dataset update` has registered a dataset version; one event per successful publish | `ext.operation`: fixed enum `create`, `update`, or `unknown`, where `unknown` absorbs an unrecognized verb so the attribute cannot widen into an open set; carries no dataset names, versions, row content, or file paths |
@@ -506,6 +514,13 @@ Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `
 | Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
 
 ## Data Classifications
+
+Agent operation markers add only fixed values to the existing `extension.event`
+SystemMetadata / FeatureInsight field on `ext.usage`, not new fields or span names.
+Format: `agent.operation.v1.<operation>.<category>.<telephony>`; the allowlisted
+vocabulary and coverage are defined in the [extension operation reference](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
+No customer strings, dynamic attributes or hashing changes are introduced; existing
+agent-context and completion-result semantics remain unchanged.
 
 Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and control how data
 is stored, retained, and who may access it.

@@ -356,17 +356,28 @@ func (da *DeployAction) previewService(
 		return nil, err
 	}
 
-	previewer, ok := serviceTarget.(project.ServiceTargetPreviewer)
-	if !ok {
+	var (
+		result     *project.ServiceDeployPreviewResult
+		previewErr error
+	)
+	if previewer, ok := serviceTarget.(project.ServiceTargetResourcePreviewer); ok {
+		targetResource, err := da.serviceManager.GetTargetResource(ctx, svc, serviceTarget)
+		if err != nil {
+			return nil, fmt.Errorf("resolving target resource: %w", err)
+		}
+
+		result, previewErr = previewer.PreviewWithTarget(ctx, svc, targetResource)
+	} else if previewer, ok := serviceTarget.(project.ServiceTargetPreviewer); ok {
+		result, previewErr = previewer.Preview(ctx, svc)
+	} else {
 		return nil, project.ErrDeployPreviewNotSupported
 	}
 
-	result, err := previewer.Preview(ctx, svc)
-	if err == nil && result == nil {
+	if previewErr == nil && result == nil {
 		return nil, errors.New("service target returned no deployment preview")
 	}
 
-	return result, err
+	return result, previewErr
 }
 
 // dotNetPackagePublishBuildGateKey groups standard .NET services whose

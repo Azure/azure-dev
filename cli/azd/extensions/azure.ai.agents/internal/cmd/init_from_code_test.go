@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,28 +18,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-func TestConfirmExistingDefinitionOverwrite_NoPromptRequiresForce(t *testing.T) {
-	srcDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
-
-	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true}}
-	err := action.confirmExistingDefinitionOverwrite(t.Context(), srcDir)
-
-	require.Error(t, err)
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, err, &localErr)
-	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
-	require.Contains(t, localErr.Suggestion, "--force")
-}
-
-func TestConfirmExistingDefinitionOverwrite_ForcePreConsents(t *testing.T) {
-	srcDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
-
-	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true, force: true}}
-	require.NoError(t, action.confirmExistingDefinitionOverwrite(t.Context(), srcDir))
-}
 
 func TestSanitizeAgentName(t *testing.T) {
 	t.Parallel()
@@ -551,6 +528,38 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	}
 }
 
+func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	const (
+		envName = "agent-dev"
+		image   = "registry.example.com/team/agent:v1"
+	)
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	action := &InitFromCodeAction{
+		azdClient:    newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: nil,
+		flags: &initFlags{
+			noPrompt:           true,
+			env:                envName,
+			agentName:          "image-agent",
+			image:              image,
+			registryConnection: "private-registry",
+		},
+	}
+
+	definition, err := action.createDefinitionFromLocalAgent(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, image, definition.Image)
+	require.Equal(t, "private-registry", definition.RegistryConnectionID)
+	require.Nil(t, definition.CodeConfiguration)
+	require.Equal(t, agent_yaml.AgentKindHosted, definition.Kind)
+	require.NotEmpty(t, definition.Protocols)
+}
+
 func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -774,6 +783,20 @@ func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	}
 }
 
+func TestValidateExplicitProtocols(t *testing.T) {
+	t.Parallel()
+
+	got, err := validateExplicitProtocols([]string{"responses", "activity", "responses"})
+	require.NoError(t, err)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "2.0.0"},
+		{Protocol: "activity", Version: "2.0.0"},
+	}, got)
+
+	_, err = validateExplicitProtocols([]string{"unknown"})
+	require.ErrorContains(t, err, `unknown protocol "unknown"`)
+}
+
 func TestKnownProtocolNames(t *testing.T) {
 	t.Parallel()
 
@@ -967,7 +990,7 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 		noPrompt             bool
 		showCodeDeploy       bool
 		flag                 string
-		userProvidedManifest bool
+		userProvidedTemplate bool
 		want                 string
 		wantErr              bool
 		wantErrContain       string
@@ -1016,27 +1039,27 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			want:           "container",
 		},
 		{
-			name:                 "userProvidedManifest + showCodeDeploy auto-selects code",
+			name:                 "userProvidedTemplate + showCodeDeploy auto-selects code",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "",
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			want:                 "code",
 		},
 		{
-			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",
+			name:                 "showCodeDeploy=false returns container regardless of userProvidedTemplate",
 			noPrompt:             false,
 			showCodeDeploy:       false,
 			flag:                 "",
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			want:                 "container",
 		},
 		{
-			name:                 "explicit flag overrides userProvidedManifest",
+			name:                 "explicit flag overrides userProvidedTemplate",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "container",
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			want:                 "container",
 		},
 	}
@@ -1044,7 +1067,7 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedManifest)
+			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedTemplate)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -1071,7 +1094,7 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 		name                 string
 		files                []string // files to create in temp dir
 		noPrompt             bool
-		userProvidedManifest bool
+		userProvidedTemplate bool
 		opts                 codeDeployOptions
 		wantRuntime          string
 		wantEntry            string
@@ -1122,30 +1145,30 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 			wantDepRes:  "remote_build",
 		},
 		{
-			name:                 "userProvidedManifest auto-detects python defaults",
+			name:                 "userProvidedTemplate auto-detects python defaults",
 			files:                []string{"requirements.txt", "app.py"},
 			noPrompt:             false,
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			opts:                 codeDeployOptions{},
 			wantRuntime:          "python_3_13",
 			wantEntry:            "app.py",
 			wantDepRes:           "remote_build",
 		},
 		{
-			name:                 "userProvidedManifest auto-detects dotnet defaults",
+			name:                 "userProvidedTemplate auto-detects dotnet defaults",
 			files:                []string{"MyAgent.csproj"},
 			noPrompt:             false,
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			opts:                 codeDeployOptions{},
 			wantRuntime:          "dotnet_10",
 			wantEntry:            "MyAgent.dll",
 			wantDepRes:           "remote_build",
 		},
 		{
-			name:                 "opts override userProvidedManifest defaults",
+			name:                 "opts override userProvidedTemplate defaults",
 			files:                []string{"requirements.txt", "app.py"},
 			noPrompt:             false,
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			opts:                 codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
 			wantRuntime:          "python_3_14",
 			wantEntry:            "bot.py",
@@ -1163,7 +1186,7 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 				}
 			}
 
-			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedManifest)
+			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedTemplate)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

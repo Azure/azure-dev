@@ -210,6 +210,19 @@ if err := host.Run(ctx); err != nil {
 }
 ```
 
+##### Command-level follow-up text
+
+Successful beta project `post*` handlers may provide command-level guidance
+by calling `CommandResult().SetFollowUp` with the invocation ID from
+`EventsBeta()` before sending a completed project handler status.
+
+azd appends committed text to the parent command's human-readable completion
+message; JSON output is unchanged. Published extensions using this preview
+API should set `requiredAzdVersion` to `>=1.35.0` for the current release
+line. See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
+for beta stream subscription and host compatibility requirements, clearing contributions,
+and how multiple handlers and workflow steps are resolved.
+
 #### Service Target Providers
 
 Extensions can implement custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. `ExtensionHost` handles registration and readiness by default.
@@ -1370,7 +1383,11 @@ When `azd` invokes an extension command, the following steps occur:
     - Additional environment variables from the current `azd` environment are also set.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
-    - If a non-zero exit code is returned, `azd` reports the operation as an error.
+    - If the extension succeeds, `azd` exits with code `0`.
+    - If the extension returns a positive exit code, `azd` reports the operation as an error and exits with the same code. For example, an extension can use code `2` for a quality gate breach and code `1` for an operational failure so scripts can distinguish them.
+    - If invocation fails before an extension exit code is available, `azd` exits with code `1`.
+
+Structured error reporting preserves the extension's exit code while providing diagnostics and telemetry classification. These exit-code rules apply to directly invoked extension commands, not lifecycle event handlers or service target providers.
 
 To enable interaction with `azd` from within the extension, the extension must leverage a gRPC client and connect to the server using the address specified in the `AZD_SERVER` environment variable.
 
@@ -1585,6 +1602,10 @@ changes a deployment would make. Nothing is packaged, published, or deployed,
 service targets are not initialized, and deploy hooks do not run. Services whose
 host does not support preview are reported and skipped. The flag cannot be
 combined with `--from-package` or `--timeout`.
+
+Core built-in service targets resolve their Azure resource before generating the
+preview. Extension service targets receive the effective service configuration
+through the contract below and can perform their own read-only lookups as needed.
 
 Extension service targets opt in through the experimental, **v1beta-only**
 contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
@@ -2431,7 +2452,14 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../../grpc/proto/azd/extensions/v1/event.proto) for more details.
+The message types below describe the stable
+[v1 event contract](../../grpc/proto/azd/extensions/v1/event.proto). The
+[v1beta event contract](../../grpc/proto/azd/extensions/v1beta/event.proto)
+also adds `request_id` for correlating stream requests and responses,
+structured `error` details, and project and service subscription
+acknowledgements. Its `InvokeProjectHandler` includes an `invocation_id`
+used with the beta
+[CommandResultService](../../grpc/proto/azd/extensions/v1beta/command_result.proto).
 
 #### Message Types
 

@@ -172,10 +172,10 @@ func TestRoutineCreateNewRoutineDispatchIdentity(t *testing.T) {
 			"triggers:\n"+
 			"  default:\n"+
 			"    type: schedule\n"+
-			"    cron_expression: \"0 8 * * *\"\n"+
+			"    cronExpression: \"0 8 * * *\"\n"+
 			"action:\n"+
 			"  type: invoke_agent_responses_api\n"+
-			"  agent_name: summarizer\n"),
+			"  agentName: summarizer\n"),
 		output: "json",
 	}
 
@@ -222,10 +222,10 @@ func TestRoutineCreateTableOutputIncludesDispatchIdentity(t *testing.T) {
 			"triggers:\n"+
 			"  default:\n"+
 			"    type: schedule\n"+
-			"    cron_expression: \"0 8 * * *\"\n"+
+			"    cronExpression: \"0 8 * * *\"\n"+
 			"action:\n"+
 			"  type: invoke_agent_responses_api\n"+
-			"  agent_name: summarizer\n"),
+			"  agentName: summarizer\n"),
 		output: "table",
 	}
 

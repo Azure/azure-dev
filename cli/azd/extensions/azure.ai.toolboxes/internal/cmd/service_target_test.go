@@ -96,7 +96,7 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"description": "research tools",
 		"connections": []any{
-			map[string]any{"name": "search", "index": "docs"},
+			map[string]any{"name": "search", "index": "docs", "instanceName": "docs-config"},
 		},
 		"skills": []any{
 			map[string]any{"name": "summarize", "version": "2"},
@@ -106,7 +106,7 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 			map[string]any{"type": "mcp", "connection": "github-mcp"},
 		},
 		"policies": map[string]any{
-			"rai_config": map[string]any{"rai_policy_name": "default"},
+			"raiConfig": map[string]any{"raiPolicyName": "default"},
 		},
 		"metadata": map[string]any{"owner": "platform"},
 	})
@@ -122,6 +122,7 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 	require.Len(t, cfg.Connections, 1)
 	assert.Equal(t, "search", cfg.Connections[0].Name)
 	assert.Equal(t, "docs", cfg.Connections[0].Index)
+	assert.Equal(t, "docs-config", cfg.Connections[0].InstanceName)
 	require.Len(t, cfg.Skills, 1)
 	assert.Equal(t, "summarize", cfg.Skills[0].Name)
 	assert.Equal(t, "2", cfg.Skills[0].Version)
@@ -132,6 +133,111 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 	require.NotNil(t, cfg.Policies.RaiConfig)
 	assert.Equal(t, "default", cfg.Policies.RaiConfig.RaiPolicyName)
 	assert.Equal(t, map[string]string{"owner": "platform"}, cfg.Metadata)
+}
+
+func TestParseToolboxServiceConfig_RejectsLegacySnakeCaseFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		properties  map[string]any
+		legacyPath  string
+		replacement string
+	}{
+		{
+			name: "connection instance",
+			properties: map[string]any{
+				"connections": []any{map[string]any{"name": "search", "instance_name": "docs-config"}},
+			},
+			legacyPath:  "connections[0].instance_name",
+			replacement: "connections[0].instanceName",
+		},
+		{
+			name: "RAI config",
+			properties: map[string]any{
+				"policies": map[string]any{"rai_config": map[string]any{"raiPolicyName": "default"}},
+			},
+			legacyPath:  "policies.rai_config",
+			replacement: "policies.raiConfig",
+		},
+		{
+			name: "RAI policy name",
+			properties: map[string]any{
+				"policies": map[string]any{"raiConfig": map[string]any{"rai_policy_name": "default"}},
+			},
+			legacyPath:  "policies.raiConfig.rai_policy_name",
+			replacement: "policies.raiConfig.raiPolicyName",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			props, err := structpb.NewStruct(test.properties)
+			require.NoError(t, err)
+
+			_, err = parseToolboxServiceConfig(&azdext.ServiceConfig{
+				Name:                 "research",
+				Host:                 aiToolboxHost,
+				AdditionalProperties: props,
+			})
+			localErr := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+			assert.Contains(t, localErr.Message, test.legacyPath)
+			assert.Contains(t, localErr.Suggestion, test.replacement)
+		})
+	}
+}
+
+func TestParseToolboxServiceConfig_ConfigFallbackRejectsLegacySnakeCase(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"policies": map[string]any{"rai_config": map[string]any{"raiPolicyName": "default"}},
+	})
+	require.NoError(t, err)
+
+	_, err = parseToolboxServiceConfig(&azdext.ServiceConfig{
+		Name:   "research",
+		Host:   aiToolboxHost,
+		Config: config,
+	})
+	localErr := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+	assert.Contains(t, localErr.Message, "policies.rai_config")
+	assert.Contains(t, localErr.Suggestion, "policies.raiConfig")
+}
+
+func TestParseToolboxServiceConfig_PreservesSnakeCaseToolPayload(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"tools": []any{
+			map[string]any{
+				"type": "web_search",
+				"custom_search_configuration": map[string]any{
+					"project_connection_id": "/connections/search",
+					"instance_name":         "docs-config",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	cfg, err := parseToolboxServiceConfig(&azdext.ServiceConfig{
+		Name:                 "research",
+		Host:                 aiToolboxHost,
+		AdditionalProperties: props,
+	})
+	require.NoError(t, err)
+	require.Len(t, cfg.Tools, 1)
+	assert.Equal(
+		t,
+		map[string]any{
+			"project_connection_id": "/connections/search",
+			"instance_name":         "docs-config",
+		},
+		cfg.Tools[0]["custom_search_configuration"],
+	)
 }
 
 func TestParseToolboxServiceConfig_Endpoint(t *testing.T) {

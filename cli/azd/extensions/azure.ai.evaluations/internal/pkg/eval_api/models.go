@@ -300,7 +300,7 @@ func (j *GenerationJob) ResultStringList(key string) []string {
 	}
 	if raw, ok := m[key]; ok {
 		var list []string
-		if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+		if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 			return list
 		}
 	}
@@ -309,7 +309,7 @@ func (j *GenerationJob) ResultStringList(key string) []string {
 		if err := json.Unmarshal(rawOutputs, &outputs); err == nil && len(outputs) > 0 {
 			if raw, ok := outputs[0][key]; ok {
 				var list []string
-				if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+				if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 					return list
 				}
 			}
@@ -402,8 +402,21 @@ type Dataset struct {
 // DataSourceConfig describes the data source for an OpenAI eval.
 type DataSourceConfig struct {
 	Type                string         `json:"type"`
+	Scenario            string         `json:"scenario,omitempty"`
 	ItemSchema          map[string]any `json:"item_schema"`
 	IncludeSampleSchema bool           `json:"include_sample_schema"`
+}
+
+// MarshalJSON keeps custom-schema fields out of the service-defined scenario.
+func (c DataSourceConfig) MarshalJSON() ([]byte, error) {
+	if c.Type == "azure_ai_source" {
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			Scenario string `json:"scenario"`
+		}{c.Type, c.Scenario})
+	}
+	type plain DataSourceConfig
+	return json.Marshal(plain(c))
 }
 
 // DataSourceSchema defines the item and sample schemas for an eval data source.
@@ -543,6 +556,9 @@ type EvalRunDataSource struct {
 	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
 	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
 	DataMapping                    map[string]string        `json:"data_mapping,omitempty"`
+	// SimulationSeedCount is captured from the validated dataset at submission,
+	// not sent as an unsupported service data-source field.
+	SimulationSeedCount *int `json:"-"`
 }
 
 // ItemGenerationParams says how the service should turn a source into the items
@@ -686,18 +702,13 @@ func NewModelTargetDataSource(model string) *EvalRunDataSource {
 
 // NewResponsesDataSource evaluates responses the project already stored.
 //
-// The ids travel as ordinary JSONL rows and a data_mapping points the service
-// at the field holding each one, which is how it retrieves the chat history
-// behind the response.
-//
-// The id sits at the row root. `{{item.response_id}}` already means "the
-// response_id of this item", so a row that wrapped it in another `item` was
-// asking the service for `item.item.response_id` and resolved to nothing --
-// the same shape every other file_content source here uses.
+// Response retrieval uses EvalJsonlFileContentSourceContent: each source entry
+// wraps its fields in the required item object. The mapping remains nested in
+// item_generation_params and addresses that item's response_id.
 func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSource {
 	rows := make([]map[string]any, 0, len(responseIDs))
 	for _, id := range responseIDs {
-		rows = append(rows, map[string]any{"response_id": id})
+		rows = append(rows, map[string]any{"item": map[string]any{"response_id": id}})
 	}
 
 	return &EvalRunDataSource{
@@ -765,6 +776,9 @@ type OpenAIEvalRun struct {
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
 	Error              *JobError               `json:"error,omitempty"`
+	raw                json.RawMessage
+	initial            json.RawMessage
+	reportedCounts     map[string]bool
 }
 
 // Failure returns why the run failed, or "" when it did not.
@@ -822,6 +836,8 @@ type OutputItem struct {
 	Status         string         `json:"status"`
 	DataSourceItem map[string]any `json:"datasource_item,omitempty"`
 	Results        []OutputResult `json:"results,omitempty"`
+	raw            json.RawMessage
+	initial        json.RawMessage
 }
 
 // OutputResult is one evaluator's verdict on one row.
@@ -846,6 +862,9 @@ type OutputResult struct {
 	// Reason is the judge's explanation, which is the part a failing row is
 	// actually looked at for.
 	Reason string `json:"reason,omitempty"`
+	// Properties includes service-specific details such as rubric dimension
+	// scores. Retained verbatim; human views interpret only known fields.
+	Properties json.RawMessage `json:"properties,omitempty"`
 }
 
 // OutputSample is the evaluator's record of the call it made.

@@ -12,8 +12,6 @@ import (
 
 	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
-
-	"gopkg.in/yaml.v3"
 )
 
 // readRoutineManifest reads and parses a routine manifest from a YAML or JSON file.
@@ -35,25 +33,16 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 		)
 	}
 
-	var r routines.Routine
 	ext := strings.ToLower(filepath.Ext(path))
+	var routine *routines.Routine
+	var parseErr error
+	syntax := "JSON"
 	switch ext {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, &r); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidRoutineManifest,
-				fmt.Sprintf("failed to parse routine manifest %s: %v", path, err),
-				"ensure the file is valid YAML and matches the routine schema",
-			)
-		}
+		syntax = "YAML"
+		routine, parseErr = routines.ParseAuthoringYAML(data)
 	case ".json", "":
-		if err := json.Unmarshal(data, &r); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidRoutineManifest,
-				fmt.Sprintf("failed to parse routine manifest %s: %v", path, err),
-				"ensure the file is valid JSON and matches the routine schema",
-			)
-		}
+		routine, parseErr = routines.ParseAuthoringJSON(data)
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidRoutineManifest,
@@ -61,12 +50,17 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 			"use a .yaml, .yml, or .json file",
 		)
 	}
-
-	if err := validateRoutineAuthorization(r.Authorization); err != nil {
+	if parseErr != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidRoutineManifest,
+			fmt.Sprintf("failed to parse routine manifest %s: %v", path, parseErr),
+			fmt.Sprintf("ensure the file is valid %s and matches the routine schema", syntax),
+		)
+	}
+	if err := validateRoutineAuthorization(routine.Authorization); err != nil {
 		return nil, err
 	}
-
-	return &r, nil
+	return routine, nil
 }
 
 func validateRoutineAuthorization(authorization *routines.RoutineAuthorization) error {
@@ -117,9 +111,8 @@ func routineAuthorizationForUpsert(
 				requested.Identity,
 			),
 			fmt.Sprintf(
-				"delete it with 'azd ai routine delete %q', then recreate it with "+
+				"run 'azd ai routine delete' with this routine's name, then recreate it with "+
 					"--dispatch-identity %s or authorization.identity: %s",
-				name,
 				requested.Identity,
 				requested.Identity,
 			),

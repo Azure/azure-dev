@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,6 +37,11 @@ func TestResolveEvaluationLevel_UnknownIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "turn")
 	assert.Contains(t, err.Error(), "conversation",
 		"a refusal has to name what it would have accepted")
+	// ADO 5572140: this refusal used to reach -o json with a message and no
+	// code at all.
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "an unknown --evaluation-level must carry a structured code")
+	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 }
 
 // With nobody to ask, the documented default applies rather than a refusal:

@@ -2,6 +2,46 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.19 (2026-10-08)
+
+### Breaking Changes
+
+- [[#10314]](https://github.com/Azure/azure-dev/pull/10314) Rename prompt-memory and GitHub Copilot toolset authoring properties to camelCase, maintaining consistency across properties and extensions, and reject the former snake_case spellings.
+
+### Features Added
+
+- [[#10313]](https://github.com/Azure/azure-dev/pull/10313) Add `--template`/`-t` as the canonical option for agent initialization templates while retaining `--manifest`/`-m` as a deprecated alias.
+- [[#10276]](https://github.com/Azure/azure-dev/pull/10276) Increase the hosted-agent session idle timeout maximum to 240 minutes. Thanks @Deeksharma for the contribution!
+- [[#10284]](https://github.com/Azure/azure-dev/pull/10284) Add kind-aware endpoint display and reporting for hosted, prompt, and voice agents while limiting endpoint and card updates to hosted agents.
+
+### Bugs Fixed
+
+- [[#9791]](https://github.com/Azure/azure-dev/pull/9791) Fix invocation moderation to require a field name for `textField` so output screening is not silently skipped. Thanks @amitbhave10 for the contribution!
+- [[#10283]](https://github.com/Azure/azure-dev/pull/10283) Fix Doctor and lifecycle checks to validate agent definitions according to their agent kind.
+
+### Other Changes
+
+- [[#10072]](https://github.com/Azure/azure-dev/pull/10072) Add operation classifications to existing agent usage telemetry.
+- [[#10236]](https://github.com/Azure/azure-dev/pull/10236) Add usage telemetry for selected remote agent invocation protocols and modes.
+
+## 1.0.0-beta.18 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10137]](https://github.com/Azure/azure-dev/pull/10137) Require runtime agent definitions in `azure.yaml` or through an explicit root `$ref`, rejecting `AGENT_DEFINITION_PATH`, nested agent `config:` blocks, and implicit standalone-file discovery.
+- [[#10140]](https://github.com/Azure/azure-dev/pull/10140) Require unified `azure.yaml` project documents for agent initialization and remove standalone manifest adoption and the `sample list --type agent` filter.
+- [[#10164]](https://github.com/Azure/azure-dev/pull/10164) Remove legacy AgentManifest support from diagnostics and next-step guidance; move agent definitions to direct `azure.yaml` service properties or an explicit root `$ref`.
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2`.
+
+### Features Added
+
+- [[#10106]](https://github.com/Azure/azure-dev/pull/10106) Add `azd ai agent state-stores` commands to inspect existing stores and list, read, set, and delete their JSON items.
+- [[#10127]](https://github.com/Azure/azure-dev/pull/10127) Add project managed identity storage-permission diagnostics to `azd ai agent doctor` for Storage connections bound to the project capability host. Thanks @Yimin-Jin for the contribution!
+
+### Bugs Fixed
+
+- [[#10152]](https://github.com/Azure/azure-dev/pull/10152) Fix local Activity Playground routing to use `/activity/messages` for current protocols while preserving `/api/messages` for legacy v1 agents.
+
 ## 1.0.0-beta.17 (2026-09-24)
 
 ### Features Added

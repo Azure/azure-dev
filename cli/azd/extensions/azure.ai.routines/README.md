@@ -125,6 +125,38 @@ subscription's user-access tenant rather than its resource tenant. The flag
 applies to remote routine commands; local commands such as `add` and `context`
 reject it.
 
+## Author a routine manifest
+
+Extension-owned routine properties use camelCase in `azure.yaml` and in YAML or
+JSON files loaded through `$ref` or `--file`. During deployment, the extension
+translates them to the Foundry API's snake_case fields.
+
+```yaml
+description: Summarize repository activity every weekday.
+enabled: true
+triggers:
+  default:
+    type: schedule
+    cronExpression: "0 9 * * 1-5"
+    timeZone: America/Los_Angeles
+action:
+  type: invoke_agent_responses_api
+  agentName: summarizer
+  conversation: existing-conversation
+  input:
+    topic: ${SUMMARY_TOPIC}
+```
+
+GitHub issue triggers use `connectionId` and `issueEvent`; custom triggers use
+`eventName`. Actions can use `agentEndpointId` instead of `agentName`, and
+invocations-API actions can continue a session with `sessionId`.
+
+The contents of `triggers.<name>.parameters` and `action.input` are
+service/provider-owned payloads. Their property names are passed through
+unchanged, including snake_case properties required by those external
+contracts. Trigger and action `type` values such as `github_issue` and
+`invoke_agent_responses_api` also remain unchanged.
+
 ## Timeout configuration
 
 Routine read API calls default to a 30-second HTTP request timeout.

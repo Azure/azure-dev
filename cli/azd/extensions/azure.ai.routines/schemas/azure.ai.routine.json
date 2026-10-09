@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json",
   "title": "Azure AI Foundry routine service",
-  "description": "Service-level configuration for a host: azure.ai.routine entry. The service key is the routine name. A routine is a scheduled or event-driven invocation of an agent declared as an azure.ai.agent service; the routine service must uses: the agent it invokes. The keys bind directly to the Foundry routine API model, so the schema is intentionally permissive while that API stabilizes.",
+  "description": "Service-level configuration for a host: azure.ai.routine entry. The service key is the routine name. A routine is a scheduled or event-driven invocation of an agent declared as an azure.ai.agent service; the routine service must use the agent it invokes. Extension-owned authoring keys use camelCase and are translated to the Foundry API wire contract during deployment.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -33,15 +33,36 @@
     },
     "triggers": {
       "type": "object",
-      "description": "Triggers keyed by a user-defined identifier (commonly 'default'). Each trigger selects a variant via its type (e.g. timer, recurring, github_issue, custom).",
+      "description": "Triggers keyed by a user-defined identifier (commonly 'default'). Each trigger selects a variant via its type (schedule, timer, github_issue, or custom).",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true,
         "required": ["type"],
         "properties": {
           "type": { "type": "string", "description": "Trigger variant." },
-          "cron_expression": { "type": "string", "description": "Cron expression for a recurring trigger." },
-          "at": { "type": "string", "description": "Fire time for a one-shot timer trigger." }
+          "cronExpression": { "type": "string", "description": "Cron expression for a schedule trigger." },
+          "timeZone": { "type": "string", "description": "Time zone for a schedule trigger." },
+          "at": { "type": "string", "description": "Fire time for a one-shot timer trigger." },
+          "connectionId": { "type": "string", "description": "Foundry connection name or ID for a GitHub issue trigger." },
+          "owner": { "type": "string", "description": "GitHub repository owner for a GitHub issue trigger." },
+          "repository": { "type": "string", "description": "GitHub repository name for a GitHub issue trigger." },
+          "issueEvent": { "type": "string", "enum": ["opened", "closed"], "description": "GitHub issue event." },
+          "provider": { "type": "string", "description": "Provider name for a custom trigger." },
+          "eventName": { "type": "string", "description": "Event name for a custom trigger." },
+          "parameters": {
+            "type": "object",
+            "description": "Provider-owned custom trigger parameters. Property names are passed through unchanged.",
+            "additionalProperties": true
+          }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["cron_expression"] },
+            { "required": ["time_zone"] },
+            { "required": ["connection_id"] },
+            { "required": ["issue_event"] },
+            { "required": ["event_name"] }
+          ]
         }
       }
     },
@@ -52,8 +73,18 @@
       "required": ["type"],
       "properties": {
         "type": { "type": "string", "description": "Action variant (e.g. invoke_agent_responses_api, invoke_agent_invocations_api)." },
-        "agent_name": { "type": "string", "description": "Name of the azure.ai.agent service the routine invokes." },
+        "agentName": { "type": "string", "description": "Name of the azure.ai.agent service the routine invokes." },
+        "agentEndpointId": { "type": "string", "description": "Existing Foundry agent endpoint ID the routine invokes." },
+        "conversation": { "type": "string", "description": "Existing responses-API conversation to continue." },
+        "sessionId": { "type": "string", "description": "Existing invocations-API session to continue." },
         "input": { "description": "Static JSON input sent to the agent when the routine fires. Values may use ${VAR} declared in the service-level env object or ${{...}} for Foundry server-side resolution." }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["agent_name"] },
+          { "required": ["agent_endpoint_id"] },
+          { "required": ["session_id"] }
+        ]
       }
     }
   }

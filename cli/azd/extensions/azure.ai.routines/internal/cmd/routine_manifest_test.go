@@ -6,6 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,7 +62,7 @@ triggers:
     at: "2026-01-01T00:00:00Z"
 action:
   type: invoke_agent_responses_api
-  agent_name: yaml-agent-name
+  agentName: yaml-agent-name
 `
 	path := filepath.Join(t.TempDir(), "routine.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(yaml), 0600))
@@ -101,7 +102,7 @@ func TestReadRoutineManifest_InvalidAuthorizationIdentity(t *testing.T) {
 			t.Parallel()
 
 			path := filepath.Join(t.TempDir(), test.file)
-			require.NoError(t, os.WriteFile(path, []byte(test.content), 0600))
+			require.NoError(t, os.WriteFile(path, []byte(test.content), 0o600))
 
 			_, err := readRoutineManifest(path)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -109,6 +110,50 @@ func TestReadRoutineManifest_InvalidAuthorizationIdentity(t *testing.T) {
 			assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
 			assert.Contains(t, localErr.Message, "authorization.identity")
 			assert.Contains(t, localErr.Suggestion, "agent or creator")
+		})
+	}
+}
+
+func TestReadRoutineManifest_RejectsSnakeCaseJSONAndYAML(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		extension string
+		contents  string
+		wantKey   string
+		wantNew   string
+	}{
+		{
+			name: "json", extension: ".json",
+			contents: `{"action":{"type":"invoke_agent_responses_api","agent_name":"agent"}}`,
+			wantKey:  "agent_name", wantNew: "agentName",
+		},
+		{
+			name: "yaml", extension: ".yaml",
+			contents: "triggers:\n  default:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n",
+			wantKey:  "cron_expression", wantNew: "cronExpression",
+		},
+		{
+			name: "yaml numeric trigger", extension: ".yaml",
+			contents: "triggers:\n  1:\n    type: schedule\n    cron_expression: \"0 9 * * *\"\n",
+			wantKey:  "cron_expression", wantNew: "cronExpression",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "routine"+test.extension)
+			require.NoError(t, os.WriteFile(path, []byte(test.contents), 0o600))
+
+			_, err := readRoutineManifest(path)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+			assert.Contains(t, localErr.Message, test.wantKey)
+			assert.Contains(t, localErr.Message, test.wantNew)
 		})
 	}
 }
@@ -321,6 +366,44 @@ func TestRoutineAuthorizationForUpsert(t *testing.T) {
 			}
 			require.NotNil(t, got)
 			assert.Equal(t, test.wantIdentity, got.Identity)
+		})
+	}
+}
+
+func TestRoutineAuthorizationForUpsertSuggestionOmitsRoutineName(t *testing.T) {
+	t.Parallel()
+
+	names := []string{
+		"routine$()",
+		"routine`backtick`",
+		`routine"quoted`,
+		"routine'quoted",
+		"routine with spaces",
+		"routine%VAR%",
+	}
+	var expectedSuggestion string
+	for i, name := range names {
+		t.Run(fmt.Sprintf("hostile-name-%d", i), func(t *testing.T) {
+			_, err := routineAuthorizationForUpsert(
+				name,
+				&routines.Routine{},
+				&routines.RoutineAuthorization{
+					Identity: routines.RoutineDispatchIdentityCreator,
+				},
+			)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+			require.Contains(t, localErr.Message, fmt.Sprintf("%q", name))
+			require.Contains(t, localErr.Suggestion, "azd ai routine delete")
+			require.Contains(t, localErr.Suggestion, "this routine's name")
+			require.NotContains(t, localErr.Suggestion, name)
+
+			if i == 0 {
+				expectedSuggestion = localErr.Suggestion
+				return
+			}
+			assert.Equal(t, expectedSuggestion, localErr.Suggestion)
 		})
 	}
 }

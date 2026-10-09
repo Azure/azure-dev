@@ -161,11 +161,11 @@ func (c *Client) GetRoutine(ctx context.Context, name string) (*Routine, error) 
 		return nil, runtime.NewResponseError(resp)
 	}
 
-	var routine Routine
-	if err := decodeJSON(resp.Body, &routine); err != nil {
+	var wire routineAPI
+	if err := decodeJSON(resp.Body, &wire); err != nil {
 		return nil, err
 	}
-	return &routine, nil
+	return routineFromAPI(&wire), nil
 }
 
 // ListRoutines retrieves all routines, draining all pages.
@@ -174,12 +174,14 @@ func (c *Client) ListRoutines(ctx context.Context) ([]Routine, error) {
 	nextURL := c.routinesURL()
 
 	for nextURL != "" {
-		var page PagedRoutine
+		var page pagedRoutineAPI
 		if err := c.getPage(ctx, nextURL, &page); err != nil {
 			return nil, err
 		}
 
-		all = append(all, page.Value...)
+		for i := range page.Value {
+			all = append(all, *routineFromAPI(&page.Value[i]))
+		}
 		if page.ContinuationToken == "" {
 			break
 		}
@@ -216,7 +218,7 @@ func (c *Client) PutRoutine(ctx context.Context, name string, body *Routine) (*R
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := setJSONBody(req, body); err != nil {
+	if err := setJSONBody(req, routineToAPI(body)); err != nil {
 		return nil, err
 	}
 
@@ -230,11 +232,11 @@ func (c *Client) PutRoutine(ctx context.Context, name string, body *Routine) (*R
 		return nil, runtime.NewResponseError(resp)
 	}
 
-	var result Routine
-	if err := decodeJSON(resp.Body, &result); err != nil {
+	var wire routineAPI
+	if err := decodeJSON(resp.Body, &wire); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return routineFromAPI(&wire), nil
 }
 
 // DeleteRoutine deletes a routine by name.
@@ -285,11 +287,11 @@ func (c *Client) postRoutineAction(ctx context.Context, name, action string) (*R
 		return nil, runtime.NewResponseError(resp)
 	}
 
-	var result Routine
-	if err := decodeJSON(resp.Body, &result); err != nil {
+	var wire routineAPI
+	if err := decodeJSON(resp.Body, &wire); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return routineFromAPI(&wire), nil
 }
 
 // DispatchRoutineAsync calls the routine async-dispatch route.

@@ -26,6 +26,8 @@ func TestListDatasetContentReadsABlobURIWithoutListing(t *testing.T) {
 	content, err := client.ListDatasetContent(context.Background(), "ds", "1.0", testAPIVersion)
 	require.NoError(t, err)
 	assert.True(t, content.SingleFile)
+	assert.Equal(t, []string{"rows.jsonl"}, content.Files)
+	assert.Equal(t, ".jsonl", content.Extension())
 	assert.Nil(t, server.gotListQuery, "a blob URI needs no container listing")
 
 	body, err := client.Open(context.Background(), content, content.Files[0])

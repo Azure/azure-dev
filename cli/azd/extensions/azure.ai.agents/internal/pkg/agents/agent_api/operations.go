@@ -24,6 +24,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 )
 
@@ -74,6 +75,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(useragent.Default()),
 		},
+	}
+	if recordproxy.Transport != nil {
+		clientOptions.Transport = &http.Client{Transport: recordproxy.Transport}
 	}
 
 	pipeline := runtime.NewPipeline(
@@ -831,6 +835,14 @@ func (c *AgentClient) GetAgentVersion(
 		feature = DigitalWorkerPreviewFeature
 	}
 	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, feature)
+}
+
+// GetPromptAgentVersion retrieves a managed prompt agent version with the
+// GitHub Copilot preview contract enabled so harness metadata is included.
+func (c *AgentClient) GetPromptAgentVersion(
+	ctx context.Context, agentName, agentVersion, apiVersion string,
+) (*AgentVersionObject, error) {
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, GitHubCopilotPreviewFeature)
 }
 
 // GetVoiceAgentVersion retrieves a voice version with the Voice Agents API contract.

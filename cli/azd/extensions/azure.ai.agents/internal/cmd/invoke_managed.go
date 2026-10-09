@@ -91,7 +91,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
 			"agent name could not be resolved",
-			"set 'name' in agent.yaml or pass the agent name as the first argument",
+			"set 'name' on the agent service in azure.yaml or pass the agent name as the first argument",
 		)
 	}
 

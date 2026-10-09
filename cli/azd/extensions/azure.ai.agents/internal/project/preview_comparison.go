@@ -19,6 +19,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/containerref"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -28,6 +29,8 @@ type previewChange struct {
 	Group     string `json:"group"`
 	Path      string `json:"path"`
 	Operation string `json:"operation"`
+	Before    any    `json:"before,omitempty"`
+	After     any    `json:"after,omitempty"`
 }
 
 type agentPreviewResult struct {
@@ -89,7 +92,7 @@ func comparePreviewRequest(
 		Status: "noChange", Changes: []previewChange{}, Unknown: []string{},
 		Notes: []string{
 			"Read-only comparison of the latest agent version; infrastructure and dependencies are not previewed.",
-			"Change values are omitted to protect environment values and credentials.",
+			"Sensitive values are redacted; known configuration values are shown.",
 			"Deploy creates a new agent version even when configuration has no changes.",
 		},
 	}
@@ -114,9 +117,16 @@ func comparePreviewRequest(
 		} else if !newExists {
 			operation = "remove"
 		}
-		result.Changes = append(result.Changes, previewChange{
+		change := previewChange{
 			Group: previewFieldGroup(path), Path: clean(path), Operation: operation,
-		})
+		}
+		if oldExists {
+			change.Before = previewDisplayValue(path, oldValue, clean)
+		}
+		if newExists {
+			change.After = previewDisplayValue(path, newValue, clean)
+		}
+		result.Changes = append(result.Changes, change)
 	}
 	for _, path := range unknown {
 		result.Unknown = append(result.Unknown, clean(path))
@@ -175,8 +185,10 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 	definition.ProtocolVersions = slices.Compact(definition.ProtocolVersions)
 	definition.Image = ""
 	var secrets []string
-	for _, value := range definition.EnvironmentVariables {
-		secrets = append(secrets, value)
+	for name, value := range definition.EnvironmentVariables {
+		if name != "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+			secrets = append(secrets, value)
+		}
 	}
 	clone := *request
 	clone.Definition = definition
@@ -201,6 +213,126 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 	result := map[string]any{}
 	flattenPreviewState("", object, result)
 	return result, secrets, nil
+}
+
+const previewRedactedValue = "[redacted]"
+
+var (
+	previewIdentifier = regexp.MustCompile(`^[A-Za-z0-9_.:/\\-]+$`)
+	previewQuantity   = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?(?:(?:K|M|G|T)i?)?$`)
+	previewRuntime    = regexp.MustCompile(`^(?:python|dotnet)_[0-9]+(?:_[0-9]+)?$`)
+	previewVersion    = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*$`)
+)
+
+// previewDisplayValue is deny-by-default: new API fields must opt in before their
+// values can reach either terminal or JSON output. Free-form text stays redacted.
+func previewDisplayValue(path string, value any, clean func(string) string) any {
+	switch path {
+	case "definition.cpu", "definition.memory":
+		if text, ok := value.(string); ok && previewQuantity.MatchString(text) {
+			return text
+		}
+	case "metadata.enableVnextExperience":
+		if value == "true" || value == "false" {
+			return value
+		}
+	case "definition.code_configuration.runtime":
+		if text, ok := value.(string); ok && previewRuntime.MatchString(text) {
+			return text
+		}
+	case "definition.protocol_versions.version":
+		if text, ok := value.(string); ok && previewVersion.MatchString(text) {
+			return text
+		}
+	case "definition.kind":
+		if value == "hosted" {
+			return value
+		}
+	case "digital_worker_type":
+		if value == "m365" {
+			return value
+		}
+	case "definition.code_configuration.dependency_resolution":
+		if value == "remote_build" || value == "bundled" {
+			return value
+		}
+	case "definition.protocol_versions.protocol", "agent_endpoint.protocols":
+		if text, ok := value.(string); ok && slices.Contains([]string{
+			"responses", "invocations", "invocations_ws", "activity", "activity_protocol", "a2a", "mcp",
+		}, text) {
+			return text
+		}
+	case "agent_endpoint.authorization_schemes.type":
+		if text, ok := value.(string); ok && slices.Contains([]string{
+			"Entra", "BotService", "BotServiceRbac", "BotServiceTenant",
+		}, text) {
+			return text
+		}
+	case "agent_endpoint.authorization_schemes.isolation_key_source.kind":
+		if value == "Entra" || value == "Header" {
+			return value
+		}
+	case "agent_endpoint.version_selector.version_selection_rules.type":
+		if value == "FixedRatio" {
+			return value
+		}
+	case "name", "definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME",
+		"definition.container_configuration.registry_connection_id", "definition.rai_config.rai_policy_name",
+		"agent_endpoint.version_selector.version_selection_rules.agent_version", "agent_card.version":
+		if text, ok := value.(string); ok && (text == "" || previewIdentifier.MatchString(text)) {
+			return clean(text)
+		}
+	case previewImagePath:
+		if text, ok := value.(string); ok {
+			text = clean(text)
+			if containerref.IsValid(text) || strings.Contains(text, "://") {
+				return text
+			}
+		}
+	case "definition.session_configuration.idle_timeout_seconds",
+		"agent_endpoint.version_selector.version_selection_rules.traffic_percentage":
+		if number, ok := value.(float64); ok {
+			return number
+		}
+	case "agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint":
+		if flag, ok := value.(bool); ok {
+			return flag
+		}
+	case "definition.code_configuration.entry_point":
+		// The normal request contains an interpreter and a file, not shell text.
+		// Remote commands may carry inline credentials or arguments; hide those.
+		if items, ok := value.([]any); ok && len(items) == 2 {
+			command, commandOK := items[0].(string)
+			file, fileOK := items[1].(string)
+			if commandOK && fileOK && (command == "python" || command == "dotnet") &&
+				previewIdentifier.MatchString(file) && (strings.HasSuffix(file, ".py") || strings.HasSuffix(file, ".dll")) {
+				return []any{command, clean(file)}
+			}
+		}
+	}
+	switch path {
+	case "definition.protocol_versions", "agent_endpoint.protocols", "agent_endpoint.authorization_schemes",
+		"agent_endpoint.version_selector.version_selection_rules":
+		if items, ok := value.([]any); ok {
+			result := make([]any, len(items))
+			for i, item := range items {
+				result[i] = previewDisplayValue(path, item, clean)
+			}
+			return result
+		}
+		if object, ok := value.(map[string]any); ok {
+			result := make(map[string]any, len(object))
+			for key, item := range object {
+				result[key] = previewDisplayValue(path+"."+key, item, clean)
+			}
+			return result
+		}
+	case "agent_endpoint.authorization_schemes.isolation_key_source":
+		if object, ok := value.(map[string]any); ok {
+			return map[string]any{"kind": previewDisplayValue(path+".kind", object["kind"], clean)}
+		}
+	}
+	return previewRedactedValue
 }
 
 func previewFieldGroup(path string) string {
@@ -311,7 +443,23 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 				fmt.Fprintf(&message, "  %s:\n", group.label)
 				shown = true
 			}
-			fmt.Fprintf(&message, "    %s: %s\n", change.Operation, change.Path)
+			before, err := json.Marshal(change.Before)
+			if err != nil {
+				return fmt.Errorf("cannot encode deployment preview before value")
+			}
+			after, err := json.Marshal(change.After)
+			if err != nil {
+				return fmt.Errorf("cannot encode deployment preview after value")
+			}
+			fmt.Fprintf(&message, "    %s: %s: ", change.Operation, change.Path)
+			switch change.Operation {
+			case "add":
+				fmt.Fprintf(&message, "%s\n", after)
+			case "remove":
+				fmt.Fprintf(&message, "%s -> (removed)\n", before)
+			default:
+				fmt.Fprintf(&message, "%s -> %s\n", before, after)
+			}
 		}
 	}
 	for _, unknown := range result.Unknown {

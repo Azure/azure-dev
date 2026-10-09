@@ -85,6 +85,9 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 			Image: "registry.example.com/agent:v1", Docker: &azdext.DockerProjectOptions{ImagePassthrough: true},
 		}
 	}
+	services["create"].Environment = map[string]string{
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1", "API_KEY": "private-create-secret",
+	}
 	services["update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
 		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
 	})
@@ -142,6 +145,32 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, tc.status, result.Data["status"])
 		require.NotEmpty(t, result.Message)
+		require.NotContains(t, result.Message, "private-create-secret")
+		if tc.name == "create" || tc.name == "update" {
+			changes, ok := result.Data["changes"].([]any)
+			require.True(t, ok)
+			cpuFound := false
+			for _, item := range changes {
+				change, ok := item.(map[string]any)
+				require.True(t, ok)
+				if change["path"] == "definition.cpu" {
+					cpuFound = true
+					if tc.name == "create" {
+						require.NotContains(t, change, "before")
+						require.Equal(t, "0.5", change["after"])
+						require.Contains(t, result.Message, `add: definition.cpu: "0.5"`)
+					} else {
+						require.Equal(t, "0.5", change["before"])
+						require.Equal(t, "2", change["after"])
+						require.Contains(t, result.Message, `update: definition.cpu: "0.5" -> "2"`)
+					}
+				}
+				if change["path"] == "definition.environment_variables.API_KEY" {
+					require.Equal(t, "[redacted]", change["after"])
+				}
+			}
+			require.True(t, cpuFound, "host forwarding must preserve configuration values")
+		}
 	}
 	_, err = preview(ctx, services["legacy"])
 	require.ErrorContains(t, err, "unsupported for legacy")

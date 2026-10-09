@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -275,7 +276,7 @@ func TestPreviewGroupedChangesAndNonDisclosure(t *testing.T) {
 	remote := remotePreviewAgent(request)
 	hosted := request.Definition.(agent_api.HostedAgentDefinition)
 	hosted.EnvironmentVariables = map[string]string{
-		"API_KEY": "private-local-secret", "AZURE_AI_MODEL_DEPLOYMENT_NAME": "private-model",
+		"API_KEY": "private-local-secret", "AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1",
 	}
 	hosted.CPU = "2"
 	hosted.Memory = "4Gi"
@@ -285,7 +286,9 @@ func TestPreviewGroupedChangesAndNonDisclosure(t *testing.T) {
 	request.Description = new("https://private-user:private-password@host/path?sig=private-signature#private-fragment")
 	request.Metadata = map[string]string{"owner": "private-local-secret"}
 	oldHosted := remote.Versions.Latest.Definition.(agent_api.HostedAgentDefinition)
-	oldHosted.EnvironmentVariables = map[string]string{"REMOVED_SECRET": "private-remote-secret"}
+	oldHosted.EnvironmentVariables = map[string]string{
+		"REMOVED_SECRET": "private-remote-secret", "AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4o",
+	}
 	remote.Versions.Latest.Definition = oldHosted
 	result, err := comparePreviewRequest("agent", request, remote, nil)
 	require.NoError(t, err)
@@ -303,8 +306,170 @@ func TestPreviewGroupedChangesAndNonDisclosure(t *testing.T) {
 	require.NotEmpty(t, parsed.Changes)
 	require.NotContains(t, result.Message, "private-")
 	require.NotContains(t, string(encoded), "private-")
-	require.NotContains(t, string(encoded), "before")
-	require.NotContains(t, string(encoded), "after")
+	require.Contains(t, result.Message, `update: definition.cpu: "0.5" -> "2"`)
+	require.Contains(t, result.Message, `add: definition.environment_variables.API_KEY: "[redacted]"`)
+	require.Contains(t, result.Message,
+		`remove: definition.environment_variables.REMOVED_SECRET: "[redacted]" -> (removed)`)
+	require.Contains(t, result.Message,
+		`update: definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME: "gpt-4o" -> "gpt-4.1"`)
+	for _, change := range parsed.Changes {
+		switch change.Path {
+		case "definition.cpu":
+			require.Equal(t, "0.5", change.Before)
+			require.Equal(t, "2", change.After)
+		case "definition.environment_variables.API_KEY", "metadata.owner", "description":
+			require.Equal(t, previewRedactedValue, change.After)
+		case "definition.environment_variables.REMOVED_SECRET":
+			require.Equal(t, previewRedactedValue, change.Before)
+			require.Nil(t, change.After)
+		}
+	}
+}
+
+func TestPreviewCreateIncludesSafeValues(t *testing.T) {
+	service := previewService(t)
+	service.AdditionalProperties.Fields["codeConfiguration"], _ = structpb.NewValue(map[string]any{
+		"runtime": "python_3_13", "entryPoint": "app.py",
+	})
+	service.Environment = map[string]string{
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1", "API_KEY": "private-secret",
+		"NUMBER": "0.5", "FLAG": "true",
+	}
+	_, definition, err := resolvePreviewDefinition(service, t.TempDir())
+	require.NoError(t, err)
+	request, unknown, err := preparePreviewRequest(service, definition, nil, nil)
+	require.NoError(t, err)
+	request.Description = new("private-description")
+	request.Metadata["arbitrary"] = "private-metadata"
+	request.AgentEndpoint = &agent_api.AgentEndpoint{
+		ProtocolConfiguration: &agent_api.ProtocolConfiguration{
+			Activity: &agent_api.ActivityProtocolConfiguration{EnableM365PublicEndpoint: new(false)},
+		},
+		VersionSelector: &agent_api.VersionSelector{VersionSelectionRules: []agent_api.VersionSelectionRule{
+			{Type: agent_api.VersionSelectorTypeFixedRatio, AgentVersion: "1", TrafficPercentage: new(int32(0))},
+		}},
+	}
+	result, err := comparePreviewRequest(service.Name, request, nil, unknown)
+	require.NoError(t, err)
+	require.Equal(t, "create", result.Data.AsMap()["status"])
+	for _, line := range []string{
+		`add: definition.kind: "hosted"`,
+		`add: name: "example-agent"`,
+		`add: metadata.enableVnextExperience: "true"`,
+		`add: definition.cpu: "0.5"`,
+		`add: definition.memory: "1Gi"`,
+		`add: definition.protocol_versions: [{"protocol":"responses","version":"2.0.0"}]`,
+		`add: definition.code_configuration.runtime: "python_3_13"`,
+		`add: definition.code_configuration.entry_point: ["python","app.py"]`,
+		`add: definition.code_configuration.dependency_resolution: "remote_build"`,
+		`add: definition.session_configuration.idle_timeout_seconds: 900`,
+		`add: definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME: "gpt-4.1"`,
+		`add: definition.environment_variables.API_KEY: "[redacted]"`,
+		`add: definition.environment_variables.NUMBER: "[redacted]"`,
+		`add: description: "[redacted]"`,
+		`add: metadata.arbitrary: "[redacted]"`,
+		`add: agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint: false`,
+		`add: agent_endpoint.version_selector.version_selection_rules: ` +
+			`[{"agent_version":"1","traffic_percentage":0,"type":"FixedRatio"}]`,
+		`unknown: codeArtifact`,
+	} {
+		require.Contains(t, result.Message, line)
+	}
+	require.NotContains(t, result.Message, "private-")
+	require.NotContains(t, result.Message, "preview.invalid")
+	data := result.Data.AsMap()
+	changes, ok := data["changes"].([]any)
+	require.True(t, ok)
+	for _, item := range changes {
+		change, ok := item.(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "add", change["operation"])
+		require.NotContains(t, change, "before")
+		require.Contains(t, change, "after")
+		encoded, err := json.Marshal(change["after"])
+		require.NoError(t, err)
+		require.Contains(t, result.Message, fmt.Sprintf("add: %s: %s", change["path"], encoded))
+	}
+	encoded, err := json.Marshal(data)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "private-")
+	require.NotContains(t, string(encoded), "preview.invalid")
+}
+
+func TestPreviewValueRedactionPolicy(t *testing.T) {
+	clean := func(value string) string { return redactPreviewURLs(value) }
+	imageDigest := "registry.example.com/agent@sha256:" + strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		path  string
+		value any
+		want  any
+	}{
+		{path: previewImagePath, value: imageDigest, want: imageDigest},
+		//nolint:gosec // Fake credential-bearing URL verifies non-disclosure.
+		{path: previewImagePath, value: "https://user:private-password@host/image?sig=private-sas#private-fragment",
+			want: "https://host/image"},
+		{path: "definition.environment_variables.PASSWORD", value: "private-password", want: previewRedactedValue},
+		{path: "definition.environment_variables.CONFIG", value: `{"password":"private-json"}`, want: previewRedactedValue},
+		{path: "metadata.token", value: "private-metadata", want: previewRedactedValue},
+		{path: "agent_card.skills", value: []any{"private-card-content"}, want: previewRedactedValue},
+		{path: "definition.code_configuration.runtime", value: "private-runtime", want: previewRedactedValue},
+		{path: "definition.code_configuration.entry_point",
+			value: []any{"python", "-c", "private-code"}, want: previewRedactedValue},
+		{path: "definition.code_configuration.entry_point",
+			value: []any{"python", "app.py --token=private-token"}, want: previewRedactedValue},
+		{path: "definition.protocol_versions", value: []any{
+			map[string]any{"protocol": "responses", "version": "private-version"},
+		}, want: []any{map[string]any{"protocol": "responses", "version": previewRedactedValue}}},
+		{path: "agent_endpoint.authorization_schemes", value: []any{
+			map[string]any{"type": "Entra", "isolation_key_source": map[string]any{"kind": "Header"}},
+		}, want: []any{map[string]any{"type": "Entra", "isolation_key_source": map[string]any{"kind": "Header"}}}},
+		{path: "agent_endpoint.protocol_configuration.activity.enable_m365_public_endpoint", value: false, want: false},
+		{path: "agent_endpoint.version_selector.version_selection_rules.traffic_percentage", value: float64(0),
+			want: float64(0)},
+		{path: "definition.future_api_field", value: "private-future-value", want: previewRedactedValue},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			actual := previewDisplayValue(tc.path, tc.value, clean)
+			require.Equal(t, tc.want, actual)
+			data, err := json.Marshal(actual)
+			require.NoError(t, err)
+			require.NotContains(t, string(data), "private-")
+		})
+	}
+}
+
+func TestPreviewSafeRemovalAndEmptyValue(t *testing.T) {
+	request := previewRequest(t)
+	remote := remotePreviewAgent(request)
+	hosted := remote.Versions.Latest.Definition.(agent_api.HostedAgentDefinition)
+	container := *hosted.ContainerConfiguration
+	container.RegistryConnectionID = "registry-connection"
+	hosted.ContainerConfiguration = &container
+	hosted.EnvironmentVariables = map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1"}
+	remote.Versions.Latest.Definition = hosted
+	desired := request.Definition.(agent_api.HostedAgentDefinition)
+	desired.EnvironmentVariables = map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": ""}
+	request.Definition = desired
+	result, err := comparePreviewRequest("agent", request, remote, nil)
+	require.NoError(t, err)
+	require.Contains(t, result.Message,
+		`remove: definition.container_configuration.registry_connection_id: "registry-connection" -> (removed)`)
+	require.Contains(t, result.Message,
+		`update: definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME: "gpt-4.1" -> ""`)
+	changes, ok := result.Data.AsMap()["changes"].([]any)
+	require.True(t, ok)
+	require.Len(t, changes, 2)
+	for _, item := range changes {
+		change, ok := item.(map[string]any)
+		require.True(t, ok)
+		if change["operation"] == "remove" {
+			require.Equal(t, "registry-connection", change["before"])
+			require.NotContains(t, change, "after")
+		} else {
+			require.Contains(t, change, "after")
+			require.Equal(t, "", change["after"])
+		}
+	}
 }
 
 func TestPreviewNormalizationAndPatchPreservation(t *testing.T) {
@@ -497,6 +662,20 @@ func TestPreviewURLRedactionAndWriter(t *testing.T) {
 	require.NotContains(t, result.Message, "private-")
 	encoded, err := json.Marshal(result.Data.AsMap())
 	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "private-")
+	remote := remotePreviewAgent(request)
+	hosted := remote.Versions.Latest.Definition.(agent_api.HostedAgentDefinition)
+	container := *hosted.ContainerConfiguration
+	container.Image = raw
+	hosted.ContainerConfiguration = &container
+	remote.Versions.Latest.Definition = hosted
+	result, err = comparePreviewRequest("agent", request, remote, nil)
+	require.NoError(t, err)
+	require.Contains(t, result.Message,
+		`update: definition.container_configuration.image: "https://host/path" -> "registry.example.com/agent:v1"`)
+	encoded, err = json.Marshal(result.Data.AsMap())
+	require.NoError(t, err)
+	require.NotContains(t, result.Message, "private-")
 	require.NotContains(t, string(encoded), "private-")
 	request.Metadata["escape\x1b[31m\u009b"] = "not emitted"
 	result, err = comparePreviewRequest("agent", request, nil, nil)

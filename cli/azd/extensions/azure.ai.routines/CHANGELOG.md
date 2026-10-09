@@ -2,6 +2,12 @@
 
 <!-- cspell:ignore Yimin -->
 
+## 1.0.0-beta.9 (2026-10-08)
+
+### Breaking Changes
+
+- [[#10350]](https://github.com/Azure/azure-dev/pull/10350) Standardize authored Routine properties on camelCase to maintain consistency across properties and extensions, and reject the former snake_case spellings with replacement guidance.
+
 ## 1.0.0-beta.8 (2026-09-30)
 
 ### Bugs Fixed

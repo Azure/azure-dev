@@ -194,6 +194,18 @@ overrides:
   - filename: cmd/mcp.go
     words:
       - internalcmd
+  - filename: cmd/{build,container}{,_test}.go
+    words:
+      - commandresult
+  - filename: cmd/middleware/ux{,_test}.go
+    words:
+      - commandresult
+  - filename: internal/commandresult/*.go
+    words:
+      - commandresult
+  - filename: internal/grpcserver/{beta_event_service,beta_event_service_test,event_service_test}.go
+    words:
+      - commandresult
   - filename: cmd/extension.go
     words:
       - compatResult

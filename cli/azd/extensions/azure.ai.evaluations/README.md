@@ -85,16 +85,28 @@ evaluators:
 evals:
   - name: support-quality
     dataset: support-golden
-    evaluation_level: turn
+    evaluationLevel: turn
     evaluators:
       - evaluator: builtin.task_adherence
-        initialization_parameters:
+        initializationParameters:
           model: gpt-4.1-nano
       - evaluator: support-quality
     target:
       type: agent
       name: support-agent
 ```
+
+Keys in the configuration are camelCase, like the rest of `azure.yaml`:
+`evaluationLevel`, `maxSamples`, `initializationParameters`, `dataMapping`, the
+`source` keys (`lookbackHours`, `maxTraces`, `agentName`, `agentVersion`,
+`responseIds`, `maxTurns`, `startTime`, `endTime`), the `simulation` keys
+(`numConversations`, `maxTurns`) and an evaluator's catalog metadata
+(`displayName`, `supportedEvaluationLevels`). That is the only spelling read: a
+snake_case key such as `evaluation_level` is reported as an unknown key, with
+the camelCase key suggested. Only the configuration's own keys are camelCase.
+What a key holds (an evaluator's `initializationParameters`, a `dataMapping`'s
+inputs, a rubric's `definition`) and the JSON the service returns, which `-o json`
+prints as the service sent it, keep the service's names.
 
 `azd up` reconciles **datasets → evaluators → eval groups**, in that order,
 because a group references the versions the first two resolve to.
@@ -106,6 +118,13 @@ The same holds for a `$ref` on a single catalog entry: `file:` and `source:` are
 registered as this extension's path keys, so a relative `source:` written inside
 `evals/evaluators/quality.yaml` means `evals/evaluators/quality.json` — beside
 the file it was written in, wherever that file is pulled in from.
+
+Properties beside a `$ref` override the referenced definition and use the same
+camelCase keys and value types as its inline configuration shape. For example,
+`$ref: ./quality.yaml` with `maxSamples: 5` overrides an eval's cap;
+`max_samples` is rejected by both the editor schema and the CLI. Required fields
+may come from the referenced file and are checked after resolution. Rubric
+`definition:` overlays retain the evaluator service's own vocabulary instead.
 
 A rubric kept in its own file is named by `source:`, which is what `generate`
 writes:
@@ -294,7 +313,7 @@ An explicit `version:` takes precedence over the recorded publication version;
 without either, the latest registered version is resolved from the service.
 Run metadata records that same resolved version.
 
-Registered versions cannot be sampled by this run API. A positive `max_samples:`
+Registered versions cannot be sampled by this run API. A positive `maxSamples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
 rows. Remove the cap, or publish and select a smaller dataset.
 
@@ -302,7 +321,7 @@ For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
 clears its configured cap. Trace/response sources and reruns selected by a bare
 eval ID reject every explicit `--max-samples` value, including zero, rather than
 silently ignoring it. Omit the flag to repeat a previous run's source; use
-`source.max_traces` to limit a declared trace source. Simulation declarations
+`source.maxTraces` to limit a declared trace source. Simulation declarations
 with a positive configured cap remain invalid even when the flag is zero.
 
 Genuinely unregistered local files still run inline and support a cap, but only
@@ -333,30 +352,30 @@ produces:
 evals:
   - name: retail-conversations
     dataset: retail-seeds
-    evaluation_level: conversation
+    evaluationLevel: conversation
     simulation:
       model: model-connection/gpt-4.1-nano # plays the user, not the judge or generation model
-      num_conversations: 3      # per seed row, 1–5
-      max_turns: 8              # 1–20; omit to leave it to the service
+      numConversations: 3      # per seed row, 1–5
+      maxTurns: 8              # 1–20; omit to leave it to the service
     evaluators:
       - evaluator: builtin.task_completion
-        initialization_parameters:
+        initializationParameters:
           model: gpt-4.1-nano
     target:
       type: agent
       name: support-agent
 ```
 
-`simulation:` requires `evaluation_level: conversation` and an agent target:
+`simulation:` requires `evaluationLevel: conversation` and an agent target:
 there is no turn to score before the conversation exists, and nothing to hold it
 with if the target is a model. It is also exclusive with `source:` and positive
-`max_samples:` caps; `max_samples: 0` means uncapped. The run creates its
+`maxSamples:` caps; `maxSamples: 0` means uncapped. The run creates its
 conversations rather than collecting or sampling ones that already happened.
 Every evaluator listed has to support
 conversation level; one that does not is refused at deploy rather than bound to
 a column the graded rows do not have.
 
-Omit `num_conversations` to use one conversation per seed, and omit `max_turns`
+Omit `numConversations` to use one conversation per seed, and omit `maxTurns`
 to use the service default. Explicit zero or null values for either of these
 simulation counts are rejected by both file-based and inline service configuration
 loaders.
@@ -385,8 +404,8 @@ with and must contain non-whitespace text of 1 to 2,500 Unicode characters. Per-
 inside `simulation_configuration`, matching
 the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
 The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
-the per-row maximum overrides `simulation.max_turns`, and the service default is
-20 when neither is set. When correcting a row that exceeds `simulation.max_turns`,
+the per-row maximum overrides `simulation.maxTurns`, and the service default is
+20 when neither is set. When correcting a row that exceeds `simulation.maxTurns`,
 keep that authored cap within 1 to 20; if raising it cannot satisfy the row within
 those bounds, lower the row's desired turns to fit the current cap.
 Generation can return a flat top-level `desired_num_turns`.
@@ -572,7 +591,7 @@ mapped `messages`, or mapped `query` and `response`, must resolve to columns
 present in every dataset row. Optional tool columns are not made required by
 this check, and generated sample bindings and simulation outputs are not
 mistaken for input dataset columns.
-An explicitly authored `data_mapping` is stricter than an optional default:
+An explicitly authored `dataMapping` is stricter than an optional default:
 each item column it names must exist in the known source rows, including explicit
 tool, context, and ground-truth bindings. Simulation default inference remains
 `messages`-only. An explicit `tool_definitions` binding opts into a generated field
@@ -609,14 +628,14 @@ Stored-response turn evaluations bind retrieved output through the sample
 namespace without invoking a target. A published evaluator contract that requires
 a string uses `{{sample.output_text}}`; structured or unspecified response types
 retain `{{sample.output_items}}`. Conversation mappings retain `{{item.messages}}`,
-and explicit `data_mapping` values take precedence.
+and explicit `dataMapping` values take precedence.
 
-Managed response evals with conflicting item/sample bindings or incompatible
-text/items response bindings require a compatible eval, retaining the original
-eval and its runs. Missing inferred mappings and unrelated service enrichment do not
-require replacement. An explicit `id:` with conflicting response or trace
+Managed response evals with positively identified conflicting item/sample bindings or
+incompatible text/items response bindings create a compatible eval once, retaining the
+original eval and its run history. Missing inferred mappings and unrelated service enrichment
+do not trigger recreation. An explicit `id:` with conflicting response or trace
 source contracts is refused before dependency publication; remove the `id:` and deploy the
-declaration to create a compatible eval. Each explicitly authored `data_mapping` field must match the
+declaration to create a compatible eval. Each explicitly authored `dataMapping` field must match the
 stored criterion exactly, including the column name, not just the item/sample namespace.
 Missing authored bindings or a missing/renamed stored criterion for those bindings
 are also conflicts; inferred defaults retain the narrower source-compatibility checks.
@@ -626,7 +645,7 @@ A trace target names an agent filter, not a new invocation. Managed trace evals
 with positively identified conflicting sample bindings or custom sample-schema
 settings require completed-item bindings, including when the agent filter
 is declared with `target.name`. The original eval and its runs are retained. Explicit
-`data_mapping` values still win, and compatible SDK trace scenarios ignore unrelated
+`dataMapping` values still win, and compatible SDK trace scenarios ignore unrelated
 sample-schema enrichment. Missing or unknown evidence does not require replacement;
 unrelated optional/default mapping changes require a deliberate criterion change.
 
@@ -637,7 +656,7 @@ Rerun sources with bare response-ID rows are also rejected; running the
 declaration by name builds the required `item` envelopes without invoking an
 agent or changing the selected response IDs. Stored-response runs reject
 `--max-samples` (including explicit zero) and configured row caps; select
-`source.response_ids` to control which stored responses are evaluated.
+`source.responseIds` to control which stored responses are evaluated.
 Inline reruns must map `response_id` to `{{item.<field>}}`, with a non-blank
 string ID at that field in every item. Invalid reruns identify the zero-based item
 index and reason without printing stored response IDs. Response-source IDs must not be blank.
@@ -651,7 +670,7 @@ switch or `--dataset` override of a response eval, before submitting a run.
 Bare-ID reruns retain other source/schema pairs from their previous run unless
 there is a known response/trace scenario mismatch. The schema read is required:
 an unreadable definition does not establish compatibility.
-Editor validation and create/deploy preflight reject positive `max_samples`
+Editor validation and create/deploy preflight reject positive `maxSamples`
 for source-backed declarations, including sources loaded through `$ref`.
 
 ### Recovering partial generation

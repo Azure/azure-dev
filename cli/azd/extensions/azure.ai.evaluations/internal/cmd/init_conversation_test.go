@@ -145,9 +145,9 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 				raw, err := os.ReadFile(filepath.Join(h.dir, "evals", "azure.eval.yaml"))
 				require.NoError(t, err)
 				if tc.turns == 0 {
-					assert.NotContains(t, string(raw), "max_turns:")
+					assert.NotContains(t, string(raw), "maxTurns:")
 				} else {
-					assert.Contains(t, string(raw), fmt.Sprintf("max_turns: %d", tc.turns))
+					assert.Contains(t, string(raw), fmt.Sprintf("maxTurns: %d", tc.turns))
 				}
 			} else {
 				assert.Nil(t, eval.Simulation)
@@ -458,7 +458,7 @@ func TestInitSimulationRefusesKnownIncompatibleEvaluatorBeforeWriting(t *testing
 			h := newInitHarness(t, nil)
 			path := filepath.Join(h.dir, "evals", "azure.eval.yaml")
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-			body := "evaluators:\n  - name: turn-only\n    supported_evaluation_levels: [" + level + "]\n"
+			body := "evaluators:\n  - name: turn-only\n    supportedEvaluationLevels: [" + level + "]\n"
 			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 			before := initFileSnapshot(t, h.dir)
 			text, err := executeConversationInit(t, append(simulationInitArgs("seeds"),

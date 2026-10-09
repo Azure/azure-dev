@@ -108,7 +108,7 @@ func TestMapAgentTemplateToDTO_AzureYamlType(t *testing.T) {
 	require.Equal(t, []string{"featured", "recommended"}, got.Tags)
 	require.True(t, got.Featured)
 	require.True(t, got.Recommended)
-	require.Equal(t, fmt.Sprintf("azd ai agent init -m %q", src), got.InitCommand)
+	require.Equal(t, fmt.Sprintf("azd ai agent init -t %q", src), got.InitCommand)
 }
 
 func TestMapAgentTemplateToDTO_AzdType(t *testing.T) {
@@ -377,8 +377,8 @@ func TestBuildTemplateListItems_InitCommandIsReadyToExecute(t *testing.T) {
 			"InitCommand must not contain placeholders like <url>: %q", it.InitCommand)
 		switch it.Type {
 		case TemplateTypeAzureYaml:
-			require.True(t, strings.HasPrefix(it.InitCommand, "azd ai agent init -m "),
-				"azure.yaml InitCommand must use 'azd ai agent init -m': %q", it.InitCommand)
+			require.True(t, strings.HasPrefix(it.InitCommand, "azd ai agent init -t "),
+				"azure.yaml InitCommand must use 'azd ai agent init -t': %q", it.InitCommand)
 		case TemplateTypeAzd:
 			require.True(t, strings.HasPrefix(it.InitCommand, "azd init -t "),
 				"azd-type InitCommand must use 'azd init -t': %q", it.InitCommand)
@@ -411,7 +411,7 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: `azd ai agent init -m "https://example.com/path with space/azure.yaml"`,
+			want: `azd ai agent init -t "https://example.com/path with space/azure.yaml"`,
 		},
 		{
 			name: "azure.yaml type quotes a clean URL too",
@@ -420,7 +420,7 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: `azd ai agent init -m "https://example.com/clean/azure.yaml"`,
+			want: `azd ai agent init -t "https://example.com/clean/azure.yaml"`,
 		},
 		{
 			name: "azd type quotes the repo slug",
@@ -438,7 +438,7 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: fmt.Sprintf(`azd ai agent init -m %q`, `https://x/y "evil" path/azure.yaml`),
+			want: fmt.Sprintf(`azd ai agent init -t %q`, `https://x/y "evil" path/azure.yaml`),
 		},
 	}
 

@@ -135,7 +135,7 @@ func TestInitSimulationRefusesLocalRowsBeforeAnyWrites(t *testing.T) {
 		{"boolean turns", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":true}}`,
 			"positive whole number"},
 		{"over explicit cap", `{"test_case_description":"help","simulation_configuration":{"desired_num_turns":21}}`,
-			"max_turns is 20"},
+			"maxTurns is 20"},
 		{"zero per-row maximum", `{"test_case_description":"help","simulation_configuration":{"max_num_turns":0}}`,
 			"positive whole number"},
 		{"completed messages", `{"test_case_description":"help","messages":[]}`, `carries "messages"`},
@@ -272,7 +272,7 @@ func TestInitSimulationRejectsServiceDefaultSeedOverflow(t *testing.T) {
 		[]byte(`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":21}}`), 0o600))
 	before := initFileSnapshot(t, h.dir)
 	text, err := executeConversationInit(t, append(simulationInitArgs(h.seedRows), "--output", "json")...)
-	require.ErrorContains(t, err, "effective simulation.max_turns is 20")
+	require.ErrorContains(t, err, "effective simulation.maxTurns is 20")
 	assert.Empty(t, text)
 	assert.Zero(t, h.project.wiringAttempts())
 	assert.Equal(t, before, initFileSnapshot(t, h.dir))

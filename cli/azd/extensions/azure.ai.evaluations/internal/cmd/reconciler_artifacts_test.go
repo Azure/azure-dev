@@ -110,7 +110,7 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 		},
 		{
 			"over cap", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":6}}`,
-			project.TargetTypeAgent, true, "simulation.max_turns is 5",
+			project.TargetTypeAgent, true, "simulation.maxTurns is 5",
 		},
 		{
 			"later over cap",
@@ -304,11 +304,11 @@ func TestReconciliationTurnLimitGuidanceEditsExistingConfig(t *testing.T) {
 			suggestion string
 		}{
 			{"within authored bounds", "6",
-				"Raise simulation.max_turns to at least 6, or lower " +
+				"Raise simulation.maxTurns to at least 6, or lower " +
 					"simulation_configuration.desired_num_turns on that row."},
 			{"above authored maximum", "21",
 				"Lower simulation_configuration.desired_num_turns to at most 5 on that row. " +
-					"simulation.max_turns accepts 1 to 20."},
+					"simulation.maxTurns accepts 1 to 20."},
 		} {
 			t.Run(caller+"/"+tc.name, func(t *testing.T) {
 				ec, env, service, cfg, dir := validationFixture(t)

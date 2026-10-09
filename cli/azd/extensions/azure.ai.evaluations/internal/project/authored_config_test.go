@@ -28,7 +28,7 @@ func TestAuthoredEvaluatorLevelsAreLocalMetadataOnly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			body := "evaluators:\n  - name: rubric\n    $ref: ./does-not-exist.yaml\n" +
-				"    future_setting: untouched\n    supported_evaluation_levels: " + tc.value + "\n"
+				"    future_setting: untouched\n    supportedEvaluationLevels: " + tc.value + "\n"
 			path := filepath.Join(dir, "azure.eval.yaml")
 			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 			cfg, err := ReadAuthoredConfig(dir)

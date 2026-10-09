@@ -95,7 +95,7 @@ evals:
 	assert.Equal(t, filepath.Join(flat, "evals"), baseDirUnder(flat, relativeSvc))
 }
 
-// max_samples and source: cap and window a run. Neither reaches the eval the
+// maxSamples and source: cap and window a run. Neither reaches the eval the
 // service stores, so recreating the eval for a change to either points the
 // declaration at a new id and leaves every run taken before it reachable only
 // through the old one.

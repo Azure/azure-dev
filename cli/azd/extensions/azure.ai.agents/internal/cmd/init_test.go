@@ -45,6 +45,70 @@ func TestInitCommand_AgentNameFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_TemplateFlags(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	templateFlag := cmd.Flags().Lookup("template")
+	require.NotNil(t, templateFlag)
+	require.Equal(t, "t", templateFlag.Shorthand)
+	require.False(t, templateFlag.Hidden)
+	require.Empty(t, templateFlag.Deprecated)
+
+	manifestFlag := cmd.Flags().Lookup("manifest")
+	require.NotNil(t, manifestFlag)
+	require.Equal(t, "m", manifestFlag.Shorthand)
+	require.True(t, manifestFlag.Hidden)
+	require.Equal(t, "use --template/-t instead", manifestFlag.Deprecated)
+}
+
+func TestInitCommand_TemplateFlagAliases(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		args        []string
+		wantWarning bool
+	}{
+		{name: "template long", args: []string{"--template", "azure.yaml"}},
+		{name: "template short", args: []string{"-t", "azure.yaml"}},
+		{name: "manifest long", args: []string{"--manifest", "azure.yaml"}, wantWarning: true},
+		{name: "manifest short", args: []string{"-m", "azure.yaml"}, wantWarning: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newInitCommand(nil)
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+			cmd.SetArgs(tt.args)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return nil
+			}
+
+			require.NoError(t, cmd.Execute())
+			require.Equal(t, "azure.yaml", cmd.Flags().Lookup("template").Value.String())
+			if tt.wantWarning {
+				require.Contains(t, output.String(),
+					"Flag --manifest has been deprecated, use --template/-t instead")
+			} else {
+				require.NotContains(t, output.String(), "deprecated")
+			}
+		})
+	}
+}
+
+func TestValidateTemplateFlagAliases(t *testing.T) {
+	cmd := newInitCommand(nil)
+	cmd.SetErr(io.Discard)
+	require.NoError(t, cmd.Flags().Set("template", "canonical.yaml"))
+	require.NoError(t, cmd.Flags().Set("manifest", "legacy.yaml"))
+
+	err := validateTemplateFlagAliases(cmd)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Equal(t, "cannot pass both --template and deprecated --manifest", localErr.Message)
+	require.Equal(t, "use --template/-t only", localErr.Suggestion)
+}
+
 func TestInitCommand_ForceFlag(t *testing.T) {
 	cmd := newInitCommand(nil)
 
@@ -1317,7 +1381,7 @@ func TestInitCommandPreAuthLocalValidation(t *testing.T) {
 			if filepath.Ext(source) == "" {
 				command.SetArgs([]string{"--src", source})
 			} else {
-				command.SetArgs([]string{"--manifest", source})
+				command.SetArgs([]string{"--template", source})
 			}
 
 			require.ErrorContains(t, command.Execute(), tt.wantErr)
@@ -1347,6 +1411,38 @@ func TestInitCommandRejectsInvalidDeployModeBeforeSideEffects(t *testing.T) {
 	require.Equal(t, "invalid --deploy-mode value \"invalid\"; must be 'container' or 'code'", localErr.Message)
 	require.Equal(t, "Use --deploy-mode container or --deploy-mode code", localErr.Suggestion)
 	require.Empty(t, output.String(), "validation must run before command output or prompts")
+
+	entries, readErr := os.ReadDir(root)
+	require.NoError(t, readErr)
+	require.Empty(t, entries, "validation must run before project or Git initialization")
+}
+
+func TestInitCommandRejectsTemplateAliasConflictBeforeSideEffects(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	command.SilenceErrors = true
+	command.SilenceUsage = true
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{
+		"--template", "canonical.yaml",
+		"--manifest", "legacy.yaml",
+	})
+
+	err := command.Execute()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Equal(t, "cannot pass both --template and deprecated --manifest", localErr.Message)
+	require.Contains(t, output.String(),
+		"Flag --manifest has been deprecated, use --template/-t instead")
+	require.NotContains(t, output.String(), bannerArt)
 
 	entries, readErr := os.ReadDir(root)
 	require.NoError(t, readErr)
@@ -1400,7 +1496,7 @@ func TestInitCommandValidLocalAzureYamlReachesAuthentication(t *testing.T) {
 	command := newInitCommand(&azdext.ExtensionContext{})
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
-	command.SetArgs([]string{"--manifest", manifest})
+	command.SetArgs([]string{"--template", manifest})
 
 	err = command.Execute()
 	require.ErrorContains(t, err, "not logged in")
@@ -1409,25 +1505,28 @@ func TestInitCommandValidLocalAzureYamlReachesAuthentication(t *testing.T) {
 	require.Equal(t, exterrors.CodeNotLoggedIn, localErr.Code)
 }
 
-func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
+func registerInitTemplateFlagsForTest(cmd *cobra.Command, flags *initFlags) {
+	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "", "")
+	cmd.Flags().StringVarP(&flags.templatePointer, "manifest", "m", "", "")
+}
+
+func TestApplyPositionalArg_ConflictWithTemplateFlag(t *testing.T) {
 	t.Parallel()
 
 	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
 	if err := os.WriteFile(manifestPath, []byte("name: test\n"), 0600); err != nil {
 		t.Fatalf("failed to create test manifest: %v", err)
 	}
-
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
-	// Simulate the user having set --manifest explicitly
-	if err := cmd.Flags().Set("manifest", "other.yaml"); err != nil {
+	registerInitTemplateFlagsForTest(cmd, flags)
+	if err := cmd.Flags().Set("template", "other.yaml"); err != nil {
 		t.Fatalf("failed to set flag: %v", err)
 	}
 
 	err := applyPositionalArg(manifestPath, flags, cmd)
 	if err == nil {
-		t.Fatal("expected error for conflicting positional arg and --manifest flag")
+		t.Fatal("expected error for conflicting positional arg and --template flag")
 	}
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -1442,6 +1541,26 @@ func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
 	}
 }
 
+func TestApplyPositionalArg_ConflictWithDeprecatedManifestFlag(t *testing.T) {
+	t.Parallel()
+
+	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
+	require.NoError(t, os.WriteFile(manifestPath, []byte("name: test\n"), 0o600))
+
+	flags := &initFlags{}
+	cmd := &cobra.Command{}
+	registerInitTemplateFlagsForTest(cmd, flags)
+	require.NoError(t, cmd.Flags().Set("manifest", "other.yaml"))
+
+	err := applyPositionalArg(manifestPath, flags, cmd)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Contains(t, localErr.Message, "--template")
+	require.NotContains(t, localErr.Suggestion, "--manifest")
+}
+
 func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	t.Parallel()
 
@@ -1450,7 +1569,7 @@ func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	// Simulate the user having set --src explicitly
 	if err := cmd.Flags().Set("src", "other-dir"); err != nil {
 		t.Fatalf("failed to set flag: %v", err)
@@ -1473,7 +1592,7 @@ func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	}
 }
 
-func TestApplyPositionalArg_SetsManifestPointer(t *testing.T) {
+func TestApplyPositionalArg_SetsTemplatePointer(t *testing.T) {
 	t.Parallel()
 
 	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
@@ -1483,14 +1602,14 @@ func TestApplyPositionalArg_SetsManifestPointer(t *testing.T) {
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(manifestPath, flags, cmd); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if flags.manifestPointer != manifestPath {
-		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, manifestPath)
+	if flags.templatePointer != manifestPath {
+		t.Errorf("templatePointer = %q, want %q", flags.templatePointer, manifestPath)
 	}
 }
 
@@ -1501,7 +1620,7 @@ func TestApplyPositionalArg_SetsSrcDir(t *testing.T) {
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(tmpDir, flags, cmd); err != nil {
@@ -1519,7 +1638,7 @@ func TestApplyPositionalArg_NonExistentDirSetsSrc(t *testing.T) {
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(newDir, flags, cmd); err != nil {
@@ -1530,21 +1649,21 @@ func TestApplyPositionalArg_NonExistentDirSetsSrc(t *testing.T) {
 	}
 }
 
-func TestApplyPositionalArg_NonExistentYamlSetsManifest(t *testing.T) {
+func TestApplyPositionalArg_NonExistentYamlSetsTemplate(t *testing.T) {
 	t.Parallel()
 
 	yamlPath := filepath.Join(t.TempDir(), "agent.yaml")
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(yamlPath, flags, cmd); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if flags.manifestPointer != yamlPath {
-		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, yamlPath)
+	if flags.templatePointer != yamlPath {
+		t.Errorf("templatePointer = %q, want %q", flags.templatePointer, yamlPath)
 	}
 }
 
@@ -2352,24 +2471,24 @@ func TestFolderNameFromTitle(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// absolutizeRelativeManifestPaths: ensures the -m manifest path survives
+// absolutizeRelativeTemplatePaths: ensures the template path survives
 // ensureProject chdir into the newly created project directory. flags.src
 // is intentionally NOT absolutized (see godoc on the helper for why).
 // ---------------------------------------------------------------------------
 
-func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_RelativeLocalManifest(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp)
 
 	flags := &initFlags{
-		manifestPointer: "agent.yaml",
+		templatePointer: "agent.yaml",
 		src:             "src",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if !filepath.IsAbs(flags.manifestPointer) {
-		t.Errorf("manifestPointer should be absolute, got %q", flags.manifestPointer)
+	if !filepath.IsAbs(flags.templatePointer) {
+		t.Errorf("templatePointer should be absolute, got %q", flags.templatePointer)
 	}
 	// Regression guard: --src is an output target (where the agent
 	// definition is downloaded to, relative to the project root).
@@ -2381,68 +2500,68 @@ func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
 	}
 }
 
-func TestAbsolutizeRelativeManifestPaths_AbsoluteLocalUnchanged(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_AbsoluteLocalUnchanged(t *testing.T) {
 	t.Parallel()
 	absManifest := filepath.Join(t.TempDir(), "agent.yaml")
 
 	flags := &initFlags{
-		manifestPointer: absManifest,
+		templatePointer: absManifest,
 		src:             "src",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if flags.manifestPointer != absManifest {
-		t.Errorf("absolute manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	if flags.templatePointer != absManifest {
+		t.Errorf("absolute templatePointer should be unchanged, got %q", flags.templatePointer)
 	}
 	if flags.src != "src" {
 		t.Errorf("src should be unchanged, got %q", flags.src)
 	}
 }
 
-func TestAbsolutizeRelativeManifestPaths_URLPointerUnchanged(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_URLPointerUnchanged(t *testing.T) {
 	t.Parallel()
 	const ghURL = "https://github.com/owner/repo/blob/main/agent.yaml"
 	flags := &initFlags{
-		manifestPointer: ghURL,
+		templatePointer: ghURL,
 		src:             "",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if flags.manifestPointer != ghURL {
-		t.Errorf("URL manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	if flags.templatePointer != ghURL {
+		t.Errorf("URL templatePointer should be unchanged, got %q", flags.templatePointer)
 	}
 }
 
-func TestAbsolutizeRelativeManifestPaths_EmptyFields(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_EmptyFields(t *testing.T) {
 	t.Parallel()
 	flags := &initFlags{}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if flags.manifestPointer != "" {
-		t.Errorf("empty manifestPointer should remain empty, got %q", flags.manifestPointer)
+	if flags.templatePointer != "" {
+		t.Errorf("empty templatePointer should remain empty, got %q", flags.templatePointer)
 	}
 	if flags.src != "" {
 		t.Errorf("empty src should remain empty, got %q", flags.src)
 	}
 }
 
-// TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression specifically guards
+// TestAbsolutizeRelativeTemplatePaths_SrcEscapeRegression specifically guards
 // against the bug where absolutizing --src before chdir + relativization in
 // InitAction.Run would produce "..\src" and write agent files outside the
 // newly created project directory.
-func TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_SrcEscapeRegression(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
 
 	flags := &initFlags{
-		manifestPointer: "agent.yaml",
+		templatePointer: "agent.yaml",
 		src:             "src",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
 
 	// Simulate ensureProject creating + chdir'ing into the project folder.

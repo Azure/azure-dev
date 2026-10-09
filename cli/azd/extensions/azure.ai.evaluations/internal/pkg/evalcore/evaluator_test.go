@@ -49,9 +49,9 @@ func TestEvaluatorListJSONMatchesYAML(t *testing.T) {
 - evaluator: builtin.task_adherence
 - evaluator: support-quality
   name: quality_strict
-  initialization_parameters:
+  initializationParameters:
     model: gpt-5.6-luna
-  data_mapping:
+  dataMapping:
     query: "{{item.customer_message}}"
 `
 	var fromYAML EvaluatorList

@@ -154,7 +154,7 @@ func authoredFromDocument(doc *yaml.Node) *AuthoredConfig {
 }
 
 func authoredEvaluationLevels(item *yaml.Node) []string {
-	node := nodeUnder(item, "supported_evaluation_levels")
+	node := nodeUnder(item, "supportedEvaluationLevels")
 	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil
 	}

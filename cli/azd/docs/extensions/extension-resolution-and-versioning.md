@@ -183,6 +183,23 @@ Once a version is resolved, installation proceeds through these steps:
 
 Installation progress updates in place in an interactive terminal. In redirected or non-TTY output, each uninterrupted install emits at most one `Installing <id>` progress line rather than animation frames. Progress resumes after a source-selection or replacement prompt, or a compatibility warning. Final statuses and dependency results are reported separately.
 
+### Recovery after a failed update
+
+An extension update preserves the target's previous files and installed record
+until replacement succeeds. On Windows, backup staging retries transient file
+locks using the update's context; cancellation stops those retries before
+uninstall. A handled replacement failure attempts to restore files and metadata
+and reports a nonzero exit code. Recovery failures are reported explicitly,
+including a retained backup path when file or metadata restoration fails. The
+owner-only backup contains `metadata.json`, a snapshot of the previous installed
+record written before any files are moved. If saving restored metadata fails,
+the error identifies both this backup and the restored installed-file directory;
+the snapshot remains available for manual recovery. An unsuccessful replacement
+is removed using its registry ID, including when its casing differs from the
+previous installed ID. Completed
+dependency updates are not rolled back. This does not guarantee recovery from a
+process crash.
+
 ### Re-installing over an existing extension
 
 `azd extension install <id>` keys off the extension **id**, so installing an id that is already present is handled based on whether the **source** is changing and on the version relationship. `--force` bypasses all of these guards.

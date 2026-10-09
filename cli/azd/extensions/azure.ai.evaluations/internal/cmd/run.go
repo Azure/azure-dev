@@ -256,19 +256,16 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		return err
 	}
 
-	if ref.Eval == nil || (ref.Eval.Source != nil && !ref.Eval.IsLocalSource()) {
+	if ref.Eval == nil || !ref.Eval.IsLocalSource() {
 		// A bare-ID rerun carries no declaration of its own, so the remote
-		// eval's actual schema is the only contract available -- always
-		// reconciled, even when the reused source turns out to be a plain
-		// dataset, so a rerun never silently submits data the eval does not
-		// accept. A declared eval instead answers from what it says: a
-		// responses/traces Source needs reconciling against the remote eval
-		// (checked here on the declaration, not on the data source a dataset
-		// override may have reconstructed, since the override replaces what
-		// is submitted but not what the eval itself contractually expects).
-		// A local Source already got a full item_schema check from
-		// localRunValidator's own GetOpenAIEval, and a plain dataset eval
-		// (no Source at all) carries no responses/traces contract to check.
+		// eval's actual schema is the only contract available. A declared
+		// eval is checked too: its id can come from the service or from
+		// state recorded before scoping, so a plain dataset declaration may
+		// resolve to an existing responses or traces eval, and submitting a
+		// dataset source to it would be rejected late or score the wrong
+		// thing. The check reads the declaration, not the data source a
+		// dataset override may have reconstructed. A local Source already got
+		// a full item_schema check from localRunValidator's own GetOpenAIEval.
 		if err := ec.validateResponsesRun(ctx, evalID, dataSource, ref.Declared()); err != nil {
 			return err
 		}

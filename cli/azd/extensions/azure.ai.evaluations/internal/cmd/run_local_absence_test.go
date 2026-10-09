@@ -61,17 +61,19 @@ func TestRunStartDatasetOverridePreservesAttributionAndExplicitZero(t *testing.T
 	require.NoError(t, action.start(t.Context(), ec, gate{}))
 
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 4, "only absence lookup and one run submission; no publication or original dataset lookup")
+	require.Len(t, recorded, 5, "absence lookup, schema check and one run submission; no publication")
 	for index, path := range []string{
 		"/datasets/golden/versions", "/datasets/golden/versions/1.0", "/datasets/golden/versions/1",
 	} {
 		assert.Equal(t, http.MethodGet, recorded[index].method)
 		assert.Equal(t, path, recorded[index].path)
 	}
-	assert.Equal(t, http.MethodPost, recorded[3].method)
-	assert.Equal(t, "/openai/v1/evals/eval_1/runs", recorded[3].path)
+	assert.Equal(t, http.MethodGet, recorded[3].method)
+	assert.Equal(t, "/openai/v1/evals/eval_1", recorded[3].path)
+	assert.Equal(t, http.MethodPost, recorded[4].method)
+	assert.Equal(t, "/openai/v1/evals/eval_1/runs", recorded[4].path)
 	var submitted eval_api.CreateOpenAIEvalRunRequest
-	require.NoError(t, json.Unmarshal(recorded[3].body, &submitted))
+	require.NoError(t, json.Unmarshal(recorded[4].body, &submitted))
 	assert.Equal(t, map[string]string{metaEvalName: "quality", metaDataset: "golden"}, submitted.Metadata)
 	require.NotNil(t, submitted.DataSource)
 	require.NotNil(t, submitted.DataSource.Source)

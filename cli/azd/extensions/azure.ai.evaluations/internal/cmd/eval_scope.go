@@ -57,15 +57,19 @@ func (ec *evalContext) scopedValue(ctx context.Context, base, scope string) stri
 //
 // Before scoping every configuration wrote the same unqualified value, so an
 // unmarked one is whichever configuration wrote last, not necessarily the
-// owner of the id beside it. When that owner is all there is to go on, the
-// value is unknown: it reads as absent, the next deploy records a baseline
-// instead of comparing against another configuration's definition and
-// recreating an unchanged eval.
+// owner of the id beside it. Only that legacy value is unknown: for the
+// configuration that owns the id it reads as absent, so the next deploy records
+// a baseline instead of comparing against another configuration's definition
+// and recreating an unchanged eval. A configuration that does not own the id
+// has its own suffixed key, and what it recorded there is read as usual.
 func (ec *evalContext) scopedValueOwnedBy(ctx context.Context, base, ownerBase, scope string) string {
-	if scope != "" && ownerBase != "" &&
-		ec.privateValue(ctx, base+project.EvalScopeSuffix) == "" &&
-		ec.privateValue(ctx, ownerBase+project.EvalScopeSuffix) != "" {
-		return ""
+	if scope != "" && ownerBase != "" && ec.privateValue(ctx, base+project.EvalScopeSuffix) == "" {
+		if idOwner := ec.privateValue(ctx, ownerBase+project.EvalScopeSuffix); idOwner != "" {
+			if idOwner == scope {
+				return ""
+			}
+			return ec.privateValue(ctx, base+"_"+project.EvalScopeTag(scope))
+		}
 	}
 	return ec.privateValue(ctx, ec.scopedKeyOwnedBy(ctx, base, ownerBase, scope))
 }

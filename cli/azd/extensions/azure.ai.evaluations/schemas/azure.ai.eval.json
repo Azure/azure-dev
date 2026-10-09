@@ -294,16 +294,20 @@
       },
       "allOf": [
         {
-          "if": { "required": ["type"], "properties": { "type": { "const": "local" } } },
+          "$comment": "A $ref overlay is a shallow override of the referenced document, so the final source shape is unknown here; runtime validation of the resolved source enforces it.",
+          "if": { "not": { "required": ["$ref"] } },
           "then": {
-            "required": ["file"],
-            "properties": {
-              "lookbackHours": false, "maxTraces": false, "agentName": false,
-              "agentVersion": false, "responseIds": false, "maxTurns": false,
-              "startTime": false, "endTime": false
-            }
-          },
-          "else": { "properties": { "file": false } }
+            "if": { "required": ["type"], "properties": { "type": { "const": "local" } } },
+            "then": {
+              "required": ["file"],
+              "properties": {
+                "lookbackHours": false, "maxTraces": false, "agentName": false,
+                "agentVersion": false, "responseIds": false, "maxTurns": false,
+                "startTime": false, "endTime": false
+              }
+            },
+            "else": { "properties": { "file": false } }
+          }
         },
         {
           "if": { "properties": { "type": { "const": "responses" } }, "required": ["type"] },

@@ -236,3 +236,26 @@ func TestAnUnmarkedFingerprintIsUnknownWhenOnlyTheIDHasAnOwner(t *testing.T) {
 	assert.Equal(t, "v2:baseline-a", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
 	assert.Equal(t, "v2:baseline-b", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
 }
+
+// The non-owning scope's own baseline must stay readable: B deploys twice
+// before A has ever deployed, and its second deploy compares against what its
+// first recorded.
+func TestANonOwnerReadsItsOwnBaselineBeforeTheOwnerDeploys(t *testing.T) {
+	fingerprint := project.FingerprintKey("eval", "quality")
+	id := idKey("eval", "quality")
+	env := &testEnvServer{state: map[string]string{
+		fingerprint:                  "v2:last-written-by-b",
+		id:                           "evalgroup_a",
+		id + project.EvalScopeSuffix: scopeA,
+	}}
+	ctx := t.Context()
+
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:baseline-b")
+	assert.Equal(t, "v2:baseline-b", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB),
+		"B's second deploy reads the baseline its first recorded")
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:edited-b")
+	assert.Equal(t, "v2:edited-b", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA),
+		"A still has no trustworthy baseline: the unqualified value is B's legacy write")
+}

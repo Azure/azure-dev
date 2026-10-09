@@ -22,7 +22,6 @@ import (
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
-	"azureaieval/internal/urlsafe"
 
 	"github.com/spf13/cobra"
 )
@@ -52,6 +51,11 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 	switch strings.ToLower(run.Status) {
 	case "completed", "":
 		return nil
+	}
+	// The line a pipeline logs is often the only one it keeps, so it carries the
+	// reason when the run has one, and the details that name what was rejected.
+	if reason := failureText(runFailureMessage(run)); reason != "" {
+		return messages.RunFinishedWithReason(run.ID, run.Status, failureReasonLine(reason, run.Error))
 	}
 	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
@@ -360,7 +364,11 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	display := runForDisplay(final, evalID, run.ID)
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(out, runForJSON(final)); err != nil {
+		projected, err := runForJSON(final)
+		if err != nil {
+			return err
+		}
+		if err := emitJSON(out, projected); err != nil {
 			return err
 		}
 	} else {
@@ -1243,6 +1251,8 @@ func timestampString(value any) string {
 type runOutputSummary struct {
 	means         map[string]float64
 	conversations *conversationOutputSummary
+	// rowErrors are the distinct reasons evaluators gave for scoring no verdict.
+	rowErrors []rowErrorGroup
 }
 
 // runOutputSummary uses a complete row listing for mean scores and observed
@@ -1269,7 +1279,7 @@ func (ec *evalContext) runOutputSummary(
 		}
 		return nil
 	}
-	summary := &runOutputSummary{means: criteriaMeans(items.Data)}
+	summary := &runOutputSummary{means: criteriaMeans(items.Data), rowErrors: summarizeRowErrors(items.Data)}
 	if isSimulationRun(run) {
 		summary.conversations = summarizeConversationOutput(items.Data)
 	}
@@ -1335,6 +1345,9 @@ func renderRun(
 			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
 			passRateText(rate, scored)))
 	}
+	if rows != nil {
+		renderRowErrors(out, rows.rowErrors)
+	}
 
 	var means map[string]float64
 	if rows != nil {
@@ -1372,8 +1385,11 @@ func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
 }
 
 func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
-	if why := runFailureMessage(run); why != "" {
-		fmt.Fprintf(out, "\n%s\n", urlsafe.Text(why))
+	// The same one-line, bounded text every other path prints: a service reason
+	// can carry newlines or an arbitrarily long body.
+	if why := failureText(runFailureMessage(run)); why != "" {
+		fmt.Fprintf(out, "\n%s\n", why)
+		renderFailureDetails(out, run.Error)
 	}
 }
 

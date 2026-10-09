@@ -593,8 +593,26 @@ follow-up commands inspect **available** output and export the run's diagnostics
 plus any available results; they do not imply that grading succeeded or that
 failing rows exist. `run show` also prints the service's run-level failure
 message when one was returned, removing URL credentials, query strings, and
-fragments from the human message. `--output json` keeps its existing document
-shape and exit behavior without appending human guidance.
+fragments from the human message. The message is read from `error.message`,
+otherwise from the first nested explanation (`error.details`,
+`error.innererror`, or `error.inner_error`); an `error` sent as a bare string is
+read as the message. When the error has its own message and also a `details`
+array (the specific findings behind a summary such as "Evaluation validation
+failed"), the summary and `run show` list those detail messages under it, each
+with its `target` when the service sent one, skipping any that only repeat the
+message (and name no target) or read exactly like an earlier detail, and showing up
+to five followed by a count of the rest. `job show` lists them the same way. The error line a failed `--wait` or
+`--fail-on` run exits with repeats the reason on one line, with up to three
+details appended in parentheses, redacted and limited to 300 characters each.
+When rows errored, the `run start --wait` summary also lists up to three
+distinct evaluator errors, most common first, with the number of rows each
+affected; `run show` makes no extra requests, so use the follow-up commands to
+list errored rows. `--output json` keeps its existing document
+shape and exit behavior without appending human guidance, except that an
+`error` sent in an unconventional shape (a bare string, an array, or a `message`
+that is not a string) is read for its text and emitted as `{ "message": ... }`;
+`run output export` still
+refuses an `error` it cannot redact reliably.
 Human portal/report links also remove URL credentials, query strings, and
 fragments before display, without rewriting the underlying service fields.
 Each link is validated as a whole URL. Malformed, ambiguous, or raw

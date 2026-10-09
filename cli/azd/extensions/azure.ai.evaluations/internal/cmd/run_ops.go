@@ -83,9 +83,13 @@ func (a *runListAction) Run() error {
 	if err != nil || !ok {
 		return err
 	}
+	return a.list(ctx, ec, evalID)
+}
 
+func (a *runListAction) list(ctx context.Context, ec *evalContext, evalID string) error {
 	pageSize := pageSizeOr(a.flags.limit, a.flags.all, defaultPageSize)
 	var list *eval_api.OpenAIEvalRunList
+	var err error
 	if a.flags.all {
 		list, err = ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 	} else {
@@ -107,7 +111,11 @@ func (a *runListAction) Run() error {
 		if list != nil {
 			runs = make([]eval_api.OpenAIEvalRun, len(list.Data))
 			for i := range list.Data {
-				runs[i] = *runForJSON(&list.Data[i])
+				projected, err := runForJSON(&list.Data[i])
+				if err != nil {
+					return err
+				}
+				runs[i] = *projected
 			}
 			if list.HasMore {
 				cursor = list.LastID
@@ -243,7 +251,11 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 				return messages.GateOutlivedTheWait(display.ID, waitBudget)
 			}
 			if isJSON(a.cmd) {
-				return emitJSON(a.cmd.OutOrStdout(), runForJSON(run))
+				projected, err := runForJSON(run)
+				if err != nil {
+					return err
+				}
+				return emitJSON(a.cmd.OutOrStdout(), projected)
 			}
 			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(display.ID, waitBudget))
 			return nil
@@ -267,7 +279,11 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 	}
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(a.cmd.OutOrStdout(), runForJSON(run)); err != nil {
+		projected, err := runForJSON(run)
+		if err != nil {
+			return err
+		}
+		if err := emitJSON(a.cmd.OutOrStdout(), projected); err != nil {
 			return err
 		}
 		if gateOnStatus {
@@ -403,7 +419,11 @@ func (a *runCancelAction) Run() error {
 		return messages.CancellingRun(runID, err)
 	}
 	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), runForJSON(canceled))
+		projected, err := runForJSON(canceled)
+		if err != nil {
+			return err
+		}
+		return emitJSON(a.cmd.OutOrStdout(), projected)
 	}
 	status := canceled.Status
 	if status == "" {

@@ -29,10 +29,12 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -4457,26 +4459,71 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // Double quotes are what cmd, PowerShell, bash and zsh all read the same way.
 // What they do not do is make the value literal: $, $(...) and backticks still
 // expand inside them in POSIX shells and PowerShell, and \" does not escape a
-// quote in PowerShell at all. There is no wrapping that is literal in all four.
+// quote in PowerShell at all. There is no double-quote wrapping that is literal
+// in all four, so a value carrying one of those is single-quoted instead when
+// that is literal for every shell that could be pasting it, and is named
+// otherwise (see literalArg).
 //
 // These values come out of the configuration file, so a printed command that
-// carried one of those characters would run it when pasted. They are named
-// rather than inlined: the command stops being copy-and-run for that argument,
-// which is the honest outcome, because it cannot be made both runnable and
-// safe here. Backslashes are left alone, so a Windows path comes back as itself.
+// carried one of those characters would run it when pasted if it were not
+// quoted literally. Backslashes are left alone, so a Windows path comes back as
+// itself.
 func shellArg(v string) string {
+	return shellArgFor(runtime.GOOS, v)
+}
+
+// shellArgFor is shellArg for a named operating system, so both rules can be
+// tested wherever the tests run.
+func shellArgFor(goos, v string) string {
 	if v == "" {
 		return `""`
 	}
-	// The three that cannot survive being wrapped: two expand, one breaks the
-	// quoting itself.
-	if strings.ContainsAny(v, "$`\"") {
+	// A control character other than a tab or a line break has no quoting.
+	if strings.ContainsFunc(v, func(r rune) bool { return unicode.IsControl(r) && r != '\t' && r != '\n' }) {
 		return shellArgNeedsQuoting
+	}
+	// PowerShell reads these typographic quotes as quotes on every operating
+	// system, so they end a quoted value early whichever way it is wrapped.
+	if strings.ContainsAny(v, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
+		return shellArgNeedsQuoting
+	}
+	// cmd.exe expands %NAME% even inside double quotes, reads an unquoted ^ as
+	// an escape, and ends the command at a line break, and nothing printed can
+	// say which of cmd.exe and PowerShell is pasting it.
+	if goos == "windows" && strings.ContainsAny(v, "%^\n") {
+		return shellArgNeedsQuoting
+	}
+	// The three that cannot survive being wrapped in double quotes: two expand,
+	// one breaks the quoting itself.
+	if strings.ContainsAny(v, "$`\"") {
+		return literalArg(goos, v)
 	}
 	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
 		return v
 	}
 	return `"` + v + `"`
+}
+
+// literalArg single-quotes a value so nothing in it is expanded, where single
+// quotes are literal in every shell that could be pasting it, and names it
+// otherwise:
+//   - On Windows nothing printed says whether cmd.exe or PowerShell is pasting
+//     it. Single quotes are literal in PowerShell but ordinary characters in
+//     cmd.exe, which splits a quoted value at its spaces, so no single-quoted
+//     form runs as printed in both.
+//   - Off Windows an ASCII single quote has no escape that bash, zsh and PowerShell
+//     agree on (bash and zsh close the quote, escape it and reopen it; PowerShell
+//     does not read that), and fish reads a backslash before a quote or another
+//     backslash inside single quotes, so a value with either is named.
+//
+// The placeholder is deliberately inert, so a reader who pastes it without
+// noticing gets a command that fails on the name rather than one that runs
+// something the configuration chose.
+func literalArg(goos, v string) string {
+	if goos == "windows" || strings.ContainsAny(v, `'\`) {
+		return shellArgNeedsQuoting
+	}
+	return "'" + v + "'"
 }
 
 // shellArgNeedsQuoting stands in for a value no portable quoting makes literal.

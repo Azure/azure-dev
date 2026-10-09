@@ -356,10 +356,7 @@ func (a *jobShowAction) Run() error {
 
 	out := a.cmd.OutOrStdout()
 	if !isJSON(a.cmd) {
-		fmt.Fprint(out, messages.JobLine(job.ID, job.Status))
-		if job.Error != nil && job.Error.Message != "" {
-			fmt.Fprint(out, messages.JobErrorLine(job.Error.Message))
-		}
+		writeJobStatus(out, job)
 	}
 
 	// The half `generate --no-wait` could not do. Only a job that has finished
@@ -383,6 +380,11 @@ func (a *jobShowAction) Run() error {
 		}
 	}
 	return collectErr
+}
+
+func writeJobStatus(out io.Writer, job *eval_api.GenerationJob) {
+	fmt.Fprint(out, messages.JobLine(job.ID, job.Status))
+	writeJobFailure(out, job)
 }
 
 // collect finishes a job that has succeeded, and reports nothing for one that

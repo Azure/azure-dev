@@ -80,7 +80,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -259,15 +259,6 @@ func updateLegacyProjectDeployments(
 	)
 }
 
-// developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
-// process lifetime. Service-level predeploy handlers fire per-service, but the
-// RBAC pre-flight check is project-scoped and idempotent — running it once is
-// sufficient and avoids duplicate ARM/Graph calls and noisy output.
-var (
-	developerRBACOnce sync.Once
-	developerRBACErr  error
-)
-
 // duplicateAgentNameWarnOnce ensures the duplicate agent-name warning is emitted
 // at most once per extension process lifetime. Service-level predeploy handlers
 // fire per-service, but the check is project-scoped — a single pass over every
@@ -278,7 +269,7 @@ var duplicateAgentNameWarnOnce sync.Once
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -318,19 +309,14 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// Capture the current session so it can be resumed on the newly deployed
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
-	if isHostedAgentService(svc, args.Project) {
+	hosted := isHostedAgentService(svc, args.Project)
+	if hosted {
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	// Run developer RBAC pre-flight checks only for hosted agent deployments.
-	// Guarded by sync.Once since this handler fires per-service but the check
-	// is project-scoped.
-	if isHostedAgentService(svc, args.Project) {
-		developerRBACOnce.Do(func() {
-			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
-		})
-		if developerRBACErr != nil {
-			return developerRBACErr
+	if hosted || isPromptAgentService(svc, args.Project) {
+		if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
+			return err
 		}
 	}
 
@@ -629,7 +615,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
+func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment bool) error {
 	serviceNames := make([]string, 0, len(proj.GetServices()))
 	for name := range proj.GetServices() {
 		serviceNames = append(serviceNames, name)
@@ -641,7 +627,14 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		if _, err := project.ValidateAgentServiceDefinition(svc, proj.GetPath()); err != nil {
+		var err error
+		if validateDeployment {
+			_, err = project.ValidateAgentServiceDefinition(svc, proj.GetPath())
+		} else {
+			// Down requires safe runtime sources, not deployable instructions or skills.
+			_, _, _, err = project.LoadHostedAgentDefinition(svc, proj.GetPath())
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -656,7 +649,7 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 //
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
 		return err
 	}
 

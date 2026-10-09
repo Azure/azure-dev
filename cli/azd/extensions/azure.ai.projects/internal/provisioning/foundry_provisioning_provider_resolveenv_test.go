@@ -5,7 +5,6 @@ package provisioning
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -16,7 +15,6 @@ import (
 	"azure.ai.projects/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -29,12 +27,11 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName      string
-	get          map[string]string
-	getErr       map[string]error
-	getValuesErr error
-	set          map[string]string
-	process      map[string]string
+	envName string
+	get     map[string]string
+	getErr  map[string]error
+	set     map[string]string
+	process map[string]string
 }
 
 func (s *resolveEnvStubEnvServer) GetCurrent(
@@ -59,9 +56,6 @@ func (s *resolveEnvStubEnvServer) GetValue(
 func (s *resolveEnvStubEnvServer) GetValues(
 	_ context.Context, _ *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
-	if s.getValuesErr != nil {
-		return nil, s.getValuesErr
-	}
 	values := make([]*azdext.KeyValue, 0, len(s.get))
 	for key, value := range s.get {
 		values = append(values, &azdext.KeyValue{Key: key, Value: value})
@@ -113,37 +107,17 @@ func (s *resolveEnvStubPromptServer) PromptLocation(
 	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: s.location}}, nil
 }
 
-type principalStubAccountServer struct {
-	v1beta.UnimplementedAccountServiceServer
-	response       *v1beta.GetCurrentPrincipalResponse
-	err            error
-	calls          atomic.Int32
-	subscriptionID atomic.Value
-}
-
-func (s *principalStubAccountServer) GetCurrentPrincipal(
-	_ context.Context, req *v1beta.GetCurrentPrincipalRequest,
-) (*v1beta.GetCurrentPrincipalResponse, error) {
-	s.calls.Add(1)
-	s.subscriptionID.Store(req.GetSubscriptionId())
-	return s.response, s.err
-}
-
 // newResolveEnvTestClient connects an AzdClient to the supplied host service stubs.
 func newResolveEnvTestClient(
 	t *testing.T,
 	envSrv azdext.EnvironmentServiceServer,
 	promptSrv azdext.PromptServiceServer,
-	accountSrv ...v1beta.AccountServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
 	azdext.RegisterPromptServiceServer(srv, promptSrv)
-	for _, account := range accountSrv {
-		v1beta.RegisterAccountServiceServer(srv, account)
-	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -385,7 +359,7 @@ func TestResolveEnv_LocationReadErrorSurfaces(t *testing.T) {
 }
 
 func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
-	for _, key := range []string{envKeyFoundryRG, envKeyFoundryRGOwner, envKeyProjectName, envKeyPrincipalID} {
+	for _, key := range []string{envKeyFoundryRG, envKeyFoundryRGOwner, envKeyProjectName} {
 		t.Run(key, func(t *testing.T) {
 			env := &resolveEnvStubEnvServer{
 				envName: "foundry-layer",
@@ -406,98 +380,6 @@ func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
 			assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
 		})
 	}
-}
-
-func TestResolveEnvTracksExplicitPrincipalID(t *testing.T) {
-	tests := []struct {
-		name       string
-		principal  *string
-		process    map[string]string
-		virtual    map[string]string
-		configured bool
-		wantID     string
-		wantType   string
-	}{
-		{name: "absent"},
-		{name: "explicitly empty", principal: new(""), configured: true},
-		{name: "configured", principal: new("object-id"), configured: true, wantID: "object-id", wantType: "User"},
-		{
-			name: "process override",
-			process: map[string]string{
-				envKeyPrincipalID: "process-object-id", envKeyPrincipalType: "ServicePrincipal",
-			},
-			configured: true, wantID: "process-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name:      "persisted empty overrides process",
-			principal: new(""), process: map[string]string{envKeyPrincipalID: "process-object-id"},
-			configured: true,
-		},
-		{
-			name:      "persisted value overrides process",
-			principal: new("persisted-object-id"), process: map[string]string{envKeyPrincipalID: "process-object-id"},
-			configured: true, wantID: "persisted-object-id", wantType: "User",
-		},
-		{
-			name:      "virtual value overrides persisted and process",
-			virtual:   map[string]string{envKeyPrincipalID: "virtual-object-id", envKeyPrincipalType: "ServicePrincipal"},
-			principal: new("persisted-object-id"), process: map[string]string{envKeyPrincipalID: "process-object-id"},
-			configured: true, wantID: "virtual-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name:      "virtual empty overrides persisted and process",
-			virtual:   map[string]string{envKeyPrincipalID: ""},
-			principal: new("persisted-object-id"), process: map[string]string{envKeyPrincipalID: "process-object-id"},
-			configured: true,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			values := map[string]string{
-				envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
-				envKeyLocation:       "westus2",
-			}
-			if test.principal != nil {
-				values[envKeyPrincipalID] = *test.principal
-			}
-			env := &resolveEnvStubEnvServer{envName: "foundry-bugbash", get: values, process: test.process}
-			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
-			provider := &FoundryProvisioningProvider{azdClient: client, virtualEnv: test.virtual}
-
-			require.NoError(t, provider.resolveEnv(t.Context()))
-			assert.Equal(t, test.configured, provider.principalIDConfigured)
-			assert.Equal(t, test.wantID, provider.principalID)
-			assert.Equal(t, test.wantType, provider.principalType)
-			if test.configured {
-				provider.armTemplate = map[string]any{"resources": []any{}}
-				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
-				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"value": test.wantID}, source.parameters["principalId"])
-				assert.Equal(t, map[string]any{"value": test.wantType}, source.parameters["principalType"])
-				assert.Nil(t, provider.credential)
-			}
-		})
-	}
-}
-
-func TestResolveEnvPrincipalEnumerationFailure(t *testing.T) {
-	env := &resolveEnvStubEnvServer{
-		envName: "test",
-		get: map[string]string{
-			envKeySubscriptionID: "subscription-id", envKeyLocation: "eastus",
-		},
-		getValuesErr: status.Error(codes.Internal, "environment unavailable"),
-	}
-	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	err := provider.resolveEnv(t.Context())
-
-	local, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
-	assert.False(t, provider.principalIDConfigured)
 }
 
 func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {

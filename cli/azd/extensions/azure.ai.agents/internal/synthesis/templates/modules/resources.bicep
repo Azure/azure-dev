@@ -1,6 +1,6 @@
 // Resource-group-scoped resources for a microsoft.foundry service: the
 // Foundry (AIServices) account, its project, model deployments, the optional
-// container registry, and the developer role assignment.
+// container registry.
 //
 // Deployed by main.bicep into a resource group it creates at subscription
 // scope. Kept as a separate module so main.bicep can target the subscription
@@ -48,12 +48,6 @@ param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
-
-@description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
-param principalId string = ''
-
-@description('Principal type used in the developer role assignment.')
-param principalType string = 'User'
 
 // Network isolation parameters. All default off so an absent network: block in
 // azure.yaml yields a public account identical to the pre-network template.
@@ -110,12 +104,6 @@ var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 var useByoNetwork = enableNetworkIsolation && !useManagedEgress
 var useManagedNetwork = enableNetworkIsolation && useManagedEgress
 var disablePublicDataPlaneAccess = enableNetworkIsolation
-
-// Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
-var cognitiveServicesUserRoleId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'a97b65f3-24c7-4388-baec-2e87135dc908'
-)
 
 // Resources
 
@@ -268,18 +256,6 @@ module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolat
     suffix: resourceToken
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
-  }
-}
-
-// Grant the developer Cognitive Services User on the project so they can call
-// the Foundry data-plane (chat/completions, agents API) from their machine.
-resource developerCognitiveServicesUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  name: guid(foundryAccount::project.id, principalId, cognitiveServicesUserRoleId)
-  scope: foundryAccount::project
-  properties: {
-    principalId: principalId
-    principalType: principalType
-    roleDefinitionId: cognitiveServicesUserRoleId
   }
 }
 

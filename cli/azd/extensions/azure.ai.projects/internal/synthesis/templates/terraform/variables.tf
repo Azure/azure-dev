@@ -57,15 +57,3 @@ variable "deployments" {
   }))
   default = []
 }
-
-variable "principal_id" {
-  description = "Object id of the developer running azd. When empty, the developer role assignment is skipped."
-  type        = string
-  default     = ""
-}
-
-variable "principal_type" {
-  description = "Principal type used in the developer role assignment."
-  type        = string
-  default     = "User"
-}

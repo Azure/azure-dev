@@ -363,6 +363,13 @@ func DecodeEvalConfig(data []byte, name string) (*EvalConfig, error) {
 		}
 		return nil, messages.ParsingEvalConfig(name, explainUnknownKeys(err))
 	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple YAML documents are not supported; use one configuration document")
+		}
+		return nil, messages.ParsingEvalConfig(name, err)
+	}
 	return &cfg, nil
 }
 

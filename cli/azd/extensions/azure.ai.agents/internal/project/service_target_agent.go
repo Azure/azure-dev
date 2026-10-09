@@ -202,6 +202,7 @@ const (
 	// Keep the legacy metadata value for consumers that identify this artifact
 	// source; definitions now come from direct/root-$ref azure.yaml services.
 	preBuiltImageArtifactSource = "agent.yaml"
+	evaluationServiceHost       = "azure.ai.eval"
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -3599,13 +3600,28 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
-			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
-				"https://aka.ms/azd-agents-invoke") +
-				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval generate")
+			note := "For information on invoking the agent, see " + output.WithLinkFormat(
+				"https://aka.ms/azd-agents-invoke")
+			if !p.projectDeclaresEvaluationService() {
+				note += "\n\nInstall the evaluations extension with " +
+					output.WithHighLightFormat("azd extension install azure.ai.evaluations") +
+					".\nSet up an evaluation suite to measure quality and impact with " +
+					output.WithHighLightFormat("azd ai eval init")
+			}
+			last.Metadata["note"] = note
 		}
 	}
 
 	return artifacts
+}
+
+func (p *AgentServiceTargetProvider) projectDeclaresEvaluationService() bool {
+	for service := range maps.Values(p.projectServices) {
+		if service.GetHost() == evaluationServiceHost {
+			return true
+		}
+	}
+	return false
 }
 
 // augmentDeployNote enriches the last endpoint artifact's note with a
@@ -3615,9 +3631,8 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 //
 //   - When the resolved block contains a "see <relPath>/README.md"
 //     suggestion (i.e. a local README exists at the service path), the
-//     aka.ms line is replaced entirely — the block already points the
-//     user at the more-detailed local doc, so the canned link is
-//     redundant.
+//     aka.ms paragraph is replaced — the block points at the more-detailed
+//     local doc. Independent guidance in subsequent paragraphs is retained.
 //   - Otherwise the aka.ms line is preserved and the "Next:" block is
 //     appended below, separated by a single blank line — aka.ms remains
 //     the fallback doc pointer when no local README is present. The block
@@ -3677,7 +3692,11 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 	}
 
 	if suggestionsIncludeReadme(suggestions) {
+		_, additional, _ := strings.Cut(target.Metadata["note"], "\n\n")
 		target.Metadata["note"] = block
+		if additional != "" {
+			target.Metadata["note"] += "\n\n" + additional
+		}
 		return
 	}
 	existing := target.Metadata["note"]

@@ -1,0 +1,121 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"azureaieval/internal/exterrors"
+	"azureaieval/internal/project"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSourceEmptyDatasetKeySchemaRuntimeParity(t *testing.T) {
+	const uri = "https://example.test/empty-dataset.schema.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(uri, evalSchemaDocument(t)))
+	schema, err := compiler.Compile(uri)
+	require.NoError(t, err)
+	for name, source := range map[string]map[string]any{
+		"traces":    {"type": "traces", "agentName": "agent"},
+		"responses": {"type": "responses", "responseIds": []string{"response"}},
+		"local":     {"type": "local", "file": "rows.jsonl"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"evals": []any{map[string]any{
+				"name": "quality", "dataset": "", "source": source,
+				"evaluators": []any{map[string]any{"evaluator": "builtin.relevance"}},
+			}}})
+			require.NoError(t, err)
+			var instance any
+			require.NoError(t, json.Unmarshal(body, &instance))
+			require.Error(t, schema.Validate(instance))
+			_, err = project.DecodeEvalConfig(body, "empty-dataset")
+			require.ErrorContains(t, err, "`dataset` and `source`")
+		})
+	}
+}
+
+func TestSourceSampleCapSchemaAndRuntimeAgree(t *testing.T) {
+	t.Parallel()
+
+	const resourceURI = "https://example.test/eval.schema.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(resourceURI, evalSchemaDocument(t)))
+	schema, err := compiler.Compile(resourceURI)
+	require.NoError(t, err)
+
+	for name, source := range map[string]map[string]any{
+		"traces":     {"type": "traces", "agentName": "agent", "maxTraces": 2},
+		"responses":  {"type": "responses", "responseIds": []string{"response"}},
+		"referenced": {"$ref": "source.yaml"},
+	} {
+		for _, tc := range []struct {
+			name string
+			cap  *int
+		}{
+			{name: "omitted"},
+			{name: "zero", cap: new(0)},
+			{name: "positive", cap: new(1)},
+			{name: "negative", cap: new(-1)},
+		} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				eval := map[string]any{
+					"name": "quality", "source": source,
+					"evaluators": []any{map[string]any{"evaluator": "builtin.relevance"}},
+				}
+
+				if tc.cap != nil {
+					eval["maxSamples"] = *tc.cap
+				}
+				body, err := json.Marshal(map[string]any{"evals": []any{eval}})
+				require.NoError(t, err)
+				var instance any
+				require.NoError(t, json.Unmarshal(body, &instance))
+				schemaErr := schema.Validate(instance)
+
+				dir := t.TempDir()
+				path := filepath.Join(dir, "azure.eval.yaml")
+				require.NoError(t, os.WriteFile(path, body, 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "source.yaml"),
+					[]byte("type: traces\nagentName: agent\nmaxTraces: 2\n"), 0o600))
+				cfg, err := project.LoadEvalConfig(path)
+				require.NoError(t, err)
+				require.NoError(t, cfg.ValidateForLookup(), "listing by name does not validate run settings")
+				runtimeErr := cfg.Validate()
+
+				if tc.cap != nil && *tc.cap != 0 {
+					if name == "referenced" && *tc.cap > 0 {
+						// An unresolved source ref may be local; the resolved runtime
+						// declaration remains authoritative for trace/response caps.
+						assert.NoError(t, schemaErr)
+					} else {
+						assert.Error(t, schemaErr)
+					}
+					require.ErrorContains(t, runtimeErr, "maxSamples")
+					assert.Contains(t, runtimeErr.Error(), "quality")
+					if *tc.cap > 0 {
+						assert.Contains(t, azdext.WrapError(runtimeErr).GetMessage(), "quality")
+						local, ok := errors.AsType[*azdext.LocalError](runtimeErr)
+						require.True(t, ok)
+						assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+						assert.Contains(t, local.Suggestion, "source.maxTraces")
+						assert.Contains(t, local.Suggestion, "source.responseIds")
+					}
+				} else {
+					assert.NoError(t, schemaErr)
+					assert.NoError(t, runtimeErr)
+				}
+			})
+		}
+	}
+}

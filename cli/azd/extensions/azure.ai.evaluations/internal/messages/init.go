@@ -72,8 +72,8 @@ func InitRootConfigChanged(expected, actual string) error {
 func InitDatasetNameInvalid(path, name string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		fmt.Sprintf("Dataset file %q derives invalid catalog name %q", path, name),
-		"Rename the file to give it a non-empty stem other than . or .., "+
-			"at most 255 bytes long and without path separators or control characters.")
+		"Rename the file so its stem uses only letters, digits, dashes and underscores, "+
+			"up to 255 characters.")
 }
 
 // InitFlagRange names both the input and its supported bounds.

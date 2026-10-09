@@ -220,19 +220,19 @@ func TestInitDatasetExistingLocalNameUsesCreateRules(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "seed data.jsonl")
 		require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
-		cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
-			Name:    "seed data",
-			File:    path,
-			Version: "7",
-		}}}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), []byte(
+			"datasets:\n  - name: seed data\n    file: seed data.jsonl\n    version: '7'\n"), 0o600))
+		cfg, err := project.OpenEvalConfig(dir)
+		require.NoError(t, err)
 		in := localDatasetScaffold(t, path)
 		in.cfg = cfg
+		in.evalDir = dir
 
 		plan, err := planScaffold(in)
 		require.NoError(t, err)
 		assert.Equal(t, "seed data", plan.datasetName)
 		assert.Equal(t, "7", cfg.Datasets[0].Version)
-		assert.Equal(t, path, cfg.Datasets[0].File)
+		assert.Equal(t, "seed data.jsonl", cfg.Datasets[0].File)
 	})
 
 	t.Run("registered declaration", func(t *testing.T) {

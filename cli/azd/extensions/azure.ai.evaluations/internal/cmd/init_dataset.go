@@ -156,11 +156,13 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 	if err != nil {
 		return project.DatasetDecl{}, err
 	}
-	if existing == nil {
-		if decl, ok := cfg.DatasetDeclaration(requested.Name); ok {
+	if decl, ok := cfg.DatasetDeclaration(requested.Name); ok {
+		if existing == nil {
 			existing = &project.DatasetDecl{
 				Name: decl.Name, File: project.ResolveSource(project.EvalDirOf(location), decl.File), Version: decl.Version,
 			}
+		} else {
+			existing.Version = decl.Version
 		}
 	}
 	if existing == nil {

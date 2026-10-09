@@ -39,6 +39,20 @@ jobs:
           version: ${{ inputs.golangci-lint-version }}
           args: -v --timeout 10m0s
           working-directory: ${{ inputs.working-directory }}
+          # Validate below with a local schema to avoid the verifier's two-second HTTP timeout.
+          verify: false
+      - name: Validate golangci-lint configuration
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          GOLANGCI_LINT_VERSION: ${{ inputs.golangci-lint-version }}
+        run: |
+          SCHEMA_PATH="$RUNNER_TEMP/golangci-lint.schema.json"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/golangci/golangci-lint/$GOLANGCI_LINT_VERSION/jsonschema/golangci.jsonschema.json" \
+            --output "$SCHEMA_PATH"
+          golangci-lint config verify --schema "$SCHEMA_PATH"
 
   go-fix:
     runs-on: ubuntu-latest

@@ -104,6 +104,17 @@ ERROR: initializing service '...', getting framework service: language 'logicapp
 
 ## Local Development
 
+### Dependency versions and CI
+
+Keep dependencies shared with azd core aligned with the versions in `cli/azd/go.mod`,
+including the indirect gRPC and OpenTelemetry requirements. See the
+[dependency synchronization policy](../../docs/dependency-version-sync.md) for the
+shared direct dependency check.
+
+The extension uses the shared Go lint workflow on Linux and Windows. Configuration
+validation uses a schema from the pinned golangci-lint release, downloaded with
+retries and validated locally to avoid the verifier's two-second HTTP timeout.
+
 ### Prerequisites
 
 1. **Install developer kit extension** (if not already installed):

@@ -89,6 +89,26 @@ func configureExtensionHostWithOutput(host *azdext.ExtensionHost, output io.Writ
 				return err
 			})
 		}).
+		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return runDemoWork(ctx, func(index int) error {
+				_, err := fmt.Fprintf(
+					output,
+					"%d. Doing important predeploy project work in extension...\n",
+					index,
+				)
+				return err
+			})
+		}).
+		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return runDemoWork(ctx, func(index int) error {
+				_, err := fmt.Fprintf(
+					output,
+					"%d. Doing important postdeploy project work in extension...\n",
+					index,
+				)
+				return err
+			})
+		}).
 		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runDemoWork(ctx, func(int) error {
 				_, err := fmt.Fprintf(

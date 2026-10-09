@@ -964,14 +964,14 @@ func TestPredeployAcceptsValidDirectAndRootRefServices(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "referenced.yaml"),
-		[]byte("kind: prompt\nname: referenced\nmodel: gpt-4.1\n"),
+		[]byte("kind: prompt\nname: referenced\nmodel: gpt-4.1\ninstructions: Help the user.\n"),
 		0o600,
 	))
 	current := &azdext.ServiceConfig{
 		Name: "direct",
 		Host: AiAgentHost,
 		AdditionalProperties: mustStruct(t, map[string]any{
-			"kind": "prompt", "name": "direct", "model": "gpt-4.1",
+			"kind": "prompt", "name": "direct", "model": "gpt-4.1", "instructions": "Help the user.",
 		}),
 	}
 	referenced := &azdext.ServiceConfig{
@@ -1025,7 +1025,7 @@ func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {
 					Name: "agent",
 					Host: AiAgentHost,
 					AdditionalProperties: mustStruct(t, map[string]any{
-						"kind": "prompt", "name": "agent", "model": "gpt-4.1",
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": "Help the user.",
 					}),
 				}
 			},
@@ -1154,7 +1154,7 @@ func TestPredownPreservesValidPromptAndActivityDefinitions(t *testing.T) {
 					Name: "agent",
 					Host: AiAgentHost,
 					AdditionalProperties: mustStruct(t, map[string]any{
-						"kind": "prompt", "name": "agent", "model": "gpt-4.1",
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": "Help the user.",
 					}),
 				}
 			},
@@ -1165,7 +1165,7 @@ func TestPredownPreservesValidPromptAndActivityDefinitions(t *testing.T) {
 				t.Helper()
 				require.NoError(t, os.WriteFile(
 					filepath.Join(root, "definition.yaml"),
-					[]byte("kind: prompt\nname: agent\nmodel: gpt-4.1\n"),
+					[]byte("kind: prompt\nname: agent\nmodel: gpt-4.1\ninstructions: Help the user.\n"),
 					0o600,
 				))
 				return &azdext.ServiceConfig{

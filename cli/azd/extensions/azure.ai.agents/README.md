@@ -25,6 +25,7 @@ for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
 [Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
@@ -69,6 +70,15 @@ project routes (prompt, voice, workflow) are excluded.
 
 This records command-path adoption, not whether the service accepted or
 completed work. No prompt, agent name, endpoint, or service response is sent.
+
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
 
 ## Non-interactive automation
 
@@ -198,6 +208,26 @@ core-owned fields such as `host`, `project`, `language`, and `uses` in
 sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
 and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
 targeted Agent deployment does not deploy its dependencies automatically.
+
+### Endpoint command support
+
+Endpoint behavior depends on the agent `kind` declared inline or through `$ref`:
+
+| Agent kind | `endpoint show` | `endpoint update` | Deployment endpoint reporting |
+| --- | --- | --- | --- |
+| `hosted` | Shows the live endpoint/card configuration | Updates endpoint/card configuration | Reports configured protocol URLs |
+| `prompt` | Shows the deployed Responses endpoint | Not supported | Reports the deployed Responses endpoint |
+| `voice`, `prompt-voice` | Shows the deployed voice WebSocket endpoint | Not supported | Reports the deployed voice WebSocket endpoint |
+| `workflow` | Not supported | Not supported | Not supported |
+
+For JSON output, `endpoint show` includes `name` and `kind`. Hosted agents retain
+the `agent_endpoint` and `agent_card` fields; prompt and voice agents return their
+callable URLs in `endpoints`.
+
+The command validates the agent definition before reading deployment state.
+Missing, unknown, or malformed kinds return a structured validation error rather
+than falling back to hosted-agent behavior. Hosted Activity and session
+capabilities do not change the agent kind and follow the hosted behavior above.
 
 ## Invoke latency diagnostics
 
@@ -783,7 +813,7 @@ same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
 flow as other current Hosted Agent and `invocations_ws` samples:
 
 ```powershell
-azd ai agent init -m .\path\to\azure.yaml
+azd ai agent init -t .\path\to\azure.yaml
 ```
 
 The local path can be replaced with its public GitHub URL after the sample is

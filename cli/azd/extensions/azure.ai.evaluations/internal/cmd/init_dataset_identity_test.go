@@ -200,19 +200,54 @@ func TestInitDatasetRegisteredNameUsesLookupRules(t *testing.T) {
 }
 
 func TestInitDatasetExistingLocalNameUsesCreateRules(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "seed data.jsonl")
-	require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
-	cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
-		Name: "seed data",
-		File: path,
-	}}}
+	t.Run("unpinned local declaration", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "seed data.jsonl")
+		require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+		cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
+			Name: "seed data",
+			File: path,
+		}}}
 
-	_, err := resolveInitLocalDataset(dir, path, cfg)
-	require.ErrorContains(t, err, "invalid catalog name")
-	validation, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+		_, err := resolveInitLocalDataset(dir, path, cfg)
+		require.ErrorContains(t, err, "invalid catalog name")
+		validation, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+	})
+
+	t.Run("pinned local declaration", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "seed data.jsonl")
+		require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+		cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
+			Name:    "seed data",
+			File:    path,
+			Version: "7",
+		}}}
+		in := localDatasetScaffold(t, path)
+		in.cfg = cfg
+
+		plan, err := planScaffold(in)
+		require.NoError(t, err)
+		assert.Equal(t, "seed data", plan.datasetName)
+		assert.Equal(t, "7", cfg.Datasets[0].Version)
+		assert.Equal(t, path, cfg.Datasets[0].File)
+	})
+
+	t.Run("registered declaration", func(t *testing.T) {
+		cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
+			Name:    "seed data",
+			Version: "7",
+		}}}
+		in := localDatasetScaffold(t, "seed data")
+		in.cfg = cfg
+
+		plan, err := planScaffold(in)
+		require.NoError(t, err)
+		assert.Equal(t, "seed data", plan.datasetName)
+		assert.Equal(t, []project.DatasetDecl{{Name: "seed data", Version: "7"}}, cfg.Datasets)
+	})
 }
 
 func TestInitDatasetCollisionCorrection(t *testing.T) {

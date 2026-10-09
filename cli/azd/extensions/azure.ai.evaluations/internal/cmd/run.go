@@ -132,8 +132,8 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().StringVar(&flags.groupName, "eval", "",
 		"Name of the eval to run, or its id. Defaults to the only one declared.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset", "",
-		"Catalog dataset to read instead of the one the eval declares. "+
-			"Must satisfy the eval's column schema. Not supported with source.type: local.")
+		"Name of a dataset declared in the eval configuration, to read instead of the one the eval uses. "+
+			"It must satisfy the eval's column schema. Not supported with source.type: local.")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
 		"Cap explicit local-source or unregistered dataset rows. On ordinary dataset and local-source evals, "+
@@ -180,7 +180,6 @@ func (a *runStartAction) Run() error {
 	if a.flags.maxSamples < 0 {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
 	}
-
 	newContext := a.newContext
 	if newContext == nil {
 		newContext = newEvalContext
@@ -372,9 +371,9 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 
 func (a *runStartAction) validateDatasetFlag() error {
 	if a.cmd.Flags().Changed("dataset") && strings.TrimSpace(a.flags.datasetName) == "" {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
+		return exterrors.Validation(exterrors.CodeConflictingArguments,
 			"--dataset must not be empty when explicitly supplied",
-			"Provide a catalog dataset name, or omit --dataset to keep the declared or stored source.")
+			"Provide a dataset name declared in the eval configuration, or omit --dataset to use the eval's dataset.")
 	}
 	return nil
 }

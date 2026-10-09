@@ -278,13 +278,10 @@ silently ignoring it. Omit the flag to repeat a previous run's source; use
 `source.maxTraces` to limit a declared trace source. Simulation declarations
 with a positive configured cap remain invalid even when the flag is zero.
 
-Genuinely unregistered local files still run inline and support a cap, but only
-after a typed not-found version-list response and not-found first-version probes
-confirm absence. A successful empty listing remains indeterminate when those
-probes find nothing: later registered versions may exist even if early versions
-were deleted. The run fails instead of selecting local data; retry after the
-registry catches up or declare a known dataset version. Permissions, transient
-failures, and malformed listings also fail the run without a local fallback.
+A local dataset file with no registered version runs inline and supports a cap,
+once a complete empty version listing (or a not-found response) and not-found
+first-version probes confirm that no version exists. Permissions, transient
+failures, and malformed listings fail the run instead of selecting local data.
 
 Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
 `--max-samples` flags; use `source.maxTraces` for trace limits or select
@@ -300,7 +297,6 @@ The JSON handoff from `run start --no-wait -o json` retains the submitted datase
 name and registered version even when the create response omits that metadata.
 Local unregistered runs do not invent a version, and anonymous reruns remain
 unattributed.
-
 `job show --dataset` recovers the registered evaluation level even when the local
 artifact already exists. It preserves edited bytes unless `--force` is given,
 does not download content when preserving the file, and does not record a new

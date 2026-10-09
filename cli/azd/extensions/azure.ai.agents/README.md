@@ -25,8 +25,31 @@ reports `create` on a missing agent, `update` for known differences, `noChange`
 for an equal fully known configuration, or `unknown` when known fields match
 but inputs/artifacts are unresolved. Changes are grouped by metadata, protocols,
 resources, environment variables, model deployment reference, container image,
-code, session settings, content safety, endpoint, and agent card. Changes include
-only field paths and add/update/remove operations, not old/new values.
+code, session settings, content safety, endpoint, and agent card. Additions show
+the desired value, updates show `before -> after`, and removals show the old
+value followed by `(removed)`.
+
+Known values include CPU/memory, protocol versions, runtime, interpreter/file
+entry points, dependency resolution, idle timeout, agent/model/registry/policy
+identifiers, and endpoint routing/authentication settings. Arbitrary environment
+values, metadata, descriptions, agent-card content, and non-file command arguments
+are `[redacted]`. The model deployment binding and extension-generated
+`enableVnextExperience` metadata are explicitly safe exceptions. Unknown/new API
+fields are redacted by default, and URL usernames/passwords, query strings, and
+fragments are removed from displayed references. Redaction affects display only,
+not comparison.
+
+For example:
+
+```text
+  Resources:
+    update: definition.cpu: "0.5" -> "2"
+  Code:
+    add: definition.code_configuration.entry_point: ["python","app.py"]
+  Environment variables:
+    add: definition.environment_variables.API_KEY: "[redacted]"
+  unknown: codeArtifact
+```
 
 Image passthrough compares the configured image reference, including a private
 registry connection. A future build/push image and a future code ZIP upload are
@@ -38,7 +61,9 @@ are preserved, not evaluated or resolved to credentials.
 
 The existing host JSON envelope contains `timestamp` and `services`. Provider
 results are at `services.<service>.data`, with `service`, `agent`, `status`,
-`changes` (each has `group`, `path`, `operation`), `unknown`, and `notes`.
+`changes` (each has `group`, `path`, `operation` and the applicable sanitized
+`before`/`after` values), `unknown`, and `notes`. JSON preserves numeric, boolean,
+and array types and uses the same sanitized values as readable output.
 Create, update, no-change, and unknown previews succeed; configuration,
 authentication, permission, connectivity, and malformed-response errors fail.
 `noChange` describes configuration only: ordinary deploy still creates a new
@@ -50,8 +75,9 @@ The provider runs on a fresh instance without `Initialize`, uses only project,
 environment, and tenant reads plus the Foundry agent GET, and returns output to
 the host. It never calls deployment writes, prompts, builds, uploads, provisioning,
 or extension-owned state persistence. Normal deployment remains on the stable
-service-target lifecycle. Provider values are omitted and credential-bearing
-URLs are sanitized; provider errors do not echo raw API bodies or authored values.
+service-target lifecycle. Sensitive provider values are redacted and
+credential-bearing URLs are sanitized; provider errors do not echo raw API bodies
+or authored values.
 
 The unchanged azd host skips package/publish/deploy and deployment hooks, but its
 ordinary project/environment-loading path still runs. Environment selection or

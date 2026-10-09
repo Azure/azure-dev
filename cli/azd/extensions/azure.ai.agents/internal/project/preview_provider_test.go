@@ -100,7 +100,7 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			service := previewService(t)
 			if tc.rawImage != "" {
 				service.Image = tc.image
-				service.AdditionalProperties.Fields["registryConnectionId"] = structpb.NewStringValue("private-registry")
+				service.AdditionalProperties.Fields["registryConnectionId"] = structpb.NewStringValue("registry-connection")
 			}
 			if tc.legacy {
 				service.Config, service.AdditionalProperties = service.AdditionalProperties, nil

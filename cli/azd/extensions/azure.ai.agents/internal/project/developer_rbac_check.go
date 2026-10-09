@@ -171,7 +171,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 
 	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
 
-	// Foundry User (or a superset) is sufficient to use the agent data plane.
+	// Check 1: Foundry User (or a superset) is sufficient to use the agent data plane.
 	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check AI User role: %s\n", err)

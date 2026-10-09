@@ -11,10 +11,48 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 )
+
+func TestNewInterruptContextCoordinatesInputDispatcher(t *testing.T) {
+	tests := []struct {
+		name              string
+		cancelParentFirst bool
+	}{
+		{name: "InputDispatcherFirst"},
+		{name: "ContextCancellationFirst", cancelParentFirst: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			initialHandlerCount := len(input.SnapshotInterruptStack())
+			parent, cancelParent := context.WithCancel(t.Context())
+			t.Cleanup(cancelParent)
+
+			ctx, stop := newInterruptContext(parent)
+			t.Cleanup(stop)
+
+			handlers := input.SnapshotInterruptStack()
+			require.Len(t, handlers, initialHandlerCount+1)
+			handler := handlers[len(handlers)-1]
+
+			if tt.cancelParentFirst {
+				cancelParent()
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+			}
+
+			require.True(t, handler())
+			require.ErrorIs(t, ctx.Err(), context.Canceled)
+			require.False(t, handler())
+
+			stop()
+			require.Len(t, input.SnapshotInterruptStack(), initialHandlerCount)
+		})
+	}
+}
 
 func TestExecuteCommand(t *testing.T) {
 	t.Run("PreCanceled", func(t *testing.T) {

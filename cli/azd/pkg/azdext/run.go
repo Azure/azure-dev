@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -55,14 +57,8 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 	rootCmd.SilenceErrors = true
 
-	interruptCtx, stopInterruptNotifications := signal.NotifyContext(NewContext(), os.Interrupt)
+	interruptCtx, stopInterruptNotifications := newInterruptContext(NewContext())
 	defer stopInterruptNotifications()
-	go func(ctx context.Context) {
-		<-ctx.Done()
-		// Restore the default signal behavior after the first interrupt so a
-		// subsequent Ctrl+C can still force-exit an unresponsive extension.
-		stopInterruptNotifications()
-	}(interruptCtx)
 	ctx := WithAccessToken(interruptCtx)
 
 	var cfg runConfig
@@ -98,6 +94,35 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 		}
 
 		os.Exit(1)
+	}
+}
+
+func newInterruptContext(parent context.Context) (context.Context, func()) {
+	cancelCtx, cancel := context.WithCancel(parent)
+	var interruptHandled atomic.Bool
+	// input.Console subscribes to the same process signal independently. Claim
+	// its first dispatch so it cannot race graceful cancellation with os.Exit.
+	popHandler := input.PushInterruptHandler(func() bool {
+		if !interruptHandled.CompareAndSwap(false, true) {
+			return false
+		}
+
+		cancel()
+		return true
+	})
+
+	ctx, stopSignals := signal.NotifyContext(cancelCtx, os.Interrupt)
+	go func() {
+		<-ctx.Done()
+		// Restore the default signal behavior after the first interrupt so a
+		// subsequent Ctrl+C can still force-exit an unresponsive extension.
+		stopSignals()
+	}()
+
+	return ctx, func() {
+		stopSignals()
+		popHandler()
+		cancel()
 	}
 }
 

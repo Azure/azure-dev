@@ -96,7 +96,7 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 	// resolves process completion and context cancellation atomically.
 	if ctxErr := context.Cause(ctx); ctxErr != nil {
 		switch {
-		case runErr == nil:
+		case runErr == nil, runErr == ctx.Err():
 			runErr = ctxErr
 		case !errors.Is(runErr, ctxErr):
 			runErr = errors.Join(runErr, ctxErr)

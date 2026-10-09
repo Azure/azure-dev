@@ -478,6 +478,28 @@ func TestRunner_Invoke_DeadlineCauseOverridesSuccessfulExit(t *testing.T) {
 	require.NotErrorIs(t, err, context.Canceled)
 }
 
+func TestRunner_Invoke_DeadlineCauseOverridesCanceledRunError(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(context.DeadlineExceeded)
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 1}, context.Canceled
+	})
+
+	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.ExitCode)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotErrorIs(t, err, context.Canceled)
+}
+
 func TestRunner_Invoke_ExtensionPathResolution(t *testing.T) {
 	configDir, ext := setupConfigAndExtension(t)
 	cmdRunner := mockexec.NewMockCommandRunner()

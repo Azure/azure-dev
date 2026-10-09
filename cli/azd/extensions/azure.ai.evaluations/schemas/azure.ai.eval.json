@@ -158,7 +158,7 @@
         "maxSamples": {
           "type": "integer",
           "minimum": 0,
-          "description": "Cap on local, unregistered dataset rows graded per run. Positive caps are unsupported for registered dataset versions."
+          "description": "Limit on the rows read from a local dataset file that has no registered version. A registered dataset version cannot be capped, so a positive value is refused for one."
         },
         "evaluators": {
           "type": "array",

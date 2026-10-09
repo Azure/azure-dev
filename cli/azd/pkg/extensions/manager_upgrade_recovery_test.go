@@ -119,6 +119,49 @@ func TestPrepareUpgradeRecoveryRejectsUnsafeReplacementIDs(t *testing.T) {
 	}
 }
 
+func TestPrepareUpgradeRecoverySnapshotsInstalledMetadata(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	mockCtx := mocks.NewMockContext(t.Context())
+	configManager := config.NewFileConfigManager(config.NewManager())
+	userConfig := config.NewUserConfigManager(configManager)
+	sourceManager := NewSourceManager(mockCtx.Container, userConfig, mockCtx.HttpClient)
+	runner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockCtx.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfig, sourceManager, runner, mockCtx.HttpClient)
+	require.NoError(t, err)
+
+	installed := &Extension{
+		Id:                    "test.snapshot",
+		Version:               "1.0.0",
+		Source:                "original",
+		InstalledAsDependency: true,
+		Dependencies:          []ExtensionDependency{{Id: "test.dependency", Version: "1.0.0"}},
+	}
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{installed.Id: installed}))
+	require.NoError(t, manager.configManager.Save(manager.userConfig))
+	extensionDir := filepath.Join(configDir, "extensions", installed.Id)
+	require.NoError(t, os.MkdirAll(extensionDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(extensionDir, "installed"), []byte("installed bytes"), 0o600))
+	before, err := json.Marshal(installed)
+	require.NoError(t, err)
+
+	finish, err := manager.prepareUpgradeRecovery(t.Context(), installed, installed.Id)
+	require.NoError(t, err)
+	installed.Version = "9.0.0"
+	installed.Source = "mutated"
+	installed.Dependencies[0].Version = "9.0.0"
+	require.NoError(t, finish(t.Context(), true))
+
+	require.NoError(t, manager.ReloadUserConfig())
+	restored, err := manager.GetInstalled(FilterOptions{Id: installed.Id})
+	require.NoError(t, err)
+	after, err := json.Marshal(restored)
+	require.NoError(t, err)
+	require.JSONEq(t, string(before), string(after))
+}
+
 func TestUpgradeRecoveryPreservesInstalledState(t *testing.T) {
 	tests := []struct {
 		name              string

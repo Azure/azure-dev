@@ -80,7 +80,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -269,7 +269,7 @@ var duplicateAgentNameWarnOnce sync.Once
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -615,7 +615,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
+func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment bool) error {
 	serviceNames := make([]string, 0, len(proj.GetServices()))
 	for name := range proj.GetServices() {
 		serviceNames = append(serviceNames, name)
@@ -627,7 +627,14 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		if _, err := project.ValidateAgentServiceDefinition(svc, proj.GetPath()); err != nil {
+		var err error
+		if validateDeployment {
+			_, err = project.ValidateAgentServiceDefinition(svc, proj.GetPath())
+		} else {
+			// Down requires safe runtime sources, not deployable instructions or skills.
+			_, _, _, err = project.LoadHostedAgentDefinition(svc, proj.GetPath())
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -642,7 +649,7 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 //
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
 		return err
 	}
 

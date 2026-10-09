@@ -17,7 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -163,21 +163,13 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	fmt.Println()
 	fmt.Println("Developer RBAC pre-flight check")
 
-	// Get the developer's principal ID via Graph API.
-	graphClient, err := graphsdk.NewGraphClient(cred, nil)
+	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.AccountBeta(), info.SubscriptionID)
 	if err != nil {
-		fmt.Println("  ⚠ Could not create Graph client — skipping RBAC pre-flight check")
+		fmt.Printf("  ⚠ Could not resolve current principal: %s — skipping RBAC pre-flight check\n", err)
 		return nil
 	}
 
-	userProfile, err := graphClient.Me().Get(ctx)
-	if err != nil {
-		fmt.Println("  ⚠ Could not retrieve user profile — skipping RBAC pre-flight check")
-		return nil
-	}
-
-	principalID := userProfile.Id
-	fmt.Printf("  Developer: %s (%s)\n", userProfile.DisplayName, principalID)
+	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
 
 	// Foundry User (or a superset) is sufficient to use the agent data plane.
 	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
@@ -188,7 +180,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		if _, assignErr := assignRoleToIdentity(
 			ctx, cred, principalID, roleAzureAIUser,
 			"Foundry User → Foundry Project", info.ProjectScope,
-			armauthorization.PrincipalTypeUser,
+			principalType,
 		); assignErr != nil {
 			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
 				respErr.StatusCode == http.StatusForbidden {
@@ -198,7 +190,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 						"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
 						"      az role assignment create --assignee %s --role "+roleAzureAIUser+
 						" --scope %q  # Foundry User (formerly Azure AI User)",
-					userProfile.DisplayName, info.AccountName, info.ProjectName,
+					principalID, info.AccountName, info.ProjectName,
 					principalID, info.ProjectScope,
 				))
 			} else {
@@ -295,7 +287,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 					"      • Container Registry Repository Contributor (superset of Writer)\n\n"+
 					"      az role assignment create --assignee %s "+
 					"--role \"Container Registry Repository Writer\" --scope %q",
-				userProfile.DisplayName, acrName,
+				principalID, acrName,
 				principalID, acrResourceID,
 			))
 		} else {
@@ -308,7 +300,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 					"      • Container Registry Tasks Contributor (remote build)\n"+
 					"      • Container Registry Repository Contributor (repository operations)\n\n"+
 					"      az role assignment create --assignee %s --role \"AcrPush\" --scope %q",
-				userProfile.DisplayName, acrName,
+				principalID, acrName,
 				principalID, acrResourceID,
 			))
 		}
@@ -322,6 +314,29 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	}
 	fmt.Println()
 	return nil
+}
+
+func developerRBACPrincipal(
+	ctx context.Context,
+	account v1beta.AccountServiceClient,
+	subscriptionID string,
+) (string, armauthorization.PrincipalType, error) {
+	// The host resolves object IDs in the resource tenant for both user and app logins.
+	principal, err := account.GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})
+	if err != nil {
+		return "", "", err
+	}
+	if strings.TrimSpace(principal.GetObjectId()) == "" {
+		return "", "", fmt.Errorf("the azd host returned an empty current principal object ID")
+	}
+	switch principal.GetPrincipalType() {
+	case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+		return principal.GetObjectId(), armauthorization.PrincipalTypeUser, nil
+	case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+		return principal.GetObjectId(), armauthorization.PrincipalTypeServicePrincipal, nil
+	default:
+		return "", "", fmt.Errorf("the azd host returned an unsupported current principal type: %v", principal.GetPrincipalType())
+	}
 }
 
 // hasAnyRoleAssignment checks whether the given principal has any of the specified roles

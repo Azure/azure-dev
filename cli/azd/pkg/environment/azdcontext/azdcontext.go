@@ -201,7 +201,7 @@ func (c *AzdContext) readConfig() (configFile, error) {
 		// Repairing the file by overwriting it would silently discard the recorded default
 		// environment, so surface the failure with the path needed to recover manually.
 		return configFile{}, fmt.Errorf(
-			"deserializing config file: %w; delete %s to reset the project state", err, path)
+			"deserializing config file: %w; delete %q to reset the project state", err, path)
 	}
 
 	return config, nil

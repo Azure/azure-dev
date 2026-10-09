@@ -405,7 +405,9 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 			existing, has := envMap[env.Name]
 			if !has {
 				// Remote-only environments must be able to hydrate into their local state paths.
-				for _, name := range []string{DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock"} {
+				for _, name := range []string{
+					DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock", state.StateCacheFileName,
+				} {
 					if _, err := m.azdContext.EnvironmentFilePath(env.Name, name); err != nil {
 						if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
 							log.Printf("skipping remote environment entry %q: %v", env.Name, err)
@@ -457,7 +459,7 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	// Not in cache, load from data store
 	localEnv, err := m.local.Get(ctx, name)
 	if err != nil {
-		if m.remote == nil {
+		if m.remote == nil || !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
 

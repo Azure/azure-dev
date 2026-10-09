@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -146,7 +147,9 @@ environmentEntries:
 				Name:      ent.Name(),
 				IsDefault: ent.Name() == defaultEnv,
 			}
-			for _, name := range []string{DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock"} {
+			for _, name := range []string{
+				DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock", state.StateCacheFileName,
+			} {
 				path, err := fs.azdContext.EnvironmentFilePath(ent.Name(), name)
 				if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
 					log.Printf("skipping environment entry %q: %v", ent.Name(), err)

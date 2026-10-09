@@ -279,13 +279,16 @@ func Test_EnvManager_List(t *testing.T) {
 }
 
 func Test_EnvManager_ListSkipsInvalidLocalRemoteDestination(t *testing.T) {
-	for _, entry := range []string{"root-link", ".env", "config.json", ".env.lock"} {
+	for _, entry := range []string{"root-link", ".env", "config.json", ".env.lock", ".state.json", "cache-link"} {
 		t.Run(entry, func(t *testing.T) {
 			ctx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 			root := filepath.Join(ctx.EnvironmentDirectory(), "prod")
 			require.NoError(t, os.MkdirAll(ctx.EnvironmentDirectory(), 0700))
 			if entry == "root-link" {
 				ostest.DirectoryLink(t, t.TempDir(), root)
+			} else if entry == "cache-link" {
+				require.NoError(t, os.MkdirAll(root, 0700))
+				ostest.DirectoryLink(t, t.TempDir(), filepath.Join(root, state.StateCacheFileName))
 			} else {
 				require.NoError(t, os.MkdirAll(filepath.Join(root, entry), 0700))
 			}
@@ -361,6 +364,29 @@ func Test_EnvManager_ListSkipsInvalidRemoteNames(t *testing.T) {
 			require.Equal(t, tt.expected, envs)
 			local.AssertExpectations(t)
 			remote.AssertExpectations(t)
+		})
+	}
+}
+
+func Test_EnvManager_GetPreservesLocalReadErrors(t *testing.T) {
+	for _, localErr := range []error{
+		errors.New("malformed local configuration"),
+		os.ErrPermission,
+		azdcontext.ErrUnsafeEnvironmentPath,
+	} {
+		t.Run(localErr.Error(), func(t *testing.T) {
+			local := &MockDataStore{}
+			remote := &MockDataStore{}
+			local.On("Get", t.Context(), "prod").Return(nil, localErr).Once()
+			manager := newManagerForTest(nil, nil, local, remote)
+
+			env, err := manager.Get(t.Context(), "prod")
+
+			require.Same(t, localErr, err)
+			require.Nil(t, env)
+			require.Empty(t, remote.Calls)
+			local.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
+			local.AssertExpectations(t)
 		})
 	}
 }

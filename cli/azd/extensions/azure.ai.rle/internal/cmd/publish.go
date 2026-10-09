@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -17,14 +18,21 @@ import (
 )
 
 type rlePublishFlags struct {
-	dockerfile  string
-	versionBump string
+	dockerfile          string
+	versionBump         string
+	limeRouting         string
+	limeProjectEndpoint string
+	routingSet          bool
+	endpointSet         bool
 }
 
 type publishAction struct {
 	cmd   *cobra.Command
 	flags *rlePublishFlags
 }
+
+var buildPublishImage = project.BuildRuntimeImage
+var pushPublishImage = project.PushImage
 
 func newPublishCommand() *cobra.Command {
 	flags := &rlePublishFlags{}
@@ -33,7 +41,10 @@ func newPublishCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish",
 		Short: "Build, push, and create or update the RLE environment",
-		Args:  cobra.NoArgs,
+		Long: "Build and push an RLE image, then create or update its environment. " +
+			"Lime routing is optional and is requested only for this publish; omitting it preserves legacy behavior. " +
+			"The extension is preview-gated. Production public API mapping depends on Task 5717034.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&publishAction{cmd: cmd, flags: flags}).Run()
 		},
@@ -47,12 +58,21 @@ func newPublishCommand() *cobra.Command {
 		flags.versionBump,
 		"Version bump to apply when creating or updating the environment: major, minor, or patch.",
 	)
+	cmd.Flags().StringVar(&flags.limeRouting, "lime-routing", "",
+		"Lime routing request: legacy, disabled, same-project, or custom. Omitted and legacy preserve existing behavior.")
+	cmd.Flags().StringVar(&flags.limeProjectEndpoint, "lime-project-endpoint", "",
+		"HTTPS Foundry project endpoint for --lime-routing custom only.")
 	return cmd
 }
 
 func (a *publishAction) Run() error {
+	a.flags.routingSet = a.cmd.Flags().Changed("lime-routing")
+	a.flags.endpointSet = a.cmd.Flags().Changed("lime-project-endpoint")
 	versionBump, err := normalizeVersionBumpFlag(a.flags.versionBump)
 	if err != nil {
+		return err
+	}
+	if err := validateLimeRoutingFlags(a.flags); err != nil {
 		return err
 	}
 
@@ -78,6 +98,10 @@ func (a *publishAction) Run() error {
 			),
 		}
 	}
+	lime, err := publishLimeConfiguration(a.flags, state.ProjectEndpoint)
+	if err != nil {
+		return err
+	}
 
 	image, err := resolvePublishImage(state)
 	if err != nil {
@@ -91,7 +115,7 @@ func (a *publishAction) Run() error {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
-	if err := project.BuildRuntimeImage(
+	if err := buildPublishImage(
 		a.cmd.Context(),
 		a.cmd.OutOrStdout(),
 		a.cmd.ErrOrStderr(),
@@ -103,7 +127,7 @@ func (a *publishAction) Run() error {
 	); err != nil {
 		return err
 	}
-	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
+	if err := pushPublishImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
 	client, err := createRleClient(state.ProjectEndpoint)
@@ -111,6 +135,7 @@ func (a *publishAction) Run() error {
 		return err
 	}
 	request := buildEnvironmentCreateRequest(state.EnvironmentName, image, versionBump)
+	request.LimeConfiguration = lime
 
 	var environment *environmentResource
 	created := state.EnvironmentId == ""
@@ -130,7 +155,7 @@ func (a *publishAction) Run() error {
 	}
 	environment, err = client.createV1Environment(a.cmd.Context(), request)
 	if err != nil {
-		return serviceError(err)
+		return serviceError(redactLimeEndpointError(err, a.flags.limeProjectEndpoint))
 	}
 	state.EnvironmentName = environment.Name
 	state.EnvironmentId = environment.Id
@@ -167,7 +192,131 @@ func (a *publishAction) Run() error {
 	if _, err := fmt.Fprintln(a.cmd.OutOrStdout(), string(body)); err != nil {
 		return err
 	}
+	if a.cmd.Flags().Changed("lime-routing") {
+		if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Lime routing requested: %s\n", a.flags.limeRouting); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func limeRoutingError(message string) error {
+	return &azdext.LocalError{
+		Message:  message,
+		Code:     "rle_invalid_lime_routing",
+		Category: azdext.LocalErrorCategoryUser,
+		Suggestion: "Use --lime-routing legacy|disabled|same-project|custom; " +
+			"provide --lime-project-endpoint only with custom.",
+	}
+}
+
+func validateLimeRoutingFlags(flags *rlePublishFlags) error {
+	if flags.routingSet && flags.limeRouting == "" {
+		return limeRoutingError("--lime-routing cannot be empty.")
+	}
+	switch flags.limeRouting {
+	case "", "legacy", "disabled", "same-project", "custom":
+	default:
+		return limeRoutingError("Invalid --lime-routing value.")
+	}
+	if flags.limeRouting == "" && !flags.endpointSet && flags.limeProjectEndpoint == "" {
+		return nil
+	}
+	if flags.limeRouting == "" {
+		return limeRoutingError("--lime-project-endpoint requires --lime-routing custom.")
+	}
+	if flags.limeRouting == "custom" && flags.limeProjectEndpoint == "" {
+		return limeRoutingError("--lime-routing custom requires --lime-project-endpoint.")
+	}
+	if flags.limeRouting != "custom" && (flags.endpointSet || flags.limeProjectEndpoint != "") {
+		return limeRoutingError("--lime-project-endpoint is only valid with --lime-routing custom.")
+	}
+	return nil
+}
+
+func publishLimeConfiguration(flags *rlePublishFlags, projectEndpoint string) (*limeConfiguration, error) {
+	if err := validateLimeRoutingFlags(flags); err != nil {
+		return nil, err
+	}
+	switch flags.limeRouting {
+	case "", "legacy":
+		return nil, nil
+	case "disabled":
+		return &limeConfiguration{Enabled: false}, nil
+	case "same-project":
+		return &limeConfiguration{Enabled: true, ProjectMode: "same_project"}, nil
+	case "custom":
+		if err := validateLimeProjectEndpoint(flags.limeProjectEndpoint, projectEndpoint); err != nil {
+			return nil, err
+		}
+		return &limeConfiguration{
+			Enabled: true, ProjectMode: "custom", ProjectEndpoint: flags.limeProjectEndpoint,
+		}, nil
+	default:
+		return nil, limeRoutingError("Invalid --lime-routing value.")
+	}
+}
+
+func validateLimeProjectEndpoint(raw string, projectEndpoint string) error {
+	invalid := func() error {
+		return limeRoutingError("--lime-project-endpoint must be an HTTPS Foundry project URL " +
+			"with no credentials, query, fragment, port, or trailing slash.")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery ||
+		u.Fragment != "" || strings.Contains(raw, "#") || u.Port() != "" ||
+		u.Hostname() == "" || u.Opaque != "" || strings.HasSuffix(raw, "/") {
+		return invalid()
+	}
+	parent, err := url.Parse(projectEndpoint)
+	if err != nil {
+		return invalid()
+	}
+	if strings.EqualFold(u.Hostname(), parent.Hostname()) && u.Path == parent.Path {
+		return limeRoutingError("Use --lime-routing same-project when the Lime project is the publish project.")
+	}
+	// Anchor the allowed cloud domain to the already validated publish project, rather than assuming public Azure.
+	parentHost := strings.ToLower(parent.Hostname())
+	dot := strings.IndexByte(parentHost, '.')
+	if dot < 0 {
+		return invalid()
+	}
+	host := strings.ToLower(u.Hostname())
+	prefix := strings.TrimSuffix(host, parentHost[dot:])
+	if !strings.HasSuffix(host, parentHost[dot:]) ||
+		prefix == "" || strings.Contains(prefix, ".") || strings.Contains(u.Host, ":") ||
+		u.EscapedPath() != u.Path || !validLimeProjectPath(u.Path) {
+		return invalid()
+	}
+	return nil
+}
+
+func validLimeProjectPath(path string) bool {
+	parts := strings.Split(path, "/")
+	if len(parts) != 4 || parts[0] != "" || parts[1] != "api" || parts[2] != "projects" {
+		return false
+	}
+	name := parts[3]
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, char := range name {
+		if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' ||
+			char >= '0' && char <= '9' || char == '-' || char == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func redactLimeEndpointError(err error, endpoint string) error {
+	if endpoint == "" {
+		return err
+	}
+	if httpErr, ok := errors.AsType[*rleHTTPError](err); ok {
+		return newRleHTTPError(httpErr.statusCode, []byte(`{"message":"The RLE publish request failed."}`))
+	}
+	return errors.New("The RLE publish request failed before receiving a response.")
 }
 
 func normalizeVersionBumpFlag(value string) (string, error) {

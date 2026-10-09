@@ -344,7 +344,7 @@ func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
 			response: `{"code":"InvalidLimeConfiguration",` +
 				`"message":"Lime project is not enabled; access_token parameter is required."}`,
 			expectedCode: "InvalidLimeConfiguration",
-			expectedText: "access_token parameter is required.",
+			expectedText: "Lime project is not enabled; access_token parameter is required.",
 		},
 		{
 			name: "endpoint and credentials in diagnostic",
@@ -357,6 +357,19 @@ func TestRedactLimeEndpointErrorPreservesSafeServiceDiagnostics(t *testing.T) {
 			forbiddenText: []string{
 				testLimeProjectEndpoint, "token=secret", "access-value", "client-value",
 				"quoted-secret", "private-token",
+			},
+		},
+		{
+			name: "JSON-formatted credentials in diagnostic",
+			response: `{"code":"InvalidLimeConfiguration","message":"Rejected routing ` +
+				`{\"access_token\":\"private-access\", \"client_secret\" : \"private-client\", ` +
+				`\"api_key\":\"private-api\", \"authorization\":\"Bearer private-bearer\", ` +
+				`\"project_endpoint\":\"` + testLimeProjectEndpoint +
+				`\"}; verify permissions."}`,
+			expectedCode: "InvalidLimeConfiguration",
+			expectedText: "verify permissions.",
+			forbiddenText: []string{
+				"private-access", "private-client", "private-api", "private-bearer", testLimeProjectEndpoint,
 			},
 		},
 	}

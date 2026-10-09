@@ -149,7 +149,20 @@ func TestBetaEventStreamRequestIDModeValidation(t *testing.T) {
 			},
 		},
 		{
-			name: "service status keeps legacy correlation",
+			name: "service status with request ID",
+			message: &v1beta.EventMessage{
+				RequestId: "request-1",
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "prepackage",
+						ServiceName: "api",
+						Status:      "completed",
+					},
+				},
+			},
+		},
+		{
+			name: "service status without request ID",
 			message: &v1beta.EventMessage{
 				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
 					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{

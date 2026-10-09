@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"google.golang.org/protobuf/proto"
 )
 
 type betaEventMessageEnvelope struct{}
@@ -25,103 +24,133 @@ func newBetaEventMessageEnvelope() *betaEventMessageEnvelope {
 }
 
 func (e *betaEventMessageEnvelope) GetRequestId(
-	ctx context.Context, msg *v1beta.EventMessage,
+	ctx context.Context,
+	msg *v1beta.EventMessage,
 ) string {
 	if msg != nil && msg.RequestId != "" {
 		return msg.RequestId
 	}
 
 	claims, err := extensions.GetClaimsFromContext(ctx)
-	if err != nil {
+	if err != nil || claims.Subject == "" {
 		return ""
 	}
-	id := claims.Subject
-	if id == "" {
-		return ""
-	}
-	switch m := e.GetInnerMessage(msg).(type) {
+	extensionID := claims.Subject
+
+	switch inner := e.GetInnerMessage(msg).(type) {
 	case *v1beta.SubscribeProjectEvent:
-		if len(m.EventNames) > 0 {
-			return fmt.Sprintf("%s.%s", id, m.EventNames[0])
+		if len(inner.EventNames) > 0 {
+			return fmt.Sprintf("%s.%s", extensionID, inner.EventNames[0])
 		}
 	case *v1beta.ProjectHandlerStatus:
-		return fmt.Sprintf("%s.%s", id, m.EventName)
+		return fmt.Sprintf("%s.%s", extensionID, inner.EventName)
 	case *v1beta.InvokeProjectHandler:
-		return fmt.Sprintf("%s.%s", id, m.EventName)
+		return fmt.Sprintf("%s.%s", extensionID, inner.EventName)
 	case *v1beta.SubscribeServiceEvent:
-		if len(m.EventNames) > 0 {
-			return fmt.Sprintf("%s.%s", id, m.EventNames[0])
+		if len(inner.EventNames) > 0 {
+			return fmt.Sprintf("%s.%s", extensionID, inner.EventNames[0])
 		}
 	case *v1beta.ServiceHandlerStatus:
-		return fmt.Sprintf("%s.%s.%s", id, m.ServiceName, m.EventName)
+		return fmt.Sprintf(
+			"%s.%s.%s",
+			extensionID,
+			inner.GetServiceName(),
+			inner.GetEventName(),
+		)
 	case *v1beta.InvokeServiceHandler:
-		if m.Service != nil {
-			return fmt.Sprintf("%s.%s.%s", id, m.Service.Name, m.EventName)
+		if inner.Service != nil {
+			return fmt.Sprintf(
+				"%s.%s.%s",
+				extensionID,
+				inner.Service.Name,
+				inner.EventName,
+			)
 		}
+	default:
 	}
 	return ""
 }
 
-func (*betaEventMessageEnvelope) SetRequestId(
-	_ context.Context, msg *v1beta.EventMessage, id string,
+func (e *betaEventMessageEnvelope) SetRequestId(
+	_ context.Context,
+	msg *v1beta.EventMessage,
+	id string,
 ) {
 	msg.RequestId = id
 }
 
-func (*betaEventMessageEnvelope) GetError(msg *v1beta.EventMessage) error {
+func (*betaEventMessageEnvelope) GetError(
+	msg *v1beta.EventMessage,
+) error {
 	if msg == nil || msg.Error == nil {
 		return nil
 	}
-
-	wire, marshalErr := proto.Marshal(msg.Error)
-	if marshalErr == nil {
-		stableError := new(azdext.ExtensionError)
-		if unmarshalErr := proto.Unmarshal(wire, stableError); unmarshalErr == nil {
-			return azdext.UnwrapError(stableError)
-		}
-	}
-	return fmt.Errorf("%s", msg.Error.GetMessage())
+	return unwrapBetaExtensionError(msg.Error)
 }
 
 func wrapBetaError(err error) *v1beta.ExtensionError {
-	if err == nil {
+	stableError := azdext.WrapError(err)
+	if stableError == nil {
 		return nil
 	}
 
-	stableError := azdext.WrapError(err)
-	wire, marshalErr := proto.Marshal(stableError)
-	if marshalErr == nil {
-		betaError := new(v1beta.ExtensionError)
-		if unmarshalErr := proto.Unmarshal(wire, betaError); unmarshalErr == nil {
-			if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
-				if betaLocalErr := betaError.GetLocalError(); betaLocalErr != nil {
-					betaLocalErr.CauseTypes = errorchain.NormalizeCauseTypes(localErr.CauseTypes)
-				}
-			}
-			if stableError.GetOrigin() == azdext.ErrorOrigin_ERROR_ORIGIN_TOOL {
-				if toolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
-					var exitCode *int64
-					if toolErr.ExitCode != nil {
-						exitCode = new(int64(*toolErr.ExitCode))
-					}
-					betaError.Source = &v1beta.ExtensionError_ToolError{
-						ToolError: &v1beta.ToolErrorDetail{
-							ToolName:    toolErr.ToolName,
-							FailureKind: string(toolErr.Kind),
-							ExitCode:    exitCode,
-						},
-					}
-				}
-			}
-			return betaError
+	betaError := &v1beta.ExtensionError{
+		Message:    stableError.GetMessage(),
+		Origin:     v1beta.ErrorOrigin(stableError.GetOrigin()),
+		Suggestion: stableError.GetSuggestion(),
+	}
+	for _, link := range stableError.GetLinks() {
+		if link != nil {
+			betaError.Links = append(betaError.Links, &v1beta.ErrorLink{
+				Url:   link.GetUrl(),
+				Title: link.GetTitle(),
+			})
 		}
 	}
 
-	return &v1beta.ExtensionError{Message: err.Error()}
+	if serviceError := stableError.GetServiceError(); serviceError != nil {
+		betaError.Source = &v1beta.ExtensionError_ServiceError{
+			ServiceError: &v1beta.ServiceErrorDetail{
+				ErrorCode:   serviceError.GetErrorCode(),
+				StatusCode:  serviceError.GetStatusCode(),
+				ServiceName: serviceError.GetServiceName(),
+			},
+		}
+	}
+	if localError := stableError.GetLocalError(); localError != nil {
+		localErrorDetail := &v1beta.LocalErrorDetail{
+			Code:     localError.GetCode(),
+			Category: localError.GetCategory(),
+		}
+		if typedError, ok := errors.AsType[*azdext.LocalError](err); ok {
+			localErrorDetail.CauseTypes = errorchain.NormalizeCauseTypes(
+				typedError.CauseTypes,
+			)
+		}
+		betaError.Source = &v1beta.ExtensionError_LocalError{
+			LocalError: localErrorDetail,
+		}
+	}
+	if toolError, ok := errors.AsType[*azdext.ToolError](err); ok &&
+		stableError.GetOrigin() == azdext.ErrorOrigin_ERROR_ORIGIN_TOOL {
+		betaError.Origin = v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL
+		toolErrorDetail := &v1beta.ToolErrorDetail{
+			ToolName:    toolError.ToolName,
+			FailureKind: string(toolError.Kind),
+		}
+		if toolError.ExitCode != nil {
+			toolErrorDetail.ExitCode = new(int64(*toolError.ExitCode))
+		}
+		betaError.Source = &v1beta.ExtensionError_ToolError{
+			ToolError: toolErrorDetail,
+		}
+	}
+	return betaError
 }
 
-func (*betaEventMessageEnvelope) SetError(
-	msg *v1beta.EventMessage, err error,
+func (e *betaEventMessageEnvelope) SetError(
+	msg *v1beta.EventMessage,
+	err error,
 ) {
 	msg.Error = wrapBetaError(err)
 }
@@ -144,23 +173,24 @@ func (*betaEventMessageEnvelope) GetInnerMessage(
 	if msg == nil {
 		return nil
 	}
-	switch m := msg.MessageType.(type) {
+
+	switch message := msg.MessageType.(type) {
 	case *v1beta.EventMessage_SubscribeProjectEvent:
-		return m.SubscribeProjectEvent
-	case *v1beta.EventMessage_InvokeProjectHandler:
-		return m.InvokeProjectHandler
-	case *v1beta.EventMessage_ProjectHandlerStatus:
-		return m.ProjectHandlerStatus
+		return message.SubscribeProjectEvent
 	case *v1beta.EventMessage_SubscribeServiceEvent:
-		return m.SubscribeServiceEvent
+		return message.SubscribeServiceEvent
+	case *v1beta.EventMessage_InvokeProjectHandler:
+		return message.InvokeProjectHandler
 	case *v1beta.EventMessage_InvokeServiceHandler:
-		return m.InvokeServiceHandler
+		return message.InvokeServiceHandler
+	case *v1beta.EventMessage_ProjectHandlerStatus:
+		return message.ProjectHandlerStatus
 	case *v1beta.EventMessage_ServiceHandlerStatus:
-		return m.ServiceHandlerStatus
+		return message.ServiceHandlerStatus
 	case *v1beta.EventMessage_SubscribeProjectEventResponse:
-		return m.SubscribeProjectEventResponse
+		return message.SubscribeProjectEventResponse
 	case *v1beta.EventMessage_SubscribeServiceEventResponse:
-		return m.SubscribeServiceEventResponse
+		return message.SubscribeServiceEventResponse
 	default:
 		return nil
 	}

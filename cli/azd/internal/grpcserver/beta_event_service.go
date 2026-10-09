@@ -176,7 +176,7 @@ func (s *betaEventService) createProjectHandler(
 				return fmt.Errorf("convert project config to beta: %w", err)
 			}
 			invoke := &v1beta.EventMessage{
-				RequestId: invocationID,
+				RequestId: uuid.NewString(),
 				MessageType: &v1beta.EventMessage_InvokeProjectHandler{
 					InvokeProjectHandler: &v1beta.InvokeProjectHandler{
 						EventName:    eventName,

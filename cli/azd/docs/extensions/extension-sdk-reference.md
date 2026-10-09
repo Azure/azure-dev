@@ -138,7 +138,6 @@ alongside a handler error are retained, while the error still fails the
 deployment. Use the existing stable `WithServiceEventHandler` for other
 service lifecycle events; do not register both handler APIs for the same
 event.
-
 See the [extension framework guide](extension-framework.md#event-service)
 for the host behavior and the demo implementation.
 

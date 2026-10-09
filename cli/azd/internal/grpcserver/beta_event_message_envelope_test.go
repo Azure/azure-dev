@@ -10,11 +10,118 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBetaEventMessageEnvelope_UsesTopLevelRequestID(t *testing.T) {
+func TestBetaEventMessageEnvelope_GetRequestId(t *testing.T) {
 	envelope := newBetaEventMessageEnvelope()
+	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "test-ext"},
+	})
+
+	tests := []struct {
+		name string
+		msg  *v1beta.EventMessage
+		want string
+	}{
+		{
+			name: "SubscribeProjectEvent",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+				SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
+					EventNames: []string{"provision"},
+				},
+			}},
+			want: "test-ext.provision",
+		},
+		{
+			name: "ProjectHandlerStatus",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+				ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+					EventName: "provision",
+				},
+			}},
+			want: "test-ext.provision",
+		},
+		{
+			name: "InvokeProjectHandler",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_InvokeProjectHandler{
+				InvokeProjectHandler: &v1beta.InvokeProjectHandler{
+					EventName: "provision",
+				},
+			}},
+			want: "test-ext.provision",
+		},
+		{
+			name: "SubscribeServiceEvent",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+				SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{
+					EventNames: []string{"deploy"},
+				},
+			}},
+			want: "test-ext.deploy",
+		},
+		{
+			name: "ServiceHandlerStatus",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+					EventName:   "deploy",
+					ServiceName: "api",
+				},
+			}},
+			want: "test-ext.api.deploy",
+		},
+		{
+			name: "InvokeServiceHandler",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_InvokeServiceHandler{
+				InvokeServiceHandler: &v1beta.InvokeServiceHandler{
+					EventName: "deploy",
+					Service:   &v1beta.ServiceConfig{Name: "api"},
+				},
+			}},
+			want: "test-ext.api.deploy",
+		},
+		{
+			name: "TopLevelRequestID",
+			msg:  &v1beta.EventMessage{RequestId: "request-1"},
+			want: "request-1",
+		},
+		{name: "NilMessage"},
+		{
+			name: "NilService",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_InvokeServiceHandler{
+				InvokeServiceHandler: &v1beta.InvokeServiceHandler{
+					EventName: "deploy",
+				},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, envelope.GetRequestId(ctx, tt.msg))
+		})
+	}
+}
+
+func TestBetaEventMessageEnvelope_RequestResponseFields(t *testing.T) {
+	envelope := newBetaEventMessageEnvelope()
+	message := &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeProjectEventResponse{
+			SubscribeProjectEventResponse: &v1beta.SubscribeProjectEventResponse{},
+		},
+	}
+	envelope.SetRequestId(t.Context(), message, "request-1")
+	require.Equal(t, "request-1", envelope.GetRequestId(t.Context(), message))
+	require.NotNil(t, envelope.GetInnerMessage(message))
+
+	envelope.SetError(message, errors.New("subscription failed"))
+	require.ErrorContains(t, envelope.GetError(message), "subscription failed")
+}
+
+func TestBetaEventMessageEnvelope_NoProgressMessages(t *testing.T) {
+	envelope := betaEventMessageEnvelope{}
 	message := &v1beta.EventMessage{
 		RequestId: "request-1",
 		MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
@@ -25,14 +132,13 @@ func TestBetaEventMessageEnvelope_UsesTopLevelRequestID(t *testing.T) {
 			},
 		},
 	}
-
 	require.Equal(t, "request-1", envelope.GetRequestId(t.Context(), message))
 	require.False(t, envelope.IsProgressMessage(message))
 	require.Empty(t, envelope.GetProgressMessage(message))
 	require.Nil(t, envelope.CreateProgressMessage("request-1", "warning"))
 }
 
-func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
+func TestWrapBetaError_PreservesStructuredDetails(t *testing.T) {
 	t.Run("local cause types", func(t *testing.T) {
 		err := &azdext.LocalError{
 			Message:    "handler failed",
@@ -43,10 +149,30 @@ func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
 		}
 
 		message := wrapBetaError(err)
-		localErr, ok := errors.AsType[*azdext.LocalError](unwrapBetaExtensionError(message))
+		localErr, ok := errors.AsType[*azdext.LocalError](
+			unwrapBetaExtensionError(message),
+		)
 		require.True(t, ok)
 		require.Equal(t, []string{"*demo.TransportError"}, localErr.CauseTypes)
 		require.Equal(t, "Check the extension configuration", localErr.Suggestion)
+	})
+
+	t.Run("service detail", func(t *testing.T) {
+		err := &azdext.ServiceError{
+			Message:     "service failed",
+			ErrorCode:   "Conflict",
+			StatusCode:  409,
+			ServiceName: "example.service",
+		}
+
+		message := wrapBetaError(err)
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](
+			unwrapBetaExtensionError(message),
+		)
+		require.True(t, ok)
+		require.Equal(t, "Conflict", serviceErr.ErrorCode)
+		require.Equal(t, 409, serviceErr.StatusCode)
+		require.Equal(t, "example.service", serviceErr.ServiceName)
 	})
 
 	t.Run("tool detail", func(t *testing.T) {
@@ -67,7 +193,7 @@ func TestWrapBetaEventError_PreservesStructuredDetails(t *testing.T) {
 	})
 }
 
-func TestWrapBetaEventError_PreservesErrorChainPrecedence(t *testing.T) {
+func TestWrapBetaError_PreservesErrorChainPrecedence(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		cause error
@@ -150,7 +276,9 @@ func TestValidateBetaEventMessageModes(t *testing.T) {
 		err := validateBetaEventMessage(&v1beta.EventMessage{
 			RequestId: "request-1",
 			MessageType: &v1beta.EventMessage_InvokeProjectHandler{
-				InvokeProjectHandler: &v1beta.InvokeProjectHandler{EventName: "predeploy"},
+				InvokeProjectHandler: &v1beta.InvokeProjectHandler{
+					EventName: "predeploy",
+				},
 			},
 		}, betaEventStreamRequestIDs)
 		require.ErrorContains(t, err, "invalid message for a beta event client")

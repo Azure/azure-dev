@@ -66,6 +66,18 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 	},
 }
 
+func Test_EnvironmentStore_ConfigPathUnsupported(t *testing.T) {
+	store := &EnvironmentStore{}
+	for _, name := range []string{"prod", ""} {
+		t.Run(name, func(t *testing.T) {
+			path, err := store.ConfigPath(environment.New(name))
+			require.ErrorIs(t, err, errors.ErrUnsupported)
+			require.Empty(t, path)
+			require.ErrorContains(t, err, "Dev Center does not expose an environment configuration file path")
+		})
+	}
+}
+
 func Test_EnvironmentStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
@@ -214,7 +226,8 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 
 	store := newEnvironmentStoreForTest(t, mockContext, config, nil)
 	env := environment.New(mockEnvironments[0].Name)
-	path := store.EnvPath(env)
+	path, err := store.EnvPath(env)
+	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("projects/%s/users/me/environments/%s", config.Project, env.Name()), path)
 }
 

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -352,10 +351,11 @@ func TestInitializeEnv(t *testing.T) {
 		seedDefaultEnv(t, *mockContext.Context, azdCtx, envManager, "corrupt-dev", nil)
 
 		// Overwrite config.json with invalid JSON to simulate a real load error.
-		configPath := filepath.Join(azdCtx.EnvironmentRoot("corrupt-dev"), environment.ConfigFileName)
+		configPath, err := azdCtx.EnvironmentFilePath("corrupt-dev", environment.ConfigFileName)
+		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(configPath, []byte("{invalid json"), 0600))
 
-		_, err := action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
+		_, err = action.initializeEnv(*mockContext.Context, azdCtx, templates.Metadata{})
 		require.Error(t, err)
 		// The I/O error must surface rather than being swallowed.
 		var initErr *environment.EnvironmentInitError

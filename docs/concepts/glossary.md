@@ -16,6 +16,16 @@ The project configuration file that defines an azd project. Located at the root 
 
 A named collection of configuration values and secrets stored locally (and optionally in a remote backend). Environments let you target different deployment configurations (e.g., `dev`, `staging`, `prod`) from the same project.
 
+Local state is stored in `.azure/<environment-name>/`. Names contain 1-64 alphanumeric characters, hyphens, underscores, parentheses, or periods and must be valid directory names, not paths. Paths, dot-only names (such as `.` and `..`), and platform-reserved names are rejected before accessing environment state. The same validation applies to `defaultEnvironment` in `.azure/config.json`; an empty default means no environment is selected.
+
+On Windows, names ending in a period are also rejected because they resolve to the same directory as the name without trailing periods. Interior periods remain supported.
+
+Local environment paths are resolved against the canonical project directory before accessing state. The `.azure` directory, environment directories, and environment state and lock files cannot be symbolic links or Windows reparse points (including junctions), even when a link targets another location within `.azure`. Existing directory paths must be directories, and state and lock file paths must be regular files. Missing paths remain supported, and a project reached through a linked parent directory remains supported. These checks validate existing filesystem entries; they do not provide isolation from a process concurrently replacing filesystem entries.
+
+The same checks protect the resource cache (`.azure/<environment-name>/.state.json`), state-change notification (`.azure/.state-change`), and all reads and writes of project configuration (`.azure/config.json`), including saved session state. Environment listing skips invalid names from both local and remote stores, as well as local entries with links or unsupported filesystem types in their directories, state files, or lock files, logging the reason, so unrelated entries do not prevent selecting a valid environment. Errors accessing the base directory or project configuration still fail the listing.
+
+Remote state is loaded only when the local environment is absent. Errors reading existing local state are reported rather than treated as a reason to replace it with remote state. Remote-only listing entries must also pass local state and cache path validation before they can be selected.
+
 ### Service
 
 A deployable unit defined in `azure.yaml`. Each service has a source path, a language/framework, and a host target. Services are built, packaged, and deployed independently during `azd deploy`.

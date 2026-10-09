@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -82,8 +83,8 @@ type Manager interface {
 	// Delete deletes the environment from local storage.
 	Delete(ctx context.Context, name string) error
 
-	EnvPath(env *Environment) string
-	ConfigPath(env *Environment) string
+	EnvPath(env *Environment) (string, error)
+	ConfigPath(env *Environment) (string, error)
 
 	// InvalidateEnvCache invalidates the state cache for the given environment
 	InvalidateEnvCache(ctx context.Context, envName string) error
@@ -159,20 +160,13 @@ func NewManager(
 		}
 	}
 
-	// Initialize state cache manager with environment directory path
-	// If azdContext is nil (no project), use empty path (cache won't be usable)
-	envDir := ""
-	if azdContext != nil {
-		envDir = azdContext.EnvironmentDirectory()
-	}
-
 	return &manager{
 		azdContext:        azdContext,
 		local:             local,
 		remote:            remote,
 		console:           console,
 		envCache:          make(map[string]*Environment),
-		stateCacheManager: state.NewStateCacheManager(envDir),
+		stateCacheManager: state.NewStateCacheManager(azdContext),
 	}, nil
 }
 
@@ -310,12 +304,6 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 	// - The user has not specified an environment name, and there was no default environment set
 	// - The user has specified an environment name, but the named environment didn't exist and they told us they would
 	//   like us to create it.
-	if environmentName != "" && !IsValidEnvironmentName(environmentName) {
-		err := InvalidEnvironmentNameError(environmentName)
-		fmt.Fprintln(m.console.Handles().Stdout, err.Error())
-		return nil, false, err
-	}
-
 	// No environment name, no default environment set.
 	// Ask the user if they want to create a new environment or select an existing one
 	if environmentName == "" {
@@ -369,21 +357,24 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 }
 
 // ConfigPath returns the path to the environment config file
-func (m *manager) ConfigPath(env *Environment) string {
+func (m *manager) ConfigPath(env *Environment) (string, error) {
 	return m.local.ConfigPath(env)
 }
 
 // EnvPath returns the path to the environment .env file
-func (m *manager) EnvPath(env *Environment) string {
+func (m *manager) EnvPath(env *Environment) (string, error) {
 	return m.local.EnvPath(env)
 }
 
 // List returns a list of all environments within the data store
 func (m *manager) List(ctx context.Context) ([]*Description, error) {
+	if m.azdContext == nil {
+		return nil, azdcontext.ErrNoProject
+	}
 	envMap := map[string]*Description{}
 	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
 	if err != nil {
-		defaultEnvName = ""
+		return nil, fmt.Errorf("getting default environment: %w", err)
 	}
 
 	localEnvs, err := m.local.List(ctx)
@@ -405,13 +396,27 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 			return nil, fmt.Errorf("retrieving remote environments, %w", err)
 		}
 
+	remoteEnvironments:
 		for _, env := range remoteEnvs {
+			if !IsValidEnvironmentName(env.Name) {
+				log.Printf("skipping remote environment entry %q: %v", env.Name, InvalidEnvironmentNameError(env.Name))
+				continue
+			}
 			existing, has := envMap[env.Name]
 			if !has {
-				existing = &Description{
-					Name:      env.Name,
-					HasRemote: true,
+				// Remote-only environments must be able to hydrate into their local state paths.
+				for _, name := range []string{
+					DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock", state.StateCacheFileName,
+				} {
+					if _, err := m.azdContext.EnvironmentFilePath(env.Name, name); err != nil {
+						if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
+							log.Printf("skipping remote environment entry %q: %v", env.Name, err)
+							continue remoteEnvironments
+						}
+						return nil, fmt.Errorf("checking local destination for remote environment %q: %w", env.Name, err)
+					}
 				}
+				existing = &Description{Name: env.Name, HasRemote: true}
 			} else {
 				existing.HasRemote = true
 			}
@@ -438,6 +443,9 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	if name == "" {
 		return nil, ErrNameNotSpecified
 	}
+	if !IsValidEnvironmentName(name) {
+		return nil, InvalidEnvironmentNameError(name)
+	}
 
 	// Check cache first
 	cached, err := m.getFromCache(ctx, name)
@@ -451,7 +459,7 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	// Not in cache, load from data store
 	localEnv, err := m.local.Get(ctx, name)
 	if err != nil {
-		if m.remote == nil {
+		if m.remote == nil || !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
 
@@ -519,6 +527,10 @@ func (m *manager) Save(ctx context.Context, env *Environment) error {
 
 // Save saves the environment to the persistent data store with the specified options
 func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error {
+	if !IsValidEnvironmentName(env.Name()) {
+		return InvalidEnvironmentNameError(env.Name())
+	}
+
 	if options == nil {
 		options = &SaveOptions{}
 	}
@@ -547,6 +559,10 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 
 // Reload reloads the environment from the persistent data store
 func (m *manager) Reload(ctx context.Context, env *Environment) error {
+	if !IsValidEnvironmentName(env.Name()) {
+		return InvalidEnvironmentNameError(env.Name())
+	}
+
 	// Reload swaps the in-memory dotenv map; serialize against Save so that
 	// a Reload triggered by a hook in service A doesn't observe a half-written
 	// .env file produced by service B's concurrent Save.
@@ -558,6 +574,9 @@ func (m *manager) Reload(ctx context.Context, env *Environment) error {
 func (m *manager) Delete(ctx context.Context, name string) error {
 	if name == "" {
 		return ErrNameNotSpecified
+	}
+	if !IsValidEnvironmentName(name) {
+		return InvalidEnvironmentNameError(name)
 	}
 
 	err := m.local.Delete(ctx, name)

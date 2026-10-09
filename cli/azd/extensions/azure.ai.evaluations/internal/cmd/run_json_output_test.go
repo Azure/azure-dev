@@ -335,7 +335,8 @@ func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
 		`"details":[{"error":{"message":"nested https://host/rows?sig=deep-secret"}}]}],` +
 		`"innererror":{"inner_error":{"target":"https://host/rows?sig=inner-secret"}},` +
 		`"unknown":{"url":"https://host/rows?sig=unknown-secret",` +
-		`"items":["plain",{"note":"retry https://host/rows?sig=array-secret"}]}}}`
+		`"items":["plain",{"note":"leave this diagnostic note unchanged",` +
+		`"url":"retry https://host/rows?sig=array-secret"}]}}}`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -381,6 +382,7 @@ func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
 		} {
 			assert.NotContains(t, raw, secret, name)
 		}
+		assert.Contains(t, raw, "leave this diagnostic note unchanged", name)
 		assert.Contains(t, raw, "9007199254740993", name)
 		assert.Contains(t, raw, `"plain"`, name)
 	}
@@ -407,6 +409,22 @@ func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testi
 	projected, err := runForJSON(nil)
 	require.NoError(t, err)
 	assert.Nil(t, projected)
+}
+
+func TestRunErrorProjectionPreservesUnknownValuesAndKeyOrder(t *testing.T) {
+	const input = `{"id":"run","error":{"unknown":{"z":"plain value",` +
+		`"credential":"https://fixture-user:fixture-password@host/rows?sig=fixture-secret","a":true}}}`
+
+	projected, err := redactExportRunError(json.RawMessage(input))
+	require.NoError(t, err)
+	output := string(projected)
+	assert.Contains(t, output, `"z":"plain value"`)
+	assert.Contains(t, output, `"a":true`)
+	assert.NotContains(t, output, "fixture-user")
+	assert.NotContains(t, output, "fixture-password")
+	assert.NotContains(t, output, "fixture-secret")
+	assert.Less(t, strings.Index(output, `"z"`), strings.Index(output, `"credential"`))
+	assert.Less(t, strings.Index(output, `"credential"`), strings.Index(output, `"a"`))
 }
 
 func TestRunJSONPreservesScalarDiagnosticFields(t *testing.T) {

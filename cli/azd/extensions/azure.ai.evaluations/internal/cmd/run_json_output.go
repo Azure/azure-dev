@@ -13,8 +13,9 @@ import (
 	"azureaieval/internal/urlsafe"
 )
 
-// runForJSON sanitizes the error diagnostic tree on a copy. Dataset values,
-// top-level service fields, and the original model remain untouched.
+// runForJSON removes URL credentials from strings in the error diagnostic tree
+// on a copy. Non-credential values, top-level service fields, and the original
+// model remain untouched.
 func runForJSON(run *eval_api.OpenAIEvalRun) (*eval_api.OpenAIEvalRun, error) {
 	if run == nil {
 		return run, nil
@@ -40,61 +41,40 @@ func redactExportRunError(raw json.RawMessage) (json.RawMessage, error) {
 	if len(raw) == 0 {
 		return raw, nil
 	}
-	var run map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &run); err != nil {
-		return nil, fmt.Errorf("reading exported run diagnostics: %w", err)
-	}
-	changed := false
-	// The run decodes `error` without regard to case, so every spelling of it is
-	// redacted, not only the exact one.
-	for runKey, errorJSON := range run {
-		if !strings.EqualFold(runKey, "error") || bytes.Equal(bytes.TrimSpace(errorJSON), []byte("null")) {
-			continue
-		}
-		redacted, errorChanged, err := redactExportError(errorJSON)
-		if err != nil {
-			return nil, err
-		}
-		if errorChanged {
-			run[runKey] = redacted
-			changed = true
-		}
-	}
-	if !changed {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return raw, nil
 	}
-	return json.Marshal(run)
+	// The run decodes `error` without regard to case, so every spelling of it is
+	// redacted, not only the exact one.
+	redacted, _, err := transformJSONObject(raw, func(key string, value json.RawMessage) (json.RawMessage, bool, error) {
+		if !strings.EqualFold(key, "error") || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return value, false, nil
+		}
+		return redactExportError(value)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading exported run diagnostics: %w", err)
+	}
+	return redacted, nil
 }
 
-// redactExportError redacts the recognized diagnostic members of one exported
-// error object, including nested details and inner errors.
+// redactExportError removes URL credentials from every string below one
+// exported error object, including nested diagnostic fields not yet modeled.
 func redactExportError(errorJSON json.RawMessage) (redacted json.RawMessage, changed bool, err error) {
-	var diagnostic map[string]json.RawMessage
-	if err := json.Unmarshal(errorJSON, &diagnostic); err != nil {
-		return nil, false, fmt.Errorf("reading exported run error: %w", err)
-	}
-	redacted, changed, err = redactDiagnosticObject(diagnostic)
+	redacted, changed, err = redactDiagnosticObject(errorJSON)
 	if err != nil || !changed {
 		return errorJSON, changed, err
 	}
 	return redacted, true, nil
 }
 
-func redactDiagnosticObject(diagnostic map[string]json.RawMessage) (json.RawMessage, bool, error) {
-	changed := false
-	for key, value := range diagnostic {
+func redactDiagnosticObject(diagnostic json.RawMessage) (json.RawMessage, bool, error) {
+	return transformJSONObject(diagnostic, func(key string, value json.RawMessage) (json.RawMessage, bool, error) {
 		switch {
 		case strings.EqualFold(key, "code"),
 			strings.EqualFold(key, "message"),
 			strings.EqualFold(key, "target"):
-			redacted, valueChanged, err := redactDiagnosticText(key, value)
-			if err != nil {
-				return nil, false, err
-			}
-			if valueChanged {
-				diagnostic[key] = redacted
-				changed = true
-			}
+			return redactDiagnosticText(key, value)
 		case strings.EqualFold(key, "details"),
 			strings.EqualFold(key, "innererror"),
 			strings.EqualFold(key, "inner_error"),
@@ -103,26 +83,15 @@ func redactDiagnosticObject(diagnostic map[string]json.RawMessage) (json.RawMess
 			if err != nil {
 				return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
 			}
-			if valueChanged {
-				diagnostic[key] = redacted
-				changed = true
-			}
+			return redacted, valueChanged, nil
 		default:
 			redacted, valueChanged, err := redactDiagnosticValue(value)
 			if err != nil {
 				return nil, false, fmt.Errorf("reading exported run error %s: %w", key, err)
 			}
-			if valueChanged {
-				diagnostic[key] = redacted
-				changed = true
-			}
+			return redacted, valueChanged, nil
 		}
-	}
-	if !changed {
-		return nil, false, nil
-	}
-	redacted, err := json.Marshal(diagnostic)
-	return redacted, err == nil, err
+	})
 }
 
 func redactDiagnosticText(key string, value json.RawMessage) (json.RawMessage, bool, error) {
@@ -157,37 +126,107 @@ func redactDiagnosticValue(value json.RawMessage) (json.RawMessage, bool, error)
 	case '"':
 		return redactDiagnosticText("nested diagnostic", value)
 	case '{':
-		var diagnostic map[string]json.RawMessage
-		if err := json.Unmarshal(value, &diagnostic); err != nil {
-			return nil, false, err
-		}
-		redacted, changed, err := redactDiagnosticObject(diagnostic)
+		redacted, changed, err := redactDiagnosticObject(value)
 		if err != nil || !changed {
 			return value, changed, err
 		}
 		return redacted, true, nil
 	case '[':
-		var entries []json.RawMessage
-		if err := json.Unmarshal(value, &entries); err != nil {
-			return nil, false, err
-		}
-		changed := false
-		for i, entry := range entries {
-			redacted, entryChanged, err := redactDiagnosticValue(entry)
-			if err != nil {
-				return nil, false, err
-			}
-			if entryChanged {
-				entries[i] = redacted
-				changed = true
-			}
-		}
-		if !changed {
-			return value, false, nil
-		}
-		redacted, err := json.Marshal(entries)
-		return redacted, err == nil, err
+		return transformJSONArray(value, redactDiagnosticValue)
 	default:
 		return value, false, nil
 	}
+}
+
+type jsonValueTransformer func(json.RawMessage) (json.RawMessage, bool, error)
+
+func transformJSONObject(
+	raw json.RawMessage,
+	transform func(string, json.RawMessage) (json.RawMessage, bool, error),
+) (json.RawMessage, bool, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, false, err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return nil, false, fmt.Errorf("expected object")
+	}
+	var output bytes.Buffer
+	output.WriteByte('{')
+	changed := false
+	for first := true; decoder.More(); first = false {
+		if !first {
+			output.WriteByte(',')
+		}
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, false, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return nil, false, fmt.Errorf("expected object member name")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, false, err
+		}
+		transformed, valueChanged, err := transform(key, value)
+		if err != nil {
+			return nil, false, err
+		}
+		encodedKey, err := json.Marshal(key)
+		if err != nil {
+			return nil, false, err
+		}
+		output.Write(encodedKey)
+		output.WriteByte(':')
+		output.Write(transformed)
+		changed = changed || valueChanged
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, false, err
+	}
+	output.WriteByte('}')
+	if !changed {
+		return raw, false, nil
+	}
+	return output.Bytes(), true, nil
+}
+
+func transformJSONArray(raw json.RawMessage, transform jsonValueTransformer) (json.RawMessage, bool, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, false, err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '[' {
+		return nil, false, fmt.Errorf("expected array")
+	}
+	var output bytes.Buffer
+	output.WriteByte('[')
+	changed := false
+	for first := true; decoder.More(); first = false {
+		if !first {
+			output.WriteByte(',')
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, false, err
+		}
+		transformed, valueChanged, err := transform(value)
+		if err != nil {
+			return nil, false, err
+		}
+		output.Write(transformed)
+		changed = changed || valueChanged
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, false, err
+	}
+	output.WriteByte(']')
+	if !changed {
+		return raw, false, nil
+	}
+	return output.Bytes(), true, nil
 }

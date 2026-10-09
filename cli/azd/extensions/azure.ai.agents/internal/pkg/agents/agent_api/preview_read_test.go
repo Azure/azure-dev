@@ -29,7 +29,8 @@ func TestPreviewReadsLatestAgentWithGetOnly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			transport := &captureTransport{
 				statusCode: http.StatusOK,
-				body: `{"name":"agent","versions":{"latest":{"name":"agent","version":"7","definition":` +
+				body: `{"name":"agent","versions":{"latest":{"name":"agent","version":"7",` +
+					`"metadata":{"tags":"[\"one\",\"two\"]","empty":""},"definition":` +
 					tc.definition + `}}}`,
 			}
 			client := newTestClient("https://account.services.ai.azure.com/api/projects/project", transport)
@@ -40,6 +41,7 @@ func TestPreviewReadsLatestAgentWithGetOnly(t *testing.T) {
 			require.Equal(t, AgentEndpointAPIVersion, transport.requests[0].URL.Query().Get("api-version"))
 			require.Equal(t, "/api/projects/project/agents/agent", transport.requests[0].URL.Path)
 			require.Equal(t, "7", agent.Versions.Latest.Version)
+			require.Equal(t, map[string]string{"tags": `["one","two"]`, "empty": ""}, agent.Versions.Latest.Metadata)
 			data, err := json.Marshal(agent.Versions.Latest.Definition)
 			require.NoError(t, err)
 			var definition HostedAgentDefinition

@@ -49,6 +49,34 @@ unless they are in scope, and displayed values are redacted by default. URL
 usernames/passwords, query strings, and fragments are removed from displayed
 references. Redaction affects display only, not comparison.
 
+Agent tags belong under the service's `metadata.tags`, not project/resource
+provisioning tags. Both ordinary deployment and preview accept a string or a
+list of strings:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - customer-support
+        - responses
+```
+
+Foundry agent metadata is a string-valued dictionary. The extension stores a
+tag list as a JSON array string at `metadata.tags`, preserving commas and empty
+items; existing string values are unchanged. List additions/removals therefore
+appear as an `update: metadata.tags` change. Removing the entire `tags` property
+reports `remove: metadata.tags` if the latest remote version contains it.
+Explicit `tags: []` and `tags: ""` remain present values, not missing properties.
+Invalid tag types fail instead of silently disappearing. Tag values stay
+redacted, and comparison uses their actual values before redaction.
+
+Preview compares against the latest deployed version, not a previous local
+file revision. A deleted local tag that was never deployed cannot appear as a
+remote removal; a missing remote agent reports creation and only additions.
+
 For example:
 
 ```text

@@ -19,8 +19,8 @@ Unused legacy files do not override an inline definition. Prompt, voice, and
 workflow agent definitions are outside this preview's scope. There is no
 standalone `azd ai agent deploy` or `--dry-run` command.
 
-The provider reads the latest remote agent version and compares the desired
-deployment request, including extension defaults, with its configuration. It
+The provider reads the latest remote agent version and compares the declared,
+in-scope properties with its configuration, using normal deployment normalization. It
 reports `create` on a missing agent, `update` for known differences, `noChange`
 when the in-scope known configuration matches, or `unknown` when it matches but
 an in-scope input or image-source choice is unresolved.
@@ -33,10 +33,18 @@ artifact contents are not compared or reported, and do not affect change counts
 or statuses. Additions show the desired value, updates show `before -> after`,
 and removals show the old value followed by `(removed)`.
 
+Absent properties and empty groups are omitted from both readable and structured
+changes. Field/fragment references retain their effective authored presence.
+Normalization-only defaults, including undeclared CPU/memory, protocols, and
+`enableVnextExperience` metadata, do not create differences. Declared zero, false,
+and empty values are not treated as absent; normal value normalization and
+redaction still apply. Remote-only optional metadata/environment/image properties
+remain real removals when the new request removes them.
+
 CPU/memory, protocol versions, and agent/model/registry identifiers are shown.
 Arbitrary environment values, metadata tags, and descriptions are `[redacted]`.
-The model deployment binding and extension-generated `enableVnextExperience`
-metadata are explicitly safe exceptions. New fields are excluded from comparison
+The model deployment binding and explicitly declared `enableVnextExperience`
+metadata are safe exceptions. New fields are excluded from comparison
 unless they are in scope, and displayed values are redacted by default. URL
 usernames/passwords, query strings, and fragments are removed from displayed
 references. Redaction affects display only, not comparison.
@@ -54,14 +62,21 @@ For example:
 ```
 
 Image passthrough compares the configured image reference, including a private
-registry connection, and reports `build: false` / `push: false`. Container builds
-report `build: true` / `push: true`, including remote builds, without building,
-pushing, or inventing a resulting tag/digest. Code-mode services do not perform
-azd container build/push operations and report both as false; code packaging and
-upload content are excluded. If normal interactive deployment would ask whether
-to build or use a configured image, those two intent fields are unknown. With
-`--no-prompt`, the normal default is build. The legacy `AZD_AGENT_SKIP_ACR=true`
-marker still selects a configured pre-built image.
+registry connection. The Container image group and optional JSON `containerImage`
+intent are change-only: creating a container-based agent or changing its known
+image/registry configuration can include relevant build/push intent. Unchanged
+container configuration is omitted, even if normal deployment would always
+rebuild. A changed passthrough image shows its sanitized reference diff and
+`build: false` / `push: false`; a relevant container build reports true/true,
+including remote builds, without inventing a resulting tag/digest.
+
+Code-only services have no container intent or synthetic false/false section;
+code packaging and upload content remain excluded. Switching from a deployed
+container definition to code can still report removal of the old image reference.
+If a relevant normal interactive deployment would ask whether to build or use
+a configured image, intent is unknown. With `--no-prompt`, the normal default is
+build. The legacy `AZD_AGENT_SKIP_ACR=true` marker selects a configured pre-built
+image.
 
 Equal image tags do not prove their mutable content is unchanged. Unset `${VAR}`
 inputs in service `env` or a selected passthrough `image` remain unknown rather
@@ -72,13 +87,16 @@ evaluated or resolved to credentials.
 The existing host JSON envelope contains `timestamp` and `services`. Provider
 results are at `services.<service>.data`, with `service`, `agent`, `status`,
 `changes` (each has `group`, `path`, `operation` and the applicable sanitized
-`before`/`after` values), `unknown`, `notes`, and `containerImage` with boolean
-`build`/`push` intent (null when the image-source choice is unresolved). JSON
+`before`/`after` values), `unknown`, and `notes`. Optional `containerImage` has
+boolean `build`/`push` intent for relevant container changes (null when a relevant
+image-source choice is unresolved); it is absent for code-only and unchanged
+container configurations. JSON
 uses the same sanitized values as readable output.
 Create, update, no-change, and unknown previews succeed; configuration,
 authentication, permission, connectivity, and malformed-response errors fail.
-`noChange` describes only the six in-scope configuration groups, not artifact
-content equivalence: ordinary deploy still creates a new agent version.
+`noChange` describes only the declared, in-scope configuration and actual optional
+removals, not normalization-only defaults or artifact content equivalence:
+ordinary deploy still creates a new agent version.
 
 ### Read-only boundary and inherited host limitations
 

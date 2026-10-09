@@ -14,8 +14,10 @@ configuration are accessed.
 
 The test exercises stable registration, beta preview registration and forwarding,
 fresh providers without `Initialize`, create/update/no-change/unknown results,
-six-group comparison, planned build/push booleans, ignored code/session/artifact
-differences, safe values/redaction, and legacy errors.
+six-group presence-aware comparison, omitted normalization-only defaults and
+absent/code-only/unchanged container groups, conditional build/push booleans,
+image-reference updates, ignored code/session/artifact differences, safe
+values/redaction, and legacy errors.
 It also uses the projects extension's production registration
 to verify a silent no-op preview, without project/environment/account reads.
 The forwarded project result is passed to the unchanged deploy preview command

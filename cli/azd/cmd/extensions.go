@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
@@ -359,6 +360,10 @@ type extensionInterruptController struct {
 	handledAfterFinish           bool
 	popHandler                   func()
 	popOnce                      sync.Once
+	interruptSignals             chan os.Signal
+	stopInterruptObservation     func()
+	interruptObservationOnce     sync.Once
+	hostInterruptObserved        bool
 }
 
 func installExtensionInterruptHandler(
@@ -374,6 +379,12 @@ func installExtensionInterruptHandler(
 		gracePeriod = 0
 	}
 	controller := newExtensionInterruptController(cancelProcess, gracePeriod)
+	interruptSignals := make(chan os.Signal, 1)
+	signal.Notify(interruptSignals, os.Interrupt)
+	controller.interruptSignals = interruptSignals
+	controller.stopInterruptObservation = func() {
+		signal.Stop(interruptSignals)
+	}
 	popHandler := input.PushInterruptHandler(controller.handle)
 	controller.popHandler = popHandler
 
@@ -467,6 +478,7 @@ func (c *extensionInterruptController) cancelAfterGrace() {
 
 func (c *extensionInterruptController) finish(invokeErr error, extension *extensions.Extension) error {
 	processInterrupted := isExtensionInterruptExit(invokeErr)
+	hostInterruptObserved := c.stopAndObserveHostInterrupt()
 
 	c.mu.Lock()
 	c.finished = true
@@ -475,6 +487,14 @@ func (c *extensionInterruptController) finish(invokeErr error, extension *extens
 		c.graceTimer = nil
 	}
 	cancellationRequested := c.cancellationRequested
+	if hostInterruptObserved && !cancellationRequested {
+		// The child may trap SIGINT and exit successfully before the input
+		// dispatcher invokes this handler. Keep the handler registered until
+		// that same host signal is acknowledged.
+		c.cancellationRequested = true
+		c.awaitingHostInterrupt = true
+		cancellationRequested = true
+	}
 	interrupted := cancellationRequested || processInterrupted
 	contextTerminationObserved := errors.Is(invokeErr, context.Canceled) ||
 		errors.Is(invokeErr, context.DeadlineExceeded)
@@ -503,6 +523,8 @@ func (c *extensionInterruptController) finish(invokeErr error, extension *extens
 }
 
 func (c *extensionInterruptController) close() {
+	c.stopAndObserveHostInterrupt()
+
 	c.mu.Lock()
 	c.finished = true
 	c.processCancellationRequested = true
@@ -518,6 +540,28 @@ func (c *extensionInterruptController) close() {
 	if !awaitingHostInterrupt {
 		c.pop()
 	}
+}
+
+func (c *extensionInterruptController) stopAndObserveHostInterrupt() bool {
+	c.interruptObservationOnce.Do(func() {
+		if c.stopInterruptObservation != nil {
+			// signal.Stop waits for in-flight delivery to quiesce. Draining
+			// afterward acknowledges a host SIGINT even when the child exits
+			// before the process-wide input dispatcher runs.
+			c.stopInterruptObservation()
+		}
+		if c.interruptSignals == nil {
+			return
+		}
+
+		select {
+		case <-c.interruptSignals:
+			c.hostInterruptObserved = true
+		default:
+		}
+	})
+
+	return c.hostInterruptObserved
 }
 
 func (c *extensionInterruptController) pop() {

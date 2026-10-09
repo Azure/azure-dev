@@ -126,8 +126,7 @@ external-tool failures:
   Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`, `Links`.
 
 - **`azdext.LocalError`** — for local errors such as validation, auth, config, or internal failures.
-  Fields: `Message`, `Err`, `Code`, `Category`, `CauseTypes`, `Suggestion`,
-  `Links`.
+  Fields: `Message`, `Code`, `Category`, `CauseTypes`, `Suggestion`, `Links`.
 
 - **`azdext.ToolError`** — for failures from external tools or subprocesses.
   Fields: `Message`, `Err`, `ToolName`, `Kind`, `ExitCode`, `Suggestion`,
@@ -135,8 +134,12 @@ external-tool failures:
   Use `ToolErrorKindMissing` when the tool was not found and
   `ToolErrorKindFailed` when it ran and failed.
 
-These types implement `Error()`; `LocalError` and `ToolError` also unwrap
-their `Err` value. They are detected via `errors.As` during serialization.
+These types implement `Error()`. `ToolError` unwraps its `Err` value.
+`LocalError` derives a canonical cause from its category and code:
+category `user` with code `canceled` or `cancelled` unwraps
+`context.Canceled`, while category `internal` with code
+`deadline_exceeded` unwraps `context.DeadlineExceeded`. Other local errors
+do not unwrap a cause. They are detected via `errors.As` during serialization.
 `CauseTypes` is bounded, extension-provided diagnostic input
 for unexpected local fallbacks; it does not change the selected
 classification. The host records it only as hashes in

@@ -399,6 +399,46 @@ func TestExtensionInterruptController_InterruptExitWaitsForHostSignal(t *testing
 	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
 }
 
+func TestExtensionInterruptController_SuccessAfterObservedSignalWaitsForHostDispatch(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	_, cancel := context.WithCancel(t.Context())
+	controller := newExtensionInterruptController(cancel, time.Hour)
+	controller.popHandler = input.PushInterruptHandler(controller.handle)
+	defer controller.close()
+
+	interruptSignals := make(chan os.Signal, 1)
+	observationStopped := false
+	controller.interruptSignals = interruptSignals
+	controller.stopInterruptObservation = func() {
+		observationStopped = true
+		interruptSignals <- os.Interrupt
+	}
+
+	err := controller.finish(nil, &extensions.Extension{
+		Id:      "test.ext",
+		Version: "1.0.0",
+	})
+	require.True(t, observationStopped)
+	require.ErrorIs(t, err, context.Canceled)
+
+	handlers := input.SnapshotInterruptStack()
+	require.Len(t, handlers, initialHandlers+1)
+	require.True(t, handlers[len(handlers)-1]())
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+}
+
+func TestExtensionInterruptController_SuccessWithoutObservedSignalPopsHandler(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	_, controller, cleanup := installExtensionInterruptHandler(t.Context())
+	defer cleanup()
+
+	require.NoError(t, controller.finish(nil, &extensions.Extension{
+		Id:      "test.ext",
+		Version: "1.0.0",
+	}))
+	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+}
+
 func TestExtensionInterruptController_InterruptExitAfterHandledSignalPopsHandler(t *testing.T) {
 	initialHandlers := len(input.SnapshotInterruptStack())
 	ctx, cancel := context.WithCancel(t.Context())

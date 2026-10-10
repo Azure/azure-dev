@@ -38,19 +38,29 @@ changes. Field/fragment references retain their effective authored presence.
 Normalization-only defaults, including undeclared CPU/memory, protocols, and
 `enableVnextExperience` metadata, do not create differences. Declared zero, false,
 and empty values are not treated as absent; normal value normalization and
-redaction still apply. Remote-only optional metadata/environment/image properties
+credential sanitization still apply. Remote-only optional metadata/environment/image properties
 remain real removals when the new request removes them.
 
-CPU/memory, protocol versions, and agent/model/registry identifiers are shown.
-Ordinary `metadata.tags` values are shown as logical lists or scalar strings.
-Arbitrary environment values, other free-form metadata, and descriptions are
-`[redacted]`. Tags still strip credential-bearing URL components and terminal
-controls, and redact known environment secrets without hiding adjacent public tags.
-The model deployment binding and explicitly declared `enableVnextExperience`
-metadata are safe exceptions. New fields are excluded from comparison
-unless they are in scope, and displayed values are redacted by default. URL
-usernames/passwords, query strings, and fragments are removed from displayed
-references. Redaction affects display only, not comparison.
+Ordinary in-scope values are visible, including descriptions, metadata, protocol
+versions, CPU/memory, and literal service environment bindings. There is no
+blanket redaction based on a property's name or free-text type. Tags are shown
+as logical lists or scalar strings; false, zero, and empty values keep their types.
+Fields outside the six groups remain excluded.
+
+Credential protection is targeted at environment-resolution boundaries.
+Preview reads the effective authored source, including references, to distinguish
+literal environment bindings from `${VAR}` substitutions. Substituted bindings
+and remote-only bindings without authored provenance remain protected; the
+public model deployment identifier remains visible. Foundry `${{...}}`
+expressions stay unevaluated and visible. Known resolved values and protected
+previous remote binding values are also removed if embedded in descriptions,
+metadata, tags, or other displayed strings. Current source cannot recover
+historical secret provenance when a binding is now literal; it does not guess
+sensitivity from names.
+URL usernames/passwords, query strings, and fragments are always stripped, and
+terminal control characters are neutralized. Keep credentials in environment
+substitutions rather than inline configuration. Sanitization affects display
+only, not comparison.
 
 Agent tags belong under the service's `metadata.tags`, not project/resource
 provisioning tags. Both ordinary deployment and preview accept a string or a
@@ -91,10 +101,12 @@ For example:
 
 ```text
   Metadata:
+    update: description: "A basic responses agent." -> "A helpful responses agent."
     update: metadata.tags: ["retained","removed"] -> ["retained","added"]
   Resources:
     update: definition.cpu: "0.5" -> "2"
   Environment variables:
+    update: definition.environment_variables.MODE: "production" -> "development"
     add: definition.environment_variables.API_KEY: "[redacted]"
   Container image:
     build: true

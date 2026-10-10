@@ -19,7 +19,9 @@ absent/code-only/unchanged container groups, conditional build/push booleans,
 image-reference updates, visible logical tag lists on additions/updates/removals,
 scalar and empty tags, and unchanged omission through production request mapping,
 tag URL/known-environment-secret sanitization and typed JSON forwarding, ignored
-code/session/artifact differences, safe values/redaction, and legacy errors.
+code/session/artifact differences, visible description/protocol/memory/inline-env
+changes, authored substitution versus inline provenance, previous remote
+credential non-disclosure, and legacy errors.
 It also uses the projects extension's production registration
 to verify a silent no-op preview, without project/environment/account reads.
 The forwarded project result is passed to the unchanged deploy preview command

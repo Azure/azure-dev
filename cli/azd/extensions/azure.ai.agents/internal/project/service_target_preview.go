@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext/preview"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/proto"
 )
@@ -101,21 +102,24 @@ func (p *AgentServiceTargetProvider) Preview(
 	if err != nil {
 		return nil, err
 	}
-	pending, err := previewPendingInputs(project.Project.Path, service, environment)
+	sourceInputs, err := previewSourceInputs(project.Project.Path, service, environment)
 	if err != nil {
 		return nil, err
 	}
-	if slices.Contains(pending, previewImagePath) {
+	if slices.Contains(sourceInputs.Unknown, previewImagePath) {
 		service.Image = "preview.invalid/unknown"
 	}
 	service, definition, err := resolvePreviewDefinition(service, project.Project.Path)
 	if err != nil {
 		return nil, err
 	}
-	request, inputs, err := preparePreviewRequest(service, definition, environment, pending)
+	request, inputs, err := preparePreviewRequest(service, definition, environment, sourceInputs.Unknown)
 	if err != nil {
 		return nil, err
 	}
+	// The transport config is already interpolated; only authored sources establish provenance.
+	inputs.PublicEnvironment = sourceInputs.PublicEnvironment
+	inputs.Secrets = append(inputs.Secrets, sourceInputs.Secrets...)
 	subscription := environment["AZURE_SUBSCRIPTION_ID"]
 	if subscription == "" {
 		return nil, exterrors.Dependency(exterrors.CodeMissingAzureSubscription,
@@ -181,7 +185,18 @@ func preparePreviewRequest(
 	}
 	inputs := previewInputs{
 		Unknown: slices.Clone(pending), Declared: previewDeclaredFields(service, definition),
-		Description: definition.Description, ProtocolVersions: map[string]bool{},
+		Description: definition.Description, ProtocolVersions: map[string]bool{}, PublicEnvironment: map[string]bool{},
+	}
+	for name, value := range service.Environment {
+		if name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+			inputs.PublicEnvironment[name] = true
+			continue
+		}
+		public, err := previewEnvironmentSource(value, func(key string) string { return environment[key] }, &inputs.Secrets)
+		if err != nil {
+			return nil, previewInputs{}, previewConfigurationError()
+		}
+		inputs.PublicEnvironment[name] = public
 	}
 	for _, protocol := range service.GetAdditionalProperties().GetFields()["protocols"].GetListValue().GetValues() {
 		fields := protocol.GetStructValue().GetFields()
@@ -242,6 +257,16 @@ func preparePreviewRequest(
 			if missing {
 				unknown = append(unknown, "definition.environment_variables."+variable.Name)
 			}
+			secrets := &inputs.Secrets
+			if variable.Name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+				secrets = new([]string)
+			}
+			public, err := previewEnvironmentSource(variable.Value,
+				func(name string) string { value, _ := lookup(name); return value }, secrets)
+			if err != nil {
+				return nil, previewInputs{}, previewConfigurationError()
+			}
+			inputs.PublicEnvironment[variable.Name] = public
 			value, err := ResolveAgentEnvironmentVariable(variable.Name, variable.Value, service.Environment,
 				func(name string) string { value, _ := lookup(name); return value })
 			if err != nil {
@@ -325,12 +350,12 @@ func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.
 	return fields
 }
 
-func previewPendingInputs(
+func previewSourceInputs(
 	root string, service *azdext.ServiceConfig, environment map[string]string,
-) ([]string, error) {
+) (previewInputs, error) {
 	raw, err := projectconfig.LoadServiceEnvironment(root, service.Name)
 	if err != nil {
-		return nil, previewConfigurationError()
+		return previewInputs{}, previewConfigurationError()
 	}
 	lookup := func(variable string) (string, bool) {
 		value, found := environment[variable]
@@ -339,34 +364,125 @@ func previewPendingInputs(
 		}
 		return value, found
 	}
-	var pending []string
+	inputs := previewInputs{PublicEnvironment: map[string]bool{}}
 	for name, expression := range raw {
+		secrets := &inputs.Secrets
+		if name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+			secrets = new([]string)
+		}
+		public, err := previewEnvironmentSource(expression,
+			func(key string) string { value, _ := lookup(key); return value }, secrets)
+		if err != nil {
+			return previewInputs{}, previewConfigurationError()
+		}
+		inputs.PublicEnvironment[name] = public
 		missing, err := previewEnvironmentInputUnknown(expression, lookup)
 		if err != nil {
-			return nil, previewConfigurationError()
+			return previewInputs{}, previewConfigurationError()
 		}
 		if missing {
-			pending = append(pending, "definition.environment_variables."+name)
+			inputs.Unknown = append(inputs.Unknown, "definition.environment_variables."+name)
 		}
 	}
 	data, _, err := projectconfig.ReadProjectFile(root)
 	if err != nil {
-		return nil, previewConfigurationError()
+		return previewInputs{}, previewConfigurationError()
 	}
 	var document struct {
-		Services map[string]struct{ Image string } `yaml:"services"`
+		Services map[string]map[string]any `yaml:"services"`
 	}
 	if err := yaml.Unmarshal(data, &document); err != nil {
-		return nil, previewConfigurationError()
+		return previewInputs{}, previewConfigurationError()
 	}
-	missing, err := previewEnvironmentInputUnknown(document.Services[service.Name].Image, lookup)
+	source, err := foundry.ResolveFileRefs(document.Services[service.Name], root)
 	if err != nil {
-		return nil, previewConfigurationError()
+		return previewInputs{}, previewConfigurationError()
+	}
+	// Scan only previewed inputs, not excluded code/artifact settings.
+	for _, key := range []string{"name", "description", "metadata", "protocols", "image", "registryConnectionId"} {
+		if err := previewSourceSecrets(source[key], lookup, &inputs.Secrets); err != nil {
+			return previewInputs{}, previewConfigurationError()
+		}
+	}
+	if container, ok := source["container"].(map[string]any); ok {
+		if err := previewSourceSecrets(container["resources"], lookup, &inputs.Secrets); err != nil {
+			return previewInputs{}, previewConfigurationError()
+		}
+	}
+	// The deprecated list form still has ordinary deployment support.
+	if variables, ok := source["environmentVariables"].([]any); ok {
+		for _, item := range variables {
+			fields, ok := item.(map[string]any)
+			if !ok {
+				return previewInputs{}, previewConfigurationError()
+			}
+			name, ok := fields["name"].(string)
+			if !ok || name == "" {
+				return previewInputs{}, previewConfigurationError()
+			}
+			if _, overridden := raw[name]; overridden {
+				continue
+			}
+			value, ok := fields["value"].(string)
+			if !ok {
+				return previewInputs{}, previewConfigurationError()
+			}
+			secrets := &inputs.Secrets
+			if name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
+				secrets = new([]string)
+			}
+			public, err := previewEnvironmentSource(value,
+				func(key string) string { value, _ := lookup(key); return value }, secrets)
+			if err != nil {
+				return previewInputs{}, previewConfigurationError()
+			}
+			inputs.PublicEnvironment[name] = public
+		}
+	}
+	image, _ := source["image"].(string)
+	missing, err := previewEnvironmentInputUnknown(image, lookup)
+	if err != nil {
+		return previewInputs{}, previewConfigurationError()
 	}
 	if missing {
-		pending = append(pending, previewImagePath)
+		inputs.Unknown = append(inputs.Unknown, previewImagePath)
 	}
-	return pending, nil
+	return inputs, nil
+}
+
+func previewEnvironmentSource(expression string, lookup func(string) string, secrets *[]string) (bool, error) {
+	public := true
+	_, err := ExpandEnv(expression, func(name string) string {
+		public = false
+		value := lookup(name)
+		if value != "" {
+			*secrets = append(*secrets, value)
+		}
+		return value
+	})
+	return public, err
+}
+
+func previewSourceSecrets(value any, lookup func(string) (string, bool), secrets *[]string) error {
+	switch typed := value.(type) {
+	case string:
+		_, err := previewEnvironmentSource(typed,
+			func(name string) string { value, _ := lookup(name); return value }, secrets)
+		return err
+	case []any:
+		for _, item := range typed {
+			if err := previewSourceSecrets(item, lookup, secrets); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, item := range typed {
+			if err := previewSourceSecrets(item, lookup, secrets); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 var (

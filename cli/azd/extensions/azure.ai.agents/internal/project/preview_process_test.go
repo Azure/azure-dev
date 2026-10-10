@@ -57,7 +57,21 @@ func (p *previewProcessProvider) Preview(
 ) (*v1beta.ServiceDeployPreviewResult, error) {
 	require.Nil(p.t, p.serviceConfig)
 	require.False(p.t, p.deployContextReady)
-	if service.GetName() == "create" {
+	if service.GetName() == "config-update" || service.GetName() == "protected-update" {
+		p.previewReader = func(string, string) (agentPreviewReader, error) {
+			request := previewRequest(p.t)
+			request.Description = new("A basic responses agent.")
+			request.Metadata["tags"] = `["responses","removed"]`
+			if service.GetName() == "protected-update" {
+				request.Description = new("Old private-previous-secret instructions.")
+				hosted, ok := request.Definition.(agent_api.HostedAgentDefinition)
+				require.True(p.t, ok)
+				hosted.EnvironmentVariables = map[string]string{"API_KEY": "private-previous-secret"}
+				request.Definition = hosted
+			}
+			return &recordingPreviewReader{agent: remotePreviewAgent(request)}, nil
+		}
+	} else if service.GetName() == "create" {
 		p.previewReader = func(string, string) (agentPreviewReader, error) {
 			return &recordingPreviewReader{err: &azcore.ResponseError{StatusCode: http.StatusNotFound}}, nil
 		}

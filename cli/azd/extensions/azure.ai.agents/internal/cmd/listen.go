@@ -405,7 +405,7 @@ func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGro
 // It is advisory: deploy continues.
 func warnDuplicateAgentNames(proj *azdext.ProjectConfig) {
 	for _, group := range findDuplicateAgentNames(proj) {
-		fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		_, _ = fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
 			"WARNING: agent name %q is used by multiple services (%s). Foundry identifies an agent "+
 				"by its name, so these services deploy to the same agent and overwrite each other. "+
 				"Give each agent a unique name in azure.yaml.\n",
@@ -591,7 +591,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 	if len(found) == 0 {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+	_, _ = fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
 		"WARNING: digital worker service %q still has legacy simple-agent Teams artifacts in %q (%s). "+
 			"This transition can leave stale appPackage.zip and TEAMS_APP_SETUP.md files behind. "+
 			"review and remove them manually before retrying the Teams setup flow.\n",
@@ -1085,7 +1085,8 @@ func enrichToolboxFromConnections(
 		}
 		conn, ok := connByName[connID]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "warning: tool references connection %q but no matching connection was found\n", connID)
+			_, _ = fmt.Fprintf(os.Stderr,
+				"warning: tool references connection %q but no matching connection was found\n", connID)
 			continue
 		}
 		if _, has := tool["server_url"]; !has && conn.Target != "" {
@@ -1179,7 +1180,7 @@ func resolveEnvValue(value string, azdEnv map[string]string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr,
+		_, _ = fmt.Fprintf(os.Stderr,
 			"Warning: failed to resolve env references in %q: %s\n", value, err)
 		return value
 	}

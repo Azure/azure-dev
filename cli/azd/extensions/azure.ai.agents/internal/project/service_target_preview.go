@@ -61,7 +61,7 @@ func (p *AgentServiceTargetProvider) Preview(
 	}
 	if err != nil || project.GetProject().GetPath() == "" {
 		return nil, exterrors.Dependency(exterrors.CodeProjectNotFound,
-			"Cannot read the project for deployment preview.", "run preview from an initialized azd project")
+			"cannot read the project for deployment preview", "run preview from an initialized azd project")
 	}
 	original := project.GetProject().GetServices()[service.Name]
 	if original == nil {
@@ -81,7 +81,7 @@ func (p *AgentServiceTargetProvider) Preview(
 	}
 	if err != nil || current.GetEnvironment().GetName() == "" {
 		return nil, exterrors.Dependency(exterrors.CodeEnvironmentNotFound,
-			"An existing azd environment is required for deployment preview.",
+			"an existing azd environment is required for deployment preview",
 			"select an existing environment with --environment")
 	}
 	values, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
@@ -92,7 +92,7 @@ func (p *AgentServiceTargetProvider) Preview(
 	}
 	if err != nil || values == nil {
 		return nil, exterrors.Dependency(exterrors.CodeEnvironmentValuesFailed,
-			"Cannot read environment values for deployment preview.", "check the selected azd environment")
+			"cannot read environment values for deployment preview", "check the selected azd environment")
 	}
 	environment := make(map[string]string, len(values.KeyValues))
 	for _, entry := range values.KeyValues {
@@ -123,7 +123,8 @@ func (p *AgentServiceTargetProvider) Preview(
 	subscription := environment["AZURE_SUBSCRIPTION_ID"]
 	if subscription == "" {
 		return nil, exterrors.Dependency(exterrors.CodeMissingAzureSubscription,
-			"AZURE_SUBSCRIPTION_ID is required for deployment preview.", "check the selected azd environment")
+			"environment variable AZURE_SUBSCRIPTION_ID is required for deployment preview",
+			"check the selected azd environment")
 	}
 	tenant, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{SubscriptionId: subscription})
 	if err != nil && ctx.Err() != nil {
@@ -131,7 +132,7 @@ func (p *AgentServiceTargetProvider) Preview(
 	}
 	if err != nil || tenant.GetTenantId() == "" {
 		return nil, exterrors.Auth(exterrors.CodeTenantLookupFailed,
-			"Cannot resolve the user access tenant for deployment preview.",
+			"cannot resolve the user access tenant for deployment preview",
 			"run 'azd auth login' and check your subscription access")
 	}
 	factory := p.previewReader
@@ -141,7 +142,7 @@ func (p *AgentServiceTargetProvider) Preview(
 	reader, err := factory(endpoint, tenant.TenantId)
 	if err != nil {
 		return nil, exterrors.Auth(exterrors.CodeCredentialCreationFailed,
-			"Cannot create the preview credential.", "run 'azd auth login'")
+			"cannot create the preview credential", "run 'azd auth login'")
 	}
 	return previewAgentRequest(ctx, reader, service.Name, request, inputs)
 }
@@ -159,13 +160,13 @@ func newAgentPreviewReader(endpoint, tenantID string) (agentPreviewReader, error
 func previewProjectEndpoint(raw string) (string, error) {
 	if raw == "" {
 		return "", exterrors.Dependency(exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required for deployment preview.",
+			"environment variable FOUNDRY_PROJECT_ENDPOINT is required for deployment preview",
 			"connect this environment to an existing Microsoft Foundry project")
 	}
 	endpoint, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" {
 		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
-			"Invalid Foundry project endpoint for deployment preview.", "provide an HTTPS project endpoint")
+			"invalid Foundry project endpoint for deployment preview", "provide an HTTPS project endpoint")
 	}
 	endpoint.User = nil
 	endpoint.RawQuery = ""
@@ -523,7 +524,7 @@ func previewAgentRequest(
 			// Response bodies and transport/auth errors can contain credentials.
 			if isResponse {
 				return nil, &azdext.ServiceError{
-					Message:    fmt.Sprintf("Foundry deployment preview read failed (HTTP %d).", response.StatusCode),
+					Message:    fmt.Sprintf("the Foundry deployment preview read failed (HTTP %d)", response.StatusCode),
 					StatusCode: response.StatusCode, ServiceName: "foundry",
 					Suggestion: "check your login, project permissions, and network access",
 				}
@@ -533,7 +534,7 @@ func previewAgentRequest(
 		existing = nil
 	} else if existing == nil || existing.Name != request.Name || existing.Versions.Latest.Version == "" ||
 		existing.Versions.Latest.Definition == nil {
-		return nil, fmt.Errorf("Foundry returned a malformed agent response; preview cannot compare it")
+		return nil, fmt.Errorf("the Foundry service returned a malformed agent response; preview cannot compare it")
 	}
 	return comparePreviewRequest(service, request, existing, inputs)
 }

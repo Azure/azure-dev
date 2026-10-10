@@ -8,7 +8,7 @@
       "description": "This extension provides examples of the azd extension framework.",
       "versions": [
         {
-          "version": "0.8.0-nightly.6939983",
+          "version": "0.8.0-nightly.6942513",
           "requiredAzdVersion": ">=1.33.0",
           "capabilities": [
             "custom-commands",
@@ -79,7 +79,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c272b1f3ef58b1947e98dee12f76f8cc3acb0a1e801fc7ad7f398a2f0188ce33"
+                "value": "f386f191127540a1d1e37f9568b22d6389b109ce9db8af9709bb93a725761882"
               },
               "entryPoint": "microsoft-azd-demo-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-darwin-amd64.zip"
@@ -87,7 +87,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "693e7fb1d0893262ac227ee700ecc785574d9a7ba7c94079d0f02c6a9fef3be3"
+                "value": "b56756802bb31f3d63b2d2543d1914c0167c498447c328d37bde6a9027631bb1"
               },
               "entryPoint": "microsoft-azd-demo-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-darwin-arm64.zip"
@@ -95,7 +95,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "57e4daf95bb8cdb8c6b9c4e2f15b894248a25030e7376729cf152f9f36c7297c"
+                "value": "ed270da00a49bb0e7ee3c6f389b00eb576ab8922134feb7d5e44e7f1cf4fd560"
               },
               "entryPoint": "microsoft-azd-demo-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-linux-amd64.tar.gz"
@@ -103,7 +103,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "855a2945dfc3521124c85bd17566ebe2c22cc5892619a338bad89cf46cb340be"
+                "value": "ce080e5d88c56c528f0a9940b6170ec922da92ffdbb804c4121173fb91c570c8"
               },
               "entryPoint": "microsoft-azd-demo-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-linux-arm64.tar.gz"
@@ -111,7 +111,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a56c63ea66bd5f3a9987b92c3275429e34a49ebbc47a851609ba77da5c7bd583"
+                "value": "f38026153369c8461efd67ed8168d783f98fb457a781100b4a22a94cab96966e"
               },
               "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-windows-amd64.zip"
@@ -119,7 +119,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "b39c4d54d52547e053a91d3cb4412c7e17a4e1fbcfc60ef5954a08f409fa56e6"
+                "value": "939bb7484a7f1fbf8b2fcd45747b233216d16f2f0335aa5aadf8afc543fcabd1"
               },
               "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/microsoft-azd-demo/nightly/microsoft-azd-demo-windows-arm64.zip"

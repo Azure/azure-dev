@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,7 +36,8 @@ var _ BetaEventServiceEventStreamOverride = (*betaEventService)(nil)
 func (s *betaEventService) EventStream(
 	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
 ) error {
-	ctx := stream.Context()
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get extension claims: %w", err)
@@ -91,7 +94,7 @@ func (s *betaEventService) EventStream(
 		ctx context.Context,
 		msg *v1beta.SubscribeServiceEvent,
 	) (*v1beta.EventMessage, error) {
-		return s.subscribeService(ctx, extension, msg, broker)
+		return s.subscribeService(ctx, extension, msg, broker, betaStream.serviceCorrelations)
 	}); err != nil {
 		return err
 	}
@@ -152,11 +155,12 @@ func (s *betaEventService) createProjectHandler(
 			}
 			invocationCtx := extensions.WithClaimsContext(ctx, claims)
 
-			defer s.service.syncExtensionOutput(
+			cleanupPreview := s.service.syncExtensionOutput(
 				ctx,
 				extension,
 				fmt.Sprintf("%s (%s)", extension.DisplayName, eventName),
-			)()
+			)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.service.lazyEnv.GetValue()
@@ -172,7 +176,7 @@ func (s *betaEventService) createProjectHandler(
 				return fmt.Errorf("convert project config to beta: %w", err)
 			}
 			invoke := &v1beta.EventMessage{
-				RequestId: invocationID,
+				RequestId: uuid.NewString(),
 				MessageType: &v1beta.EventMessage_InvokeProjectHandler{
 					InvokeProjectHandler: &v1beta.InvokeProjectHandler{
 						EventName:    eventName,
@@ -229,6 +233,7 @@ func (s *betaEventService) subscribeService(
 	extension *extensions.Extension,
 	msg *v1beta.SubscribeServiceEvent,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+	correlations *betaServiceEventCorrelations,
 ) (*v1beta.EventMessage, error) {
 	if msg == nil || len(msg.EventNames) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "event names are required")
@@ -252,7 +257,14 @@ func (s *betaEventService) subscribeService(
 			if msg.Host != "" && string(serviceConfig.Host) != msg.Host {
 				continue
 			}
-			handler := s.createServiceHandler(ctx, serviceConfig, extension, eventName, broker)
+			handler := s.createServiceHandler(
+				ctx,
+				serviceConfig,
+				extension,
+				eventName,
+				broker,
+				correlations,
+			)
 			if err := serviceConfig.AddHandler(ctx, ext.Event(eventName), handler); err != nil {
 				return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
@@ -271,6 +283,7 @@ func (s *betaEventService) createServiceHandler(
 	extension *extensions.Extension,
 	eventName string,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+	correlations *betaServiceEventCorrelations,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
@@ -280,11 +293,12 @@ func (s *betaEventService) createServiceHandler(
 			}
 			invocationCtx := extensions.WithClaimsContext(ctx, claims)
 
-			defer s.service.syncExtensionOutput(
+			cleanupPreview := s.service.syncExtensionOutput(
 				ctx,
 				extension,
 				fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName),
-			)()
+			)
+			defer cleanupPreview()
 			resolver := noEnvResolver
 			env, err := s.service.lazyEnv.GetValue()
 			if err == nil && env != nil {
@@ -315,7 +329,9 @@ func (s *betaEventService) createServiceHandler(
 			if err := transcodeStableResponse(stableContext, protoContext); err != nil {
 				return fmt.Errorf("convert service context to beta: %w", err)
 			}
+			requestID := uuid.NewString()
 			invoke := &v1beta.EventMessage{
+				RequestId: requestID,
 				MessageType: &v1beta.EventMessage_InvokeServiceHandler{
 					InvokeServiceHandler: &v1beta.InvokeServiceHandler{
 						EventName:      eventName,
@@ -326,16 +342,32 @@ func (s *betaEventService) createServiceHandler(
 				},
 			}
 			return s.service.runWithEnvReload(ctx, func() error {
+				if err := correlations.register(args.Service.Name, eventName, requestID); err != nil {
+					return err
+				}
+				defer correlations.abandon(requestID)
+
 				response, err := broker.SendAndWait(invocationCtx, invoke)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}
+				correlations.finish(requestID)
 				statusMsg, ok := response.MessageType.(*v1beta.EventMessage_ServiceHandlerStatus)
-				if !ok {
+				if !ok || statusMsg.ServiceHandlerStatus == nil {
 					return fmt.Errorf("unexpected response type for service event %s", eventName)
 				}
-				if statusMsg.ServiceHandlerStatus.Status == "failed" {
-					if extErr := unwrapBetaError(statusMsg.ServiceHandlerStatus.Error); extErr != nil {
+				serviceStatus := statusMsg.ServiceHandlerStatus
+				if err := collectBetaServiceEventMessages(
+					ctx,
+					extension.Id,
+					eventName,
+					args.Service.Name,
+					serviceStatus,
+				); err != nil {
+					return err
+				}
+				if serviceStatus.Status == "failed" {
+					if extErr := unwrapBetaError(serviceStatus.Error); extErr != nil {
 						return extErr
 					}
 					return fmt.Errorf(
@@ -343,7 +375,7 @@ func (s *betaEventService) createServiceHandler(
 						extension.Id,
 						args.Service.Name,
 						eventName,
-						statusMsg.ServiceHandlerStatus.Message,
+						serviceStatus.Message,
 					)
 				}
 				return nil
@@ -351,6 +383,103 @@ func (s *betaEventService) createServiceHandler(
 		}()
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
+}
+
+func collectBetaServiceEventMessages(
+	ctx context.Context,
+	extensionID string,
+	eventName string,
+	serviceName string,
+	status *v1beta.ServiceHandlerStatus,
+) error {
+	if status == nil || len(status.Messages) == 0 {
+		return nil
+	}
+	if eventName != "predeploy" && eventName != "postdeploy" {
+		return fmt.Errorf("messages are not supported for service event %q", eventName)
+	}
+	if status.EventName != eventName || status.ServiceName != serviceName {
+		return fmt.Errorf("beta service event messages do not match their invocation")
+	}
+	if status.Status != "completed" && status.Status != "failed" {
+		return fmt.Errorf("beta service event messages require a final handler status")
+	}
+
+	collector := commandresult.ServiceEventMessageCollectorFromContext(ctx)
+	if collector == nil {
+		return fmt.Errorf("beta service event messages require a deploy command")
+	}
+
+	messages := make([]commandresult.ServiceEventMessage, 0, len(status.Messages))
+	for index, message := range status.Messages {
+		if message == nil {
+			return fmt.Errorf("beta service event message %d is empty", index+1)
+		}
+		if strings.TrimSpace(message.GetMessage()) == "" {
+			return fmt.Errorf("beta service event message %d has no text", index+1)
+		}
+
+		kind := ""
+		switch message.GetKind() {
+		case v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO:
+			kind = "info"
+		case v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING:
+			kind = "warning"
+		default:
+			return fmt.Errorf(
+				"beta service event message %d has unsupported kind %s",
+				index+1,
+				message.GetKind(),
+			)
+		}
+
+		item := commandresult.ServiceEventMessage{
+			ExtensionID: extensionID,
+			ServiceName: serviceName,
+			EventName:   eventName,
+			Kind:        kind,
+			Message:     message.GetMessage(),
+			Suggestion:  message.GetSuggestion(),
+		}
+		for linkIndex, link := range message.GetLinks() {
+			if link == nil || strings.TrimSpace(link.GetUrl()) == "" {
+				return fmt.Errorf(
+					"beta service event message %d link %d has no URL",
+					index+1,
+					linkIndex+1,
+				)
+			}
+			linkURL, err := redactBetaServiceEventMessageURL(link.GetUrl())
+			if err != nil {
+				return fmt.Errorf(
+					"beta service event message %d link %d has an invalid URL",
+					index+1,
+					linkIndex+1,
+				)
+			}
+			item.Links = append(item.Links, commandresult.ServiceEventMessageLink{
+				Title: link.GetTitle(),
+				URL:   linkURL,
+			})
+		}
+		messages = append(messages, item)
+	}
+
+	collector.Add(messages)
+	return nil
+}
+
+func redactBetaServiceEventMessageURL(rawURL string) (string, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	parsedURL.User = nil
+	parsedURL.RawQuery = ""
+	parsedURL.ForceQuery = false
+	parsedURL.Fragment = ""
+	parsedURL.RawFragment = ""
+	return parsedURL.String(), nil
 }
 
 func betaFollowUpLayer(args project.ProjectLifecycleEventArgs) string {

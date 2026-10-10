@@ -20,6 +20,18 @@ The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
 
+Structured deploy messages are beta-only. Service `predeploy` and
+`postdeploy` handlers can return non-blocking info or warning messages in
+`ServiceHandlerStatus.messages`. Go extensions register them with
+`ExtensionHost.WithBetaServiceEventHandler`; the default language scaffolds
+and stable event contracts remain unchanged.
+
+Messages use the correlated beta event stream. Its first subscription must
+include a `request_id`, and each service status carrying messages must echo
+the invocation's ID. Legacy beta streams retain their existing behavior but
+cannot send structured messages. See the extension contract versioning guide
+for host routing and compatibility behavior.
+
 ## Generate contracts
 
 Run generation from `cli/azd`:

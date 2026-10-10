@@ -452,10 +452,6 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 
-	// Give a small delay to ensure all progress messages are delivered
-	// (the final progress message might still be in flight when SendAndWaitWithProgress returns)
-	time.Sleep(20 * time.Millisecond)
-
 	// Verify progress updates were received
 	progressMu.Lock()
 	assert.Equal(t, []string{"Starting...", "50% done", "Almost there..."}, progressUpdates)
@@ -658,8 +654,8 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestClose_ClosesAllChannels tests that Close properly cleans up
-func TestClose_ClosesAllChannels(t *testing.T) {
+// TestClose_RemovesAllResponseChannels tests that Close properly cleans up.
+func TestClose_RemovesAllResponseChannels(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()
 
@@ -682,7 +678,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 	// Wait for both response channels to register in responseChans.
 	require.Eventually(t, func() bool {
 		count := 0
-		broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+		broker.responseChans.Range(func(_ string, _ *responseChannel[TestMessage]) bool {
 			count++
 			return true
 		})
@@ -694,11 +690,102 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 
 	// Verify all channels are removed
 	count := 0
-	broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+	broker.responseChans.Range(func(_ string, _ *responseChannel[TestMessage]) bool {
 		count++
 		return true
 	})
 	assert.Equal(t, 0, count, "All channels should be removed from the map")
+}
+
+func TestSendAndWait_ReturnsBufferedResponseAfterBrokerClose(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
+	ctx := t.Context()
+	const requestID = "buffered-final-response"
+
+	type result struct {
+		response *TestMessage
+		err      error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		response, err := broker.SendAndWait(ctx, &TestMessage{
+			RequestId: requestID,
+			InnerMsg:  &TestRequest{Value: "request"},
+		})
+		resultCh <- result{response: response, err: err}
+	}()
+
+	var response *responseChannel[TestMessage]
+	require.Eventually(t, func() bool {
+		var ok bool
+		response, ok = broker.responseChans.Load(requestID)
+		return ok
+	}, time.Second, 5*time.Millisecond)
+
+	finalResponse := &TestMessage{
+		RequestId: requestID,
+		InnerMsg:  &TestResponse{Result: "response"},
+	}
+	require.True(t, response.send(finalResponse))
+	broker.Close()
+
+	select {
+	case result := <-resultCh:
+		require.NoError(t, result.err)
+		require.Same(t, finalResponse, result.response)
+	case <-time.After(time.Second):
+		t.Fatal("SendAndWait did not return the buffered response")
+	}
+}
+
+func TestProcessMessage_CancellationUnblocksFullResponseChannel(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const requestID = "canceled-progress-request"
+	response := newResponseChannel[TestMessage](ctx, 1)
+	response.messages <- &TestMessage{
+		RequestId:  requestID,
+		IsProgress: true,
+	}
+	broker.responseChans.Store(requestID, response)
+	defer func() {
+		broker.responseChans.Delete(requestID)
+		response.close()
+	}()
+
+	dispatchDone := make(chan struct{})
+	go func() {
+		broker.processMessage(ctx, &TestMessage{
+			RequestId:    requestID,
+			IsProgress:   true,
+			ProgressText: "discarded",
+		})
+		close(dispatchDone)
+	}()
+
+	select {
+	case <-dispatchDone:
+		t.Fatal("dispatcher should wait while the response channel is full")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+
+	select {
+	case <-dispatchDone:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher remained blocked after request cancellation")
+	}
 }
 
 // TestEndToEnd_HandlerPanic verifies that when a handler panics, the client receives

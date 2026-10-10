@@ -1,0 +1,45 @@
+Add or update a file-backed Agent service in the current project's azure.yaml.
+
+<name> is the azure.yaml service key, not the Foundry agent name. --file must
+refer to a direct YAML or JSON definition for a prompt, hosted (including code
+deployment), voice, or prompt-voice Agent. The service's root $ref resolves
+from the directory containing azure.yaml.
+
+The command validates locally and writes through azd's project API only. It
+does not authenticate to Azure, create remote resources, copy source files,
+or deploy the Agent. The project must declare exactly one
+azure.ai.project service; multiple Project services are rejected before any
+write. --project may confirm that service's key. --source overrides the Agent
+service's project directory and must name an existing directory inside the
+current project.
+
+If <name> already identifies an Agent service, the command updates its
+Agent-owned declaration and preserves other service fields. Deploy it with
+'azd deploy <name>' or 'azd up'.
+
+Usage
+  azd ai agent add <name> [flags]
+
+Flags
+      --file string    : Path to a direct Agent definition file.
+      --project string : Service key for the sole azure.ai.project service.
+      --source string  : Override the Agent service's project directory.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for add
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Add an Agent service from a direct definition
+    azd ai agent add support-agent --file ./agents/support.yaml
+
+  Override the source directory and confirm the sole Foundry Project service
+    azd ai agent add support-agent --file ./agents/support.json \
+      --source ./src/support-agent --project ai-project
+
+  Emit the service declaration as JSON
+    azd ai agent add support-agent --file ./agents/support.yaml --output json

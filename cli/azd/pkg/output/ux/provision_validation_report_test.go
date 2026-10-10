@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 )
 
@@ -145,7 +147,7 @@ func TestProvisionValidationReport_NoSuggestion(t *testing.T) {
 func TestProvisionValidationReport_MarshalJSON_Envelope(t *testing.T) {
 	report := &ProvisionValidationReport{
 		Items: []ProvisionValidationReportItem{
-			{IsError: false, Message: "w1", Suggestion: "fix it"},
+			{IsError: false, IsCritical: true, Message: "w1", Suggestion: "fix it"},
 			{IsError: true, Message: "e1"},
 		},
 	}
@@ -164,6 +166,8 @@ func TestProvisionValidationReport_MarshalJSON_Envelope(t *testing.T) {
 	require.Equal(t, "consoleMessage", string(parsed.Type))
 	require.Contains(t, parsed.Data.Message, "1 warning(s)")
 	require.Contains(t, parsed.Data.Message, "1 error(s)")
+	require.NotContains(t, string(data), "critical")
+	require.NotContains(t, string(data), "found")
 }
 
 func TestProvisionValidationReport_Indentation(t *testing.T) {
@@ -190,15 +194,131 @@ func TestProvisionValidationReport_MultiLineMessageIndentation(t *testing.T) {
 	}
 
 	result := report.ToString("  ")
-	lines := strings.Split(result, "\n")
-	require.Len(t, lines, 2)
-	// First line has the warning prefix
-	require.Contains(t, lines[0], "(!) Warning:")
-	require.Contains(t, lines[0], "Model \"gpt-4o\" not found")
-	// Second line is indented at the same level
-	require.True(t, strings.HasPrefix(lines[1], "  "),
-		"continuation line should be indented")
-	require.Contains(t, lines[1], "Model not found in AI model catalog.")
+	require.Equal(t, []string{
+		"  " + warningPrefix + ` Model "gpt-4o" not found in eastus2`,
+		"      Model not found in AI model catalog.",
+		"",
+		"  " + output.WithWarningFormat("1 warning found."),
+	}, strings.Split(result, "\n"))
+}
+
+func TestProvisionValidationReport_CriticalCountsAndSummary(t *testing.T) {
+	tests := []struct {
+		name         string
+		items        []ProvisionValidationReportItem
+		wantCritical int
+		wantSummary  string
+	}{
+		{name: "empty"},
+		{
+			name:        "one regular",
+			items:       []ProvisionValidationReportItem{{Message: "regular"}},
+			wantSummary: "1 warning found.",
+		},
+		{
+			name: "one critical",
+			items: []ProvisionValidationReportItem{
+				{Message: "critical", IsCritical: true},
+			},
+			wantCritical: 1,
+			wantSummary:  "1 warning found (1 critical).",
+		},
+		{
+			name: "critical and regular",
+			items: []ProvisionValidationReportItem{
+				{Message: "critical", IsCritical: true},
+				{Message: "regular"},
+			},
+			wantCritical: 1,
+			wantSummary:  "2 warnings found (1 critical).",
+		},
+		{
+			name: "multiple critical",
+			items: []ProvisionValidationReportItem{
+				{Message: "first", IsCritical: true},
+				{Message: "second", IsCritical: true},
+			},
+			wantCritical: 2,
+			wantSummary:  "2 warnings found (2 critical).",
+		},
+		{
+			name: "error is not a critical warning",
+			items: []ProvisionValidationReportItem{
+				{Message: "blocking", IsError: true, IsCritical: true},
+			},
+		},
+		{
+			name: "mixed errors skip warning-only summary",
+			items: []ProvisionValidationReportItem{
+				{Message: "critical", IsCritical: true},
+				{Message: "blocking", IsError: true},
+			},
+			wantCritical: 1,
+		},
+		{
+			name: "diagnostic id does not imply critical",
+			items: []ProvisionValidationReportItem{
+				{Message: "extension warning", DiagnosticID: "role_assignment_missing"},
+			},
+			wantSummary: "1 warning found.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := &ProvisionValidationReport{Items: tt.items}
+			require.Equal(t, tt.wantCritical, report.CriticalWarningCount())
+			rendered := report.ToString("")
+			if tt.wantSummary == "" {
+				require.NotContains(t, rendered, " found")
+			} else {
+				require.True(t, strings.HasSuffix(rendered,
+					output.WithWarningFormat(tt.wantSummary)))
+			}
+		})
+	}
+}
+
+func TestProvisionValidationReport_WarningLayout(t *testing.T) {
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
+			{
+				Message:    "First warning\ndetail",
+				Suggestion: "first suggestion line\nsecond suggestion line",
+				Links: []ProvisionValidationReportLink{
+					{URL: "https://example.com/help"},
+				},
+			},
+			{Message: "Second warning"},
+		},
+	}
+
+	want := "  " + warningPrefix + " First warning\n" +
+		"      detail\n\n" +
+		"      " + output.WithHighLightFormat("Suggestion:") +
+		" first suggestion line\n" +
+		"      second suggestion line\n" +
+		"      • " + output.WithLinkFormat("https://example.com/help") + "\n\n" +
+		"  " + warningPrefix + " Second warning\n\n" +
+		"  " + output.WithWarningFormat("2 warnings found.")
+	require.Equal(t, want, report.ToString("  "))
+}
+
+func TestProvisionValidationReport_CriticalWarningStyling(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = previousNoColor })
+
+	report := &ProvisionValidationReport{
+		Items: []ProvisionValidationReportItem{
+			{Message: "Missing 100% permissions", IsCritical: true},
+		},
+	}
+
+	result := report.ToString("")
+	require.Contains(t, result, "\x1b[97;1m")
+	require.Contains(t, result, "\x1b[33m(!) Critical warning: Missing 100% permissions")
+	require.NotContains(t, result, "%!")
 }
 
 func TestProvisionValidationReport_MultiLineWithSuggestion(t *testing.T) {
@@ -320,20 +440,15 @@ func TestProvisionValidationReport_Snapshot_RoleAssignmentMissing(t *testing.T) 
 		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
+				IsCritical:   true,
 				DiagnosticID: "role_assignment_missing",
-				Message: "Principal (5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb)" +
-					" lacks role assignment permissions on" +
-					" subscription 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
-					"The deployment includes role assignments" +
-					" and will fail without" +
-					" Microsoft.Authorization/roleAssignments/write" +
-					" permission.",
-				Suggestion: "Ensure you have the" +
-					" 'Role Based Access Control Administrator'," +
-					" 'User Access Administrator'," +
-					" 'Owner', or a custom role with" +
-					" 'Microsoft.Authorization/roleAssignments/write'" +
-					" assigned to your account.",
+				Message: "Missing role assignment permissions\n" +
+					output.WithWarningFormat("Deployment will likely fail.") + "\n" +
+					output.WithGrayFormat("Principal ID:") + " 5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb\n" +
+					output.WithGrayFormat("Subscription:") + " 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
+					output.WithGrayFormat("Required permission:") + " Microsoft.Authorization/roleAssignments/write",
+				Suggestion: "Ask for Owner, User Access Administrator, or " +
+					"Role Based Access Control Administrator on this subscription.",
 			},
 		},
 	}
@@ -438,20 +553,15 @@ func TestProvisionValidationReport_Snapshot_AllWarningsCombined(t *testing.T) {
 		Items: []ProvisionValidationReportItem{
 			{
 				IsError:      false,
+				IsCritical:   true,
 				DiagnosticID: "role_assignment_missing",
-				Message: "Principal (5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb)" +
-					" lacks role assignment permissions on" +
-					" subscription 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
-					"The deployment includes role assignments" +
-					" and will fail without" +
-					" Microsoft.Authorization/roleAssignments/write" +
-					" permission.",
-				Suggestion: "Ensure you have the" +
-					" 'Role Based Access Control Administrator'," +
-					" 'User Access Administrator'," +
-					" 'Owner', or a custom role with" +
-					" 'Microsoft.Authorization/roleAssignments/write'" +
-					" assigned to your account.",
+				Message: "Missing role assignment permissions\n" +
+					output.WithWarningFormat("Deployment will likely fail.") + "\n" +
+					output.WithGrayFormat("Principal ID:") + " 5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb\n" +
+					output.WithGrayFormat("Subscription:") + " 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
+					output.WithGrayFormat("Required permission:") + " Microsoft.Authorization/roleAssignments/write",
+				Suggestion: "Ask for Owner, User Access Administrator, or " +
+					"Role Based Access Control Administrator on this subscription.",
 			},
 			{
 				IsError:      false,

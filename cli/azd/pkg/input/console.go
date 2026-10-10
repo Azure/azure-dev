@@ -204,6 +204,9 @@ type ConsoleOptions struct {
 
 	// Prompt-only options
 	IsPassword bool
+
+	// IsWarning renders confirmation messages in yellow, keeping the marker, choices, and answer blue.
+	IsWarning bool
 }
 
 type ConsoleHandles struct {

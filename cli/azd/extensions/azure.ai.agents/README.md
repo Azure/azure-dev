@@ -183,9 +183,13 @@ declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
-sibling `azure.ai.connection` service names. These are references, not resource
-definitions: the siblings must be in `uses` and deployed to the same project
-before the prompt agent. Connection objects remain unsupported on any agent.
+local `azure.ai.connection` service keys or effective resource names. An
+effective name comes from the service's `name` after resolving local `$ref`
+files; absent or blank names fall back to the service key. An exact service-key
+match takes precedence over a resource-name match. These are references, not
+resource definitions: the matching service key must be in `uses` and deployed
+to the same project before the prompt agent. Connection objects remain
+unsupported on any agent.
 
 ## Deploying Agents
 

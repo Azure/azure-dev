@@ -49,7 +49,8 @@ type promptNode struct {
 // registration (dependency) order. None of this machinery is exposed in YAML.
 type promptGraph struct {
 	// agentDir anchors the definition's conventional skills/ folder.
-	agentDir string
+	agentDir    string
+	projectRoot string
 
 	// managed is the parsed agent definition. Nodes may enrich managed.Tools
 	// with resolved bindings before publish.
@@ -342,6 +343,7 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 		return nil, err
 	}
 	g.projectServices = p.projectServices
+	g.projectRoot = p.projectPath
 	g.agentService = p.serviceConfig
 	g.dependencyEnabled = p.dependencyEnabled
 	if err := g.resolve(ctx, progress); err != nil {

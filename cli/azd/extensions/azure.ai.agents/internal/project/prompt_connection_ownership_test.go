@@ -95,6 +95,11 @@ func TestAgentConnectionReferencesConfigAndSchema(t *testing.T) {
 							require.Equal(t, tt.want, managed.Connections)
 							graph, err := newPromptGraph(root, &managed, nil, nil, nil)
 							require.NoError(t, err)
+							graph.projectRoot = root
+							graph.projectServices = map[string]*azdext.ServiceConfig{
+								"search": promptConnectionService(t, "search", ""),
+								"api":    promptConnectionService(t, "api", ""),
+							}
 							var connectionNodes int
 							for _, node := range graph.nodes {
 								if node.Kind == nodeConnection {
@@ -174,6 +179,10 @@ func TestPromptConnectionReferencesPreserveGraphValidation(t *testing.T) {
 			require.True(t, found)
 			graph, err := newPromptGraph(root, &managed, nil, nil, nil)
 			require.NoError(t, err)
+			graph.projectRoot = root
+			graph.projectServices = map[string]*azdext.ServiceConfig{
+				"search": promptConnectionService(t, "search", ""),
+			}
 			resolved := false
 			for i := range graph.nodes {
 				graph.nodes[i].Resolve = func(context.Context) error { resolved = true; return nil }

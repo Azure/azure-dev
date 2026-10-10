@@ -194,9 +194,15 @@ func (m *Manager) RunProvisionValidation(ctx context.Context, preview bool) (err
 		if preview {
 			action = "the preview"
 		}
+		hasCriticalWarnings := report.CriticalWarningCount() > 0
+		message := fmt.Sprintf("Proceed with %s anyway?", action)
+		if hasCriticalWarnings {
+			message = "Deployment will likely fail. Proceed anyway?"
+		}
 		continueProvision, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      fmt.Sprintf("Proceed with %s anyway?", action),
-			DefaultValue: report.CriticalWarningCount() == 0,
+			Message:      message,
+			IsWarning:    hasCriticalWarnings,
+			DefaultValue: !hasCriticalWarnings,
 		})
 		if promptErr != nil {
 			span.SetAttributes(fields.ProvisionValidationOutcomeKey.String(provisionValidationOutcomeError))

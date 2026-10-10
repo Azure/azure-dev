@@ -153,14 +153,17 @@ yellow; principal, subscription, and required-permission labels are gray.
 
 Indent warning details, suggestions, and reference links four spaces beyond the heading
 indentation. Separate warning blocks and suggestion paragraphs with a blank line. Place
-a yellow `N warnings found.` summary directly above confirmation; include `(M critical)`
-when applicable and use `1 warning found.` for one finding. Totals count findings in
-that report, including critical warnings.
+a yellow summary directly above confirmation. Use `N critical warnings found.` when
+all findings are critical, `N warnings found (M critical).` for a mix of regular and
+critical warnings, and `N warnings found.` for regular-only findings. Use singular
+`warning` for one finding. Totals count findings in that report, including critical warnings.
 
-Use `Proceed with deployment anyway?` for deployment confirmation and
-`Proceed with the preview anyway?` for preview confirmation. Regular-only reports
-default to Yes; reports containing a critical warning default to No, including with
-`--no-prompt`. Users can explicitly choose Yes to continue despite a critical warning.
+Regular-only reports use `Proceed with deployment anyway?` for deployment confirmation
+and `Proceed with the preview anyway?` for preview confirmation, with the default Yes.
+Reports containing a critical warning use `Deployment will likely fail. Proceed anyway?`
+and render the prompt marker, message, choices, and default answer in yellow. Their
+default remains No, including with `--no-prompt`. Users can explicitly choose Yes to
+continue despite a critical warning.
 Keep this pattern scoped to provision validation rather than changing global warning
 or error prefixes.
 

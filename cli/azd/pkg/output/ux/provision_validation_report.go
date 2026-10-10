@@ -77,7 +77,9 @@ func (r *ProvisionValidationReport) ToString(currentIndentation string) string {
 			noun = "warning"
 		}
 		summary := fmt.Sprintf("%d %s found", len(warnings), noun)
-		if criticalCount := r.CriticalWarningCount(); criticalCount > 0 {
+		if criticalCount := r.CriticalWarningCount(); criticalCount == len(warnings) {
+			summary = fmt.Sprintf("%d critical %s found", criticalCount, noun)
+		} else if criticalCount > 0 {
 			summary += fmt.Sprintf(" (%d critical)", criticalCount)
 		}
 		sb.WriteString(fmt.Sprintf("\n\n%s%s",

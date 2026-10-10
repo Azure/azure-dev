@@ -28,6 +28,8 @@ type ConfirmOptions struct {
 	DefaultValue *bool
 	// The message to display before the prompt
 	Message string
+	// IsWarning renders the prompt in yellow instead of the default styling.
+	IsWarning bool
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
 	// The optional hint text that display after the message (default: "[Type ? for hint]")
@@ -186,7 +188,13 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 
 // Render renders the Confirm component.
 func (p *Confirm) Render(printer Printer) error {
-	renderPromptMessage(printer, p.options.Message)
+	format := output.WithHighLightFormat
+	if p.options.IsWarning {
+		format = output.WithWarningFormat
+		printer.Fprintf("%s", format("%s", BoldString("? %s", formatPromptMessage(p.options.Message))))
+	} else {
+		renderPromptMessage(printer, p.options.Message)
+	}
 
 	// Hint indicator
 	if !p.cancelled && !p.complete && p.options.HelpMessage != "" {
@@ -195,7 +203,7 @@ func (p *Confirm) Render(printer Printer) error {
 
 	// Hint
 	if !p.cancelled && !p.complete && p.options.Hint != "" {
-		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
+		printer.Fprintf("%s ", format(p.options.Hint))
 	}
 
 	// Value
@@ -203,7 +211,7 @@ func (p *Confirm) Render(printer Printer) error {
 	valueOutput := rawStringValue
 
 	if p.complete || p.value == p.options.DefaultValue {
-		valueOutput = output.WithHighLightFormat(rawStringValue)
+		valueOutput = format(rawStringValue)
 	}
 
 	if p.cancelled {

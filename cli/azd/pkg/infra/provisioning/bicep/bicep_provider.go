@@ -2844,9 +2844,15 @@ func (p *BicepProvider) runLocalProvisionValidation(
 		}
 
 		if report.HasWarnings() {
+			hasCriticalWarnings := report.CriticalWarningCount() > 0
+			message := "Proceed with deployment anyway?"
+			if hasCriticalWarnings {
+				message = "Deployment will likely fail. Proceed anyway?"
+			}
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Proceed with deployment anyway?",
-				DefaultValue: report.CriticalWarningCount() == 0,
+				Message:      message,
+				IsWarning:    hasCriticalWarnings,
+				DefaultValue: !hasCriticalWarnings,
 			})
 			if promptErr != nil {
 				p.setProvisionValidationOutcome(

@@ -141,7 +141,7 @@ Results are displayed using the `ProvisionValidationReport` UX component (`pkg/o
 
 Regular warnings use `(!) Warning:`. The built-in missing-role-permission warning uses a bold yellow `(!) Critical warning:` heading and labeled principal, subscription, and required-permission details. Critical warnings retain warning severity: they are advisory, not blocking errors. Extension findings remain regular warnings.
 
-Warning details, suggestions, and reference links are indented four spaces relative to the heading. Warning blocks are separated by a blank line, and suggestions begin after a blank line. Warning-only reports end with a yellow total immediately above confirmation, such as `2 warnings found.` or `2 warnings found (1 critical).`
+Warning details, suggestions, and reference links are indented four spaces relative to the heading. Warning blocks are separated by a blank line, and suggestions begin after a blank line. Warning-only reports end with a yellow total immediately above confirmation: `2 critical warnings found.` when all warnings are critical, `2 warnings found (1 critical).` for mixed warnings, or `2 warnings found.` for regular-only warnings. A single finding uses `1 critical warning found.` or `1 warning found.`.
 
 Totals count findings in the current report, including critical warnings. They do not combine the provider-agnostic and Bicep validation phases or separate layers. Reports containing blocking errors cancel without a confirmation or a warning-only total. The existing JSON report envelope and warning/error counts are unchanged.
 
@@ -174,7 +174,7 @@ Validating deployment
 ? Proceed with deployment anyway? [Y/n]
 ```
 
-When the report contains the built-in missing-role-permission warning, the default is **No**, even when other regular warnings are also present:
+When the report contains the built-in missing-role-permission warning, the prompt changes to `Deployment will likely fail. Proceed anyway?` and its marker, message, choices, and default answer are yellow. The default is **No**, even when other regular warnings are also present:
 
 ```
 Validating deployment
@@ -191,7 +191,7 @@ Validating deployment
     Supporting details from that finding.
 
 2 warnings found (1 critical).
-? Proceed with deployment anyway? [y/N]
+? Deployment will likely fail. Proceed anyway? [y/N]
 ```
 
 An explicit **Yes** continues deployment despite any warning, including a critical warning. **No** cancels with exit code 0 (an intentional cancel, not a failure).

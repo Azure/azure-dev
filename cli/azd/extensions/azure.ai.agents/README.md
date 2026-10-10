@@ -398,11 +398,22 @@ services:
 ```
 
 Alternatively, keep a direct definition in a separate file and reference it
-explicitly from the service with a root `$ref`. The basename can be anything,
-including a legacy-looking name such as `agent.yaml`, but prompt-agent references
-must use a `.yaml` or `.yml` extension. The file content must be a supported
-direct agent definition. An `agent.manifest.yaml` template wrapper must first be
-converted or extracted.
+explicitly from the service with a root `$ref`, for example
+`$ref: ./definitions/agent.json`. Prompt, hosted (including code deploy), voice,
+and prompt-voice agents support YAML or JSON definitions. The basename can be
+anything, including a legacy-looking name such as `agent.yaml`; prompt-agent
+references accept `.yaml`, `.yml`, and `.json` extensions. The file content must
+be a supported direct agent definition. An `agent.manifest.yaml` template wrapper
+must first be converted or extracted.
+
+Prompt-agent root references must stay within the project directory and resolve
+relative to the directory holding `azure.yaml`, not the service's `project`
+directory. Prompt `skills/` and `vector-assets/` convention folders remain next
+to the referenced definition. Nested `$ref` includes and relative instructions
+paths inside a definition resolve relative to that file. Hosted code packaging
+still uses the service's `project` directory. Keep core service fields such as
+`project`, `language`, `image`, `docker`, and `env` in `azure.yaml`, not in the
+root reference target.
 
 ### Environment variables under `config:`
 

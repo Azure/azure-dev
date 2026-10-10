@@ -4,14 +4,17 @@
 package grpcserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
@@ -39,10 +42,17 @@ func mapHostError(err error) error {
 
 	suggestionErr, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
 	isAuthErr := isAuthError(err)
+	isCanceled := errors.Is(err, terminal.InterruptErr) || errors.Is(err, context.Canceled)
+	isDeadlineExceeded := errors.Is(err, context.DeadlineExceeded)
 	responseErr, hasResponseError := errors.AsType[*azcore.ResponseError](err)
 	relayedErr := relayedExtensionError(err)
 	existingStatus, hasExistingStatus := azdext.GRPCStatusFromError(err)
-	if !hasSuggestion && !isAuthErr && !hasResponseError && relayedErr == nil {
+	if hasExistingStatus {
+		isCanceled = isCanceled || existingStatus.Code() == codes.Canceled
+		isDeadlineExceeded = isDeadlineExceeded || existingStatus.Code() == codes.DeadlineExceeded
+	}
+	if !hasSuggestion && !isAuthErr && !isCanceled && !isDeadlineExceeded &&
+		!hasResponseError && relayedErr == nil {
 		return err
 	}
 
@@ -50,12 +60,38 @@ func mapHostError(err error) error {
 	if hasExistingStatus {
 		code = existingStatus.Code()
 	}
-	if isAuthErr {
+	switch {
+	case isCanceled:
+		code = codes.Canceled
+	case isDeadlineExceeded:
+		code = codes.DeadlineExceeded
+	case isAuthErr:
 		code = codes.Unauthenticated
 	}
 
-	st := hostErrorStatus(existingStatus, hasExistingStatus, code, statusMessage(err, suggestionErr))
-	if isAuthErr {
+	message := statusMessage(err, suggestionErr)
+	if relayedErr == nil {
+		switch code {
+		case codes.Canceled:
+			relayedErr = azdext.WrapError(&azdext.LocalError{
+				Message:  message,
+				Code:     "canceled",
+				Category: azdext.LocalErrorCategoryUser,
+			})
+		case codes.DeadlineExceeded:
+			relayedErr = azdext.WrapError(&azdext.LocalError{
+				Message:  message,
+				Code:     "deadline_exceeded",
+				Category: azdext.LocalErrorCategoryInternal,
+			})
+		}
+	}
+
+	st := hostErrorStatus(existingStatus, hasExistingStatus, code, message)
+	if code == codes.Canceled || code == codes.DeadlineExceeded {
+		st = withoutRelayedExtensionErrorDetail(st)
+	}
+	if code == codes.Unauthenticated {
 		st = withAuthErrorInfo(st, err)
 	}
 	if hasSuggestion {
@@ -63,7 +99,9 @@ func mapHostError(err error) error {
 	}
 	if relayedErr != nil {
 		st = withRelayedExtensionErrorDetail(st, relayedErr)
-	} else if hasResponseError && !hasServiceErrorDetail(st) {
+	}
+	if hasResponseError && !hasServiceErrorDetail(st) &&
+		(relayedErr == nil || code == codes.Canceled || code == codes.DeadlineExceeded) {
 		st = withServiceErrorDetail(st, responseErr)
 	}
 
@@ -96,6 +134,24 @@ func hostErrorStatus(
 	statusProto := proto.Clone(existingStatus.Proto()).(*statuspb.Status)
 	statusProto.Code = int32(code) //nolint:gosec // gRPC status codes use the defined int32 range
 	statusProto.Message = message
+	return status.FromProto(statusProto)
+}
+
+func withoutRelayedExtensionErrorDetail(st *status.Status) *status.Status {
+	if st == nil || !hasRelayedExtensionErrorDetail(st) {
+		return st
+	}
+
+	statusProto := proto.Clone(st.Proto()).(*statuspb.Status)
+	filtered := statusProto.Details[:0]
+	for _, detail := range statusProto.Details {
+		if detail != nil &&
+			(detail.MessageIs(&azdext.ExtensionError{}) || detail.MessageIs(&v1beta.ExtensionError{})) {
+			continue
+		}
+		filtered = append(filtered, detail)
+	}
+	statusProto.Details = filtered
 	return status.FromProto(statusProto)
 }
 

@@ -14,6 +14,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const windowsControlCExitCode = 0xC000013A
+
 // setupProcessTree merges CREATE_NEW_PROCESS_GROUP into the command's
 // SysProcAttr (preserving CmdLine if already set by setCmdLineOverride).
 // Interactive mode skips the flag because CREATE_NEW_PROCESS_GROUP disables
@@ -92,4 +94,14 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 		}
 		_ = windows.CloseHandle(handle)
 	}, nil
+}
+
+func isInterruptExit(exitErr *exec.ExitError) bool {
+	exitCode := exitErr.ExitCode()
+	return isInterruptExitCode(exitCode)
+}
+
+func isInterruptExitCode(exitCode int) bool {
+	return exitCode == 130 ||
+		uint32(exitCode) == windowsControlCExitCode //nolint:gosec // preserve the Windows exit code bit pattern
 }

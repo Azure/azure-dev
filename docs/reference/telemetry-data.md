@@ -266,7 +266,7 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | Pattern | Category | Example |
 |---------|----------|---------|
 | `Success` | No error | — |
-| `user.canceled` | User cancelled the operation | — |
+| `user.canceled` | User cancelled the operation, including an extension command interrupted by the host or reporting a `user` / `canceled` (`cancelled`) local error | — |
 | `auth.<detail>` | Authentication error | `auth.login_required`, `auth.not_logged_in`, `auth.identity_failed` |
 | `service.arm.<statusCode>` | ARM service error | `service.arm.500`, `service.arm.409` |
 | `service.aad.<detail>` | Entra ID (AAD) error | `service.aad.failed` |
@@ -277,10 +277,11 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.validation.*` | Extension validation error | `ext.validation.config` |
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
+| `ext.run.failed` | Unclassified extension process failure that was not caused by cancellation or a deadline | — |
+| `internal.timeout` | Operation deadline exceeded, including service operations and deadlines transported through the extension gRPC boundary | — |
 | `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
 | `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
 | `internal.extension_invalid_response` | Extension service target omitted a required deploy result or target resource | — |
-| `internal.timeout` | Operation timed out, including service publish or deploy | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 

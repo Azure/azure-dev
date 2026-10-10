@@ -4,15 +4,103 @@
 package azdext
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 )
+
+func TestNewInterruptContextCoordinatesInputDispatcher(t *testing.T) {
+	tests := []struct {
+		name              string
+		cancelParentFirst bool
+	}{
+		{name: "InputDispatcherFirst"},
+		{name: "ContextCancellationFirst", cancelParentFirst: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			initialHandlerCount := len(input.SnapshotInterruptStack())
+			parent, cancelParent := context.WithCancel(t.Context())
+			t.Cleanup(cancelParent)
+
+			ctx, stop := newInterruptContext(parent)
+			t.Cleanup(stop)
+
+			handlers := input.SnapshotInterruptStack()
+			require.Len(t, handlers, initialHandlerCount+1)
+			handler := handlers[len(handlers)-1]
+
+			if tt.cancelParentFirst {
+				cancelParent()
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+			}
+
+			require.True(t, handler())
+			require.ErrorIs(t, ctx.Err(), context.Canceled)
+			require.False(t, handler())
+
+			stop()
+			require.Len(t, input.SnapshotInterruptStack(), initialHandlerCount)
+		})
+	}
+}
+
+func TestExecuteCommand(t *testing.T) {
+	t.Run("PreCanceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		called := false
+		cmd := &cobra.Command{
+			Run: func(cmd *cobra.Command, args []string) {
+				called = true
+			},
+		}
+		cmd.SetArgs([]string{})
+
+		require.ErrorIs(t, executeCommand(ctx, cmd), context.Canceled)
+		require.False(t, called)
+	})
+
+	t.Run("CanceledHandlerReturnsNil", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cmd := &cobra.Command{
+			Run: func(cmd *cobra.Command, args []string) {
+				cancel()
+			},
+		}
+		cmd.SetArgs([]string{})
+
+		require.ErrorIs(t, executeCommand(ctx, cmd), context.Canceled)
+	})
+
+	t.Run("HandlerErrorWins", func(t *testing.T) {
+		expected := errors.New("handler failed")
+		cmd := &cobra.Command{
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return expected
+			},
+		}
+		cmd.SetArgs([]string{})
+
+		require.ErrorIs(t, executeCommand(t.Context(), cmd), expected)
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		cmd := &cobra.Command{Run: func(cmd *cobra.Command, args []string) {}}
+		cmd.SetArgs([]string{})
+		require.NoError(t, executeCommand(t.Context(), cmd))
+	})
+}
 
 func TestErrorSuggestion(t *testing.T) {
 	tests := []struct {

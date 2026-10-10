@@ -36,3 +36,15 @@ func (o *CmdTree) Start() error {
 func (o *CmdTree) Kill() {
 	_ = syscall.Kill(-o.Cmd.Process.Pid, syscall.SIGKILL)
 }
+
+func isInterruptExit(err exec.ExitError, exitCode int) bool {
+	if exitCode == 130 {
+		return true
+	}
+	if err.ProcessState == nil {
+		return false
+	}
+
+	waitStatus, ok := err.Sys().(syscall.WaitStatus)
+	return ok && waitStatus.Signaled() && waitStatus.Signal() == syscall.SIGINT
+}

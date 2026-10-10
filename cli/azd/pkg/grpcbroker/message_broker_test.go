@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"reflect"
 	"sync"
 	"testing"
@@ -61,6 +62,19 @@ func (s *SimulatedBidiStream) Close() {
 		s.closed = true
 		close(s.done)
 	}
+}
+
+func TestNewMessageBroker_FunctionValueCompatibility(t *testing.T) {
+	var constructor func(
+		BidiStream[TestMessage],
+		MessageEnvelope[TestMessage],
+		string,
+		*log.Logger,
+	) *MessageBroker[TestMessage] = NewMessageBroker[TestMessage]
+
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+	require.NotNil(t, constructor(sim.ClientStream(), &SimpleMessageEnvelope{}, "client", nil))
 }
 
 // ClientStream returns a stream interface for the client side
@@ -129,6 +143,41 @@ func (s *serverSideStream) Recv() (*TestMessage, error) {
 	}
 }
 
+type errorBidiStream struct {
+	sendErr error
+	recvErr error
+}
+
+func (s *errorBidiStream) Send(*TestMessage) error {
+	return s.sendErr
+}
+
+func (s *errorBidiStream) Recv() (*TestMessage, error) {
+	return nil, s.recvErr
+}
+
+type controlledSendBidiStream struct {
+	sendStarted chan *TestMessage
+	releaseSend chan struct{}
+}
+
+func newControlledSendBidiStream() *controlledSendBidiStream {
+	return &controlledSendBidiStream{
+		sendStarted: make(chan *TestMessage),
+		releaseSend: make(chan struct{}),
+	}
+}
+
+func (s *controlledSendBidiStream) Send(msg *TestMessage) error {
+	s.sendStarted <- msg
+	<-s.releaseSend
+	return nil
+}
+
+func (s *controlledSendBidiStream) Recv() (*TestMessage, error) {
+	return nil, io.EOF
+}
+
 // SimpleMessageEnvelope is a simple implementation of MessageEnvelope for testing
 type SimpleMessageEnvelope struct{}
 
@@ -155,6 +204,9 @@ func (e *SimpleMessageEnvelope) GetInnerMessage(msg *TestMessage) any {
 	if msg.InnerMsg != nil {
 		return msg.InnerMsg
 	}
+	if msg.Error != nil {
+		return nil
+	}
 	// Fallback: try to infer from data
 	return &TestRequest{Value: msg.Data}
 }
@@ -173,6 +225,41 @@ func (e *SimpleMessageEnvelope) CreateProgressMessage(requestId string, message 
 		IsProgress:   true,
 		ProgressText: message,
 	}
+}
+
+type customCancellationEnvelope struct {
+	SimpleMessageEnvelope
+}
+
+func (e *customCancellationEnvelope) CreateCancellationMessage(
+	_ context.Context,
+	request *TestMessage,
+	err error,
+) *TestMessage {
+	return &TestMessage{
+		RequestId: request.RequestId,
+		Error:     err,
+		Data:      "custom-cancellation",
+	}
+}
+
+func (e *customCancellationEnvelope) IsCancellationMessage(_ context.Context, msg *TestMessage) bool {
+	return msg.Data == "custom-cancellation"
+}
+
+func (e *customCancellationEnvelope) GetCancellationError(msg *TestMessage) error {
+	return msg.Error
+}
+
+type persistentTestMessageEnvelope struct {
+	SimpleMessageEnvelope
+}
+
+func (e *persistentTestMessageEnvelope) PreserveHandlerContext(
+	_ context.Context,
+	msg *TestMessage,
+) bool {
+	return msg.Data == "persistent"
 }
 
 // TestOn_RegistersHandler tests that handlers are registered correctly
@@ -658,8 +745,37 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestClose_ClosesAllChannels tests that Close properly cleans up
-func TestClose_ClosesAllChannels(t *testing.T) {
+func TestRun_GracefulShutdown_GRPCStatus(t *testing.T) {
+	tests := []struct {
+		name    string
+		recvErr error
+	}{
+		{
+			name:    "UnavailableEOF",
+			recvErr: status.Error(codes.Unavailable, "transport closed: EOF"),
+		},
+		{
+			name:    "Canceled",
+			recvErr: status.Error(codes.Canceled, "stream canceled"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			broker := NewMessageBroker(
+				&errorBidiStream{recvErr: tt.recvErr},
+				&SimpleMessageEnvelope{},
+				"test",
+				nil,
+			)
+
+			require.NoError(t, broker.Run(t.Context()))
+		})
+	}
+}
+
+// TestClose_ClosesAllWaiters tests that Close properly cleans up.
+func TestClose_ClosesAllWaiters(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()
 
@@ -668,37 +784,675 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 
 	ctx := t.Context()
 
-	// Start some SendAndWait operations that will register channels
+	errCh := make(chan error, 2)
+
+	// Start some SendAndWait operations that will register waiters.
 	go func() {
 		msg := &TestMessage{RequestId: "req1", InnerMsg: &TestRequest{Value: "test"}}
-		broker.SendAndWait(ctx, msg)
+		_, err := broker.SendAndWait(ctx, msg)
+		errCh <- err
 	}()
 
 	go func() {
 		msg := &TestMessage{RequestId: "req2", InnerMsg: &TestRequest{Value: "test"}}
-		broker.SendAndWait(ctx, msg)
+		_, err := broker.SendAndWait(ctx, msg)
+		errCh <- err
 	}()
 
-	// Wait for both response channels to register in responseChans.
+	// Wait for both response waiters to register.
 	require.Eventually(t, func() bool {
 		count := 0
-		broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+		broker.responseWaiters.Range(func(_ string, _ *responseWaiter[TestMessage]) bool {
 			count++
 			return true
 		})
 		return count == 2
-	}, 1*time.Second, 5*time.Millisecond, "both response channels should register")
+	}, time.Second, 5*time.Millisecond, "both response waiters should register")
 
-	// Close the broker
 	broker.Close()
 
-	// Verify all channels are removed
 	count := 0
-	broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+	broker.responseWaiters.Range(func(_ string, _ *responseWaiter[TestMessage]) bool {
 		count++
 		return true
 	})
-	assert.Equal(t, 0, count, "All channels should be removed from the map")
+	assert.Equal(t, 0, count, "all response waiters should be removed")
+
+	for range 2 {
+		select {
+		case err := <-errCh:
+			require.ErrorIs(t, err, errMessageBrokerClosed)
+		case <-time.After(time.Second):
+			t.Fatal("pending request did not return after broker close")
+		}
+	}
+
+	_, err := broker.SendAndWait(t.Context(), &TestMessage{
+		RequestId: "after-close",
+		InnerMsg:  &TestRequest{Value: "test"},
+	})
+	require.ErrorIs(t, err, errMessageBrokerClosed)
+}
+
+func TestRegisterResponseWaiter_RejectsDuplicateCorrelationId(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ClientStream(), &SimpleMessageEnvelope{}, "client", nil)
+	first := newResponseWaiter[TestMessage](1)
+	second := newResponseWaiter[TestMessage](1)
+
+	require.NoError(t, broker.registerResponseWaiter(t.Context(), "shared-request", first))
+	t.Cleanup(func() {
+		broker.unregisterResponseWaiter("shared-request", first)
+	})
+
+	err := broker.registerResponseWaiter(t.Context(), "shared-request", second)
+
+	require.ErrorIs(t, err, errRequestAlreadyPending)
+	second.close()
+}
+
+func TestResponseWaiter_FullProgressQueueKeepsFinalResponse(t *testing.T) {
+	waiter := newResponseWaiter[TestMessage](1)
+	t.Cleanup(waiter.close)
+
+	progress := &TestMessage{RequestId: "request", IsProgress: true, ProgressText: "first"}
+	droppedProgress := &TestMessage{RequestId: "request", IsProgress: true, ProgressText: "second"}
+	final := &TestMessage{RequestId: "request", InnerMsg: &TestResponse{Result: "done"}}
+
+	require.True(t, waiter.send(progress, true))
+	require.False(t, waiter.send(droppedProgress, true))
+	require.True(t, waiter.send(final, false))
+
+	actualProgress, ok := waiter.receive()
+	require.True(t, ok)
+	require.Same(t, progress, actualProgress)
+
+	actualFinal, ok := waiter.receive()
+	require.True(t, ok)
+	require.Same(t, final, actualFinal)
+}
+
+func TestResponseWaiter_CloseDiscardsQueuedResponses(t *testing.T) {
+	waiter := newResponseWaiter[TestMessage](1)
+	require.True(t, waiter.send(&TestMessage{RequestId: "request"}, false))
+
+	waiter.close()
+
+	require.False(t, waiter.send(&TestMessage{RequestId: "request"}, false))
+	response, ok := waiter.receive()
+	require.False(t, ok)
+	require.Nil(t, response)
+}
+
+func TestCancellationMessageEnvelope_CustomControlMessage(t *testing.T) {
+	envelope := &customCancellationEnvelope{}
+	broker := NewMessageBroker(
+		&errorBidiStream{},
+		envelope,
+		"test",
+		nil,
+	)
+	request := &TestMessage{RequestId: "request"}
+
+	cancellation := broker.createCancellationMessage(t.Context(), request, context.DeadlineExceeded)
+
+	require.Equal(t, "request", cancellation.RequestId)
+	require.Equal(t, "custom-cancellation", cancellation.Data)
+	require.True(t, broker.isCancellationMessage(t.Context(), cancellation))
+	require.ErrorIs(t, broker.cancellationError(cancellation), context.DeadlineExceeded)
+}
+
+func TestCancellationMessageEnvelope_DefaultRequiresRequestId(t *testing.T) {
+	broker := NewMessageBroker(
+		&errorBidiStream{},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+	)
+
+	cancellation := broker.createCancellationMessage(
+		t.Context(),
+		&TestMessage{},
+		context.Canceled,
+	)
+
+	require.Nil(t, cancellation)
+}
+
+func TestCancelPendingRequest_CancellationSendFailure(t *testing.T) {
+	sendErr := errors.New("send failed")
+	broker := NewMessageBroker(
+		&errorBidiStream{sendErr: sendErr},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := broker.cancelPendingRequest(
+		ctx,
+		&TestMessage{RequestId: "request"},
+		"request",
+		reflect.TypeFor[*TestRequest](),
+		newResponseWaiter[TestMessage](1),
+		make(chan error),
+		true,
+	)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, sendErr)
+}
+
+func TestSendAndWait_DelayedCancellationReservesCorrelationId(t *testing.T) {
+	stream := newControlledSendBidiStream()
+	broker := NewMessageBrokerWithOptions(
+		stream,
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+		WithCancellationGracePeriod(20*time.Millisecond),
+	)
+	t.Cleanup(broker.Close)
+
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := broker.SendAndWait(firstCtx, &TestMessage{
+			RequestId: "shared-request",
+			Data:      "first",
+		})
+		firstDone <- err
+	}()
+
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "first", msg.Data)
+	case <-time.After(time.Second):
+		t.Fatal("first request did not start sending")
+	}
+
+	cancelFirst()
+	select {
+	case err := <-firstDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("first request did not return after cancellation grace period")
+	}
+
+	firstWaiter, ok := broker.responseWaiters.Load("shared-request")
+	require.True(t, ok)
+	require.True(t, firstWaiter.isDraining())
+
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := broker.SendAndWait(t.Context(), &TestMessage{
+			RequestId: "shared-request",
+			Data:      "second",
+		})
+		secondDone <- err
+	}()
+
+	select {
+	case msg := <-stream.sendStarted:
+		t.Fatalf("reused correlation ID sent before cancellation completed: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stream.releaseSend <- struct{}{}
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "shared-request", msg.RequestId)
+		require.ErrorIs(t, msg.Error, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("delayed cancellation was not sent")
+	}
+
+	select {
+	case msg := <-stream.sendStarted:
+		t.Fatalf("reused correlation ID sent before cancellation completed: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stream.releaseSend <- struct{}{}
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "second", msg.Data)
+	case <-time.After(time.Second):
+		t.Fatal("second request did not start after cancellation completed")
+	}
+
+	stream.releaseSend <- struct{}{}
+	broker.Close()
+	select {
+	case err := <-secondDone:
+		require.ErrorIs(t, err, errMessageBrokerClosed)
+	case <-time.After(time.Second):
+		t.Fatal("second request did not stop after broker close")
+	}
+}
+
+func TestCancelPendingRequest_PendingCancellationReservesCorrelationId(t *testing.T) {
+	stream := newControlledSendBidiStream()
+	broker := NewMessageBrokerWithOptions(
+		stream,
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+		WithCancellationGracePeriod(20*time.Millisecond),
+	)
+	t.Cleanup(broker.Close)
+
+	waiter := newResponseWaiter[TestMessage](1)
+	require.NoError(t, broker.registerResponseWaiter(t.Context(), "shared-request", waiter))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	cancelDone := make(chan error, 1)
+	go func() {
+		cancelDone <- broker.cancelPendingRequest(
+			ctx,
+			&TestMessage{RequestId: "shared-request"},
+			"shared-request",
+			reflect.TypeFor[*TestRequest](),
+			waiter,
+			make(chan error),
+			true,
+		)
+	}()
+
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "shared-request", msg.RequestId)
+		require.ErrorIs(t, msg.Error, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not start sending")
+	}
+
+	select {
+	case err := <-cancelDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not return after its grace period")
+	}
+	broker.unregisterResponseWaiter("shared-request", waiter)
+
+	current, ok := broker.responseWaiters.Load("shared-request")
+	require.True(t, ok)
+	require.Same(t, waiter, current)
+	require.True(t, waiter.isDraining())
+
+	second := newResponseWaiter[TestMessage](1)
+	registerDone := make(chan error, 1)
+	go func() {
+		registerDone <- broker.registerResponseWaiter(t.Context(), "shared-request", second)
+	}()
+
+	select {
+	case err := <-registerDone:
+		t.Fatalf("correlation ID reused before cancellation completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stream.releaseSend <- struct{}{}
+	select {
+	case err := <-registerDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("correlation ID was not released after cancellation completed")
+	}
+	broker.unregisterResponseWaiter("shared-request", second)
+}
+
+func TestCancelActiveRequest_DefaultCauseAndMissingRequest(t *testing.T) {
+	broker := NewMessageBroker(
+		&errorBidiStream{},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+	)
+
+	require.False(t, broker.cancelActiveRequest("", nil))
+	require.False(t, broker.cancelActiveRequest("missing", nil))
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	request := &activeRequest{cancel: cancel}
+	broker.active["request"] = map[*activeRequest]struct{}{
+		request: {},
+	}
+
+	require.True(t, broker.cancelActiveRequest("request", nil))
+	require.ErrorIs(t, context.Cause(ctx), context.Canceled)
+}
+
+func TestRun_FullProgressWaiterDoesNotBlockCancellation(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
+	slowWaiter := newResponseWaiter[TestMessage](1)
+	require.NoError(t, broker.registerResponseWaiter(t.Context(), "slow-request", slowWaiter))
+	t.Cleanup(func() {
+		broker.unregisterResponseWaiter("slow-request", slowWaiter)
+	})
+
+	handlerStarted := make(chan struct{})
+	handlerCanceled := make(chan error, 1)
+	require.NoError(t, broker.On(func(ctx context.Context, _ *TestRequest) (*TestMessage, error) {
+		close(handlerStarted)
+		<-ctx.Done()
+		handlerCanceled <- context.Cause(ctx)
+		return nil, ctx.Err()
+	}))
+
+	brokerCtx, cancelBroker := context.WithCancel(t.Context())
+	defer cancelBroker()
+	go func() {
+		_ = broker.Run(brokerCtx)
+	}()
+	require.NoError(t, broker.Ready(t.Context()))
+
+	clientStream := sim.ClientStream()
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId: "cancel-request",
+		InnerMsg:  &TestRequest{Value: "work"},
+	}))
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId:    "slow-request",
+		IsProgress:   true,
+		ProgressText: "first",
+	}))
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId:    "slow-request",
+		IsProgress:   true,
+		ProgressText: "second",
+	}))
+	require.NoError(t, clientStream.Send(&TestMessage{
+		RequestId: "cancel-request",
+		Error:     context.Canceled,
+	}))
+
+	select {
+	case cause := <-handlerCanceled:
+		require.ErrorIs(t, cause, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("full progress waiter blocked cancellation delivery")
+	}
+}
+
+func TestDuplicateRequestIds_DoNotCancelActiveHandlers(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
+	started := make(chan struct{}, 2)
+	canceled := make(chan error, 2)
+	release := make(chan struct{})
+	require.NoError(t, broker.On(func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
+		started <- struct{}{}
+		select {
+		case <-ctx.Done():
+			canceled <- context.Cause(ctx)
+			return nil, ctx.Err()
+		case <-release:
+			return &TestMessage{InnerMsg: &TestResponse{Result: req.Value}}, nil
+		}
+	}))
+
+	for _, value := range []string{"first", "second"} {
+		broker.processMessage(t.Context(), &TestMessage{
+			RequestId: "shared-request",
+			InnerMsg:  &TestRequest{Value: value},
+		})
+	}
+
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("handler did not start")
+		}
+	}
+
+	select {
+	case cause := <-canceled:
+		t.Fatalf("duplicate request id canceled an active handler: %v", cause)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(release)
+	for range 2 {
+		select {
+		case <-sim.serverToClient:
+		case <-time.After(time.Second):
+			t.Fatal("handler response was not sent")
+		}
+	}
+}
+
+func TestEndToEnd_CancellationCancelsMatchingHandler(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	clientBroker := NewMessageBrokerWithOptions(
+		sim.ClientStream(),
+		&SimpleMessageEnvelope{},
+		"client",
+		nil,
+		WithCancellationGracePeriod(time.Second),
+	)
+	serverBroker := NewMessageBrokerWithOptions(
+		sim.ServerStream(),
+		&SimpleMessageEnvelope{},
+		"server",
+		nil,
+		WithCancellationGracePeriod(time.Second),
+	)
+
+	brokerCtx, stopBrokers := context.WithCancel(t.Context())
+	defer stopBrokers()
+
+	handlerStarted := make(chan struct{})
+	handlerCause := make(chan error, 1)
+	require.NoError(t, serverBroker.On(func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
+		close(handlerStarted)
+		<-ctx.Done()
+		handlerCause <- context.Cause(ctx)
+		return nil, ctx.Err()
+	}))
+
+	go func() {
+		_ = serverBroker.Run(brokerCtx)
+	}()
+	go func() {
+		_ = clientBroker.Run(brokerCtx)
+	}()
+	require.NoError(t, serverBroker.Ready(t.Context()))
+	require.NoError(t, clientBroker.Ready(t.Context()))
+
+	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := clientBroker.SendAndWait(requestCtx, &TestMessage{
+			RequestId: "cancel-request",
+			InnerMsg:  &TestRequest{Value: "work"},
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+	cancelRequest()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("canceled request did not return")
+	}
+
+	select {
+	case cause := <-handlerCause:
+		require.ErrorIs(t, cause, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("handler context was not canceled")
+	}
+}
+
+func TestEndToEnd_DeadlineCancelsMatchingHandler(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	clientBroker := NewMessageBrokerWithOptions(
+		sim.ClientStream(),
+		&SimpleMessageEnvelope{},
+		"client",
+		nil,
+		WithCancellationGracePeriod(time.Second),
+	)
+	serverBroker := NewMessageBrokerWithOptions(
+		sim.ServerStream(),
+		&SimpleMessageEnvelope{},
+		"server",
+		nil,
+		WithCancellationGracePeriod(time.Second),
+	)
+
+	brokerCtx, stopBrokers := context.WithCancel(t.Context())
+	defer stopBrokers()
+
+	handlerStarted := make(chan struct{})
+	handlerCause := make(chan error, 1)
+	require.NoError(t, serverBroker.On(func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
+		close(handlerStarted)
+		<-ctx.Done()
+		handlerCause <- context.Cause(ctx)
+		return nil, ctx.Err()
+	}))
+
+	go func() {
+		_ = serverBroker.Run(brokerCtx)
+	}()
+	go func() {
+		_ = clientBroker.Run(brokerCtx)
+	}()
+	require.NoError(t, serverBroker.Ready(t.Context()))
+	require.NoError(t, clientBroker.Ready(t.Context()))
+
+	requestCtx, cancelRequest := context.WithCancelCause(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := clientBroker.SendAndWait(requestCtx, &TestMessage{
+			RequestId: "deadline-request",
+			InnerMsg:  &TestRequest{Value: "work"},
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+
+	cancelRequest(context.DeadlineExceeded)
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		t.Fatal("timed-out request did not return")
+	}
+
+	select {
+	case cause := <-handlerCause:
+		require.ErrorIs(t, cause, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		t.Fatal("handler context did not receive the deadline")
+	}
+}
+
+func TestClose_CancelsActiveHandlers(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
+	handlerStarted := make(chan struct{})
+	handlerStopped := make(chan error, 1)
+	require.NoError(t, broker.On(func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
+		close(handlerStarted)
+		<-ctx.Done()
+		handlerStopped <- ctx.Err()
+		return nil, ctx.Err()
+	}))
+
+	brokerCtx, cancelBroker := context.WithCancel(t.Context())
+	defer cancelBroker()
+	go func() {
+		_ = broker.Run(brokerCtx)
+	}()
+	require.NoError(t, broker.Ready(t.Context()))
+
+	sim.clientToServer <- &TestMessage{
+		RequestId: "active-request",
+		InnerMsg:  &TestRequest{Value: "work"},
+	}
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not start")
+	}
+
+	broker.Close()
+	select {
+	case err := <-handlerStopped:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("broker close did not cancel handler")
+	}
+}
+
+func TestPersistentHandlerContext_RemainsUntilStreamCancellation(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	broker := NewMessageBroker(sim.ServerStream(), &persistentTestMessageEnvelope{}, "server", nil)
+	handlerCtx := make(chan context.Context, 1)
+	require.NoError(t, broker.On(func(ctx context.Context, _ *TestRequest) (*TestMessage, error) {
+		handlerCtx <- ctx
+		return nil, nil
+	}))
+
+	streamCtx, cancelStream := context.WithCancel(t.Context())
+	broker.processMessage(streamCtx, &TestMessage{
+		RequestId: "persistent-request",
+		Data:      "persistent",
+		InnerMsg:  &TestRequest{Value: "register"},
+	})
+
+	var ctx context.Context
+	select {
+	case ctx = <-handlerCtx:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not run")
+	}
+
+	require.NoError(t, ctx.Err())
+	cancelStream()
+	require.Eventually(t, func() bool {
+		return errors.Is(ctx.Err(), context.Canceled)
+	}, time.Second, 10*time.Millisecond)
 }
 
 // TestEndToEnd_HandlerPanic verifies that when a handler panics, the client receives
@@ -1078,6 +1832,58 @@ func TestProcessHandlerRequest_NilNilHandler_NoSend(t *testing.T) {
 		t.Fatalf("expected no response, but got: %+v", resp)
 	default:
 		// Good — nothing was sent
+	}
+}
+
+func TestProcessHandlerRequest_CanceledNilHandler_SendsCancellation(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+	require.NoError(t, broker.On(func(_ context.Context, _ *TestRequest) (*TestMessage, error) {
+		return nil, nil
+	}))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	broker.processHandlerRequest(ctx, &TestMessage{
+		RequestId: "req-canceled",
+		InnerMsg:  &TestRequest{Value: "data"},
+	}, "req-canceled", reflect.TypeFor[*TestRequest]())
+
+	select {
+	case resp := <-sim.serverToClient:
+		require.Equal(t, "req-canceled", resp.RequestId)
+		require.ErrorIs(t, resp.Error, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("canceled handler did not send a response")
+	}
+}
+
+func TestProcessHandlerRequest_DeadlineContextErrorHandler_PreservesCause(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
+	require.NoError(t, broker.On(func(ctx context.Context, _ *TestRequest) (*TestMessage, error) {
+		return nil, ctx.Err()
+	}))
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(context.DeadlineExceeded)
+	broker.processHandlerRequest(ctx, &TestMessage{
+		RequestId: "req-deadline",
+		InnerMsg:  &TestRequest{Value: "data"},
+	}, "req-deadline", reflect.TypeFor[*TestRequest]())
+
+	select {
+	case resp := <-sim.serverToClient:
+		require.Equal(t, "req-deadline", resp.RequestId)
+		require.ErrorIs(t, resp.Error, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		t.Fatal("timed-out handler did not send a response")
 	}
 }
 

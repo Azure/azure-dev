@@ -56,3 +56,14 @@ func TestExecutionError_Error_Script(t *testing.T) {
 	assert.Contains(t, got, "pwsh")
 	assert.NotContains(t, got, "inline")
 }
+
+func TestExecutionError_Interrupted(t *testing.T) {
+	assert.False(t, (&ExecutionError{ExitCode: 1}).Interrupted())
+	assert.True(t, (&ExecutionError{ExitCode: 130}).Interrupted())
+	assert.False(t, (*ExecutionError)(nil).Interrupted())
+}
+
+func TestExecutionError_UnkeyedLiteralCompatibility(t *testing.T) {
+	err := &ExecutionError{1, "", false}
+	assert.Equal(t, 1, err.ExitCode)
+}

@@ -39,6 +39,9 @@ type eventService struct {
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 	lazyProject    *lazy.Lazy[*project.ProjectConfig]
 	lazyEnv        *lazy.Lazy[*environment.Environment]
+
+	// Stable event messages lack per-invocation IDs, so identical broker keys must not overlap.
+	stableInvocations stableEventInvocationGate
 }
 
 // ExtensionLookup resolves an installed extension.
@@ -86,7 +89,7 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 	}
 
 	// Create message broker with EventMessageEnvelope
-	envelope := azdext.NewEventMessageEnvelope()
+	envelope := azdext.NewEventMessageEnvelopeWithExtensionId(extension.Id)
 	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id, log.Default())
 
 	// Register handlers for incoming subscription requests (no response needed)
@@ -132,8 +135,7 @@ func (s *eventService) onSubscribeProjectEvent(
 		}
 
 		evt := ext.Event(eventName)
-		// Pass the stream context (ctx) which has extension claims
-		handler := s.createProjectEventHandler(ctx, extension, eventName, broker)
+		handler := s.createProjectEventHandler(extension, eventName, broker)
 		if err := projectConfig.AddHandler(ctx, evt, handler); err != nil {
 			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
@@ -143,13 +145,13 @@ func (s *eventService) onSubscribeProjectEvent(
 }
 
 func (s *eventService) createProjectEventHandler(
-	streamCtx context.Context,
 	extension *extensions.Extension,
 	eventName string,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
-		err := func() error {
+		correlationID := fmt.Sprintf("%s.%s", extension.Id, eventName)
+		err := s.stableInvocations.run(ctx, broker, correlationID, func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
@@ -175,8 +177,7 @@ func (s *eventService) createProjectEventHandler(
 			}
 
 			return s.runWithEnvReload(ctx, func() error {
-				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				response, err := broker.SendAndWait(ctx, invokeMsg)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
 				}
@@ -207,7 +208,7 @@ func (s *eventService) createProjectEventHandler(
 
 				return nil
 			})
-		}()
+		})
 
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
@@ -247,8 +248,7 @@ func (s *eventService) onSubscribeServiceEvent(
 				continue
 			}
 
-			// Pass the stream context (ctx) which has extension claims
-			handler := s.createServiceEventHandler(ctx, serviceConfig, extension, eventName, broker)
+			handler := s.createServiceEventHandler(serviceConfig, extension, eventName, broker)
 			if err := serviceConfig.AddHandler(ctx, evt, handler); err != nil {
 				return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
@@ -259,14 +259,14 @@ func (s *eventService) onSubscribeServiceEvent(
 }
 
 func (s *eventService) createServiceEventHandler(
-	streamCtx context.Context,
 	serviceConfig *project.ServiceConfig,
 	extension *extensions.Extension,
 	eventName string,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
-		err := func() error {
+		correlationID := fmt.Sprintf("%s.%s.%s", extension.Id, args.Service.Name, eventName)
+		err := s.stableInvocations.run(ctx, broker, correlationID, func() error {
 			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
@@ -306,8 +306,7 @@ func (s *eventService) createServiceEventHandler(
 			}
 
 			return s.runWithEnvReload(ctx, func() error {
-				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				response, err := broker.SendAndWait(ctx, invokeMsg)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}
@@ -340,7 +339,7 @@ func (s *eventService) createServiceEventHandler(
 
 				return nil
 			})
-		}()
+		})
 
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}

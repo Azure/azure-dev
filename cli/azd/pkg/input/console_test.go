@@ -27,6 +27,39 @@ type lineCapturer struct {
 	raw      strings.Builder
 }
 
+func TestNewConsole_NonTerminalInstallsInterruptWatcher(t *testing.T) {
+	previousWatcher := processInterruptWatcher
+	var watchedConsoles []*AskerConsole
+	processInterruptWatcher = &interruptSignalWatcher{
+		watch: func(c *AskerConsole) {
+			watchedConsoles = append(watchedConsoles, c)
+		},
+	}
+	t.Cleanup(func() {
+		processInterruptWatcher = previousWatcher
+	})
+
+	newConsole := func() *AskerConsole {
+		console := NewConsole(
+			false,
+			false,
+			Writers{Output: io.Discard},
+			ConsoleHandles{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard},
+			&output.NoneFormatter{},
+			nil,
+		)
+		askerConsole, ok := console.(*AskerConsole)
+		require.True(t, ok)
+		return askerConsole
+	}
+
+	firstConsole := newConsole()
+	newConsole()
+
+	require.Equal(t, []*AskerConsole{firstConsole}, watchedConsoles)
+	require.Nil(t, firstConsole.consoleWidth)
+}
+
 func (l *lineCapturer) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()

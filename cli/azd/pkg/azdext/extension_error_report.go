@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 )
+
+const errorReportTimeout = 2 * time.Second
 
 // ReportError sends a structured extension error to the azd host via gRPC.
 // It creates a temporary gRPC client using the AZD_SERVER environment variable.
-// Returns nil if AZD_SERVER is not set (extension running outside azd).
+// Returns an error if AZD_SERVER is not set.
 func ReportError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -34,9 +37,15 @@ func ReportError(ctx context.Context, err error) error {
 	defer client.Close()
 
 	req := &ReportErrorRequest{Error: extErr}
-	if _, rpcErr := client.Extension().ReportError(ctx, req); rpcErr != nil {
+	reportCtx, cancel := newErrorReportContext(ctx)
+	defer cancel()
+	if _, rpcErr := client.Extension().ReportError(reportCtx, req); rpcErr != nil {
 		return fmt.Errorf("report error via gRPC: %w", rpcErr)
 	}
 
 	return nil
+}
+
+func newErrorReportContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), errorReportTimeout)
 }

@@ -626,7 +626,8 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		ctx:    streamCtx,
 		recvCh: make(chan *v1beta.EventMessage, 1),
 	}
-	sendErr := make(chan error, 1)
+	sendErr := make(chan error, 2)
+	requestIDs := make(chan string, 2)
 	stream.sendFn = func(msg *v1beta.EventMessage) error {
 		invoke := msg.GetInvokeServiceHandler()
 		if invoke == nil || invoke.Service == nil {
@@ -637,8 +638,14 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 			sendErr <- errors.New("service name was not preserved")
 			return nil
 		}
+		if msg.GetRequestId() == "" {
+			sendErr <- errors.New("service invocation request ID was empty")
+			return nil
+		}
+		requestIDs <- msg.GetRequestId()
 		sendErr <- nil
 		stream.recvCh <- &v1beta.EventMessage{
+			RequestId: msg.GetRequestId(),
 			MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
 				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
 					EventName:   invoke.EventName,
@@ -673,13 +680,19 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		"prepackage",
 		broker,
 	)
-	err = handler(t.Context(), project.ServiceLifecycleEventArgs{
-		Project:        projectConfig,
-		Service:        serviceConfig,
-		ServiceContext: project.NewServiceContext(),
-	})
-	require.NoError(t, err)
-	require.NoError(t, <-sendErr)
+	for range 2 {
+		err = handler(t.Context(), project.ServiceLifecycleEventArgs{
+			Project:        projectConfig,
+			Service:        serviceConfig,
+			ServiceContext: project.NewServiceContext(),
+		})
+		require.NoError(t, err)
+		require.NoError(t, <-sendErr)
+	}
+
+	firstRequestID := <-requestIDs
+	secondRequestID := <-requestIDs
+	require.NotEqual(t, firstRequestID, secondRequestID)
 }
 
 func TestBetaEventServiceProjectHandlerUsesInvocationCancellation(t *testing.T) {
@@ -738,19 +751,27 @@ func requireBetaHandlerStopsOnCancel(
 ) {
 	t.Helper()
 
-	invoked := make(chan struct{})
+	invoked := make(chan string, 1)
+	cancellationReceived := make(chan error, 1)
+	envelope := newBetaEventMessageEnvelope()
+	recvCh := make(chan *v1beta.EventMessage, 1)
 	stream := &scriptedBetaEventStream{
 		ctx:    streamCtx,
-		recvCh: make(chan *v1beta.EventMessage),
-		sendFn: func(*v1beta.EventMessage) error {
-			close(invoked)
+		recvCh: recvCh,
+		sendFn: func(msg *v1beta.EventMessage) error {
+			if envelope.GetInnerMessage(msg) != nil {
+				invoked <- msg.GetRequestId()
+			} else if err := envelope.GetError(msg); err != nil {
+				cancellationReceived <- err
+				recvCh <- &v1beta.EventMessage{RequestId: msg.GetRequestId()}
+			}
 			return nil
 		},
 	}
 	brokerCtx, stopBroker := context.WithCancel(streamCtx)
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		newBetaEventMessageEnvelope(),
+		envelope,
 		extensionID,
 		nil,
 	)
@@ -770,7 +791,8 @@ func requireBetaHandlerStopsOnCancel(
 	}()
 
 	select {
-	case <-invoked:
+	case requestID := <-invoked:
+		require.NotEmpty(t, requestID)
 	case <-time.After(time.Second):
 		t.Fatal("handler did not send its invocation")
 	}
@@ -781,6 +803,13 @@ func requireBetaHandlerStopsOnCancel(
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("handler did not stop after its invocation was canceled")
+	}
+
+	select {
+	case err := <-cancellationReceived:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("extension handler did not receive cancellation")
 	}
 }
 

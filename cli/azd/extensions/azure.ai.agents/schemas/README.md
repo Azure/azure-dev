@@ -2,6 +2,17 @@
 
 These schemas describe Foundry resource shapes used by `azure.yaml`.
 
+The `azure.ai.agent.json` schema is also embedded by the extension and used to
+validate direct Agent-definition files. The supplied entry file must contain
+exactly one non-empty mapping document; YAML, YML, and JSON are accepted.
+Project/service wrappers, AgentManifest `template` wrappers, legacy `config`
+blocks, and core-owned service fields are not direct Agent definitions. The
+entry definition then goes through schema and kind-specific runtime validation.
+
+Only the supplied entry file receives strict single-document parsing. Nested
+`$ref` files continue to use the existing SDK resolver behavior; this loader
+does not add path confinement or strict document checks for those files.
+
 The root `azure.yaml` schemas in `schemas/v1.0/azure.yaml.json` and
 `schemas/alpha/azure.yaml.json` are consumed from the repository's `main` raw
 URLs through SchemaStore and generated `# yaml-language-server: $schema=...`

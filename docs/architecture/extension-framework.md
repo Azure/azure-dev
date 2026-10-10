@@ -112,6 +112,48 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
 
+### Project service save acknowledgment
+
+The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.
+This read-only RPC advertises whether the active `AddService` implementation
+supports `AddServiceRequest.operation_id` and `AddServiceAcknowledgment` status
+details. An unrelated focused beta override does not disable the built-in
+implementation. A custom `AddService` override must explicitly advertise its
+own support; the built-in capability response otherwise reports false.
+
+When supported, the caller supplies a fresh operation ID of at most 64 bytes
+(not characters) and makes exactly one beta `AddService` call. Longer identifiers
+are rejected with `InvalidArgument` before project mutation or saving.
+A failed operation that acquired the project mutation
+lock attaches an `AddServiceAcknowledgment` detail echoing that ID. Completion,
+including synchronous save retries, cleanup, and cache restoration, happens
+under the mutation lock. The status detail is serialized after the shared
+mutation helper returns and releases that lock. Success, panics, and errors
+rejected before the lock, cancellation, and deadline expiration do not carry a
+failure acknowledgment. Existing host-error codes, messages, suggestions, and
+structured details are preserved alongside the acknowledgment. Detail-attachment
+failures are explicit internal errors, not confirmed completion.
+
+Require exactly one well-formed matching detail before compensating local
+edits. Missing, malformed, stale, wrong-type, or duplicate details are uncertain
+outcomes. Cancellation, deadlines, authentication/authorization and transport
+failures are not safe completion signals. Completion is not proof that the
+root file stayed unchanged: retain root-byte comparisons, local locks, and
+ownership checks before rollback.
+
+The authentication/authorization exclusions above are a consumer recovery
+policy, not additional host acknowledgment suppression.
+
+An explicit false capability response or `Unimplemented` from the read-only
+RPC selects the stable host path. Other capability errors stop before
+mutation; errors from the subsequent mutation never trigger a fallback replay.
+Stable calls can succeed normally, but failed saves retain the scaffold
+with manual inspection guidance.
+
+Completion acknowledgments exist only on the typed beta API.
+Stable callers receive ordinary errors and retain uncertain
+scaffolds for manual recovery, without trusting custom metadata or trailers.
+
 ## Deployment Preview
 
 `azd deploy --preview` calls an optional `Preview` on each selected service target

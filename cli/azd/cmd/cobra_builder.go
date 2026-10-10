@@ -205,6 +205,10 @@ func (df *docsFlag) Set(value string) error {
 
 		commandPath := strings.ReplaceAll(c.CommandPath(), " ", "-")
 		commandDocsUrl := referenceDocumentationUrl + commandPath
+		if c.Annotations["extension.namespace"] != "" {
+			// Extension namespaces are not part of the built-in command reference.
+			commandDocsUrl = extensionsDocumentationURL
+		}
 		openWithDefaultBrowser(ctx, console, commandDocsUrl)
 	})
 

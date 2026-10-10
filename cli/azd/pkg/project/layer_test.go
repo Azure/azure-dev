@@ -69,6 +69,33 @@ layers:
 	assert.Equal(t, "application", projectConfig.Layers[0].Infra[0].Layer)
 }
 
+func TestParseRejectsDuplicateOutputAliasDestinations(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"infra", "project"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+
+			infra := provisioning.Options{
+				Name: "producer", Provider: provisioning.Bicep, Path: "infra/producer",
+				OutputAliases: map[string]string{"FIRST": "SHARED", "SECOND": "SHARED"},
+			}
+			project := ProjectConfig{Name: "test-project"}
+			if format == "infra" {
+				project.Infra.Layers = []provisioning.Options{infra}
+			} else {
+				project.Layers = LayerConfigs{{Name: "application", Infra: []provisioning.Options{infra}}}
+			}
+			content, err := yaml.Marshal(project)
+			require.NoError(t, err)
+
+			_, err = Parse(t.Context(), string(content))
+			require.ErrorContains(t, err, "output aliases")
+			require.ErrorContains(t, err, `cannot both target "SHARED"`)
+		})
+	}
+}
+
 func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
 	t.Parallel()
 

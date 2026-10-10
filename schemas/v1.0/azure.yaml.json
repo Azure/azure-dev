@@ -111,7 +111,7 @@
                             "paramAliases": {
                                 "type": "object",
                                 "title": "Layer input aliases",
-                                "description": "Optional. Maps environment variable names used by this layer to variable names in the shared project environment.",
+                                "description": "Optional. Maps environment variable names in the provider view to variable names in the project view. Keys are provider variables; values are project variables.",
                                 "propertyNames": {
                                     "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                                 },
@@ -123,7 +123,7 @@
                             "outputAliases": {
                                 "type": "object",
                                 "title": "Layer output aliases",
-                                "description": "Optional. Maps provisioning output names produced by this layer to variable names in the shared project environment.",
+                                "description": "Optional. Maps output names in the provider view to variable names in the project view. Keys are provider outputs; values are project variables.",
                                 "propertyNames": {
                                     "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                                 },

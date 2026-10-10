@@ -69,23 +69,83 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	}
 
 	m.provider = provider
+	infraOptions.VirtualEnv = m.virtualInputsForProviderView(options.VirtualEnv)
 	return m.provider.Initialize(ctx, projectPath, infraOptions)
 }
 
-// Parameters gets the list of parameters and its value which will be used to provision the infrastructure.
+func (m *Manager) virtualInputsForProviderView(projectInputs map[string]string) map[string]string {
+	if m.options.VirtualEnv == nil || len(m.options.ParamAliases) == 0 {
+		return m.options.VirtualEnv
+	}
+
+	providerInputs := maps.Clone(m.options.VirtualEnv)
+	// Read from the project view, not the copy being translated, so overlapping aliases apply only once.
+	for providerName, projectName := range m.options.ParamAliases {
+		if value, has := projectInputs[projectName]; has {
+			providerInputs[providerName] = value
+		} else {
+			delete(providerInputs, providerName)
+		}
+	}
+	return providerInputs
+}
+
+// Parameters returns provisioning parameters with environment mappings expressed in the project view.
 func (m *Manager) Parameters(ctx context.Context) ([]Parameter, error) {
 	if m.provider == nil {
 		panic("called parameters() with provider not initialized. Make sure to call manager.Initialize() first.")
 	}
-	return m.provider.Parameters(ctx)
+	parameters, err := m.provider.Parameters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return m.parametersForProjectView(parameters), nil
 }
 
-// PlannedOutputs returns the list of outputs in the current plan.
+func (m *Manager) parametersForProjectView(parameters []Parameter) []Parameter {
+	if len(m.options.ParamAliases) == 0 {
+		return parameters
+	}
+
+	// CI must export project variables; the scoped environment translates provider-variable reads.
+	// Keep the provider's own metadata in the provider view.
+	projectParameters := slices.Clone(parameters)
+	for i := range projectParameters {
+		projectParameters[i].EnvVarMapping = slices.Clone(parameters[i].EnvVarMapping)
+
+		for j, providerName := range projectParameters[i].EnvVarMapping {
+			if projectName, has := m.options.ParamAliases[providerName]; has {
+				projectParameters[i].EnvVarMapping[j] = projectName
+			}
+		}
+	}
+	return projectParameters
+}
+
+// PlannedOutputs returns the current plan's output names in the project view.
 func (m *Manager) PlannedOutputs(ctx context.Context) ([]PlannedOutput, error) {
 	if m.provider == nil {
 		panic("called PlannedOutputs() with provider not initialized. Make sure to call manager.Initialize() first.")
 	}
-	return m.provider.PlannedOutputs(ctx)
+	outputs, err := m.provider.PlannedOutputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return m.plannedOutputsForProjectView(outputs), nil
+}
+
+func (m *Manager) plannedOutputsForProjectView(outputs []PlannedOutput) []PlannedOutput {
+	if len(m.options.OutputAliases) == 0 {
+		return outputs
+	}
+
+	projectOutputs := slices.Clone(outputs)
+	for i := range projectOutputs {
+		if projectName, has := m.options.OutputAliases[projectOutputs[i].Name]; has {
+			projectOutputs[i].Name = projectName
+		}
+	}
+	return projectOutputs
 }
 
 // Gets the latest deployment details for the specified scope
@@ -117,6 +177,14 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	if skippedDueToDeploymentState {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
+	}
+
+	// YAML validation cannot see provider outputs without aliases. Check all destinations
+	// before writing any output, while retaining provider-view names in the deployment result.
+	if len(m.options.OutputAliases) > 0 {
+		if _, err := ApplyOutputAliases(deployResult.Deployment.Outputs, m.options.OutputAliases); err != nil {
+			return nil, fmt.Errorf("validating deployment output aliases: %w", err)
+		}
 	}
 
 	scopedEnv := m.scopedEnvironment()
@@ -541,8 +609,8 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		providerKey = defaultProvider
 	}
 
-	container, ok := m.serviceLocator.(*ioc.NestedContainer)
-	if !ok {
+	container, isNestedContainer := m.serviceLocator.(*ioc.NestedContainer)
+	if !isNestedContainer {
 		if len(m.options.ParamAliases) == 0 && len(m.options.OutputAliases) == 0 {
 			var provider Provider
 			if err := m.serviceLocator.ResolveNamed(string(providerKey), &provider); err != nil {
@@ -559,7 +627,17 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning provider scope: %w", err)
 	}
-	ioc.RegisterInstance(providerScope, m.scopedEnvironment())
+	// Providers retain the registered environment and persistence policy; only the manager stages layer outputs.
+	providerScope.MustRegisterSingleton(func() (environment.ScopedEnvironment, error) {
+		var env environment.ScopedEnvironment
+		if err := container.Resolve(&env); err != nil {
+			return nil, fmt.Errorf("resolving provider environment: %w", err)
+		}
+
+		return environment.NewMappedScopedEnvironment(
+			env, m.options.ParamAliases, m.options.OutputAliases,
+		), nil
+	})
 
 	var provider Provider
 	err = providerScope.ResolveNamed(string(providerKey), &provider)

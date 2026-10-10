@@ -55,8 +55,8 @@ type mappedScopedEnvironment struct {
 	outputs map[string]string
 }
 
-// NewMappedScopedEnvironment creates a provider-facing environment that maps layer-local input
-// and output names to names in the shared environment.
+// NewMappedScopedEnvironment translates input and output variable names between the provider view
+// and the project view. Both alias maps use provider names as keys and project names as values.
 func NewMappedScopedEnvironment(
 	env ScopedEnvironment,
 	inputs map[string]string,
@@ -84,9 +84,13 @@ func (e *mappedScopedEnvironment) LookupEnv(key string) (string, bool) {
 func (e *mappedScopedEnvironment) Dotenv() map[string]string {
 	values := e.ScopedEnvironment.Dotenv()
 
-	// Resolve every source before adding local names so overlapping aliases do not affect each other.
+	// Resolve every project variable before adding provider names so overlapping aliases do not affect each other.
 	mapped := make(map[string]string, len(e.inputs))
 	for localName, sharedName := range e.inputs {
+		// Aliases must not restore loader controls excluded from the backing dotenv.
+		if isLoaderControlKey(localName) {
+			continue
+		}
 		mapped[localName], _ = e.ScopedEnvironment.LookupEnv(sharedName)
 	}
 	maps.Copy(values, mapped)

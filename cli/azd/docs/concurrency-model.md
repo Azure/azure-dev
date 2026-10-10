@@ -181,6 +181,11 @@ Prove the boundary with different values in the scoped view and backing environm
 - Replacing the interface in a child scope must not change the concrete environment or its lazy loader.
 - Framework services, service targets, and hooks use the concrete environment supplied by their caller.
   Provisioning output persistence uses the scoped environment and saves its backing environment.
+- Provider scopes map the registered, real-backed scoped environment and retain the real environment
+  manager. Providers read live inputs and persist their own config and dotenv changes, as on `upstream/main`.
+  Alias keys name variables in the provider view; alias values name variables in the project view.
+  The per-layer provisioning manager separately maps its cloned environment and uses the no-op-save
+  manager to stage deployment outputs. The graph saves those outputs to the shared environment after merging.
 - External provider registration must succeed without loading an environment. A later operation must pick up
   an environment that becomes available after registration.
 

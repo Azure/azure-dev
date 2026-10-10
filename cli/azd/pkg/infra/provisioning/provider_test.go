@@ -38,7 +38,7 @@ func TestApplyOutputAliasesRejectsDuplicateDestinations(t *testing.T) {
 		"SECOND": "SHARED",
 	})
 
-	require.ErrorContains(t, err, `outputs "FIRST" and "SECOND" both target shared environment variable "SHARED"`)
+	require.ErrorContains(t, err, `provider outputs "FIRST" and "SECOND" both target project variable "SHARED"`)
 }
 
 func TestOptions_GetWithDefaults(t *testing.T) {

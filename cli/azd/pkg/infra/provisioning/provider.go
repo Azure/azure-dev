@@ -63,9 +63,9 @@ type Options struct {
 	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
-	// ParamAliases maps provider-local environment variable names to names in the shared project environment.
+	// ParamAliases maps environment variable names in the provider view to names in the project view.
 	ParamAliases map[string]string `yaml:"paramAliases,omitempty" json:"paramAliases,omitempty"`
-	// OutputAliases maps provider-local output names to names in the shared project environment.
+	// OutputAliases maps output names in the provider view to variable names in the project view.
 	OutputAliases map[string]string `yaml:"outputAliases,omitempty" json:"outputAliases,omitempty"`
 	// DependsOn lists the names of other infrastructure entries this entry must wait for
 	// before being provisioned. Use this to declare hook-mediated edges
@@ -88,6 +88,7 @@ type Options struct {
 	//
 	// This is used when planning multiple layers, and would be set to plan-time outputs
 	// from previous layers.
+	// Callers supply project-view variable names; Manager.Initialize maps them to provider-view names.
 	VirtualEnv map[string]string `yaml:"-"`
 }
 
@@ -127,7 +128,7 @@ func (o Options) AbsolutePath(projectPath string) string {
 	return filepath.Join(projectPath, o.Path)
 }
 
-// ApplyOutputAliases maps provider-local output names to their shared environment names.
+// ApplyOutputAliases maps output names in the provider view to variable names in the project view.
 func ApplyOutputAliases(
 	outputs map[string]OutputParameter,
 	aliases map[string]string,
@@ -143,7 +144,7 @@ func ApplyOutputAliases(
 
 		if previous, has := sources[sharedName]; has && previous != localName {
 			return nil, fmt.Errorf(
-				"outputs %q and %q both target shared environment variable %q",
+				"provider outputs %q and %q both target project variable %q",
 				previous, localName, sharedName,
 			)
 		}
@@ -288,18 +289,19 @@ func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 func validateLayerAliases(layer Options) error {
 	for localName, sharedName := range layer.ParamAliases {
 		if localName == "" || sharedName == "" {
-			return errors.New("input alias names cannot be empty")
+			return errors.New("input alias names cannot be empty in the provider view or project view")
 		}
 	}
 
+	// YAML does not declare provider outputs, so collisions with unaliased outputs need a runtime check.
 	destinations := make(map[string]string, len(layer.OutputAliases))
 	for localName, sharedName := range layer.OutputAliases {
 		if localName == "" || sharedName == "" {
-			return errors.New("output alias names cannot be empty")
+			return errors.New("output alias names cannot be empty in the provider view or project view")
 		}
 		if previous, has := destinations[sharedName]; has && previous != localName {
 			return fmt.Errorf(
-				"output aliases %q and %q cannot both target %q",
+				"output aliases %q and %q cannot both target %q in the project view",
 				previous, localName, sharedName,
 			)
 		}

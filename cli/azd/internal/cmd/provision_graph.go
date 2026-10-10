@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
@@ -816,9 +815,9 @@ func provisionSingleLayer(
 }
 
 // runProvisionSingleLayer provisions a single infrastructure layer. It creates
-// an isolated environment clone so that parallel layers don't interfere with
-// each other's parameter resolution, then merges outputs back into the shared
-// env.
+// an environment clone for staging deployment outputs, then merges those outputs
+// back into the shared env. Providers resolve the real environment and manager
+// through the service locator, independently of this output-staging clone.
 //
 // The lifecycle matches the sequential path in [ProvisionAction]:
 //
@@ -837,27 +836,27 @@ func provisionSingleLayer(
 // dotenv file on disk via their own envManager; deps.env in this process
 // is intentionally NOT kept live during that window — step 8's reload is
 // the single point at which we re-converge with disk before returning.
-// Concurrent sibling layers (no dependsOn edge) running their own steps 0/4
-// will therefore not observe this layer's mid-flight hook writes, which is
-// the correct behavior — sibling layers without an explicit dependency on
-// us are by definition not allowed to read our hook-mediated values.
+// Providers read live shared inputs, not the output-staging clone. Sibling
+// layers without a dependsOn edge have no guarantee about when they observe
+// this layer's provider or hook writes.
 //
 // Cross-layer ordering contract: when the dependency graph contains an edge
 // `B → A` (either detected by [bicep.AnalyzeLayerDependencies] or declared
 // via `infra.layers[].dependsOn`), the scheduler treats this entire function
 // invocation as a single graph node. Layer B's node is only scheduled after
 // layer A's node returns, which by construction means after step 8
-// completes. Therefore B's clone of deps.env at the start of its own
-// invocation observes:
+// completes. B's provider therefore reads the shared environment after it contains:
 //
 //   - all of A's deployment outputs (merged in step 4), AND
 //   - any env mutations performed by A's hooks or event handlers via
 //     `azd env set` (captured by step 8's reload).
 //
+// B also snapshots that updated environment to stage its own deployment outputs.
+//
 // The latter is the "hook-mediated edge" case the static analyzer is blind
 // to. Authors who need this guarantee must declare the edge explicitly via
 // `infra.layers[].dependsOn`; without an explicit edge, A and B may run in
-// parallel and B's clone may pre-date A's reload.
+// parallel and B's parameter resolution may pre-date A's reload.
 //
 // Returns the raw [provisioning.DeployResult] so callers can record skip
 // semantics; on [provisioning.ProvisionValidationCanceledSkipped] it returns
@@ -871,17 +870,14 @@ func runProvisionSingleLayer(
 	console input.Console,
 	envMu *sync.Mutex,
 ) (*provisioning.DeployResult, error) {
-	// Snapshot the shared environment so this layer resolves parameters
-	// from current values (including outputs from prior phases).
+	// Stage this layer's outputs separately from the provider's live shared environment.
 	envMu.Lock()
 	layerEnv := environment.NewWithValues(
 		deps.env.Name(), deps.env.Dotenv(),
 	)
-	layerEnv.Config = &synchronizedConfig{Config: deps.env.Config, mu: envMu}
 	envMu.Unlock()
 
-	// Use a noop-save env manager for the per-layer manager. Saves happen
-	// against the shared environment after outputs are merged.
+	// Suppress the manager's output saves, not the provider's own state saves.
 	noopMgr := &noopSaveEnvManager{Manager: deps.envManager}
 
 	mgr := provisioning.NewManager(
@@ -1228,79 +1224,6 @@ func (c *syncConsole) EnsureBlankLine(ctx context.Context) {
 // writes; the authoritative save happens through the shared environment.
 type noopSaveEnvManager struct {
 	environment.Manager
-}
-
-// synchronizedConfig keeps provider configuration reads and writes in the same critical section
-// as shared environment saves during parallel layer provisioning.
-type synchronizedConfig struct {
-	config.Config
-	mu *sync.Mutex
-}
-
-func (c *synchronizedConfig) Raw() map[string]any {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.Raw()
-}
-
-func (c *synchronizedConfig) ResolvedRaw() map[string]any {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.ResolvedRaw()
-}
-
-func (c *synchronizedConfig) Get(path string) (any, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.Get(path)
-}
-
-func (c *synchronizedConfig) GetString(path string) (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.GetString(path)
-}
-
-func (c *synchronizedConfig) GetSection(path string, section any) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.GetSection(path, section)
-}
-
-func (c *synchronizedConfig) GetMap(path string) (map[string]any, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.GetMap(path)
-}
-
-func (c *synchronizedConfig) GetSlice(path string) ([]any, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.GetSlice(path)
-}
-
-func (c *synchronizedConfig) Set(path string, value any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.Set(path, value)
-}
-
-func (c *synchronizedConfig) SetSecret(path string, value string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.SetSecret(path, value)
-}
-
-func (c *synchronizedConfig) Unset(path string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.Unset(path)
-}
-
-func (c *synchronizedConfig) IsEmpty() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.Config.IsEmpty()
 }
 
 func (*noopSaveEnvManager) Save(

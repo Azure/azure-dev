@@ -12,12 +12,15 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	provisioningtest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -43,6 +46,77 @@ func TestNoopSaveEnvManager(t *testing.T) {
 	inner.On("Reload", mock.Anything, env).Return(nil)
 	require.NoError(t, noop.Reload(t.Context(), env))
 	inner.AssertCalled(t, "Reload", mock.Anything, env)
+}
+
+type savingParametersProvider struct {
+	provisioning.Provider
+	env        environment.ScopedEnvironment
+	envManager environment.Manager
+}
+
+func (p *savingParametersProvider) Initialize(ctx context.Context, path string, options provisioning.Options) error {
+	if err := p.Provider.Initialize(ctx, path, options); err != nil {
+		return err
+	}
+	if err := p.env.GetConfig().Set("infra.parameters.input", p.env.Getenv("LOCAL_INPUT")); err != nil {
+		return err
+	}
+	if err := p.env.GetConfig().SetSecret("infra.parameters.password", "generated-secret"); err != nil {
+		return err
+	}
+
+	return p.envManager.Save(ctx, p.env.BackingEnv())
+}
+
+func TestLayerProviderInitialization_PersistsRealEnvironment(t *testing.T) {
+	t.Setenv(environment.SubscriptionIdEnvVarName, "initialization-subscription")
+	t.Setenv(environment.LocationEnvVarName, "eastus2")
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+
+	deps, _, envPath := newPropagationTestDeps(t)
+	deps.env.DotenvSet("SHARED_INPUT", "live-input")
+
+	mockContext := mocks.NewMockContext(t.Context())
+	ioc.RegisterInstance[environment.ScopedEnvironment](mockContext.Container, deps.env)
+	ioc.RegisterInstance(mockContext.Container, deps.envManager)
+	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test),
+		func(env environment.ScopedEnvironment, manager environment.Manager) provisioning.Provider {
+			return &savingParametersProvider{
+				Provider:   provisioningtest.NewTestProvider(manager, env, mockContext.Console, nil),
+				env:        env,
+				envManager: manager,
+			}
+		})
+
+	layerEnv := environment.NewWithValues(deps.env.Name(), deps.env.Dotenv())
+	deps.env.DotenvSet("SHARED_INPUT", "updated-live-input")
+	noopManager := &noopSaveEnvManager{Manager: deps.envManager}
+
+	manager := provisioning.NewManager(
+		mockContext.Container, deps.defaultProvider, noopManager, layerEnv,
+		mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
+	)
+	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
+		Provider:     provisioning.Test,
+		ParamAliases: map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
+	}))
+
+	contents, err := os.ReadFile(envPath)
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "initialization-subscription")
+	require.Equal(t, "initialization-subscription", deps.env.GetSubscriptionId())
+	require.Equal(t, "eastus2", deps.env.GetLocation())
+	require.Empty(t, layerEnv.Dotenv()[environment.SubscriptionIdEnvVarName])
+	require.Empty(t, layerEnv.Dotenv()[environment.LocationEnvVarName])
+	require.True(t, layerEnv.Config.IsEmpty())
+
+	require.NoError(t, deps.envManager.Reload(t.Context(), deps.env))
+	value, has := deps.env.Config.GetString("infra.parameters.input")
+	require.True(t, has)
+	require.Equal(t, "updated-live-input", value)
+	secret, has := deps.env.Config.GetString("infra.parameters.password")
+	require.True(t, has)
+	require.Equal(t, "generated-secret", secret)
 }
 
 func TestSyncConsole_SerializesMessages(t *testing.T) {

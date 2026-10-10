@@ -188,7 +188,7 @@ func AnalyzeLayerDependencies(
 					)
 				}
 				return nil, fmt.Errorf(
-					"duplicate output %q: produced by both layer %q and layer %q",
+					"duplicate output %q in the project view: produced by both layer %q and layer %q",
 					sharedName, layers[prev].Name, layer.Name,
 				)
 			}

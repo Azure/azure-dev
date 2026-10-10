@@ -48,16 +48,6 @@ import (
 // Place this marker on its own line immediately before the opening fence.
 const docExamplePartialMarker = "<!-- azd:doc-example partial -->"
 
-// coreServiceKeys are the `services.<name>` properties that azd core parses into
-// typed fields on its own ServiceConfig. Everything else in a service block is
-// captured by core's `yaml:",inline"` AdditionalProperties map and handed to the
-// extension. Mirrors ServiceConfig in cli/azd/pkg/project/service_config.go.
-var coreServiceKeys = []string{
-	"apiVersion", "condition", "config", "dist", "docker", "env", "hooks", "host",
-	"image", "infra", "k8s", "language", "module", "project", "remoteBuild",
-	"resourceGroup", "resourceName", "uses",
-}
-
 // docSchema is the extension's published JSON Schema for the `azure.ai.agent`
 // service block, used to check that every property a doc advertises is one the
 // extension actually declares — including properties nested inside documented

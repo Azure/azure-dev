@@ -23,7 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext/preview"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
@@ -487,8 +487,8 @@ func previewSourceSecrets(value any, lookup func(string) (string, bool), secrets
 }
 
 var (
-	previewRequiredVariable = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-	previewServerTemplate   = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
+	previewRequiredVariable = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)}`)
+	previewServerTemplate   = regexp.MustCompile(`(?s)\$\{\{.*?}}`)
 )
 
 func previewEnvironmentInputUnknown(expression string, lookup func(string) (string, bool)) (bool, error) {

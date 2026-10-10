@@ -19,7 +19,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -255,7 +255,6 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 		return strings.Compare(string(a.Protocol)+"/"+a.Version, string(b.Protocol)+"/"+b.Version)
 	})
 	definition.ProtocolVersions = slices.Compact(definition.ProtocolVersions)
-	definition.Image = ""
 	clone := *request
 	clone.Definition = definition
 	clone.AgentEndpoint = nil
@@ -458,7 +457,7 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 		_, _ = fmt.Fprintf(&message, "  unknown: %s\n", unknown)
 	}
 	for _, note := range result.Notes {
-		fmt.Fprintln(&message, note)
+		_, _ = fmt.Fprintln(&message, note)
 	}
 	_, err := io.WriteString(writer, message.String())
 	return err

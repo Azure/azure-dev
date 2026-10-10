@@ -158,8 +158,10 @@ lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 
 **Breaking change:** the dependency type now precedes the verb:
 `azd ai agent <toolbox|connection> add <service> --agent <agent>`.
-The previous `azd ai agent add <type> ...` command order is no longer supported;
-only the command hierarchy changes, not the dependency mutation or JSON output.
+The previous `azd ai agent add <type> ...` form is no longer supported for
+dependency attachment. The root `azd ai agent add <service> --file <path>`
+command adds or updates one Agent service. Attach dependencies with the
+Toolbox or Connection commands above.
 
 If a toolbox is declared inline on an agent, move its definition to an
 independent `azure.ai.toolbox` service before deployment. If the new service key
@@ -388,6 +390,22 @@ New Foundry agent projects keep the agent definition directly on the
 definition in an `agent.yaml`/`agent.yml` file, an AgentManifest file, or under
 the service's `config:` block. Runtime commands reject those implicit and nested
 sources with migration guidance.
+
+For an existing azd project, `azd ai agent add <name> --file <path>`
+validates a direct definition and adds or updates only that Agent service.
+The positional service key is not the Foundry Agent identity in the definition.
+The command does not adopt another project, authenticate to Azure, create
+resources, copy source files, or deploy. For full sample or project adoption,
+use the `azd ai agent init --template <path>` workflow.
+
+The definition may be YAML or JSON and must use a supported direct Agent kind:
+`prompt`, `hosted` (including code deployment), `voice`, or the `prompt-voice`
+compatibility name. The service stores a root `$ref` relative to the directory
+containing `azure.yaml`; nested references resolve relative to the file that
+declares them. The project must declare exactly one `azure.ai.project` service
+before the command writes. `--project` can confirm that service key, and
+`--source` overrides the Agent service's project directory with an existing
+directory inside the current project.
 
 Move a direct agent definition to service-level properties in `azure.yaml`:
 

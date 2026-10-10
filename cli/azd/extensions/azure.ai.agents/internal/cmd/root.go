@@ -27,6 +27,9 @@ func NewRootCommand() *cobra.Command {
   azd ai agent init
   azd up
 
+  # Add a file-backed Agent service to the current project
+  azd ai agent add support-agent --file ./agents/support.yaml
+
   # Send a message to a deployed prompt or hosted agent
   azd ai agent invoke "Hello"`
 	rootCmd.SilenceErrors = true
@@ -78,6 +81,7 @@ func NewRootCommand() *cobra.Command {
 	}))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
+	rootCmd.AddCommand(newAgentServiceAddCommand(extCtx))
 	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "toolbox", AiToolboxHost))
 	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "connection", AiConnectionHost))
 	rootCmd.AddCommand(newRunCommand(extCtx))

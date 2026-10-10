@@ -4,7 +4,7 @@ This guide covers how to create, build, and publish an extension for the Azure D
 
 ## Overview
 
-azd extensions use a gRPC-based framework to add functionality. Extensions can provide:
+azd extensions use a gRPC-based framework to add functionality. The extension framework is [generally available (GA)](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/); individual extensions you create may still be experimental or pre-release until you publish a stable version. Extensions can provide:
 
 - **Custom commands** — Expose new command groups and commands to azd
 - **Lifecycle events** — Subscribe to project and service lifecycle events (pre/post provision, deploy, etc.)

@@ -70,6 +70,13 @@ Without this option, resolution continues to treat includes as trusted input and
 
 Consumers must wait for an SDK release containing `WithProjectRootConfinement()` before opting in. Adding this core API does not change existing extension binaries.
 
+The default scaffolds and SDK `EventManager` use the stable `v1` contract.
+Go extensions can opt into beta structured messages for service
+`predeploy`/`postdeploy` handlers with
+`ExtensionHost.WithBetaServiceEventHandler`. See
+[contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
+for the stream requirements and legacy-client behavior.
+
 ### 4. Build
 
 ```bash

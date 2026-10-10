@@ -133,6 +133,23 @@ func TestGetRoutine_Success(t *testing.T) {
 	assert.Equal(t, "session", got.Action.SessionID)
 }
 
+func TestGetRoutine_PreservesCreatorAuthorizationFromRawResponse(t *testing.T) {
+	t.Parallel()
+	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "api-version=v1", r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(
+			`{"name":"creator-routine","authorization":{"identity":"creator"}}`,
+		))
+	}))
+
+	got, err := client.GetRoutine(t.Context(), "creator-routine")
+	require.NoError(t, err)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, got.Authorization.Identity)
+}
+
 func TestGetRoutine_NotFound(t *testing.T) {
 	t.Parallel()
 	client, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -245,6 +262,12 @@ func TestPutRoutine_Created(t *testing.T) {
 			return
 		}
 		assert.Equal(t, "new-routine", body["name"])
+		authorization, ok := body["authorization"].(map[string]any)
+		if !assert.True(t, ok) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		assert.Equal(t, RoutineDispatchIdentityCreator, authorization["identity"])
 		triggers, ok := body["triggers"].(map[string]any)
 		if !assert.True(t, ok) {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -289,6 +312,9 @@ func TestPutRoutine_Created(t *testing.T) {
 
 	input := &Routine{
 		Name: "new-routine", Description: "desc",
+		Authorization: &RoutineAuthorization{
+			Identity: RoutineDispatchIdentityCreator,
+		},
 		Triggers: map[string]RoutineTrigger{
 			"default": {
 				Type: "schedule", CronExpression: "0 9 * * *", TimeZone: "UTC",
@@ -305,6 +331,8 @@ func TestPutRoutine_Created(t *testing.T) {
 	got, err := client.PutRoutine(t.Context(), "new-routine", input)
 	require.NoError(t, err)
 	assert.Equal(t, "new-routine", got.Name)
+	require.NotNil(t, got.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, got.Authorization.Identity)
 	assert.Equal(t, "2025-01-01T00:00:00Z", got.CreatedAt.String())
 }
 

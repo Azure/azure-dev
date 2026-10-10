@@ -11,6 +11,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
+  - [Structured deploy messages (beta)](#structured-deploy-messages-beta)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
@@ -89,6 +90,56 @@ func main() {
     azdext.Run(rootCmd)
 }
 ```
+
+### Structured deploy messages (beta)
+
+Service-level `predeploy` and `postdeploy` handlers can return structured,
+non-blocking info and warning messages. These are beta-only fields on
+`ServiceHandlerStatus.messages`; each message can include text, a suggestion,
+and links. The stable event API and default language scaffolds are unchanged.
+
+Register a beta handler on the extension host:
+
+```go
+host.WithBetaServiceEventHandler(
+    "postdeploy",
+    func(_ context.Context, args *azdext.ServiceEventArgs) (
+        *azdext.BetaServiceEventResponse, error,
+    ) {
+        return &azdext.BetaServiceEventResponse{
+            Messages: []azdext.BetaServiceEventMessage{{
+                Kind:       azdext.BetaServiceEventMessageWarning,
+                Message:    "Review the service access policy.",
+                Suggestion: "Update the policy before the next deployment.",
+            }},
+        }, nil
+    },
+    nil,
+)
+```
+
+Extensions that adopt this API must set `requiredAzdVersion` in their
+extension manifest to require at least the first azd release that supports
+both subscription acknowledgements and `ServiceHandlerStatus.messages`.
+Set the minimum to that release once its version is known; do not publish
+an adopting extension with an older minimum. Older hosts can time out
+during registration or acknowledge the subscription but ignore returned
+messages. An acknowledgement alone does not establish message support.
+
+The beta event stream must begin with a subscription that includes a
+`request_id` and waits for its acknowledgement. A service status that contains
+messages must echo the invocation's request ID. Legacy beta streams without
+request IDs retain their previous behavior but cannot send structured
+messages.
+
+The host displays returned messages after the deployment table and includes
+them in the `messages` array of deploy/up JSON results. Messages returned
+alongside a handler error are retained, while the error still fails the
+deployment. Use the existing stable `WithServiceEventHandler` for other
+service lifecycle events; do not register both handler APIs for the same
+event.
+See the [extension framework guide](extension-framework.md#event-service)
+for the host behavior and the demo implementation.
 
 ### RunOption / WithPreExecute
 

@@ -149,13 +149,60 @@ func TestBetaEventStreamRequestIDModeValidation(t *testing.T) {
 			},
 		},
 		{
-			name: "service status keeps legacy correlation",
+			name: "service status with request ID",
+			message: &v1beta.EventMessage{
+				RequestId: "request-1",
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "prepackage",
+						ServiceName: "api",
+						Status:      "completed",
+					},
+				},
+			},
+		},
+		{
+			name: "service status without request ID",
 			message: &v1beta.EventMessage{
 				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
 					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
 						EventName:   "prepackage",
 						ServiceName: "api",
 						Status:      "completed",
+					},
+				},
+			},
+		},
+		{
+			name: "structured service message requires request ID",
+			message: &v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "predeploy",
+						ServiceName: "api",
+						Status:      "completed",
+						Messages: []*v1beta.ServiceEventMessage{{
+							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+							Message: "service warning",
+						}},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "structured service message with request ID",
+			message: &v1beta.EventMessage{
+				RequestId: "invocation-1",
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "predeploy",
+						ServiceName: "api",
+						Status:      "completed",
+						Messages: []*v1beta.ServiceEventMessage{{
+							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+							Message: "service warning",
+						}},
 					},
 				},
 			},
@@ -216,6 +263,130 @@ func TestBetaEventStreamRequestIDModeValidation(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestBetaEventStreamCorrelatesUnambiguousIDlessServiceStatuses(t *testing.T) {
+	tests := []struct {
+		name          string
+		registerIDs   []string
+		abandonIDs    []string
+		wantRequestID string
+		wantError     codes.Code
+	}{
+		{
+			name:          "single outstanding invocation",
+			registerIDs:   []string{"request-1"},
+			wantRequestID: "request-1",
+		},
+		{
+			name: "no outstanding invocation",
+		},
+		{
+			name:        "multiple outstanding invocations",
+			registerIDs: []string{"request-1", "request-2"},
+			wantError:   codes.InvalidArgument,
+		},
+		{
+			name:        "canceled invocation makes fallback ambiguous",
+			registerIDs: []string{"canceled", "request-2"},
+			abandonIDs:  []string{"canceled"},
+			wantError:   codes.InvalidArgument,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &scriptedBetaEventStream{
+				ctx:    t.Context(),
+				recvCh: make(chan *v1beta.EventMessage, 1),
+			}
+			source.recvCh <- &v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "predeploy",
+						ServiceName: "api",
+						Status:      "completed",
+					},
+				},
+			}
+			stream := newBetaEventStream(
+				source,
+				&v1beta.EventMessage{
+					RequestId: "subscribe-1",
+					MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+						SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{
+							EventNames: []string{"predeploy"},
+						},
+					},
+				},
+				betaEventStreamRequestIDs,
+			)
+
+			for _, requestID := range tt.registerIDs {
+				require.NoError(t, stream.serviceCorrelations.register(
+					"api",
+					"predeploy",
+					requestID,
+				))
+			}
+			for _, requestID := range tt.abandonIDs {
+				stream.serviceCorrelations.abandon(requestID)
+			}
+
+			_, err := stream.Recv()
+			require.NoError(t, err)
+			message, err := stream.Recv()
+			if tt.wantError != codes.OK {
+				require.Equal(t, tt.wantError, status.Code(err))
+				require.Empty(t, message)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantRequestID, message.GetRequestId())
+		})
+	}
+}
+
+func TestBetaEventStreamDoesNotReuseCanceledRequestIDForLateResponse(t *testing.T) {
+	source := &scriptedBetaEventStream{
+		ctx:    t.Context(),
+		recvCh: make(chan *v1beta.EventMessage, 2),
+	}
+	first := &v1beta.EventMessage{
+		RequestId: "subscribe-1",
+		MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+			SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{
+				EventNames: []string{"predeploy"},
+			},
+		},
+	}
+	stream := newBetaEventStream(source, first, betaEventStreamRequestIDs)
+	require.NoError(t, stream.serviceCorrelations.register("api", "predeploy", "canceled"))
+	stream.serviceCorrelations.abandon("canceled")
+	require.NoError(t, stream.serviceCorrelations.register("api", "predeploy", "current"))
+
+	for _, requestID := range []string{"canceled", "current"} {
+		source.recvCh <- &v1beta.EventMessage{
+			RequestId: requestID,
+			MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+					EventName:   "predeploy",
+					ServiceName: "api",
+					Status:      "completed",
+				},
+			},
+		}
+	}
+
+	_, err := stream.Recv()
+	require.NoError(t, err)
+	lateResponse, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "canceled", lateResponse.GetRequestId())
+	currentResponse, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "current", currentResponse.GetRequestId())
 }
 
 type initialErrorBetaEventStream struct {

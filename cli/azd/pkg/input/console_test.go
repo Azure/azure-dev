@@ -4,6 +4,7 @@
 package input
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,8 +18,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	tm "github.com/buger/goterm"
 	"github.com/stretchr/testify/require"
 	"github.com/theckman/yacspin"
+	"go.uber.org/atomic"
 )
 
 type lineCapturer struct {
@@ -622,6 +625,89 @@ func TestAskerConsole_Previewer_SingleUser(t *testing.T) {
 	require.Equal(t, len("late write\n"), n)
 }
 
+func TestAskerConsole_Previewer_SuppressedShowDoesNotReleaseActiveOwner(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+	ctx := t.Context()
+
+	activeWriter := c.ShowPreviewer(ctx, nil)
+	require.NotEqual(t, io.Discard, activeWriter)
+
+	ps, ok := c.(PreviewerPauser)
+	require.True(t, ok)
+	ps.PausePreviewer()
+	suppressedWriter := c.ShowPreviewer(ctx, nil)
+	require.Equal(t, io.Discard, suppressedWriter)
+
+	// A suppressed ShowPreviewer does not acquire ownership, so its caller
+	// must not call StopPreviewer. The active owner can still release safely.
+	c.StopPreviewer(ctx, false)
+	require.NotNil(t, c.(*AskerConsole).previewer.Load())
+
+	ps.ResumePreviewer()
+	require.Nil(t, c.(*AskerConsole).previewer.Load())
+}
+
+func TestAskerConsole_PausePreviewerSerializesWithProgressRenderer(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	).(*AskerConsole)
+
+	c.showProgressMu.Lock()
+	pauseStarted := make(chan struct{})
+	pauseDone := make(chan struct{})
+	go func() {
+		close(pauseStarted)
+		c.PausePreviewer()
+		close(pauseDone)
+	}()
+	<-pauseStarted
+
+	select {
+	case <-pauseDone:
+		c.showProgressMu.Unlock()
+		t.Fatal("PausePreviewer completed while the renderer lock was held")
+	case <-time.After(50 * time.Millisecond):
+	}
+	c.showProgressMu.Unlock()
+
+	select {
+	case <-pauseDone:
+	case <-time.After(time.Second):
+		t.Fatal("PausePreviewer did not complete after the renderer unlocked")
+	}
+	require.True(t, c.previewerSuppressed.Load())
+	require.Equal(t, io.Discard, c.ShowPreviewer(t.Context(), nil))
+	require.Zero(t, c.previewerRefCount)
+}
+
 // TestAskerConsole_Previewer_ConcurrentWriteStress runs many goroutines writing
 // and stopping concurrently to verify there are no data races.
 func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {
@@ -738,6 +824,55 @@ func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	require.NotEqual(t, io.Discard, writerAfterResume,
 		"ShowPreviewer should return a real writer after ResumePreviewer")
 	c.StopPreviewer(ctx, false)
+}
+
+func TestAskerConsole_StopPreviewerPreservesKeepLogsWhilePaused(t *testing.T) {
+	renderStop := func(t *testing.T, keepLogs bool) string {
+		t.Helper()
+
+		formatter, err := output.NewFormatter(string(output.NoneFormat))
+		require.NoError(t, err)
+
+		lines := &lineCapturer{}
+		c := NewConsole(
+			false,
+			false,
+			Writers{Output: lines},
+			ConsoleHandles{
+				Stderr: os.Stderr,
+				Stdin:  os.Stdin,
+				Stdout: lines,
+			},
+			formatter,
+			nil,
+		).(*AskerConsole)
+		c.consoleWidth = atomic.NewInt32(80)
+
+		var terminal bytes.Buffer
+		previousScreen := tm.Screen
+		tm.Screen = &terminal
+		defer func() {
+			tm.Screen = previousScreen
+		}()
+
+		ctx := t.Context()
+		writer := c.ShowPreviewer(ctx, &ShowPreviewerOptions{Title: "deploy hook"})
+		_, err = writer.Write([]byte("preview log\n"))
+		require.NoError(t, err)
+
+		c.PausePreviewer()
+		c.StopPreviewer(ctx, keepLogs)
+		c.ResumePreviewer()
+
+		return terminal.String()
+	}
+
+	keptOutput := renderStop(t, true)
+	clearedOutput := renderStop(t, false)
+	require.NotEqual(t, keptOutput, clearedOutput,
+		"deferred teardown must pass keepLogs to progressLog.Stop")
+	require.Greater(t, len(clearedOutput), len(keptOutput),
+		"clearing deferred preview output should emit terminal cleanup")
 }
 
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.

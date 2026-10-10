@@ -243,7 +243,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 		ctx := args.Get(0).(context.Context)
 		close(receiveStarted)
 		<-ctx.Done()
-	}).Return(nil)
+	}).Return(context.Canceled)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	// Setup extension host
@@ -431,6 +431,85 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	require.NoError(t, err)
 	mockServiceTargetManager.AssertExpectations(t)
 	mockEventManager.AssertExpectations(t)
+}
+
+func TestExtensionHost_ValidateBetaServiceEventRegistrations(t *testing.T) {
+	handler := BetaServiceEventHandler(func(
+		context.Context,
+		*ServiceEventArgs,
+	) (*BetaServiceEventResponse, error) {
+		return nil, nil
+	})
+
+	tests := []struct {
+		name           string
+		stableHandlers []ServiceEventRegistration
+		betaHandlers   []betaServiceEventRegistration
+		wantError      string
+	}{
+		{
+			name: "valid deploy handlers",
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "predeploy", Handler: handler},
+				{EventName: "postdeploy", Handler: handler},
+			},
+		},
+		{
+			name: "unsupported prepackage event",
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "prepackage", Handler: handler},
+			},
+			wantError: "use predeploy or postdeploy",
+		},
+		{
+			name: "unsupported postpackage event",
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "postpackage", Handler: handler},
+			},
+			wantError: "use predeploy or postdeploy",
+		},
+		{
+			name: "duplicate beta event",
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "predeploy", Handler: handler},
+				{EventName: "predeploy", Handler: handler},
+			},
+			wantError: "registered more than once",
+		},
+		{
+			name: "stable and beta handlers conflict",
+			stableHandlers: []ServiceEventRegistration{
+				{EventName: "postdeploy"},
+			},
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "postdeploy", Handler: handler},
+			},
+			wantError: "cannot have both stable and beta handlers",
+		},
+		{
+			name: "nil handler",
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "predeploy"},
+			},
+			wantError: "is nil",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			host := NewExtensionHost(nil)
+			host.serviceHandlers = test.stableHandlers
+			host.betaServiceHandlers = test.betaHandlers
+
+			err := host.validateBetaServiceEventRegistrations()
+			if test.wantError == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, test.wantError)
+			require.ErrorContains(t, host.Run(t.Context()), test.wantError)
+		})
+	}
 }
 
 func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {

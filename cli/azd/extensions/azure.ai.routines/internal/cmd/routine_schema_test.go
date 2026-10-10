@@ -22,6 +22,12 @@ func TestRoutineSchemaUsesCamelCaseAuthoringKeys(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &schema))
 
 	properties := requireSchemaMap(t, schema, "properties")
+	authorization := requireSchemaMap(t, properties, "authorization")
+	require.Equal(t, []any{"identity"}, authorization["required"])
+	authorizationProperties := requireSchemaMap(t, authorization, "properties")
+	identity := requireSchemaMap(t, authorizationProperties, "identity")
+	require.Equal(t, []any{"agent", "creator"}, identity["enum"])
+
 	triggers := requireSchemaMap(t, properties, "triggers")
 	triggerItem := requireSchemaMap(t, triggers, "additionalProperties")
 	triggerProperties := requireSchemaMap(t, triggerItem, "properties")

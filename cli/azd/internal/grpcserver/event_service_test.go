@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -668,6 +669,110 @@ func TestEventService_createProjectEventHandler_CancelsExtensionHandler(t *testi
 	case <-cancellationReceived:
 	case <-time.After(time.Second):
 		t.Fatal("extension handler did not receive cancellation")
+	}
+}
+
+func TestEventService_createProjectEventHandler_SerializesSameKeyInvocations(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	firstInvoked := make(chan struct{})
+	secondInvoked := make(chan struct{})
+	cancellationReceived := make(chan struct{})
+	var invocationCount atomic.Int32
+	broker, cleanup := createBrokerForEventHandler(
+		t,
+		extension.Id,
+		func(msg *azdext.EventMessage) *azdext.EventMessage {
+			if invoke := msg.GetInvokeProjectHandler(); invoke != nil {
+				switch invocationCount.Add(1) {
+				case 1:
+					close(firstInvoked)
+					return nil
+				case 2:
+					close(secondInvoked)
+					return &azdext.EventMessage{
+						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+								EventName: invoke.EventName,
+								Status:    "completed",
+							},
+						},
+					}
+				default:
+					t.Errorf("unexpected invocation count")
+					return nil
+				}
+			}
+
+			statusMsg := msg.GetProjectHandlerStatus()
+			if statusMsg != nil && statusMsg.Status == "canceling" {
+				close(cancellationReceived)
+				return &azdext.EventMessage{
+					MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+						ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+							EventName: statusMsg.EventName,
+							Status:    "failed",
+							Message:   context.Canceled.Error(),
+							Error:     azdext.WrapError(context.Canceled),
+						},
+					},
+				}
+			}
+
+			return nil
+		},
+	)
+	defer cleanup()
+
+	handler := service.createProjectEventHandler(extension, "prepackage", broker)
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- handler(firstCtx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+	}()
+
+	select {
+	case <-firstInvoked:
+	case <-time.After(time.Second):
+		t.Fatal("first extension handler was not invoked")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- handler(t.Context(), project.ProjectLifecycleEventArgs{Project: projectConfig})
+	}()
+
+	select {
+	case <-secondInvoked:
+		t.Fatal("same-key stable invocation was not serialized")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancelFirst()
+	select {
+	case err := <-firstDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("first extension handler did not stop after cancellation")
+	}
+	select {
+	case <-cancellationReceived:
+	case <-time.After(time.Second):
+		t.Fatal("first extension handler did not receive cancellation")
+	}
+	select {
+	case <-secondInvoked:
+	case <-time.After(time.Second):
+		t.Fatal("second extension handler did not start after the first completed")
+	}
+	select {
+	case err := <-secondDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("second extension handler did not complete")
 	}
 }
 

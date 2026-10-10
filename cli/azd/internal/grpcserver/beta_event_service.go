@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -316,6 +317,7 @@ func (s *betaEventService) createServiceHandler(
 				return fmt.Errorf("convert service context to beta: %w", err)
 			}
 			invoke := &v1beta.EventMessage{
+				RequestId: uuid.NewString(),
 				MessageType: &v1beta.EventMessage_InvokeServiceHandler{
 					InvokeServiceHandler: &v1beta.InvokeServiceHandler{
 						EventName:      eventName,

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -40,6 +41,19 @@ type resolveOptions struct {
 	// pathKeys are keys whose relative string values name files, beyond the two
 	// core owns.
 	pathKeys map[string]bool
+	confine  bool
+	root     *os.Root
+}
+
+// WithProjectRootConfinement limits every $ref read to projectRoot.
+// Only regular files are read, through os.Root to prevent symlink
+// replacement from escaping the root. Relative in-root symlinks work;
+// absolute symlinks are rejected, including those pointing inside.
+// This does not constrain path-bearing values such as instructions.
+func WithProjectRootConfinement() ResolveOption {
+	return func(o *resolveOptions) {
+		o.confine = true
+	}
 }
 
 // WithPathKeys declares keys whose relative string values are filesystem paths.
@@ -96,6 +110,7 @@ func WithPathKeys(keys ...string) ResolveOption {
 //
 // Path keys beyond the two core owns are rebased only when named with WithPathKeys.
 // Each referenced file must contain exactly one YAML or JSON object.
+// WithProjectRootConfinement opts into confined regular-file reads.
 func ResolveFileRefs(cfg map[string]any, projectRoot string, opts ...ResolveOption) (map[string]any, error) {
 	if cfg == nil {
 		return nil, nil
@@ -107,6 +122,36 @@ func ResolveFileRefs(cfg map[string]any, projectRoot string, opts ...ResolveOpti
 	}
 
 	root := filepath.Clean(projectRoot)
+	if resolved.confine {
+		if projectRoot == "" {
+			return nil, fileRefValidation(
+				"project root must not be empty for confined $ref resolution",
+				"Provide the project directory that contains the referenced files.",
+			)
+		}
+		if runtime.GOOS == "js" || runtime.GOOS == "plan9" {
+			return nil, fileRefValidation(
+				"confined $ref resolution is not supported on this platform",
+				"Use a platform with handle-based os.Root confinement.",
+			)
+		}
+		var err error
+		root, err = filepath.Abs(root)
+		if err != nil {
+			return nil, fileRefValidation(
+				fmt.Sprintf("cannot resolve project root: %v", err),
+				"Provide a valid project directory.",
+			)
+		}
+		resolved.root, err = os.OpenRoot(root)
+		if err != nil {
+			return nil, fileRefValidation(
+				fmt.Sprintf("cannot open project root %q: %v", root, err),
+				"Check that the project directory exists and is accessible.",
+			)
+		}
+		defer resolved.root.Close()
+	}
 	out, err := resolveValue(cfg, root, root, nil, resolved)
 	if err != nil {
 		return nil, err
@@ -199,7 +244,7 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 		)
 	}
 
-	loaded, err := loadRefFile(target)
+	loaded, err := loadRefFile(target, opts.root)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +292,7 @@ func refTargetPath(ref, baseDir string) (string, error) {
 	}
 	if remoteRefPattern.MatchString(ref) {
 		return "", fileRefValidation(
-			fmt.Sprintf("%s %q is a URL; remote includes are not supported yet", refKey, ref),
+			fmt.Sprintf("%s is a URL; remote includes are not supported yet", refKey),
 			"Use a local file path. Download the file and reference it by a relative or absolute path.",
 		)
 	}
@@ -259,10 +304,8 @@ func refTargetPath(ref, baseDir string) (string, error) {
 
 // loadRefFile reads and parses a referenced YAML or JSON file into a mapping. JSON parses as a
 // subset of YAML, so a single decoder handles both.
-func loadRefFile(path string) (map[string]any, error) {
-	// #nosec G304 -- $ref targets are trusted config input, the same trust level as azure.yaml
-	// itself (design spec §2.4 treats includes as trusted input).
-	data, err := os.ReadFile(path)
+func loadRefFile(path string, root *os.Root) (map[string]any, error) {
+	data, err := readRefFile(path, root)
 	if err != nil {
 		return nil, fileRefValidation(
 			fmt.Sprintf("cannot read %s file %q: %v", refKey, path, err),
@@ -300,6 +343,40 @@ func loadRefFile(path string) (map[string]any, error) {
 		)
 	}
 	return out, nil
+}
+
+func readRefFile(path string, root *os.Root) ([]byte, error) {
+	if root == nil {
+		// #nosec G304 -- Default mode accepts trusted config paths.
+		return os.ReadFile(path)
+	}
+
+	name, err := filepath.Rel(root.Name(), path)
+	if err != nil || !filepath.IsLocal(name) {
+		return nil, errors.New("referenced file is outside the project root")
+	}
+	// Avoid opening known special files, such as named pipes.
+	info, err := root.Stat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("referenced file must be a regular file")
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	// Check the opened handle, not just the earlier path lookup.
+	info, err = file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("referenced file must be a regular file")
+	}
+	return io.ReadAll(file)
 }
 
 // isPathKey reports whether a string value for key is a filesystem path that should be rebased.

@@ -185,13 +185,20 @@ func (p *ProvisionAction) provisionLayersGraph(
 						return svcErr
 					}
 
+					projectOutputs, err := provisioning.ApplyOutputAliases(
+						deployResult.Deployment.Outputs, layer.OutputAliases,
+					)
+					if err != nil {
+						return fmt.Errorf("applying output aliases for layer %s: %w", layer.Name, err)
+					}
+
 					for _, svc := range servicesStable {
 						eventArgs := project.ServiceLifecycleEventArgs{
 							Project:        p.projectConfig,
 							Service:        svc,
 							ServiceContext: project.NewServiceContext(),
 							Args: map[string]any{
-								"bicepOutput": deployResult.Deployment.Outputs,
+								"bicepOutput": projectOutputs,
 							},
 						}
 
@@ -1000,6 +1007,13 @@ func runProvisionSingleLayer(
 	// to update appsettings with provisioning outputs.
 	if deps.importManager != nil && deployResult.Deployment != nil &&
 		len(deployResult.Deployment.Outputs) > 0 {
+		projectOutputs, err := provisioning.ApplyOutputAliases(
+			deployResult.Deployment.Outputs, layer.OutputAliases,
+		)
+		if err != nil {
+			return deployResult, fmt.Errorf("applying output aliases for layer %s: %w", stepName, err)
+		}
+
 		servicesStable, svcErr := deps.importManager.ServiceStable(ctx, deps.projectConfig)
 		if svcErr != nil {
 			return deployResult, fmt.Errorf(
@@ -1016,7 +1030,7 @@ func runProvisionSingleLayer(
 					Service:        svc,
 					ServiceContext: project.NewServiceContext(),
 					Args: map[string]any{
-						"bicepOutput": deployResult.Deployment.Outputs,
+						"bicepOutput": projectOutputs,
 					},
 				}
 				if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {

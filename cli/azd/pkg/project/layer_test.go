@@ -96,6 +96,75 @@ func TestParseRejectsDuplicateOutputAliasDestinations(t *testing.T) {
 	}
 }
 
+func TestParseLayerAliasNames(t *testing.T) {
+	t.Parallel()
+
+	names := []struct {
+		name  string
+		valid bool
+	}{
+		{name: "VALID_NAME", valid: true},
+		{name: "_name0", valid: true},
+		{name: "a", valid: true},
+		{name: ""},
+		{name: "BAD-NAME"},
+		{name: "PATH=value"},
+		{name: "1BAD"},
+		{name: "BAD.NAME"},
+		{name: "BAD NAME"},
+		{name: "BAD\nNAME"},
+		{name: "NAME\n"},
+		{name: "caf\u00e9"},
+	}
+	for _, format := range []string{"infra", "project"} {
+		for _, aliasKind := range []string{"input", "output"} {
+			for _, view := range []string{"provider", "project"} {
+				for _, tt := range names {
+					t.Run(fmt.Sprintf("%s/%s/%s/%q", format, aliasKind, view, tt.name), func(t *testing.T) {
+						t.Parallel()
+
+						providerName, projectName := "LOCAL_VARIABLE", "SHARED_VARIABLE"
+						if view == "provider" {
+							providerName = tt.name
+						} else {
+							projectName = tt.name
+						}
+						aliases := map[string]string{providerName: projectName}
+						infra := provisioning.Options{
+							Name: "producer", Provider: provisioning.Bicep, Path: "infra/producer",
+						}
+						if aliasKind == "input" {
+							infra.ParamAliases = aliases
+						} else {
+							infra.OutputAliases = aliases
+						}
+						project := ProjectConfig{Name: "test-project"}
+						if format == "infra" {
+							project.Infra.Layers = []provisioning.Options{infra}
+						} else {
+							project.Layers = LayerConfigs{{Name: "application", Infra: []provisioning.Options{infra}}}
+						}
+						content, err := yaml.Marshal(project)
+						require.NoError(t, err)
+
+						_, err = Parse(t.Context(), string(content))
+						if tt.valid {
+							require.NoError(t, err)
+						} else {
+							require.ErrorContains(t, err, aliasKind+" alias")
+							if tt.name == "" {
+								require.ErrorContains(t, err, "names cannot be empty")
+							} else {
+								require.ErrorContains(t, err, "must use names matching ^[A-Za-z_][A-Za-z0-9_]*$")
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
 	t.Parallel()
 

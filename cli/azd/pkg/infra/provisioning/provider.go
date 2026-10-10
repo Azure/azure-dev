@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -286,10 +287,15 @@ func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 	return nil
 }
 
+var aliasNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 func validateLayerAliases(layer Options) error {
 	for localName, sharedName := range layer.ParamAliases {
 		if localName == "" || sharedName == "" {
 			return errors.New("input alias names cannot be empty in the provider view or project view")
+		}
+		if !aliasNamePattern.MatchString(localName) || !aliasNamePattern.MatchString(sharedName) {
+			return fmt.Errorf("input alias %q to %q must use names matching %s", localName, sharedName, aliasNamePattern)
 		}
 	}
 
@@ -298,6 +304,9 @@ func validateLayerAliases(layer Options) error {
 	for localName, sharedName := range layer.OutputAliases {
 		if localName == "" || sharedName == "" {
 			return errors.New("output alias names cannot be empty in the provider view or project view")
+		}
+		if !aliasNamePattern.MatchString(localName) || !aliasNamePattern.MatchString(sharedName) {
+			return fmt.Errorf("output alias %q to %q must use names matching %s", localName, sharedName, aliasNamePattern)
 		}
 		if previous, has := destinations[sharedName]; has && previous != localName {
 			return fmt.Errorf(

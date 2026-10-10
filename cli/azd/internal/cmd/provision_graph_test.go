@@ -6,21 +6,28 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	provisioningtest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -46,6 +53,129 @@ func TestNoopSaveEnvManager(t *testing.T) {
 	inner.On("Reload", mock.Anything, env).Return(nil)
 	require.NoError(t, noop.Reload(t.Context(), env))
 	inner.AssertCalled(t, "Reload", mock.Anything, env)
+}
+
+func TestProvisionServiceEnvUpdatedEventUsesProjectViewOutputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		single  bool
+		skipped bool
+		aliases map[string]string
+	}{
+		{
+			name: "single layer", single: true,
+			aliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT", "SHARED_OUTPUT": "OTHER_OUTPUT"},
+		},
+		{
+			name:    "multi-layer",
+			aliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT", "SHARED_OUTPUT": "OTHER_OUTPUT"},
+		},
+		{
+			name: "skipped multi-layer", skipped: true,
+			aliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT", "SHARED_OUTPUT": "OTHER_OUTPUT"},
+		},
+		{name: "single layer without aliases", single: true},
+		{name: "multi-layer without aliases"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			deps, envMu, _ := newPropagationTestDeps(t)
+			mockContext := mocks.NewMockContext(t.Context())
+			outputs := map[string]provisioning.OutputParameter{
+				"LOCAL_OUTPUT":  {Type: provisioning.ParameterTypeString, Value: "local-value"},
+				"SHARED_OUTPUT": {Type: provisioning.ParameterTypeString, Value: "shared-value"},
+				"UNCHANGED":     {Type: provisioning.ParameterTypeString, Value: "unchanged-value"},
+			}
+			providerOutputs := maps.Clone(outputs)
+			provider := &mockProvider{
+				deployResult: &provisioning.DeployResult{Deployment: &provisioning.Deployment{Outputs: outputs}},
+				stateResult:  &provisioning.StateResult{State: &provisioning.State{Outputs: outputs}},
+			}
+			if tt.skipped {
+				provider.deployResult.SkippedReason = provisioning.DeploymentStateSkipped
+			}
+			ioc.RegisterNamedInstance[provisioning.Provider](mockContext.Container, string(provisioning.Test), provider)
+
+			projectConfig := &project.ProjectConfig{
+				Name: "test-project", Path: t.TempDir(),
+				EventDispatcher: ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](project.ProjectEvents...),
+			}
+			service := &project.ServiceConfig{
+				Name: "api", Project: projectConfig,
+				EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
+			}
+			projectConfig.Services = map[string]*project.ServiceConfig{service.Name: service}
+
+			var eventOutputs map[string]provisioning.OutputParameter
+			eventCount := 0
+			require.NoError(t, service.AddHandler(t.Context(), project.ServiceEventEnvUpdated,
+				func(_ context.Context, args project.ServiceLifecycleEventArgs) error {
+					var ok bool
+					eventOutputs, ok = args.Args["bicepOutput"].(map[string]provisioning.OutputParameter)
+					if !ok {
+						return fmt.Errorf("unexpected event output type %T", args.Args["bicepOutput"])
+					}
+					eventCount++
+					return nil
+				}))
+
+			deps.serviceLocator = mockContext.Container
+			deps.defaultProvider = func() (provisioning.ProviderKind, error) { return provisioning.Test, nil }
+			deps.alphaFeatureManager = mockContext.AlphaFeaturesManager
+			deps.cloud = cloud.AzurePublic()
+			deps.projectPath = projectConfig.Path
+			deps.projectConfig = projectConfig
+			deps.importManager = project.NewImportManager(nil)
+			deps.hookMu = &sync.Mutex{}
+			layer := provisioning.Options{
+				Name: "producer", Provider: provisioning.Test, Path: "infra", OutputAliases: tt.aliases,
+			}
+
+			if tt.single {
+				manager := provisioning.NewManager(
+					deps.serviceLocator, deps.defaultProvider, deps.envManager, deps.env,
+					mockContext.Console, deps.alphaFeatureManager, nil, deps.cloud,
+				)
+				action := &ProvisionAction{
+					flags: &ProvisionFlags{
+						global: &internal.GlobalCommandOptions{}, EnvFlag: &internal.EnvFlag{},
+					},
+					provisionManager: manager, envManager: deps.envManager, env: deps.env,
+					projectConfig: projectConfig, importManager: deps.importManager,
+					console: mockContext.Console, alphaFeatureManager: deps.alphaFeatureManager,
+					formatter: &output.JsonFormatter{}, writer: io.Discard,
+				}
+				_, err := action.provisionLayersGraph(t.Context(), []provisioning.Options{layer}, time.Now(), false)
+				require.NoError(t, err)
+			} else {
+				result, err := runProvisionSingleLayer(t.Context(), deps, layer, layer.Name, mockContext.Console, envMu)
+				require.NoError(t, err)
+				require.Same(t, provider.deployResult, result)
+			}
+
+			expectedOutputs := providerOutputs
+			// Event consumers need the same names as the saved environment. These aliases overlap
+			// to catch accidental remapping of an already-translated name.
+			if len(tt.aliases) > 0 {
+				expectedOutputs = map[string]provisioning.OutputParameter{
+					"SHARED_OUTPUT": providerOutputs["LOCAL_OUTPUT"],
+					"OTHER_OUTPUT":  providerOutputs["SHARED_OUTPUT"],
+					"UNCHANGED":     providerOutputs["UNCHANGED"],
+				}
+				require.NotContains(t, deps.env.Dotenv(), "LOCAL_OUTPUT")
+			}
+			require.Equal(t, 1, eventCount)
+			require.Equal(t, expectedOutputs, eventOutputs)
+			require.Equal(t, providerOutputs, provider.deployResult.Deployment.Outputs)
+			for name, param := range expectedOutputs {
+				require.Equal(t, param.Value, deps.env.Dotenv()[name])
+			}
+		})
+	}
 }
 
 type savingParametersProvider struct {

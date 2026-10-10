@@ -140,6 +140,9 @@ infra:
   persisted in the project view. Outputs without a mapping keep their
   original names.
 
+Names on both sides of either alias map must match `^[A-Za-z_][A-Za-z0-9_]*$`.
+azd checks this when it loads the project configuration.
+
 In this example, the producer's `PROVIDER_ENDPOINT` output is stored as
 `PROJECT_ENDPOINT`. The consumer reads that value as `PROVIDER_INPUT`. These aliases
 work with both Bicep and Terraform providers. For Bicep layers, azd uses the
@@ -151,6 +154,10 @@ This also applies to Bicep consumers of Terraform outputs.
 Pipeline configuration exports parameter variables and secrets using project-view
 names. Outputs from earlier layers are also tracked in the project view while
 planning later layers.
+
+Service environment-update events also use project-view output names during
+provisioning and `azd env refresh`. This includes the .NET user-secrets integration,
+which converts `__` in those names to the .NET configuration separator `:`.
 
 Two output aliases in one infrastructure entry cannot target the same project variable; azd rejects this when it
 loads the project configuration. An alias can also collide with an output that has

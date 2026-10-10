@@ -1,0 +1,387 @@
+name: Evaluation CI hero scenario
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/eval-scenario-ci.yml
+      - eng/scripts/eval-scenario-ci/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/eval-scenario-ci.yml
+      - eng/scripts/eval-scenario-ci/**
+  workflow_dispatch:
+    inputs:
+      run_live:
+        description: Run the protected live Scenario 5 quality gate
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  NO_COLOR: "1"
+  AZD_VERSION: 1.34.1
+  AZD_REGISTRY_URL: https://github.com/m7md7sien/azd-foundry-feed/releases/download/extensions-2026-10-05-47/registry.json
+  AZD_EVALUATIONS_VERSION: 1.0.47-beta
+  AZD_DATASET_VERSION: 1.0.0-beta.35
+
+jobs:
+  installed-package:
+    name: Installed packages / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the proof
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up azd 1.34.1
+        uses: Azure/setup-azd@0b7e3a35ab00f2eee7080c845eb39c3f0ebfa553 # v2.4.0
+        with:
+          version: ${{ env.AZD_VERSION }}
+
+      - name: Install and verify pinned evaluation packages
+        shell: pwsh
+        env:
+          AZD_CONFIG_DIR: ${{ runner.temp }}/azd-config
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          azd extension source add `
+            --name build-47 `
+            --type url `
+            --location $env:AZD_REGISTRY_URL `
+            --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to register the pinned extension source."
+          }
+
+          azd extension install azure.ai.evaluations `
+            --version $env:AZD_EVALUATIONS_VERSION `
+            --source build-47 `
+            --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install azure.ai.evaluations."
+          }
+
+          azd extension install azure.ai.dataset `
+            --version $env:AZD_DATASET_VERSION `
+            --source build-47 `
+            --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install azure.ai.dataset."
+          }
+
+          $installedJson = azd extension list --installed --output json
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list installed extensions."
+          }
+
+          $installed = @(($installedJson -join [Environment]::NewLine) | ConvertFrom-Json)
+          $expected = @{
+            "azure.ai.evaluations" = $env:AZD_EVALUATIONS_VERSION
+            "azure.ai.dataset" = $env:AZD_DATASET_VERSION
+          }
+          foreach ($extensionId in $expected.Keys) {
+            $matches = @($installed | Where-Object { $_.id -ceq $extensionId })
+            if ($matches.Count -ne 1) {
+              throw "Expected one installed $extensionId package, found $($matches.Count)."
+            }
+            if ($matches[0].installedVersion -cne $expected[$extensionId]) {
+              throw "Unexpected installed version for $extensionId."
+            }
+          }
+
+          azd ai eval version --output json | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "The installed evaluation extension did not start."
+          }
+          azd ai dataset version --output json | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "The installed dataset extension did not start."
+          }
+
+      - name: Test sanitized result generation
+        run: python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v
+
+  live-scenario:
+    name: Live Scenario 5 quality gate
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.run_live) ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      vars.AZD_EVAL_LIVE_PR_GATE == 'true')
+    needs: installed-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: live-evaluation
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out the proof
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up azd 1.34.1
+        uses: Azure/setup-azd@0b7e3a35ab00f2eee7080c845eb39c3f0ebfa553 # v2.4.0
+        with:
+          version: ${{ env.AZD_VERSION }}
+
+      - name: Install pinned evaluation packages
+        shell: pwsh
+        env:
+          AZD_CONFIG_DIR: ${{ runner.temp }}/azd-config
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          azd extension source add `
+            --name build-47 `
+            --type url `
+            --location $env:AZD_REGISTRY_URL `
+            --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to register the pinned extension source."
+          }
+
+          azd extension install azure.ai.evaluations `
+            --version $env:AZD_EVALUATIONS_VERSION `
+            --source build-47 `
+            --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install azure.ai.evaluations."
+          }
+
+          azd extension install azure.ai.dataset `
+            --version $env:AZD_DATASET_VERSION `
+            --source build-47 `
+            --no-prompt
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install azure.ai.dataset."
+          }
+
+      - name: Authenticate to Azure with GitHub OIDC
+        shell: pwsh
+        env:
+          AZD_CONFIG_DIR: ${{ runner.temp }}/azd-config
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          foreach ($name in @(
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+          )) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "The protected environment is missing a required OIDC value."
+            }
+          }
+
+          $authLog = Join-Path $env:RUNNER_TEMP "azd-auth.log"
+          try {
+            & azd auth login `
+              --client-id $env:AZURE_CLIENT_ID `
+              --tenant-id $env:AZURE_TENANT_ID `
+              --federated-credential-provider github `
+              --no-prompt `
+              *> $authLog
+            if ($LASTEXITCODE -ne 0) {
+              throw "Operational failure: azd could not authenticate with GitHub OIDC."
+            }
+          } finally {
+            Remove-Item -LiteralPath $authLog -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Reconcile, run, reattach, gate, and sanitize
+        id: hero
+        shell: pwsh
+        env:
+          AZD_CONFIG_DIR: ${{ runner.temp }}/azd-config
+          AZURE_AI_PROJECT_ENDPOINT: ${{ secrets.AZURE_AI_PROJECT_ENDPOINT }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          foreach ($name in @(
+            "AZURE_AI_PROJECT_ENDPOINT",
+            "AZURE_LOCATION",
+            "AZURE_RESOURCE_GROUP",
+            "AZURE_SUBSCRIPTION_ID"
+          )) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "The protected environment is missing required Azure configuration."
+            }
+          }
+
+          $project = Join-Path $env:RUNNER_TEMP "scenario-5-project"
+          $raw = Join-Path $env:RUNNER_TEMP "scenario-5-raw"
+          $evidence = Join-Path $env:RUNNER_TEMP "scenario-5-evidence"
+          $startJson = Join-Path $raw "start.json"
+          $showJson = Join-Path $raw "show.json"
+          $exportJson = Join-Path $raw "export.json"
+          $upLog = Join-Path $raw "up.log"
+          $startLog = Join-Path $raw "start.log"
+          $showLog = Join-Path $raw "show.log"
+          $exportLog = Join-Path $raw "export.log"
+          $artifact = Join-Path $evidence "results.json"
+          $qualityGateBreached = $false
+
+          Copy-Item `
+            -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "eng/scripts/eval-scenario-ci/fixture") `
+            -Destination $project `
+            -Recurse
+          New-Item -ItemType Directory -Path $raw, $evidence -Force | Out-Null
+
+          function Stop-OperationalFailure {
+            param([string] $Message)
+            Write-Output "::error title=Operational failure::$Message"
+            throw [InvalidOperationException]::new($Message)
+          }
+
+          Push-Location $project
+          try {
+            & azd up --no-prompt *> $upLog
+            if ($LASTEXITCODE -ne 0) {
+              Stop-OperationalFailure "azd up could not reconcile the checked-in evaluation."
+            }
+
+            & azd ai eval run start `
+              --eval ci-f1-quality `
+              --no-prompt `
+              --no-wait `
+              -o json `
+              1> $startJson `
+              2> $startLog
+            if ($LASTEXITCODE -ne 0) {
+              Stop-OperationalFailure "The evaluation could not be started asynchronously."
+            }
+
+            try {
+              $start = Get-Content -LiteralPath $startJson -Raw | ConvertFrom-Json
+            } catch {
+              Stop-OperationalFailure "The start command did not return valid JSON."
+            }
+            $runIdProperty = $start.PSObject.Properties["run_id"]
+            if ($null -eq $runIdProperty -or [string]::IsNullOrWhiteSpace([string] $runIdProperty.Value)) {
+              Stop-OperationalFailure "The start command did not return run_id."
+            }
+            $runId = [string] $runIdProperty.Value
+
+            & azd ai eval run show $runId `
+              --eval ci-f1-quality `
+              --wait `
+              --fail-on pass-rate=0.8 `
+              --no-prompt `
+              -o json `
+              1> $showJson `
+              2> $showLog
+            $gateExitCode = $LASTEXITCODE
+
+            try {
+              $show = Get-Content -LiteralPath $showJson -Raw | ConvertFrom-Json
+            } catch {
+              Stop-OperationalFailure "The reattach command did not return valid JSON."
+            }
+            if ([string] $show.status -cne "completed") {
+              Stop-OperationalFailure "The evaluation did not reach the completed state."
+            }
+
+            & azd ai eval run output export $runId `
+              --eval ci-f1-quality `
+              --format json `
+              --output-file $exportJson `
+              --no-prompt `
+              *> $exportLog
+            if ($LASTEXITCODE -ne 0) {
+              Stop-OperationalFailure "The completed evaluation results could not be exported."
+            }
+
+            & python `
+              (Join-Path $env:GITHUB_WORKSPACE "eng/scripts/eval-scenario-ci/sanitize_results.py") `
+              --run-summary $showJson `
+              --export $exportJson `
+              --fixture (Join-Path $project "live/data/golden.jsonl") `
+              --output $artifact
+            if ($LASTEXITCODE -ne 0) {
+              Stop-OperationalFailure "The exported results did not match the safe artifact contract."
+            }
+
+            $safe = Get-Content -LiteralPath $artifact -Raw | ConvertFrom-Json
+            $qualityPassed = [bool] $safe.quality_gate.passed
+            if ($qualityPassed -and $gateExitCode -ne 0) {
+              Stop-OperationalFailure "The quality gate command failed even though the result passed."
+            }
+            if (-not $qualityPassed -and $gateExitCode -eq 0) {
+              Stop-OperationalFailure "The quality gate command succeeded despite a threshold breach."
+            }
+
+            "artifact_ready=true" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+            @(
+              "## Scenario 5 evaluation"
+              ""
+              "| Check | Result |"
+              "|---|---:|"
+              "| Status | completed |"
+              "| Passed samples | $($safe.counts.passed) |"
+              "| Failed samples | $($safe.counts.failed) |"
+              "| Errored samples | $($safe.counts.errored) |"
+              "| Pass-rate gate | $($safe.quality_gate.pass_rate) / $($safe.quality_gate.threshold) |"
+            ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+            if (-not $qualityPassed) {
+              $qualityGateBreached = $true
+            }
+          } finally {
+            Pop-Location
+            Remove-Item -LiteralPath $raw -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          if ($qualityGateBreached) {
+            Write-Output "::error title=Quality gate breached::The completed evaluation missed pass-rate=0.8."
+            exit 2
+          }
+
+      - name: Upload sanitized per-sample results
+        if: always() && steps.hero.outputs.artifact_ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-5-evaluation-results
+          path: ${{ runner.temp }}/scenario-5-evidence/results.json
+          if-no-files-found: error
+          retention-days: 7

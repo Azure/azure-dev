@@ -177,7 +177,7 @@ and Go's runtime will panic on a concurrent map write.
 | Lock                       | Protects                                              | Acquired by                                                       |
 |----------------------------|-------------------------------------------------------|-------------------------------------------------------------------|
 | `cacheMu sync.RWMutex`     | `cache map[string]*Environment` (env-name → instance) | `Get`, `LoadOrCreateInteractive`, `Save`, `Reload`, `cachePut`    |
-| `saveMu sync.Mutex`        | The .env file write critical section                  | `Save` (held across read → merge → write to prevent torn writes)  |
+| `saveMu sync.Mutex`        | Environment persistence critical sections             | `Save`, `SaveWithOptions`, `Reload`                               |
 
 **Save path in `local_file_data_store.Save()`**: The reload-merge-write
 cycle snapshots `dotenv`/`deletedKeys` under `env.mu.RLock()`, calls
@@ -186,11 +186,22 @@ then overlays the snapshot and replays deletions under `env.mu.Lock()`.
 This ensures the overlay writes don't race with concurrent `DotenvSet`/
 `DotenvDelete` calls from parallel service publishes.
 
+`Reload` and `Save` acquire locks separately; reloading before saving is
+not a transaction. For selected-key operations, `SaveOptions.DotenvKeys`
+restricts the snapshot and overlay to the listed raw `.env` keys while the
+existing file lock covers reload, merge, and atomic write. Selected keys
+absent from memory are deleted. Unrelated values and configuration are
+reloaded from disk, not overwritten by stale or pending in-memory changes.
+The refreshed environment is then available to the optional remote save.
+`azd env unset` uses this option for both removal and error-path restoration.
+A nil `DotenvKeys` retains the existing full-snapshot merge and configuration
+save; an empty non-nil slice persists no in-memory changes.
+
 **Contract**: `cacheMu` ensures every caller asking for env "X" gets the
 **same** `*Environment` instance — without this, parallel deploy steps would
-each get their own copy and writes would diverge. `saveMu` serializes the
-read-modify-write cycle on the .env file so two concurrent `Save` calls
-cannot interleave and clobber each other's writes.
+each get their own copy and writes would diverge. `saveMu` serializes saves
+and reloads within a manager; the local file lock serializes the
+reload-merge-write cycle across processes.
 
 **Why it matters**: A future `Manager` method that loads or persists
 environment state must take the appropriate lock or it will either return

@@ -69,6 +69,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newEnvUnsetAction,
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdEnvUnsetHelpDescription,
+			Footer:      getCmdEnvUnsetHelpFooter,
 		},
 	})
 

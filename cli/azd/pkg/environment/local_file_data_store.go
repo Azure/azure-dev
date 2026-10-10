@@ -225,17 +225,33 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	}
 	defer releaseEnvLock(fl)
 
-	// Update configuration (under the lock so concurrent readers never
-	// observe a half-written config.json).
-	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
-		return fmt.Errorf("saving config: %w", err)
+	scopedDotenvSave := options != nil && options.DotenvKeys != nil
+	// Scoped .env changes reload configuration instead of overwriting it with a stale snapshot.
+	if !scopedDotenvSave {
+		if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
 	}
 
 	// Snapshot current in-memory state under RLock so the reads of env.dotenv
 	// and env.deletedKeys don't race with concurrent DotenvSet/DotenvDelete.
 	env.mu.RLock()
-	currentValues := maps.Clone(env.dotenv)
-	deletedValues := maps.Clone(env.deletedKeys)
+	var currentValues map[string]string
+	var deletedValues map[string]struct{}
+	if scopedDotenvSave {
+		currentValues = make(map[string]string, len(options.DotenvKeys))
+		deletedValues = make(map[string]struct{}, len(options.DotenvKeys))
+		for _, key := range options.DotenvKeys {
+			if value, exists := env.dotenv[key]; exists {
+				currentValues[key] = value
+			} else {
+				deletedValues[key] = struct{}{}
+			}
+		}
+	} else {
+		currentValues = maps.Clone(env.dotenv)
+		deletedValues = maps.Clone(env.deletedKeys)
+	}
 	env.mu.RUnlock()
 
 	// reloadLocked replaces env.dotenv via replaceState (acquires env.mu

@@ -62,6 +62,23 @@ func getCmdEnvUnsetHelpDescription(cmd *cobra.Command) string {
 	return generateCmdHelpDescription(cmd.Long, nil)
 }
 
+func getCmdEnvUnsetHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Remove a key from the current environment": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd env unset"),
+			output.WithWarningFormat("MY_KEY")),
+		"Remove multiple keys from a named environment": fmt.Sprintf("%s %s %s %s",
+			output.WithHighLightFormat("azd env unset"),
+			output.WithWarningFormat("KEY1 KEY2"),
+			output.WithHighLightFormat("--environment"),
+			output.WithWarningFormat("dev")),
+		"Remove a key without prompting": fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("azd env unset"),
+			output.WithWarningFormat("MY_KEY"),
+			output.WithHighLightFormat("--force")),
+	})
+}
+
 type envUnsetFlags struct {
 	internal.EnvFlag
 	global *internal.GlobalCommandOptions
@@ -164,7 +181,7 @@ func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		env.DotenvDelete(key)
 	}
 
-	if err := a.envManager.Save(ctx, env); err != nil {
+	if err := a.envManager.SaveWithOptions(ctx, env, &environment.SaveOptions{DotenvKeys: keys}); err != nil {
 		return nil, a.handleSaveError(ctx, env, keys, previousValues, err)
 	}
 
@@ -251,7 +268,7 @@ func (a *envUnsetAction) handleSaveError(
 	for key, value := range previousValues {
 		env.DotenvSet(key, value)
 	}
-	if err := a.envManager.Save(restoreCtx, env); err != nil {
+	if err := a.envManager.SaveWithOptions(restoreCtx, env, &environment.SaveOptions{DotenvKeys: keys}); err != nil {
 		return errors.Join(saveErr, fmt.Errorf("restoring previous environment values failed: %w", err))
 	}
 	return fmt.Errorf("%w; the previous local .env values were restored", saveErr)

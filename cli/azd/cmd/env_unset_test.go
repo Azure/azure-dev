@@ -87,6 +87,17 @@ func TestEnvUnsetCmd(t *testing.T) {
 	}
 }
 
+func TestEnvUnsetHelpFooter(t *testing.T) {
+	t.Parallel()
+	cmd := newEnvUnsetCmd()
+	footer := getCmdEnvUnsetHelpFooter(cmd)
+	require.Contains(t, footer, "Examples")
+	for example := range strings.SplitSeq(cmd.Example, "\n") {
+		require.Contains(t, footer, strings.TrimPrefix(example, "$ "))
+	}
+	require.NotContains(t, footer, "--no-prompt")
+}
+
 func TestEnvUnsetFlags(t *testing.T) {
 	t.Setenv(environment.EnvNameEnvVarName, "process-env")
 
@@ -194,7 +205,14 @@ func TestEnvUnsetAction(t *testing.T) {
 			manager := newTestEnvManager()
 			manager.On("Reload", t.Context(), env).Return(nil).Once()
 			if !tt.noSave {
-				manager.On("Save", t.Context(), env).Return(nil).Once()
+				var keys []string
+				for _, key := range tt.args {
+					if _, exists := tt.values[key]; exists && !slices.Contains(keys, key) {
+						keys = append(keys, key)
+					}
+				}
+				manager.On("SaveWithOptions", t.Context(), env, &environment.SaveOptions{DotenvKeys: keys}).
+					Return(nil).Once()
 			}
 			console := mockinput.NewMockConsole()
 
@@ -205,9 +223,9 @@ func TestEnvUnsetAction(t *testing.T) {
 			require.Equal(t, tt.want, env.Dotenv())
 			manager.AssertExpectations(t)
 			if tt.noSave {
-				manager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+				manager.AssertNotCalled(t, "SaveWithOptions", mock.Anything, mock.Anything, mock.Anything)
 			} else {
-				manager.AssertNumberOfCalls(t, "Save", 1)
+				manager.AssertNumberOfCalls(t, "SaveWithOptions", 1)
 			}
 			if slices.Contains(tt.args, "MISSING") {
 				require.Len(t, console.Output(), 1)
@@ -302,7 +320,7 @@ func TestEnvUnsetActionLoadingErrors(t *testing.T) {
 				require.ErrorIs(t, err, tt.reloadErr)
 				require.ErrorContains(t, err, "reloading environment before removal")
 			}
-			manager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+			manager.AssertNotCalled(t, "SaveWithOptions", mock.Anything, mock.Anything, mock.Anything)
 			require.Equal(t, map[string]string{"KEY": "value"}, env.Dotenv())
 			manager.AssertExpectations(t)
 		})
@@ -368,6 +386,49 @@ func TestEnvUnsetActionPersistsDeletion(t *testing.T) {
 	}
 }
 
+func TestEnvUnsetActionPreservesConcurrentWrites(t *testing.T) {
+	t.Parallel()
+	_, backing, _ := setupTestEnvironment(t, "test-env", map[string]any{"app": map[string]any{"enabled": true}})
+	env, err := backing.Get(t.Context(), "test-env")
+	require.NoError(t, err)
+	env.DotenvSet("KEY", "remove-me")
+	env.DotenvSet("KEEP", "stale-value")
+	env.DotenvSet("OTHER_REMOVED", "stale-value")
+	require.NoError(t, backing.Save(t.Context(), env))
+
+	manager := newTestEnvManager()
+	manager.On("Reload", t.Context(), env).Run(func(mock.Arguments) {
+		require.NoError(t, backing.Reload(t.Context(), env))
+	}).Return(nil).Once()
+	options := &environment.SaveOptions{DotenvKeys: []string{"KEY"}}
+	manager.On("SaveWithOptions", t.Context(), env, options).Run(func(mock.Arguments) {
+		values, err := godotenv.Read(backing.EnvPath(env))
+		require.NoError(t, err)
+		values["KEEP"] = "concurrent-value"
+		values["ADDED"] = "concurrent-addition"
+		delete(values, "OTHER_REMOVED")
+		require.NoError(t, godotenv.Write(values, backing.EnvPath(env)))
+		require.NoError(t, os.WriteFile(backing.ConfigPath(env), []byte(`{"app":{"enabled":false}}`), 0600))
+		require.NoError(t, backing.SaveWithOptions(t.Context(), env, options))
+	}).Return(nil).Once()
+
+	result, err := newEnvUnsetAction(
+		lazy.From(env), manager, mockinput.NewMockConsole(), &envUnsetFlags{force: true}, []string{"KEY"}).Run(t.Context())
+	require.NoError(t, err)
+	require.Nil(t, result)
+	values, err := godotenv.Read(backing.EnvPath(env))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		environment.EnvNameEnvVarName: "test-env",
+		"KEEP":                        "concurrent-value",
+		"ADDED":                       "concurrent-addition",
+	}, values)
+	cfg, err := os.ReadFile(backing.ConfigPath(env))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"app":{"enabled":false}}`, string(cfg))
+	manager.AssertExpectations(t)
+}
+
 func TestEnvUnsetActionConfirmation(t *testing.T) {
 	t.Parallel()
 	promptErr := errors.New("prompt failed")
@@ -417,7 +478,7 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 			}
 			manager.On("Reload", t.Context(), env).Return(nil).Times(reloads)
 			if tt.wantModified {
-				manager.On("Save", t.Context(), env).Return(nil).Once()
+				manager.On("SaveWithOptions", t.Context(), env, mock.Anything).Return(nil).Once()
 			}
 			console := mockinput.NewMockConsole()
 			console.SetNoPromptMode(tt.noPrompt)
@@ -470,7 +531,7 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 			}
 			require.Equal(t, want, env.Dotenv())
 			if !tt.wantModified {
-				manager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+				manager.AssertNotCalled(t, "SaveWithOptions", mock.Anything, mock.Anything, mock.Anything)
 			}
 			manager.AssertExpectations(t)
 		})
@@ -491,7 +552,7 @@ func TestEnvUnsetActionProcessOnlyKey(t *testing.T) {
 	require.Len(t, console.Output(), 1)
 	require.Contains(t, console.Output()[0], "was ignored")
 	require.Equal(t, "process-value", os.Getenv("PROCESS_ONLY"))
-	manager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+	manager.AssertNotCalled(t, "SaveWithOptions", mock.Anything, mock.Anything, mock.Anything)
 	manager.AssertExpectations(t)
 }
 
@@ -503,19 +564,20 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 	restoreSaveErr := errors.New("restore save failed")
 	promptErr := errors.New("restore prompt failed")
 	tests := []struct {
-		name                 string
-		persistedBeforeError bool
-		restore              bool
-		force                bool
-		noPrompt             bool
-		inspectionErr        error
-		restoreReloadErr     error
-		restoreSaveErr       error
-		promptErr            error
-		concurrentUpdate     bool
-		updateDuringConfirm  bool
-		cancelDuringSave     bool
-		errorText            string
+		name                    string
+		persistedBeforeError    bool
+		restore                 bool
+		force                   bool
+		noPrompt                bool
+		inspectionErr           error
+		restoreReloadErr        error
+		restoreSaveErr          error
+		promptErr               error
+		concurrentUpdate        bool
+		updateBeforeRestoreSave bool
+		updateDuringConfirm     bool
+		cancelDuringSave        bool
+		errorText               string
 	}{
 		{name: "NoPersistedChange", force: true, errorText: "selected local .env values were not modified"},
 		{
@@ -533,6 +595,10 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 		{
 			name: "PreservesConcurrentUpdates", persistedBeforeError: true, restore: true, concurrentUpdate: true,
 			errorText: "previous local .env values were restored",
+		},
+		{
+			name: "PreservesConcurrentUpdatesDuringRestoreSave", persistedBeforeError: true, restore: true,
+			updateBeforeRestoreSave: true, errorText: "previous local .env values were restored",
 		},
 		{
 			name: "SnapshotsValuesAfterConfirmation", persistedBeforeError: true, restore: true, updateDuringConfirm: true,
@@ -597,11 +663,21 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			env.DotenvSet("EMPTY", "")
 			env.DotenvSet("LD_TEST_UNSET", "filtered-private-value")
 			env.DotenvSet("KEEP", "unchanged")
+			env.DotenvSet("OTHER_REMOVED", "unchanged")
 			require.NoError(t, backing.Save(t.Context(), env))
 			before, err := godotenv.Read(backing.EnvPath(env))
 			require.NoError(t, err)
 			configBefore, err := os.ReadFile(backing.ConfigPath(env))
 			require.NoError(t, err)
+			updateUnrelated := func() {
+				updated, err := godotenv.Read(backing.EnvPath(env))
+				require.NoError(t, err)
+				updated["KEEP"] = "concurrent-value"
+				updated["ADDED"] = "concurrent-addition"
+				delete(updated, "OTHER_REMOVED")
+				require.NoError(t, godotenv.Write(updated, backing.EnvPath(env)))
+				require.NoError(t, os.WriteFile(backing.ConfigPath(env), []byte(`{"app":{"enabled":false}}`), 0600))
+			}
 
 			runCtx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -620,11 +696,12 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			if tt.cancelDuringSave {
 				initialErr = context.Canceled
 			}
-			manager.On("Save", mock.Anything, env).Run(func(call mock.Arguments) {
+			options := &environment.SaveOptions{DotenvKeys: []string{"KEY", "EMPTY", "LD_TEST_UNSET"}}
+			manager.On("SaveWithOptions", mock.Anything, env, options).Run(func(call mock.Arguments) {
 				if tt.persistedBeforeError {
 					ctx, ok := call.Get(0).(context.Context)
 					require.True(t, ok)
-					require.NoError(t, backing.Save(ctx, env))
+					require.NoError(t, backing.SaveWithOptions(ctx, env, options))
 				}
 				if tt.cancelDuringSave {
 					cancel()
@@ -642,12 +719,15 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 					manager.On("Reload", mock.Anything, env).Return(tt.restoreReloadErr).Once()
 				} else {
 					manager.On("Reload", mock.Anything, env).Run(reload).Return(nil).Once()
-					manager.On("Save", mock.Anything, env).Run(func(call mock.Arguments) {
+					manager.On("SaveWithOptions", mock.Anything, env, options).Run(func(call mock.Arguments) {
 						if tt.restoreSaveErr == nil {
+							if tt.updateBeforeRestoreSave {
+								updateUnrelated()
+							}
 							ctx, ok := call.Get(0).(context.Context)
 							require.True(t, ok)
 							require.NoError(t, ctx.Err())
-							require.NoError(t, backing.Save(ctx, env))
+							require.NoError(t, backing.SaveWithOptions(ctx, env, options))
 						}
 					}).Return(tt.restoreSaveErr).Once()
 				}
@@ -675,13 +755,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 					require.Contains(t, options.Message, `"test-env"`)
 					require.Contains(t, options.Message, `"KEY"`)
 					if tt.concurrentUpdate {
-						updated, err := godotenv.Read(backing.EnvPath(env))
-						require.NoError(t, err)
-						updated["KEEP"] = "concurrent-value"
-						updated["ADDED"] = "concurrent-addition"
-						require.NoError(t, godotenv.Write(updated, backing.EnvPath(env)))
-						require.NoError(t, os.WriteFile(
-							backing.ConfigPath(env), []byte(`{"app":{"enabled":false}}`), 0600))
+						updateUnrelated()
 					}
 					return tt.restore, tt.promptErr
 				})
@@ -705,9 +779,10 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 				delete(want, "EMPTY")
 				delete(want, "LD_TEST_UNSET")
 			}
-			if tt.concurrentUpdate {
+			if tt.concurrentUpdate || tt.updateBeforeRestoreSave {
 				want["KEEP"] = "concurrent-value"
 				want["ADDED"] = "concurrent-addition"
+				delete(want, "OTHER_REMOVED")
 			}
 			if tt.updateDuringConfirm {
 				want["KEEP"] = "concurrent-value"
@@ -720,7 +795,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			require.Equal(t, want, persisted)
 			configAfter, err := os.ReadFile(backing.ConfigPath(env))
 			require.NoError(t, err)
-			if tt.concurrentUpdate {
+			if tt.concurrentUpdate || tt.updateBeforeRestoreSave {
 				require.JSONEq(t, `{"app":{"enabled":false}}`, string(configAfter))
 			} else {
 				require.JSONEq(t, string(configBefore), string(configAfter))

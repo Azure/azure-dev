@@ -23,6 +23,14 @@ Global Flags
     -h, --help       	: Gets help for unset.
         --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Examples
+  Remove a key from the current environment
+    azd env unset MY_KEY
+
+  Remove a key without prompting
+    azd env unset MY_KEY --force
+
+  Remove multiple keys from a named environment
+    azd env unset KEY1 KEY2 --environment dev
 
 

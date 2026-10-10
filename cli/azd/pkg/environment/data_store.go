@@ -25,6 +25,10 @@ var ValidRemoteKinds = []string{
 type SaveOptions struct {
 	// Whether or not the environment is new
 	IsNew bool
+	// DotenvKeys limits local persistence to these raw .env keys, deleting keys absent from the environment.
+	// Other values and config.json are reloaded without saving their in-memory changes.
+	// Nil preserves the full-save behavior.
+	DotenvKeys []string
 }
 
 type DataStore interface {

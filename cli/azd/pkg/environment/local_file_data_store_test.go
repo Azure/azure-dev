@@ -6,6 +6,7 @@ package environment
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,6 +105,154 @@ func TestLocalReloadInvalidConfigPreservesDotenv(t *testing.T) {
 	require.ErrorContains(t, store.Reload(t.Context(), env), "loading config")
 	require.Equal(t, "in-memory", env.Getenv("VALUE"))
 	require.Contains(t, env.deletedKeys, "PENDING")
+}
+
+func TestLocalFileDataStoreSaveSelectedKeys(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		options      *SaveOptions
+		fullSave     bool
+		saveSelected bool
+	}{
+		{name: "NilOptions", fullSave: true, saveSelected: true},
+		{name: "DefaultOptions", options: &SaveOptions{}, fullSave: true, saveSelected: true},
+		{
+			name: "SelectedKeys", options: &SaveOptions{DotenvKeys: []string{"REMOVE", "RESTORE", "LD_SELECTED"}},
+			saveSelected: true,
+		},
+		{name: "NoSelectedKeys", options: &SaveOptions{DotenvKeys: []string{}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			store := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+			seed := NewWithValues("test", map[string]string{
+				"REMOVE":            "remove-me",
+				"RESTORE":           "original",
+				"LD_SELECTED":       "raw-original",
+				"DYLD_KEEP":         "raw-unrelated",
+				"KEEP":              "original",
+				"OTHER_REMOVED":     "original",
+				"UNSELECTED_DELETE": "original",
+			})
+			require.NoError(t, seed.Config.Set("app.enabled", true))
+			require.NoError(t, store.Save(t.Context(), seed, nil))
+			env, err := store.Get(t.Context(), "test")
+			require.NoError(t, err)
+			concurrent, err := store.Get(t.Context(), "test")
+			require.NoError(t, err)
+			concurrent.DotenvSet("KEEP", "concurrent-value")
+			concurrent.DotenvSet("ADDED", "concurrent-addition")
+			concurrent.DotenvDelete("OTHER_REMOVED")
+			require.NoError(t, concurrent.Config.Set("app.enabled", false))
+			require.NoError(t, store.Save(t.Context(), concurrent, nil))
+			want, err := godotenv.Read(store.EnvPath(env))
+			require.NoError(t, err)
+			configBefore, err := os.ReadFile(store.ConfigPath(env))
+			require.NoError(t, err)
+
+			env.DotenvDelete("REMOVE")
+			env.DotenvSet("RESTORE", "restored")
+			env.DotenvSet("LD_SELECTED", "raw-updated")
+			env.DotenvSet("DYLD_KEEP", "pending")
+			env.DotenvSet("PENDING", "pending")
+			env.DotenvDelete("UNSELECTED_DELETE")
+			require.NoError(t, store.Save(t.Context(), env, tt.options))
+			if tt.fullSave {
+				maps.Copy(want, map[string]string{
+					"KEEP":          "original",
+					"OTHER_REMOVED": "original",
+					"DYLD_KEEP":     "pending",
+					"PENDING":       "pending",
+				})
+				delete(want, "UNSELECTED_DELETE")
+			}
+			if tt.saveSelected {
+				delete(want, "REMOVE")
+				want["RESTORE"] = "restored"
+				want["LD_SELECTED"] = "raw-updated"
+			}
+			persisted, err := godotenv.Read(store.EnvPath(env))
+			require.NoError(t, err)
+			require.Equal(t, want, persisted)
+			for key, value := range want {
+				actual, exists := env.LookupDotenv(key)
+				require.True(t, exists)
+				require.Equal(t, value, actual)
+			}
+			configAfter, err := os.ReadFile(store.ConfigPath(env))
+			require.NoError(t, err)
+			if tt.fullSave {
+				require.JSONEq(t, `{"app":{"enabled":true}}`, string(configAfter))
+			} else {
+				require.Equal(t, configBefore, configAfter)
+			}
+		})
+	}
+}
+
+func TestLocalFileDataStoreSaveSelectedKeysInvalidConfig(t *testing.T) {
+	t.Parallel()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	store := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	env := NewWithValues("test", map[string]string{"KEY": "original"})
+	require.NoError(t, store.Save(t.Context(), env, nil))
+	before, err := os.ReadFile(store.EnvPath(env))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(store.ConfigPath(env), []byte("{invalid"), 0600))
+	env.DotenvDelete("KEY")
+
+	require.ErrorContains(t, store.Save(t.Context(), env, &SaveOptions{DotenvKeys: []string{"KEY"}}), "loading config")
+	after, err := os.ReadFile(store.EnvPath(env))
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	cfg, err := os.ReadFile(store.ConfigPath(env))
+	require.NoError(t, err)
+	require.Equal(t, "{invalid", string(cfg))
+}
+
+func TestLocalFileDataStoreConcurrentSelectedKeysSave(t *testing.T) {
+	t.Parallel()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	seedStore := NewLocalFileDataStore(azdCtx, fileConfigManager)
+	seed := NewWithValues("test", map[string]string{"KEEP": "unchanged"})
+	const writers = 8
+	for i := range writers {
+		seed.DotenvSet(fmt.Sprintf("UPDATE_%d", i), "original")
+		seed.DotenvSet(fmt.Sprintf("REMOVE_%d", i), "original")
+	}
+	require.NoError(t, seedStore.Save(t.Context(), seed, nil))
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range writers {
+		store := NewLocalFileDataStore(azdCtx, fileConfigManager)
+		env, err := store.Get(t.Context(), "test")
+		require.NoError(t, err)
+		updateKey := fmt.Sprintf("UPDATE_%d", i)
+		removeKey := fmt.Sprintf("REMOVE_%d", i)
+		env.DotenvSet(updateKey, "updated")
+		env.DotenvDelete(removeKey)
+		wg.Go(func() {
+			<-start
+			if err := store.Save(t.Context(), env, &SaveOptions{DotenvKeys: []string{updateKey, removeKey}}); err != nil {
+				t.Errorf("writer %d Save: %v", i, err)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	final, err := seedStore.Get(t.Context(), "test")
+	require.NoError(t, err)
+	want := map[string]string{"KEEP": "unchanged"}
+	for i := range writers {
+		want[fmt.Sprintf("UPDATE_%d", i)] = "updated"
+	}
+	require.Equal(t, want, final.Dotenv())
 }
 
 // Test_LocalFileDataStore_ConcurrentSave_NoLostUpdate is a regression test

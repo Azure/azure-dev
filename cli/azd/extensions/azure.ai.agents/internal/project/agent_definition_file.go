@@ -57,12 +57,16 @@ type AgentDefinitionFile struct {
 	Path string
 	// Properties contains the input document before reference expansion.
 	Properties map[string]any
+	// ResolvedProperties contains the effective definition after local
+	// $ref expansion.
+	ResolvedProperties map[string]any
 	// Kind and Name are the identity accepted by runtime validation.
 	Kind agent_yaml.AgentKind
 	Name string
 }
 
-// LoadAgentDefinitionFile loads and validates a direct definition.
+// LoadAgentDefinitionFile validates a direct definition. Project-local
+// Connection references are resolved against the service map.
 // Relative paths use projectRoot. serviceName preserves the
 // existing prompt-agent name fallback used by runtime validation.
 func LoadAgentDefinitionFile(
@@ -138,7 +142,7 @@ func LoadAgentDefinitionFile(
 		RelativePath:         sourceDir,
 		AdditionalProperties: resolved,
 	}
-	validation, err := ValidateAgentServiceDefinition(service, projectRoot)
+	validation, err := ValidateAgentServiceDefinitionContent(service, projectRoot)
 	if err != nil {
 		return AgentDefinitionFile{}, exterrors.ValidationFromError(
 			err,
@@ -149,10 +153,11 @@ func LoadAgentDefinitionFile(
 	}
 
 	return AgentDefinitionFile{
-		Path:       relativePath,
-		Properties: properties,
-		Kind:       validation.Kind,
-		Name:       validation.Name,
+		Path:               relativePath,
+		Properties:         properties,
+		ResolvedProperties: effectiveProperties,
+		Kind:               validation.Kind,
+		Name:               validation.Name,
 	}, nil
 }
 

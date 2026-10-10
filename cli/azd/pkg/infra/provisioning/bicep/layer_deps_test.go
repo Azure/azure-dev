@@ -120,6 +120,41 @@ func TestAnalyzeLayerDependencies_LinearChain(t *testing.T) {
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
 
+func TestAnalyzeLayerDependencies_AliasedInputsAndOutputs(t *testing.T) {
+	dir := t.TempDir()
+
+	producerDir := filepath.Join(dir, "producer")
+	mkTestDir(t, producerDir)
+	writeTestFile(t, filepath.Join(producerDir, "main.bicep"),
+		"output LOCAL_ENDPOINT string = 'endpoint'\n")
+
+	consumerDir := filepath.Join(dir, "consumer")
+	mkTestDir(t, consumerDir)
+	writeTestFile(t, filepath.Join(consumerDir, "main.bicep"), "param endpoint string\n")
+	writeTestFile(t, filepath.Join(consumerDir, "main.parameters.json"),
+		`{"parameters":{"endpoint":{"value":"${LOCAL_INPUT}"}}}`)
+
+	layers := []provisioning.Options{
+		{
+			Name:          "producer",
+			Path:          "producer",
+			Module:        "main",
+			OutputAliases: map[string]string{"LOCAL_ENDPOINT": "SHARED_ENDPOINT"},
+		},
+		{
+			Name:         "consumer",
+			Path:         "consumer",
+			Module:       "main",
+			ParamAliases: map[string]string{"LOCAL_INPUT": "SHARED_ENDPOINT"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+}
+
 func TestAnalyzeLayerDependencies_Diamond(t *testing.T) {
 	dir := t.TempDir()
 

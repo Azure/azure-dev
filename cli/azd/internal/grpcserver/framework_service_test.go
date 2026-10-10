@@ -58,8 +58,21 @@ func TestFrameworkService_onRegisterRequest(t *testing.T) {
 
 			container := ioc.NewNestedContainer(nil)
 			ioc.RegisterInstance[input.Console](container, mockinput.NewMockConsole())
+			// A provisioning override must not become a framework-service dependency.
+			container.MustRegisterSingleton(func() environment.ScopedEnvironment {
+				t.Fatal("framework service resolved the provisioning environment")
+				return nil
+			})
 
-			svc := NewFrameworkService(container, nil, tc.lazyEnv).(*FrameworkService)
+			loadCalls := 0
+			lazyEnv := tc.lazyEnv
+			if lazyEnv != nil {
+				lazyEnv = lazy.NewLazy(func() (*environment.Environment, error) {
+					loadCalls++
+					return tc.lazyEnv.GetValue()
+				})
+			}
+			svc := NewFrameworkService(container, nil, lazyEnv).(*FrameworkService)
 
 			var language string
 			_, err := svc.onRegisterRequest(
@@ -75,6 +88,7 @@ func TestFrameworkService_onRegisterRequest(t *testing.T) {
 			err = container.ResolveNamed("rust", &frameworkService)
 			require.NoError(t, err)
 			require.NotNil(t, frameworkService)
+			require.Zero(t, loadCalls, "registration and resolution must not load the environment")
 		})
 	}
 }

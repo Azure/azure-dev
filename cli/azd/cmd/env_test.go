@@ -1519,6 +1519,36 @@ func Test_EnvRefreshAction_Run_RefreshesOutputs(t *testing.T) {
 	pm.AssertExpectations(t)
 }
 
+func Test_EnvRefreshAction_Run_AppliesOutputAliases(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockRefreshProvider{stateResult: &provisioning.StateResult{
+		State: &provisioning.State{
+			Outputs: map[string]provisioning.OutputParameter{
+				"LOCAL_OUTPUT": {Type: provisioning.ParameterTypeString, Value: "value"},
+			},
+		},
+	}}
+	action, _, envManager, pm := newTestEnvRefreshAction(t, provider, &envRefreshFlags{})
+	action.projectConfig.Infra = provisioning.Options{
+		Provider: provisioning.Test,
+		Layers: []provisioning.Options{{
+			Name:          "infra",
+			Provider:      provisioning.Test,
+			Path:          "infra",
+			OutputAliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
+		}},
+	}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	pm.On("InitializeFrameworks", mock.Anything, mock.Anything).Return(nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, "value", action.env.Dotenv()["SHARED_OUTPUT"])
+	require.NotContains(t, action.env.Dotenv(), "LOCAL_OUTPUT")
+}
+
 func Test_NewEnvSetSecretAction(t *testing.T) {
 	t.Parallel()
 	azdCtx := newTestAzdContext(t)

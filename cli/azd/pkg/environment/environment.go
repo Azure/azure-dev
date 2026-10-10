@@ -233,13 +233,17 @@ func (e *Environment) Dotenv() map[string]string {
 	defer e.mu.RUnlock()
 	myDotenv := make(map[string]string, len(e.dotenv))
 	for k, v := range e.dotenv {
-		upper := strings.ToUpper(k)
-		if strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_") {
+		if isLoaderControlKey(k) {
 			continue
 		}
 		myDotenv[k] = v
 	}
 	return myDotenv
+}
+
+func isLoaderControlKey(key string) bool {
+	upper := strings.ToUpper(key)
+	return strings.HasPrefix(upper, "LD_") || strings.HasPrefix(upper, "DYLD_")
 }
 
 // DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be

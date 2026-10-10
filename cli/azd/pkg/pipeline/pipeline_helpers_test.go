@@ -15,8 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -1065,4 +1067,146 @@ func Test_DefaultRoleNames(t *testing.T) {
 	require.Len(t, DefaultRoleNames, 2)
 	assert.Contains(t, DefaultRoleNames, "Contributor")
 	assert.Contains(t, DefaultRoleNames, "User Access Administrator")
+}
+
+// ------------------------------------------------------------------
+// mergeProjectVariablesAndSecrets — layer aliases
+// ------------------------------------------------------------------
+
+type paramsOnlyProvider struct {
+	provisioning.Provider
+	parameters []provisioning.Parameter
+}
+
+func (p *paramsOnlyProvider) Initialize(context.Context, string, provisioning.Options) error {
+	return nil
+}
+
+func (p *paramsOnlyProvider) Parameters(context.Context) ([]provisioning.Parameter, error) {
+	return p.parameters, nil
+}
+
+// CI must use project variable names so the provider can read their values through its input aliases.
+func Test_mergeProjectVariablesAndSecrets_usesStorageProjectVariables(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := &paramsOnlyProvider{parameters: []provisioning.Parameter{
+		{Name: "instanceName", Value: "primary",
+			EnvVarMapping: []string{"STORAGE_INSTANCE_NAME"}, UsingEnvVarMapping: true},
+		{Name: "location", Value: "eastus", EnvVarMapping: []string{"AZURE_LOCATION"}, UsingEnvVarMapping: true},
+		{Name: "environmentName", Value: "the-environment-name",
+			EnvVarMapping: []string{"AZURE_ENV_NAME"}, UsingEnvVarMapping: true},
+	}}
+	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Test), func() provisioning.Provider {
+		return provider
+	})
+	manager := provisioning.NewManager(
+		mockContext.Container,
+		func() (provisioning.ProviderKind, error) { return provisioning.Test, nil },
+		nil,
+		environment.New("test"),
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
+	)
+
+	err := manager.Initialize(t.Context(), "", provisioning.Options{
+		Name:     "primary-storage",
+		Provider: provisioning.Test,
+		Path:     "infra/storage",
+		ParamAliases: map[string]string{
+			"STORAGE_INSTANCE_NAME": "PRIMARY_STORAGE_INSTANCE_NAME",
+		},
+	})
+	require.NoError(t, err)
+
+	parameters, err := manager.Parameters(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []provisioning.Parameter{
+		{Name: "instanceName", Value: "primary",
+			EnvVarMapping: []string{"PRIMARY_STORAGE_INSTANCE_NAME"}, UsingEnvVarMapping: true},
+		{Name: "location", Value: "eastus", EnvVarMapping: []string{"AZURE_LOCATION"}, UsingEnvVarMapping: true},
+		{Name: "environmentName", Value: "the-environment-name",
+			EnvVarMapping: []string{"AZURE_ENV_NAME"}, UsingEnvVarMapping: true},
+	}, parameters)
+	require.Equal(t, []string{"STORAGE_INSTANCE_NAME"}, provider.parameters[0].EnvVarMapping)
+
+	vars, secrets, err := mergeProjectVariablesAndSecrets(
+		nil, nil, map[string]string{}, map[string]string{}, parameters,
+		map[string]string{
+			"PRIMARY_STORAGE_INSTANCE_NAME": "primary",
+			"STORAGE_INSTANCE_NAME":         "must-not-be-exported",
+			"AZURE_LOCATION":                "eastus",
+			"AZURE_ENV_NAME":                "the-environment-name",
+		})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"PRIMARY_STORAGE_INSTANCE_NAME": "primary",
+		"AZURE_LOCATION":                "eastus",
+		"AZURE_ENV_NAME":                "the-environment-name",
+	}, vars)
+	require.Empty(t, secrets)
+}
+
+func Test_mergeProjectVariablesAndSecrets_aliasesSecretsAndCombinedInputs(t *testing.T) {
+	provider := &paramsOnlyProvider{parameters: []provisioning.Parameter{
+		{Name: "location", Value: "eastus", EnvVarMapping: []string{"PROVIDER_LOCATION"}, UsingEnvVarMapping: true},
+		{Name: "dbPass", Value: "s3cret", Secret: true, EnvVarMapping: []string{"PROVIDER_DB_CONN"},
+			UsingEnvVarMapping: true},
+		{Name: "plain", Value: "kept", EnvVarMapping: []string{"UNALIASED"}, UsingEnvVarMapping: true},
+		// CI reads each source variable separately for a combined parameter
+		// value (ex: "${PROVIDER_LOCATION}${UNALIASED_MULTI}").
+		// It must read the project variable PROJECT_LOCATION, not the provider variable PROVIDER_LOCATION.
+		{Name: "multi", Value: "x", EnvVarMapping: []string{"PROVIDER_LOCATION", "UNALIASED_MULTI"}},
+	}}
+
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Test), func() provisioning.Provider {
+		return provider
+	})
+	manager := provisioning.NewManager(
+		mockContext.Container,
+		func() (provisioning.ProviderKind, error) { return provisioning.Test, nil },
+		nil,
+		environment.New("test"),
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
+	)
+
+	err := manager.Initialize(t.Context(), "", provisioning.Options{
+		Provider: provisioning.Test,
+		ParamAliases: map[string]string{
+			// The provider reads project values through its provider variable names.
+			"PROVIDER_LOCATION": "PROJECT_LOCATION",
+			"PROVIDER_DB_CONN":  "PROJECT_DB_CONN",
+		},
+	})
+	require.NoError(t, err)
+
+	parameters, err := manager.Parameters(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []provisioning.Parameter{
+		{Name: "location", Value: "eastus", EnvVarMapping: []string{"PROJECT_LOCATION"}, UsingEnvVarMapping: true},
+		{Name: "dbPass", Value: "s3cret", Secret: true, EnvVarMapping: []string{"PROJECT_DB_CONN"},
+			UsingEnvVarMapping: true},
+		{Name: "plain", Value: "kept", EnvVarMapping: []string{"UNALIASED"}, UsingEnvVarMapping: true},
+		{Name: "multi", Value: "x", EnvVarMapping: []string{"PROJECT_LOCATION", "UNALIASED_MULTI"}},
+	}, parameters)
+
+	vars, secrets, err := mergeProjectVariablesAndSecrets(
+		nil, nil, map[string]string{}, map[string]string{}, parameters,
+		map[string]string{
+			"PROJECT_LOCATION":  "project-location",
+			"PROVIDER_LOCATION": "provider-location",
+			"UNALIASED_MULTI":   "unaliased-multi"})
+	require.NoError(t, err)
+
+	require.Equal(t, map[string]string{
+		"PROJECT_LOCATION": "project-location",
+		"UNALIASED":        "kept",
+		"UNALIASED_MULTI":  "unaliased-multi",
+	}, vars)
+	require.Equal(t, map[string]string{"PROJECT_DB_CONN": "s3cret"}, secrets)
 }

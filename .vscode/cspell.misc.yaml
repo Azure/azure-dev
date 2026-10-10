@@ -125,6 +125,9 @@ overrides:
     - filename: docs/reference/telemetry-data.md
       words:
           - azdext
+    - filename: docs/reference/azure-yaml-schema.md
+      words:
+          - DYLD
     - filename: docs/guides/**/*.md
       words:
           - azdext

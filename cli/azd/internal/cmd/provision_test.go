@@ -49,6 +49,7 @@ func (m *recordingServiceManager) Initialize(
 type mockProvider struct {
 	deployResult *provisioning.DeployResult
 	deployErr    error
+	stateResult  *provisioning.StateResult
 }
 
 func (p *mockProvider) Name() string { return "test" }
@@ -58,7 +59,7 @@ func (p *mockProvider) Initialize(_ context.Context, _ string, _ provisioning.Op
 }
 
 func (p *mockProvider) State(_ context.Context, _ *provisioning.StateOptions) (*provisioning.StateResult, error) {
-	return nil, nil
+	return p.stateResult, nil
 }
 
 func (p *mockProvider) Deploy(_ context.Context) (*provisioning.DeployResult, error) {

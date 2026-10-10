@@ -5,25 +5,294 @@ package cmd
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	provisioningtest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 )
+
+// newOfflineContainer builds the root container the way ExecuteWithAutoInstall does. Unexpected HTTP requests fail
+// offline. Like production, the root container has no context.Context: CobraBuilder registers one per command, so
+// use runInFakeCommand to resolve anything that needs it.
+func newOfflineContainer(t *testing.T) *ioc.NestedContainer {
+	t.Helper()
+	container, _ := newOfflineRoot(t)
+	return container
+}
+
+func newOfflineRoot(t *testing.T) (*ioc.NestedContainer, *cobra.Command) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	_ = newTestUserConfigManager(t)
+	require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{Name: "test"}, "azure.yaml"))
+
+	container := ioc.NewNestedContainer(nil)
+
+	globalOpts := &internal.GlobalCommandOptions{}
+	require.NoError(t, ParseGlobalFlags([]string{"--no-prompt", "-e", "dev"}, globalOpts))
+	ioc.RegisterInstance(container, globalOpts)
+
+	command, err := newRootCmdForExecution(container, globalOpts)
+	require.NoError(t, err)
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+
+	httpClient := mockhttp.NewMockHttpUtil()
+	ioc.RegisterInstance[policy.Transporter](container, httpClient)
+	ioc.RegisterInstance[auth.HttpClient](container, httpClient)
+
+	return container, command
+}
+
+// runInFakeCommand runs fn as the action of a command that only exists in tests. CobraBuilder gives fn the same
+// per-command scope a real azd command gets, including its context.Context.
+func runInFakeCommand(t *testing.T, container *ioc.NestedContainer, fn func(scope *ioc.NestedContainer)) {
+	t.Helper()
+
+	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{Use: "azd"},
+	})
+	ran := false
+	root.Add("fake", &actions.ActionDescriptorOptions{
+		Command:          &cobra.Command{Short: "A command that only exists in tests."},
+		DisableTelemetry: true,
+		OutputFormats:    []output.Format{output.NoneFormat},
+		DefaultFormat:    output.NoneFormat,
+		ActionResolver: func(scope *ioc.NestedContainer) actions.Action {
+			return actions.ActionFunc(func(ctx context.Context) (*actions.ActionResult, error) {
+				ran = true
+				fn(scope)
+				return nil, nil
+			})
+		},
+	})
+
+	var builder *CobraBuilder
+	require.NoError(t, container.Resolve(&builder))
+	command, err := builder.BuildCommand(root)
+	require.NoError(t, err)
+
+	command.SetArgs([]string{"fake"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.True(t, ran, "the action never ran")
+}
+
+// runInOfflineCommand is runInFakeCommand with a "dev" environment already created.
+func runInOfflineCommand(
+	t *testing.T,
+	test func(scope *ioc.NestedContainer, manager environment.Manager, env *environment.Environment),
+) {
+	t.Helper()
+
+	runInFakeCommand(t, newOfflineContainer(t), func(scope *ioc.NestedContainer) {
+		manager, env := createDevEnvironment(t, scope)
+		test(scope, manager, env)
+	})
+}
+
+func createDevEnvironment(t *testing.T, scope *ioc.NestedContainer) (environment.Manager, *environment.Environment) {
+	t.Helper()
+
+	var manager environment.Manager
+	require.NoError(t, scope.Resolve(&manager))
+	_, err := manager.Create(t.Context(), environment.Spec{
+		Name: "dev", Subscription: "shared-subscription", Location: "eastus2",
+	})
+	require.NoError(t, err)
+	env, err := manager.Get(t.Context(), "dev")
+	require.NoError(t, err)
+
+	return manager, env
+}
+
+func Test_ProvisioningRegistrations_ProviderScope(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		name := "Root"
+		if nested {
+			name = "NestedWorkflow"
+		}
+		t.Run(name, func(t *testing.T) {
+			runInOfflineCommand(t, func(
+				root *ioc.NestedContainer, envManager environment.Manager, env *environment.Environment,
+			) {
+				env.DotenvSet("LAYER_SUBSCRIPTION", "layer-subscription")
+				env.DotenvSet("LAYER_LOCATION", "westus2")
+				require.NoError(t, envManager.Save(t.Context(), env))
+
+				var providerEnv environment.ScopedEnvironment
+				var providerManager environment.Manager
+				root.MustRegisterNamedTransient(string(provisioning.Test), func(
+					manager environment.Manager,
+					scoped environment.ScopedEnvironment,
+					console input.Console,
+					prompter prompt.Prompter,
+				) provisioning.Provider {
+					providerEnv, providerManager = scoped, manager
+					return provisioningtest.NewTestProvider(manager, scoped, console, prompter)
+				})
+
+				container := root
+				if nested {
+					var err error
+					container, err = root.NewScope()
+					require.NoError(t, err)
+				}
+				var manager *provisioning.Manager
+				require.NoError(t, container.Resolve(&manager))
+				aliases := map[string]string{
+					environment.SubscriptionIdEnvVarName: "LAYER_SUBSCRIPTION",
+					environment.LocationEnvVarName:       "LAYER_LOCATION",
+				}
+				require.NoError(t, manager.Initialize(t.Context(), ".", provisioning.Options{
+					Provider: provisioning.Test, ParamAliases: aliases, OutputAliases: aliases,
+				}))
+
+				require.NotNil(t, providerEnv)
+				require.Same(t, env, providerEnv.BackingEnv())
+				require.Same(t, envManager, providerManager)
+				require.Equal(t, "layer-subscription", providerEnv.GetSubscriptionId())
+				require.Equal(t, "westus2", providerEnv.GetLocation())
+
+				var store environment.LocalDataStore
+				require.NoError(t, container.Resolve(&store))
+				persisted, err := store.Get(t.Context(), env.Name())
+				require.NoError(t, err)
+				require.Equal(t, "shared-subscription", persisted.GetSubscriptionId())
+				require.Equal(t, "eastus2", persisted.GetLocation())
+				require.Equal(t, "layer-subscription", persisted.Getenv("LAYER_SUBSCRIPTION"))
+				require.Equal(t, "westus2", persisted.Getenv("LAYER_LOCATION"))
+			})
+		})
+	}
+}
+
+func Test_ExtensionRegistrations_SharedEnvironment(t *testing.T) {
+	runInOfflineCommand(t, func(root *ioc.NestedContainer, envManager environment.Manager, env *environment.Environment) {
+		env.DotenvSet("RPC_VALUE", "shared")
+		require.NoError(t, envManager.Save(t.Context(), env))
+
+		scope, err := root.NewScope()
+		require.NoError(t, err)
+		layer := environment.NewWithValues("layer", map[string]string{"RPC_VALUE": "layer"})
+		ioc.RegisterInstance[environment.ScopedEnvironment](scope, layer)
+
+		// Resolving the whole server checks the production constructors for every registered RPC service.
+		var server *grpcserver.Server
+		require.NoError(t, scope.Resolve(&server))
+		require.NotNil(t, server)
+
+		var service azdext.EnvironmentServiceServer
+		require.NoError(t, scope.Resolve(&service))
+		response, err := service.GetValue(t.Context(), &azdext.GetEnvRequest{EnvName: "dev", Key: "RPC_VALUE"})
+		require.NoError(t, err)
+		require.Equal(t, "shared", response.Value)
+
+		_, err = service.SetValue(t.Context(), &azdext.SetEnvRequest{
+			EnvName: "dev", Key: "RPC_VALUE", Value: "from-extension",
+		})
+		require.NoError(t, err)
+		var concrete *environment.Environment
+		require.NoError(t, scope.Resolve(&concrete))
+		require.Same(t, env, concrete)
+		require.Equal(t, "from-extension", concrete.Getenv("RPC_VALUE"))
+		require.Equal(t, "layer", layer.Getenv("RPC_VALUE"))
+
+		var store environment.LocalDataStore
+		require.NoError(t, scope.Resolve(&store))
+		persisted, err := store.Get(t.Context(), "dev")
+		require.NoError(t, err)
+		require.Equal(t, "from-extension", persisted.Getenv("RPC_VALUE"))
+
+		var rpcValidation azdext.ValidationServiceServer
+		var dispatcher provisioning.ValidationCheckDispatcher
+		require.NoError(t, scope.Resolve(&rpcValidation))
+		require.NoError(t, scope.Resolve(&dispatcher))
+		require.Same(t, rpcValidation, dispatcher)
+	})
+}
+
+// fakeCommandProbe is an action that is not part of azd. It records what the command scope hands to an action.
+type fakeCommandProbe struct {
+	env     *environment.Environment
+	scoped  environment.ScopedEnvironment
+	manager *provisioning.Manager
+}
+
+func (p *fakeCommandProbe) Run(ctx context.Context) (*actions.ActionResult, error) {
+	return nil, nil
+}
+
+// Runs a made-up command through CobraBuilder using the real container registrations and global middleware,
+// so tests can look at what a command's scope resolves without going through a real azd command.
+func Test_FakeCommand_RunsThroughFramework(t *testing.T) {
+	container := newOfflineContainer(t)
+	runInFakeCommand(t, container, func(scope *ioc.NestedContainer) {
+		createDevEnvironment(t, scope)
+	})
+	probe := &fakeCommandProbe{}
+
+	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{Use: "azd"},
+	})
+	root.Add("fake", &actions.ActionDescriptorOptions{
+		Command:          &cobra.Command{Short: "A command that only exists in tests."},
+		DisableTelemetry: true,
+		OutputFormats:    []output.Format{output.NoneFormat},
+		DefaultFormat:    output.NoneFormat,
+		ActionResolver: func(
+			e *environment.Environment,
+			scoped environment.ScopedEnvironment,
+			manager *provisioning.Manager,
+		) actions.Action {
+			probe.env, probe.scoped, probe.manager = e, scoped, manager
+			return probe
+		},
+	})
+	registerGlobalMiddleware(root)
+
+	var builder *CobraBuilder
+	require.NoError(t, container.Resolve(&builder))
+	command, err := builder.BuildCommand(root)
+	require.NoError(t, err)
+
+	command.SetArgs([]string{"fake"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	require.NoError(t, command.ExecuteContext(t.Context()))
+
+	require.NotNil(t, probe.manager, "the action never ran")
+	require.Equal(t, "dev", probe.env.Name())
+	require.Same(t, probe.env, probe.scoped.BackingEnv())
+}
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	t.Parallel()
@@ -292,6 +561,189 @@ func Test_EnvironmentRegistrations_InitLifecycle(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Test_EnvironmentRegistrations_SharedInstancePerScope verifies that concrete environment consumers share one backing
+// environment per scope and interface consumers preserve child-scope overrides.
+func Test_EnvironmentRegistrations_SharedInstancePerScope(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		// Resolving the interface or concrete type first must not create separate instances.
+		for _, firstResolution := range []string{"Interface", "Concrete"} {
+			scopeName := "Root"
+			if nested {
+				scopeName = "NestedWorkflow"
+			}
+			t.Run(scopeName+"/"+firstResolution, func(t *testing.T) {
+				projectDir := t.TempDir()
+				t.Chdir(projectDir)
+
+				root := ioc.NewNestedContainer(nil)
+				ioc.RegisterInstance(root, t.Context())
+				registerCommonDependencies(root)
+				ioc.RegisterInstance(root, newTestUserConfigManager(t))
+				root.MustRegisterScoped(func() internal.EnvFlag {
+					return internal.EnvFlag{EnvironmentName: "dev"}
+				})
+				console := mocks.NewMockContext(t.Context()).Console
+				root.MustRegisterScoped(func() input.Console { return console })
+
+				container := root
+				if nested {
+					var err error
+					container, err = root.NewScope()
+					require.NoError(t, err)
+				}
+
+				// Failed resolutions must remain retryable as the project and environment become available.
+				var lazyEnv *lazy.Lazy[*environment.Environment]
+				require.NoError(t, container.Resolve(&lazyEnv))
+				// Resolving the lazy wrapper succeeds without a project; evaluating it needs azure.yaml.
+				value, err := lazyEnv.GetValue()
+				require.ErrorIs(t, err, azdcontext.ErrNoProject)
+				require.Nil(t, value)
+
+				// make sure resolution works the same, no matter if you Resolve() the concrete type or
+				// the interface first.
+				var env environment.ScopedEnvironment
+				var concrete *environment.Environment
+				if firstResolution == "Interface" {
+					require.ErrorIs(t, container.Resolve(&env), azdcontext.ErrNoProject)
+				} else {
+					require.ErrorIs(t, container.Resolve(&concrete), azdcontext.ErrNoProject)
+				}
+
+				require.NoError(t, project.Save(
+					t.Context(), &project.ProjectConfig{Name: "test"}, filepath.Join(projectDir, "azure.yaml")))
+				// Saving azure.yaml fixes the missing project, but does not create the requested "dev" environment.
+				// A different error proves the lazy wrapper retried instead of caching ErrNoProject.
+				value, err = lazyEnv.GetValue()
+				require.ErrorIs(t, err, environment.ErrNotFound)
+				require.Nil(t, value)
+
+				var manager environment.Manager
+				require.NoError(t, container.Resolve(&manager))
+
+				// now that we've actually created the two environments we can test having the
+				// lazy singleton call through to Lazy.GetValue() and succeed...
+				_, err = manager.Create(t.Context(), environment.Spec{Name: "dev"})
+				require.NoError(t, err)
+				_, err = manager.Create(t.Context(), environment.Spec{Name: "prod"})
+				require.NoError(t, err)
+
+				resolveEnvironment := func(scope *ioc.NestedContainer, name string) environment.ScopedEnvironment {
+					t.Helper()
+
+					var resolved environment.ScopedEnvironment
+					var backing *environment.Environment
+
+					if firstResolution == "Interface" {
+						require.NoError(t, scope.Resolve(&resolved))
+						require.NoError(t, scope.Resolve(&backing))
+					} else {
+						require.NoError(t, scope.Resolve(&backing))
+						require.NoError(t, scope.Resolve(&resolved))
+					}
+
+					var scopedLazy *lazy.Lazy[*environment.Environment]
+					require.NoError(t, scope.Resolve(&scopedLazy))
+
+					lazyValue, err := scopedLazy.GetValue()
+					require.NoError(t, err)
+					require.Same(t, backing, resolved.BackingEnv())
+					require.Same(t, backing, lazyValue)
+					require.Equal(t, name, resolved.Name())
+
+					// In the basic form the environment is the same for all of these, you're just
+					// requesting a different veneer/interface over the top of it.
+					resolved.DotenvSet("CONSUMER_TEST", name)
+					require.Equal(t, name, backing.Getenv("CONSUMER_TEST"))
+					require.Equal(t, name, lazyValue.Getenv("CONSUMER_TEST"))
+
+					return resolved
+				}
+
+				// Reuse the same container after both failures: no reset or replacement should be necessary.
+				env = resolveEnvironment(container, "dev")
+				var resolvedLazy *lazy.Lazy[*environment.Environment]
+				require.NoError(t, container.Resolve(&resolvedLazy))
+				require.Same(t, lazyEnv, resolvedLazy)
+
+				// The original lazy wrapper should also succeed now that it's resolved once.
+				value, err = lazyEnv.GetValue()
+				require.NoError(t, err)
+				require.Same(t, env.BackingEnv(), value)
+
+				// A child scope selects its own environment without changing the parent's cached instance.
+				nextScope, err := container.NewScope()
+				require.NoError(t, err)
+				// swap from our parent context's 'dev' env to 'prod' for nextScope
+				ioc.RegisterInstance(nextScope, internal.EnvFlag{EnvironmentName: "prod"})
+				nextEnv := resolveEnvironment(nextScope, "prod")
+
+				var nextLazy *lazy.Lazy[*environment.Environment]
+				require.NoError(t, nextScope.Resolve(&nextLazy))
+				require.NotSame(t, lazyEnv, nextLazy)
+				require.NotSame(t, env.BackingEnv(), nextEnv.BackingEnv(), "parent and child purposefully diverge")
+				require.Same(t, env.BackingEnv(), resolveEnvironment(container, "dev").BackingEnv())
+
+				value, err = lazyEnv.GetValue()
+				require.NoError(t, err)
+				require.Equal(t, "dev", value.Name())
+				require.Equal(t, "dev", value.Getenv("CONSUMER_TEST"))
+
+				provisionScope, err := container.NewScope()
+				require.NoError(t, err)
+				layerEnv := environment.NewWithValues("layer", map[string]string{
+					"CONSUMER_TEST": "backing",
+				})
+				overriddenEnv := &getenvOverride{
+					ScopedEnvironment: layerEnv,
+					key:               "CONSUMER_TEST",
+					value:             "override",
+				}
+				ioc.RegisterInstance[environment.ScopedEnvironment](provisionScope, overriddenEnv)
+
+				var scopedEnv environment.ScopedEnvironment
+				require.NoError(t, provisionScope.Resolve(&scopedEnv))
+				require.Same(t, layerEnv, scopedEnv.BackingEnv())
+				require.Equal(t, "override", scopedEnv.Getenv("CONSUMER_TEST"))
+				require.Equal(t, "backing", scopedEnv.BackingEnv().Getenv("CONSUMER_TEST"))
+
+				var sharedEnv *environment.Environment
+				require.NoError(t, provisionScope.Resolve(&sharedEnv))
+				require.Equal(t, "dev", sharedEnv.Name())
+				require.NotEqual(t, "layer", sharedEnv.Getenv("CONSUMER_TEST"))
+
+				require.NoError(t, provisioning.UpdateEnvironment(t.Context(), map[string]provisioning.OutputParameter{
+					"OUTPUT_TEST": {Value: "deployed"},
+				}, sharedEnv, manager))
+				require.Equal(t, "deployed", sharedEnv.Getenv("OUTPUT_TEST"))
+				require.Empty(t, scopedEnv.Getenv("OUTPUT_TEST"))
+				require.Empty(t, nextEnv.Getenv("OUTPUT_TEST"))
+
+				var sharedLazy *lazy.Lazy[*environment.Environment]
+				require.NoError(t, provisionScope.Resolve(&sharedLazy))
+				sharedValue, err := sharedLazy.GetValue()
+				require.NoError(t, err)
+				require.Same(t, sharedEnv, sharedValue)
+				require.Equal(t, "dev", resolveEnvironment(container, "dev").Name())
+			})
+		}
+	}
+}
+
+type getenvOverride struct {
+	environment.ScopedEnvironment
+	key   string
+	value string
+}
+
+func (e *getenvOverride) Getenv(key string) string {
+	if key == e.key {
+		return e.value
+	}
+
+	return e.ScopedEnvironment.Getenv(key)
 }
 
 type testLazyComponent[T comparable] struct {

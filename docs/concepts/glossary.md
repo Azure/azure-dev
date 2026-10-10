@@ -38,6 +38,14 @@ The default Infrastructure as Code (IaC) language for azd. Bicep templates decla
 
 An alternative IaC provider supported by azd. Terraform configurations use HCL syntax to declare Azure resources.
 
+### Provider View
+
+The variable names an infrastructure provider reads or emits. A provider input variable is an environment variable referenced by the provider's parameter file, not necessarily the IaC parameter name. Input and output aliases translate these names to the [project view](#project-view).
+
+### Project View
+
+The environment variable names the project stores and supplies to CI. Both input and output aliases are written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`: inputs read a project variable through its provider name, and outputs save a provider output under its project name. These views describe naming, not separate persisted environments. See [Infrastructure Layer Variable Aliases](../reference/azure-yaml-schema.md#infrastructure-layer-variable-aliases).
+
 ### Provisioning
 
 The process of creating or updating Azure infrastructure from IaC templates. Triggered by `azd provision` or as part of `azd up`.

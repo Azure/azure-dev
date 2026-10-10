@@ -185,13 +185,20 @@ func (p *ProvisionAction) provisionLayersGraph(
 						return svcErr
 					}
 
+					projectOutputs, err := provisioning.ApplyOutputAliases(
+						deployResult.Deployment.Outputs, layer.OutputAliases,
+					)
+					if err != nil {
+						return fmt.Errorf("applying output aliases for layer %s: %w", layer.Name, err)
+					}
+
 					for _, svc := range servicesStable {
 						eventArgs := project.ServiceLifecycleEventArgs{
 							Project:        p.projectConfig,
 							Service:        svc,
 							ServiceContext: project.NewServiceContext(),
 							Args: map[string]any{
-								"bicepOutput": deployResult.Deployment.Outputs,
+								"bicepOutput": projectOutputs,
 							},
 						}
 
@@ -815,9 +822,9 @@ func provisionSingleLayer(
 }
 
 // runProvisionSingleLayer provisions a single infrastructure layer. It creates
-// an isolated environment clone so that parallel layers don't interfere with
-// each other's parameter resolution, then merges outputs back into the shared
-// env.
+// an environment clone for staging deployment outputs, then merges those outputs
+// back into the shared env. Providers resolve the real environment and manager
+// through the service locator, independently of this output-staging clone.
 //
 // The lifecycle matches the sequential path in [ProvisionAction]:
 //
@@ -836,27 +843,27 @@ func provisionSingleLayer(
 // dotenv file on disk via their own envManager; deps.env in this process
 // is intentionally NOT kept live during that window — step 8's reload is
 // the single point at which we re-converge with disk before returning.
-// Concurrent sibling layers (no dependsOn edge) running their own steps 0/4
-// will therefore not observe this layer's mid-flight hook writes, which is
-// the correct behavior — sibling layers without an explicit dependency on
-// us are by definition not allowed to read our hook-mediated values.
+// Providers read live shared inputs, not the output-staging clone. Sibling
+// layers without a dependsOn edge have no guarantee about when they observe
+// this layer's provider or hook writes.
 //
 // Cross-layer ordering contract: when the dependency graph contains an edge
 // `B → A` (either detected by [bicep.AnalyzeLayerDependencies] or declared
 // via `infra.layers[].dependsOn`), the scheduler treats this entire function
 // invocation as a single graph node. Layer B's node is only scheduled after
 // layer A's node returns, which by construction means after step 8
-// completes. Therefore B's clone of deps.env at the start of its own
-// invocation observes:
+// completes. B's provider therefore reads the shared environment after it contains:
 //
 //   - all of A's deployment outputs (merged in step 4), AND
 //   - any env mutations performed by A's hooks or event handlers via
 //     `azd env set` (captured by step 8's reload).
 //
+// B also snapshots that updated environment to stage its own deployment outputs.
+//
 // The latter is the "hook-mediated edge" case the static analyzer is blind
 // to. Authors who need this guarantee must declare the edge explicitly via
 // `infra.layers[].dependsOn`; without an explicit edge, A and B may run in
-// parallel and B's clone may pre-date A's reload.
+// parallel and B's parameter resolution may pre-date A's reload.
 //
 // Returns the raw [provisioning.DeployResult] so callers can record skip
 // semantics; on [provisioning.ProvisionValidationCanceledSkipped] it returns
@@ -870,16 +877,14 @@ func runProvisionSingleLayer(
 	console input.Console,
 	envMu *sync.Mutex,
 ) (*provisioning.DeployResult, error) {
-	// Snapshot the shared environment so this layer resolves parameters
-	// from current values (including outputs from prior phases).
+	// Stage this layer's outputs separately from the provider's live shared environment.
 	envMu.Lock()
 	layerEnv := environment.NewWithValues(
 		deps.env.Name(), deps.env.Dotenv(),
 	)
 	envMu.Unlock()
 
-	// Use a noop-save env manager for the per-layer manager. Saves happen
-	// against the shared environment after outputs are merged.
+	// Suppress the manager's output saves, not the provider's own state saves.
 	noopMgr := &noopSaveEnvManager{Manager: deps.envManager}
 
 	mgr := provisioning.NewManager(
@@ -978,7 +983,7 @@ func runProvisionSingleLayer(
 	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
 		if deployResult.Deployment != nil && len(deployResult.Deployment.Outputs) > 0 {
 			if err := mergeLayerOutputsLocked(
-				ctx, deps, envMu, stepName, deployResult.Deployment.Outputs,
+				ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.OutputAliases,
 			); err != nil {
 				return deployResult, fmt.Errorf(
 					"updating environment for skipped layer %s: %w", stepName, err,
@@ -989,7 +994,7 @@ func runProvisionSingleLayer(
 		// can react to cached outputs.
 	} else {
 		if err := mergeLayerOutputsLocked(
-			ctx, deps, envMu, stepName, deployResult.Deployment.Outputs,
+			ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.OutputAliases,
 		); err != nil {
 			return deployResult, fmt.Errorf(
 				"updating environment for layer %s: %w", stepName, err,
@@ -1002,6 +1007,13 @@ func runProvisionSingleLayer(
 	// to update appsettings with provisioning outputs.
 	if deps.importManager != nil && deployResult.Deployment != nil &&
 		len(deployResult.Deployment.Outputs) > 0 {
+		projectOutputs, err := provisioning.ApplyOutputAliases(
+			deployResult.Deployment.Outputs, layer.OutputAliases,
+		)
+		if err != nil {
+			return deployResult, fmt.Errorf("applying output aliases for layer %s: %w", stepName, err)
+		}
+
 		servicesStable, svcErr := deps.importManager.ServiceStable(ctx, deps.projectConfig)
 		if svcErr != nil {
 			return deployResult, fmt.Errorf(
@@ -1018,7 +1030,7 @@ func runProvisionSingleLayer(
 					Service:        svc,
 					ServiceContext: project.NewServiceContext(),
 					Args: map[string]any{
-						"bicepOutput": deployResult.Deployment.Outputs,
+						"bicepOutput": projectOutputs,
 					},
 				}
 				if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
@@ -1097,6 +1109,7 @@ func mergeLayerOutputsLocked(
 	envMu *sync.Mutex,
 	stepName string,
 	outputs map[string]provisioning.OutputParameter,
+	aliases map[string]string,
 ) error {
 	envMu.Lock()
 	defer envMu.Unlock()
@@ -1105,15 +1118,20 @@ func mergeLayerOutputsLocked(
 		return fmt.Errorf("reloading shared env: %w", err)
 	}
 
+	sharedOutputs, err := provisioning.ApplyOutputAliases(outputs, aliases)
+	if err != nil {
+		return fmt.Errorf("applying output aliases for layer %s: %w", stepName, err)
+	}
+
 	currentEnv := deps.env.Dotenv()
-	for key, param := range outputs {
+	for key, param := range sharedOutputs {
 		newValue := resolveOutputString(param)
 		if existing, ok := currentEnv[key]; ok && existing != newValue {
 			log.Printf("warning: layer %q overwrites env output %q", stepName, key)
 		}
 	}
 
-	return provisioning.UpdateEnvironment(ctx, outputs, deps.env, deps.envManager)
+	return provisioning.UpdateEnvironment(ctx, sharedOutputs, deps.env, deps.envManager)
 }
 
 // reloadSharedEnvLocked acquires envMu and reloads deps.env from disk,

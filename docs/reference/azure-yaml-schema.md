@@ -110,6 +110,64 @@ have permission to pull the image through its managed identity or registry crede
 When `imagePassthrough` is omitted or `false`, an external service image can still be pulled and copied into the
 configured destination registry.
 
+## Infrastructure Layer Variable Aliases
+
+Each entry under `infra.layers[]` or `layers[].infra[]` can translate between
+the **[provider view](../concepts/glossary.md#provider-view)** and the
+**[project view](../concepts/glossary.md#project-view)**:
+
+- The provider view uses the variable names an infrastructure provider reads or emits.
+- The project view uses the environment variable names the project stores and supplies to CI.
+- Both alias maps are written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`.
+
+```yaml
+infra:
+  layers:
+    - name: producer
+      path: infra/producer
+      outputAliases:
+        PROVIDER_ENDPOINT: PROJECT_ENDPOINT
+    - name: consumer
+      path: infra/consumer
+      paramAliases:
+        PROVIDER_INPUT: PROJECT_ENDPOINT
+```
+
+- `paramAliases` maps an environment variable name in the provider view to its source
+  variable name in the project view. The provider variable is the name referenced by
+  the parameter file, not necessarily the IaC parameter name.
+- `outputAliases` maps an output name in the provider view to the variable name
+  persisted in the project view. Outputs without a mapping keep their
+  original names.
+
+Names on both sides of either alias map must match `^[A-Za-z_][A-Za-z0-9_]*$`.
+azd checks this when it loads the project configuration.
+
+In this example, the producer's `PROVIDER_ENDPOINT` output is stored as
+`PROJECT_ENDPOINT`. The consumer reads that value as `PROVIDER_INPUT`. These aliases
+work with both Bicep and Terraform providers. For Bicep layers, azd uses the
+aliases during static dependency analysis, so the consumer waits for the producer.
+Terraform dependencies are not inferred from aliases. Declare
+`dependsOn: [producer]` on the consumer when it needs the producer's outputs.
+This also applies to Bicep consumers of Terraform outputs.
+
+Pipeline configuration exports parameter variables and secrets using project-view
+names. Outputs from earlier layers are also tracked in the project view while
+planning later layers.
+
+Service environment-update events also use project-view output names during
+provisioning and `azd env refresh`. This includes the .NET user-secrets integration,
+which converts `__` in those names to the .NET configuration separator `:`.
+
+Two output aliases in one infrastructure entry cannot target the same project variable; azd rejects this when it
+loads the project configuration. An alias can also collide with an output that has
+no alias. Since provider output names are not declared in `azure.yaml`, azd checks
+that case after deployment, before writing any deployment outputs to the environment.
+
+Aliases do not bypass the environment filter for dynamic loader variables.
+Names in the `LD_` and `DYLD_` namespaces are excluded from `Dotenv()` and
+subprocess environments, including when introduced by an input alias.
+
 ## Hooks
 
 Hooks run user-defined scripts at lifecycle points:

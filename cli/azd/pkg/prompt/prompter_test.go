@@ -4,7 +4,11 @@
 package prompt
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -16,9 +20,81 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 )
+
+type resourceGroupScopedEnvironment struct {
+	*environment.Environment
+}
+
+func (e *resourceGroupScopedEnvironment) GetSubscriptionId() string {
+	return "layer-subscription"
+}
+
+func (e *resourceGroupScopedEnvironment) GetLocation() string {
+	return "layer-location"
+}
+
+func TestDefaultPrompter_ResourceGroupUsesScopedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	backing := environment.NewWithValues("shared", map[string]string{
+		environment.SubscriptionIdEnvVarName: "backing-subscription",
+		environment.LocationEnvVarName:       "backing-location",
+	})
+	root := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(root, backing)
+	ioc.RegisterInstance[input.Console](root, mockContext.Console)
+	ioc.RegisterInstance[account.Manager](root, &mockaccount.MockAccountManager{})
+	ioc.RegisterInstance[config.UserConfigManager](root, config.NewUserConfigManager(mockContext.ConfigManager))
+	ioc.RegisterInstance(root, azapi.NewResourceService(
+		mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions))
+	ioc.RegisterInstance(root, cloud.AzurePublic())
+	root.MustRegisterScoped(func(env *environment.Environment) environment.ScopedEnvironment { return env })
+	root.MustRegisterScoped(NewDefaultPrompter)
+	scope, err := root.NewScope()
+	require.NoError(t, err)
+	ioc.RegisterInstance[environment.ScopedEnvironment](scope, &resourceGroupScopedEnvironment{Environment: backing})
+
+	created := false
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.Contains(request.URL.Path, "/resourcegroups")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		require.Contains(t, request.URL.Path, "/subscriptions/layer-subscription/resourcegroups")
+		body := `{"value":[]}`
+		if request.Method == http.MethodPut {
+			created = true
+			var resourceGroup struct {
+				Location string `json:"location"`
+			}
+			require.NoError(t, json.NewDecoder(request.Body).Decode(&resourceGroup))
+			require.Equal(t, "layer-location", resourceGroup.Location)
+			body = `{"id":"/subscriptions/layer-subscription/resourceGroups/new-rg",` +
+				`"name":"new-rg","location":"layer-location"}`
+		}
+		return &http.Response{
+			Request: request, StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(body)),
+		}, nil
+	})
+	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Pick a resource group to use:"
+	}).Respond(0)
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return options.Message == "Enter a name for the new resource group:"
+	}).Respond("new-rg")
+
+	var prompter Prompter
+	require.NoError(t, scope.Resolve(&prompter))
+	name, err := prompter.PromptResourceGroup(t.Context(), PromptResourceOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "new-rg", name)
+	require.True(t, created)
+	require.Equal(t, "backing-subscription", backing.GetSubscriptionId())
+	require.Equal(t, "backing-location", backing.GetLocation())
+}
 
 func Test_formatSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {

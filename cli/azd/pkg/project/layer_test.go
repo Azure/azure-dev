@@ -47,6 +47,10 @@ layers:
       - name: app-infra
         path: ./infra/app
         provider: bicep
+        paramAliases:
+          LOCAL_INPUT: SHARED_INPUT
+        outputAliases:
+          LOCAL_OUTPUT: SHARED_OUTPUT
     services:
       api:
         project: ./src/api
@@ -63,6 +67,102 @@ layers:
 	require.Contains(t, projectConfig.Layers[0].Services, "api")
 	assert.Equal(t, "api", projectConfig.Layers[0].Services["api"].Name)
 	assert.Equal(t, "application", projectConfig.Layers[0].Infra[0].Layer)
+}
+
+func TestParseRejectsDuplicateOutputAliasDestinations(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"infra", "project"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+
+			infra := provisioning.Options{
+				Name: "producer", Provider: provisioning.Bicep, Path: "infra/producer",
+				OutputAliases: map[string]string{"FIRST": "SHARED", "SECOND": "SHARED"},
+			}
+			project := ProjectConfig{Name: "test-project"}
+			if format == "infra" {
+				project.Infra.Layers = []provisioning.Options{infra}
+			} else {
+				project.Layers = LayerConfigs{{Name: "application", Infra: []provisioning.Options{infra}}}
+			}
+			content, err := yaml.Marshal(project)
+			require.NoError(t, err)
+
+			_, err = Parse(t.Context(), string(content))
+			require.ErrorContains(t, err, "output aliases")
+			require.ErrorContains(t, err, `cannot both target "SHARED"`)
+		})
+	}
+}
+
+func TestParseLayerAliasNames(t *testing.T) {
+	t.Parallel()
+
+	names := []struct {
+		name  string
+		valid bool
+	}{
+		{name: "VALID_NAME", valid: true},
+		{name: "_name0", valid: true},
+		{name: "a", valid: true},
+		{name: ""},
+		{name: "BAD-NAME"},
+		{name: "PATH=value"},
+		{name: "1BAD"},
+		{name: "BAD.NAME"},
+		{name: "BAD NAME"},
+		{name: "BAD\nNAME"},
+		{name: "NAME\n"},
+		{name: "caf\u00e9"},
+	}
+	for _, format := range []string{"infra", "project"} {
+		for _, aliasKind := range []string{"input", "output"} {
+			for _, view := range []string{"provider", "project"} {
+				for _, tt := range names {
+					t.Run(fmt.Sprintf("%s/%s/%s/%q", format, aliasKind, view, tt.name), func(t *testing.T) {
+						t.Parallel()
+
+						providerName, projectName := "LOCAL_VARIABLE", "SHARED_VARIABLE"
+						if view == "provider" {
+							providerName = tt.name
+						} else {
+							projectName = tt.name
+						}
+						aliases := map[string]string{providerName: projectName}
+						infra := provisioning.Options{
+							Name: "producer", Provider: provisioning.Bicep, Path: "infra/producer",
+						}
+						if aliasKind == "input" {
+							infra.ParamAliases = aliases
+						} else {
+							infra.OutputAliases = aliases
+						}
+						project := ProjectConfig{Name: "test-project"}
+						if format == "infra" {
+							project.Infra.Layers = []provisioning.Options{infra}
+						} else {
+							project.Layers = LayerConfigs{{Name: "application", Infra: []provisioning.Options{infra}}}
+						}
+						content, err := yaml.Marshal(project)
+						require.NoError(t, err)
+
+						_, err = Parse(t.Context(), string(content))
+						if tt.valid {
+							require.NoError(t, err)
+						} else {
+							require.ErrorContains(t, err, aliasKind+" alias")
+							if tt.name == "" {
+								require.ErrorContains(t, err, "names cannot be empty")
+							} else {
+								require.ErrorContains(t, err, "must use names matching ^[A-Za-z_][A-Za-z0-9_]*$")
+							}
+						}
+					})
+				}
+			}
+		}
+	}
 }
 
 func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
@@ -199,6 +299,10 @@ layers:
       - name: app-infra
         path: ./infra/app
         provider: bicep
+        paramAliases:
+          LOCAL_INPUT: SHARED_INPUT
+        outputAliases:
+          LOCAL_OUTPUT: SHARED_OUTPUT
     services:
       api:
         project: ./src/api
@@ -206,6 +310,8 @@ layers:
         language: js
 `)
 	require.NoError(t, err)
+	require.Equal(t, "SHARED_INPUT", projectConfig.Layers[0].Infra[0].ParamAliases["LOCAL_INPUT"])
+	require.Equal(t, "SHARED_OUTPUT", projectConfig.Layers[0].Infra[0].OutputAliases["LOCAL_OUTPUT"])
 
 	path := filepath.Join(t.TempDir(), "azure.yaml")
 	require.NoError(t, Save(t.Context(), projectConfig, path))
@@ -218,10 +324,17 @@ layers:
 	require.Contains(t, yaml, "- name: application")
 	require.Contains(t, yaml, "infra:")
 	require.Contains(t, yaml, "- provider: bicep")
+	require.Contains(t, yaml, "paramAliases:")
+	require.Contains(t, yaml, "outputAliases:")
 	require.Contains(t, yaml, "services:")
 	require.Contains(t, yaml, "api:")
 	require.NotContains(t, yaml, "layer: application")
 	require.Equal(t, 1, strings.Count(yaml, "layers:"))
+
+	reloaded, err := Load(t.Context(), path)
+	require.NoError(t, err)
+	require.Equal(t, projectConfig.Layers[0].Infra[0].ParamAliases, reloaded.Layers[0].Infra[0].ParamAliases)
+	require.Equal(t, projectConfig.Layers[0].Infra[0].OutputAliases, reloaded.Layers[0].Infra[0].OutputAliases)
 }
 
 func TestSaveProjectLayersPreservesEmptyLayers(t *testing.T) {

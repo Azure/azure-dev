@@ -1,0 +1,50 @@
+# Tier 0: reject an Agent target service key owned by another host.
+# No Azure authentication, network, or resource creation is allowed.
+name: "agent-add-wrong-host-collision"
+command: "azd ai agent add manual-tool --file ./definitions/support.yaml --output json --no-prompt"
+cwd: "~/working/azd-agents-t0-agent-add-wrong-host-collision-{instance}"
+tags: ["tier:0", "cmd:add", "negative-path", "parallel-safe"]
+
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-agent-add-wrong-host-collision-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-t0-agent-add-wrong-host-collision-{instance}/definitions" &&
+      cp -- "{fixtures_dir}/agent-add/definitions/support.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-wrong-host-collision-{instance}/definitions/support.yaml" &&
+      cp -- "{fixtures_dir}/agent-add/definitions/previous-support.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-wrong-host-collision-{instance}/definitions/previous-support.yaml" &&
+      cp -- "{fixtures_dir}/agent-add/projects/update/azure.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-wrong-host-collision-{instance}/azure.yaml"
+    cwd: "~/working"
+    name: "seed a project with a non-Agent target service"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any prompt. Do not
+    obtain credentials, install or update extensions, fetch files, contact Azure, create cloud
+    resources, or make network calls. Never run init, provision, up, deploy, or other cloud
+    commands. Use only the literal add command in this scenario and read-only inspection; do not
+    repair fixtures or substitute commands.
+  - >-
+    Wait for 'azd ai agent add manual-tool --file ./definitions/support.yaml --output json
+    --no-prompt' to exit with a non-zero CLI code. Confirm the error contains
+    'service "manual-tool" has host "containerapp"; expected "azure.ai.agent"'. No success JSON
+    is emitted, and no product prompt is answered.
+  - >-
+    Compare the working azure.yaml byte-for-byte with
+    '{fixtures_dir}/agent-add/projects/update/azure.yaml'. Confirm the manual-tool service still
+    has host 'containerapp'; no service is added, removed, or changed. The only command-created
+    artifact allowed is .azure/agent-add.lock and its containing directory.
+  - "Take a best-effort screenshot of the validation error; capture failure must not block later goals."
+  - >-
+    Report a finding if the existing non-Agent service key is accepted, a different error occurs,
+    azure.yaml differs byte-for-byte from its fixture, or any prompt, Azure/network activity, or
+    cloud resource creation occurs. Do not retry or work around a failed goal.

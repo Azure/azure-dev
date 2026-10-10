@@ -1,0 +1,53 @@
+# Tier 0: reject definition and source paths outside the project.
+# No Azure authentication, network, or resource creation is allowed.
+name: "agent-add-path-safety"
+command: "azd ai agent add support-agent --file ../outside.yaml --output json --no-prompt"
+cwd: "~/working/azd-agents-t0-agent-add-path-safety-{instance}"
+tags: ["tier:0", "cmd:add", "negative-path", "parallel-safe"]
+
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-agent-add-path-safety-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-t0-agent-add-path-safety-{instance}/definitions" &&
+      cp -- "{fixtures_dir}/agent-add/definitions/support.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-path-safety-{instance}/definitions/support.yaml" &&
+      cp -- "{fixtures_dir}/agent-add/projects/path-safety/azure.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-path-safety-{instance}/azure.yaml"
+    cwd: "~/working"
+    name: "seed a project and an in-project definition"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any prompt. Do not
+    obtain credentials, install or update extensions, fetch files, contact Azure, create cloud
+    resources, or make network calls. Never run init, provision, up, deploy, or other cloud
+    commands. Use only the two literal add commands in this scenario and read-only inspection; do
+    not repair fixtures or substitute commands.
+  - >-
+    Wait for the initial command 'azd ai agent add support-agent --file ../outside.yaml --output
+    json --no-prompt' to exit non-zero. Confirm the error identifies an invalid agent definition
+    file path and says the relative path must not contain '..'. No success JSON is emitted.
+  - >-
+    Run exactly 'azd ai agent add support-agent --file ./definitions/support.yaml --source
+    ../outside --output json --no-prompt' in the same cwd. Confirm it exits non-zero with an error
+    containing 'invalid project source "../outside"' and stating the relative path must not contain
+    '..'. No success JSON is emitted.
+  - >-
+    After both rejections, compare the working azure.yaml byte-for-byte with
+    '{fixtures_dir}/agent-add/projects/path-safety/azure.yaml'. Confirm it still contains only the
+    ai-project service; no outside file is read or created, no Agent service is added, and the
+    only command-created artifact allowed is .azure/agent-add.lock and its containing directory.
+  - "Take a best-effort screenshot of both validation errors; capture failure must not block later goals."
+  - >-
+    Report a finding if either path outside the project is accepted, an error differs from the
+    described path validation, any project service is added or changed, or any prompt,
+    Azure/network activity, or cloud resource creation occurs. Do not retry or work around a
+    failed goal.

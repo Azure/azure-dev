@@ -1,0 +1,65 @@
+steps:
+  - pwsh: |
+      $ErrorActionPreference = 'Stop'
+      $requiredVersion = '5.5.3'
+
+      $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+      if (-not $repository) {
+        Register-PSRepository -Default
+        $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+      }
+
+      if (-not $repository) {
+        throw "Failed to find or register PSGallery."
+      }
+
+      if ($repository.InstallationPolicy -ne 'Trusted') {
+        Set-PSRepository -Name $repository.Name -InstallationPolicy Trusted
+      }
+
+      Install-Module `
+        -Name Az.Accounts `
+        -RequiredVersion $requiredVersion `
+        -Repository $repository.Name `
+        -Scope CurrentUser `
+        -Force `
+        -AllowClobber
+
+      $module = Get-Module -Name Az.Accounts -ListAvailable |
+        Where-Object Version -eq $requiredVersion |
+        Select-Object -First 1
+      if (-not $module) {
+        throw "Az.Accounts $requiredVersion was not available after installation."
+      }
+
+      Write-Host "Installed Az.Accounts $($module.Version) at $($module.ModuleBase)"
+    displayName: Install Az.Accounts
+
+  - pwsh: |
+      $ErrorActionPreference = 'Stop'
+      $archivePath = Join-Path $env:AGENT_TEMPDIRECTORY 'azcopy.tar.gz'
+      $extractPath = Join-Path $env:AGENT_TEMPDIRECTORY 'azcopy'
+
+      Invoke-WebRequest `
+        -Uri 'https://aka.ms/downloadazcopy-v10-linux' `
+        -OutFile $archivePath
+
+      New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
+      tar -xzf $archivePath -C $extractPath
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to extract AzCopy."
+      }
+
+      $azCopy = Get-ChildItem -Path $extractPath -Filter azcopy -File -Recurse |
+        Select-Object -First 1
+      if (-not $azCopy) {
+        throw "AzCopy was not available after installation."
+      }
+
+      chmod +x $azCopy.FullName
+      Write-Host "##vso[task.prependpath]$($azCopy.DirectoryName)"
+      & $azCopy.FullName --version
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to run AzCopy after installation."
+      }
+    displayName: Install AzCopy

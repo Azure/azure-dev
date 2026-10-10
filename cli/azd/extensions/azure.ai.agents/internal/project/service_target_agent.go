@@ -195,7 +195,7 @@ type AgentServiceTargetProvider struct {
 	dependencyEnabled          dependencyEnabled
 	dependencyEnv              map[string]string
 	promptAgentVersionResolver PromptAgentVersionResolver
-	previewReader             func(endpoint, tenantID string) (agentPreviewReader, error)
+	previewReader              func(endpoint, tenantID string) (agentPreviewReader, error)
 }
 
 const (

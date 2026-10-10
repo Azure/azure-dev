@@ -1346,15 +1346,17 @@ func (s *stubEnvServer) SetValue(
 	return &azdext.EmptyResponse{}, nil
 }
 
-// newEnvTestClient spins up a gRPC server with the given environment
-// service stub and returns an AzdClient connected to it.
+// newEnvTestClient serves the environment stub and optional project stub over gRPC.
 func newEnvTestClient(
-	t *testing.T, envSrv azdext.EnvironmentServiceServer,
+	t *testing.T, envSrv azdext.EnvironmentServiceServer, projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

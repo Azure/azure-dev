@@ -5,11 +5,16 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
@@ -232,19 +237,24 @@ func TestLifecycleCommandsRejectPositionalArguments(t *testing.T) {
 		t.Fatalf("expected init command to be registered: %v", err)
 	}
 	if err := initCommand.Args(initCommand, []string{"custom_env"}); err != nil {
-		t.Fatalf("expected init to accept one positional environment name: %v", err)
+		t.Fatalf("expected init to accept one positional folder name: %v", err)
+	}
+	if err := initCommand.Args(initCommand, nil); err != nil {
+		t.Fatalf("expected interactive init to allow an omitted folder name: %v", err)
 	}
 	if err := initCommand.Args(initCommand, []string{"one", "two"}); err == nil {
 		t.Fatal("expected init to reject multiple positional arguments")
 	}
 }
 
-func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
+func TestInitSelectsSampleAndCopiesItToNamedFolder(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	stubOpenEnvEchoCheckout(t)
+	stubRleSampleCatalog(t, []string{"echo", "wordle"}, "wordle", "training_env")
 
-	command := newInitCommand()
+	noPrompt := false
+	command := newInitCommand(&noPrompt)
+	command.SetArgs([]string{"training_env"})
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -252,7 +262,7 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessionDir := filepath.Join(tempDir, "echo_env")
+	sessionDir := filepath.Join(tempDir, "training_env")
 	// The test reads state from its own temporary session directory.
 	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
 	if err != nil {
@@ -262,11 +272,11 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	if err := json.Unmarshal(stateBytes, &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.EnvironmentName != "echo_env" {
-		t.Fatalf("expected echo_env environment name, got %q", state.EnvironmentName)
+	if state.EnvironmentName != "training_env" {
+		t.Fatalf("expected training_env environment name, got %q", state.EnvironmentName)
 	}
 	if _, err := os.Stat(filepath.Join(sessionDir, "server", "Dockerfile")); err != nil {
-		t.Fatalf("expected copied OpenEnv server Dockerfile: %v", err)
+		t.Fatalf("expected copied RLE sample server Dockerfile: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(sessionDir, ".git")); !os.IsNotExist(err) {
 		t.Fatalf("expected copied sample not to include .git metadata, got err=%v", err)
@@ -274,38 +284,79 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	if strings.Contains(output.String(), sessionDir) {
 		t.Fatalf("expected init output not to use absolute cd path, got %s", output.String())
 	}
-	expectedCd := `cd "` + "." + string(os.PathSeparator) + "echo_env" + `"`
+	expectedCd := `cd "` + "." + string(os.PathSeparator) + "training_env" + `"`
 	if !strings.Contains(output.String(), expectedCd) {
 		t.Fatalf("expected init output to quote relative cd path, got %s", output.String())
 	}
+	if !strings.Contains(output.String(), `Copied RLE sample "wordle".`) {
+		t.Fatalf("expected selected sample in output, got %s", output.String())
+	}
 }
 
-func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
+func TestInitWithoutFolderUsesSelectedSampleName(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	stubOpenEnvEchoCheckout(t)
+	stubRleSampleCatalog(t, []string{"echo", "wordle"}, "wordle", "wordle")
 
-	command := newInitCommand()
-	command.SetArgs([]string{"code_rl"})
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
+	noPrompt := false
+	command := newInitCommand(&noPrompt)
+	command.SetArgs(nil)
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(filepath.Join(tempDir, "wordle", rleStateFile)); err != nil {
+		t.Fatalf("expected selected sample folder and state: %v", err)
+	}
+}
 
-	sessionDir := filepath.Join(tempDir, "code_rl")
-	// The test reads state from its own temporary session directory.
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
-	if err != nil {
+func TestInitNoPromptUsesPositionalNameAsSampleAndFolder(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(rleEnableEnvVar, "true")
+
+	oldLoad := loadRleSampleCatalogFunc
+	oldSelect := selectRleSampleFunc
+	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
+		return &testRleSampleCatalog{
+			t:                  t,
+			sampleNames:        []string{"echo", "wordle"},
+			expectedSampleName: "wordle",
+			expectedFolderName: "wordle",
+		}, nil
+	}
+	selectRleSampleFunc = func(context.Context, []string) (string, error) {
+		t.Fatal("expected no-prompt init to bypass the prompt")
+		return "", nil
+	}
+	t.Cleanup(func() {
+		loadRleSampleCatalogFunc = oldLoad
+		selectRleSampleFunc = oldSelect
+	})
+
+	command := NewRootCommand()
+	command.SetArgs([]string{"init", "wordle", "--no-prompt"})
+	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	var state rleState
-	if err := json.Unmarshal(stateBytes, &state); err != nil {
-		t.Fatal(err)
+}
+
+func TestInitNoPromptRequiresPositionalSampleName(t *testing.T) {
+	t.Setenv(rleEnableEnvVar, "true")
+	command := NewRootCommand()
+	command.SetArgs([]string{"init", "--no-prompt"})
+	err := command.Execute()
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || localError.Code != "rle_sample_name_required" {
+		t.Fatalf("expected missing no-prompt sample error, got %v", err)
 	}
-	if state.EnvironmentName != "code_rl" {
-		t.Fatalf("expected code_rl environment name, got %q", state.EnvironmentName)
+}
+
+func TestResolveRleSampleRejectsUnknownNonInteractiveSample(t *testing.T) {
+	_, err := resolveRleSample(t.Context(), "missing", []string{"echo", "wordle"})
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || localError.Code != "rle_sample_not_found" ||
+		!strings.Contains(localError.Suggestion, "echo, wordle") {
+		t.Fatalf("expected available sample guidance, got %v", err)
 	}
 }
 
@@ -368,32 +419,74 @@ func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
 	}
 }
 
-func stubOpenEnvEchoCheckout(t *testing.T) {
+type testRleSampleCatalog struct {
+	t                  *testing.T
+	sampleNames        []string
+	expectedSampleName string
+	expectedFolderName string
+}
+
+func (c *testRleSampleCatalog) SampleNames() []string {
+	return c.sampleNames
+}
+
+func (c *testRleSampleCatalog) Copy(
+	sampleName string,
+	folderName string,
+	dest string,
+	force bool,
+) (string, error) {
+	c.t.Helper()
+	if sampleName != c.expectedSampleName {
+		c.t.Fatalf("expected RLE sample %q, got %q", c.expectedSampleName, sampleName)
+	}
+	if folderName != c.expectedFolderName {
+		c.t.Fatalf("expected folder name %q, got %q", c.expectedFolderName, folderName)
+	}
+	sessionDir := filepath.Join(dest, folderName)
+	if force {
+		if err := os.RemoveAll(sessionDir); err != nil {
+			return "", err
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(sessionDir, "server"), 0750); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "server", "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
+		return "", err
+	}
+	return sessionDir, nil
+}
+
+func (c *testRleSampleCatalog) Close() error {
+	return nil
+}
+
+func stubRleSampleCatalog(
+	t *testing.T,
+	sampleNames []string,
+	selectedSampleName string,
+	expectedFolderName string,
+) {
 	t.Helper()
-	old := checkoutOpenEnvEchoSampleFunc
-	checkoutOpenEnvEchoSampleFunc = func(name string, dest string, force bool) (string, error) {
-		sessionDir := filepath.Join(dest, name)
-		if force {
-			if err := os.RemoveAll(sessionDir); err != nil {
-				return "", err
-			}
+	oldLoad := loadRleSampleCatalogFunc
+	oldSelect := selectRleSampleFunc
+	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
+		return &testRleSampleCatalog{
+			t:                  t,
+			sampleNames:        sampleNames,
+			expectedSampleName: selectedSampleName,
+			expectedFolderName: expectedFolderName,
+		}, nil
+	}
+	selectRleSampleFunc = func(_ context.Context, actualSampleNames []string) (string, error) {
+		if !slices.Equal(actualSampleNames, sampleNames) {
+			t.Fatalf("expected sample names %v, got %v", sampleNames, actualSampleNames)
 		}
-		if err := os.MkdirAll(sessionDir, 0750); err != nil {
-			return "", err
-		}
-		serverDir := filepath.Join(sessionDir, "server")
-		if err := os.MkdirAll(serverDir, 0750); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(filepath.Join(serverDir, "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(filepath.Join(sessionDir, "openenv.yaml"), []byte("name: echo_env\n"), 0600); err != nil {
-			return "", err
-		}
-		return sessionDir, nil
+		return selectedSampleName, nil
 	}
 	t.Cleanup(func() {
-		checkoutOpenEnvEchoSampleFunc = old
+		loadRleSampleCatalogFunc = oldLoad
+		selectRleSampleFunc = oldSelect
 	})
 }

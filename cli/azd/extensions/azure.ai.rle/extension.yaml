@@ -11,11 +11,11 @@ tags:
   - ai
   - rle
 usage: azd ai rle <command> [options]
-version: 0.4.0-preview
+version: 0.4.1-preview
 examples:
   - name: init
-    description: Copy the OpenEnv echo sample into a local RLE environment.
-    usage: azd ai rle init
+    description: Select an RLE sample and copy it into a new local folder.
+    usage: azd ai rle init [folder-name]
   - name: publish
     description: Build, push, and create or update the RLE environment.
     usage: azd ai rle publish --version-bump major

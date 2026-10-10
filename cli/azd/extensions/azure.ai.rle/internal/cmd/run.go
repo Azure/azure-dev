@@ -92,6 +92,9 @@ func (a *localRunAction) Run() error {
 		}
 	}()
 
+	runtimeSession := project.NewWebSocketRuntimeSession(baseUrl, 0, nil)
+	defer runtimeSession.Close()
+
 	watchDone := make(chan error, 1)
 	if a.flags.watch {
 		watchCtx, cancelWatch := context.WithCancel(ctx)
@@ -99,11 +102,20 @@ func (a *localRunAction) Run() error {
 		watchCmd := *a.cmd
 		watchCmd.SetContext(watchCtx)
 		go func() {
-			watchDone <- watchLocalContainer(&watchCmd, a.flags)
+			watchDone <- watchLocalContainer(&watchCmd, a.flags, runtimeSession)
 		}()
 	}
 
-	webUrl := baseUrl + "/web"
+	webUrl, stopPlayground, err := playgroundURLWithAuthorizationProvider(
+		ctx,
+		baseUrl,
+		nil,
+		runtimeSession,
+	)
+	if err != nil {
+		return err
+	}
+	defer stopPlayground()
 	_, err = fmt.Fprintf(
 		a.cmd.OutOrStdout(),
 		"Local RLE environment is running at %s\nPlayground UI: %s\n",
@@ -116,7 +128,12 @@ func (a *localRunAction) Run() error {
 	if err := ui.OpenBrowser(webUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	shellErr := project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), baseUrl, 0)
+	shellErr := project.RunWebSocketShellWithSession(
+		ctx,
+		a.cmd.InOrStdin(),
+		a.cmd.OutOrStdout(),
+		runtimeSession,
+	)
 	if a.flags.watch {
 		select {
 		case err := <-watchDone:
@@ -300,7 +317,11 @@ func defaultSourceName(source string) string {
 	return project.Slug(name)
 }
 
-func watchLocalContainer(cmd *cobra.Command, flags *localRunFlags) error {
+func watchLocalContainer(
+	cmd *cobra.Command,
+	flags *localRunFlags,
+	runtimeSession *project.WebSocketRuntimeSession,
+) error {
 	last, err := sourceSnapshot(flags.source)
 	if err != nil {
 		return err
@@ -336,6 +357,7 @@ func watchLocalContainer(cmd *cobra.Command, flags *localRunFlags) error {
 			if err != nil {
 				return err
 			}
+			runtimeSession.Restart(baseUrl)
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Local RLE environment restarted at %s\n", baseUrl); err != nil {
 				return err
 			}

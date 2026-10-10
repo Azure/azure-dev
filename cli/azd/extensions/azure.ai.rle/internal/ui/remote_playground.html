@@ -46,10 +46,12 @@
     document.getElementById("stepButton").addEventListener("click", stepEnv);
     call("GET", "/state");
     call("GET", "/schema", undefined, "schema").then((schema) => {
-      if (schema && schema.properties && document.getElementById("actionBody").value.trim() === "{}") {
+      const actionSchema = schema && schema.action;
+      if (actionSchema && actionSchema.properties && document.getElementById("actionBody").value.trim() === "{}") {
         const sample = {};
-        for (const [name, prop] of Object.entries(schema.properties)) {
+        for (const [name, prop] of Object.entries(actionSchema.properties)) {
           if (prop.default !== undefined) sample[name] = prop.default;
+          else if (prop.const !== undefined) sample[name] = prop.const;
         }
         document.getElementById("actionBody").value = JSON.stringify(sample, null, 2);
       }

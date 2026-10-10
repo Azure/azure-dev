@@ -123,18 +123,21 @@ resolved transparently before injection.
 | --- | --- | --- |
 | **Script file** | First argument is an existing file | `azd exec ./setup.sh` |
 | **Direct exec** | Multiple arguments, no `--shell` flag | `azd exec python script.py` |
-| **Shell inline** | Single argument, or `--shell` specified | `azd exec 'echo $AZURE_ENV_NAME'` |
+| **Shell inline** | Single argument that is not a missing script path; use `--shell` to disambiguate script-like input | `azd exec --shell bash "cat<deploy.sh"` |
 
 **Direct exec** passes the exact argument vector to the child process without shell wrapping, which
 avoids quoting and escaping issues. **Shell inline** wraps the argument with the detected (or
 specified) shell's `-c` flag. **Script file** detects the shell from the file extension (`.sh` →
 bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
 
+A missing path-like input remains an error instead of falling through to shell execution. Use
+`--shell` when a single inline command contains shell operators or script-like path arguments.
+
 ### Flags
 
 | Flag | Description |
 | --- | --- |
-| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. |
+| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. Also disambiguates inline commands that contain script-like path arguments. |
 | `--interactive`, `-i` | Run in interactive mode (connects stdin to the child process). |
 | `--environment`, `-e` | The azd environment to load. |
 

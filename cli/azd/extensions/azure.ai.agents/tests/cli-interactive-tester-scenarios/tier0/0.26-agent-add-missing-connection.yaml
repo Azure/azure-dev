@@ -1,0 +1,49 @@
+# Tier 0: reject a missing local Connection before mutation.
+# No Azure authentication, network, or resource creation is allowed.
+name: "agent-add-missing-connection"
+command: "azd ai agent add support-agent --file ./definitions/missing-connection.yaml --output json --no-prompt"
+cwd: "~/working/azd-agents-t0-agent-add-missing-connection-{instance}"
+tags: ["tier:0", "cmd:add", "negative-path", "parallel-safe"]
+
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-agent-add-missing-connection-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-t0-agent-add-missing-connection-{instance}/definitions" &&
+      cp -- "{fixtures_dir}/agent-add/definitions/missing-connection.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-missing-connection-{instance}/definitions/missing-connection.yaml" &&
+      cp -- "{fixtures_dir}/agent-add/projects/missing-connection/azure.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-missing-connection-{instance}/azure.yaml"
+    cwd: "~/working"
+    name: "seed a Project and a missing Connection reference"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any prompt. Do not
+    obtain credentials, install or update extensions, fetch files, contact Azure, create cloud
+    resources, or make network calls. Never run init, provision, up, deploy, or other cloud
+    commands. Use only the literal add command in this scenario and read-only inspection; do not
+    repair fixtures or substitute commands.
+  - >-
+    Wait for 'azd ai agent add support-agent --file ./definitions/missing-connection.yaml
+    --output json --no-prompt' to exit non-zero. Confirm the error contains
+    'connection reference "missing-search" does not match an azure.ai.connection service key or
+    resource name'. A definition-file or Project-service error is not a pass. No success JSON is
+    emitted, and no product prompt is answered.
+  - >-
+    Compare the working azure.yaml byte-for-byte with
+    '{fixtures_dir}/agent-add/projects/missing-connection/azure.yaml'. Confirm it still has only
+    the seeded ai-project service and no uses or Agent-service mutation. The only command-created
+    artifact allowed is .azure/agent-add.lock and its containing directory.
+  - "Take a best-effort screenshot of the validation error; capture failure must not block later goals."
+  - >-
+    Report a finding if the missing local Connection is accepted, a different error occurs, any
+    project service is added or changed, or any prompt, Azure/network activity, or cloud
+    resource creation occurs. Do not retry or work around a failed goal.

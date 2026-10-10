@@ -1,0 +1,36 @@
+name: agent-add-update
+services:
+  ai-project:
+    host: azure.ai.project
+  manual-tool:
+    host: containerapp
+  support-agent:
+    host: azure.ai.agent
+    project: src/support-agent
+    uses:
+      - ai-project
+      - manual-tool
+    $ref: ./definitions/previous-support.yaml
+    apiVersion: "2025-01-01"
+    condition: ${DEPLOY_AGENT}
+    dist: dist
+    docker:
+      path: ./Dockerfile
+      context: .
+    env:
+      API_KEY: ${AGENT_API_KEY}
+    hooks:
+      predeploy:
+        - echo ${MESSAGE}
+    image: ${AGENT_IMAGE}
+    infra:
+      path: infra
+      module: main
+    k8s:
+      namespace: agents
+    language: python
+    module: infra
+    remoteBuild: true
+    resourceGroup: ${RESOURCE_GROUP}
+    resourceName: ${AGENT_NAME}
+    customField: keep-me

@@ -1,0 +1,63 @@
+# Tier 0: add locally, then verify the repeat is a no-op.
+# No Azure authentication, network, or resource creation is allowed.
+name: "agent-add-new-idempotent"
+command: "azd ai agent add support-agent --file ./definitions/support.yaml --output json --no-prompt"
+cwd: "~/working/azd-agents-t0-agent-add-new-idempotent-{instance}"
+tags: ["tier:0", "cmd:add", "parallel-safe"]
+
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-agent-add-new-idempotent-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-t0-agent-add-new-idempotent-{instance}/definitions" &&
+      cp -- "{fixtures_dir}/agent-add/definitions/support.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-new-idempotent-{instance}/definitions/support.yaml" &&
+      cp -- "{fixtures_dir}/agent-add/projects/new/azure.yaml"
+      "$HOME/working/azd-agents-t0-agent-add-new-idempotent-{instance}/azure.yaml"
+    cwd: "~/working"
+    name: "seed a minimal local azd project"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any prompt. Do not
+    obtain credentials, install or update extensions, fetch files, contact Azure, create cloud
+    resources, or make network calls. Never run init, provision, up, deploy, or other cloud
+    commands. Use only the literal add command in this scenario and read-only inspection; do not
+    repair fixtures or substitute commands.
+  - >-
+    Wait for the initial command 'azd ai agent add support-agent --file ./definitions/support.yaml
+    --output json --no-prompt' to exit with code 0. Confirm stdout contains only one JSON object
+    with exactly these fields: string name 'support-agent', string host 'azure.ai.agent', string
+    mutation 'added', string ref './definitions/support.yaml', string project 'definitions', and
+    string-array dependencies exactly ['ai-project']. Human-readable success text must not replace
+    or contaminate the JSON.
+  - >-
+    Compare the working azure.yaml with
+    '{fixtures_dir}/agent-add/projects/new/azure.yaml' as parsed YAML. The root project name and
+    the complete ai-project service remain unchanged. The only service added is support-agent,
+    with host 'azure.ai.agent', $ref './definitions/support.yaml', project 'definitions', and
+    uses exactly ['ai-project']. No other services or bundled Connection or Toolbox definitions
+    are added. YAML formatting, mapping order, and a schema comment may change.
+  - >-
+    Run exactly 'azd ai agent add support-agent --file ./definitions/support.yaml --output json
+    --no-prompt' again in the same cwd. Confirm exit code 0 and one JSON object with the same
+    field names and values as the first result except mutation is 'unchanged'. Confirm uses still
+    contains exactly ['ai-project'] and azure.yaml is byte-for-byte unchanged from its first
+    successful result. Do not write a comparison snapshot into the project.
+  - >-
+    Inspect the working tree, including hidden files. The only command-created artifact allowed
+    beyond the seeded azure.yaml and definitions/support.yaml is .azure/agent-add.lock and its
+    containing directory. No environment config, dotenv files, source files, infrastructure, or
+    deployment state may be created.
+  - "Take best-effort screenshots of both JSON results; capture failure must not block later goals."
+  - >-
+    Report a finding if the command prompts, the JSON shape or mutation differs, a repeated add
+    duplicates a dependency or rewrites azure.yaml, any unrelated project field changes, or any
+    Azure/network/resource-creation activity occurs. Do not retry or work around a failed goal.

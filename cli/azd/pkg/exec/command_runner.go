@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // Settings to modify the way CmdTree is executed
@@ -151,15 +152,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		return RunResult{}, err
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	go func() {
-		<-ctx.Done()
-		cmd.Kill()
-	}()
-
-	err = cmd.Wait()
+	err = waitForProcess(ctx, cmd.Wait, cmd.Kill)
 
 	var result RunResult
 
@@ -231,15 +224,8 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	err = waitForProcess(ctx, process.Wait, process.Kill)
 
-	go func() {
-		<-ctx.Done()
-		process.Kill()
-	}()
-
-	err = process.Wait()
 	result := NewRunResult(
 		process.ProcessState.ExitCode(),
 		stdOutBuf.String(),
@@ -257,6 +243,27 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	}
 
 	return result, err
+}
+
+func waitForProcess(ctx context.Context, wait func() error, kill func()) error {
+	stopWatcher := make(chan struct{})
+	watcherDone := make(chan struct{})
+	killOnce := sync.OnceFunc(kill)
+
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-ctx.Done():
+			killOnce()
+		case <-stopWatcher:
+		}
+	}()
+
+	err := wait()
+	close(stopWatcher)
+	killOnce()
+	<-watcherDone
+	return err
 }
 
 // ToolInPath checks to see if a program can be found on the PATH, as exec.LookPath

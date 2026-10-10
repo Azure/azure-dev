@@ -156,6 +156,28 @@ func (s *errorBidiStream) Recv() (*TestMessage, error) {
 	return nil, s.recvErr
 }
 
+type controlledSendBidiStream struct {
+	sendStarted chan *TestMessage
+	releaseSend chan struct{}
+}
+
+func newControlledSendBidiStream() *controlledSendBidiStream {
+	return &controlledSendBidiStream{
+		sendStarted: make(chan *TestMessage),
+		releaseSend: make(chan struct{}),
+	}
+}
+
+func (s *controlledSendBidiStream) Send(msg *TestMessage) error {
+	s.sendStarted <- msg
+	<-s.releaseSend
+	return nil
+}
+
+func (s *controlledSendBidiStream) Recv() (*TestMessage, error) {
+	return nil, io.EOF
+}
+
 // SimpleMessageEnvelope is a simple implementation of MessageEnvelope for testing
 type SimpleMessageEnvelope struct{}
 
@@ -820,12 +842,12 @@ func TestRegisterResponseWaiter_RejectsDuplicateCorrelationId(t *testing.T) {
 	first := newResponseWaiter[TestMessage](1)
 	second := newResponseWaiter[TestMessage](1)
 
-	require.NoError(t, broker.registerResponseWaiter("shared-request", first))
+	require.NoError(t, broker.registerResponseWaiter(t.Context(), "shared-request", first))
 	t.Cleanup(func() {
 		broker.unregisterResponseWaiter("shared-request", first)
 	})
 
-	err := broker.registerResponseWaiter("shared-request", second)
+	err := broker.registerResponseWaiter(t.Context(), "shared-request", second)
 
 	require.ErrorIs(t, err, errRequestAlreadyPending)
 	second.close()
@@ -924,6 +946,166 @@ func TestCancelPendingRequest_CancellationSendFailure(t *testing.T) {
 	require.ErrorIs(t, err, sendErr)
 }
 
+func TestSendAndWait_DelayedCancellationReservesCorrelationId(t *testing.T) {
+	stream := newControlledSendBidiStream()
+	broker := NewMessageBrokerWithOptions(
+		stream,
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+		WithCancellationGracePeriod(20*time.Millisecond),
+	)
+	t.Cleanup(broker.Close)
+
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := broker.SendAndWait(firstCtx, &TestMessage{
+			RequestId: "shared-request",
+			Data:      "first",
+		})
+		firstDone <- err
+	}()
+
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "first", msg.Data)
+	case <-time.After(time.Second):
+		t.Fatal("first request did not start sending")
+	}
+
+	cancelFirst()
+	select {
+	case err := <-firstDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("first request did not return after cancellation grace period")
+	}
+
+	firstWaiter, ok := broker.responseWaiters.Load("shared-request")
+	require.True(t, ok)
+	require.True(t, firstWaiter.isDraining())
+
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := broker.SendAndWait(t.Context(), &TestMessage{
+			RequestId: "shared-request",
+			Data:      "second",
+		})
+		secondDone <- err
+	}()
+
+	select {
+	case msg := <-stream.sendStarted:
+		t.Fatalf("reused correlation ID sent before cancellation completed: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stream.releaseSend <- struct{}{}
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "shared-request", msg.RequestId)
+		require.ErrorIs(t, msg.Error, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("delayed cancellation was not sent")
+	}
+
+	select {
+	case msg := <-stream.sendStarted:
+		t.Fatalf("reused correlation ID sent before cancellation completed: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stream.releaseSend <- struct{}{}
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "second", msg.Data)
+	case <-time.After(time.Second):
+		t.Fatal("second request did not start after cancellation completed")
+	}
+
+	stream.releaseSend <- struct{}{}
+	broker.Close()
+	select {
+	case err := <-secondDone:
+		require.ErrorIs(t, err, errMessageBrokerClosed)
+	case <-time.After(time.Second):
+		t.Fatal("second request did not stop after broker close")
+	}
+}
+
+func TestCancelPendingRequest_PendingCancellationReservesCorrelationId(t *testing.T) {
+	stream := newControlledSendBidiStream()
+	broker := NewMessageBrokerWithOptions(
+		stream,
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+		WithCancellationGracePeriod(20*time.Millisecond),
+	)
+	t.Cleanup(broker.Close)
+
+	waiter := newResponseWaiter[TestMessage](1)
+	require.NoError(t, broker.registerResponseWaiter(t.Context(), "shared-request", waiter))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	cancelDone := make(chan error, 1)
+	go func() {
+		cancelDone <- broker.cancelPendingRequest(
+			ctx,
+			&TestMessage{RequestId: "shared-request"},
+			"shared-request",
+			reflect.TypeFor[*TestRequest](),
+			waiter,
+			make(chan error),
+			true,
+		)
+	}()
+
+	select {
+	case msg := <-stream.sendStarted:
+		require.Equal(t, "shared-request", msg.RequestId)
+		require.ErrorIs(t, msg.Error, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not start sending")
+	}
+
+	select {
+	case err := <-cancelDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not return after its grace period")
+	}
+	broker.unregisterResponseWaiter("shared-request", waiter)
+
+	current, ok := broker.responseWaiters.Load("shared-request")
+	require.True(t, ok)
+	require.Same(t, waiter, current)
+	require.True(t, waiter.isDraining())
+
+	second := newResponseWaiter[TestMessage](1)
+	registerDone := make(chan error, 1)
+	go func() {
+		registerDone <- broker.registerResponseWaiter(t.Context(), "shared-request", second)
+	}()
+
+	select {
+	case err := <-registerDone:
+		t.Fatalf("correlation ID reused before cancellation completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	stream.releaseSend <- struct{}{}
+	select {
+	case err := <-registerDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("correlation ID was not released after cancellation completed")
+	}
+	broker.unregisterResponseWaiter("shared-request", second)
+}
+
 func TestCancelActiveRequest_DefaultCauseAndMissingRequest(t *testing.T) {
 	broker := NewMessageBroker(
 		&errorBidiStream{},
@@ -951,7 +1133,7 @@ func TestRun_FullProgressWaiterDoesNotBlockCancellation(t *testing.T) {
 
 	broker := NewMessageBroker(sim.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
 	slowWaiter := newResponseWaiter[TestMessage](1)
-	require.NoError(t, broker.registerResponseWaiter("slow-request", slowWaiter))
+	require.NoError(t, broker.registerResponseWaiter(t.Context(), "slow-request", slowWaiter))
 	t.Cleanup(func() {
 		broker.unregisterResponseWaiter("slow-request", slowWaiter)
 	})

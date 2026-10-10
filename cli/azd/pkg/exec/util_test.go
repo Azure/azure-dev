@@ -161,6 +161,48 @@ func TestKillCommandList(t *testing.T) {
 	require.Less(t, time.Since(start), 5*time.Second)
 }
 
+func TestWaitForProcessJoinsCancellationCleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	killStarted := make(chan struct{})
+	releaseKill := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		done <- waitForProcess(
+			ctx,
+			func() error {
+				<-ctx.Done()
+				return nil
+			},
+			func() {
+				close(killStarted)
+				<-releaseKill
+			},
+		)
+	}()
+
+	cancel()
+	select {
+	case <-killStarted:
+	case <-time.After(time.Second):
+		t.Fatal("cancellation cleanup did not start")
+	}
+
+	select {
+	case <-done:
+		t.Fatal("waitForProcess returned before cancellation cleanup completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseKill)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("waitForProcess did not return after cancellation cleanup completed")
+	}
+}
+
 func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 

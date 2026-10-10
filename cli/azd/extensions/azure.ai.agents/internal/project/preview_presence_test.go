@@ -95,8 +95,8 @@ func TestPreviewReferencedPresenceAndDeclaredValues(t *testing.T) {
 		`add: description: ""`, `add: metadata.empty: ""`, `add: definition.cpu: "0"`,
 		`add: definition.protocol_versions: [{"protocol":"responses","version":""}]`,
 		`add: definition.environment_variables.EMPTY: ""`,
-		`add: definition.environment_variables.FALSE: "[redacted]"`,
-		`add: definition.environment_variables.ZERO: "[redacted]"`,
+		`add: definition.environment_variables.FALSE: "false"`,
+		`add: definition.environment_variables.ZERO: "0"`,
 		`add: definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME: ""`,
 		"build: false", "push: false",
 	} {
@@ -138,9 +138,9 @@ func TestPreviewAbsentDesiredPropertiesRemainRemovals(t *testing.T) {
 	service := previewService(t)
 	request, inputs := preparePresencePreview(t, service, t.TempDir())
 	remote := remotePreviewAgent(request)
-	remote.Versions.Latest.Description = new("private-description")
+	remote.Versions.Latest.Description = new("Old customer support description.")
 	remote.Versions.Latest.Metadata = maps.Clone(request.Metadata)
-	remote.Versions.Latest.Metadata["removed"] = "private-tag"
+	remote.Versions.Latest.Metadata["removed"] = "old-team"
 	hosted := request.Definition.(agent_api.HostedAgentDefinition)
 	hosted.EnvironmentVariables = map[string]string{
 		"SECRET": "private-secret", "AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1",

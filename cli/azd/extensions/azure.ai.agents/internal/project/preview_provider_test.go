@@ -5,7 +5,9 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
@@ -75,9 +78,13 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 		resolvedRef bool
 		rawImage    string
 		image       string
+		visible     bool
+		protected   bool
 	}{
 		{name: "create", remoteCode: http.StatusNotFound},
 		{name: "existing"},
+		{name: "visible description and inline config", visible: true},
+		{name: "resolved and previous credentials", protected: true},
 		{name: "legacy before auth", legacy: true, wantError: true},
 		{name: "authentication failure", authError: true, wantError: true},
 		{name: "permission failure", remoteCode: http.StatusForbidden, wantError: true},
@@ -94,10 +101,34 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			if tc.rawImage != "" {
 				document = fmt.Appendf(document, "    image: %s\n", tc.rawImage)
 			}
+			if tc.visible {
+				document = append(document, []byte("    env:\n      MODE: development\n")...)
+			}
+			if tc.protected {
+				document = append(document, []byte("    env:\n      API_KEY: ${CREDENTIAL}\n")...)
+			}
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), document, 0600))
 			legacy := []byte("retained: unused\n")
 			require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), legacy, 0600))
 			service := previewService(t)
+			if tc.visible {
+				service.Environment = map[string]string{"MODE": "development"}
+				service.AdditionalProperties.Fields["description"] = structpb.NewStringValue("A helpful responses agent.")
+				service.AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
+					"tags": []any{"responses", "added"},
+				})
+				service.AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+					map[string]any{"protocol": "responses", "version": "2.0.1"},
+				})
+				service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+					"resources": map[string]any{"memory": "2Gi"},
+				})
+			}
+			if tc.protected {
+				service.Environment = map[string]string{"API_KEY": "private-current-secret"}
+				service.AdditionalProperties.Fields["description"] =
+					structpb.NewStringValue("New private-current-secret instructions.")
+			}
 			if tc.rawImage != "" {
 				service.Image = tc.image
 				service.AdditionalProperties.Fields["registryConnectionId"] = structpb.NewStringValue("registry-connection")
@@ -136,6 +167,7 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			}})
 			azdext.RegisterEnvironmentServiceServer(server, &previewEnvironmentServer{values: map[string]string{
 				"AZURE_SUBSCRIPTION_ID": "subscription",
+				"CREDENTIAL":            "private-current-secret",
 				"FOUNDRY_PROJECT_ENDPOINT": "https://private-user:private-password@account.services.ai.azure.com/" +
 					"api/projects/project?sig=private-signature#private-fragment",
 			}})
@@ -153,6 +185,18 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			t.Cleanup(client.Close)
 			provider := NewAgentServiceTargetProvider(client).(*AgentServiceTargetProvider)
 			reader := &recordingPreviewReader{agent: remotePreviewAgent(previewRequest(t))}
+			if tc.visible {
+				reader.agent.Versions.Latest.Description = new("A basic responses agent.")
+				reader.agent.Versions.Latest.Metadata = maps.Clone(reader.agent.Versions.Latest.Metadata)
+				reader.agent.Versions.Latest.Metadata["tags"] = `["responses","removed"]`
+			}
+			if tc.protected {
+				reader.agent.Versions.Latest.Description = new("Old private-previous-secret instructions.")
+				hosted, ok := reader.agent.Versions.Latest.Definition.(agent_api.HostedAgentDefinition)
+				require.True(t, ok)
+				hosted.EnvironmentVariables = map[string]string{"API_KEY": "private-previous-secret"}
+				reader.agent.Versions.Latest.Definition = hosted
+			}
 			if tc.remoteCode != 0 {
 				reader.agent = nil
 				reader.err = &azcore.ResponseError{StatusCode: tc.remoteCode}
@@ -178,6 +222,28 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, result.Data)
 				require.NotContains(t, result.Message, "private-")
+				encoded, err := json.Marshal(result.Data.AsMap())
+				require.NoError(t, err)
+				require.NotContains(t, string(encoded), "private-")
+				if tc.visible {
+					for _, line := range []string{
+						`update: description: "A basic responses agent." -> "A helpful responses agent."`,
+						`update: metadata.tags: ["responses","removed"] -> ["responses","added"]`,
+						`update: definition.memory: "1Gi" -> "2Gi"`,
+						`add: definition.environment_variables.MODE: "development"`,
+					} {
+						require.Contains(t, result.Message, line)
+					}
+					require.NotContains(t, string(encoded), "[redacted]")
+					require.NotContains(t, result.Data.AsMap(), "containerImage")
+				}
+				if tc.protected {
+					require.Contains(t, result.Message,
+						`update: description: "Old [redacted] instructions." -> "New [redacted] instructions."`)
+					require.Contains(t, result.Message,
+						`update: definition.environment_variables.API_KEY: "[redacted]" -> "[redacted]"`)
+					require.Equal(t, "update", result.Data.AsMap()["status"])
+				}
 				if tc.rawImage != "" {
 					require.Contains(t, result.Data.AsMap()["unknown"], previewImagePath)
 					require.NotContains(t, result.Message, "preview.invalid")

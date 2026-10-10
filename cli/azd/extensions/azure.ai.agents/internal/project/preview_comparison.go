@@ -18,7 +18,6 @@ import (
 	"unicode"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/containerref"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -48,18 +47,20 @@ type previewContainerImage struct {
 }
 
 type previewInputs struct {
-	Unknown          []string
-	ContainerImage   *previewContainerImage
-	IgnoreImage      bool
-	Declared         map[string]bool
-	Description      *string
-	ProtocolVersions map[string]bool
+	Unknown           []string
+	ContainerImage    *previewContainerImage
+	IgnoreImage       bool
+	Declared          map[string]bool
+	Description       *string
+	ProtocolVersions  map[string]bool
+	PublicEnvironment map[string]bool
+	Secrets           []string
 }
 
 func comparePreviewRequest(
 	service string, desired *agent_api.CreateAgentRequest, existing *agent_api.AgentObject, inputs previewInputs,
 ) (*v1beta.ServiceDeployPreviewResult, error) {
-	after, secrets, err := previewRequestState(desired)
+	after, err := previewRequestState(desired)
 	if err != nil {
 		return nil, previewConfigurationError()
 	}
@@ -73,12 +74,21 @@ func comparePreviewRequest(
 				DigitalWorkerType: existing.DigitalWorkerType,
 			},
 		}
-		var remoteSecrets []string
-		before, remoteSecrets, err = previewRequestState(remote)
+		before, err = previewRequestState(remote)
 		if err != nil {
 			return nil, fmt.Errorf("Foundry returned an invalid hosted-agent definition; preview cannot compare it")
 		}
-		secrets = append(secrets, remoteSecrets...)
+	}
+	secrets := slices.Clone(inputs.Secrets)
+	for _, state := range []map[string]any{before, after} {
+		for path, value := range state {
+			name, environment := strings.CutPrefix(path, "definition.environment_variables.")
+			if environment && name != "AZURE_AI_MODEL_DEPLOYMENT_NAME" && !inputs.PublicEnvironment[name] {
+				if text, ok := value.(string); ok {
+					secrets = append(secrets, text)
+				}
+			}
+		}
 	}
 	if inputs.Description != nil {
 		after["description"] = *inputs.Description
@@ -104,12 +114,12 @@ func comparePreviewRequest(
 	}
 	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
 	clean := func(value string) string {
-		value = redactPreviewURLs(value)
 		for _, secret := range secrets {
 			if secret != "" {
 				value = strings.ReplaceAll(value, secret, "[redacted]")
 			}
 		}
+		value = redactPreviewURLs(value)
 		return strings.Map(func(r rune) rune {
 			if unicode.IsControl(r) {
 				return '?'
@@ -122,7 +132,7 @@ func comparePreviewRequest(
 		Status: "noChange", Changes: []previewChange{}, Unknown: []string{},
 		Notes: []string{
 			"Read-only comparison of the latest agent version; infrastructure and dependencies are not previewed.",
-			"Sensitive values are redacted; known configuration values are shown.",
+			"Configuration values are shown; resolved environment inputs and URL credentials are protected.",
 			"Comparison is limited to metadata, protocols, resources, environment, model reference, " +
 				"and container image intent.",
 			"Deploy creates a new agent version even when configuration has no changes.",
@@ -215,27 +225,27 @@ func previewProtocolPresence(state map[string]any, versions map[string]bool) err
 	return nil
 }
 
-func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any, []string, error) {
+func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any, error) {
 	data, err := json.Marshal(request.Definition)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var definition agent_api.HostedAgentDefinition
 	if err := json.Unmarshal(data, &definition); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if definition.Kind != agent_api.AgentKindHosted || definition.CPU == "" || definition.Memory == "" ||
 		(definition.ContainerConfiguration == nil && definition.CodeConfiguration == nil) {
-		return nil, nil, fmt.Errorf("invalid hosted definition")
+		return nil, fmt.Errorf("invalid hosted definition")
 	}
 	if definition.CodeConfiguration != nil {
 		if definition.CodeConfiguration.Runtime == "" || len(definition.CodeConfiguration.EntryPoint) == 0 {
-			return nil, nil, fmt.Errorf("invalid code configuration")
+			return nil, fmt.Errorf("invalid code configuration")
 		}
 		// The service can expose its built image alongside the source code config.
 		definition.ContainerConfiguration = nil
 	} else if definition.ContainerConfiguration.Image == "" {
-		return nil, nil, fmt.Errorf("invalid container configuration")
+		return nil, fmt.Errorf("invalid container configuration")
 	}
 	if cpu, err := strconv.ParseFloat(definition.CPU, 64); err == nil {
 		definition.CPU = strconv.FormatFloat(cpu, 'f', -1, 64)
@@ -245,23 +255,17 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 	})
 	definition.ProtocolVersions = slices.Compact(definition.ProtocolVersions)
 	definition.Image = ""
-	var secrets []string
-	for name, value := range definition.EnvironmentVariables {
-		if name != "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
-			secrets = append(secrets, value)
-		}
-	}
 	clone := *request
 	clone.Definition = definition
 	clone.AgentEndpoint = nil
 	clone.AgentCard = nil
 	data, err = json.Marshal(clone)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var object map[string]any
 	if err := json.Unmarshal(data, &object); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	result := map[string]any{}
 	flattenPreviewState("", object, result)
@@ -270,25 +274,18 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 			delete(result, path)
 		}
 	}
-	return result, secrets, nil
+	return result, nil
 }
 
 const previewRedactedValue = "[redacted]"
 
-var (
-	previewIdentifier = regexp.MustCompile(`^[A-Za-z0-9_.:/\\-]+$`)
-	previewQuantity   = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?(?:(?:K|M|G|T)i?)?$`)
-	previewVersion    = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*$`)
-)
-
-// previewDisplayValue is deny-by-default: new API fields must opt in before their
-// values can reach either terminal or JSON output. Only tags opt in as free-form text.
+// previewDisplayValue sanitizes values after comparison without classifying
+// ordinary in-scope properties as sensitive based on their field path.
 func previewDisplayValue(path string, value any, clean func(string) string) any {
-	if text, ok := value.(string); ok && text == "" && previewFieldGroup(path) != "" {
-		return text
+	if previewFieldGroup(path) == "" {
+		return previewRedactedValue
 	}
-	switch path {
-	case "metadata.tags":
+	if path == "metadata.tags" {
 		if text, ok := value.(string); ok {
 			// Lists use a string-valued wire field; decode only actual string lists.
 			var tags []any
@@ -304,55 +301,25 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 			}
 			return clean(text)
 		}
-	case "definition.cpu", "definition.memory":
-		if text, ok := value.(string); ok && previewQuantity.MatchString(text) {
-			return text
-		}
-	case "metadata.enableVnextExperience":
-		if value == "true" || value == "false" {
-			return value
-		}
-	case "definition.protocol_versions.version":
-		if text, ok := value.(string); ok && (text == "" || previewVersion.MatchString(text)) {
-			return text
-		}
-	case "definition.protocol_versions.protocol":
-		if text, ok := value.(string); ok && slices.Contains([]string{
-			"responses", "invocations", "invocations_ws", "activity", "activity_protocol", "a2a", "mcp",
-		}, text) {
-			return text
-		}
-	case "name", "definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		"definition.container_configuration.registry_connection_id":
-		if text, ok := value.(string); ok && (text == "" || previewIdentifier.MatchString(text)) {
-			return clean(text)
-		}
-	case previewImagePath:
-		if text, ok := value.(string); ok {
-			text = clean(text)
-			if containerref.IsValid(text) || strings.Contains(text, "://") {
-				return text
-			}
-		}
 	}
-	switch path {
-	case "definition.protocol_versions":
-		if items, ok := value.([]any); ok {
-			result := make([]any, len(items))
-			for i, item := range items {
-				result[i] = previewDisplayValue(path, item, clean)
-			}
-			return result
+	switch typed := value.(type) {
+	case string:
+		return clean(typed)
+	case []any:
+		result := make([]any, len(typed))
+		for i, item := range typed {
+			result[i] = previewDisplayValue(path, item, clean)
 		}
-		if object, ok := value.(map[string]any); ok {
-			result := make(map[string]any, len(object))
-			for key, item := range object {
-				result[key] = previewDisplayValue(path+"."+key, item, clean)
-			}
-			return result
+		return result
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			result[clean(key)] = previewDisplayValue(path, item, clean)
 		}
+		return result
+	default:
+		return value
 	}
-	return previewRedactedValue
 }
 
 func previewFieldGroup(path string) string {

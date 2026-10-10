@@ -324,7 +324,11 @@ func TestPreviewGroupedChangesAndNonDisclosure(t *testing.T) {
 			require.Equal(t, "0.5", change.Before)
 			require.Equal(t, "2", change.After)
 		case "definition.environment_variables.API_KEY", "metadata.owner", "description":
-			require.Equal(t, previewRedactedValue, change.After)
+			if change.Path == "description" {
+				require.Equal(t, "https://host/path", change.After)
+			} else {
+				require.Equal(t, previewRedactedValue, change.After)
+			}
 		case "definition.environment_variables.REMOVED_SECRET":
 			require.Equal(t, previewRedactedValue, change.Before)
 			require.Nil(t, change.After)
@@ -338,9 +342,9 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	service.AdditionalProperties.Fields["codeConfiguration"], _ = structpb.NewValue(map[string]any{
 		"runtime": "python_3_13", "entryPoint": "app.py",
 	})
-	service.AdditionalProperties.Fields["description"] = structpb.NewStringValue("private-description")
+	service.AdditionalProperties.Fields["description"] = structpb.NewStringValue("A customer support agent.")
 	service.AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
-		"arbitrary": "private-metadata", "tags": "customer-support",
+		"arbitrary": "support-team", "tags": "customer-support",
 	})
 	service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
 		"resources": map[string]any{"cpu": "0.5", "memory": "1Gi"},
@@ -356,6 +360,7 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	require.NoError(t, err)
 	request, unknown, err := preparePreviewRequest(service, definition, nil, nil)
 	require.NoError(t, err)
+	unknown.PublicEnvironment["API_KEY"] = false // Fixture represents an interpolated credential.
 	request.AgentEndpoint = &agent_api.AgentEndpoint{
 		ProtocolConfiguration: &agent_api.ProtocolConfiguration{
 			Activity: &agent_api.ActivityProtocolConfiguration{EnableM365PublicEndpoint: new(false)},
@@ -374,9 +379,10 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 		`add: definition.protocol_versions: [{"protocol":"responses","version":"2.0.0"}]`,
 		`add: definition.environment_variables.AZURE_AI_MODEL_DEPLOYMENT_NAME: "gpt-4.1"`,
 		`add: definition.environment_variables.API_KEY: "[redacted]"`,
-		`add: definition.environment_variables.NUMBER: "[redacted]"`,
-		`add: description: "[redacted]"`,
-		`add: metadata.arbitrary: "[redacted]"`,
+		`add: definition.environment_variables.NUMBER: "0.5"`,
+		`add: definition.environment_variables.FLAG: "true"`,
+		`add: description: "A customer support agent."`,
+		`add: metadata.arbitrary: "support-team"`,
 		`add: metadata.tags: "customer-support"`,
 	} {
 		require.Contains(t, result.Message, line)
@@ -433,9 +439,10 @@ func TestPreviewValueRedactionPolicy(t *testing.T) {
 		//nolint:gosec // Fake credential-bearing URL verifies non-disclosure.
 		{path: previewImagePath, value: "https://user:private-password@host/image?sig=private-sas#private-fragment",
 			want: "https://host/image"},
-		{path: "definition.environment_variables.PASSWORD", value: "private-password", want: previewRedactedValue},
-		{path: "definition.environment_variables.CONFIG", value: `{"password":"private-json"}`, want: previewRedactedValue},
-		{path: "metadata.token", value: "private-metadata", want: previewRedactedValue},
+		{path: "description", value: "A customer support agent.", want: "A customer support agent."},
+		{path: "definition.environment_variables.MODE", value: "development", want: "development"},
+		{path: "definition.environment_variables.CONFIG", value: `{"enabled":true}`, want: `{"enabled":true}`},
+		{path: "metadata.owner", value: "support-team", want: "support-team"},
 		{path: "agent_card.skills", value: []any{"private-card-content"}, want: previewRedactedValue},
 		{path: "definition.code_configuration.runtime", value: "private-runtime", want: previewRedactedValue},
 		{path: "definition.code_configuration.entry_point",
@@ -443,8 +450,8 @@ func TestPreviewValueRedactionPolicy(t *testing.T) {
 		{path: "definition.code_configuration.entry_point",
 			value: []any{"python", "app.py --token=private-token"}, want: previewRedactedValue},
 		{path: "definition.protocol_versions", value: []any{
-			map[string]any{"protocol": "responses", "version": "private-version"},
-		}, want: []any{map[string]any{"protocol": "responses", "version": previewRedactedValue}}},
+			map[string]any{"protocol": "responses", "version": "next-preview"},
+		}, want: []any{map[string]any{"protocol": "responses", "version": "next-preview"}}},
 		{path: "agent_endpoint.authorization_schemes", value: []any{
 			map[string]any{"type": "Entra", "isolation_key_source": map[string]any{"kind": "Header"}},
 		}, want: previewRedactedValue},
@@ -685,7 +692,8 @@ services:
 `), 0600))
 	service := previewService(t)
 	service.Image = ""
-	pending, err := previewPendingInputs(root, service, nil)
+	sourceInputs, err := previewSourceInputs(root, service, nil)
+	pending := sourceInputs.Unknown
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{
 		previewImagePath, "definition.environment_variables.MODEL", "definition.environment_variables.PARTIAL",
@@ -746,7 +754,8 @@ services:
 	before := proto.CloneOf(service)
 	service, definition, err := resolvePreviewDefinition(service, root)
 	require.NoError(t, err)
-	pending, err := previewPendingInputs(root, service, nil)
+	sourceInputs, err := previewSourceInputs(root, service, nil)
+	pending := sourceInputs.Unknown
 	require.NoError(t, err)
 	request, unknown, err := preparePreviewRequest(service, definition, nil, pending)
 	require.NoError(t, err)

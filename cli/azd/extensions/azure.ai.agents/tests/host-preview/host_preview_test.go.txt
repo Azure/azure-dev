@@ -46,6 +46,7 @@ func (s *foundryPreviewEnvironment) GetValues(
 ) (*azdext.KeyValueListResponse, error) {
 	return &azdext.KeyValueListResponse{KeyValues: []*azdext.KeyValue{
 		{Key: "AZURE_SUBSCRIPTION_ID", Value: "subscription"},
+		{Key: "PREVIEW_TEST_CREDENTIAL", Value: "private-current-secret"},
 		{Key: "FOUNDRY_PROJECT_ENDPOINT", Value: "https://account.services.ai.azure.com/api/projects/project"},
 	}}, nil
 }
@@ -80,12 +81,15 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
 		"name: preview\nservices:\n  agent:\n    host: azure.ai.agent\n"+
-			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n",
+			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n"+
+			"  config-update:\n    env:\n      MODE: development\n"+
+			"  protected-update:\n    env:\n      API_KEY: ${PREVIEW_TEST_CREDENTIAL}\n",
 	), 0600))
 	services := map[string]*azdext.ServiceConfig{}
 	for _, name := range []string{
 		"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update",
 		"tags-add", "tags-update", "tags-remove", "tags-unchanged", "tags-empty", "tags-scalar", "tags-safe",
+		"config-update", "protected-update",
 	} {
 		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
 		require.NoError(t, err)
@@ -106,6 +110,23 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	services["create"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
 		"tags": []any{"support"},
 	})
+	services["create"].AdditionalProperties.Fields["description"] =
+		structpb.NewStringValue("A helpful responses agent.")
+	services["config-update"].Environment = map[string]string{"MODE": "development"}
+	services["config-update"].AdditionalProperties.Fields["description"] =
+		structpb.NewStringValue("A helpful responses agent.")
+	services["config-update"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
+		"tags": []any{"responses", "added"},
+	})
+	services["config-update"].AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+		map[string]any{"protocol": "responses", "version": "2.0.1"},
+	})
+	services["config-update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"memory": "2Gi"},
+	})
+	services["protected-update"].Environment = map[string]string{"API_KEY": "private-current-secret"}
+	services["protected-update"].AdditionalProperties.Fields["description"] =
+		structpb.NewStringValue("New private-current-secret instructions.")
 	for name, tags := range map[string][]any{
 		"tags-add": {"support", "responses"}, "tags-update": {"retained", "added"},
 		"tags-unchanged": {"retained", "removed"}, "tags-empty": {},
@@ -180,6 +201,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		{"code", "noChange"}, {"build", "noChange"}, {"image-update", "update"},
 		{"tags-add", "update"}, {"tags-update", "update"}, {"tags-remove", "update"}, {"tags-unchanged", "noChange"},
 		{"tags-empty", "update"}, {"tags-scalar", "update"}, {"tags-safe", "update"},
+		{"config-update", "update"}, {"protected-update", "update"},
 	} {
 		result, err := preview(ctx, services[tc.name])
 		require.NoError(t, err)
@@ -197,6 +219,25 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		encoded, err := json.Marshal(result.Data)
 		require.NoError(t, err)
 		require.NotContains(t, string(encoded), "private-")
+		if tc.name == "config-update" {
+			for _, line := range []string{
+				`update: description: "A basic responses agent." -> "A helpful responses agent."`,
+				`update: metadata.tags: ["responses","removed"] -> ["responses","added"]`,
+				`update: definition.memory: "1Gi" -> "2Gi"`,
+				`add: definition.environment_variables.MODE: "development"`,
+			} {
+				require.Contains(t, result.Message, line)
+			}
+			require.Contains(t, string(encoded), `"after":"A helpful responses agent."`)
+			require.Contains(t, string(encoded), `"before":"A basic responses agent."`)
+			require.NotContains(t, string(encoded), "[redacted]")
+		}
+		if tc.name == "protected-update" {
+			require.Contains(t, result.Message,
+				`update: description: "Old [redacted] instructions." -> "New [redacted] instructions."`)
+			require.Contains(t, result.Message,
+				`update: definition.environment_variables.API_KEY: "[redacted]" -> "[redacted]"`)
+		}
 		tagChanges := map[string]struct {
 			operation string
 			line      string

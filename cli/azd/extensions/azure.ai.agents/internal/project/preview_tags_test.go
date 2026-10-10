@@ -72,14 +72,14 @@ func TestPreviewAuthoredMetadataTags(t *testing.T) {
 			},
 		}, status: "update", operation: "add", path: "metadata.tags", wantAfter: []any{"support", "https://example.com"}},
 		{name: "absent on both sides", status: "noChange"},
-		{name: "add metadata key", metadata: map[string]any{"owner": "private-team"},
-			status: "update", operation: "add", path: "metadata.owner", wantAfter: "[redacted]"},
-		{name: "update metadata key", metadata: map[string]any{"owner": "private-new"},
-			before: map[string]string{"owner": "private-old"},
+		{name: "add metadata key", metadata: map[string]any{"owner": "support-team"},
+			status: "update", operation: "add", path: "metadata.owner", wantAfter: "support-team"},
+		{name: "update metadata key", metadata: map[string]any{"owner": "new-team"},
+			before: map[string]string{"owner": "old-team"},
 			status: "update", operation: "update", path: "metadata.owner",
-			wantBefore: "[redacted]", wantAfter: "[redacted]"},
-		{name: "remove metadata key", before: map[string]string{"owner": "private-old"},
-			status: "update", operation: "remove", path: "metadata.owner", wantBefore: "[redacted]"},
+			wantBefore: "old-team", wantAfter: "new-team"},
+		{name: "remove metadata key", before: map[string]string{"owner": "old-team"},
+			status: "update", operation: "remove", path: "metadata.owner", wantBefore: "old-team"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			service := previewService(t)
@@ -300,6 +300,8 @@ func TestPreviewTagValuesRemainSafeAndCompareBeforeSanitizing(t *testing.T) {
 			remote := remotePreviewAgent(request)
 			remote.Versions.Latest.Metadata = maps.Clone(request.Metadata)
 			remote.Versions.Latest.Metadata["tags"] = tc.before
+			inputs.PublicEnvironment["API_KEY"] = false
+			inputs.PublicEnvironment["ESCAPED_KEY"] = false
 			hosted, ok := remote.Versions.Latest.Definition.(agent_api.HostedAgentDefinition)
 			require.True(t, ok)
 			hosted.EnvironmentVariables = maps.Clone(hosted.EnvironmentVariables)

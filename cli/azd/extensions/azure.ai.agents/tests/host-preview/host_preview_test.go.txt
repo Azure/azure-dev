@@ -85,7 +85,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	services := map[string]*azdext.ServiceConfig{}
 	for _, name := range []string{
 		"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update",
-		"tags-add", "tags-update", "tags-remove", "tags-unchanged",
+		"tags-add", "tags-update", "tags-remove", "tags-unchanged", "tags-empty", "tags-scalar", "tags-safe",
 	} {
 		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
 		require.NoError(t, err)
@@ -104,13 +104,17 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		map[string]any{"protocol": "responses", "version": "2.0.0"},
 	})
 	services["create"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
-		"tags": []any{"private-create-tag"},
+		"tags": []any{"support"},
 	})
 	for name, tags := range map[string][]any{
-		"tags-add": {"private-added"}, "tags-update": {"private-updated"}, "tags-unchanged": {"private-existing"},
+		"tags-add": {"support", "responses"}, "tags-update": {"retained", "added"},
+		"tags-unchanged": {"retained", "removed"}, "tags-empty": {},
+		"tags-safe": {"support", "private-known-secret", "https://user:private-password@example.com?sig=private-signature"},
 	} {
 		services[name].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{"tags": tags})
 	}
+	services["tags-scalar"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{"tags": "support"})
+	services["tags-safe"].Environment = map[string]string{"API_KEY": "private-known-secret"}
 	services["update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
 		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
 	})
@@ -175,6 +179,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		{"agent", "noChange"}, {"create", "create"}, {"update", "update"}, {"unknown", "unknown"},
 		{"code", "noChange"}, {"build", "noChange"}, {"image-update", "update"},
 		{"tags-add", "update"}, {"tags-update", "update"}, {"tags-remove", "update"}, {"tags-unchanged", "noChange"},
+		{"tags-empty", "update"}, {"tags-scalar", "update"}, {"tags-safe", "update"},
 	} {
 		result, err := preview(ctx, services[tc.name])
 		require.NoError(t, err)
@@ -192,19 +197,54 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		encoded, err := json.Marshal(result.Data)
 		require.NoError(t, err)
 		require.NotContains(t, string(encoded), "private-")
-		if operation := map[string]string{
-			"create": "add", "tags-add": "add", "tags-update": "update", "tags-remove": "remove",
-		}[tc.name]; operation != "" {
-			require.Contains(t, result.Message, operation+`: metadata.tags: "[redacted]"`)
+		tagChanges := map[string]struct {
+			operation string
+			line      string
+			before    any
+			after     any
+		}{
+			"create": {operation: "add", line: `add: metadata.tags: ["support"]`, after: []any{"support"}},
+			"tags-add": {operation: "add", line: `add: metadata.tags: ["support","responses"]`,
+				after: []any{"support", "responses"}},
+			"tags-update": {operation: "update",
+				line:   `update: metadata.tags: ["retained","removed"] -> ["retained","added"]`,
+				before: []any{"retained", "removed"}, after: []any{"retained", "added"}},
+			"tags-remove": {operation: "remove", line: `remove: metadata.tags: ["retained","removed"] -> (removed)`,
+				before: []any{"retained", "removed"}},
+			"tags-empty": {operation: "update", line: `update: metadata.tags: ["retained","removed"] -> []`,
+				before: []any{"retained", "removed"}, after: []any{}},
+			"tags-scalar": {operation: "update", line: `update: metadata.tags: ["retained","removed"] -> "support"`,
+				before: []any{"retained", "removed"}, after: "support"},
+			"tags-safe": {operation: "add", line: `add: metadata.tags: ["support","[redacted]","https://example.com"]`,
+				after: []any{"support", "[redacted]", "https://example.com"}},
+		}
+		if expected, hasTags := tagChanges[tc.name]; hasTags {
+			require.Contains(t, result.Message, expected.line)
 			changes, ok := result.Data["changes"].([]any)
 			require.True(t, ok)
-			if tc.name != "create" {
+			if tc.name != "create" && tc.name != "tags-safe" {
 				require.Len(t, changes, 1)
-				change, ok := changes[0].(map[string]any)
-				require.True(t, ok)
-				require.Equal(t, "metadata.tags", change["path"])
-				require.Equal(t, operation, change["operation"])
 			}
+			found := false
+			for _, item := range changes {
+				change, ok := item.(map[string]any)
+				require.True(t, ok)
+				if change["path"] == "metadata.tags" {
+					found = true
+					require.Equal(t, expected.operation, change["operation"])
+					if expected.before != nil {
+						require.Equal(t, expected.before, change["before"])
+					} else {
+						require.NotContains(t, change, "before")
+					}
+					if expected.after != nil {
+						require.Equal(t, expected.after, change["after"])
+					} else {
+						require.NotContains(t, change, "after")
+					}
+				}
+			}
+			require.True(t, found)
 		}
 		if tc.name == "tags-unchanged" {
 			require.Empty(t, result.Data["changes"])

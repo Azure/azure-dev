@@ -42,7 +42,10 @@ redaction still apply. Remote-only optional metadata/environment/image propertie
 remain real removals when the new request removes them.
 
 CPU/memory, protocol versions, and agent/model/registry identifiers are shown.
-Arbitrary environment values, metadata tags, and descriptions are `[redacted]`.
+Ordinary `metadata.tags` values are shown as logical lists or scalar strings.
+Arbitrary environment values, other free-form metadata, and descriptions are
+`[redacted]`. Tags still strip credential-bearing URL components and terminal
+controls, and redact known environment secrets without hiding adjacent public tags.
 The model deployment binding and explicitly declared `enableVnextExperience`
 metadata are safe exceptions. New fields are excluded from comparison
 unless they are in scope, and displayed values are redacted by default. URL
@@ -70,16 +73,25 @@ items; existing string values are unchanged. List additions/removals therefore
 appear as an `update: metadata.tags` change. Removing the entire `tags` property
 reports `remove: metadata.tags` if the latest remote version contains it.
 Explicit `tags: []` and `tags: ""` remain present values, not missing properties.
-Invalid tag types fail instead of silently disappearing. Tag values stay
-redacted, and comparison uses their actual values before redaction.
+Invalid tag types fail instead of silently disappearing. Preview decodes the
+known JSON string-list form for display: additions show all desired tags,
+updates show the old and new lists, and removals show the previous tags. JSON
+uses the same sanitized logical arrays or scalar strings. Explicit empty lists
+and strings remain `[]` and `""`. Comparison uses the actual values before
+sanitization, so different credentials still produce a change even when their
+display values are both redacted.
 
 Preview compares against the latest deployed version, not a previous local
 file revision. A deleted local tag that was never deployed cannot appear as a
 remote removal; a missing remote agent reports creation and only additions.
+If the remote version has no tags, preview reports `add` with the full desired
+list, not individual removals from a previous local edit.
 
 For example:
 
 ```text
+  Metadata:
+    update: metadata.tags: ["retained","removed"] -> ["retained","added"]
   Resources:
     update: definition.cpu: "0.5" -> "2"
   Environment variables:

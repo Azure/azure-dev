@@ -71,10 +71,11 @@ func (p *previewProcessProvider) Preview(
 			request.Definition = hosted
 			return &recordingPreviewReader{agent: remotePreviewAgent(request)}, nil
 		}
-	} else if strings.HasPrefix(service.GetName(), "tags-") && service.GetName() != "tags-add" {
+	} else if strings.HasPrefix(service.GetName(), "tags-") &&
+		service.GetName() != "tags-add" && service.GetName() != "tags-safe" {
 		p.previewReader = func(string, string) (agentPreviewReader, error) {
 			request := previewRequest(p.t)
-			request.Metadata["tags"] = `["private-existing"]`
+			request.Metadata["tags"] = `["retained","removed"]`
 			return &recordingPreviewReader{agent: remotePreviewAgent(request)}, nil
 		}
 	}

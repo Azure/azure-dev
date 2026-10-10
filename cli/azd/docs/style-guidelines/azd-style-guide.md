@@ -161,7 +161,8 @@ critical warnings, and `N warnings found.` for regular-only findings. Use singul
 Regular-only reports use `Proceed with deployment anyway?` for deployment confirmation
 and `Proceed with the preview anyway?` for preview confirmation, with the default Yes.
 Reports containing a critical warning use `Deployment will likely fail. Proceed anyway?`
-and render the prompt marker, message, choices, and default answer in yellow. Their
+and render only the message in bold yellow. The `?` marker, `[y/N]` choices, and
+answer retain the standard blue prompt styling. Their
 default remains No, including with `--no-prompt`. Users can explicitly choose Yes to
 continue despite a critical warning.
 Keep this pattern scoped to provision validation rather than changing global warning

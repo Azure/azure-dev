@@ -174,7 +174,7 @@ Validating deployment
 ? Proceed with deployment anyway? [Y/n]
 ```
 
-When the report contains the built-in missing-role-permission warning, the prompt changes to `Deployment will likely fail. Proceed anyway?` and its marker, message, choices, and default answer are yellow. The default is **No**, even when other regular warnings are also present:
+When the report contains the built-in missing-role-permission warning, the prompt changes to `Deployment will likely fail. Proceed anyway?` with a bold yellow message. The `?` marker, `[y/N]` choices, and answer retain azd's standard blue prompt styling. The default is **No**, even when other regular warnings are also present:
 
 ```
 Validating deployment

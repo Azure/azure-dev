@@ -269,6 +269,16 @@ func NewMessageBroker[TMessage any](
 	ops MessageEnvelope[TMessage],
 	name string,
 	logger *log.Logger,
+) *MessageBroker[TMessage] {
+	return NewMessageBrokerWithOptions(stream, ops, name, logger)
+}
+
+// NewMessageBrokerWithOptions creates a new message broker and applies the provided options.
+func NewMessageBrokerWithOptions[TMessage any](
+	stream BidiStream[TMessage],
+	ops MessageEnvelope[TMessage],
+	name string,
+	logger *log.Logger,
 	options ...MessageBrokerOption,
 ) *MessageBroker[TMessage] {
 	if logger == nil {

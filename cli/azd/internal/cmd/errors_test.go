@@ -107,6 +107,30 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: nil,
 		},
 		{
+			name: "WithKilledToolExitAndContextCanceled",
+			err: errors.Join(
+				&exec.ExitError{
+					Cmd:      "any",
+					ExitCode: -1,
+				},
+				context.Canceled,
+			),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithKilledToolExitAndContextDeadlineExceeded",
+			err: errors.Join(
+				&exec.ExitError{
+					Cmd:      "any",
+					ExitCode: -1,
+				},
+				context.DeadlineExceeded,
+			),
+			wantErrReason:  "internal.timeout",
+			wantErrDetails: nil,
+		},
+		{
 			name: "WithArmDeploymentError",
 			err: &azapi.AzureDeploymentError{
 				Operation: azapi.DeploymentOperationDeploy,

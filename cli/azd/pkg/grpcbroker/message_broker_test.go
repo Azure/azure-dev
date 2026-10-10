@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"reflect"
 	"sync"
 	"testing"
@@ -61,6 +62,19 @@ func (s *SimulatedBidiStream) Close() {
 		s.closed = true
 		close(s.done)
 	}
+}
+
+func TestNewMessageBroker_FunctionValueCompatibility(t *testing.T) {
+	var constructor func(
+		BidiStream[TestMessage],
+		MessageEnvelope[TestMessage],
+		string,
+		*log.Logger,
+	) *MessageBroker[TestMessage] = NewMessageBroker[TestMessage]
+
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+	require.NotNil(t, constructor(sim.ClientStream(), &SimpleMessageEnvelope{}, "client", nil))
 }
 
 // ClientStream returns a stream interface for the client side
@@ -1046,14 +1060,14 @@ func TestEndToEnd_CancellationCancelsMatchingHandler(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()
 
-	clientBroker := NewMessageBroker(
+	clientBroker := NewMessageBrokerWithOptions(
 		sim.ClientStream(),
 		&SimpleMessageEnvelope{},
 		"client",
 		nil,
 		WithCancellationGracePeriod(time.Second),
 	)
-	serverBroker := NewMessageBroker(
+	serverBroker := NewMessageBrokerWithOptions(
 		sim.ServerStream(),
 		&SimpleMessageEnvelope{},
 		"server",
@@ -1118,14 +1132,14 @@ func TestEndToEnd_DeadlineCancelsMatchingHandler(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()
 
-	clientBroker := NewMessageBroker(
+	clientBroker := NewMessageBrokerWithOptions(
 		sim.ClientStream(),
 		&SimpleMessageEnvelope{},
 		"client",
 		nil,
 		WithCancellationGracePeriod(time.Second),
 	)
-	serverBroker := NewMessageBroker(
+	serverBroker := NewMessageBrokerWithOptions(
 		sim.ServerStream(),
 		&SimpleMessageEnvelope{},
 		"server",

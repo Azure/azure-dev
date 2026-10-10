@@ -202,6 +202,9 @@ func classify(err error) (string, []attribute.KeyValue) {
 		return "ext.run.failed", nil
 	}
 	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if cancellationCode := classifyCancellationCause(err); cancellationCode != "" {
+			return cancellationCode, nil
+		}
 		toolName := normalizeToolName(toolExecErr.Cmd)
 		return fmt.Sprintf("tool.%s.failed", toolName), []attribute.KeyValue{
 			fields.ToolExitCode.Int(toolExecErr.ExitCode),

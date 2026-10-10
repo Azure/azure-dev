@@ -1,0 +1,26 @@
+# Tier 2: read-only deployment preview; requires the cost-gated shared hosted agent setup.
+name: "deploy-preview"
+command: "azd deploy --preview --no-prompt"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:deploy", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+pre:
+  - run: "test -f azure.yaml"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "require the unified shared agent project"
+
+goals:
+  - "Wait for deployment preview to finish with exit code 0. No product prompt is expected."
+  - "Confirm the hosted agent preview reports 'No deployment configuration changes.', 'Known configuration matches; some preview inputs are unresolved.', or 'Would update the hosted agent.' Changes must be limited to metadata, protocols, resources, environment variables, model deployment reference, and container image. Code/runtime, session, safety, endpoint, agent-card, and unavailable artifact contents must not be compared or reported."
+  - "Confirm preview does not show build, package, push, upload, provision, agent creation, or endpoint patch progress. A deployment-preview heading is expected."
+  - "Confirm each azure.ai.project service has no unsupported-preview warning or provider prose. Its host-owned 'Done: Previewing service' progress line is expected, not a project resource comparison."
+  - "Run 'azd deploy --preview --no-prompt --output json' in the same project. Confirm exit code 0 and valid JSON with timestamp and services. Each hosted agent service result must contain message and data; data must have service, agent, status, changes, unknown, and notes."
+  - "Confirm status is noChange, update, or unknown for the existing shared agent. Each change must have group, path, operation, and applicable sanitized before/after values. If resources or protocols differ, confirm their actual values appear in readable output and JSON, not just field paths. Confirm codeArtifact and the generic build/upload uncertainty note are absent from readable output and JSON; excluded properties must not cause update/unknown status."
+  - "Confirm absent properties, empty groups, and normalization-only undeclared CPU/memory, protocols, and enableVnextExperience metadata are omitted from changes in readable output and JSON. Declared false, zero, and empty values must retain their presence in real changes, subject to normal value normalization and redaction. Real removals of remote-only optional properties must still be reported."
+  - "If authored metadata.tags differs from the latest deployed version, confirm metadata.tags appears in readable and JSON changes with ordinary public tag values visible and the matching add/update/remove operation. Add shows all desired tags, update shows full old/new logical lists, and remove shows previous tags. JSON uses matching arrays for logical lists and strings for scalar tags, not opaque escaped wire strings or blanket '[redacted]'. Lists are stored as one string-valued metadata field: adding/removing list items is an update; deleting the whole property is a remove only if it exists remotely. Explicit empty lists/strings remain present. Unchanged tags must be omitted; do not fabricate removals from a previous local file revision when remote tags are absent."
+  - "Confirm unchanged container/image configuration has no Container image section or containerImage operation data, even if ordinary deploy would rebuild. Code-only services must have no synthetic container intent. A real image/registry addition, update, or removal must show the sanitized actual diff; relevant known build/push intent must agree in readable output and JSON. Changed passthrough images do not build/push; relevant container builds (including remote builds) do. No resulting tag, digest, or artifact content may be invented."
+  - "Confirm each azure.ai.project JSON result has no non-empty message and has data with status 'noOp', scope 'deployment', and infrastructurePreviewed false."
+  - "Confirm changed descriptions, metadata, protocols, resources, and literal inline environment values are visible in readable output and JSON, not blanket '[redacted]' merely because they are free text or environment bindings. Description additions show desired text, updates show old/new text, and removals show previous text. Tags retain logical lists. Protect credentials resolved through authored environment substitutions and previous remote binding values; remote-only environment bindings without authored provenance remain protected. The public model deployment identifier and unevaluated Foundry expressions may be shown. Known protected values embedded in other displayed strings must also be sanitized. Confirm neither readable output nor JSON contains URL usernames/passwords, query signatures, fragments, or terminal controls."
+  - "Take a screenshot of the readable preview output."
+  - "Report a finding if preview fails, prompts unexpectedly, runs a deployment step, omits the hosted agent result, leaks sensitive values, invents absent/default-only changes or unchanged container intent, loses declared false/zero/empty values or real removals, reports excluded properties/artifacts, or claims artifact-content equivalence."

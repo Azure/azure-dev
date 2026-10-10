@@ -1,0 +1,418 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package grpcserver
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
+)
+
+type foundryPreviewProject struct {
+	azdext.UnimplementedProjectServiceServer
+	project *azdext.ProjectConfig
+}
+
+func (s *foundryPreviewProject) Get(context.Context, *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+type foundryPreviewEnvironment struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *foundryPreviewEnvironment) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "selected"}}, nil
+}
+
+func (s *foundryPreviewEnvironment) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{KeyValues: []*azdext.KeyValue{
+		{Key: "AZURE_SUBSCRIPTION_ID", Value: "subscription"},
+		{Key: "PREVIEW_TEST_CREDENTIAL", Value: "private-current-secret"},
+		{Key: "FOUNDRY_PROJECT_ENDPOINT", Value: "https://account.services.ai.azure.com/api/projects/project"},
+	}}, nil
+}
+
+type foundryPreviewAccount struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *foundryPreviewAccount) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "user-access-tenant"}, nil
+}
+
+type foundryPreviewExtension struct {
+	azdext.UnimplementedExtensionServiceServer
+	ready chan struct{}
+}
+
+func (s *foundryPreviewExtension) Ready(
+	context.Context, *azdext.ReadyRequest,
+) (*azdext.ReadyResponse, error) {
+	if s.ready != nil {
+		close(s.ready)
+	}
+	return &azdext.ReadyResponse{}, nil
+}
+
+func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
+	binary := os.Getenv("AZD_PREVIEW_EXTENSION_TEST_BINARY")
+	require.NotEmpty(t, binary)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"name: preview\nservices:\n  agent:\n    host: azure.ai.agent\n"+
+			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n"+
+			"  config-update:\n    env:\n      MODE: development\n"+
+			"  protected-update:\n    env:\n      API_KEY: ${PREVIEW_TEST_CREDENTIAL}\n",
+	), 0600))
+	services := map[string]*azdext.ServiceConfig{}
+	for _, name := range []string{
+		"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update",
+		"tags-add", "tags-update", "tags-remove", "tags-unchanged", "tags-empty", "tags-scalar", "tags-safe",
+		"config-update", "protected-update",
+	} {
+		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
+		require.NoError(t, err)
+		services[name] = &azdext.ServiceConfig{
+			Name: name, Host: "azure.ai.agent", AdditionalProperties: props,
+			Image: "registry.example.com/agent:v1", Docker: &azdext.DockerProjectOptions{ImagePassthrough: true},
+		}
+	}
+	services["create"].Environment = map[string]string{
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4.1", "API_KEY": "private-create-secret",
+	}
+	services["create"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"cpu": "0.5", "memory": "1Gi"},
+	})
+	services["create"].AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+		map[string]any{"protocol": "responses", "version": "2.0.0"},
+	})
+	services["create"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
+		"tags": []any{"support"},
+	})
+	services["create"].AdditionalProperties.Fields["description"] =
+		structpb.NewStringValue("A helpful responses agent.")
+	services["config-update"].Environment = map[string]string{"MODE": "development"}
+	services["config-update"].AdditionalProperties.Fields["description"] =
+		structpb.NewStringValue("A helpful responses agent.")
+	services["config-update"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
+		"tags": []any{"responses", "added"},
+	})
+	services["config-update"].AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+		map[string]any{"protocol": "responses", "version": "2.0.1"},
+	})
+	services["config-update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"memory": "2Gi"},
+	})
+	services["protected-update"].Environment = map[string]string{"API_KEY": "private-current-secret"}
+	services["protected-update"].AdditionalProperties.Fields["description"] =
+		structpb.NewStringValue("New private-current-secret instructions.")
+	for name, tags := range map[string][]any{
+		"tags-add": {"support", "responses"}, "tags-update": {"retained", "added"},
+		"tags-unchanged": {"retained", "removed"}, "tags-empty": {},
+		"tags-safe": {"support", "private-known-secret", "https://user:private-password@example.com?sig=private-signature"},
+	} {
+		services[name].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{"tags": tags})
+	}
+	services["tags-scalar"].AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{"tags": "support"})
+	services["tags-safe"].Environment = map[string]string{"API_KEY": "private-known-secret"}
+	services["update"].AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+		"resources": map[string]any{"cpu": "2", "memory": "4Gi"},
+	})
+	services["unknown"].Environment = map[string]string{"VALUE": ""}
+	services["code"].AdditionalProperties.Fields["codeConfiguration"], _ = structpb.NewValue(map[string]any{
+		"runtime": "python_3_13", "entryPoint": "app.py",
+	})
+	services["code"].AdditionalProperties.Fields["sessionConfiguration"], _ = structpb.NewValue(map[string]any{
+		"idleTimeoutSeconds": 123,
+	})
+	services["code"].Image, services["code"].Docker = "", nil
+	services["build"].Image = ""
+	services["build"].Docker.ImagePassthrough = false
+	services["image-update"].Image = "registry.example.com/agent:v2"
+	services["legacy"].Config = services["legacy"].AdditionalProperties
+	services["legacy"].AdditionalProperties = nil
+	extension := &extensions.Extension{
+		Id:           "test.foundry.preview",
+		Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+	}
+	service := NewServiceTargetService(
+		ioc.NewNestedContainer(nil), newStreamTestExtensionManager(t, extension), nil,
+	).(*ServiceTargetService)
+	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
+	server.serviceTargetService = service
+	server.projectService = &foundryPreviewProject{project: &azdext.ProjectConfig{Path: root, Services: services}}
+	server.environmentService = &foundryPreviewEnvironment{}
+	server.accountService = &foundryPreviewAccount{}
+	server.extensionService = &foundryPreviewExtension{}
+	info, err := server.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.Stop()) })
+	token, err := GenerateExtensionToken(extension, info)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	//nolint:gosec // Test binary is built by the extension-local integration runner.
+	process := exec.CommandContext(ctx, binary, "-test.run=^TestPreviewExtensionProcess$", "-test.v")
+	process.Env = append(os.Environ(),
+		"AZD_SERVER="+info.Address, "AZD_ACCESS_TOKEN="+token,
+		"AZD_PREVIEW_EXTENSION_PROCESS=true", "AZD_EXTENSION_ID="+extension.Id,
+		"AGENT_DEFINITION_PATH=", "AZD_EXT_DEBUG=false", "AZD_DEBUG=false",
+	)
+	var processOutput bytes.Buffer
+	process.Stdout = &processOutput
+	process.Stderr = &processOutput
+	require.NoError(t, process.Start())
+	t.Cleanup(func() {
+		cancel()
+		_ = process.Wait()
+		if t.Failed() {
+			t.Log(processOutput.String())
+		}
+	})
+	require.Eventually(t, func() bool {
+		service.providerMapMu.Lock()
+		defer service.providerMapMu.Unlock()
+		return service.previewMap["azure.ai.agent"] != nil && service.providerMap["azure.ai.agent"] != nil
+	}, 10*time.Second, 10*time.Millisecond)
+	preview := service.previewFunc("azure.ai.agent", extension.Id)
+	for _, tc := range []struct{ name, status string }{
+		{"agent", "noChange"}, {"create", "create"}, {"update", "update"}, {"unknown", "unknown"},
+		{"code", "noChange"}, {"build", "noChange"}, {"image-update", "update"},
+		{"tags-add", "update"}, {"tags-update", "update"}, {"tags-remove", "update"}, {"tags-unchanged", "noChange"},
+		{"tags-empty", "update"}, {"tags-scalar", "update"}, {"tags-safe", "update"},
+		{"config-update", "update"}, {"protected-update", "update"},
+	} {
+		result, err := preview(ctx, services[tc.name])
+		require.NoError(t, err)
+		require.Equal(t, tc.status, result.Data["status"])
+		require.NotEmpty(t, result.Message)
+		require.NotContains(t, result.Message, "private-create-secret")
+		if tc.name == "create" || tc.name == "image-update" {
+			require.Equal(t, map[string]any{"build": false, "push": false}, result.Data["containerImage"])
+		} else {
+			require.NotContains(t, result.Data, "containerImage")
+			require.NotContains(t, result.Message, "  Container image:")
+		}
+		require.NotContains(t, result.Message, "metadata.enableVnextExperience")
+		require.NotContains(t, result.Message, "private-")
+		encoded, err := json.Marshal(result.Data)
+		require.NoError(t, err)
+		require.NotContains(t, string(encoded), "private-")
+		if tc.name == "config-update" {
+			for _, line := range []string{
+				`update: description: "A basic responses agent." -> "A helpful responses agent."`,
+				`update: metadata.tags: ["responses","removed"] -> ["responses","added"]`,
+				`update: definition.memory: "1Gi" -> "2Gi"`,
+				`add: definition.environment_variables.MODE: "development"`,
+			} {
+				require.Contains(t, result.Message, line)
+			}
+			require.Contains(t, string(encoded), `"after":"A helpful responses agent."`)
+			require.Contains(t, string(encoded), `"before":"A basic responses agent."`)
+			require.NotContains(t, string(encoded), "[redacted]")
+		}
+		if tc.name == "protected-update" {
+			require.Contains(t, result.Message,
+				`update: description: "Old [redacted] instructions." -> "New [redacted] instructions."`)
+			require.Contains(t, result.Message,
+				`update: definition.environment_variables.API_KEY: "[redacted]" -> "[redacted]"`)
+		}
+		tagChanges := map[string]struct {
+			operation string
+			line      string
+			before    any
+			after     any
+		}{
+			"create": {operation: "add", line: `add: metadata.tags: ["support"]`, after: []any{"support"}},
+			"tags-add": {operation: "add", line: `add: metadata.tags: ["support","responses"]`,
+				after: []any{"support", "responses"}},
+			"tags-update": {operation: "update",
+				line:   `update: metadata.tags: ["retained","removed"] -> ["retained","added"]`,
+				before: []any{"retained", "removed"}, after: []any{"retained", "added"}},
+			"tags-remove": {operation: "remove", line: `remove: metadata.tags: ["retained","removed"] -> (removed)`,
+				before: []any{"retained", "removed"}},
+			"tags-empty": {operation: "update", line: `update: metadata.tags: ["retained","removed"] -> []`,
+				before: []any{"retained", "removed"}, after: []any{}},
+			"tags-scalar": {operation: "update", line: `update: metadata.tags: ["retained","removed"] -> "support"`,
+				before: []any{"retained", "removed"}, after: "support"},
+			"tags-safe": {operation: "add", line: `add: metadata.tags: ["support","[redacted]","https://example.com"]`,
+				after: []any{"support", "[redacted]", "https://example.com"}},
+		}
+		if expected, hasTags := tagChanges[tc.name]; hasTags {
+			require.Contains(t, result.Message, expected.line)
+			changes, ok := result.Data["changes"].([]any)
+			require.True(t, ok)
+			if tc.name != "create" && tc.name != "tags-safe" {
+				require.Len(t, changes, 1)
+			}
+			found := false
+			for _, item := range changes {
+				change, ok := item.(map[string]any)
+				require.True(t, ok)
+				if change["path"] == "metadata.tags" {
+					found = true
+					require.Equal(t, expected.operation, change["operation"])
+					if expected.before != nil {
+						require.Equal(t, expected.before, change["before"])
+					} else {
+						require.NotContains(t, change, "before")
+					}
+					if expected.after != nil {
+						require.Equal(t, expected.after, change["after"])
+					} else {
+						require.NotContains(t, change, "after")
+					}
+				}
+			}
+			require.True(t, found)
+		}
+		if tc.name == "tags-unchanged" {
+			require.Empty(t, result.Data["changes"])
+			require.NotContains(t, result.Message, "  Metadata:")
+		}
+		for _, excluded := range []string{
+			"codeArtifact", "code_configuration", "session_configuration", "agent_endpoint", "agent_card", "build/upload",
+		} {
+			require.NotContains(t, result.Message, excluded)
+			require.NotContains(t, string(encoded), excluded)
+		}
+		if tc.name == "code" || tc.name == "build" {
+			require.Empty(t, result.Data["changes"])
+			require.Empty(t, result.Data["unknown"])
+		}
+		if tc.name == "image-update" {
+			require.Contains(t, result.Message,
+				`update: definition.container_configuration.image: "registry.example.com/agent:v1" -> `+
+					`"registry.example.com/agent:v2"`)
+		}
+		if tc.name == "create" || tc.name == "update" {
+			changes, ok := result.Data["changes"].([]any)
+			require.True(t, ok)
+			cpuFound := false
+			for _, item := range changes {
+				change, ok := item.(map[string]any)
+				require.True(t, ok)
+				if change["path"] == "definition.cpu" {
+					cpuFound = true
+					if tc.name == "create" {
+						require.NotContains(t, change, "before")
+						require.Equal(t, "0.5", change["after"])
+						require.Contains(t, result.Message, `add: definition.cpu: "0.5"`)
+					} else {
+						require.Equal(t, "0.5", change["before"])
+						require.Equal(t, "2", change["after"])
+						require.Contains(t, result.Message, `update: definition.cpu: "0.5" -> "2"`)
+					}
+				}
+				if change["path"] == "definition.environment_variables.API_KEY" {
+					require.Equal(t, "[redacted]", change["after"])
+				}
+			}
+			require.True(t, cpuFound, "host forwarding must preserve configuration values")
+		}
+	}
+	_, err = preview(ctx, services["legacy"])
+	require.ErrorContains(t, err, "unsupported for legacy")
+	unsupported := service.previewFunc("not-registered", extension.Id)
+	_, err = unsupported(ctx, services["agent"])
+	require.ErrorIs(t, err, project.ErrDeployPreviewNotSupported)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "preview must not create extension state")
+}
+
+func TestFoundryProjectPreviewAgainstMainHost(t *testing.T) {
+	binary := os.Getenv("AZD_PROJECT_PREVIEW_EXTENSION_TEST_BINARY")
+	require.NotEmpty(t, binary)
+	root := t.TempDir()
+	config, err := project.Parse(t.Context(), "name: preview\nservices:\n  ai-project:\n    host: azure.ai.project\n")
+	require.NoError(t, err)
+	config.Path = root
+	extension := &extensions.Extension{
+		Id: "test.foundry.project.preview",
+		Capabilities: []extensions.CapabilityType{
+			extensions.ServiceTargetProviderCapability, extensions.ProvisioningProviderCapability,
+			extensions.ValidationProviderCapability, extensions.LifecycleEventsCapability,
+		},
+	}
+	container := ioc.NewNestedContainer(nil)
+	manager := newStreamTestExtensionManager(t, extension)
+	service := NewServiceTargetService(container, manager, nil).(*ServiceTargetService)
+	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
+	server.serviceTargetService = service
+	server.provisioningService = NewProvisioningService(container, manager)
+	server.validationService = NewValidationService(manager)
+	server.eventService = NewEventService(manager, nil, lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return config, nil
+	}), nil, nil, nil)
+	ready := make(chan struct{})
+	server.extensionService = &foundryPreviewExtension{ready: ready}
+	info, err := server.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.Stop()) })
+	token, err := GenerateExtensionToken(extension, info)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	//nolint:gosec // Test binary is built by the extension-local integration runner.
+	process := exec.CommandContext(ctx, binary, "-test.run=^TestProjectPreviewExtensionProcess$", "-test.v")
+	process.Env = append(os.Environ(),
+		"AZD_SERVER="+info.Address, "AZD_ACCESS_TOKEN="+token, "AZD_EXTENSION_ID="+extension.Id,
+		"AZD_PROJECT_PREVIEW_EXTENSION_PROCESS=true", "AZD_EXT_DEBUG=false", "AZD_DEBUG=false",
+	)
+	var processOutput bytes.Buffer
+	process.Stdout = &processOutput
+	process.Stderr = &processOutput
+	require.NoError(t, process.Start())
+	t.Cleanup(func() {
+		cancel()
+		_ = process.Wait()
+		if t.Failed() {
+			t.Log(processOutput.String())
+		}
+	})
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("project extension did not finish production provider registration")
+	}
+	result, err := service.previewFunc("azure.ai.project", extension.Id)(ctx, &azdext.ServiceConfig{
+		Name: "ai-project", Host: "azure.ai.project",
+	})
+	require.NoError(t, err, "registered no-op preview must not return the unsupported-preview error")
+	require.NotNil(t, result)
+	require.Empty(t, result.Message)
+	require.Equal(t, map[string]any{
+		"status": "noOp", "scope": "deployment", "infrastructurePreviewed": false,
+	}, result.Data)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Empty(t, entries, "preview must not create project state")
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	path := os.Getenv("AZD_PROJECT_PREVIEW_TEST_RESULT")
+	require.NotEmpty(t, path)
+	//nolint:gosec // Task-local result path is supplied by the integration runner.
+	require.NoError(t, os.WriteFile(path, encoded, 0600))
+}

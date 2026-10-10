@@ -1,5 +1,188 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Hosted agent deployment preview
+
+With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
+project, use the core deployment command:
+
+```bash
+azd deploy <service> --preview --no-prompt
+azd deploy <service> --preview --no-prompt --output json
+```
+
+Preview supports `host: azure.ai.agent`, `kind: hosted` definitions declared at
+service level in unified `azure.yaml`. Legacy `agent.yaml`/`agent.manifest.yaml`
+projects, whole agent-file references, deprecated nested `config`, and
+`AGENT_DEFINITION_PATH` overrides return an unsupported error with migration
+guidance. Local references to individual fields or fragments remain supported.
+Unused legacy files do not override an inline definition. Prompt, voice, and
+workflow agent definitions are outside this preview's scope. There is no
+standalone `azd ai agent deploy` or `--dry-run` command.
+
+The provider reads the latest remote agent version and compares the declared,
+in-scope properties with its configuration, using normal deployment normalization. It
+reports `create` on a missing agent, `update` for known differences, `noChange`
+when the in-scope known configuration matches, or `unknown` when it matches but
+an in-scope input or image-source choice is unresolved.
+
+Comparison and output are limited to six groups: metadata (name, description,
+and `metadata` tags), protocols, resources (CPU/memory), environment variables,
+model deployment reference, and container image/build-push intent. Code settings,
+session settings, content safety, endpoint settings, agent cards, and unavailable
+artifact contents are not compared or reported, and do not affect change counts
+or statuses. Additions show the desired value, updates show `before -> after`,
+and removals show the old value followed by `(removed)`.
+
+Absent properties and empty groups are omitted from both readable and structured
+changes. Field/fragment references retain their effective authored presence.
+Normalization-only defaults, including undeclared CPU/memory, protocols, and
+`enableVnextExperience` metadata, do not create differences. Declared zero, false,
+and empty values are not treated as absent; normal value normalization and
+credential sanitization still apply. Remote-only optional metadata/environment/image properties
+remain real removals when the new request removes them.
+
+Ordinary in-scope values are visible, including descriptions, metadata, protocol
+versions, CPU/memory, and literal service environment bindings. There is no
+blanket redaction based on a property's name or free-text type. Tags are shown
+as logical lists or scalar strings; false, zero, and empty values keep their types.
+Fields outside the six groups remain excluded.
+
+Credential protection is targeted at environment-resolution boundaries.
+Preview reads the effective authored source, including references, to distinguish
+literal environment bindings from `${VAR}` substitutions. Substituted bindings
+and remote-only bindings without authored provenance remain protected; the
+public model deployment identifier remains visible. Foundry `${{...}}`
+expressions stay unevaluated and visible. Known resolved values and protected
+previous remote binding values are also removed if embedded in descriptions,
+metadata, tags, or other displayed strings. Current source cannot recover
+historical secret provenance when a binding is now literal; it does not guess
+sensitivity from names.
+URL usernames/passwords, query strings, and fragments are always stripped, and
+terminal control characters are neutralized. Keep credentials in environment
+substitutions rather than inline configuration. Sanitization affects display
+only, not comparison.
+
+Agent tags belong under the service's `metadata.tags`, not project/resource
+provisioning tags. Both ordinary deployment and preview accept a string or a
+list of strings:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - customer-support
+        - responses
+```
+
+Foundry agent metadata is a string-valued dictionary. The extension stores a
+tag list as a JSON array string at `metadata.tags`, preserving commas and empty
+items; existing string values are unchanged. List additions/removals therefore
+appear as an `update: metadata.tags` change. Removing the entire `tags` property
+reports `remove: metadata.tags` if the latest remote version contains it.
+Explicit `tags: []` and `tags: ""` remain present values, not missing properties.
+Invalid tag types fail instead of silently disappearing. Preview decodes the
+known JSON string-list form for display: additions show all desired tags,
+updates show the old and new lists, and removals show the previous tags. JSON
+uses the same sanitized logical arrays or scalar strings. Explicit empty lists
+and strings remain `[]` and `""`. Comparison uses the actual values before
+sanitization, so different credentials still produce a change even when their
+display values are both redacted.
+
+Preview compares against the latest deployed version, not a previous local
+file revision. A deleted local tag that was never deployed cannot appear as a
+remote removal; a missing remote agent reports creation and only additions.
+If the remote version has no tags, preview reports `add` with the full desired
+list, not individual removals from a previous local edit.
+
+For example:
+
+```text
+  Metadata:
+    update: description: "A basic responses agent." -> "A helpful responses agent."
+    update: metadata.tags: ["retained","removed"] -> ["retained","added"]
+  Resources:
+    update: definition.cpu: "0.5" -> "2"
+  Environment variables:
+    update: definition.environment_variables.MODE: "production" -> "development"
+    add: definition.environment_variables.API_KEY: "[redacted]"
+  Container image:
+    build: true
+    push: true
+```
+
+Image passthrough compares the configured image reference, including a private
+registry connection. The Container image group and optional JSON `containerImage`
+intent are change-only: creating a container-based agent or changing its known
+image/registry configuration can include relevant build/push intent. Unchanged
+container configuration is omitted, even if normal deployment would always
+rebuild. A changed passthrough image shows its sanitized reference diff and
+`build: false` / `push: false`; a relevant container build reports true/true,
+including remote builds, without inventing a resulting tag/digest.
+
+Code-only services have no container intent or synthetic false/false section;
+code packaging and upload content remain excluded. Switching from a deployed
+container definition to code can still report removal of the old image reference.
+If a relevant normal interactive deployment would ask whether to build or use
+a configured image, intent is unknown. With `--no-prompt`, the normal default is
+build. The legacy `AZD_AGENT_SKIP_ACR=true` marker selects a configured pre-built
+image.
+
+Equal image tags do not prove their mutable content is unchanged. Unset `${VAR}`
+inputs in service `env` or a selected passthrough `image` remain unknown rather
+than empty-value changes; explicit empty values and `${VAR:-default}` retain
+their ordinary meanings. Foundry `${{...}}` expressions are preserved, not
+evaluated or resolved to credentials.
+
+The existing host JSON envelope contains `timestamp` and `services`. Provider
+results are at `services.<service>.data`, with `service`, `agent`, `status`,
+`changes` (each has `group`, `path`, `operation` and the applicable sanitized
+`before`/`after` values), `unknown`, and `notes`. Optional `containerImage` has
+boolean `build`/`push` intent for relevant container changes (null when a relevant
+image-source choice is unresolved); it is absent for code-only and unchanged
+container configurations. JSON
+uses the same sanitized values as readable output.
+Create, update, no-change, and unknown previews succeed; configuration,
+authentication, permission, connectivity, and malformed-response errors fail.
+`noChange` describes only the declared, in-scope configuration and actual optional
+removals, not normalization-only defaults or artifact content equivalence:
+ordinary deploy still creates a new agent version.
+
+### Read-only boundary and inherited host limitations
+
+The provider runs on a fresh instance without `Initialize`, uses only project,
+environment, and tenant reads plus the Foundry agent GET, and returns output to
+the host. It never calls deployment writes, prompts, builds, uploads, provisioning,
+or extension-owned state persistence. Normal deployment remains on the stable
+service-target lifecycle. Sensitive provider values are redacted and
+credential-bearing URLs are sanitized; provider errors do not echo raw API bodies
+or authored values.
+
+The `azure.ai.project` provider returns a silent deployment no-op preview, so a
+project dependency does not produce an unsupported-preview warning. The host
+still displays its per-service progress line; project JSON explicitly marks
+deployment as a no-op, not an infrastructure comparison.
+
+The unchanged azd host skips package/publish/deploy and deployment hooks, but its
+ordinary project/environment-loading path still runs. Environment selection or
+loading can prompt, download remote environment state, or save host-managed
+environment defaults before the provider is called. This is not a host-wide
+no-filesystem-writes guarantee; use an already initialized, selected local
+environment with `--no-prompt`. Services filtered out by conditions are not
+previewed. Hosts without a preview provider skip that service with a warning;
+skipped services are absent from JSON results. Preview does not evaluate
+infrastructure/dependency changes or deployment readiness, and compares the latest
+version, not necessarily the version receiving endpoint traffic. The host rejects
+`--timeout` and non-empty `--from-package` with `--preview`.
+
+Offline regression coverage includes an
+[integration runner against the unchanged main host](tests/host-preview/README.md).
+The optional [live preview scenario](tests/cli-interactive-tester-scenarios/tier2/2.17a-deploy-preview.yaml)
+is driven through `foundry-extension-scenario-orchestrator`; its setup incurs Azure
+cost and is not run automatically.
+
 ## Extension telemetry API
 
 Extension code reports best-effort usage events through the shared

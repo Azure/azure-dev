@@ -392,10 +392,21 @@ func TestLoadAgentDefinitionFilePathValidation(t *testing.T) {
 		require.Equal(t, "definitions/agent.yaml", got.Path)
 	})
 	t.Run("relative project root", func(t *testing.T) {
-		cwd, err := os.Getwd()
+		relativeRoot, err := os.MkdirTemp(".", "agent-definition-project-")
 		require.NoError(t, err)
-		relativeRoot, err := filepath.Rel(cwd, root)
-		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, os.RemoveAll(relativeRoot))
+		})
+		require.NoError(t, os.MkdirAll(
+			filepath.Join(relativeRoot, "definitions"),
+			0o750,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(relativeRoot, "definitions", "agent.yaml"),
+			content,
+			0o600,
+		))
+
 		got, err := LoadAgentDefinitionFile(relativeRoot, "definitions/agent.yaml", "")
 		require.NoError(t, err)
 		require.Equal(t, "definitions/agent.yaml", got.Path)

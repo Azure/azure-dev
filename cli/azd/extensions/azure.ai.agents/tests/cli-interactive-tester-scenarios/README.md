@@ -344,6 +344,7 @@ in any order, any time.
 | `tier0/0.27-agent-add-ambiguous-connection.yaml` | `agent add` rejects an ambiguous local Connection name |
 | `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
 | `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
+| `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -720,12 +721,13 @@ Telemetry and update checks are disabled in the scenario environment.
 ### Offline Agent add fixtures
 
 `fixtures/agent-add/` contains local project variants and direct prompt
-definitions for the `0.24`–`0.29` Tier 0 scenarios. Each scenario copies only
+definitions for the `0.24`–`0.30` Tier 0 scenarios. Each scenario copies only
 its project YAML and required definitions into its own `{instance}` directory.
 The fixtures exercise a new Agent service, an update with existing azd-owned
 fields, missing or ambiguous local Connection references, multiple Project
-services, and out-of-project paths. They contain no credentials, deployable
-source, or live endpoint; no fixture is fetched or deployed.
+services, a target service key owned by a non-Agent host, and out-of-project
+paths. They contain no credentials, deployable source, or live endpoint; no
+fixture is fetched or deployed.
 
 `0.19-standalone-deploy-migration` isolates the negative migration flow from both happy paths.
 It rejects standalone Agent deploy and both old add-order commands, verifies no project mutation

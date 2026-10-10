@@ -164,6 +164,20 @@ Use `--version-bump major` (default), `--version-bump minor`, or `--version-bump
 
 The publish command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
 
+Lime experiment-tracking routing is opt-in at publish time:
+
+```powershell
+azd ai rle publish --lime-routing disabled
+azd ai rle publish --lime-routing same-project
+azd ai rle publish --lime-routing custom --lime-project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+`--lime-routing legacy` and omitting the flag both omit `lime_configuration` from the request, preserving the existing server behavior. `disabled` requests `{"enabled":false}`; `same-project` requests the publish project's Lime destination; `custom` requests the specified Foundry project as the Lime destination. The custom endpoint must be an HTTPS Foundry project URL in the publish project's cloud, without a port, trailing slash, credentials, query, or fragment. `--lime-project-endpoint` is only accepted with `custom`. Routing choices are **not** stored in `.azd-rle.json` or inferred from saved endpoints; specify them on each publish. The summary reports the **requested routing**, not confirmation that telemetry was delivered, and does not display the custom endpoint.
+
+This extension remains preview-gated by `AZD_AI_RLE_ENABLE=true`. Production public API mapping of `lime_configuration` is an external dependency tracked by [Task 5717034](https://dev.azure.com/msdata/Vienna/_workitems/edit/5717034); these CLI flags do not imply hosted RLE support is deployed.
+
+For custom routing failures, the command retains the HTTP status but does not display server-provided error codes or messages, which may contain the destination endpoint or credentials. Check the destination project and its access permissions.
+
 If needed, override the Dockerfile path the same way as local run:
 
 ```powershell

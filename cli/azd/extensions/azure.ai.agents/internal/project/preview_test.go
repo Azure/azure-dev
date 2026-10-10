@@ -340,7 +340,7 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 	})
 	service.AdditionalProperties.Fields["description"] = structpb.NewStringValue("private-description")
 	service.AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{
-		"arbitrary": "private-metadata", "tags": "private-tags",
+		"arbitrary": "private-metadata", "tags": "customer-support",
 	})
 	service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
 		"resources": map[string]any{"cpu": "0.5", "memory": "1Gi"},
@@ -377,7 +377,7 @@ func TestPreviewCreateIncludesSafeValues(t *testing.T) {
 		`add: definition.environment_variables.NUMBER: "[redacted]"`,
 		`add: description: "[redacted]"`,
 		`add: metadata.arbitrary: "[redacted]"`,
-		`add: metadata.tags: "[redacted]"`,
+		`add: metadata.tags: "customer-support"`,
 	} {
 		require.Contains(t, result.Message, line)
 	}

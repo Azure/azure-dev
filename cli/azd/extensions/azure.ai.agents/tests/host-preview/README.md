@@ -16,8 +16,9 @@ The test exercises stable registration, beta preview registration and forwarding
 fresh providers without `Initialize`, create/update/no-change/unknown results,
 six-group presence-aware comparison, omitted normalization-only defaults and
 absent/code-only/unchanged container groups, conditional build/push booleans,
-image-reference updates, authored metadata tag list additions/updates/removals
-and unchanged omission through production request mapping, ignored
+image-reference updates, visible logical tag lists on additions/updates/removals,
+scalar and empty tags, and unchanged omission through production request mapping,
+tag URL/known-environment-secret sanitization and typed JSON forwarding, ignored
 code/session/artifact differences, safe values/redaction, and legacy errors.
 It also uses the projects extension's production registration
 to verify a silent no-op preview, without project/environment/account reads.

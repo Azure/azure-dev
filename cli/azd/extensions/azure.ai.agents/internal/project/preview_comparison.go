@@ -282,12 +282,28 @@ var (
 )
 
 // previewDisplayValue is deny-by-default: new API fields must opt in before their
-// values can reach either terminal or JSON output. Free-form text stays redacted.
+// values can reach either terminal or JSON output. Only tags opt in as free-form text.
 func previewDisplayValue(path string, value any, clean func(string) string) any {
 	if text, ok := value.(string); ok && text == "" && previewFieldGroup(path) != "" {
 		return text
 	}
 	switch path {
+	case "metadata.tags":
+		if text, ok := value.(string); ok {
+			// Lists use a string-valued wire field; decode only actual string lists.
+			var tags []any
+			if json.Unmarshal([]byte(text), &tags) == nil && tags != nil {
+				for i, item := range tags {
+					tag, ok := item.(string)
+					if !ok {
+						return clean(text)
+					}
+					tags[i] = clean(tag)
+				}
+				return tags
+			}
+			return clean(text)
+		}
 	case "definition.cpu", "definition.memory":
 		if text, ok := value.(string); ok && previewQuantity.MatchString(text) {
 			return text

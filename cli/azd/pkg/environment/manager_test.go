@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -326,6 +327,43 @@ func Test_EnvManager_Save(t *testing.T) {
 		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 	})
+}
+
+func TestEnvManagerSaveSelectedKeys(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	local := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	seed := NewWithValues("test", map[string]string{
+		"KEY": "remove-me", "KEEP": "original", "DYLD_KEEP": "raw-unrelated",
+	})
+	require.NoError(t, seed.Config.Set("app.enabled", true))
+	require.NoError(t, local.Save(t.Context(), seed, nil))
+	env, err := local.Get(t.Context(), "test")
+	require.NoError(t, err)
+	concurrent, err := local.Get(t.Context(), "test")
+	require.NoError(t, err)
+	concurrent.DotenvSet("KEEP", "concurrent-value")
+	concurrent.DotenvSet("ADDED", "concurrent-addition")
+	require.NoError(t, concurrent.Config.Set("app.enabled", false))
+	require.NoError(t, local.Save(t.Context(), concurrent, nil))
+	env.DotenvDelete("KEY")
+	options := &SaveOptions{DotenvKeys: []string{"KEY"}}
+	remote := &MockDataStore{}
+	remote.On("Save", t.Context(), env, options).Run(func(mock.Arguments) {
+		marshalled, err := marshallDotEnv(env)
+		require.NoError(t, err)
+		values, err := godotenv.Unmarshal(marshalled)
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{
+			"KEEP": "concurrent-value", "ADDED": "concurrent-addition", "DYLD_KEEP": "raw-unrelated",
+		}, values)
+		require.Equal(t, map[string]any{"app": map[string]any{"enabled": false}}, env.Config.Raw())
+	}).Return(nil).Once()
+
+	manager := newManagerForTest(azdCtx, mockContext.Console, local, remote)
+	require.NoError(t, manager.SaveWithOptions(t.Context(), env, options))
+	remote.AssertExpectations(t)
 }
 
 func Test_EnvManager_CreateFromContainer(t *testing.T) {

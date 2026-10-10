@@ -31,6 +31,17 @@ interface AzdConfigOption {
 	EnvVar?: string;
 }
 
+function getEnvironmentVariableSuggestions(out: string): Fig.Suggestion[] {
+	try {
+		const envVars: Record<string, string> = JSON.parse(out);
+		return Object.keys(envVars).map((key) => ({
+			name: key,
+		}));
+	} catch {
+		return [];
+	}
+}
+
 const azdGenerators: Record<string, Fig.Generator> = {
 	listEnvironments: {
 		script: ['azd', 'env', 'list', '--output', 'json'],
@@ -48,16 +59,12 @@ const azdGenerators: Record<string, Fig.Generator> = {
 	},
 	listEnvironmentVariables: {
 		script: ['azd', 'env', 'get-values', '--output', 'json'],
-		postProcess: (out) => {
-			try {
-				const envVars: Record<string, string> = JSON.parse(out);
-				return Object.keys(envVars).map((key) => ({
-					name: key,
-				}));
-			} catch {
-				return [];
-			}
-		},
+		postProcess: getEnvironmentVariableSuggestions,
+	},
+	listEnvironmentVariablesForUnset: {
+		script: ['azd', 'env', 'get-values', '--output', 'json'],
+		postProcess: (out) => getEnvironmentVariableSuggestions(out)
+			.filter((suggestion) => suggestion.name !== 'AZURE_ENV_NAME'),
 	},
 	listTemplates: {
 		script: ['azd', 'template', 'list', '--output', 'json'],

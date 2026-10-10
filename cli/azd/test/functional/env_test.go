@@ -8,15 +8,287 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
+
+func Test_CLI_Env_Unset(t *testing.T) {
+	secretRef := "akvs://sub-id/vault-name/secret-name" //nolint:gosec // G101: test fixture, not a credential
+	tests := []struct {
+		name               string
+		args               []string
+		defaultEnvironment string
+		processEnvironment string
+		targetEnvironment  string
+		errorContains      string
+		removedKeys        []string
+		withoutForce       bool
+		stdin              string
+		outputContains     []string
+	}{
+		{
+			name:               "DefaultEnvironment",
+			args:               []string{"KEY1", "KEY2", "SECRET", "KEY1", "MISSING"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env1",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
+			outputContains:     []string{`Environment value "MISSING"`, `"env1"`, "was ignored"},
+		},
+		{
+			name:               "LongEnvironmentFlag",
+			args:               []string{"KEY1", "KEY2", "SECRET", "--environment", "env2"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
+		},
+		{
+			name:               "ShortEnvironmentFlag",
+			args:               []string{"KEY1", "KEY2", "SECRET", "-e", "env2"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
+		},
+		{
+			name:               "ProcessEnvironment",
+			args:               []string{"KEY1", "KEY2", "SECRET"},
+			defaultEnvironment: "env1",
+			processEnvironment: "env2",
+			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
+		},
+		{
+			name:               "FlagOverridesProcessEnvironment",
+			args:               []string{"KEY1", "KEY2", "SECRET", "-e", "env1"},
+			defaultEnvironment: "env1",
+			processEnvironment: "env2",
+			targetEnvironment:  "env1",
+			removedKeys:        []string{"KEY1", "KEY2", "SECRET"},
+		},
+		{
+			name:              "ExplicitEnvironmentWithoutDefault",
+			args:              []string{"KEY1", "KEY2", "SECRET", "-e", "env2"},
+			targetEnvironment: "env2",
+			removedKeys:       []string{"KEY1", "KEY2", "SECRET"},
+		},
+		{
+			name:               "ExplicitRicardoEnvironment",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
+		},
+		{
+			name:               "ConfirmedSingleValue",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
+			withoutForce:       true,
+			stdin:              "y\n",
+			outputContains:     []string{`Environment value "foo"`, `environment "ricardo"`, "Do you want to continue?"},
+		},
+		{
+			name:               "ConfirmedMultipleValues",
+			args:               []string{"KEY1", "KEY2", "-e", "env2"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env2",
+			removedKeys:        []string{"KEY1", "KEY2"},
+			withoutForce:       true,
+			stdin:              "y\n",
+			outputContains:     []string{`Environment values "KEY1", "KEY2"`, `environment "env2"`},
+		},
+		{
+			name:               "DeclinedConfirmation",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			stdin:              "n\n",
+			outputContains:     []string{"No environment values were removed."},
+		},
+		{
+			name:               "ConfirmationDefaultsToNo",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			stdin:              "\n",
+			outputContains:     []string{"No environment values were removed."},
+		},
+		{
+			name:               "NoPromptRequiresForce",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			errorContains:      "requires confirmation",
+			outputContains:     []string{"--force"},
+		},
+		{
+			name:               "MissingOnlyWithoutForce",
+			args:               []string{"MISSING", "MISSING", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			outputContains:     []string{`Environment value "MISSING"`, `"ricardo"`, "was ignored"},
+		},
+		{
+			name:               "MissingEnvironment",
+			args:               []string{"KEY1", "-e", "missing"},
+			defaultEnvironment: "env1",
+			errorContains:      environment.ErrNotFound.Error(),
+		},
+		{
+			name:          "NoEnvironmentSelected",
+			args:          []string{"KEY1"},
+			errorContains: environment.ErrNameNotSpecified.Error(),
+		},
+		{
+			name:          "NoKeys",
+			errorContains: "requires at least 1 arg(s)",
+		},
+		{
+			name:               "EmptyKeyAfterValidKey",
+			args:               []string{"KEY1", ""},
+			defaultEnvironment: "env1",
+			errorContains:      "key must not be empty",
+		},
+		{
+			name:               "ManagedKeyWithForce",
+			args:               []string{environment.EnvNameEnvVarName, "-e", "env2"},
+			defaultEnvironment: "env1",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "ManagedKeyWithoutForce",
+			args:               []string{environment.EnvNameEnvVarName},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			stdin:              "y\n",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "ManagedKeyAfterValidKey",
+			args:               []string{"KEY1", environment.EnvNameEnvVarName, "-e", "env2"},
+			defaultEnvironment: "env1",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "RepeatedManagedKeyBeforeValidKey",
+			args:               []string{environment.EnvNameEnvVarName, environment.EnvNameEnvVarName, "KEY1"},
+			defaultEnvironment: "env1",
+			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:          "ManagedKeyWithoutEnvironment",
+			args:          []string{environment.EnvNameEnvVarName},
+			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+		},
+		{
+			name:               "ManagedKeyDifferentCase",
+			args:               []string{"azure_env_name"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "env1",
+			removedKeys:        []string{"azure_env_name"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newTestContext(t)
+			defer cancel()
+			dir := tempDirWithDiagnostics(t)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte("name: test\n"), 0600))
+			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+			store := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+			valuesBefore := make(map[string]map[string]string)
+			configBefore := make(map[string][]byte)
+			for _, name := range []string{"env1", "env2", "ricardo"} {
+				valuesBefore[name] = map[string]string{
+					environment.EnvNameEnvVarName: name,
+					"azure_env_name":              "ordinary-value",
+					"KEY1":                        "value1",
+					"KEY2":                        "value2",
+					"SECRET":                      secretRef,
+					"KEEP":                        "unchanged",
+					"foo":                         "foo-value",
+					"Foo":                         "different-case-value",
+				}
+				env := environment.NewWithValues(name, valuesBefore[name])
+				require.NoError(t, env.Config.Set("KEY1", "config-value"))
+				require.NoError(t, store.Save(ctx, env, &environment.SaveOptions{IsNew: true}))
+				var err error
+				configBefore[name], err = os.ReadFile(store.ConfigPath(env))
+				require.NoError(t, err)
+			}
+			require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{
+				DefaultEnvironment: tt.defaultEnvironment,
+			}))
+
+			cli := azdcli.NewCLI(t)
+			cli.WorkingDirectory = dir
+			cli.Env = append(os.Environ(), cli.Env...)
+			cli.Env = append(cli.Env,
+				"AZD_CONFIG_DIR="+tempDirWithDiagnostics(t),
+				"AZURE_DEV_COLLECT_TELEMETRY=no",
+				"AZD_SKIP_FIRST_RUN=true",
+				"AZD_FORCE_TTY=false",
+				"NO_COLOR=1",
+				"AZURE_ENV_NAME="+tt.processEnvironment,
+			)
+			args := []string{"env", "unset"}
+			if tt.stdin != "" {
+				args = append(args, "--no-prompt=false")
+			} else {
+				args = append(args, "--no-prompt")
+			}
+			if !tt.withoutForce {
+				args = append(args, "--force")
+			}
+			args = append(args, tt.args...)
+			result, err := cli.RunCommandWithStdIn(ctx, tt.stdin, args...)
+			require.NotNil(t, result)
+			if tt.errorContains != "" {
+				require.Error(t, err)
+				require.Contains(t, result.Stdout+result.Stderr, tt.errorContains)
+			} else {
+				require.NoError(t, err)
+				if tt.stdin == "" && len(tt.outputContains) == 0 {
+					require.Empty(t, result.Stdout)
+				}
+			}
+			for _, message := range tt.outputContains {
+				require.Contains(t, result.Stdout+result.Stderr, message)
+			}
+
+			for _, name := range []string{"env1", "env2", "ricardo"} {
+				env := environment.New(name)
+				persisted, err := godotenv.Read(store.EnvPath(env))
+				require.NoError(t, err)
+				want := maps.Clone(valuesBefore[name])
+				if name == tt.targetEnvironment {
+					for _, key := range tt.removedKeys {
+						delete(want, key)
+					}
+				}
+				require.Equal(t, want, persisted)
+				configAfter, err := os.ReadFile(store.ConfigPath(env))
+				require.NoError(t, err)
+				require.JSONEq(t, string(configBefore[name]), string(configAfter))
+			}
+			require.NoDirExists(t, azdCtx.EnvironmentRoot("missing"))
+			defaultEnvironment, err := azdCtx.GetDefaultEnvironmentName()
+			require.NoError(t, err)
+			require.Equal(t, tt.defaultEnvironment, defaultEnvironment)
+		})
+	}
+}
 
 func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	ctx, cancel := newTestContext(t)

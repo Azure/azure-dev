@@ -1,5 +1,5 @@
 
-Manage your application environments. With this command group, you can create a new environment or get, set, and list your application environments.
+Manage your application environments. Create, select, list, or remove environments, and get, set, or unset environment variables.
 
   • An Application can have multiple environments (ex: dev, test, prod).
   • Each environment may have a different configuration (that is, connectivity information) for accessing Azure resources.
@@ -20,6 +20,7 @@ Available Commands
   select    	: Set the default environment.
   set       	: Set one or more environment values.
   set-secret	: Set a name as a reference to a Key Vault secret in the environment.
+  unset     	: Remove one or more keys from an environment.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

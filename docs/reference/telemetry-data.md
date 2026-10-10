@@ -64,6 +64,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 - `cmd.down` — resource teardown
 - `cmd.auth.login` — authentication
 - `cmd.env.new` / `cmd.env.select` — environment management
+- `cmd.env.unset` — environment-variable removal; global command telemetry only
 - `cmd.pipeline.config` — CI/CD pipeline setup
 - `cmd.monitor` — monitoring
 - `cmd.restore` — dependency restoration

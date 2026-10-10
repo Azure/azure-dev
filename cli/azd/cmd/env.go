@@ -63,6 +63,16 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newEnvSetAction,
 	})
 
+	group.Add("unset", &actions.ActionDescriptorOptions{
+		Command:        newEnvUnsetCmd(),
+		FlagsResolver:  newEnvUnsetFlags,
+		ActionResolver: newEnvUnsetAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvUnsetHelpDescription,
+			Footer:      getCmdEnvUnsetHelpFooter,
+		},
+	})
+
 	group.Add("set-secret", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "set-secret <name>",
@@ -1874,8 +1884,8 @@ func getCmdEnvConfigHelpFooter(c *cobra.Command) string {
 
 func getCmdEnvHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Manage your application environments. With this command group, you can create a new environment or get, set,"+
-			" and list your application environments.",
+		"Manage your application environments. Create, select, list, or remove environments, "+
+			"and get, set, or unset environment variables.",
 		[]string{
 			formatHelpNote("An Application can have multiple environments (ex: dev, test, prod)."),
 			formatHelpNote("Each environment may have a different configuration (that is, connectivity information)" +

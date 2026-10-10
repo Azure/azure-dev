@@ -42,7 +42,7 @@ func TestAgentRootRejectsOldAddCommandOrder(t *testing.T) {
 			root.SetOut(&output)
 			root.SetErr(&output)
 			root.SetArgs([]string{"add", kind, "dependency", "--agent", "research-agent"})
-			require.ErrorContains(t, root.ExecuteContext(t.Context()), `unknown command "add"`)
+			require.ErrorContains(t, root.ExecuteContext(t.Context()), "unknown flag: --agent")
 		})
 	}
 }

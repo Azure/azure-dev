@@ -230,7 +230,14 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 		logMsg.err = err
 		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
 	}
-	defer process.Kill()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go func() {
+		<-ctx.Done()
+		process.Kill()
+	}()
 
 	err = process.Wait()
 	result := NewRunResult(

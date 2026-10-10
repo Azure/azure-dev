@@ -144,6 +144,23 @@ func TestRunList(t *testing.T) {
 	}
 }
 
+func TestKillCommandList(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	command := "sleep 10"
+	if runtime.GOOS == "windows" {
+		command = "ping -n 11 127.0.0.1 > nul"
+	}
+
+	start := time.Now()
+	runner := NewCommandRunner(nil)
+	_, _ = runner.RunList(ctx, []string{command}, RunArgs{})
+
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+	require.Less(t, time.Since(start), 5*time.Second)
+}
+
 func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 

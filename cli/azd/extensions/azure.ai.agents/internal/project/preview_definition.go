@@ -19,8 +19,8 @@ import (
 
 func unsupportedLegacyPreview() error {
 	return exterrors.Validation(exterrors.CodeDeploymentPreviewUnsupported,
-		"Deployment preview is unsupported for legacy agent.yaml/agent.manifest.yaml projects, "+
-			"whole agent-file references, nested config, or AGENT_DEFINITION_PATH.",
+		"deployment preview is unsupported for legacy agent.yaml/agent.manifest.yaml projects, "+
+			"whole agent-file references, nested config, or AGENT_DEFINITION_PATH",
 		"move the hosted agent definition to service-level properties in azure.yaml. See "+MigrationGuideURL)
 }
 
@@ -47,7 +47,7 @@ func resolvePreviewDefinition(
 func resolvePreviewSource(service *azdext.ServiceConfig, projectRoot string) (*azdext.ServiceConfig, error) {
 	if service == nil || service.GetHost() != foundryAgentHost {
 		return nil, exterrors.Validation(exterrors.CodeDeploymentPreviewUnsupported,
-			"Deployment preview supports hosted azure.ai.agent services only.", "select a hosted agent service")
+			"deployment preview supports hosted azure.ai.agent services only", "select a hosted agent service")
 	}
 	if os.Getenv("AGENT_DEFINITION_PATH") != "" || len(service.GetConfig().GetFields()) > 0 {
 		return nil, unsupportedLegacyPreview()
@@ -74,7 +74,7 @@ func resolvePreviewSource(service *azdext.ServiceConfig, projectRoot string) (*a
 		if structHasKind(resolved) {
 			if structKind(resolved) != string(agent_yaml.AgentKindHosted) {
 				return nil, exterrors.Validation(exterrors.CodeUnsupportedAgentKind,
-					"Deployment preview supports kind: hosted only.", "select a hosted agent service")
+					"deployment preview supports kind: hosted only", "select a hosted agent service")
 			}
 			return service, nil
 		}
@@ -96,6 +96,6 @@ func resolvePreviewSource(service *azdext.ServiceConfig, projectRoot string) (*a
 func previewConfigurationError() error {
 	// Parser errors may contain authored secrets. Return guidance, not their values.
 	return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
-		"Invalid unified agent configuration for deployment preview.",
+		"invalid unified agent configuration for deployment preview",
 		"check the service-level kind, name, image, container, env, metadata.tags, and file references in azure.yaml")
 }

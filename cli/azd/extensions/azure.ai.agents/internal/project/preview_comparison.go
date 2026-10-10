@@ -76,7 +76,8 @@ func comparePreviewRequest(
 		}
 		before, err = previewRequestState(remote)
 		if err != nil {
-			return nil, fmt.Errorf("Foundry returned an invalid hosted-agent definition; preview cannot compare it")
+			return nil, fmt.Errorf(
+				"the Foundry service returned an invalid hosted-agent definition; preview cannot compare it")
 		}
 	}
 	secrets := slices.Clone(inputs.Secrets)
@@ -97,7 +98,7 @@ func comparePreviewRequest(
 		return nil, previewConfigurationError()
 	}
 	if err := previewProtocolPresence(before, inputs.ProtocolVersions); err != nil {
-		return nil, fmt.Errorf("Foundry returned an invalid protocol definition; preview cannot compare it")
+		return nil, fmt.Errorf("the Foundry service returned an invalid protocol definition; preview cannot compare it")
 	}
 	if inputs.Declared != nil {
 		for path := range after {
@@ -395,7 +396,7 @@ func previewResponse(result agentPreviewResult) (*v1beta.ServiceDeployPreviewRes
 
 func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 	var message strings.Builder
-	fmt.Fprintf(&message, "Service: %s (agent: %s)\n", result.Service, result.Agent)
+	_, _ = fmt.Fprintf(&message, "Service: %s (agent: %s)\n", result.Service, result.Agent)
 	switch result.Status {
 	case "create":
 		message.WriteString("Would create the hosted agent.\n")
@@ -417,7 +418,7 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 				continue
 			}
 			if !shown {
-				fmt.Fprintf(&message, "  %s:\n", group.label)
+				_, _ = fmt.Fprintf(&message, "  %s:\n", group.label)
 				shown = true
 			}
 			before, err := json.Marshal(change.Before)
@@ -428,33 +429,33 @@ func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {
 			if err != nil {
 				return fmt.Errorf("cannot encode deployment preview after value")
 			}
-			fmt.Fprintf(&message, "    %s: %s: ", change.Operation, change.Path)
+			_, _ = fmt.Fprintf(&message, "    %s: %s: ", change.Operation, change.Path)
 			switch change.Operation {
 			case "add":
-				fmt.Fprintf(&message, "%s\n", after)
+				_, _ = fmt.Fprintf(&message, "%s\n", after)
 			case "remove":
-				fmt.Fprintf(&message, "%s -> (removed)\n", before)
+				_, _ = fmt.Fprintf(&message, "%s -> (removed)\n", before)
 			default:
-				fmt.Fprintf(&message, "%s -> %s\n", before, after)
+				_, _ = fmt.Fprintf(&message, "%s -> %s\n", before, after)
 			}
 		}
 		if group.key == "containerImage" && result.ContainerImage != nil &&
 			(result.ContainerImage.Build != nil || result.ContainerImage.Push != nil) {
 			if !shown {
-				fmt.Fprintf(&message, "  %s:\n", group.label)
+				_, _ = fmt.Fprintf(&message, "  %s:\n", group.label)
 			}
 			for _, operation := range []struct {
 				label string
 				value *bool
 			}{{"build", result.ContainerImage.Build}, {"push", result.ContainerImage.Push}} {
 				if operation.value != nil {
-					fmt.Fprintf(&message, "    %s: %t\n", operation.label, *operation.value)
+					_, _ = fmt.Fprintf(&message, "    %s: %t\n", operation.label, *operation.value)
 				}
 			}
 		}
 	}
 	for _, unknown := range result.Unknown {
-		fmt.Fprintf(&message, "  unknown: %s\n", unknown)
+		_, _ = fmt.Fprintf(&message, "  unknown: %s\n", unknown)
 	}
 	for _, note := range result.Notes {
 		fmt.Fprintln(&message, note)

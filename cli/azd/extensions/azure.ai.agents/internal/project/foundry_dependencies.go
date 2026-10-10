@@ -16,7 +16,6 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 )
 
 type dependencyEnabled func(context.Context, string) (bool, error)
@@ -82,34 +81,21 @@ func validateRegistryConnectionDependency(
 		)
 	}
 
+	identities, err := foundryConnectionServiceIdentities(services, projectRoot)
+	if err != nil {
+		return err
+	}
+
 	var matches []string
 	var overriddenName string
-	for key, service := range services {
-		if service.GetHost() != foundryConnectionHost {
-			continue
+	for _, identity := range identities {
+		if identity.ServiceKey == connectionRef &&
+			!strings.EqualFold(identity.ResourceName, connectionRef) {
+			overriddenName = identity.ResourceName
 		}
-		props := ServiceConfigProps(service).AsMap()
-		if strings.TrimSpace(projectRoot) == "" && containsFileRef(props) {
-			return exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("cannot resolve $ref for connection service %q: project root is empty", key),
-				"provide the project directory containing azure.yaml to resolve connection definition references",
-			)
-		}
-		resolved, err := foundry.ResolveFileRefs(props, projectRoot)
-		if err != nil {
-			return err
-		}
-		name, _ := resolved["name"].(string)
-		name = strings.TrimSpace(name)
-		if name == "" {
-			name = key
-		}
-		if key == connectionRef && !strings.EqualFold(name, connectionRef) {
-			overriddenName = name
-		}
-		if key == connectionRef || strings.EqualFold(name, connectionRef) {
-			matches = append(matches, key)
+		if identity.ServiceKey == connectionRef ||
+			strings.EqualFold(identity.ResourceName, connectionRef) {
+			matches = append(matches, identity.ServiceKey)
 		}
 	}
 	if len(matches) == 0 {

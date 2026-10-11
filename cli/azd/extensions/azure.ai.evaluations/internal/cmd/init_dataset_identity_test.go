@@ -155,13 +155,16 @@ func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
 }
 
 func TestInitDatasetDerivedNameUsesCreateRules(t *testing.T) {
-	for _, name := range []string{"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1)} {
+	for _, name := range []string{
+		"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1), strings.Repeat("é", 128),
+	} {
 		t.Run("invalid/"+name, func(t *testing.T) {
 			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
 			require.ErrorContains(t, err, "invalid catalog name")
 			validation, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+			assert.Contains(t, validation.Suggestion, "255 bytes")
 		})
 	}
 	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {

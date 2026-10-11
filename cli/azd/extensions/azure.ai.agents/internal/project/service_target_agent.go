@@ -48,6 +48,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -321,13 +322,13 @@ func (p *AgentServiceTargetProvider) agentDefinitionValidationServiceConfig() *a
 		return p.serviceConfig
 	}
 
-	validationConfig := *p.serviceConfig
+	validationConfig := proto.Clone(p.serviceConfig).(*azdext.ServiceConfig)
 	fields := maps.Clone(p.serviceConfig.GetAdditionalProperties().GetFields())
 	fields[AgentDefinitionRefKey] = structpb.NewStringValue(p.agentDefinitionRef)
 	validationConfig.AdditionalProperties = &structpb.Struct{
 		Fields: fields,
 	}
-	return &validationConfig
+	return validationConfig
 }
 
 // resolveServiceConfig expands local $ref includes on the current service

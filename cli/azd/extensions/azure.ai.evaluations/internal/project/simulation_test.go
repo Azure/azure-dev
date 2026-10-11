@@ -45,22 +45,22 @@ func TestSimulationValidate_Bounds(t *testing.T) {
 		{
 			name:    "no conversations at all",
 			sim:     Simulation{Model: "connection/gpt-4o-mini", NumConversations: 0 - 1},
-			wantErr: "num_conversations is -1",
+			wantErr: "numConversations is -1",
 		},
 		{
 			name:    "one conversation past the cap",
 			sim:     Simulation{Model: "connection/gpt-4o-mini", NumConversations: 6},
-			wantErr: "num_conversations is 6",
+			wantErr: "numConversations is 6",
 		},
 		{
 			name:    "a conversation of no turns",
 			sim:     Simulation{Model: "connection/gpt-4o-mini", MaxTurns: 0 - 1},
-			wantErr: "max_turns is -1",
+			wantErr: "maxTurns is -1",
 		},
 		{
 			name:    "one turn past the cap",
 			sim:     Simulation{Model: "connection/gpt-4o-mini", MaxTurns: 21},
-			wantErr: "max_turns is 21",
+			wantErr: "maxTurns is 21",
 		},
 	}
 

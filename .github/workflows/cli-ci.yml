@@ -84,6 +84,32 @@ jobs:
         working-directory: cli/azd
         run: go test -tags mage -v .
 
+  command-snapshots:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build
+      - name: Verify command snapshots
+        id: snapshots
+        working-directory: cli/azd
+        run: go test ./cmd -run '^(TestFigSpec|TestUsage)$' -count=1
+      - name: Explain snapshot failure
+        if: failure() && steps.snapshots.outcome == 'failure'
+        working-directory: cli/azd
+        run: |
+          echo "::error::Command snapshots are out of date."
+          echo "Regenerate them with:"
+          echo "  go build"
+          echo "  UPDATE_SNAPSHOTS=true go test ./cmd -run '^(TestFigSpec|TestUsage)$'"
+          echo "Extension snapshots follow versions in extensions/registry.json, not branch source."
+
   proto-contract-compatibility:
     runs-on: ubuntu-latest
     permissions:

@@ -19,9 +19,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
@@ -60,19 +58,11 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 		if svcErr == nil && svc != nil && project != nil {
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
-			if _, _, _, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path); loadErr != nil {
-				return nil, loadErr
+			validation, validationErr := projectpkg.ValidateAgentServiceDefinition(svc, project.Path)
+			if validationErr != nil {
+				return nil, validationErr
 			}
-			kind, kindErr := agentkind.Kind(svc, project.Path)
-			if kindErr != nil {
-				return nil, exterrors.ValidationFromError(
-					kindErr,
-					exterrors.CodeInvalidServiceConfig,
-					"failed to resolve agent kind",
-					"fix the agent service configuration in azure.yaml",
-				)
-			}
-			promptAgent := kind == string(agent_yaml.AgentKindPrompt)
+			promptAgent := validation.Kind == agent_yaml.AgentKindPrompt
 
 			// Read agent name and version from azd environment.
 			if env := getExistingEnvironment(ctx, envName, azdClient); env != nil {

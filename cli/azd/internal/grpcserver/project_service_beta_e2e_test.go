@@ -58,6 +58,7 @@ func newProjectE2EServer(t *testing.T, options ...ServerOption) (*ServerInfo, *p
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		v1beta.UnimplementedTelemetryServiceServer{},
+		v1beta.UnimplementedCommandResultServiceServer{},
 	)
 	server.WithOptions(options...)
 	serverInfo, err := server.Start()

@@ -17,6 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestUsage snapshots command usage output.
+// Extension snapshots use released versions from extensions/registry.json, not branch source.
+// Regenerate them only after the extension release is added to the registry.
+//
 // To update snapshots (assuming your current directory is cli/azd):
 //
 // For Bash,

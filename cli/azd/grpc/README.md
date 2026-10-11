@@ -12,13 +12,25 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CopilotService`, and `TelemetryService` are currently beta-only. Removing or
-renumbering fields, changing field types, and reusing reserved names or
-numbers remain breaking changes in either channel.
+`CommandResultService`, `CopilotService`, and `TelemetryService` are currently
+beta-only. Removing or renumbering fields, changing field types, and reusing
+reserved names or numbers remain breaking changes in either channel.
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
+
+Structured deploy messages are beta-only. Service `predeploy` and
+`postdeploy` handlers can return non-blocking info or warning messages in
+`ServiceHandlerStatus.messages`. Go extensions register them with
+`ExtensionHost.WithBetaServiceEventHandler`; the default language scaffolds
+and stable event contracts remain unchanged.
+
+Messages use the correlated beta event stream. Its first subscription must
+include a `request_id`, and each service status carrying messages must echo
+the invocation's ID. Legacy beta streams retain their existing behavior but
+cannot send structured messages. See the extension contract versioning guide
+for host routing and compatibility behavior.
 
 ## Generate contracts
 

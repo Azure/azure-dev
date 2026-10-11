@@ -14,10 +14,16 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`ComposeService`, `CopilotService`, and `TelemetryService` are beta-only and
-therefore do not have stable `v1` generated types or facade aliases. The
-corresponding `AzdClient` convenience accessors return generated `v1beta`
-clients, and their request and response types come from `contracts/v1beta`.
+`CommandResultService`, `ComposeService`, `CopilotService`, and
+`TelemetryService` are beta-only and therefore do not have stable `v1`
+generated types or facade aliases. The corresponding `AzdClient` convenience
+accessors return generated `v1beta` clients, and their request and response
+types come from `contracts/v1beta`. Preview project lifecycle events use
+`EventsBeta()` and `CommandResult()` with generated beta request and response
+types.
+Stable event handlers and default language scaffolds do not expose follow-up APIs.
+See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
+for the preview SDK contract.
 
 `AzdClient.ProjectBeta()` exposes the generated preview project client
 alongside the stable `Project()` accessor. Clients whose SDK exposes it use
@@ -54,10 +60,11 @@ descriptors.
 
 A service that exists only in beta is implemented directly with the generated
 `v1beta` server interface and registered without a stable adapter.
-`ComposeService`, `CopilotService`, and `TelemetryService` currently use this
-model. Focused beta overrides apply only to beta additions on services that
-also exist in stable; registration rejects an override for a beta-only service
-because its native implementation already owns the full beta contract.
+`CommandResultService`, `ComposeService`, `CopilotService`, and
+`TelemetryService` currently use this model. Focused beta overrides apply
+only to beta additions on services that also exist in stable; registration
+rejects an override for a beta-only service because its native implementation
+already owns the full beta contract.
 
 For a method shared by both channels, the beta server:
 
@@ -82,6 +89,25 @@ preservation, but the unknown fields are not exposed as typed fields on the
 stable message. Preview stream behavior that needs typed beta data therefore
 still requires a focused beta stream override.
 
+The beta lifecycle `EventStream` override selects compatibility behavior from
+the first subscription. A subscription without `request_id` is delegated to
+the stable event implementation, preserving legacy correlation for existing
+beta clients. This mode has no beta subscription acknowledgements or
+invocation IDs and cannot use beta-only follow-up or structured deploy
+messages. A subscription with `request_id` selects the current beta mode;
+later subscriptions and project handler statuses must also carry IDs.
+Every modern service invocation uses a unique `request_id`. A status carrying
+structured messages must echo that ID. For compatibility, an ID-less status
+without messages is correlated only when exactly one matching service/event
+invocation is outstanding and no canceled invocation could have replied late.
+An unmatched status is not assigned to a new invocation. If multiple calls or
+a canceled call make the mapping ambiguous, the host returns
+`InvalidArgument` instead of guessing. Clients that omit response IDs should
+serialize calls for each service/event pair and open a new stream after
+cancellation uncertainty. A status with a known ID for a different
+service/event pair is rejected with `InvalidArgument`; unknown IDs remain
+unmatched, including late canceled responses. Stable `v1` behavior is unchanged.
+
 An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with
 `server.WithOptions(WithBetaServiceOverride(...))`; it receives the true
@@ -96,6 +122,16 @@ from an additive field: proto3 preserves its numeric value in the stable
 message even when stable does not define that value. Such a preview value also
 requires a beta method override; stable business logic must not be expected to
 interpret it.
+
+The lifecycle `EventService.EventStream` uses one focused beta override for
+project follow-up contributions and structured service deploy messages.
+`ServiceHandlerStatus.messages` is collected from the final response, so a
+hook can return guidance even when it also fails. The same override handles
+subscription acknowledgements, invocation IDs, and follow-up
+commit/discard behavior; registering a separate message override would
+replace those behaviors. Stable event messages and stable handler APIs remain
+unchanged. Go extensions opt in with
+`ExtensionHost.WithBetaServiceEventHandler`.
 
 An additive beta-only method does not require a matching stable method.
 `make proto` generates a beta handler that calls a focused override when

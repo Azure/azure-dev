@@ -194,7 +194,7 @@ func runConnectionAddWith(
 			return exterrors.Validation(
 				exterrors.CodeUnsupportedInstanceNameFlag,
 				"--instance-name cannot be used together with --from-file",
-				"set connection instance names in the file under connections[].instance_name",
+				"set connection instance names in the file under connections[].instanceName",
 			)
 		}
 

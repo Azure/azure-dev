@@ -66,7 +66,7 @@ func TestScaffoldingCannotRemoveAnEval(t *testing.T) {
     dataset: golden
   - name: nightly
     dataset: stale
-    max_samples: 5
+    maxSamples: 5
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EvalConfigBase), []byte(original), 0o600))
 

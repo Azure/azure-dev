@@ -67,6 +67,96 @@ services:
 
 References are resolved during `azd deploy`. Remote URLs are not supported.
 
+## Choose a dispatch identity
+
+Routines use the agent identity by default. Set
+`authorization.identity: creator` in a YAML/JSON routine manifest to dispatch
+with the creator identity:
+
+```yaml
+authorization:
+  identity: creator
+```
+
+Creator identity is the Microsoft Entra user or service principal that makes
+the initial create request, not necessarily the manifest author or a later
+editor. For `azd deploy` or `azd up`, it is the identity azd authenticates as
+when it first creates the routine; later updates preserve that identity.
+
+The create command also accepts `--dispatch-identity` with `agent` or `creator`
+(default: `agent`). When creating from a manifest, an explicitly supplied flag
+overrides the manifest; otherwise the manifest value is used. Inline
+`host: azure.ai.routine` services accept the same object at the service level
+(excerpt):
+
+```yaml
+services:
+  nightly-summary:
+    host: azure.ai.routine
+    authorization:
+      identity: creator
+```
+
+File-backed services read the same field from the referenced manifest.
+
+Dispatch identity is create-only. When an existing routine is upserted, an
+omitted identity preserves its saved value and a different requested identity
+is rejected. This applies to `create --force`, manifest-based `update`, and
+`azd deploy`/`azd up`. Delete and recreate the routine to change it.
+
+The default table summaries from `create`, `show`, and `update` include the
+dispatch identity. Use `--output json` for machine-readable output.
+
+## Select a tenant for remote commands
+
+Remote routine commands use the tenant resolved by azd from the active
+environment or `AZURE_SUBSCRIPTION_ID`; without either, azd uses the signed-in
+user's home tenant. To select a tenant explicitly, use the root
+`--tenant-id` flag:
+
+```bash
+azd ai routine --tenant-id <tenant-id> create nightly-summary --file ./routine.yaml
+```
+
+An explicit tenant takes precedence over azd's environment and subscription
+context. This is useful when the project endpoint is configured separately
+from the subscription, including guest-user access. For guest users, use the
+subscription's user-access tenant rather than its resource tenant. The flag
+applies to remote routine commands; local commands such as `add` and `context`
+reject it.
+
+## Author a routine manifest
+
+Extension-owned routine properties use camelCase in `azure.yaml` and in YAML or
+JSON files loaded through `$ref` or `--file`. During deployment, the extension
+translates them to the Foundry API's snake_case fields.
+
+```yaml
+description: Summarize repository activity every weekday.
+enabled: true
+triggers:
+  default:
+    type: schedule
+    cronExpression: "0 9 * * 1-5"
+    timeZone: America/Los_Angeles
+action:
+  type: invoke_agent_responses_api
+  agentName: summarizer
+  conversation: existing-conversation
+  input:
+    topic: ${SUMMARY_TOPIC}
+```
+
+GitHub issue triggers use `connectionId` and `issueEvent`; custom triggers use
+`eventName`. Actions can use `agentEndpointId` instead of `agentName`, and
+invocations-API actions can continue a session with `sessionId`.
+
+The contents of `triggers.<name>.parameters` and `action.input` are
+service/provider-owned payloads. Their property names are passed through
+unchanged, including snake_case properties required by those external
+contracts. Trigger and action `type` values such as `github_issue` and
+`invoke_agent_responses_api` also remain unchanged.
+
 ## Timeout configuration
 
 Routine read API calls default to a 30-second HTTP request timeout.

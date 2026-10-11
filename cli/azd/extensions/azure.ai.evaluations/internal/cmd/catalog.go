@@ -41,16 +41,16 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 	if ref == nil {
 		return nil
 	}
-	// display_name defaults to the generated name, which is what the catalog
+	// displayName defaults to the generated name, which is what the catalog
 	// showed before anyone renamed anything; the other two are preserved exactly
 	// as the service returned them, so republishing cannot narrow them.
 	// When keeping a local artifact, existing authored metadata takes precedence.
 	return updateCatalog(cmd, evalDir, "evaluator", ref, "evaluators", []project.CatalogField{
 		{Key: "source", Value: ref.Source},
-		{Key: "display_name", Value: cmp.Or(ref.DisplayName, ref.Name), OnlyIfMissing: ref.PreserveCatalogMetadata},
+		{Key: "displayName", Value: cmp.Or(ref.DisplayName, ref.Name), OnlyIfMissing: ref.PreserveCatalogMetadata},
 		{Key: "categories", List: ref.Categories, OnlyIfMissing: ref.PreserveCatalogMetadata},
 		{
-			Key: "supported_evaluation_levels", List: ref.SupportedEvaluationLevels,
+			Key: "supportedEvaluationLevels", List: ref.SupportedEvaluationLevels,
 			OnlyIfMissing: ref.PreserveCatalogMetadata,
 		},
 	})

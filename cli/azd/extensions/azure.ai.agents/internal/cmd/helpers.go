@@ -1267,7 +1267,7 @@ func resolveAgentServiceFromProject(
 		// Telemetry classification must never change whether invocation proceeds.
 		// Use the deploy path's definition loader so an invalid or non-hosted
 		// project service cannot be counted as a hosted invoke.
-		if _, hosted, _, err := projectpkg.LoadAgentDefinition(svc, projectConfig.Path); err == nil {
+		if _, hosted, _, err := projectpkg.LoadHostedAgentDefinition(svc, projectConfig.Path); err == nil {
 			info.IsHosted = hosted
 		}
 	}
@@ -1469,7 +1469,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	projectpkg.WarnOrphanedConfigEnv(svc)
 
 	var definition *agent_yaml.ContainerAgent
-	def, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, project.Path)
+	def, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, project.Path)
 	if err != nil {
 		return nil, exterrors.ValidationFromError(
 			err,
@@ -1613,7 +1613,7 @@ func resolveAgentProtocol(
 	if err := voiceInvocationError(svc, proj.Path); err != nil {
 		return "", "", err
 	}
-	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
+	hosted, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return "", "", exterrors.ValidationFromError(
 			err,
@@ -1659,7 +1659,7 @@ func resolveAgentInvocableProtocols(
 		)
 	}
 
-	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
+	hosted, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return nil, exterrors.ValidationFromError(
 			err,

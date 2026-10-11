@@ -19,8 +19,14 @@ services:
   research-tools:
     host: azure.ai.toolbox
     description: Research tools
+    connections:
+      - name: bing-search
+        instanceName: docs-config
     tools:
       - type: web_search
+    policies:
+      raiConfig:
+        raiPolicyName: Microsoft.Default
 ```
 
 The service key (`research-tools` here) is the remote toolbox name. When migrating
@@ -29,6 +35,12 @@ field. Copy `description`, `connections`, `skills`, `tools`, `policies`, and
 `metadata` as needed. Toolbox services do not currently load a root `$ref` or
 automatically read the local definition file. Editing that file alone does not
 update the service definition.
+
+Toolbox-owned authoring properties use camelCase, including
+`connections[].instanceName`, `policies.raiConfig`, and
+`policies.raiConfig.raiPolicyName`. Entries under `tools` are Foundry API-owned
+pass-through payloads and retain the field names and discriminator values defined
+by the corresponding service contract.
 
 Configure a Foundry project endpoint before deploying. If the project or
 referenced Connections are also managed as services, declare those dependencies
@@ -107,4 +119,3 @@ The value may contain `${VAR}` references. Declare each referenced variable
 in the service-level `env` object; azd falls back to the active environment
 only when the service declares no `env`. Because a toolbox version is immutable, `endpoint` cannot be
 combined with `tools` or `description`.
-

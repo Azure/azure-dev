@@ -303,7 +303,10 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"npm", false},
 		{"./script.sh", true},
 		{"scripts/deploy.sh", true},
+		{"scripts/my script.sh", true},
+		{"my scripts/deploy.sh", true},
 		{"C:\\scripts\\deploy.ps1", true},
+		{"C:\\Program Files\\deploy.ps1", true},
 		{"deploy.sh", true},
 		{"build.ps1", true},
 		{"run.cmd", true},
@@ -315,6 +318,15 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"mycommand", false},
 		{"echo $HOME", false},
 		{"ls -la", false},
+		{"python script.py", false},
+		{"echo path/to/file", false},
+		{"cat ./config/settings.json", false},
+		{"cat<config/settings.json", false},
+		{"cat<scripts/deploy.sh", true},
+		{"Write-Output 'config\\settings.json'", false},
+		{"echo 'scripts/deploy.sh'", false},
+		{"echo scripts/deploy.sh", true},
+		{"tool --config config\\settings.json", false},
 	}
 
 	for _, tt := range tests {
@@ -324,20 +336,48 @@ func TestLooksLikeFilePath(t *testing.T) {
 	}
 }
 
+func TestShouldFailOnMissingScript(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		shell string
+		want  bool
+	}{
+		{"missing path", "my scripts/deploy.sh", "", true},
+		{"explicit inline shell", "echo scripts/deploy.sh", "pwsh", false},
+		{"explicit shell path", "./missing.ps1", "pwsh", true},
+		{"inline redirection", "cat<config/settings.json", "", false},
+		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, shouldFailOnMissingScript(tt.input, tt.shell))
+		})
+	}
+}
+
 func TestExecAction_FileNotFoundNoInlineFallback(t *testing.T) {
 	env := environment.NewWithValues("test", nil)
 	kvMock := &mockExecKeyVaultService{}
 
-	// A non-existent file with a script extension should NOT fall through
-	// to inline execution — it should return ScriptNotFoundError.
-	action := &execAction{
-		env:             env,
-		keyvaultService: kvMock,
-		flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
-		args:            []string{"nonexistent.sh"},
+	tests := []string{
+		"nonexistent.sh",
+		"my scripts/deploy.sh",
 	}
 
-	_, err := action.Run(t.Context())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	for _, scriptPath := range tests {
+		t.Run(scriptPath, func(t *testing.T) {
+			action := &execAction{
+				env:             env,
+				keyvaultService: kvMock,
+				flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+				args:            []string{scriptPath},
+			}
+
+			_, err := action.Run(t.Context())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "not found")
+		})
+	}
 }

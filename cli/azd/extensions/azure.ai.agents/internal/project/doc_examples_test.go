@@ -800,9 +800,21 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			},
 		},
 		{
-			name: "session idle timeout max valid",
+			name: "session idle timeout previous max valid",
 			mutate: func(value *fixture) {
 				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3600}
+			},
+		},
+		{
+			name: "session idle timeout above previous max valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3601}
+			},
+		},
+		{
+			name: "session idle timeout max valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 14400}
 			},
 		},
 		{
@@ -815,7 +827,7 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 		{
 			name: "session idle timeout above max",
 			mutate: func(value *fixture) {
-				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3601}
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 14401}
 			},
 			wantErr: true,
 		},
@@ -838,6 +850,53 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			}
 
 			err := schema.validate(value.value)
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestHostedAgentSchemaSessionIdleTimeoutBoundaries(t *testing.T) {
+	t.Parallel()
+
+	compiler := jsonschema.NewCompiler()
+	const schemaBaseURI = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+		"cli/azd/extensions/azure.ai.agents/schemas/"
+	for _, name := range []string{"Agent.json", "FileRef.json"} {
+		raw, err := os.ReadFile(filepath.Join(extensionRoot(t), "schemas", name))
+		require.NoError(t, err)
+		var schema map[string]any
+		require.NoError(t, json.Unmarshal(raw, &schema))
+		require.NoError(t, compiler.AddResource(schemaBaseURI+name, schema))
+	}
+	compiled, err := compiler.Compile(schemaBaseURI + "Agent.json")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		seconds int
+		wantErr bool
+	}{
+		{name: "below min", seconds: 119, wantErr: true},
+		{name: "min", seconds: 120},
+		{name: "default", seconds: 900},
+		{name: "previous max", seconds: 3600},
+		{name: "above previous max", seconds: 3601},
+		{name: "max", seconds: 14400},
+		{name: "above max", seconds: 14401, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := compiled.Validate(map[string]any{
+				"name":                 "test-agent",
+				"kind":                 "hosted",
+				"sessionConfiguration": map[string]any{"idleTimeoutSeconds": test.seconds},
+			})
 			if test.wantErr {
 				require.Error(t, err)
 			} else {
@@ -955,6 +1014,59 @@ func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
 			},
 		},
 	}))
+}
+
+// TestDocSchemaInvocationsModerationSelectors pins the schema-side guard on stream selectors.
+// agent_yaml's validator rejects invalid textField values too, but the JSON Schema is a separate
+// protection — editors apply it before azd ever runs — so it needs its own coverage. Without this,
+// the pattern could be dropped from the schema and only the Go check would fail.
+func TestDocSchemaInvocationsModerationSelectors(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	agent := func(selector map[string]any) map[string]any {
+		return map[string]any{
+			"kind": "hosted",
+			"policies": []any{
+				map[string]any{
+					"type":          "rai_policy",
+					"raiPolicyName": "/subscriptions/s/raiPolicies/p",
+					"invocationsModeration": map[string]any{
+						"responseMode":    "streaming",
+						"inputPaths":      []any{"$.input"},
+						"streamSelectors": []any{selector},
+					},
+				},
+			},
+		}
+	}
+
+	require.NoError(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+		"textField": "delta",
+	})))
+	// textField is optional; the service defaults it to "delta".
+	require.NoError(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+	})))
+
+	// These values name no field on the payload, so the frame contributes no text and output
+	// screening is silently skipped.
+	for _, textField := range []string{"", "$.delta", "$", " delta", "delta ", "   "} {
+		require.Error(t, schema.validate(agent(map[string]any{
+			"eventType": "response.output_text.delta",
+			"textField": textField,
+		})), "textField=%q", textField)
+	}
+
+	// eventType must be present, non-blank, and have no surrounding whitespace.
+	require.Error(t, schema.validate(agent(map[string]any{"textField": "delta"})))
+	for _, eventType := range []string{"   ", " response.output_text.delta", "response.output_text.delta "} {
+		require.Error(t, schema.validate(agent(map[string]any{
+			"eventType": eventType,
+			"textField": "delta",
+		})), "eventType=%q", eventType)
+	}
 }
 
 func TestActiveDocAgentConfig(t *testing.T) {

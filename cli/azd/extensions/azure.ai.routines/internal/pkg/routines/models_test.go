@@ -9,7 +9,33 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+func TestRoutineAuthorizationJSONYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := `{"authorization":{"identity":"creator"}}`
+	var fromJSON Routine
+	require.NoError(t, json.Unmarshal([]byte(rawJSON), &fromJSON))
+	require.NotNil(t, fromJSON.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, fromJSON.Authorization.Identity)
+
+	jsonData, err := json.Marshal(fromJSON)
+	require.NoError(t, err)
+	assert.JSONEq(t, rawJSON, string(jsonData))
+
+	yamlData, err := yaml.Marshal(fromJSON)
+	require.NoError(t, err)
+	var fromYAML Routine
+	require.NoError(t, yaml.Unmarshal(yamlData, &fromYAML))
+	require.NotNil(t, fromYAML.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, fromYAML.Authorization.Identity)
+
+	omittedAuthorization, err := json.Marshal(Routine{Name: "agent-default"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(omittedAuthorization), `"authorization"`)
+}
 
 func TestTriggerCLIToWire_AllEntriesPresent(t *testing.T) {
 	t.Parallel()
@@ -63,11 +89,11 @@ func TestActionCLIToWire_NoUnknownEntries(t *testing.T) {
 	}
 }
 
-// PagedRoutine now uses continuationToken instead of nextLink (spec PR #43498).
-func TestPagedRoutine_ContinuationToken(t *testing.T) {
+// The routines API uses continuationToken instead of nextLink (spec PR #43498).
+func TestPagedRoutineAPI_ContinuationToken(t *testing.T) {
 	t.Parallel()
 	raw := []byte(`{"value":[{"name":"r1"}],"continuationToken":"abc123"}`)
-	var page PagedRoutine
+	var page pagedRoutineAPI
 	require.NoError(t, json.Unmarshal(raw, &page))
 	require.Len(t, page.Value, 1)
 	assert.Equal(t, "r1", page.Value[0].Name)
@@ -141,8 +167,9 @@ func TestRoutineTrigger_GitHubIssueFields(t *testing.T) {
 		"repository":"hello-world",
 		"issue_event":"opened"
 	}`)
-	var trig RoutineTrigger
-	require.NoError(t, json.Unmarshal(raw, &trig))
+	var wire routineTriggerAPI
+	require.NoError(t, json.Unmarshal(raw, &wire))
+	trig := routineTriggerFromAPI(wire)
 	assert.Equal(t, "github_issue", trig.Type)
 	assert.Equal(t, "octocat", trig.Owner)
 	assert.Equal(t, "opened", trig.IssueEvent)
@@ -158,8 +185,9 @@ func TestRoutineTrigger_CustomFields(t *testing.T) {
 		"event_name":"my-event",
 		"parameters":{"foo":"bar","n":1}
 	}`)
-	var trig RoutineTrigger
-	require.NoError(t, json.Unmarshal(raw, &trig))
+	var wire routineTriggerAPI
+	require.NoError(t, json.Unmarshal(raw, &wire))
+	trig := routineTriggerFromAPI(wire)
 	assert.Equal(t, "custom", trig.Type)
 	assert.Equal(t, "my-provider", trig.Provider)
 	assert.Equal(t, "my-event", trig.EventName)
@@ -170,7 +198,7 @@ func TestRoutineTrigger_CustomFields(t *testing.T) {
 func TestRoutineAction_ConversationField(t *testing.T) {
 	t.Parallel()
 	a := RoutineAction{Type: "invoke_agent_responses_api", Conversation: "conv-1"}
-	data, err := json.Marshal(a)
+	data, err := json.Marshal(routineActionToAPI(&a))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"conversation":"conv-1"`)
 	assert.NotContains(t, string(data), `"conversation_id"`)
@@ -221,8 +249,9 @@ func TestRoutine_NumericTimestampsDecode(t *testing.T) {
 		"created_at":1735689600,
 		"triggers":{"default":{"type":"timer","at":1735689600}}
 	}`)
-	var r Routine
-	require.NoError(t, json.Unmarshal(raw, &r))
+	var wire routineAPI
+	require.NoError(t, json.Unmarshal(raw, &wire))
+	r := routineFromAPI(&wire)
 	assert.Equal(t, "2025-01-01T00:00:00Z", r.CreatedAt.String())
 	require.Contains(t, r.Triggers, "default")
 	assert.Equal(t, "2025-01-01T00:00:00Z", r.Triggers["default"].At.String())

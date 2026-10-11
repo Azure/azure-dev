@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -369,13 +368,6 @@ func TestNextStepsNeverFlagAzdUp(t *testing.T) {
 // ./team and reports the configuration missing -- the printed step failing in
 // the one case it was added for. Found by running it, not by reading it.
 func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
-	// Off Windows a value with a $ is single-quoted, which every shell there reads
-	// literally. On Windows nothing printed says whether cmd.exe or PowerShell is
-	// pasting it, and no single-quoted form runs in both, so it is named.
-	expanding := "--path './eval$dir'"
-	if runtime.GOOS == "windows" {
-		expanding = "--path VALUE_NEEDS_QUOTING"
-	}
 	cases := []struct {
 		name    string
 		evalDir string
@@ -402,10 +394,12 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 			want:    `--path C:\Users\Me\quality`,
 		},
 		{
-			// Double quotes do not stop $ expanding in POSIX shells or PowerShell.
+			// Double quotes do not stop $ expanding in POSIX shells or
+			// PowerShell, so wrapping it would print a step that runs whatever
+			// the directory name says. Named instead of inlined.
 			name:    "a character the shell would expand",
 			evalDir: "./eval$dir",
-			want:    expanding,
+			want:    "--path VALUE_NEEDS_QUOTING",
 		},
 		{
 			name:    "a character that would end the command",

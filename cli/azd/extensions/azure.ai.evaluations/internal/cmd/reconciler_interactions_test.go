@@ -73,7 +73,7 @@ func TestDatasetInteractionValidationUsesFinalMappings(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tc.missing)
-				assert.Contains(t, err.Error(), "data_mapping")
+				assert.Contains(t, err.Error(), "dataMapping")
 			}
 			assert.Equal(t, before, request.TestingCriteria[0].DataMapping,
 				"validation must not remove exact optional default mappings")

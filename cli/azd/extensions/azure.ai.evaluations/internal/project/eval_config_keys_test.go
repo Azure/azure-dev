@@ -59,7 +59,7 @@ func TestExplainUnknownKeys_AnotherToolsFile(t *testing.T) {
 			"  line 6: field dataset not found in type project.EvalConfig\n" +
 			"  line 13: field local_uri not found in type project.EvaluatorDecl\n" +
 			"  line 14: field options not found in type project.EvalConfig\n" +
-			"  line 16: field max_samples not found in type project.EvalConfig")).Error()
+			"  line 16: field maxSamples not found in type project.EvalConfig")).Error()
 
 	assert.Contains(t, got, "not one")
 	assert.Contains(t, got, "azd ai agent eval run", "the reader is told where the file does belong")

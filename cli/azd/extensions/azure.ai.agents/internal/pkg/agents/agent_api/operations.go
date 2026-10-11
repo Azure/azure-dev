@@ -837,6 +837,14 @@ func (c *AgentClient) GetAgentVersion(
 	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, feature)
 }
 
+// GetPromptAgentVersion retrieves a managed prompt agent version with the
+// GitHub Copilot preview contract enabled so harness metadata is included.
+func (c *AgentClient) GetPromptAgentVersion(
+	ctx context.Context, agentName, agentVersion, apiVersion string,
+) (*AgentVersionObject, error) {
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, GitHubCopilotPreviewFeature)
+}
+
 // GetVoiceAgentVersion retrieves a voice version with the Voice Agents API contract.
 func (c *AgentClient) GetVoiceAgentVersion(
 	ctx context.Context, agentName, agentVersion, apiVersion string,

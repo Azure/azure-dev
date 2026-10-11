@@ -29,12 +29,10 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"azureaieval/internal/exterrors"
 
@@ -874,7 +872,7 @@ func TraceWindowChoice(days int) string {
 //
 // The three are what the prompt offers, so the flag accepts the same three: a
 // flag that took any number would make `--no-prompt` and the wizard able to
-// write configurations the other could not. Anything else is `lookback_hours`
+// write configurations the other could not. Anything else is `lookbackHours`
 // in the file, which is where an arbitrary window belongs.
 func TraceDaysNotAChoice(given int, days []int) error {
 	offered := make([]string, 0, len(days))
@@ -883,7 +881,7 @@ func TraceDaysNotAChoice(given int, days []int) error {
 	}
 	return fmt.Errorf(
 		"--trace-days %d is not one of the offered windows (%s); for any other window "+
-			"set lookback_hours on the eval's source in the configuration",
+			"set lookbackHours on the eval's source in the configuration",
 		given, strings.Join(offered, ", "))
 }
 
@@ -2144,7 +2142,7 @@ func DatasetHasNoFile(dataset string) error {
 func EvaluatorNeedsFields(evaluator string, missing []string) error {
 	return fmt.Errorf(
 		"evaluator %q requires %s, which the dataset does not provide; "+
-			"add %s to the dataset, or bind it with `data_mapping`",
+			"add %s to the dataset, or bind it with `dataMapping`",
 		evaluator, quoteList(missing), pluralColumns(missing))
 }
 
@@ -2159,7 +2157,7 @@ func EvaluatorLevelUnsupported(evaluator, level string, supported []string) erro
 func EvaluatorNeedsInitParams(evaluator string, missing []string) error {
 	return fmt.Errorf(
 		"evaluator %q requires %s; set it under the evaluator's "+
-			"`initialization_parameters` in the eval config",
+			"`initializationParameters` in the eval config",
 		evaluator, quoteList(missing))
 }
 
@@ -2861,25 +2859,25 @@ func TraceWindowBoundUnusable(field, value string) error {
 // TraceWindowEndsBeforeItStarts reports a window that can hold no traces.
 func TraceWindowEndsBeforeItStarts(start, end string) error {
 	return fmt.Errorf(
-		"source.end_time %q is not after source.start_time %q, "+
+		"source.endTime %q is not after source.startTime %q, "+
 			"so the window holds no traces",
 		end, start)
 }
 
 // TraceWindowOverSpecified reports a window declared twice over.
 //
-// lookback_hours measures back from where the window closes and start_time is
+// lookbackHours measures back from where the window closes and startTime is
 // an absolute bound, so a file carrying both does not say which was meant.
 func TraceWindowOverSpecified() error {
 	return errors.New(
-		"source declares both start_time and lookback_hours, which are two ways " +
+		"source declares both startTime and lookbackHours, which are two ways " +
 			"of saying where the window opens: keep one")
 }
 
 // NegativeLookbackHours reports a lookback that is not a length.
 func NegativeLookbackHours(hours int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, and how far back to look cannot be "+
+		"source.lookbackHours is %d, and how far back to look cannot be "+
 			"negative: give the hours to look back",
 		hours)
 }
@@ -2887,8 +2885,8 @@ func NegativeLookbackHours(hours int) error {
 // LookbackTooLarge reports a lookback beyond the span a window may cover.
 func LookbackTooLarge(hours, limit int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, which is beyond the %d hours a window can "+
-			"reach back: give a shorter lookback, or replace it with a start_time",
+		"source.lookbackHours is %d, which is beyond the %d hours a window can "+
+			"reach back: give a shorter lookback, or replace it with a startTime",
 		hours, limit)
 }
 
@@ -2899,7 +2897,7 @@ func LookbackTooLarge(hours, limit int) error {
 // back empty.
 func MaxTracesUnusable(maxTraces int) error {
 	return fmt.Errorf(
-		"source.max_traces is %d: give a positive cap, or leave it out to use "+
+		"source.maxTraces is %d: give a positive cap, or leave it out to use "+
 			"the service's default",
 		maxTraces)
 }
@@ -2921,7 +2919,7 @@ func SourceFieldsNotRead(sourceType string, fields []string) error {
 // MaxTurnsUnusable reports a turn cap a run could not apply.
 func MaxTurnsUnusable(maxTurns int) error {
 	return fmt.Errorf(
-		"source.max_turns is %d: give a positive cap, or leave it out to use "+
+		"source.maxTurns is %d: give a positive cap, or leave it out to use "+
 			"the service's default",
 		maxTurns)
 }
@@ -2929,7 +2927,7 @@ func MaxTurnsUnusable(maxTurns int) error {
 // LookbackReachesTooFarBack reports a lookback that lands on an unusable start.
 func LookbackReachesTooFarBack(hours int) error {
 	return fmt.Errorf(
-		"source.lookback_hours is %d, which opens the window before any trace "+
+		"source.lookbackHours is %d, which opens the window before any trace "+
 			"was recorded: give a shorter lookback",
 		hours)
 }
@@ -3242,25 +3240,25 @@ func SourceTypeNotSupported(got, traces, responses string) error {
 // no spans, so it is not an answer to whose conversations to read.
 func TraceSourceNeedsAnAgent() error {
 	return errors.New(
-		"source.agent_name is required for a trace source, " +
+		"source.agentName is required for a trace source, " +
 			"or declare an agent target.name")
 }
 
 // ResponsesSourceNeedsResponseIDs reports it where there is no index.
 func ResponsesSourceNeedsResponseIDs() error {
-	return errors.New("source.response_ids is required for a responses source")
+	return errors.New("source.responseIds is required for a responses source")
 }
 
 // ResponsesSourceBlankResponseID identifies an invalid entry without printing stored response IDs.
 func ResponsesSourceBlankResponseID(index int) error {
-	return fmt.Errorf("source.response_ids[%d] must not be blank; supply a stored response ID or remove this entry", index)
+	return fmt.Errorf("source.responseIds[%d] must not be blank; supply a stored response ID or remove this entry", index)
 }
 
 // SourceSampleConflict refuses a dataset cap on a source-backed evaluation.
 func SourceSampleConflict(evalName string) error {
 	return exterrors.Validation(exterrors.CodeConflictingArguments,
-		fmt.Sprintf("--max-samples or max_samples cannot cap source-backed eval %q", evalName),
-		"Remove the dataset cap. For traces, use source.max_traces; for responses, select source.response_ids.")
+		fmt.Sprintf("--max-samples or maxSamples cannot cap source-backed eval %q", evalName),
+		"Remove the dataset cap. For traces, use source.maxTraces; for responses, select source.responseIds.")
 }
 
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
@@ -3294,7 +3292,7 @@ func TargetTypeNotSupported(got, agent, model string) error {
 
 // EvaluationLevelNotSupported reports it where there is no index.
 func EvaluationLevelNotSupported(got, turn, conversation string) error {
-	return fmt.Errorf("evaluation_level %q is invalid; expected %q or %q", got, turn, conversation)
+	return fmt.Errorf("evaluationLevel %q is invalid; expected %q or %q", got, turn, conversation)
 }
 
 // TraceSourceCannotReadAModelTarget reports a trace eval pointed at a deployment.
@@ -3304,7 +3302,7 @@ func EvaluationLevelNotSupported(got, turn, conversation string) error {
 // filter that matches no spans and a run that reports nothing.
 func TraceSourceCannotReadAModelTarget(name string) error {
 	return fmt.Errorf(
-		"source.agent_name is required for a trace source: target %q is a model "+
+		"source.agentName is required for a trace source: target %q is a model "+
 			"deployment, and traces are recorded against an agent, not a deployment",
 		name)
 }
@@ -3325,8 +3323,8 @@ func SimulationNeedsConversationLevel(declared, conversation string) error {
 		declared = "unset"
 	}
 	return fmt.Errorf(
-		"evaluation_level is %q, but a simulation produces conversations; "+
-			"set evaluation_level: %s, or remove the simulation: block to score rows as they stand",
+		"evaluationLevel is %q, but a simulation produces conversations; "+
+			"set evaluationLevel: %s, or remove the simulation: block to score rows as they stand",
 		declared, conversation)
 }
 
@@ -3372,13 +3370,13 @@ func SimulationNeedsSeedDataset() error {
 //
 // A simulation is bound to its registered seed dataset as a whole -- the run
 // carries the dataset's id, not a copy of some of its rows -- so there is no
-// row count to cap. Accepting max_samples here would report a bounded run and
+// row count to cap. Accepting maxSamples here would report a bounded run and
 // then create, and bill for, a conversation per seed in the whole dataset.
 func SimulationCannotBeSampled(got int) error {
 	return fmt.Errorf(
-		"max_samples is %d, but a simulation run is bound to its whole registered seed dataset "+
-			"and has no row count to cap. Remove max_samples and register a smaller seed dataset, "+
-			"or use simulation.num_conversations to bound the conversations created per seed",
+		"maxSamples is %d, but a simulation run is bound to its whole registered seed dataset "+
+			"and has no row count to cap. Remove maxSamples and register a smaller seed dataset, "+
+			"or use simulation.numConversations to bound the conversations created per seed",
 		got)
 }
 
@@ -3656,7 +3654,7 @@ func SampleSizeOutOfRange(min, max, got int) error {
 // for, and silent.
 func MaxSamplesNegative(got int) error {
 	return fmt.Errorf(
-		"max_samples cannot be negative, got %d. "+
+		"maxSamples cannot be negative, got %d. "+
 			"Remove it to send every row, or set the number of rows to send", got)
 }
 
@@ -4459,71 +4457,26 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // Double quotes are what cmd, PowerShell, bash and zsh all read the same way.
 // What they do not do is make the value literal: $, $(...) and backticks still
 // expand inside them in POSIX shells and PowerShell, and \" does not escape a
-// quote in PowerShell at all. There is no double-quote wrapping that is literal
-// in all four, so a value carrying one of those is single-quoted instead when
-// that is literal for every shell that could be pasting it, and is named
-// otherwise (see literalArg).
+// quote in PowerShell at all. There is no wrapping that is literal in all four.
 //
 // These values come out of the configuration file, so a printed command that
-// carried one of those characters would run it when pasted if it were not
-// quoted literally. Backslashes are left alone, so a Windows path comes back as
-// itself.
+// carried one of those characters would run it when pasted. They are named
+// rather than inlined: the command stops being copy-and-run for that argument,
+// which is the honest outcome, because it cannot be made both runnable and
+// safe here. Backslashes are left alone, so a Windows path comes back as itself.
 func shellArg(v string) string {
-	return shellArgFor(runtime.GOOS, v)
-}
-
-// shellArgFor is shellArg for a named operating system, so both rules can be
-// tested wherever the tests run.
-func shellArgFor(goos, v string) string {
 	if v == "" {
 		return `""`
 	}
-	// A control character other than a tab or a line break has no quoting.
-	if strings.ContainsFunc(v, func(r rune) bool { return unicode.IsControl(r) && r != '\t' && r != '\n' }) {
-		return shellArgNeedsQuoting
-	}
-	// PowerShell reads these typographic quotes as quotes on every operating
-	// system, so they end a quoted value early whichever way it is wrapped.
-	if strings.ContainsAny(v, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
-		return shellArgNeedsQuoting
-	}
-	// cmd.exe expands %NAME% even inside double quotes, reads an unquoted ^ as
-	// an escape, and ends the command at a line break, and nothing printed can
-	// say which of cmd.exe and PowerShell is pasting it.
-	if goos == "windows" && strings.ContainsAny(v, "%^\n") {
-		return shellArgNeedsQuoting
-	}
-	// The three that cannot survive being wrapped in double quotes: two expand,
-	// one breaks the quoting itself.
+	// The three that cannot survive being wrapped: two expand, one breaks the
+	// quoting itself.
 	if strings.ContainsAny(v, "$`\"") {
-		return literalArg(goos, v)
+		return shellArgNeedsQuoting
 	}
 	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
 		return v
 	}
 	return `"` + v + `"`
-}
-
-// literalArg single-quotes a value so nothing in it is expanded, where single
-// quotes are literal in every shell that could be pasting it, and names it
-// otherwise:
-//   - On Windows nothing printed says whether cmd.exe or PowerShell is pasting
-//     it. Single quotes are literal in PowerShell but ordinary characters in
-//     cmd.exe, which splits a quoted value at its spaces, so no single-quoted
-//     form runs as printed in both.
-//   - Off Windows an ASCII single quote has no escape that bash, zsh and PowerShell
-//     agree on (bash and zsh close the quote, escape it and reopen it; PowerShell
-//     does not read that), and fish reads a backslash before a quote or another
-//     backslash inside single quotes, so a value with either is named.
-//
-// The placeholder is deliberately inert, so a reader who pastes it without
-// noticing gets a command that fails on the name rather than one that runs
-// something the configuration chose.
-func literalArg(goos, v string) string {
-	if goos == "windows" || strings.ContainsAny(v, `'\`) {
-		return shellArgNeedsQuoting
-	}
-	return "'" + v + "'"
 }
 
 // shellArgNeedsQuoting stands in for a value no portable quoting makes literal.

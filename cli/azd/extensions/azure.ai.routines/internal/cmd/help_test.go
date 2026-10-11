@@ -25,6 +25,7 @@ func TestAIHelp(t *testing.T) {
 
 	walkAIHelp(t, func(t *testing.T, command *cobra.Command, path []string) {
 		text := executeAIHelp(t, path)
+		normalizedText := strings.Join(strings.Fields(text), " ")
 		require.NotContains(t, text, "\x1b")
 		require.Contains(t, text, "\nUsage\n  azd ai "+command.CommandPath())
 		require.Contains(t, text, "\nGlobal Flags\n")
@@ -42,6 +43,16 @@ func TestAIHelp(t *testing.T) {
 			require.Contains(t, text, "explicitly empty persisted value")
 			require.Contains(t, text, "including when no environment is")
 			require.Contains(t, text, "AZURE_AI_PROJECT_ENDPOINT can therefore win before global config")
+			require.Contains(
+				t,
+				normalizedText,
+				"--project-endpoint, --tenant-id, and --timeout are only supported by remote routine commands",
+			)
+			require.Contains(
+				t,
+				normalizedText,
+				"Local commands such as add, context, and version reject these flags",
+			)
 		} else {
 			require.NotContains(t, text, "\nEnvironments & Environment Variables\n")
 		}
@@ -51,6 +62,9 @@ func TestAIHelp(t *testing.T) {
 				require.NotRegexp(t, row, text)
 			} else {
 				require.Regexp(t, row, text)
+			}
+			if flag.Name == "tenant-id" {
+				require.Contains(t, normalizedText, flag.Usage)
 			}
 		}
 		command.LocalFlags().VisitAll(checkFlag)

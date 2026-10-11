@@ -411,14 +411,14 @@ func ValidateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
 	return validateRuntimeAgentSources(svc)
 }
 
-// LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
+// LoadHostedAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
 // service. The definition must be carried by service-level properties, either
 // directly or through the existing root $ref behavior.
 //
 // It returns the parsed ContainerAgent, whether it is a hosted agent (false for
 // other kinds), and the source the definition came from (see
 // [AgentDefinitionSource.IsLegacy]).
-func LoadAgentDefinition(
+func LoadHostedAgentDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
@@ -920,7 +920,7 @@ func agentDefinitionFromStruct(
 			}
 			definition = inline.toVoiceAgent()
 		}
-		if err := validateAgentServiceDefinition(definition); err != nil {
+		if err := validateDirectAgentDefinition(definition); err != nil {
 			return agent_yaml.ContainerAgent{}, false, err
 		}
 		return agent_yaml.ContainerAgent{}, false, nil
@@ -953,7 +953,7 @@ func agentDefinitionFromStruct(
 
 	ca := inline.toContainerAgent(cfg.Container, coreImage, environment)
 
-	if err := validateAgentServiceDefinition(ca); err != nil {
+	if err := validateDirectAgentDefinition(ca); err != nil {
 		return agent_yaml.ContainerAgent{}, false, err
 	}
 
@@ -1021,13 +1021,13 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 				"configuration to the hosted target",
 		)
 	}
-	if err := validateAgentServiceDefinition(inline.toVoiceAgent()); err != nil {
+	if err := validateDirectAgentDefinition(inline.toVoiceAgent()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateAgentServiceDefinition(definition any) error {
+func validateDirectAgentDefinition(definition any) error {
 	defBytes, err := yaml.Marshal(definition)
 	if err != nil {
 		return exterrors.Validation(

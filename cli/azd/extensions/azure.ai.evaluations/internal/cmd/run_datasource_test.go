@@ -51,14 +51,14 @@ func TestBuildRunDataSource_Traces(t *testing.T) {
 	ds, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
-	// The legacy azure_ai_traces shape discarded agent_version and start_time
+	// The legacy azure_ai_traces shape discarded agentVersion and startTime
 	// without saying so, and re-imposed its own lookback.
 	assert.Equal(t, eval_api.EvalRunDataSourceTypeTracePreview, ds.Type)
 	require.NotNil(t, ds.TraceSource)
 	assert.Equal(t, "agent_filter", ds.TraceSource.Type)
 	assert.Equal(t, "support-agent", ds.TraceSource.AgentName)
 	assert.Equal(t, 500, ds.TraceSource.MaxTraces)
-	// lookback_hours is still honoured, as the window's start bound. Asserted
+	// lookbackHours is still honoured, as the window's start bound. Asserted
 	// as a distance from now, because a merely non-zero start is also what a
 	// lookback that reached forwards would produce.
 	assert.InDelta(t, time.Now().Add(-24*time.Hour).Unix(), ds.TraceSource.StartTime, 60)
@@ -134,7 +134,7 @@ func TestBuildRunDataSource_TracesRefusesEverySourceTheConfigWould(t *testing.T)
 		{"start at the unix epoch", project.SourceDecl{StartTime: "1970-01-01T00:00:00Z"}, "traces were recorded at"},
 		{"negative lookback", project.SourceDecl{LookbackHours: -24}, "cannot be negative"},
 		{"lookback past the bound", project.SourceDecl{LookbackHours: project.MaxLookbackHours + 1}, "beyond the"},
-		{"negative cap", project.SourceDecl{MaxTraces: -5}, "source.max_traces"},
+		{"negative cap", project.SourceDecl{MaxTraces: -5}, "source.maxTraces"},
 		{
 			"window declared twice over",
 			project.SourceDecl{StartTime: "2026-08-01T00:00:00Z", LookbackHours: 24},
@@ -184,11 +184,11 @@ func TestBuildRunDataSource_ResponsesRefusesFieldsItDoesNotRead(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `eval "responses-eval"`)
-	assert.Contains(t, err.Error(), "lookback_hours")
+	assert.Contains(t, err.Error(), "lookbackHours")
 	assert.Contains(t, err.Error(), "does not read")
 }
 
-// agent_name under source: is a filter, but an eval that names a target and
+// agentName under source: is a filter, but an eval that names a target and
 // leaves the filter off still means "this agent's traces".
 func TestBuildRunDataSource_TracesFallsBackToTargetName(t *testing.T) {
 	ec := &evalContext{}
@@ -230,7 +230,7 @@ func TestBuildRunDataSource_TracesWillNotReadAModelTarget(t *testing.T) {
 	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "agent_name")
+	assert.Contains(t, err.Error(), "agentName")
 }
 
 // With neither, the run cannot say whose conversations to read, and saying so
@@ -245,10 +245,10 @@ func TestBuildRunDataSource_TracesWithoutAnAgentIsRefused(t *testing.T) {
 	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "source.agent_name")
+	assert.Contains(t, err.Error(), "source.agentName")
 }
 
-// Stored responses travel as rows carrying ids, with a data_mapping telling the
+// Stored responses travel as rows carrying ids, with a dataMapping telling the
 // service which field holds one.
 func TestBuildRunDataSource_Responses(t *testing.T) {
 	ec := &evalContext{}
@@ -289,7 +289,7 @@ func TestBuildRunDataSource_ResponsesWithoutIDsIsRefused(t *testing.T) {
 	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "source.response_ids")
+	assert.Contains(t, err.Error(), "source.responseIds")
 }
 
 // No target means the rows already hold both sides of the exchange, so the run
@@ -403,7 +403,7 @@ func TestBuildRunDataSource_RefusesADeclarationNoRunCouldCarryOut(t *testing.T) 
 			// row when the file asked for fewer rows than that.
 			"a negative cap",
 			project.Eval{Dataset: "d", MaxSamples: -1},
-			"max_samples cannot be negative",
+			"maxSamples cannot be negative",
 		},
 		{
 			// Scored as though nothing were invoked, which is a different
@@ -425,7 +425,7 @@ func TestBuildRunDataSource_RefusesADeclarationNoRunCouldCarryOut(t *testing.T) 
 		{
 			"a responses source listing nothing",
 			project.Eval{Source: &project.SourceDecl{Type: project.SourceTypeResponses}},
-			"source.response_ids is required",
+			"source.responseIds is required",
 		},
 	}
 

@@ -102,3 +102,23 @@ func TestAgentHelpColor(t *testing.T) {
 		})
 	}
 }
+
+func TestInitHelpUsesTemplateFlag(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	previous := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = previous })
+
+	root := NewRootCommand()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"init", "--help"})
+
+	require.NoError(t, root.Execute())
+	text := output.String()
+	require.Contains(t, text, "-t, --template string")
+	require.NotContains(t, text, "-m, --manifest")
+	require.Contains(t, text,
+		"--manifest / -m is deprecated and retained for compatibility. Use\n--template / -t instead.")
+}

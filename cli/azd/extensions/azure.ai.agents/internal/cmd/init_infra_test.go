@@ -2216,10 +2216,10 @@ func TestValidateStandaloneEjectArgs(t *testing.T) {
 		{name: "no extras: ok"},
 		{name: "positional arg: refuse", args: []string{"./foo"}, wantError: true, wantInput: "positional path"},
 		{
-			name:      "manifest flag: refuse",
-			changed:   map[string]string{"manifest": "./agent.yaml"},
+			name:      "template flag: refuse",
+			changed:   map[string]string{"template": "./agent.yaml"},
 			wantError: true,
-			wantInput: "--manifest",
+			wantInput: "--template",
 		},
 		{
 			name:      "scalar init flag: refuse",
@@ -2256,7 +2256,7 @@ func TestValidateStandaloneEjectArgs(t *testing.T) {
 			},
 		},
 		{
-			name:      "multiple inputs: refuse",
+			name:      "multiple inputs including deprecated manifest: refuse",
 			args:      []string{"./pos"},
 			changed:   map[string]string{"manifest": "./agent.yaml", "src": "./src"},
 			wantError: true,

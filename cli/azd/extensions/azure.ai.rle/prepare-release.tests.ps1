@@ -2,9 +2,11 @@ $ErrorActionPreference = "Stop"
 $gitExecutable = (Get-Command git -CommandType Application).Source
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("rle-release-test-" + [Guid]::NewGuid().ToString("N"))
 $previousRegistryURL = $env:RLE_REGISTRY_URL
+$previousRegistrySource = $env:RLE_REGISTRY_SOURCE
 $global:rleReleaseTestState = @{
     ghCalls = @()
     buildURLs = @()
+    buildSources = @()
     openPR = $false
     failPush = $false
     cloneSource = $null
@@ -72,6 +74,7 @@ function azd {
     $global:LASTEXITCODE = 0
     if ($args[1] -eq "build") {
         $global:rleReleaseTestState.buildURLs += $env:RLE_REGISTRY_URL
+        $global:rleReleaseTestState.buildSources += $env:RLE_REGISTRY_SOURCE
     }
     elseif ($args[1] -eq "pack") {
         $output = $args[[Array]::IndexOf($args, "--output") + 1]
@@ -130,6 +133,7 @@ try {
     $wrapper = Join-Path $extension "prepare-ext-release.ps1"
     $registryPath = Join-Path $public "cli\azd\extensions\registry.rle.json"
     $env:RLE_REGISTRY_URL = "test-environment-value"
+    $env:RLE_REGISTRY_SOURCE = "test-source-value"
 
     & $wrapper -PublicRepositoryPath $public -BreakingChanges | Out-Null
     $publicBody = $global:rleReleaseTestState.prBodies[0]
@@ -152,6 +156,7 @@ try {
         Assert-Release ($url -match "^https://raw.githubusercontent.com/Azure/azure-dev/[0-9a-f]{40}/") "Artifact is not commit-pinned: $url"
     }
     Assert-Release ($env:RLE_REGISTRY_URL -eq "test-environment-value") "Registry environment was not restored."
+    Assert-Release ($env:RLE_REGISTRY_SOURCE -eq "test-source-value") "Registry source environment was not restored."
     Assert-Release (-not (Test-Path (Join-Path $source "registry.rle.json"))) "Customer registry leaked into source checkout."
     Assert-Release (-not (Test-Path (Join-Path $source "registry.rle-ext.json"))) "Legacy external registry leaked into source checkout."
     Assert-Release (-not (git -C $public status --porcelain)) "Public checkout is not clean."
@@ -167,6 +172,7 @@ try {
     Assert-Release (-not ($second.extensions[0].versions[1].PSObject.Properties.Name -contains "breakingChanges")) "Non-breaking release has a breaking flag."
     Assert-Release (@($global:rleReleaseTestState.ghCalls | Where-Object { $_ -like "pr create *" }).Count -eq 1) "Existing PR was not reused."
     Assert-Release (@($global:rleReleaseTestState.buildURLs | Where-Object { $_ -ne "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/registry.rle.json" }).Count -eq 0) "External binary embedded the wrong registry URL."
+    Assert-Release (@($global:rleReleaseTestState.buildSources | Where-Object { $_ -ne "rle" }).Count -eq 0) "Customer binary embedded the wrong registry source."
 
     $global:rleReleaseTestState.cloneSource = $public
     $global:rleReleaseTestState.baseCommit = git -C $public rev-parse origin/main
@@ -196,11 +202,13 @@ try {
 
     & (Join-Path $extension "prepare-dev-release.ps1") -BreakingChanges | Out-Null
     Assert-Release ($global:rleReleaseTestState.buildURLs[-1] -eq "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/registry.rle-dev.json") "Development registry changed."
+    Assert-Release ($global:rleReleaseTestState.buildSources[-1] -eq "rle-dev") "Development registry source changed."
     Assert-Release (Test-Path (Join-Path $source "registry.rle-dev.json")) "Development registry was not prepared."
     Write-Host "PASS: external publishing, pinned artifacts, PR reuse, failure guards, environment restoration, and internal channel."
 }
 finally {
     $env:RLE_REGISTRY_URL = $previousRegistryURL
+    $env:RLE_REGISTRY_SOURCE = $previousRegistrySource
     Remove-Variable rleReleaseTestState -Scope Global
     Remove-Item -LiteralPath $testRoot -Recurse -Force
 }

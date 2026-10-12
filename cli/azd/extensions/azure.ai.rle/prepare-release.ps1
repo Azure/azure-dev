@@ -161,7 +161,9 @@ New-Item -ItemType Directory -Path $resolvedOutputDirectory | Out-Null
 New-Item -ItemType Directory -Path $resolvedBuildDirectory | Out-Null
 
 $previousRegistryURL = $env:RLE_REGISTRY_URL
+$previousRegistrySource = $env:RLE_REGISTRY_SOURCE
 $env:RLE_REGISTRY_URL = $registryURL
+$env:RLE_REGISTRY_SOURCE = if ($Channel -eq "rle-ext") { "rle" } else { "rle-dev" }
 
 Push-Location $PSScriptRoot
 try {
@@ -227,6 +229,7 @@ try {
 finally {
     Pop-Location
     $env:RLE_REGISTRY_URL = $previousRegistryURL
+    $env:RLE_REGISTRY_SOURCE = $previousRegistrySource
 }
 
 $registry = Get-Content -LiteralPath $resolvedRegistryPath -Raw | ConvertFrom-Json

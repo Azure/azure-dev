@@ -21,9 +21,12 @@ const (
 	maxRegistryResponseBytes = 4 * 1024 * 1024
 )
 
-// RegistryURL is set at build time so each release channel checks only the
-// registry from which its artifact was installed.
-var RegistryURL = rleDevRegistryURL
+// RegistryURL and RegistrySource are set at build time to keep update checks
+// and suggested commands on the artifact's release channel.
+var (
+	RegistryURL    = rleDevRegistryURL
+	RegistrySource = "rle-dev"
+)
 
 type extensionUpdate struct {
 	LatestVersion string
@@ -137,6 +140,10 @@ func breakingUpdateError(update *extensionUpdate) error {
 		Message:    fmt.Sprintf("Update the RLE extension to %s before continuing.", update.LatestVersion),
 		Code:       "rle_breaking_update_required",
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Run: azd extension update azure.ai.rle",
+		Suggestion: "Run: " + extensionUpdateCommand(),
 	}
+}
+
+func extensionUpdateCommand() string {
+	return fmt.Sprintf("azd extension update azure.ai.rle --source %s", RegistrySource)
 }

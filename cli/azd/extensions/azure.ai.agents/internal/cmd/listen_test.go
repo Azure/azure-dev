@@ -1036,6 +1036,34 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 	require.GreaterOrEqual(t, envServer.getCurrentCalls, firstCalls+2)
 }
 
+func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	for _, kind := range []string{"voice", "prompt-voice"} {
+		t.Run(kind, func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name: "voice-agent",
+				Host: AiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind": kind, "name": "voice-agent", "modelType": "managed",
+					"model": map[string]any{"id": "gpt-realtime"},
+				}),
+			}
+			proj := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+				"voice-agent": svc,
+			}}
+			require.False(t, isHostedAgentService(svc, proj))
+			require.False(t, isPromptAgentService(svc, proj))
+			envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+				Project: proj, Service: svc,
+			}))
+			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
+		})
+	}
+}
+
 func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {
 	tests := []struct {
 		name           string

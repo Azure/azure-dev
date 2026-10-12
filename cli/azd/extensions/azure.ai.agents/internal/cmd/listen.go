@@ -314,10 +314,8 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	if hosted || isPromptAgentService(svc, args.Project) {
-		if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
-			return err
-		}
+	if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
+		return err
 	}
 
 	return nil

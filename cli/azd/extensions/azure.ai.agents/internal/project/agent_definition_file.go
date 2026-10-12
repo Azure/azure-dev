@@ -65,10 +65,12 @@ type AgentDefinitionFile struct {
 	Name string
 }
 
-// LoadAgentDefinitionFile validates a direct definition. Project-local
-// Connection references are resolved against the service map.
-// Relative paths use projectRoot. serviceName preserves the
-// existing prompt-agent name fallback used by runtime validation.
+// LoadAgentDefinitionFile validates a direct definition.
+// Input paths are project-relative.
+// Nested $ref files resolve from the definition file and remain
+// rebased to projectRoot.
+// Connection sibling lookup is deferred to dependency planning.
+// serviceName preserves the runtime prompt-agent name fallback.
 func LoadAgentDefinitionFile(
 	projectRoot string,
 	filePath string,
@@ -116,11 +118,14 @@ func LoadAgentDefinitionFile(
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
 
-	serviceProperties, err := structpb.NewStruct(properties)
+	// Root-ref resolution preserves file-relative and rebased paths.
+	rootReference, err := structpb.NewStruct(map[string]any{
+		"$ref": filepath.ToSlash(relativePath),
+	})
 	if err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
-	resolved, err := resolveServiceProps(serviceProperties, serviceName, projectRoot)
+	resolved, err := resolveServiceProps(rootReference, serviceName, projectRoot)
 	if err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}

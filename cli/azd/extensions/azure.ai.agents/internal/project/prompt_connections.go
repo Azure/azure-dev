@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -48,6 +49,11 @@ func connectionsNode(g *promptGraph) *promptNode {
 					)
 				}
 
+				// Shared validation has no project context for sibling lookup.
+				if g.projectServices == nil {
+					continue
+				}
+
 				identity, err := ResolveFoundryConnectionServiceIdentity(
 					g.projectServices,
 					serviceRef,
@@ -64,8 +70,41 @@ func connectionsNode(g *promptGraph) *promptNode {
 			}
 			return nil
 		},
-		Resolve: func(context.Context) error {
+		Resolve: func(ctx context.Context) error {
 			for _, identity := range resolvedConnections {
+				if g.agentService != nil && g.projectServices != nil {
+					serviceKey := identity.ServiceKey
+					if !slices.Contains(g.agentService.GetUses(), serviceKey) {
+						return exterrors.Dependency(
+							exterrors.CodeFoundryDependencyNotReady,
+							fmt.Sprintf(
+								"connection service %q is not declared in agent service %q uses",
+								serviceKey,
+								g.agentService.GetName(),
+							),
+							fmt.Sprintf(
+								"add %q to the agent service's uses list and run 'azd deploy --all'",
+								serviceKey,
+							),
+						)
+					}
+					if g.dependencyEnabled != nil {
+						enabled, err := g.dependencyEnabled(ctx, serviceKey)
+						if err != nil {
+							return err
+						}
+						if !enabled {
+							return exterrors.Dependency(
+								exterrors.CodeFoundryDependencyNotReady,
+								fmt.Sprintf(
+									"connection service %q is disabled by its deployment condition",
+									serviceKey,
+								),
+								"enable the Connection dependency and run 'azd deploy --all'",
+							)
+						}
+					}
+				}
 				if !siblingOwnsConnection(identity.ServiceKey, g.projectEndpoint(), g.env) {
 					return exterrors.Dependency(
 						exterrors.CodeFoundryDependencyNotReady,

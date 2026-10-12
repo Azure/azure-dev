@@ -4,6 +4,7 @@
 package project
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,6 +85,68 @@ func TestConnectionsNodeUsesResolvedPromptProject(t *testing.T) {
 	if err := node.Resolve(t.Context()); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
+}
+
+func TestConnectionsNodeRequiresUsesDependency(t *testing.T) {
+	t.Parallel()
+
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	graph := &promptGraph{
+		managed: &agent_yaml.PromptAgent{Connections: []string{"search"}},
+		agentService: &azdext.ServiceConfig{
+			Name: "agent",
+			Uses: []string{"project"},
+		},
+		projectServices: map[string]*azdext.ServiceConfig{
+			"search": promptConnectionService(t, "search", ""),
+		},
+		env: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":                        endpoint,
+			envkey.ConnectionServiceProjectEndpoint("search"): endpoint,
+		},
+	}
+
+	node := connectionsNode(graph)
+	require.NoError(t, node.Validate())
+	require.ErrorContains(
+		t,
+		node.Resolve(t.Context()),
+		`connection service "search" is not declared in agent service "agent" uses`,
+	)
+}
+
+func TestConnectionsNodeRejectsDisabledDependency(t *testing.T) {
+	t.Parallel()
+
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	checkedService := ""
+	graph := &promptGraph{
+		managed: &agent_yaml.PromptAgent{Connections: []string{"search"}},
+		agentService: &azdext.ServiceConfig{
+			Name: "agent",
+			Uses: []string{"search"},
+		},
+		projectServices: map[string]*azdext.ServiceConfig{
+			"search": promptConnectionService(t, "search", ""),
+		},
+		dependencyEnabled: func(_ context.Context, serviceName string) (bool, error) {
+			checkedService = serviceName
+			return false, nil
+		},
+		env: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":                        endpoint,
+			envkey.ConnectionServiceProjectEndpoint("search"): endpoint,
+		},
+	}
+
+	node := connectionsNode(graph)
+	require.NoError(t, node.Validate())
+	require.ErrorContains(
+		t,
+		node.Resolve(t.Context()),
+		`connection service "search" is disabled by its deployment condition`,
+	)
+	require.Equal(t, "search", checkedService)
 }
 
 func TestConnectionsNodeResolvesConfiguredConnectionName(t *testing.T) {

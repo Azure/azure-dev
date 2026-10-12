@@ -77,3 +77,29 @@ func TestStartPollingProgress_StopJoinsBlockedSender(t *testing.T) {
 		t.Fatal("stopped poller emitted an update after its owner closed progress")
 	}
 }
+
+func TestStartPollingProgress_DeferredStopJoinsOnGoexit(t *testing.T) {
+	progress := async.NewProgress[ServiceProgress]()
+	ownerStopped := make(chan struct{})
+
+	go func() {
+		defer close(ownerStopped)
+		stop := startPollingProgress(progress, "Waiting", time.Nanosecond)
+		defer stop()
+		runtime.Goexit()
+	}()
+
+	select {
+	case <-ownerStopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("owner did not stop after runtime.Goexit")
+	}
+
+	progress.Done()
+	stack := make([]byte, 1<<20)
+	n := runtime.Stack(stack, true)
+	require.NotContains(t, string(stack[:n]), "startPollingProgress.func1")
+	for range progress.Progress() {
+		t.Fatal("stopped poller emitted an update after its owner closed progress")
+	}
+}

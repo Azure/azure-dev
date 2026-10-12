@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -133,13 +133,9 @@ func executeAgentServiceAddCommand(
 ) (string, string, error) {
 	t.Helper()
 
-	extCtx := &azdext.ExtensionContext{}
-	root := &cobra.Command{
-		Use:           "agent",
-		SilenceErrors: true,
-		SilenceUsage:  true,
-	}
-	root.PersistentFlags().StringVar(&extCtx.OutputFormat, "output", "default", "Output format")
+	root, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{Name: "agent"})
+	root.SilenceErrors = true
+	root.SilenceUsage = true
 	root.AddCommand(newAgentServiceAddCommandWithClientFactory(extCtx, newProjectClient))
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -256,6 +252,171 @@ func TestAgentServiceAddCommand_AddsServiceWithOneSDKRequest(t *testing.T) {
 		"project":      "src",
 		"dependencies": []any{"ai-project"},
 	}, result)
+}
+
+func TestAgentServiceAddStructNumbers(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		number string
+		safe   bool
+	}{
+		{"9007199254740991", true},
+		{"9007199254740992", true},
+		{"9007199254740993", false},
+		{"9007199254740994", true},
+		{"-9007199254740991", true},
+		{"-9007199254740992", true},
+		{"-9007199254740993", false},
+		{"-9007199254740994", true},
+		{"1152921504606846976", true},
+		{"-1152921504606846976", true},
+		{"18446744073709551615", false},
+		{"0.1", true},
+	} {
+		t.Run(test.number, func(t *testing.T) {
+			var values map[string]any
+			require.NoError(t, yaml.Unmarshal(
+				[]byte("custom:\n  items:\n    - token: "+test.number+"\n"), &values,
+			))
+			result, err := agentServiceAddStruct(values)
+			if !test.safe {
+				require.ErrorContains(t, err, `field "custom.items[0].token"`)
+				require.ErrorContains(t, err, "cannot be preserved losslessly")
+				require.NotContains(t, err.Error(), test.number)
+				require.Nil(t, result)
+				return
+			}
+			require.NoError(t, err)
+			number := result.GetFields()["custom"].GetStructValue().
+				GetFields()["items"].GetListValue().GetValues()[0].GetStructValue().
+				GetFields()["token"].GetNumberValue()
+			expected, ok := new(big.Rat).SetString(test.number)
+			require.True(t, ok)
+			if expected.IsInt() {
+				require.Zero(t, expected.Cmp(new(big.Rat).SetFloat64(number)))
+			} else {
+				require.Equal(t, 0.1, number)
+			}
+		})
+	}
+	t.Run("existing double", func(t *testing.T) {
+		value := float64(1 << 60)
+		result, err := agentServiceAddStruct(map[string]any{"value": value})
+		require.NoError(t, err)
+		require.Equal(t, value, result.GetFields()["value"].GetNumberValue())
+	})
+}
+
+func TestAgentServiceAddCommand_RejectsUnsafeNumbersWithoutWriting(t *testing.T) {
+	t.Parallel()
+	for _, number := range []string{"9007199254740993", "-9007199254740993"} {
+		for _, field := range []string{"hooks", "config", "custom"} {
+			t.Run(number+"/"+field, func(t *testing.T) {
+				projectRoot := t.TempDir()
+				writeAgentServiceAddProject(t, projectRoot, fmt.Sprintf(`  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    uses: [ai-project]
+    $ref: ./definitions/old.yaml
+    %s:
+      items:
+        - token: %s
+`, field, number))
+				writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+				projectFile := filepath.Join(projectRoot, "azure.yaml")
+				before, err := os.ReadFile(projectFile)
+				require.NoError(t, err)
+				client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+				stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+					t, client, "support-agent", "--file", "./definitions/support.yaml",
+				)
+				require.ErrorContains(t, err, "cannot be preserved losslessly")
+				require.ErrorContains(t, err, "items[0].token")
+				localError, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, "invalid_service_config", localError.Code)
+				require.NotContains(t, err.Error()+stdout+stderr, number)
+				require.Empty(t, client.addRequests)
+				require.Empty(t, client.setRequests)
+				after, readErr := os.ReadFile(projectFile)
+				require.NoError(t, readErr)
+				require.Equal(t, before, after)
+			})
+		}
+	}
+}
+
+func TestAgentServiceAddCommand_RejectsUnsafeDependencyProperties(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+    custom:
+      items:
+        - token: 9007199254740993
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+	projectFile := filepath.Join(projectRoot, "azure.yaml")
+	before, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+	stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+		t, client, "support-agent", "--file", "./definitions/support.yaml",
+	)
+	require.ErrorContains(t, err, `reading service "ai-project" properties`)
+	require.ErrorContains(t, err, `field "custom.items[0].token"`)
+	require.NotContains(t, err.Error()+stdout+stderr, "9007199254740993")
+	require.Empty(t, client.addRequests)
+	require.Empty(t, client.setRequests)
+	after, readErr := os.ReadFile(projectFile)
+	require.NoError(t, readErr)
+	require.Equal(t, before, after)
+}
+
+func TestAgentServiceAddCommand_RejectsOutputBeforeClient(t *testing.T) {
+	t.Parallel()
+	for _, format := range []string{"table", "none", "invalid"} {
+		t.Run(format, func(t *testing.T) {
+			called := false
+			_, _, err := executeAgentServiceAddCommand(t,
+				func() (azdext.ProjectServiceClient, func(), error) {
+					called = true
+					return nil, nil, fmt.Errorf("client must not be created")
+				},
+				nil, "support-agent", "--file", "support.yaml", "--output", format,
+			)
+			require.ErrorContains(t, err, "output")
+			require.ErrorContains(t, err, format)
+			require.False(t, called)
+		})
+	}
+}
+
+func TestAgentServiceAddCommand_OutputHelpAndMetadata(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"add", "--help"})
+	require.NoError(t, root.Execute())
+	require.Contains(t, out.String(), "supported: default, json")
+	require.NotContains(t, out.String(), `default "table"`)
+
+	metadata := azdext.GenerateExtensionMetadata("1.0", "azure.ai.agents", root)
+	for _, command := range metadata.Commands {
+		if len(command.Name) == 0 || command.Name[len(command.Name)-1] != "add" {
+			continue
+		}
+		for _, flag := range command.Flags {
+			if flag.Name == "output" {
+				require.Equal(t, []string{"default", "json"}, flag.ValidValues)
+				require.Equal(t, "default", flag.Default)
+				return
+			}
+		}
+	}
+	t.Fatal("add output flag metadata not found")
 }
 
 func TestAgentServiceAddCommand_AddsJSONDefinitionAsProjectRootRef(t *testing.T) {
@@ -690,6 +851,8 @@ func TestAgentServiceAddCommand_PersistsThroughProjectServiceClient(t *testing.T
     env:
       API_KEY: ${AGENT_API_KEY}
     customField: ${CUSTOM_VALUE}
+    safeLargeInteger: 9007199254740994
+    safePowerOfTwo: 1152921504606846976
     $ref: ./definitions/old.yaml
 `)
 	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
@@ -727,6 +890,10 @@ func TestAgentServiceAddCommand_PersistsThroughProjectServiceClient(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, server.setRequests, 1)
 	require.Empty(t, server.setRequests[0].GetPath())
+	require.Equal(t, float64(9007199254740994),
+		server.setRequests[0].GetSection().GetFields()["safeLargeInteger"].GetNumberValue())
+	require.Equal(t, float64(1152921504606846976),
+		server.setRequests[0].GetSection().GetFields()["safePowerOfTwo"].GetNumberValue())
 
 	data, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
 	require.NoError(t, err)

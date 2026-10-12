@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -130,7 +132,9 @@ service's project directory and must name an existing directory inside the
 current project.
 
 If <name> already identifies an Agent service, the command updates its
-Agent-owned declaration and preserves other service fields. Deploy it with
+Agent-owned declaration and preserves other service fields. Numeric values
+that cannot be preserved losslessly through azd's project API are rejected
+before writing, including in dependency service properties. Deploy it with
 'azd deploy <name>' or 'azd up'.`,
 		Example: `  # Add an Agent service from a direct definition
   azd ai agent add support-agent --file ./agents/support.yaml
@@ -203,7 +207,11 @@ Agent-owned declaration and preserves other service fields. Deploy it with
 	)
 	_ = cmd.MarkFlagRequired("file")
 
-	return cmd
+	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"default", "json"},
+		Default:       "default",
+	})
 }
 
 func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
@@ -524,6 +532,9 @@ func agentServiceAddStruct(values map[string]any) (*structpb.Struct, error) {
 		return nil, nil
 	}
 
+	if err := validateAgentServiceAddNumbers(values, ""); err != nil {
+		return nil, err
+	}
 	data, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encoding project values as JSON: %w", err)
@@ -537,6 +548,49 @@ func agentServiceAddStruct(values map[string]any) (*structpb.Struct, error) {
 		return nil, fmt.Errorf("converting project values to a protobuf struct: %w", err)
 	}
 	return result, nil
+}
+
+// validateAgentServiceAddNumbers checks both complete service sections and dependency
+// property maps before converting their numbers to the doubles used by structpb.
+func validateAgentServiceAddNumbers(value any, path string) error {
+	switch value := value.(type) {
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(value)) {
+			field := key
+			if path != "" {
+				field = path + "." + key
+			}
+			if err := validateAgentServiceAddNumbers(value[key], field); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, item := range value {
+			if err := validateAgentServiceAddNumbers(item, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return validateAgentServiceAddNumbers(json.Number(fmt.Sprint(value)), path)
+	case float32, float64:
+		// YAML floating-point values already fit the project's double representation.
+		return nil
+	case json.Number:
+		number, ok := new(big.Rat).SetString(string(value))
+		double, err := value.Float64()
+		if !ok || err != nil {
+			return fmt.Errorf("field %q contains a number that cannot be preserved losslessly by the project API", path)
+		}
+		roundTrip := new(big.Rat).SetFloat64(double)
+		if !number.IsInt() {
+			// Decimal fractions use their JSON round trip, not exact binary equality.
+			roundTrip, _ = new(big.Rat).SetString(strconv.FormatFloat(double, 'g', -1, 64))
+		}
+		if roundTrip == nil || number.Cmp(roundTrip) != 0 {
+			return fmt.Errorf("field %q contains a number that cannot be preserved losslessly by the project API", path)
+		}
+	}
+	return nil
 }
 
 func validateAgentServiceAddProjectFlag(

@@ -6,6 +6,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -332,6 +333,8 @@ func agentServiceProjectValue(
 	return structpb.NewStringValue(sourcePath), sourcePath, nil
 }
 
+// normalizeAgentServiceSource rejects existing non-directories while allowing
+// deferred directory paths and unexpanded project templates.
 func normalizeAgentServiceSource(
 	projectRoot string,
 	source string,
@@ -363,6 +366,13 @@ func normalizeAgentServiceSource(
 	resolved, err := paths.JoinAllowRoot(rootAbs, filepath.ToSlash(relativePath))
 	if err != nil {
 		return "", err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect source path: %w", err)
+	}
+	if err == nil && !info.IsDir() {
+		return "", fmt.Errorf("path must identify a directory")
 	}
 	relativePath, err = filepath.Rel(rootAbs, resolved)
 	if err != nil {

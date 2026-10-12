@@ -14,7 +14,9 @@ service's project directory and must name an existing directory inside the
 current project.
 
 If <name> already identifies an Agent service, the command updates its
-Agent-owned declaration and preserves other service fields. Deploy it with
+Agent-owned declaration and preserves other service fields. Numeric values
+that cannot be preserved losslessly through azd's project API are rejected
+before writing, including in dependency service properties. Deploy it with
 'azd deploy <name>' or 'azd up'.
 
 Usage
@@ -31,7 +33,7 @@ Global Flags
   -e, --environment string : The name of the environment to use
   -h, --help               : help for add
       --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
-  -o, --output string      : The output format (default "default")
+  -o, --output string      : The output format (supported: default, json) (default "default")
 
 Examples
   Add an Agent service from a direct definition

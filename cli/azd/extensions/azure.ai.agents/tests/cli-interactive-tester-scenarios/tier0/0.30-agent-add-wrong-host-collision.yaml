@@ -41,8 +41,8 @@ goals:
   - >-
     Compare the working azure.yaml byte-for-byte with
     '{fixtures_dir}/agent-add/projects/update/azure.yaml'. Confirm the manual-tool service still
-    has host 'containerapp'; no service is added, removed, or changed. The only command-created
-    artifact allowed is .azure/agent-add.lock and its containing directory.
+    has host 'containerapp'; no service is added, removed, or changed. Verify the entire working
+    tree, including hidden files, is unchanged. No project artifacts may be created.
   - "Take a best-effort screenshot of the validation error; capture failure must not block later goals."
   - >-
     Report a finding if the existing non-Agent service key is accepted, a different error occurs,

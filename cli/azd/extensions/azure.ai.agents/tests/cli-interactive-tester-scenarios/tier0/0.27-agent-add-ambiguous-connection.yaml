@@ -41,8 +41,8 @@ goals:
     Compare the working azure.yaml byte-for-byte with
     '{fixtures_dir}/agent-add/projects/ambiguous-connection/azure.yaml'. Confirm ai-project,
     alpha-search, and beta-search remain unchanged and no Agent service or uses entry is added.
-    The only command-created artifact allowed is .azure/agent-add.lock and its containing
-    directory.
+    Verify the entire working tree, including hidden files, is unchanged.
+    No project artifacts may be created.
   - "Take a best-effort screenshot of the validation error; capture failure must not block later goals."
   - >-
     Report a finding if the ambiguous Connection name is accepted, a different error occurs, any

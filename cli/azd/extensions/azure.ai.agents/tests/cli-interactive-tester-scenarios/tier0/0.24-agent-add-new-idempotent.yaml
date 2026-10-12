@@ -52,9 +52,9 @@ goals:
     contains exactly ['ai-project'] and azure.yaml is byte-for-byte unchanged from its first
     successful result. Do not write a comparison snapshot into the project.
   - >-
-    Inspect the working tree, including hidden files. The only command-created artifact allowed
-    beyond the seeded azure.yaml and definitions/support.yaml is .azure/agent-add.lock and its
-    containing directory. No environment config, dotenv files, source files, infrastructure, or
+    Inspect the working tree, including hidden files. Beyond the azure.yaml change, no artifacts
+    may be added to the seeded project. The shared lock stays outside the project.
+    No environment config, dotenv files, source files, infrastructure, or
     deployment state may be created.
   - "Take best-effort screenshots of both JSON results; capture failure must not block later goals."
   - >-

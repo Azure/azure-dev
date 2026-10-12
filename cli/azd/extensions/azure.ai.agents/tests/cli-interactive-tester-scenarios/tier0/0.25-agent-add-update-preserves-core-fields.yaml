@@ -49,9 +49,9 @@ goals:
     remains 'keep-me'. The Agent reference changes to './definitions/support.yaml'; no service
     is added or removed. YAML formatting, mapping order, and a schema comment may change.
   - >-
-    Inspect the working tree, including hidden files. The only command-created artifact allowed
-    beyond the seeded project and definitions is .azure/agent-add.lock and its containing
-    directory. No environment config, dotenv files, source files, infrastructure, or deployment
+    Inspect the working tree, including hidden files. Beyond the azure.yaml change, no artifacts
+    may be added to the seeded project. The shared lock stays outside the project.
+    No environment config, dotenv files, source files, infrastructure, or deployment
     state may be created.
   - "Take a best-effort screenshot of the JSON result; capture failure must not block later goals."
   - >-

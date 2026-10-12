@@ -43,8 +43,9 @@ goals:
   - >-
     After both rejections, compare the working azure.yaml byte-for-byte with
     '{fixtures_dir}/agent-add/projects/path-safety/azure.yaml'. Confirm it still contains only the
-    ai-project service; no outside file is read or created, no Agent service is added, and the
-    only command-created artifact allowed is .azure/agent-add.lock and its containing directory.
+    ai-project service; no outside definition or source is read or created, and no Agent service
+    is added. Verify the entire working tree, including hidden files, is unchanged.
+    No project artifacts may be created.
   - "Take a best-effort screenshot of both validation errors; capture failure must not block later goals."
   - >-
     Report a finding if either path outside the project is accepted, an error differs from the

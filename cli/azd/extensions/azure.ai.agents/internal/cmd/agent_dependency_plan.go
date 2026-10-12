@@ -187,6 +187,15 @@ func agentDependencyReferencesFromFile(
 			return agentDependencyReferences{}, invalidAgentDependencyDefinition(err)
 		}
 		references.connections = slices.Clone(prompt.Connections)
+		if prompt.Toolbox != nil {
+			name := strings.TrimSpace(prompt.Toolbox.Name)
+			if name == "" {
+				return agentDependencyReferences{}, invalidAgentDependencyDefinition(
+					fmt.Errorf("toolbox reference requires a non-empty name"),
+				)
+			}
+			references.toolboxes = append(references.toolboxes, name)
+		}
 		for _, skill := range agent_yaml.PromptAgentSkillReferences(prompt) {
 			if strings.TrimSpace(skill.Version) == "" {
 				references.skills = append(

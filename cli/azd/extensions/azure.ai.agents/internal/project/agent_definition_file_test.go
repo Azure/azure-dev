@@ -345,17 +345,24 @@ tools:
 	require.Contains(t, tool, "futureField")
 }
 
-func TestLoadAgentDefinitionFileResolvesNestedReferencesWithSDK(t *testing.T) {
+func TestLoadAgentDefinitionFileResolvesNestedReferencesBesideDefinition(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
+	definitionDir := filepath.Join(root, "definitions")
+	require.NoError(t, os.MkdirAll(definitionDir, 0o750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "harness.json"),
+		filepath.Join(definitionDir, "harness.json"),
 		[]byte(`{"type":"github_copilot_preview"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "agent.yaml"),
+		filepath.Join(root, "harness.json"),
+		[]byte(`{"type":"invalid_decoy"}`),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(definitionDir, "agent.yaml"),
 		[]byte(`kind: prompt
 name: referenced-agent
 model: gpt-4.1-mini
@@ -366,9 +373,10 @@ harness:
 		0o600,
 	))
 
-	got, err := LoadAgentDefinitionFile(root, "agent.yaml", "agent-service")
+	got, err := LoadAgentDefinitionFile(root, "definitions/agent.yaml", "agent-service")
 
 	require.NoError(t, err)
+	require.Equal(t, "definitions/agent.yaml", got.Path)
 	require.Equal(t, agent_yaml.AgentKindPrompt, got.Kind)
 	require.Equal(t, "referenced-agent", got.Name)
 	harness, ok := got.Properties["harness"].(map[string]any)

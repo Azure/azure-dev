@@ -12,9 +12,14 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CommandResultService`, `CopilotService`, and `TelemetryService` are currently
+`CommandResultService` and `CopilotService` are currently
 beta-only. Removing or renumbering fields, changing field types, and reusing
 reserved names or numbers remain breaking changes in either channel.
+
+`TelemetryService.ReportUsage` and `AccountService.GetCurrentPrincipal`
+graduate to stable in azd 1.36.0 (October 2026). Their deprecated beta routes
+continue delegating to stable behavior; removing them requires a separately
+approved policy. See the [graduation and SDK migration policy](../docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a

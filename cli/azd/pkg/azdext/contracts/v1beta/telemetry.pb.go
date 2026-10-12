@@ -24,6 +24,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/telemetry.proto.
 type ReportUsageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Event name owned by the extension. Recorded as extension.event so
@@ -83,6 +84,7 @@ func (x *ReportUsageRequest) GetAttributes() map[string]string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/telemetry.proto.
 type ReportUsageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Accepted reports whether the host recorded the event. A false value is
@@ -135,7 +137,7 @@ var File_azd_extensions_v1beta_telemetry_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_telemetry_proto_rawDesc = "" +
 	"\n" +
-	"%azd/extensions/v1beta/telemetry.proto\x12\x15azd.extensions.v1beta\"\xcd\x01\n" +
+	"%azd/extensions/v1beta/telemetry.proto\x12\x15azd.extensions.v1beta\"\xd1\x01\n" +
 	"\x12ReportUsageRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12Y\n" +
@@ -144,11 +146,11 @@ const file_azd_extensions_v1beta_telemetry_proto_rawDesc = "" +
 	"attributes\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"1\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"5\n" +
 	"\x13ReportUsageResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\bR\baccepted2x\n" +
-	"\x10TelemetryService\x12d\n" +
-	"\vReportUsage\x12).azd.extensions.v1beta.ReportUsageRequest\x1a*.azd.extensions.v1beta.ReportUsageResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
+	"\baccepted\x18\x01 \x01(\bR\baccepted:\x02\x18\x012\x82\x01\n" +
+	"\x10TelemetryService\x12i\n" +
+	"\vReportUsage\x12).azd.extensions.v1beta.ReportUsageRequest\x1a*.azd.extensions.v1beta.ReportUsageResponse\"\x03\x88\x02\x01\x1a\x03\x88\x02\x01BGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
 var (
 	file_azd_extensions_v1beta_telemetry_proto_rawDescOnce sync.Once

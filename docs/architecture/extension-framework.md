@@ -85,7 +85,8 @@ Extensions can access these azd services via gRPC:
 - **Environment** — Read/write environment values and secrets
 - **User Config** — Read user-level azd configuration
 - **Deployment** — Access deployment information
-- **Account**. List subscriptions and resolve access tenants. The `v1beta` client also retrieves the current principal's resource-tenant object ID and type for role assignments. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
+- **Account**. List subscriptions and resolve access tenants. Since azd 1.36.0, stable `Account().GetCurrentPrincipal` retrieves the current principal's resource-tenant object ID and type for role assignments. The equivalent beta API is deprecated. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
+- **Telemetry**. Since azd 1.36.0, stable `Telemetry().ReportUsage` records eligible extension usage events. Its deprecated beta wire route remains available to released binaries. See [contract graduation and SDK migration](../../cli/azd/docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events

@@ -24,6 +24,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/account.proto.
 type PrincipalType int32
 
 const (
@@ -252,6 +253,7 @@ func (x *LookupTenantResponse) GetTenantId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/account.proto.
 type GetCurrentPrincipalRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required subscription ID. The active environment is not used as a default.
@@ -297,6 +299,7 @@ func (x *GetCurrentPrincipalRequest) GetSubscriptionId() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/account.proto.
 type GetCurrentPrincipalResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Object ID in the subscription's resource tenant, not the user's home tenant or an application client ID.
@@ -365,20 +368,20 @@ const file_azd_extensions_v1beta_account_proto_rawDesc = "" +
 	"\x13LookupTenantRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"3\n" +
 	"\x14LookupTenantResponse\x12\x1b\n" +
-	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"E\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"I\n" +
 	"\x1aGetCurrentPrincipalRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"\x87\x01\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId:\x02\x18\x01\"\x8b\x01\n" +
 	"\x1bGetCurrentPrincipalResponse\x12\x1b\n" +
 	"\tobject_id\x18\x01 \x01(\tR\bobjectId\x12K\n" +
-	"\x0eprincipal_type\x18\x02 \x01(\x0e2$.azd.extensions.v1beta.PrincipalTypeR\rprincipalType*n\n" +
+	"\x0eprincipal_type\x18\x02 \x01(\x0e2$.azd.extensions.v1beta.PrincipalTypeR\rprincipalType:\x02\x18\x01*r\n" +
 	"\rPrincipalType\x12\x1e\n" +
 	"\x1aPRINCIPAL_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13PRINCIPAL_TYPE_USER\x10\x01\x12$\n" +
-	" PRINCIPAL_TYPE_SERVICE_PRINCIPAL\x10\x022\xef\x02\n" +
+	" PRINCIPAL_TYPE_SERVICE_PRINCIPAL\x10\x02\x1a\x02\x18\x012\xf5\x02\n" +
 	"\x0eAccountService\x12v\n" +
 	"\x11ListSubscriptions\x12/.azd.extensions.v1beta.ListSubscriptionsRequest\x1a0.azd.extensions.v1beta.ListSubscriptionsResponse\x12g\n" +
-	"\fLookupTenant\x12*.azd.extensions.v1beta.LookupTenantRequest\x1a+.azd.extensions.v1beta.LookupTenantResponse\x12|\n" +
-	"\x13GetCurrentPrincipal\x121.azd.extensions.v1beta.GetCurrentPrincipalRequest\x1a2.azd.extensions.v1beta.GetCurrentPrincipalResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
+	"\fLookupTenant\x12*.azd.extensions.v1beta.LookupTenantRequest\x1a+.azd.extensions.v1beta.LookupTenantResponse\x12\x81\x01\n" +
+	"\x13GetCurrentPrincipal\x121.azd.extensions.v1beta.GetCurrentPrincipalRequest\x1a2.azd.extensions.v1beta.GetCurrentPrincipalResponse\"\x03\x88\x02\x01BGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
 var (
 	file_azd_extensions_v1beta_account_proto_rawDescOnce sync.Once

@@ -88,6 +88,7 @@ func (s *Server) registerServices() error {
 	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
 	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
+	azdext.RegisterTelemetryServiceServer(s.grpcServer, s.telemetryService)
 
 	betaServiceOverrides := maps.Clone(s.betaServiceOverrides)
 	if extensionService, ok := s.extensionService.(*ExtensionService); ok {

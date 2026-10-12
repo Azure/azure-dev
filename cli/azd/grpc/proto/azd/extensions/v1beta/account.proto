@@ -16,7 +16,10 @@ service AccountService {
   rpc LookupTenant (LookupTenantRequest) returns (LookupTenantResponse);
 
   // GetCurrentPrincipal resolves the signed-in identity in the subscription's resource tenant.
-  rpc GetCurrentPrincipal (GetCurrentPrincipalRequest) returns (GetCurrentPrincipalResponse);
+  // Deprecated: use azd.extensions.v1.AccountService.GetCurrentPrincipal in azd 1.36.0 or later.
+  rpc GetCurrentPrincipal (GetCurrentPrincipalRequest) returns (GetCurrentPrincipalResponse) {
+    option deprecated = true;
+  }
 }
 
 message ListSubscriptionsRequest {
@@ -39,11 +42,15 @@ message LookupTenantResponse {
 }
 
 message GetCurrentPrincipalRequest {
+  // Deprecated: use azd.extensions.v1.GetCurrentPrincipalRequest in azd 1.36.0 or later.
+  option deprecated = true;
   // Required subscription ID. The active environment is not used as a default.
   string subscription_id = 1;
 }
 
 message GetCurrentPrincipalResponse {
+  // Deprecated: use azd.extensions.v1.GetCurrentPrincipalResponse in azd 1.36.0 or later.
+  option deprecated = true;
   // Object ID in the subscription's resource tenant, not the user's home tenant or an application client ID.
   string object_id = 1;
   // Principal type determined from the host's login details.
@@ -51,6 +58,8 @@ message GetCurrentPrincipalResponse {
 }
 
 enum PrincipalType {
+  // Deprecated: use azd.extensions.v1.PrincipalType in azd 1.36.0 or later.
+  option deprecated = true;
   PRINCIPAL_TYPE_UNSPECIFIED = 0;
   PRINCIPAL_TYPE_USER = 1;
   PRINCIPAL_TYPE_SERVICE_PRINCIPAL = 2;

@@ -383,6 +383,10 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 	}
 
 	for _, env := range localEnvs {
+		if !IsValidEnvironmentName(env.Name) {
+			log.Printf("skipping local environment entry %q: %v", env.Name, InvalidEnvironmentNameError(env.Name))
+			continue
+		}
 		envMap[env.Name] = &Description{
 			Name:       env.Name,
 			HasLocal:   true,

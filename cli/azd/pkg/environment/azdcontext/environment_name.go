@@ -29,7 +29,7 @@ func IsValidEnvironmentName(name string) bool {
 // InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
 func InvalidEnvironmentNameError(name string) error {
 	return fmt.Errorf(
-		"environment name '%s' is invalid (use 1-64 alphanumeric characters, hyphens, underscores, "+
+		"environment name %q is invalid (use 1-64 alphanumeric characters, hyphens, underscores, "+
 			"parentheses or periods; the name must be a valid directory name, not a path, "+
 			"and cannot contain only periods; trailing periods are not allowed on Windows)",
 		name,

@@ -149,7 +149,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, invalidEnvName)
 		require.Error(t, err)
 		require.Nil(t, env)
-		require.ErrorContains(t, err, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
+		require.ErrorContains(t, err, fmt.Sprintf("environment name %q is invalid", invalidEnvName))
 	})
 }
 
@@ -314,8 +314,10 @@ func Test_EnvManager_ListSkipsInvalidLocalRemoteDestination(t *testing.T) {
 	}
 }
 
-func Test_EnvManager_ListSkipsInvalidRemoteNames(t *testing.T) {
-	invalidNames := []string{"", ".", "..", "...", "invalid name", "a/b", `a\b`, strings.Repeat("a", 65)}
+func Test_EnvManager_ListSkipsInvalidDataStoreNames(t *testing.T) {
+	invalidNames := []string{
+		"", ".", "..", "...", "invalid name", "a/b", `a\b`, strings.Repeat("a", 65), "bad\nname", "bad\x1b[31mname",
+	}
 	if runtime.GOOS == "windows" {
 		invalidNames = append(invalidNames, "prod.", "NUL")
 	}
@@ -335,6 +337,21 @@ func Test_EnvManager_ListSkipsInvalidRemoteNames(t *testing.T) {
 			local:    emptyEnvList,
 			remote:   invalidEnvs,
 			expected: []*Description{},
+		},
+		{
+			name:     "AllInvalidLocal",
+			local:    invalidEnvs,
+			remote:   emptyEnvList,
+			expected: []*Description{},
+		},
+		{
+			name:   "MixedLocal",
+			local:  append(append([]*contracts.EnvListEnvironment{}, localEnvList...), invalidEnvs...),
+			remote: emptyEnvList,
+			expected: []*Description{
+				{Name: "env1", HasLocal: true, DotEnvPath: ".azure/env1/.env"},
+				{Name: "env2", HasLocal: true, DotEnvPath: ".azure/env2/.env"},
+			},
 		},
 		{
 			name:  "MixedLocalAndRemote",

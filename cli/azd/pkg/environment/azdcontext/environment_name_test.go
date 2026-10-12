@@ -8,11 +8,25 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestInvalidEnvironmentNameError_QuotesControlCharacters(t *testing.T) {
+	for _, name := range []string{"bad\nname", "bad\rname", "bad\tname", "bad\x1b[31mname", "bad\x00name"} {
+		t.Run(strconv.Quote(name), func(t *testing.T) {
+			message := InvalidEnvironmentNameError(name).Error()
+			require.Contains(t, message, "environment name "+strconv.Quote(name)+" is invalid")
+			require.NotContains(t, message, name)
+			require.NotContains(t, message, "\n")
+			require.NotContains(t, message, "\r")
+			require.NotContains(t, message, "\x1b")
+		})
+	}
+}
 
 func TestEnvironmentNameValidation(t *testing.T) {
 	tests := []struct {

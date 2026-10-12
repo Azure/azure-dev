@@ -355,7 +355,10 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 		{name: "canceled successful body", status: 200, body: `{"result":"ok"}`, cancel: true},
 		{name: "optional metadata failure", status: 200, body: `{"result":"ok"}`, metadata: 503, wantProbe: true},
 		{name: "optional metadata redirect", status: 200, body: `{"result":"ok"}`, metadata: 302, wantProbe: true},
-		{name: "optional metadata transport failure", status: 200, body: `{"result":"ok"}`, probeTransportErr: true, wantProbe: true},
+		{
+			name: "optional metadata transport failure", status: 200, body: `{"result":"ok"}`,
+			probeTransportErr: true, wantProbe: true,
+		},
 		{name: "optional metadata cancellation", status: 200, body: `{"result":"ok"}`, probeCancel: true, wantProbe: true},
 		{name: "HTTP failure", status: 503, body: `{}`, wantError: "503"},
 	} {

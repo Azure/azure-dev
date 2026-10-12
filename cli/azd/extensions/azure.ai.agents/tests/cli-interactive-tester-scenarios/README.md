@@ -732,8 +732,8 @@ deployable scaffold; never fetch them or pass this fixture to init, provision, o
 `0.17-toolbox-add` and `0.18-connection-add` each seed their own instance-isolated copy. They
 verify the four JSON fields (`agent`, `type`, `dependency`, `added`), the exact `uses` append,
 unchanged sibling definitions, and a no-op second add (`added: false`). Compare YAML semantics
-after the first add: core saving may reformat the document or add a schema comment. The existing
-local `.azure/agent-add.lock` mechanism is allowed; environment or deployment state is not.
+after the first add: core saving may reformat the document or add a schema comment. The shared
+Agent authoring lock stays in the user cache. No additional project artifacts are allowed.
 
 No `.azure/config.json` or dotenv seed is needed: core `Project.Get` resolves the environment
 non-interactively and falls back to empty substitution values when none is selected. The fixture

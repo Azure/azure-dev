@@ -42,8 +42,8 @@ goals:
     stays an empty list, and no bundled connections or toolbox definitions are added to the agent.
     YAML formatting, mapping order, and a schema comment may change; those are not semantic mutations.
   - >-
-    Inspect the working tree, including hidden files. Apart from azure.yaml, the only permitted new
-    project artifact is .azure/agent-add.lock and its containing directory. No environment config,
+    Inspect the working tree, including hidden files. Apart from the azure.yaml change, no project
+    artifacts may be created. The shared lock stays outside the project. No environment config,
     dotenv files, infrastructure, source files, or deployment state may be created. Record the current
     azure.yaml contents for comparison with the repeated command without writing a snapshot into the project.
   - >-

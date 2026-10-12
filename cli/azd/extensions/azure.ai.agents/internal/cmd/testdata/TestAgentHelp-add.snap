@@ -14,9 +14,11 @@ service's project directory and must name an existing directory inside the
 current project.
 
 If <name> already identifies an Agent service, the command updates its
-Agent-owned declaration and preserves other service fields. Numeric values
-that cannot be preserved losslessly through azd's project API are rejected
-before writing, including in dependency service properties. Deploy it with
+Agent-owned declaration and preserves other service fields. Numeric scalar
+tokens that cannot be preserved losslessly through azd's project API are
+rejected before writing. Quote YAML dates and timestamps to keep them as
+strings. These checks also apply to dependency service properties. Project
+locks stay in the user cache, outside the project tree. Deploy it with
 'azd deploy <name>' or 'azd up'.
 
 Usage

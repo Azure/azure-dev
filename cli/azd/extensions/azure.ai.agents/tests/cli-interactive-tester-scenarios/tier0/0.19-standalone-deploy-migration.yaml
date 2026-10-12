@@ -67,7 +67,8 @@ goals:
     core deploy help; capture failure is an observation and must not block the remaining goals.
   - >-
     Report a finding if standalone deploy is accepted, a legacy add ordering is accepted, rejection
-    is not an unknown-flag error, root command discovery or core help differs, local project state
+    for standalone deploy is not an unknown-command error, either legacy add rejection is not an
+    unknown-flag error, root command discovery or core help differs, local project state
     changes, or any prompt, Azure/network activity, build/deployment work, panic, or stack trace
     occurs. Never retry a failed goal or work around a failure by switching commands, logging in, or
     initializing an environment.

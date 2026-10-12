@@ -179,7 +179,11 @@ func TestConnectionsNodeRequiresLocalConnectionService(t *testing.T) {
 		services map[string]*azdext.ServiceConfig
 		want     string
 	}{
-		{name: "missing", want: "does not match an azure.ai.connection service"},
+		{
+			name:     "missing",
+			services: map[string]*azdext.ServiceConfig{},
+			want:     "does not match an azure.ai.connection service",
+		},
 		{
 			name: "wrong host",
 			services: map[string]*azdext.ServiceConfig{

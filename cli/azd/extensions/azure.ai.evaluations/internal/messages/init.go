@@ -171,6 +171,9 @@ func ListingSimulationModelConnections(err error) error {
 	if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
 		return err
 	}
+	if _, ok := errors.AsType[*serviceError](err); ok {
+		return err
+	}
 	if exterrors.IsCancellation(err) {
 		return exterrors.Cancelled("Listing Foundry project connections was cancelled")
 	}

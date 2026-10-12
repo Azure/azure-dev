@@ -31,6 +31,44 @@ model: gpt-4.1-mini
 instructions: Help the user.
 `
 
+func TestAgentServiceAddEnvironmentNormalizesScalars(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]any{
+		"PORT":    8080,
+		"ENABLED": true,
+		"EMPTY":   nil,
+	}
+	got, err := agentServiceAddEnvironment(values)
+
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"PORT":    "8080",
+		"ENABLED": "true",
+		"EMPTY":   "",
+	}, got)
+	require.Equal(t, map[string]any{
+		"PORT":    8080,
+		"ENABLED": true,
+		"EMPTY":   nil,
+	}, values)
+}
+
+func TestAgentServiceAddEnvironmentRejectsCollections(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]any{
+		"mapping":  map[string]any{"nested": "value"},
+		"sequence": []any{"value"},
+	}
+	for name, value := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := agentServiceAddEnvironment(map[string]any{"VALUE": value})
+			require.ErrorContains(t, err, `env "VALUE": must be a scalar`)
+		})
+	}
+}
+
 type recordingAgentServiceAddClient struct {
 	azdext.ProjectServiceClient
 

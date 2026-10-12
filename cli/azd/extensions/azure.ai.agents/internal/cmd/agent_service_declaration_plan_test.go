@@ -247,6 +247,59 @@ func TestPlanAgentServiceDeclarationRootDefinition(t *testing.T) {
 	require.Equal(t, ".", plan.NewServiceConfig.GetRelativePath())
 }
 
+func TestPlanAgentServiceDeclarationAllowsExplicitRootSource(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	definition := loadAgentServiceDeclarationDefinition(
+		t,
+		root,
+		"definitions/agent.yaml",
+		"agent-service",
+	)
+
+	plan, err := planAgentServiceDeclaration(agentServiceDeclarationInput{
+		ServiceName:    "agent-service",
+		ProjectRoot:    root,
+		Definition:     definition,
+		Dependencies:   agentDependencyPlan{Uses: []string{"ai-project"}},
+		SourceOverride: new("."),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ".", plan.DesiredService.GetFields()["project"].GetStringValue())
+	require.Equal(t, ".", plan.NewServiceConfig.GetRelativePath())
+}
+
+func TestPlanAgentServiceDeclarationPreservesEmptyExistingProject(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	definition := loadAgentServiceDeclarationDefinition(
+		t,
+		root,
+		"definitions/agent.yaml",
+		"agent-service",
+	)
+	existing := agentServiceDeclarationStruct(t, map[string]any{
+		"host":    AiAgentHost,
+		"$ref":    "./old-agent.yaml",
+		"project": "",
+	})
+
+	plan, err := planAgentServiceDeclaration(agentServiceDeclarationInput{
+		ServiceName:     "agent-service",
+		ProjectRoot:     root,
+		Definition:      definition,
+		Dependencies:    agentDependencyPlan{Uses: []string{"ai-project"}},
+		ExistingService: existing,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "", plan.DesiredService.GetFields()["project"].GetStringValue())
+	require.Equal(t, agentServiceMutationUpdated, plan.Mutation)
+}
+
 func TestPlanAgentServiceDeclarationIsDeterministic(t *testing.T) {
 	t.Parallel()
 
@@ -330,6 +383,20 @@ func TestPlanAgentServiceDeclarationRejectsInvalidStateWithoutMutation(t *testin
 			serviceName:    "agent-service",
 			existing:       map[string]any{"host": AiAgentHost},
 			sourceOverride: new("../outside"),
+			wantError:      "invalid project source",
+		},
+		{
+			name:           "empty source override",
+			serviceName:    "agent-service",
+			existing:       map[string]any{"host": AiAgentHost},
+			sourceOverride: new(""),
+			wantError:      "invalid project source",
+		},
+		{
+			name:           "whitespace source override",
+			serviceName:    "agent-service",
+			existing:       map[string]any{"host": AiAgentHost},
+			sourceOverride: new("  "),
 			wantError:      "invalid project source",
 		},
 		{

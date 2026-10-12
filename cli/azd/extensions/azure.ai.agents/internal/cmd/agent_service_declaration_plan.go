@@ -269,15 +269,23 @@ func agentServiceProjectValue(
 	definitionPath string,
 ) (*structpb.Value, string, error) {
 	if input.SourceOverride != nil {
+		sourceOverride := *input.SourceOverride
+		if strings.TrimSpace(sourceOverride) == "" {
+			return nil, "", invalidAgentServiceSource(
+				input.ServiceName,
+				sourceOverride,
+				fmt.Errorf("path is empty"),
+			)
+		}
 		sourcePath, err := normalizeAgentServiceSource(
 			input.ProjectRoot,
-			*input.SourceOverride,
+			sourceOverride,
 			true,
 		)
 		if err != nil {
 			return nil, "", invalidAgentServiceSource(
 				input.ServiceName,
-				*input.SourceOverride,
+				sourceOverride,
 				err,
 			)
 		}

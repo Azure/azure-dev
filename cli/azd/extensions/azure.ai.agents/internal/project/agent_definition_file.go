@@ -66,7 +66,8 @@ type AgentDefinitionFile struct {
 }
 
 // LoadAgentDefinitionFile validates a direct definition.
-// Input paths are project-relative.
+// Relative input paths are rooted at projectRoot; absolute inputs are accepted
+// only when contained within projectRoot.
 // Nested $ref files resolve from the definition file and remain
 // rebased to projectRoot.
 // Connection sibling lookup is deferred to dependency planning.

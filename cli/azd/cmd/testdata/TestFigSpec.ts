@@ -335,11 +335,11 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['endpoint'],
-							description: 'Manage agent endpoint and card configuration.',
+							description: 'Inspect agent endpoints and manage hosted endpoint/card configuration.',
 							subcommands: [
 								{
 									name: ['show'],
-									description: 'Show the current endpoint and card configuration of an agent.',
+									description: 'Show callable endpoints or hosted endpoint/card configuration.',
 									options: [
 										{
 											name: ['--output', '-o'],
@@ -355,7 +355,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['update'],
-									description: 'Update an agent\'s endpoint and card configuration without deploying a new version.',
+									description: 'Update a hosted agent\'s endpoint and card without deploying a new version.',
 									options: [
 										{
 											name: ['--force'],
@@ -10052,3 +10052,4 @@ const completionSpec: Fig.Spec = {
 };
 
 export default completionSpec;
+

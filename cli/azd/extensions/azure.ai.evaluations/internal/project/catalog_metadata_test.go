@@ -33,9 +33,9 @@ func TestAnEvaluatorEntryKeepsItsCatalogMetadata(t *testing.T) {
 	changed, created, err := UpsertCatalogFields(dir, "evaluators", "hero-evaluator",
 		[]CatalogField{
 			{Key: "source", Value: "./evaluators/hero-evaluator.json"},
-			{Key: "display_name", Value: "hero-evaluator"},
+			{Key: "displayName", Value: "hero-evaluator"},
 			{Key: "categories", List: []string{"quality", "agents"}},
-			{Key: "supported_evaluation_levels", List: []string{"turn", "conversation"}},
+			{Key: "supportedEvaluationLevels", List: []string{"turn", "conversation"}},
 		})
 
 	require.NoError(t, err)
@@ -43,10 +43,10 @@ func TestAnEvaluatorEntryKeepsItsCatalogMetadata(t *testing.T) {
 	assert.True(t, created)
 
 	text := readCatalog(t, dir)
-	assert.Contains(t, text, "display_name: hero-evaluator")
+	assert.Contains(t, text, "displayName: hero-evaluator")
 	assert.Contains(t, text, "- quality")
 	assert.Contains(t, text, "- agents")
-	assert.Contains(t, text, "supported_evaluation_levels:")
+	assert.Contains(t, text, "supportedEvaluationLevels:")
 	assert.Contains(t, text, "- conversation",
 		"the complete returned list, not the level of the first referencing eval")
 
@@ -90,15 +90,15 @@ func TestAnAbsentFieldIsNotWrittenBlank(t *testing.T) {
 
 	_, _, err := UpsertCatalogFields(dir, "evaluators", "plain", []CatalogField{
 		{Key: "source", Value: "./evaluators/plain.json"},
-		{Key: "display_name", Value: "plain"},
+		{Key: "displayName", Value: "plain"},
 		{Key: "categories", List: nil},
-		{Key: "supported_evaluation_levels", List: nil},
+		{Key: "supportedEvaluationLevels", List: nil},
 	})
 	require.NoError(t, err)
 
 	text := readCatalog(t, dir)
 	assert.NotContains(t, text, "categories")
-	assert.NotContains(t, text, "supported_evaluation_levels")
+	assert.NotContains(t, text, "supportedEvaluationLevels")
 }
 
 // Regenerating writes the same values, and rewriting the file to change nothing
@@ -107,7 +107,7 @@ func TestRewritingTheSameMetadataChangesNothing(t *testing.T) {
 	dir := t.TempDir()
 	fields := []CatalogField{
 		{Key: "source", Value: "./evaluators/hero.json"},
-		{Key: "display_name", Value: "hero"},
+		{Key: "displayName", Value: "hero"},
 		{Key: "categories", List: []string{"quality"}},
 	}
 

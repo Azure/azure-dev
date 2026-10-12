@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestExplicitTraceScenarioCallers(t *testing.T) {
@@ -60,7 +61,7 @@ func TestResponseRunChecksSchemaBothDirections(t *testing.T) {
 					Evals: []project.Eval{group}, Datasets: []project.DatasetDecl{{Name: "golden", File: "rows.jsonl"}},
 				}
 				dir := t.TempDir()
-				raw, err := json.Marshal(cfg)
+				raw, err := yaml.Marshal(authoredValues(t, &cfg))
 				require.NoError(t, err)
 				require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), raw, 0o600))
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(oneRow), 0o600))
@@ -163,7 +164,7 @@ func TestResponsePreparedMappingsAndRun(t *testing.T) {
 					assert.Equal(t, "1", request.TestingCriteria[0].EvaluatorVersion)
 					assert.Equal(t, &eval_api.DataSourceConfig{Type: "azure_ai_source", Scenario: "responses"},
 						request.DataSourceConfig)
-					raw, err := json.Marshal(cfg)
+					raw, err := yaml.Marshal(authoredValues(t, cfg))
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), raw, 0o600))
 					cmd := jsonCmd(t, "json")

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -174,7 +175,10 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 			defer cancel()
 			f.cancel = cancel
 			if tt.cancelAt == "remote" {
-				f.helper.console = &remoteBuildCancelConsole{Console: f.mocks.Console, cancel: cancel}
+				f.helper.console = &remoteBuildCancelConsole{
+					Console: f.mocks.Console,
+					cancel:  cancel,
+				}
 			}
 			f.options.Image = tt.imageOverride
 
@@ -429,6 +433,14 @@ func (f *remoteBuildFixture) publish(ctx context.Context) (*ServicePublishResult
 type remoteBuildCancelConsole struct {
 	input.Console
 	cancel context.CancelFunc
+}
+
+func (c *remoteBuildCancelConsole) ShowPreviewer(
+	ctx context.Context,
+	options *input.ShowPreviewerOptions,
+) io.Writer {
+	c.Console.ShowPreviewer(ctx, options)
+	return &bytes.Buffer{}
 }
 
 func (c *remoteBuildCancelConsole) StopPreviewer(ctx context.Context, keepLogs bool) {

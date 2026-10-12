@@ -132,12 +132,14 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().StringVar(&flags.groupName, "eval", "",
 		"Name of the eval to run, or its id. Defaults to the only one declared.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset", "",
-		"Catalog dataset to read instead of the one the eval declares. "+
-			"Must satisfy the eval's column schema.")
+		"Name of a dataset declared in the eval configuration, to read instead of the one the eval uses. "+
+			"It must satisfy the eval's column schema.")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
-		"Cap local, unregistered dataset rows. Registered versions, trace/response sources, "+
-			"and eval-ID reruns cannot be capped. Use 0 to clear an ordinary dataset eval's configured cap.")
+		"Limit the rows read from a local dataset file that has no registered version. "+
+			"Use 0 to clear an ordinary dataset eval's configured cap. A registered dataset version "+
+			"rejects a positive value; a trace or response source and a rerun selected by eval ID "+
+			"reject any value, including 0.")
 	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
 	addFailOnFlag(cmd, &flags.failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
@@ -174,6 +176,12 @@ func (a *runStartAction) Run() error {
 	// negative one sent the whole dataset to a billed run.
 	if a.flags.maxSamples < 0 {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
+	}
+	if a.cmd.Flags().Changed("dataset") && strings.TrimSpace(a.flags.datasetName) == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--dataset must not be empty when explicitly supplied",
+			"Provide a dataset name declared in the eval configuration, or omit --dataset to use the eval's dataset.")
 	}
 
 	newContext := a.newContext
@@ -693,7 +701,7 @@ func (ec *evalContext) buildRunDataSource(
 		if maxSamples > 0 {
 			return nil, "", exterrors.Validation(
 				exterrors.CodeConflictingArguments,
-				fmt.Sprintf("eval %q: --max-samples or max_samples (%d) conflicts with registered dataset %q version %q",
+				fmt.Sprintf("eval %q: --max-samples or maxSamples (%d) conflicts with registered dataset %q version %q",
 					group.Name, maxSamples, group.Dataset, version),
 				"Registered datasets retain their version identity; this run API has no supported row-subset option. "+
 					"Remove the cap, or publish a smaller dataset and select it.",
@@ -788,7 +796,7 @@ func quotedList(values []string) string {
 //
 // The service reads them from Application Insights, so the agent has to be
 // emitting gen_ai.input.messages / gen_ai.output.messages for anything to be
-// found. `agent_name` filters the traces; it is not a target, because a trace
+// found. `agentName` filters the traces; it is not a target, because a trace
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	// runnableEval has already refused an empty one; read rather than assumed,
@@ -1042,7 +1050,7 @@ func resolveLevel(group *project.Eval) string {
 // resolveMaxSamples prefers a positive flag value, then the declared cap.
 // runMaxSamples separately handles an explicitly supplied zero.
 //
-// Without this, max_samples parsed and did nothing: an eval that caps its
+// Without this, maxSamples parsed and did nothing: an eval that caps its
 // sample count in config would send the whole dataset, and only a flag on every
 // invocation would honour the cap.
 func resolveMaxSamples(flag int, group *project.Eval) int {

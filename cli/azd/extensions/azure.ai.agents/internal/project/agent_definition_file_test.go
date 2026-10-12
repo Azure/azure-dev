@@ -345,7 +345,7 @@ tools:
 	require.Contains(t, tool, "futureField")
 }
 
-func TestLoadAgentDefinitionFileResolvesNestedReferencesWithSDK(t *testing.T) {
+func TestLoadAgentDefinitionFileResolvesNestedReferencesBesideDefinition(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -376,6 +376,7 @@ harness:
 	got, err := LoadAgentDefinitionFile(root, "definitions/agent.yaml", "agent-service")
 
 	require.NoError(t, err)
+	require.Equal(t, "definitions/agent.yaml", got.Path)
 	require.Equal(t, agent_yaml.AgentKindPrompt, got.Kind)
 	require.Equal(t, "referenced-agent", got.Name)
 	harness, ok := got.ResolvedProperties["harness"].(map[string]any)

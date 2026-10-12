@@ -118,6 +118,7 @@ func LoadAgentDefinitionFile(
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
 
+	// Root-ref resolution preserves file-relative and rebased paths.
 	rootReference, err := structpb.NewStruct(map[string]any{
 		"$ref": filepath.ToSlash(relativePath),
 	})

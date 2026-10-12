@@ -17,7 +17,7 @@
 ### Bugs Fixed
 
 - [[#10158]](https://github.com/Azure/azure-dev/pull/10158) Fix stored-response evaluations sending incorrect payloads, and migrate previously stored evaluation definitions forward instead of recreating them.
-- [[#10113]](https://github.com/Azure/azure-dev/pull/10113) Fix `init` accepting local data it cannot turn into evaluation rows, a published evaluator version losing its display name, categories and supported levels, and a cancelled picker reporting success.
+- [[#10113]](https://github.com/Azure/azure-dev/pull/10113) Fix `init` accepting local data it cannot turn into evaluation rows, a published evaluator version losing its display name, categories and supported levels, and closing the eval picker printing "Cancelled" followed by an unrelated ambiguity error and a non-zero exit.
 - [[#10116]](https://github.com/Azure/azure-dev/pull/10116) Fix registered datasets being copied inline and the agent being invoked with an empty question during runs.
 - [[#10147]](https://github.com/Azure/azure-dev/pull/10147) Fix simulation results presenting requested seed, repetition and turn settings as observed counts; counts the service did not report now read `not reported`.
 - [[#10151]](https://github.com/Azure/azure-dev/pull/10151) Fix `azd ai eval dataset download --output-file` rejecting a single uploaded file when its credential is scoped to the parent container.

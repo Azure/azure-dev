@@ -784,7 +784,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return err
 				}
 			}
-			if flags.manifestPointer == "" && flags.kind != "" {
+			if flags.templatePointer == "" && flags.kind != "" {
 				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
 			}
 

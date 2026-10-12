@@ -203,6 +203,9 @@ overrides:
   - filename: internal/grpcserver/{beta_event_service,beta_event_service_test,event_service_test}.go
     words:
       - commandresult
+  - filename: internal/cmd/{deploy,service_event_messages,up_graph}.go
+    words:
+      - commandresult
   - filename: cmd/extension.go
     words:
       - compatResult

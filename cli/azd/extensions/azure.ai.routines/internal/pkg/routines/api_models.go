@@ -5,13 +5,14 @@ package routines
 
 // routineAPI is the Foundry Routines request and response wire shape.
 type routineAPI struct {
-	Name        string                       `json:"name,omitempty"`
-	Description string                       `json:"description,omitempty"`
-	Enabled     *bool                        `json:"enabled,omitempty"`
-	Triggers    map[string]routineTriggerAPI `json:"triggers,omitempty"`
-	Action      *routineActionAPI            `json:"action,omitempty"`
-	CreatedAt   FlexibleTimestamp            `json:"created_at,omitempty"`
-	UpdatedAt   FlexibleTimestamp            `json:"updated_at,omitempty"`
+	Name          string                       `json:"name,omitempty"`
+	Description   string                       `json:"description,omitempty"`
+	Enabled       *bool                        `json:"enabled,omitempty"`
+	Authorization *RoutineAuthorization        `json:"authorization,omitempty"`
+	Triggers      map[string]routineTriggerAPI `json:"triggers,omitempty"`
+	Action        *routineActionAPI            `json:"action,omitempty"`
+	CreatedAt     FlexibleTimestamp            `json:"created_at,omitempty"`
+	UpdatedAt     FlexibleTimestamp            `json:"updated_at,omitempty"`
 }
 
 type routineTriggerAPI struct {
@@ -47,11 +48,12 @@ func routineToAPI(routine *Routine) *routineAPI {
 		return nil
 	}
 	wire := &routineAPI{
-		Name:        routine.Name,
-		Description: routine.Description,
-		Enabled:     routine.Enabled,
-		CreatedAt:   routine.CreatedAt,
-		UpdatedAt:   routine.UpdatedAt,
+		Name:          routine.Name,
+		Description:   routine.Description,
+		Enabled:       routine.Enabled,
+		Authorization: routine.Authorization,
+		CreatedAt:     routine.CreatedAt,
+		UpdatedAt:     routine.UpdatedAt,
 	}
 	if len(routine.Triggers) > 0 {
 		wire.Triggers = make(map[string]routineTriggerAPI, len(routine.Triggers))
@@ -70,11 +72,12 @@ func routineFromAPI(wire *routineAPI) *Routine {
 		return nil
 	}
 	routine := &Routine{
-		Name:        wire.Name,
-		Description: wire.Description,
-		Enabled:     wire.Enabled,
-		CreatedAt:   wire.CreatedAt,
-		UpdatedAt:   wire.UpdatedAt,
+		Name:          wire.Name,
+		Description:   wire.Description,
+		Enabled:       wire.Enabled,
+		Authorization: wire.Authorization,
+		CreatedAt:     wire.CreatedAt,
+		UpdatedAt:     wire.UpdatedAt,
 	}
 	if len(wire.Triggers) > 0 {
 		routine.Triggers = make(map[string]RoutineTrigger, len(wire.Triggers))

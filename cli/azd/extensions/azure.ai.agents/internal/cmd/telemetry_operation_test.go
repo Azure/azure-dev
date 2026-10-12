@@ -353,7 +353,7 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 			[]string{"./app", "--voice", "Ava"}},
 		{"conflicting-sources", "unknown", "cannot pass both a positional directory argument and --src",
 			[]string{"./app", "--src", "./app", "--kind", "hosted"}},
-		{"conflicting-manifests", "unknown", "cannot pass both a positional argument and --manifest",
+		{"conflicting-templates", "unknown", "cannot pass both a positional argument and --template",
 			[]string{"./azure.yaml", "-m", "./azure.yaml", "--kind", "hosted"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

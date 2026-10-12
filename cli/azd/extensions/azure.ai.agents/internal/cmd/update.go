@@ -24,7 +24,7 @@ import (
 func newEndpointCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "endpoint",
-		Short: "Manage agent endpoint and card configuration.",
+		Short: "Inspect agent endpoints and manage hosted endpoint/card configuration.",
 		Example: `  # Inspect the deployed endpoint configuration
   azd ai agent endpoint show`,
 	}
@@ -46,14 +46,15 @@ func newEndpointUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "update [name]",
-		Short: "Update an agent's endpoint and card configuration without deploying a new version.",
-		Long: `Update an agent's endpoint and card configuration without deploying a new version.
+		Short: "Update a hosted agent's endpoint and card without deploying a new version.",
+		Long: `Update a hosted agent's endpoint and card configuration without deploying a new version.
 
 This command reads the agentEndpoint and agentCard fields from the azure.ai.agent
 service in azure.yaml, directly or through its explicit root $ref, and patches
 the existing agent with those values. No new agent version is created.
 
-The agent must already exist (i.e., it must have been previously deployed).`,
+The hosted agent must already exist (i.e., it must have been previously deployed).
+Prompt, voice, and workflow agents do not support endpoint/card updates.`,
 		Example: `  # Update endpoint/card for the default agent service
   azd ai agent endpoint update
 
@@ -93,6 +94,15 @@ func runEndpointUpdate(
 	if err != nil {
 		return err
 	}
+
+	if _, err := project.ValidateAgentEndpointOperation(
+		svc,
+		proj.Path,
+		project.AgentEndpointOperationUpdate,
+	); err != nil {
+		return err
+	}
+
 	if err := project.ResolveServiceConfigInPlace(svc, proj.Path); err != nil {
 		return exterrors.ValidationFromError(
 			err,

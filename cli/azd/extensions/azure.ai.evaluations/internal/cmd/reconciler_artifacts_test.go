@@ -108,7 +108,7 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 		},
 		{
 			"over cap", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":6}}`,
-			project.TargetTypeAgent, true, "simulation.max_turns is 5",
+			project.TargetTypeAgent, true, "simulation.maxTurns is 5",
 		},
 		{
 			"later over cap",

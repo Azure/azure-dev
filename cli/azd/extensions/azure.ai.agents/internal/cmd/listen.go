@@ -660,7 +660,7 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 		return err
 	}
 
-	envValues, envErr := promptEnvValues(ctx, azdClient)
+	envValues, envErr := promptEnvValues(ctx, azdClient, "")
 	if envErr != nil {
 		log.Printf("predown: failed to read the azd environment: %v", envErr)
 	}

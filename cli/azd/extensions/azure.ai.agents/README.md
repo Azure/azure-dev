@@ -209,6 +209,26 @@ sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
 and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
 targeted Agent deployment does not deploy its dependencies automatically.
 
+### Endpoint command support
+
+Endpoint behavior depends on the agent `kind` declared inline or through `$ref`:
+
+| Agent kind | `endpoint show` | `endpoint update` | Deployment endpoint reporting |
+| --- | --- | --- | --- |
+| `hosted` | Shows the live endpoint/card configuration | Updates endpoint/card configuration | Reports configured protocol URLs |
+| `prompt` | Shows the deployed Responses endpoint | Not supported | Reports the deployed Responses endpoint |
+| `voice`, `prompt-voice` | Shows the deployed voice WebSocket endpoint | Not supported | Reports the deployed voice WebSocket endpoint |
+| `workflow` | Not supported | Not supported | Not supported |
+
+For JSON output, `endpoint show` includes `name` and `kind`. Hosted agents retain
+the `agent_endpoint` and `agent_card` fields; prompt and voice agents return their
+callable URLs in `endpoints`.
+
+The command validates the agent definition before reading deployment state.
+Missing, unknown, or malformed kinds return a structured validation error rather
+than falling back to hosted-agent behavior. Hosted Activity and session
+capabilities do not change the agent kind and follow the hosted behavior above.
+
 ## Invoke latency diagnostics
 
 Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations

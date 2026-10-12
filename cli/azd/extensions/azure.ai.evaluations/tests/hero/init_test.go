@@ -329,13 +329,13 @@ func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
 
 	require.Contains(t, text, "name: support-agent-trace-eval")
 	require.Contains(t, text, "type: traces")
-	require.Contains(t, text, "agent_name: support-agent",
-		"a trace run has no target, so agent_name is what scopes it")
-	require.Contains(t, text, "max_traces: 20",
+	require.Contains(t, text, "agentName: support-agent",
+		"a trace run has no target, so agentName is what scopes it")
+	require.Contains(t, text, "maxTraces: 20",
 		"a first run is bounded rather than taking the service default of 1000")
 	require.Contains(t, text, "evaluator: builtin.task_adherence")
 	require.Contains(t, text, "model: gpt-5.6-luna",
-		"the judge is written per evaluator reference as initialization_parameters.model")
+		"the judge is written per evaluator reference as initializationParameters.model")
 
 	require.NotContains(t, text, "datasets:",
 		"there is no file to register, so the catalog is absent rather than empty")

@@ -132,9 +132,11 @@ service's project directory and must name an existing directory inside the
 current project.
 
 If <name> already identifies an Agent service, the command updates its
-Agent-owned declaration and preserves other service fields. Numeric values
-that cannot be preserved losslessly through azd's project API are rejected
-before writing, including in dependency service properties. Deploy it with
+Agent-owned declaration and preserves other service fields. Numeric scalar
+tokens that cannot be preserved losslessly through azd's project API are
+rejected before writing. Quote YAML dates and timestamps to keep them as
+strings. These checks also apply to dependency service properties. Project
+locks stay in the user cache, outside the project tree. Deploy it with
 'azd deploy <name>' or 'azd up'.`,
 		Example: `  # Add an Agent service from a direct definition
   azd ai agent add support-agent --file ./agents/support.yaml
@@ -402,8 +404,12 @@ func readAgentServiceAddProject(
 		)
 	}
 
+	var documentNode yaml.Node
+	if err := yaml.Unmarshal(data, &documentNode); err != nil {
+		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
+	}
 	var document map[string]any
-	if err := yaml.Unmarshal(data, &document); err != nil {
+	if err := documentNode.Decode(&document); err != nil {
 		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
 	}
 	if document == nil {
@@ -411,6 +417,15 @@ func readAgentServiceAddProject(
 			projectFile,
 			fmt.Errorf("project document must be a mapping"),
 		)
+	}
+	var serviceNodes struct {
+		Services yaml.Node `yaml:"services"`
+	}
+	if err := documentNode.Decode(&serviceNodes); err != nil {
+		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
+	}
+	if err := validateAgentServiceAddScalarTokens(&serviceNodes.Services, "services"); err != nil {
+		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
 	}
 
 	rawServices := map[string]any{}
@@ -440,7 +455,7 @@ func readAgentServiceAddProject(
 	var parsed struct {
 		Services map[string]*agentServiceAddRawService `yaml:"services"`
 	}
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
+	if err := documentNode.Decode(&parsed); err != nil {
 		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
 	}
 
@@ -453,6 +468,40 @@ func readAgentServiceAddProject(
 		rawServices: rawServiceSections,
 		services:    services,
 	}, nil
+}
+
+func validateAgentServiceAddScalarTokens(node *yaml.Node, path string) error {
+	if node == nil {
+		return nil
+	}
+	switch node.Kind {
+	case yaml.AliasNode:
+		return validateAgentServiceAddScalarTokens(node.Alias, path)
+	case yaml.MappingNode:
+		for index := 0; index+1 < len(node.Content); index += 2 {
+			field := path + "." + node.Content[index].Value
+			if err := validateAgentServiceAddScalarTokens(node.Content[index+1], field); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for index, item := range node.Content {
+			if err := validateAgentServiceAddScalarTokens(item, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	case yaml.ScalarNode:
+		switch node.ShortTag() {
+		case "!!timestamp":
+			return fmt.Errorf(
+				"field %q contains a YAML timestamp that cannot be preserved losslessly; quote it as a string",
+				path,
+			)
+		case "!!float":
+			return validateAgentServiceAddNumbers(json.Number(strings.ReplaceAll(node.Value, "_", "")), path)
+		}
+	}
+	return nil
 }
 
 func invalidAgentServiceAddProjectFile(projectFile string, err error) error {

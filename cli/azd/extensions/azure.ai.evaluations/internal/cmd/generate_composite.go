@@ -236,6 +236,10 @@ func (a *generateAction) Run() error {
 	levelSettled := false
 	nameTarget, nameTargetResolved := target, false
 	for {
+		if err := refuseInapplicableFlags(a.cmd, choices.dataset, choices.evaluator); err != nil {
+			return err
+		}
+
 		// Asked before the dataset is named, because the name says which level
 		// its rows hold. Asked at most once: a second pass through the
 		// confirmation is about scope, and re-asking would turn Change into a

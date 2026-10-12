@@ -153,13 +153,14 @@ func promptArtifactCollision(
 func nextFreeArtifactName(name, path string, maxLength int) string {
 	dir, file := filepath.Split(path)
 	ext := filepath.Ext(file)
+	stem := []rune(name)
+	base := string(stem)
 	for n := 2; n <= collisionSuffixLimit; n++ {
 		suffix := "-" + strconv.Itoa(n)
-		stem := []rune(name)
 		if maxLength > 0 && len(stem)+len(suffix) > maxLength {
 			return ""
 		}
-		candidate := string(stem) + suffix
+		candidate := base + suffix
 		if _, err := os.Stat(filepath.Join(dir, candidate+ext)); os.IsNotExist(err) {
 			return candidate
 		}

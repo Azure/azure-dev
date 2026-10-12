@@ -50,10 +50,5 @@ func validLookupName(name string) bool {
 	if strings.ContainsAny(name, `/\`) {
 		return false
 	}
-	for _, r := range name {
-		if unicode.IsControl(r) {
-			return false
-		}
-	}
-	return true
+	return strings.IndexFunc(name, unicode.IsControl) < 0
 }

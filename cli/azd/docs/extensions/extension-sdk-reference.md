@@ -683,6 +683,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | Accessor | Returns |
 |----------|---------|
 | `Project()` | `ProjectServiceClient` |
+| `ProjectBeta()` | `v1beta.ProjectServiceClient` (preview) |
 | `Environment()` | `EnvironmentServiceClient` |
 | `UserConfig()` | `UserConfigServiceClient` |
 | `Prompt()` | `PromptServiceClient` |
@@ -704,7 +705,8 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`CommandResult()`, `Compose()`, `Copilot()`, and `EventsBeta()` are preview accessors. Import
+`CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
+are preview accessors. Import
 `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
 request, response, and enum types. Beta-only methods and types are not
 exposed through the stable `azdext` contract facade.

@@ -1,0 +1,37 @@
+Manage files in a hosted agent session.
+
+Upload, download, list, and delete files in the session-scoped filesystem
+of a hosted agent. This is useful for debugging, seeding data, and agent setup.
+
+Agent details (name, endpoint) are automatically resolved from the
+azd environment. Use --agent-name to select a specific agent when the project
+has multiple azure.ai.agent services. The session ID is automatically resolved
+from the last invoke session, or can be overridden with --session-id.
+
+For agents configured with header-based isolation, pass --user-identity
+on each file operation.
+
+Usage
+  azd ai agent files [command]
+
+Available Commands
+  delete   : Delete a file or directory from a hosted agent session.
+  download : Download a file from a hosted agent session.
+  list     : List files in a hosted agent session.
+  mkdir    : Create a directory in a hosted agent session.
+  stat     : Get file or directory metadata in a hosted agent session.
+  upload   : Upload a file to a hosted agent session.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for files
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List files in the current hosted agent session
+    azd ai agent files list
+
+Use azd ai agent files [command] --help to view examples and more information about a specific command.

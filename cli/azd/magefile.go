@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,6 +26,89 @@ import (
 
 // Dev contains developer tooling commands for building and installing azd from source.
 type Dev mg.Namespace
+
+// Homebrew contains commands for validating azd's Homebrew distribution.
+type Homebrew mg.Namespace
+
+// Schema contains Mage targets for formatting and checking repository JSON schemas.
+type Schema mg.Namespace
+
+// Format formats every JSON file below the repository's schemas directory.
+//
+// Usage: go tool mage schema:format
+func (Schema) Format() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+
+	return formatSchemaFiles(repoRoot, true)
+}
+
+// Check verifies that every JSON file below the repository's schemas directory
+// has the canonical formatting.
+//
+// Usage: go tool mage schema:check
+func (Schema) Check() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+
+	return formatSchemaFiles(repoRoot, false)
+}
+
+func formatSchemaFiles(repoRoot string, write bool) error {
+	schemaRoot := filepath.Join(repoRoot, "schemas")
+	return filepath.WalkDir(schemaRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			return nil
+		}
+
+		input, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+		formatted, err := formatJSON(input)
+		if err != nil {
+			return fmt.Errorf("formatting %s: %w", path, err)
+		}
+		if bytes.Equal(input, formatted) {
+			return nil
+		}
+
+		if !write {
+			return fmt.Errorf("%s is not formatted; run 'go tool mage schema:format'", path)
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+		if err := os.WriteFile(path, formatted, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("writing %s: %w", path, err)
+		}
+		fmt.Printf("Formatted %s\n", path)
+		return nil
+	})
+}
+
+func formatJSON(input []byte) ([]byte, error) {
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, input); err != nil {
+		return nil, err
+	}
+
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, compact.Bytes(), "", "    "); err != nil {
+		return nil, err
+	}
+	formatted.WriteByte('\n')
+	return formatted.Bytes(), nil
+}
 
 // Install builds azd from source as 'azd-dev' and installs it to ~/.azd/bin.
 // The binary is named azd-dev to avoid conflicting with a production azd install.
@@ -133,7 +217,7 @@ func Preflight() error {
 
 	// Check required tools are installed before running anything.
 	if err := requireTool("golangci-lint",
-		"go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4"); err != nil {
+		"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4"); err != nil {
 		return err
 	}
 	if err := requireTool("cspell", "npm install -g cspell@8.13.1"); err != nil {
@@ -161,6 +245,7 @@ func Preflight() error {
 		checkLint
 		checkCspell
 		checkCspellMisc
+		checkSchema
 		checkBuild
 		checkTest
 		checkPlayback
@@ -168,7 +253,7 @@ func Preflight() error {
 	)
 	checkNames := [numChecks]string{
 		"gofmt", "go fix", "copyright", "lint",
-		"cspell", "cspell-misc", "build", "test", "playback tests",
+		"cspell", "cspell-misc", "schema", "build", "test", "playback tests",
 	}
 
 	type checkResult struct {
@@ -295,7 +380,17 @@ func Preflight() error {
 		printResult(checkCspellMisc)
 	})
 
-	// 6. go build — compile all packages AND pre-build the azd + azd-record
+	// 6. JSON schema formatting
+	wg.Go(func() {
+		if err := (Schema{}).Check(); err != nil {
+			results[checkSchema] = checkResult{"fail", err.Error(), ""}
+		} else {
+			results[checkSchema] = checkResult{"pass", "", ""}
+		}
+		printResult(checkSchema)
+	})
+
+	// 7. go build — compile all packages AND pre-build the azd + azd-record
 	// binaries so that Wave 2 tests can skip auto-building. This lets unit
 	// tests and playback tests run in parallel safely.
 	wg.Go(func() {
@@ -457,7 +552,7 @@ func GenerateProtos() error {
 	if err != nil {
 		return err
 	}
-	containerRuntime, err := protoContainerRuntime(exec.LookPath)
+	containerRuntime, err := findContainerRuntime(exec.LookPath)
 	if err != nil {
 		return err
 	}
@@ -498,13 +593,46 @@ func GenerateProtos() error {
 	return nil
 }
 
-func protoContainerRuntime(lookPath func(string) (string, error)) (string, error) {
+// Test installs the generated stable and daily casks in a Homebrew container.
+//
+// Usage: mage homebrew:test
+func (Homebrew) Test() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	containerRuntime, err := findContainerRuntime(exec.LookPath)
+	if err != nil {
+		return err
+	}
+
+	const image = "ghcr.io/homebrew/brew:latest"
+	fmt.Println("Testing Homebrew cask templates...")
+	output, err := runCaptureAll(
+		repoRoot,
+		nil,
+		containerRuntime,
+		"run", "--rm",
+		"-v", repoRoot+":/workspace:ro",
+		image,
+		"bash", "/workspace/eng/scripts/test-homebrew-casks.sh",
+	)
+	if err != nil {
+		fmt.Fprint(os.Stderr, output)
+		return fmt.Errorf("testing Homebrew cask templates: %w", err)
+	}
+
+	fmt.Println("Homebrew cask templates passed (azd, azd@daily).")
+	return nil
+}
+
+func findContainerRuntime(lookPath func(string) (string, error)) (string, error) {
 	for _, name := range []string{"docker", "wslc.exe"} {
 		if _, err := lookPath(name); err == nil {
 			return name, nil
 		}
 	}
-	return "", errors.New("protobuf generation requires docker or wslc.exe on PATH")
+	return "", errors.New("docker or wslc.exe is required on PATH")
 }
 
 // UpdateGoVersion updates the pinned Go toolchain version across the repository

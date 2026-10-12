@@ -1,0 +1,37 @@
+Delete a file or directory from a hosted agent session.
+
+Deletes the specified file or directory from the session's filesystem.
+Use --recursive to delete directories and their contents.
+
+Agent details are automatically resolved from the azd environment.
+
+Usage
+  azd ai agent files delete [file] [flags]
+
+Aliases
+  delete, remove, rm
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+  -f, --file string          : Remote file or directory path to delete
+      --recursive            : Recursively delete directories and their contents
+  -s, --session-id string    : Session ID override (defaults to last invoke session)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for delete
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Delete a file (agent auto-detected)
+    azd ai agent files delete /data/old-file.csv
+
+  Delete a directory recursively
+    azd ai agent files delete /data/temp --recursive
+
+  Delete with flags
+    azd ai agent files delete --file /data/old-file.csv --session-id <session-id>

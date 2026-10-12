@@ -33,7 +33,7 @@ func TestADatasetInsideTheEvalDirNeedsNoDotDot(t *testing.T) {
 			t.Chdir(root)
 			require.NoError(t, os.MkdirAll(filepath.Join("evals", "datasets"), 0o750))
 			require.NoError(t, os.WriteFile(
-				filepath.Join("evals", "datasets", "rows.jsonl"), []byte("{}\n"), 0o600))
+				filepath.Join("evals", "datasets", "rows.jsonl"), []byte("{\"query\":\"q\"}\n"), 0o600))
 			if tc.configOnDisk {
 				require.NoError(t, os.WriteFile(
 					filepath.Join("evals", "azure.eval.yaml"), []byte("evals: []\n"), 0o600))

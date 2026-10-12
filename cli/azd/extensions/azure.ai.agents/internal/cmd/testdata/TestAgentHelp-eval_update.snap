@@ -1,0 +1,29 @@
+Reads the eval config and uploads new versions for:
+  - Evaluators with a local_uri (rubric dimensions file)
+  - Datasets with a local_uri (JSONL data directory)
+The version fields in the config are updated after successful uploads.
+
+In interactive mode, you will be prompted for each asset type that has
+local changes. Use --dataset-only or --evaluator-only to skip prompts.
+
+Usage
+  azd ai agent eval update [flags]
+
+Flags
+      --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
+      --config string           : Local eval config YAML (default "eval.yaml")
+      --dataset-only            : Only update the dataset
+      --evaluator-only          : Only update evaluators
+  -p, --project-endpoint string : Microsoft Foundry project endpoint URL
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for update
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Upload changes to the local dataset
+    azd ai agent eval update --dataset-only

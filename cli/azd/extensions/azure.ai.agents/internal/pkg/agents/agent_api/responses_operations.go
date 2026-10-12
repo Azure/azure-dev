@@ -6,6 +6,7 @@ package agent_api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,36 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 )
+
+// CreateConversationAt creates a conversation at an agent-specific protocol endpoint.
+func (c *AgentClient) CreateConversationAt(
+	ctx context.Context,
+	endpoint string,
+	headers map[string]string,
+) (string, error) {
+	req, err := c.newResponseRequestAt(ctx, http.MethodPost, endpoint, []byte("{}"), headers)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return "", runtime.NewResponseError(resp)
+	}
+	var conversation struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&conversation); err != nil {
+		return "", fmt.Errorf("failed to parse conversation response: %w", err)
+	}
+	if strings.TrimSpace(conversation.ID) == "" {
+		return "", fmt.Errorf("conversation response missing id")
+	}
+	return conversation.ID, nil
+}
 
 func (c *AgentClient) responsesURL(pathSuffix string) string {
 	return strings.TrimRight(c.endpoint, "/") + "/openai/v1/responses" + pathSuffix

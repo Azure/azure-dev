@@ -45,6 +45,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Show the metadata returned by the service for a skill — including
 default_version and latest_version. To retrieve skill content, use
 'azd ai skill download <name>'.`,
+		Example: `  # Inspect skill metadata and version pointers
+  azd ai skill show greet-user`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

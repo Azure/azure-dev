@@ -51,7 +51,7 @@ func PrintNext(w io.Writer, suggestions []Suggestion) error {
 // PrintAllNext writes a "Next:" guidance block to w like PrintNext but
 // renders every suggestion (no two-line cap). Use this for flows where
 // the suggestions are all REQUIRED follow-up actions rather than
-// alternatives — the post-init flow can surface unresolved manifest
+// alternatives — the post-init flow can surface unresolved definition
 // placeholders, missing `azd env set` keys, AND the trailing
 // `azd deploy` reminder simultaneously, and the user has to act on each
 // one. Dropping any of them silently leaves the user thinking they are
@@ -190,10 +190,17 @@ func renderRows(suggestions []Suggestion, limit int) string {
 	return b.String()
 }
 
+// highlightedCommandPrefixes lists the prefixes of suggestion commands that
+// are runnable shell commands and should be rendered in the highlight color.
+// "cd " covers the post-init "cd <folder>" step, which the user runs before
+// the azd commands that follow it.
+var highlightedCommandPrefixes = []string{"azd ", "cd "}
+
 // highlightCommand returns cmd wrapped in the highlight (blue) color when
-// it is a runnable azd command (prefix "azd "), and cmd unchanged
-// otherwise. Non-command suggestions — "see <path>/README.md" pointers and
-// "edit agent.yaml: ..." instructions — stay plain.
+// it is a runnable command (an azd command or the post-init "cd <folder>"
+// step; see highlightedCommandPrefixes), and cmd unchanged otherwise.
+// Non-command suggestions — "see <path>/README.md" pointers and
+// "edit azure.yaml: ..." instructions — stay plain.
 //
 // output.WithHighLightFormat gates on color.NoColor. In this extension that
 // flag is driven by the FORCE_COLOR env var azd core sets when core itself
@@ -209,8 +216,10 @@ func renderRows(suggestions []Suggestion, limit int) string {
 // FORCE_COLOR for JSON output); the common scripted/piped JSON case is
 // non-TTY, so color.NoColor is already true there and the note stays plain.
 func highlightCommand(cmd string) string {
-	if strings.HasPrefix(cmd, "azd ") {
-		return output.WithHighLightFormat("%s", cmd)
+	for _, prefix := range highlightedCommandPrefixes {
+		if strings.HasPrefix(cmd, prefix) {
+			return output.WithHighLightFormat("%s", cmd)
+		}
 	}
 	return cmd
 }

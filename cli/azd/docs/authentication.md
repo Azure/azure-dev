@@ -189,8 +189,7 @@ directly with the normal login flow without clearing anything.
 | Claims file | `~/.azd/auth.claims` | Cached claims from previous login |
 | Subscription cache | `~/.azd/subscriptions.cache` | Cached list of accessible subscriptions |
 
-After clearing, the directory structure is recreated and the normal login flow proceeds. This is
-equivalent to manually deleting these files and then running `azd auth login`.
+After clearing, azd recreates the directory structure and resets its in-memory authentication caches before continuing the normal login flow. This prevents previously loaded MSAL entries from being written back to disk during re-authentication.
 
 ### When automatic cleanup helps
 

@@ -291,7 +291,7 @@ func TestHeroScenario1ColdStart(t *testing.T) {
 	out, code := azdEval(t, dir, "init",
 		"--target", agent, "--source", "traces",
 		"--evaluator", "builtin.task_adherence", "--judge-model", judge)
-	require.Zero(t, code, "init makes no service calls, so nothing can fail it here")
+	require.Zero(t, code, "init needs nothing from the service here, so nothing can fail it")
 
 	// The fixture is an eval-only project: an azure.yaml with no infra
 	// directory and no azd environment, so both conditional lines take their
@@ -329,13 +329,13 @@ func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
 
 	require.Contains(t, text, "name: support-agent-trace-eval")
 	require.Contains(t, text, "type: traces")
-	require.Contains(t, text, "agent_name: support-agent",
-		"a trace run has no target, so agent_name is what scopes it")
-	require.Contains(t, text, "max_traces: 20",
+	require.Contains(t, text, "agentName: support-agent",
+		"a trace run has no target, so agentName is what scopes it")
+	require.Contains(t, text, "maxTraces: 20",
 		"a first run is bounded rather than taking the service default of 1000")
 	require.Contains(t, text, "evaluator: builtin.task_adherence")
 	require.Contains(t, text, "model: gpt-5.6-luna",
-		"the judge is written per evaluator reference as initialization_parameters.model")
+		"the judge is written per evaluator reference as initializationParameters.model")
 
 	require.NotContains(t, text, "datasets:",
 		"there is no file to register, so the catalog is absent rather than empty")
@@ -343,10 +343,14 @@ func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
 		"a trace run invokes nothing")
 }
 
-// `init` is offline, and being offline is the property that makes its output a
-// reviewable local diff. A service call here would also make the command fail
-// for a user who has not authenticated yet, which is exactly when they run it.
-func TestHeroInitMakesNoServiceCalls(t *testing.T) {
+// `init` works offline, and that is the property that makes its output a
+// reviewable local diff. A required service call here would also make the
+// command fail for a user who has not authenticated yet, which is exactly when
+// they run it.
+//
+// The `builtin.` reference matters: it is what makes `init` try the evaluator
+// catalogue, so this covers the one lookup it has as well as the rest.
+func TestHeroInitWorksWithNoNetwork(t *testing.T) {
 	dir := project(t, "support-agent")
 
 	cmd := exec.Command("azd", "ai", "eval", "init",

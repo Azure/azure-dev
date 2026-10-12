@@ -121,12 +121,11 @@ func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Create and run quick evals for an agent.",
 		Long: `Create and run quick evals for an agent.
 
-Subcommands:
-  generate  Generate an eval config and dataset from a hosted agent
-  run       Execute an evaluation run from eval.yaml
-  update    Update an existing eval configuration
-  list      List evaluations for the current project
-  show      Show details of an evaluation run`,
+Generate an eval config and dataset, run evaluations, and inspect the results.
+Use 'azd ai agent eval update' to upload changes to local evaluators and datasets.`,
+		Example: `  # Generate an eval suite and run it
+  azd ai agent eval generate
+  azd ai agent eval run`,
 	}
 
 	cmd.AddCommand(newEvalGenerateCommand(extCtx))
@@ -280,21 +279,22 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 			agentVersion = info.Version
 			agentVersionSource = fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 		}
-		if ca, _, source, loadErr := projectpkg.LoadAgentDefinition(svc, project.Path); loadErr == nil {
-			if agent_yaml.IsValidAgentKind(ca.Kind) {
-				agentKind = ca.Kind
-				switch source {
-				case projectpkg.AgentDefinitionSourceInline:
-					agentKindSource = "azure.yaml (inline)"
-				case projectpkg.AgentDefinitionSourceLegacyConfig:
-					agentKindSource = "azure.yaml (config)"
-				case projectpkg.AgentDefinitionSourceDisk:
-					agentKindSource = "agent.yaml"
-				}
-			}
-			if source.IsLegacy() {
-				projectpkg.WarnLegacyAgentShape(source)
-			}
+		ca, _, source, loadErr := projectpkg.LoadHostedAgentDefinition(svc, project.Path)
+		if loadErr != nil {
+			azdClient.Close()
+			return nil, exterrors.ValidationFromError(
+				loadErr,
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("failed to load agent definition for service %s", svc.Name),
+				"fix the agent service configuration in azure.yaml",
+			)
+		}
+		if agent_yaml.IsValidAgentKind(ca.Kind) {
+			agentKind = ca.Kind
+			agentKindSource = "azure.yaml (inline)"
+		}
+		if source.IsLegacy() {
+			projectpkg.WarnLegacyAgentShape(source)
 		}
 	}
 	if agentKind == "" {

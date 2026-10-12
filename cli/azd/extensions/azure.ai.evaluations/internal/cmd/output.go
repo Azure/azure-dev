@@ -16,6 +16,7 @@ import (
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -47,16 +48,16 @@ func writePortalLink(w io.Writer, url string) {
 	if url == "" {
 		return
 	}
-	fmt.Fprint(w, messages.PortalLink(color.CyanString(url)))
+	safe := urlsafe.Link(url)
+	redacted := safe != url && safe != "<redacted-url>"
+	fmt.Fprint(w, messages.PortalLink(color.CyanString(safe), redacted))
 }
 
 // runLink is the one link a run has.
 //
-// The service sends report_url and the extension builds its own portal URL, and
-// the two resolve to the same page. Printing both put two labels on one
-// destination with no rule a reader could infer, so the service's value wins and
-// ours is the fallback that keeps the link from going missing. Callers format
-// it themselves, because the three views that show it are laid out differently.
+// Prefer the service's report_url and fall back to the extension's portal URL.
+// The display writer marks sanitized links because removing routing query
+// parameters can turn a report link into a general portal link.
 func runLink(reportURL, portalURL string) string {
 	if reportURL != "" {
 		return reportURL
@@ -154,7 +155,65 @@ type jsonError struct {
 
 type jsonErrorBody struct {
 	Message    string `json:"message"`
+	Code       string `json:"code,omitempty"`
 	Suggestion string `json:"suggestion,omitempty"`
+}
+
+// safeJSONError is implemented by an error whose human message may carry
+// detail -o json must not disclose, such as the backing service's full
+// internal endpoint. Only this extension's service-refusal errors implement
+// it today; every other error falls back to its ordinary Error() text.
+type safeJSONError interface {
+	error
+	SafeMessage() string
+	Code() string
+}
+
+// jsonMessage is the message a -o json document reports for err.
+//
+// When err carries a safeJSONError, the unsafe fragment that node
+// contributed to err.Error() is replaced with its safe equivalent rather than
+// discarding the whole message: a job-delete failure wraps its cause with
+// "deleting dataset generation job <id>: ...", and that context has to
+// survive even though the service refusal underneath it does not.
+func jsonMessage(err error) string {
+	if safe, ok := errors.AsType[safeJSONError](err); ok {
+		full := err.Error()
+		if unsafe := safe.Error(); unsafe != "" && strings.Contains(full, unsafe) {
+			full = strings.Replace(full, unsafe, safe.SafeMessage(), 1)
+		} else {
+			full = safe.SafeMessage()
+		}
+		return urlsafe.Text(full)
+	}
+	return urlsafe.Text(err.Error())
+}
+
+// unclassifiedErrorCode is read when no structured classification applies. It
+// reuses azd's own telemetry fallback for an error an extension did not
+// classify (see the Unclassified row of the telemetry table in
+// docs/extensions/extensions-style-guide.md) rather than inventing a new
+// value or guessing one from the error's message text. This keeps the JSON
+// "code" field populated for every failure, including Cobra's own Args/flag
+// validation errors, which never carry a structured type.
+const unclassifiedErrorCode = "ext.run.failed"
+
+// errorCode extracts a stable, machine-readable code from a structured
+// extension error, mirroring azdext.ErrorSuggestion's precedence so a JSON
+// consumer checking "code" sees the same classification azd's own telemetry
+// does. Falls back to unclassifiedErrorCode so the field is never silently
+// omitted.
+func errorCode(err error) string {
+	if safe, ok := errors.AsType[safeJSONError](err); ok && safe.Code() != "" {
+		return safe.Code()
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok && localErr.Code != "" {
+		return localErr.Code
+	}
+	if svcErr, ok := errors.AsType[*azdext.ServiceError](err); ok && svcErr.ErrorCode != "" {
+		return svcErr.ErrorCode
+	}
+	return unclassifiedErrorCode
 }
 
 // exitProcess ends the process. Replaced in tests, which cannot survive a real
@@ -184,8 +243,9 @@ func failAs(cmd *cobra.Command, err error) error {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
-		Message:    err.Error(),
-		Suggestion: azdext.ErrorSuggestion(err),
+		Message:    jsonMessage(err),
+		Code:       errorCode(err),
+		Suggestion: urlsafe.Text(azdext.ErrorSuggestion(err)),
 	}})
 	exitProcess(1)
 	return err
@@ -259,14 +319,21 @@ func reportFailuresAsJSON(root *cobra.Command) {
 				return failAs(cmd, preRun(cmd, args))
 			}
 		}
-		// Argument validation runs instead of RunE, not before it, so a wrapper
-		// around RunE alone never sees it. An unquoted shell variable holding a
-		// name with spaces arrives as several arguments and fails here -- a
-		// scripting mistake, reported to a script, which is the case that most
-		// needs an answer it can read.
-		if validate := c.Args; validate != nil {
+		// Cobra's required/group checks otherwise run after hooks and outside
+		// RunE. Check parsed flags here so local rejection stays JSON and
+		// precedes hooks that can read auth or change project state. Keep nil
+		// Args on groups: Cobra uses it when rejecting unknown commands.
+		if validate := c.Args; validate != nil || c.Runnable() {
 			c.Args = func(cmd *cobra.Command, args []string) error {
-				return failAs(cmd, validate(cmd, args))
+				if validate != nil {
+					if err := validate(cmd, args); err != nil {
+						return failAs(cmd, err)
+					}
+				}
+				if err := cmd.ValidateRequiredFlags(); err != nil {
+					return failAs(cmd, err)
+				}
+				return failAs(cmd, cmd.ValidateFlagGroups())
 			}
 		}
 		if run := c.RunE; run != nil {
@@ -285,7 +352,7 @@ func reportFailuresAsJSON(root *cobra.Command) {
 					// where azd would put it. `run --gate-on-status` reaches
 					// here: the run it reported is the answer, and why that run
 					// is a failure belongs beside it rather than inside it.
-					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+err.Error())
+					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+urlsafe.Text(err.Error()))
 					exitProcess(1)
 					return err
 				}

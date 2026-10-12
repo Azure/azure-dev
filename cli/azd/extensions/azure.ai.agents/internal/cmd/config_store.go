@@ -23,12 +23,13 @@ const (
 var validStoreFields = map[string]bool{
 	"sessions":      true,
 	"conversations": true,
+	"stateStores":   true,
 }
 
 // validateStoreField returns an error if the field is not in the allow-list.
 func validateStoreField(field string) error {
 	if !validStoreFields[field] {
-		return fmt.Errorf("invalid store field %q: must be one of sessions, conversations", field)
+		return fmt.Errorf("invalid store field %q: must be one of sessions, conversations, stateStores", field)
 	}
 	return nil
 }

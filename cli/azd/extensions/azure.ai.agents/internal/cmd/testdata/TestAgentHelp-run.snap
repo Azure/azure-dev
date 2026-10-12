@@ -1,0 +1,52 @@
+Run your agent locally for development.
+
+Detects the project type (Python, .NET, Node.js), installs dependencies,
+and starts the agent server in the foreground. Press Ctrl+C to stop.
+
+Optionally specify the agent service name (from azure.yaml) as a
+positional argument. When omitted, the single agent service is used.
+
+The startup command is read from the startupCommand property of the
+agent service in azure.yaml. If not set, it is auto-detected from the
+project type. Use --start-command to override both.
+
+By default, this also opens a local client after the agent starts listening:
+Agent Inspector for responses/invocations agents, or the Microsoft 365 Agents
+Playground for activity agents. Use --no-client to skip this.
+
+Usage
+  azd ai agent run [name] [flags]
+
+Flags
+      --channel string       : Channel for the Microsoft 365 Agents Playground (activity-protocol agents only) (default "emulator")
+      --inspector-port int   : Port the Agent Inspector UI listens on (default: 8087)
+      --no-client            : Do not open the local client (Agent Inspector or Playground)
+  -p, --port int             : Port to listen on (default 8088)
+  -c, --start-command string : Explicit startup command (overrides azure.yaml and auto-detection)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for run
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Start the agent in the current directory
+    azd ai agent run
+
+  Start a specific agent by name
+    azd ai agent run my-agent
+
+  Start on a custom port
+    azd ai agent run --port 9090
+
+  Start a second agent with its own Agent Inspector UI port
+    azd ai agent run --port 9091 --inspector-port 9002
+
+  Start without opening a local client
+    azd ai agent run --no-client
+
+  Start with an explicit command
+    azd ai agent run --start-command "python app.py"

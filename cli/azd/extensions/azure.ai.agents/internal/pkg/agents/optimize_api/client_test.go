@@ -252,6 +252,32 @@ func TestReportDeployment(t *testing.T) {
 	assert.Empty(t, capturedBody["candidate_id"])
 }
 
+func TestReportDeploymentWithHeaders(t *testing.T) {
+	t.Parallel()
+
+	var reportOnly string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reportOnly = r.Header.Get(PromotionReportOnlyHeader)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	err := client.ReportDeploymentWithHeaders(
+		t.Context(),
+		"opt-1",
+		&DeploymentReport{
+			CandidateID:  "cand-42",
+			AgentName:    "my-agent",
+			AgentVersion: "3",
+		},
+		map[string]string{PromotionReportOnlyHeader: "true"},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "true", reportOnly)
+}
+
 func TestReportDeployment_HTTPError(t *testing.T) {
 	t.Parallel()
 

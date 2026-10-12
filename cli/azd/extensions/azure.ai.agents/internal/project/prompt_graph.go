@@ -44,11 +44,11 @@ type promptNode struct {
 }
 
 // promptGraph is the internal, non-user-facing dependency graph for one
-// prompt-agent deploy. It is derived from the agent folder plus agent.yaml,
-// validated as a whole, then resolved in registration (dependency) order. None
-// of this machinery is exposed in the YAML.
+// prompt-agent deploy. It is derived from the agent folder plus the
+// direct/root-$ref definition, validated as a whole, then resolved in
+// registration (dependency) order. None of this machinery is exposed in YAML.
 type promptGraph struct {
-	// agentDir is the folder holding agent.yaml plus its skills/ folder.
+	// agentDir anchors the definition's conventional skills/ folder.
 	agentDir string
 
 	// managed is the parsed agent definition. Nodes may enrich managed.Tools
@@ -209,7 +209,7 @@ func (g *promptGraph) agentNode() promptNode {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"prompt agent requires a non-empty model",
-					"set 'model' in agent.yaml to the name of a deployment "+
+					"set 'model' in the agent definition to the name of a deployment "+
 						"declared under your azure.ai.project service (e.g. model: gpt-4.1-mini)",
 				)
 			}
@@ -217,7 +217,7 @@ func (g *promptGraph) agentNode() promptNode {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"prompt agent requires non-empty instructions",
-					"set 'instructions' in agent.yaml",
+					"set 'instructions' in the agent definition",
 				)
 			}
 			// A tool the service cannot identify is dropped silently, producing an
@@ -270,20 +270,15 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 		progress(fmt.Sprintf("Prompt graph nodes: %s", strings.Join(kinds, ", ")))
 	}
 
-	for _, n := range g.nodes {
-		if n.Validate == nil {
-			continue
-		}
-		if err := n.Validate(); err != nil {
-			return err
-		}
+	if err := g.validate(); err != nil {
+		return err
 	}
 
 	// Reported after validation and before any node injects its own tools, so
 	// the list only ever names types the author actually wrote.
 	if unrecognized := g.managed.UnrecognizedToolTypes(); len(unrecognized) > 0 {
 		g.warnf(
-			"agent.yaml declares unrecognized tool %s: %s. "+
+			"the agent definition declares unrecognized tool %s: %s. "+
 				"These are sent as authored, but a type the service does not recognize is ignored "+
 				"without error \u2014 check the spelling if the capability does not appear.",
 			pluralize("type", len(unrecognized)),
@@ -306,6 +301,25 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 	return nil
 }
 
+func (g *promptGraph) validate() error {
+	if err := g.managed.ValidateAuthoredSkills(); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			err.Error(),
+			"specify only one version for each skill under 'skills:'",
+		)
+	}
+	for _, n := range g.nodes {
+		if n.Validate == nil {
+			continue
+		}
+		if err := n.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resolvePromptAgentGraph builds and resolves the deploy graph for a prompt
 // agent. It is called by deployPromptAgent before the create request is built,
 // so any resolved bindings are reflected in the published agent definition.
@@ -322,10 +336,7 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	// that supplies the definition. With the definition inline on the service
 	// entry there is no such file, so they are anchored at the service
 	// directory instead — the same place `azd ai agent init` scaffolds them.
-	agentDir := p.servicePath
-	if p.agentDefinitionPath != "" {
-		agentDir = filepath.Dir(p.agentDefinitionPath)
-	}
+	agentDir := p.promptAgentConventionDir()
 	g, err := newPromptGraph(agentDir, managed, settings, env, p.credential)
 	if err != nil {
 		return nil, err
@@ -337,4 +348,11 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 		return nil, err
 	}
 	return g.bindings, nil
+}
+
+func (p *AgentServiceTargetProvider) promptAgentConventionDir() string {
+	if p.agentDefinitionPath != "" {
+		return filepath.Dir(p.agentDefinitionPath)
+	}
+	return p.servicePath
 }

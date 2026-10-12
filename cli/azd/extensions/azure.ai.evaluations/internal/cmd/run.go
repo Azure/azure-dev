@@ -13,13 +13,16 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/spf13/cobra"
 )
@@ -107,8 +110,9 @@ type runStartFlags struct {
 
 // runStartAction starts a run and, unless asked not to, waits for its verdict.
 type runStartAction struct {
-	cmd   *cobra.Command
-	flags *runStartFlags
+	cmd        *cobra.Command
+	flags      *runStartFlags
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 func buildRunCommand(use, short string) *cobra.Command {
@@ -128,11 +132,14 @@ func buildRunCommand(use, short string) *cobra.Command {
 	cmd.Flags().StringVar(&flags.groupName, "eval", "",
 		"Name of the eval to run, or its id. Defaults to the only one declared.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset", "",
-		"Catalog dataset to read instead of the one the eval declares. "+
-			"Must satisfy the eval's column schema.")
+		"Name of a dataset declared in the eval configuration, to read instead of the one the eval uses. "+
+			"It must satisfy the eval's column schema.")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for this run. Defaults to the eval name plus a timestamp.")
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
-		"Cap the rows sent from the dataset.")
+		"Limit the rows read from a local dataset file that has no registered version. "+
+			"Use 0 to clear an ordinary dataset eval's configured cap. A registered dataset version "+
+			"rejects a positive value; a trace or response source and a rerun selected by eval ID "+
+			"reject any value, including 0.")
 	cmd.Flags().BoolVar(&flags.wait, "wait", true, "Block until the run reaches a terminal state.")
 	addFailOnFlag(cmd, &flags.failOn)
 	// The spec documents --no-wait, and cobra does not derive it from a bool.
@@ -151,7 +158,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 func (a *runStartAction) Run() error {
 	ctx := a.cmd.Context()
-	out := a.cmd.OutOrStdout()
 
 	// Parsed before any network work, so a malformed threshold costs
 	// nothing to find out about.
@@ -171,13 +177,28 @@ func (a *runStartAction) Run() error {
 	if a.flags.maxSamples < 0 {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
 	}
+	if a.cmd.Flags().Changed("dataset") && strings.TrimSpace(a.flags.datasetName) == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--dataset must not be empty when explicitly supplied",
+			"Provide a dataset name declared in the eval configuration, or omit --dataset to use the eval's dataset.")
+	}
 
-	ec, err := newEvalContext(ctx, a.flags.endpoint)
+	newContext := a.newContext
+	if newContext == nil {
+		newContext = newEvalContext
+	}
+	ec, err := newContext(ctx, a.flags.endpoint)
 	if err != nil {
 		return err
 	}
 	defer ec.Close()
 
+	return a.start(ctx, ec, threshold)
+}
+
+func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold gate) error {
+	out := a.cmd.OutOrStdout()
 	// One flag takes a name or an id. A declared name also brings the
 	// declaration, which is what says where rows come from; a bare id
 	// has none, so the pairing comes from the eval's previous run.
@@ -185,7 +206,16 @@ func (a *runStartAction) Run() error {
 	if err != nil {
 		return err
 	}
-	ref, err := ec.resolveEvalRef(ctx, evalDir, chooseEvalIn(a.cmd, evalDir, a.flags.groupName))
+	chosen, err := chooseEvalIn(a.cmd, evalDir, a.flags.groupName)
+	if err != nil {
+		// An explicit Cancel choice is an answer; prompt errors remain errors.
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(a.cmd)
+			return nil
+		}
+		return err
+	}
+	ref, err := ec.resolveEvalRef(ctx, evalDir, chosen)
 	if err != nil {
 		return err
 	}
@@ -208,6 +238,11 @@ func (a *runStartAction) Run() error {
 		group = &overridden
 	}
 
+	maxSamples, err := runMaxSamples(a.cmd, a.flags.maxSamples, group)
+	if err != nil {
+		return err
+	}
+
 	if ref.Declared() {
 		if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
 			return err
@@ -215,14 +250,22 @@ func (a *runStartAction) Run() error {
 	}
 
 	var dataSource *eval_api.EvalRunDataSource
+	var datasetVersion string
+	// The level a bare id runs at comes from its previous run, for the same
+	// reason the data source does: there is no declaration to read it from.
+	var reusedLevel string
 	switch {
 	case group == nil:
-		dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+		dataSource, reusedLevel, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 	default:
-		dataSource, err = ec.buildRunDataSource(
-			ctx, group, configPath, resolveMaxSamples(a.flags.maxSamples, group))
+		dataSource, datasetVersion, err = ec.buildRunDataSource(
+			ctx, group, configPath, maxSamples)
 	}
 	if err != nil {
+		return err
+	}
+
+	if err := ec.validateResponsesRun(ctx, evalID, dataSource, ref.Declared()); err != nil {
 		return err
 	}
 
@@ -238,8 +281,14 @@ func (a *runStartAction) Run() error {
 	}
 
 	metadata := map[string]string{}
-	if lvl := resolveLevel(group); lvl != "" {
-		metadata["evaluation_level"] = lvl
+	// The declaration says it when there is one; a bare id repeats what its
+	// previous run recorded.
+	level := resolveLevel(group)
+	if level == "" {
+		level = reusedLevel
+	}
+	if level != "" {
+		metadata[metaEvaluationLevel] = level
 	}
 	// The eval carries its name in its own metadata, but a run is read
 	// on its own, and an id is not what the author called it.
@@ -252,15 +301,19 @@ func (a *runStartAction) Run() error {
 	// no dataset, so it records none.
 	if group != nil && group.Dataset != "" && group.Source == nil {
 		metadata[metaDataset] = group.Dataset
-		if v := ec.scoredDatasetVersion(ctx, group, configPath); v != "" {
-			metadata[metaDatasetVersion] = v
+		if datasetVersion != "" {
+			metadata[metaDatasetVersion] = datasetVersion
 		}
 	}
 
+	recordSimulationMetadata(metadata, dataSource)
 	run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
-		Name:       runName,
-		DataSource: dataSource,
-		Metadata:   metadata,
+		Name: runName,
+		// Also sent under metadata, where it stays readable to anything listing
+		// runs. Only the top-level field is what the service builds rows from.
+		EvaluationLevel: level,
+		DataSource:      dataSource,
+		Metadata:        metadata,
 	})
 	if err != nil {
 		return messages.StartingRun(err)
@@ -304,42 +357,41 @@ func (a *runStartAction) Run() error {
 		return err
 	}
 	final = ec.withPortalLink(ctx, evalID, final)
+	display := runForDisplay(final, evalID, run.ID)
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(out, final); err != nil {
+		if err := emitJSON(out, runForJSON(final)); err != nil {
 			return err
 		}
-	} else if err := renderRun(out, final, ec.runMeans(ctx, evalID, final)); err != nil {
-		return err
+	} else {
+		if err := renderRun(out, display, ec.runOutputSummary(ctx, evalID, display)); err != nil {
+			return err
+		}
 	}
 
 	// Last, so that the results are reported whether or not the gate
 	// holds: a pipeline that only learns it failed is worse off than
 	// one that can see by how much.
-	if err := runCompleted(final); err != nil {
+	if err := runCompleted(display); err != nil {
 		return err
 	}
-	applyGate(a.cmd, threshold, final)
-	return nil
+	return applyGate(a.cmd, threshold, display)
 }
 
 // checkDatasetRegistered fails when the group's local dataset has edits that
 // were never deployed.
 //
-// A run sends a local dataset inline, so without this the run would evaluate
-// content that no registered version corresponds to: the results are attributed
-// to the eval but cannot be traced back to a dataset version, which
-// makes them impossible to reproduce or compare.
-//
-// The check only applies once a deploy has recorded a fingerprint. Before that
-// there is nothing to have drifted from, and running is how a group first comes
-// into existence.
+// Runs reference the published version, so unregistered edits would otherwise
+// be ignored. An explicit pin deliberately selects published content instead.
 func (ec *evalContext) checkDatasetRegistered(
 	ctx context.Context,
 	cfg *project.EvalConfig,
 	group *project.Eval,
 	configPath string,
 ) error {
+	if declaredDatasetVersion(configPath, group) != "" {
+		return nil
+	}
 	localPath := localDatasetPath(configPath, group)
 	if localPath == "" {
 		return nil
@@ -357,8 +409,7 @@ func (ec *evalContext) checkDatasetRegistered(
 
 	digest, err := project.Fingerprint(localPath)
 	if err != nil {
-		// Reading the file is the run's problem to report, not this check's.
-		return nil
+		return messages.ReadingDataset(localPath, err)
 	}
 	if digest == recorded {
 		return nil
@@ -375,10 +426,16 @@ func (ec *evalContext) checkDatasetRegistered(
 // testing criteria, and the dataset travels on the run. The previous run is the
 // only place that pairing survives, so re-running a group means repeating what
 // it last ran.
+//
+// The evaluation level travels with it. It decides how the service builds rows
+// out of the data source, so repeating the source without it grades a
+// conversation eval turn-shaped -- which reports scores rather than an error,
+// and so is not otherwise noticed. Empty when the previous run recorded none,
+// which leaves the service's own default as before.
 func (ec *evalContext) reuseDataSourceFromLastRun(
 	ctx context.Context,
 	evalID string,
-) (*eval_api.EvalRunDataSource, error) {
+) (*eval_api.EvalRunDataSource, string, error) {
 	// The service promises no order, so one row is not the most recent run --
 	// it is whichever the listing happened to put first. Restarting from it
 	// scored a stale dataset or target on any eval with more than one run.
@@ -392,18 +449,35 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 		if eval_api.IsNotFound(err) {
 			// The eval itself is missing, which is worth saying plainly rather
 			// than as forty lines of the 404 that discovered it.
-			return nil, messages.EvalNotFound(evalID)
+			return nil, "", messages.EvalNotFound(evalID)
 		}
-		return nil, messages.ReadingPreviousRuns(evalID, err)
+		return nil, "", messages.ReadingPreviousRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 {
-		return nil, messages.EvalHasNoPreviousRun(evalID)
+		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
 	newest := newestRunIn(list.Data)
 	if newest.DataSource == nil {
-		return nil, messages.EvalHasNoPreviousRun(evalID)
+		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
-	return pinReusedTraceWindow(newest.DataSource), nil
+	return pinReusedTraceWindow(newest.DataSource), reusedEvaluationLevel(newest), nil
+}
+
+// reusedEvaluationLevel is the level a rerun repeats.
+//
+// The service's own field wins. A run created by the portal or an SDK carries
+// it and carries none of the metadata this extension writes, so reading only
+// the metadata reran such a run turn-shaped whatever it had been. The metadata
+// remains the fallback, because runs this extension made before the field was
+// read carry the level only there.
+func reusedEvaluationLevel(run *eval_api.OpenAIEvalRun) string {
+	if run == nil {
+		return ""
+	}
+	if run.EvaluationLevel != "" {
+		return run.EvaluationLevel
+	}
+	return run.Metadata[metaEvaluationLevel]
 }
 
 // legacyTraceLookbackHours is the window a legacy source with no lookback ran
@@ -530,7 +604,8 @@ func runnableEval(group *project.Eval) error {
 	return nil
 }
 
-// buildRunDataSource binds the eval's rows to the run.
+// buildRunDataSource binds the eval's rows to the run and returns the exact
+// registered version for metadata. Unregistered rows carry no version.
 //
 // Three shapes, in the order the configuration decides them. A `source:` block
 // hands the gathering to the service and sends nothing local. Otherwise the
@@ -547,24 +622,49 @@ func (ec *evalContext) buildRunDataSource(
 	group *project.Eval,
 	configPath string,
 	maxSamples int,
-) (*eval_api.EvalRunDataSource, error) {
+) (*eval_api.EvalRunDataSource, string, error) {
 	if group == nil {
-		return nil, messages.NoEvalToRun()
+		return nil, "", messages.NoEvalToRun()
 	}
 	if err := runnableEval(group); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if group.Dataset != "" && configPath != "" && !datasetIsDeclared(configPath, group) {
-		return nil, messages.InEval(group.Name, messages.DatasetNotDeclared(group.Dataset))
+	decl := &project.DatasetDecl{}
+	if group.Dataset != "" && configPath != "" {
+		cfg, err := project.LoadEvalConfig(configPath)
+		if err != nil {
+			return nil, "", err
+		}
+		var ok bool
+		decl, ok = cfg.DatasetDeclaration(group.Dataset)
+		if !ok {
+			return nil, "", messages.InEval(group.Name, messages.DatasetNotDeclared(group.Dataset))
+		}
+	}
+
+	// A simulation creates its conversations instead of reading rows that
+	// already hold them, so it is settled before every shape that reads a
+	// column: a source has none to read, and a scenario seed has no question
+	// on it to bind. ValidateRunnable has already refused a declaration that
+	// asks for both, so this order decides nothing on its own -- it is here so
+	// that adding a shape below cannot quietly claim a simulation.
+	if group.Simulation != nil {
+		return ec.simulationDataSource(ctx, group, decl.Version, maxSamples)
 	}
 
 	if group.Source != nil {
+		var ds *eval_api.EvalRunDataSource
+		var err error
 		switch group.Source.Type {
 		case project.SourceTypeTraces:
-			return tracesDataSource(group)
+			ds, err = tracesDataSource(group)
 		default:
-			return responsesDataSource(group)
+			if maxSamples > 0 {
+				return nil, "", messages.SourceSampleConflict(group.Name)
+			}
+			ds, err = responsesDataSource(group)
 		}
+		return ds, "", err
 	}
 
 	var ds *eval_api.EvalRunDataSource
@@ -580,46 +680,123 @@ func (ec *evalContext) buildRunDataSource(
 		// has to be resolved before it is sent or the run grades another agent.
 		agent, err := ec.remoteAgentName(ctx, group.Target.Name)
 		if err != nil {
-			return nil, messages.InEval(group.Name, err)
+			return nil, "", messages.InEval(group.Name, err)
 		}
 		ds = eval_api.NewAgentTargetDataSource(agent, nil)
 	}
 
 	if group.Dataset == "" {
-		return nil, messages.EvalHasNoDataset(group.Name)
+		return nil, "", messages.EvalHasNoDataset(group.Name)
 	}
 
-	// A local source is read from disk; anything else is already registered and
-	// has to be fetched. Either way the rows are sent inline, because a run's
-	// file_id means an uploaded file and a dataset name is not one: sending the
-	// name is rejected with "invalid data source file ids".
-	localPath := localDatasetPath(configPath, group)
-	if localPath == "" {
-		items, err := ec.readRegisteredDataset(
-			ctx, group.Dataset, declaredDatasetVersion(configPath, group), maxSamples)
-		if err != nil {
-			return nil, err
+	localPath := decl.File
+	if localPath != "" && !filepath.IsAbs(localPath) {
+		localPath = filepath.Join(filepath.Dir(configPath), localPath)
+	}
+	version, err := ec.resolveRunDatasetVersion(ctx, group.Dataset, decl.Version, localPath != "")
+	if err != nil {
+		return nil, "", err
+	}
+	if version != "" {
+		if maxSamples > 0 {
+			return nil, "", exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				fmt.Sprintf("eval %q: --max-samples or maxSamples (%d) conflicts with registered dataset %q version %q",
+					group.Name, maxSamples, group.Dataset, version),
+				"Registered datasets retain their version identity; this run API has no supported row-subset option. "+
+					"Remove the cap, or publish a smaller dataset and select it.",
+			)
 		}
-		ds.SetFileContent(items)
-		return ds, nil
+		id, err := ec.datasetResourceID(ctx, group.Dataset, version)
+		if err != nil {
+			return nil, "", err
+		}
+		items, err := ec.readDatasetVersion(ctx, group.Dataset, version)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := refuseUnboundTemplate(group, ds, items); err != nil {
+			return nil, "", err
+		}
+		ds.SetFileID(id)
+		return ds, version, nil
 	}
 
 	items, err := readJSONL(localPath, maxSamples)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(items) == 0 {
-		return nil, messages.DatasetFileEmpty(localPath)
+		return nil, "", messages.DatasetFileEmpty(localPath)
+	}
+	if err := refuseUnboundTemplate(group, ds, items); err != nil {
+		return nil, "", err
 	}
 	ds.SetFileContent(items)
-	return ds, nil
+	return ds, "", nil
+}
+
+// refuseUnboundTemplate refuses a run whose target invocation reads a column no
+// row carries.
+//
+// The service does not report this. It invokes the target with an empty value
+// and scores whatever comes back, so a conversation dataset run against an
+// agent target produced confident scores for a question nobody asked -- and
+// the seeded content, not the target's answer, is what got graded.
+func refuseUnboundTemplate(
+	group *project.Eval, ds *eval_api.EvalRunDataSource, items []map[string]any,
+) error {
+	missing := ds.MissingTemplateFields(items)
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Named inside the structured message rather than wrapped with InEval: azd
+	// serializes a structured error's own message, so an outer %w prefix is not
+	// what the reader is shown.
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("eval %q: dataset %q carries no %s column, which invoking the target reads from every row",
+			group.Name, group.Dataset, quotedList(missing)),
+		fmt.Sprintf("Rows carry %s. Score these rows as they stand by removing the target from the eval, "+
+			"or point the eval at a dataset whose rows carry %s.",
+			quotedList(datasetColumns(items)), quotedList(missing)),
+	)
+}
+
+// datasetColumns is every key the rows carry, sorted so two runs of the same
+// dataset report it the same way.
+func datasetColumns(items []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		for key := range item {
+			seen[key] = struct{}{}
+		}
+	}
+	columns := make([]string, 0, len(seen))
+	for key := range seen {
+		columns = append(columns, key)
+	}
+	sort.Strings(columns)
+	return columns
+}
+
+func quotedList(values []string) string {
+	if len(values) == 0 {
+		return "no columns"
+	}
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		quoted = append(quoted, strconv.Quote(v))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // tracesDataSource evaluates conversations the agent already had.
 //
 // The service reads them from Application Insights, so the agent has to be
 // emitting gen_ai.input.messages / gen_ai.output.messages for anything to be
-// found. `agent_name` filters the traces; it is not a target, because a trace
+// found. `agentName` filters the traces; it is not a target, because a trace
 // run invokes nothing.
 func tracesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, error) {
 	// runnableEval has already refused an empty one; read rather than assumed,
@@ -662,50 +839,58 @@ func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, erro
 	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil
 }
 
-// readRegisteredDataset fetches a published dataset's rows, optionally keeping
-// only the first n.
-//
-// The rows have to be fetched because a run cannot reference a dataset by
-// name: `file_id` means an uploaded file, and passing a dataset name there is
-// rejected. Fetching also makes --max-samples mean the same thing whether the
-// dataset is local or published, which a file reference could not — that
-// source carries no row limit.
-func (ec *evalContext) readRegisteredDataset(
-	ctx context.Context,
-	name string,
-	pinned string,
-	maxSamples int,
-) ([]map[string]any, error) {
-	// The declaration wins: it is the author saying which rows to score, and it
-	// is right whether or not there is an azd environment to have recorded one.
+// resolveRunDatasetVersion prefers the declaration, then the recorded publication,
+// then the service. Only a complete empty listing (or a typed 404) followed by
+// typed not-found version probes permits local rows.
+func (ec *evalContext) resolveRunDatasetVersion(
+	ctx context.Context, name, pinned string, allowLocal bool,
+) (string, error) {
 	version := pinned
 	if version == "" {
 		version = ec.privateValue(ctx, versionKey("dataset", name))
-	}
-	if version == "" {
-		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
-		if err != nil {
-			return nil, messages.ReadingDataset(name, err)
-		}
-		if versions != nil {
-			version = dataset_api.LatestVersion(versions.Value)
+		if ec.stateErr != nil && (ec.envName != "" || !isNoDefaultEnvironmentError(ec.stateErr)) {
+			return "", messages.ReadingDataset(name, ec.stateErr)
 		}
 	}
-	if version == "" {
-		return nil, messages.DatasetHasNoVersionsToRead(name)
+	if version != "" {
+		return version, nil
 	}
+	if ec.datasetClient == nil {
+		return "", messages.ReadingDataset(name, errors.New("dataset client is unavailable"))
+	}
+	versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
+	if err != nil && !dataset_api.IsNotFound(err) {
+		return "", messages.ReadingDataset(name, err)
+	}
+	if versions != nil && len(versions.Value) > 0 {
+		return dataset_api.LatestVersion(versions.Value), nil
+	}
+	for _, first := range firstDatasetVersions {
+		_, getErr := ec.datasetClient.GetDataset(ctx, name, first, ProjectEndpointAPIVersion)
+		if getErr == nil {
+			return first, nil
+		}
+		if !dataset_api.IsNotFound(getErr) {
+			return "", messages.ReadingDatasetVersion(name, first, getErr)
+		}
+	}
+	if allowLocal {
+		return "", nil
+	}
+	return "", messages.DatasetHasNoVersionsToRead(name)
+}
 
+func (ec *evalContext) readDatasetVersion(
+	ctx context.Context, name, version string,
+) ([]map[string]any, error) {
 	body, err := ec.datasetClient.OpenDatasetContent(
 		ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
 		return nil, messages.ReadingDatasetVersion(name, version, err)
 	}
-	// Closed before the end when a cap is in force, which is what stops the
-	// transfer: reading the blob into memory first made --max-samples bound the
-	// parse and nothing else.
 	defer body.Close()
 
-	items, err := scanJSONL(body, maxSamples)
+	items, err := scanJSONL(body, 0)
 	if err != nil {
 		return nil, messages.ReadingDatasetVersion(name, version, err)
 	}
@@ -713,6 +898,30 @@ func (ec *evalContext) readRegisteredDataset(
 		return nil, messages.DatasetVersionEmpty(name, version)
 	}
 	return items, nil
+}
+
+// datasetResourceID requires the identity issued by the service for this exact version.
+func (ec *evalContext) datasetResourceID(ctx context.Context, name, version string) (string, error) {
+	if name == "" || version == "" || ec.datasetClient == nil {
+		return "", messages.ReadingDatasetVersion(name, version, errors.New("dataset identity cannot be resolved"))
+	}
+	registered, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil {
+		return "", messages.ReadingDatasetVersion(name, version, err)
+	}
+	if registered == nil || strings.TrimSpace(registered.ID) == "" {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("dataset %q version %q could not be resolved to a registered id", name, version),
+			"Publish the dataset with `azd ai eval create` or `azd up`, then retry. "+
+				"A run requires the service-issued version id and cannot fall back to inline rows.",
+		)
+	}
+	if registered.Version != "" && registered.Version != version {
+		return "", messages.ReadingDatasetVersion(name, version,
+			fmt.Errorf("service returned version %q instead of the requested version", registered.Version))
+	}
+	return registered.ID, nil
 }
 
 // datasetColumnsFromPath reads one row to learn the dataset's shape. An empty
@@ -733,8 +942,8 @@ func datasetColumnsFromPath(localPath string) map[string]bool {
 	return columns
 }
 
-// localDatasetPath resolves the dataset's local source relative to the config
-// file, returning empty when the dataset is registered rather than local.
+// localDatasetPath resolves a declared file. Publication retains this declaration,
+// so its presence does not imply the dataset is unregistered.
 func localDatasetPath(configPath string, group *project.Eval) string {
 	cfg, err := project.LoadEvalConfig(configPath)
 	if err != nil || group == nil {
@@ -770,50 +979,6 @@ func declaredDatasetVersion(configPath string, group *project.Eval) string {
 		return ""
 	}
 	return decl.Version
-}
-
-// scoredDatasetVersion labels a run with the version its rows actually came
-// from, or with nothing when that cannot be said.
-//
-// It has to follow the same branch the rows did. A declaration carrying both
-// `source:` and `version:` reads the file from disk, so the pin says nothing
-// about what was scored. The recorded version is the honest label there only
-// once a fingerprint exists to tie the file to it -- that is what
-// checkDatasetRegistered confirms, and it also declines when there is none. A
-// dataset that was registered and has since gained a `source:` has a recorded
-// version and no fingerprint, and stamping the run with it would assert a
-// provenance the rows no longer have.
-func (ec *evalContext) scoredDatasetVersion(
-	ctx context.Context,
-	group *project.Eval,
-	configPath string,
-) string {
-	if localDatasetPath(configPath, group) != "" {
-		if ec.privateValue(ctx, project.FingerprintKey("dataset", group.Dataset)) == "" {
-			return ""
-		}
-		return ec.privateValue(ctx, versionKey("dataset", group.Dataset))
-	}
-	if pinned := declaredDatasetVersion(configPath, group); pinned != "" {
-		return pinned
-	}
-	return ec.privateValue(ctx, versionKey("dataset", group.Dataset))
-}
-
-// datasetIsDeclared says whether the configuration's catalog holds the dataset
-// this eval names.
-//
-// Without it a mistyped name falls through to a registry read and comes back as
-// a 404 for a dataset nobody ever registered, which sends the reader to the
-// service rather than to the line they mistyped. Answered yes when there is no
-// configuration to ask: an eval reached by id has no catalog.
-func datasetIsDeclared(configPath string, group *project.Eval) bool {
-	cfg, err := project.LoadEvalConfig(configPath)
-	if err != nil || cfg == nil {
-		return true
-	}
-	_, ok := cfg.DatasetDeclaration(group.Dataset)
-	return ok
 }
 
 // readJSONL reads newline-delimited JSON, optionally truncating to limit rows.
@@ -882,10 +1047,10 @@ func resolveLevel(group *project.Eval) string {
 	return ""
 }
 
-// resolveMaxSamples prefers the flag, then the eval's own declaration, matching
-// how the evaluation level resolves.
+// resolveMaxSamples prefers a positive flag value, then the declared cap.
+// runMaxSamples separately handles an explicitly supplied zero.
 //
-// Without this, max_samples parsed and did nothing: an eval that caps its
+// Without this, maxSamples parsed and did nothing: an eval that caps its
 // sample count in config would send the whole dataset, and only a flag on every
 // invocation would honour the cap.
 func resolveMaxSamples(flag int, group *project.Eval) int {
@@ -896,6 +1061,22 @@ func resolveMaxSamples(flag int, group *project.Eval) int {
 		return group.MaxSamples
 	}
 	return 0
+}
+
+func runMaxSamples(cmd *cobra.Command, flag int, group *project.Eval) (int, error) {
+	if cmd.Flags().Changed("max-samples") {
+		if group == nil {
+			return 0, exterrors.Validation(exterrors.CodeConflictingArguments,
+				"--max-samples cannot change a data source reused by eval id",
+				"Run a declared eval by name to select its dataset and cap, "+
+					"or omit --max-samples to repeat the previous source.")
+		}
+		if group.Source != nil {
+			return 0, messages.SourceSampleConflict(group.Name)
+		}
+		return flag, nil
+	}
+	return resolveMaxSamples(flag, group), nil
 }
 
 // errWaitBudgetSpent says the run outlived the wait, not that anything failed.
@@ -1050,29 +1231,49 @@ func timestampString(value any) string {
 		if seconds, err := t.Int64(); err == nil {
 			return time.Unix(seconds, 0).UTC().Format(time.RFC3339)
 		}
+		if seconds, err := t.Float64(); err == nil {
+			return time.Unix(int64(seconds), 0).UTC().Format(time.RFC3339)
+		}
 		return t.String()
 	default:
 		return fmt.Sprint(value)
 	}
 }
 
-// runMeans reads the run's rows to average each evaluator's score.
+type runOutputSummary struct {
+	means         map[string]float64
+	conversations *conversationOutputSummary
+}
+
+// runOutputSummary uses a complete row listing for mean scores and observed
+// conversation output. Neither is a projection of a single page.
 //
 // Best effort: the summary is worth printing without the column, and a run
-// that scored nothing has no rows to read.
-func (ec *evalContext) runMeans(
+// that explicitly reported a zero total has no rows to read. An unreported
+// total does not establish that the output is empty.
+func (ec *evalContext) runOutputSummary(
 	ctx context.Context,
 	evalID string,
 	run *eval_api.OpenAIEvalRun,
-) map[string]float64 {
-	if run == nil || run.ResultCounts == nil || run.ResultCounts.Total == 0 {
+) *runOutputSummary {
+	if run == nil {
+		return nil
+	}
+	if total, reported := run.ReportedResultCounts()["total"]; reported && total == 0 {
 		return nil
 	}
 	items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)
 	if err != nil || items == nil {
+		if isSimulationRun(run) {
+			return &runOutputSummary{conversations: &conversationOutputSummary{}}
+		}
 		return nil
 	}
-	return criteriaMeans(items.Data)
+	summary := &runOutputSummary{means: criteriaMeans(items.Data)}
+	if isSimulationRun(run) {
+		summary.conversations = summarizeConversationOutput(items.Data)
+	}
+	return summary
 }
 
 // timestampTime reads a service timestamp, which arrives as epoch seconds on a
@@ -1083,6 +1284,13 @@ func timestampTime(value any) time.Time {
 		return time.Unix(int64(t), 0).UTC()
 	case int64:
 		return time.Unix(t, 0).UTC()
+	case json.Number:
+		if seconds, err := t.Int64(); err == nil {
+			return time.Unix(seconds, 0).UTC()
+		}
+		if seconds, err := t.Float64(); err == nil {
+			return time.Unix(int64(seconds), 0).UTC()
+		}
 	case string:
 		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
 			return parsed.UTC()
@@ -1093,44 +1301,120 @@ func timestampTime(value any) time.Time {
 
 // renderRun prints what a person needs after waiting for a run.
 //
-// means carries each criterion's average score, which the run summary does not
-// return; it is nil when the rows were not fetched, and the column is dropped.
+// rows carries statistics from the complete output listing; it is nil when the
+// rows were not fetched. Service generation counters remain separate.
 func renderRun(
 	out interface{ Write([]byte) (int, error) },
 	run *eval_api.OpenAIEvalRun,
-	means map[string]float64,
+	rows *runOutputSummary,
 ) error {
 	fmt.Fprintln(out)
 	renderRunHeader(out, run)
+	renderSimulationSettings(out, run)
+	if isSimulationRun(run) && rows != nil && rows.conversations != nil {
+		renderConversationOutput(out, rows.conversations)
+	}
 
 	// A run that failed carries why, and it is usually the only actionable
 	// thing in the response — dropping it leaves the caller with just the word
 	// "failed".
-	if why := run.Failure(); why != "" {
-		fmt.Fprintf(out, "\n%s\n", why)
-	}
+	renderRunFailure(out, run)
 
 	// Counted over test cases, not over verdicts: a sample that failed two
 	// evaluators is one sample to go and look at, and reporting it as two
 	// overstates how much is wrong. The per-evaluator table below counts the
 	// verdicts, and the two are labelled so they cannot be read as the same
 	// number disagreeing with itself.
-	if c := run.ResultCounts; c != nil && c.Total > 0 {
-		errored, skipped := unscoredSplit(c, c.Passed+c.Failed)
+	if isSimulationRun(run) {
+		renderConversationResults(out, run)
+	} else if c := run.ResultCounts; c != nil && len(run.ReportedResultCounts()) < 5 {
+		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts())
+	} else if c := run.ResultCounts; c != nil {
 		rate, _, scored := scoredPassRate(c)
 		fmt.Fprint(out, messages.TestCaseResults(
-			c.Total, c.Passed, c.Failed, errored, skipped,
+			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
 			passRateText(rate, scored)))
 	}
 
+	var means map[string]float64
+	if rows != nil {
+		means = rows.means
+	}
 	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
-	if c := run.ResultCounts; c != nil && c.Failed > 0 {
-		fmt.Fprint(out, messages.ViewFailingSamples())
-	}
+	renderRunFollowUp(out, run)
 
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
 	return nil
+}
+
+// runForDisplay fills identities from the successful lookup without changing
+// the service object emitted under --output json.
+func runForDisplay(run *eval_api.OpenAIEvalRun, evalID, runID string) *eval_api.OpenAIEvalRun {
+	display := *run
+	if display.EvalID == "" {
+		display.EvalID = evalID
+	}
+	if display.ID == "" {
+		display.ID = runID
+	}
+	return &display
+}
+
+func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
+	if why := run.Failure(); why != "" {
+		return why
+	}
+	if run.Error != nil {
+		return strings.TrimSpace(run.Error.Code)
+	}
+	return ""
+}
+
+func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
+	if why := runFailureMessage(run); why != "" {
+		fmt.Fprintf(out, "\n%s\n", urlsafe.Text(why))
+	}
+}
+
+func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
+	if !runIsTerminal(run) {
+		return
+	}
+	status := strings.ToLower(run.Status)
+	operationalFailure := status == "failed" || status == "error" || runFailureMessage(run) != ""
+	counts := run.ReportedResultCounts()
+	erroredCount, _ := unscoredRunCounts(counts)
+	failed, errored := counts["failed"] > 0, erroredCount > 0
+	if status == "" && !operationalFailure && len(counts) == 0 {
+		return
+	}
+	eval := followUpEvalRef(run)
+	if eval == "" || run.ID == "" {
+		fmt.Fprint(out, messages.RunFollowUpMissingIDs())
+		return
+	}
+	if operationalFailure {
+		fmt.Fprint(out, messages.FailedRunFollowUp(eval, run.ID, failed, errored))
+		return
+	}
+	if status == "" {
+		fmt.Fprint(out, messages.AvailableRunFollowUp(eval, run.ID, failed, errored))
+		return
+	}
+	fmt.Fprint(out, messages.RunFollowUp(eval, run.ID, failed, errored))
+}
+
+// followUpEvalRef names the eval in the commands a finished run suggests.
+//
+// The immutable ID wins because a declared name can resolve to another eval
+// after a redeploy. Friendly names remain in the header, and are a fallback
+// only when neither the service nor the successful lookup provided an ID.
+func followUpEvalRef(run *eval_api.OpenAIEvalRun) string {
+	if run.EvalID != "" {
+		return run.EvalID
+	}
+	return run.Metadata[metaEvalName]
 }
 
 // passRateText is the rate, or a dash where nothing was scored. A rate over no
@@ -1156,7 +1440,17 @@ func renderRunHeader(out interface{ Write([]byte) (int, error) }, run *eval_api.
 	if ds := runDatasetLine(run.Metadata); ds != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Dataset", ds)
 	}
-	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
+	if isSimulationRun(run) {
+		fmt.Fprintf(out, "%-10s %s\n", "Mode", "conversation simulation")
+		if run.Name != "" {
+			fmt.Fprintf(out, "%-10s %s\n", "Name", run.Name)
+		}
+	}
+	status := run.Status
+	if isSimulationRun(run) {
+		status = reportedStatus(status)
+	}
+	fmt.Fprintf(out, "%-10s %s\n", "Status", status)
 	if d := runDuration(run); d != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Duration", d)
 	}

@@ -4,6 +4,7 @@
 package eval_api
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -243,7 +244,8 @@ func TestHasPromptSource(t *testing.T) {
 func TestNewDataGenerationJobRequest(t *testing.T) {
 	sources := []GenerationSource{{Type: "prompt", Prompt: "be helpful"}}
 
-	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, sources)
+	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, sources,
+		DataGenerationTypeSimpleQnA)
 
 	require.NotNil(t, req)
 	assert.Equal(t, "support-regression", req.Inputs.Name)
@@ -252,6 +254,133 @@ func TestNewDataGenerationJobRequest(t *testing.T) {
 	assert.Equal(t, 15, req.Inputs.Options.MaxSamples)
 	assert.Equal(t, "gpt-4o", req.Inputs.Options.ModelOptions.Model)
 	assert.Equal(t, sources, req.Inputs.Sources)
+}
+
+// A conversation eval grades scenario seeds, not query/response pairs. The type
+// is what tells the service which to produce, so it is pinned on the wire.
+//
+// `simulation_seed` is DataGenerationJobType.simulation_seed in the published
+// Foundry contract. The enum has no member spelled conversation_simulation, so
+// sending that would not select the seed shape at all.
+func TestNewDataGenerationJobRequest_CarriesTheConversationSeedType(t *testing.T) {
+	sources := []GenerationSource{{Type: "prompt", Prompt: "be helpful"}}
+
+	req := NewDataGenerationJobRequest("retail-multiturn", "gpt-4o", 5, sources,
+		DataGenerationTypeSimulationSeed)
+
+	require.NotNil(t, req)
+	assert.Equal(t, "simulation_seed", req.Inputs.Options.Type)
+	assert.Equal(t, "evaluation", req.Inputs.Scenario,
+		"the scenario stays evaluation; only the seed type changes")
+}
+
+// Every caller before the type was selectable got simple_qna, and a caller that
+// still expresses no preference has to keep getting it -- an empty type on the
+// wire is not a request the service can answer.
+func TestNewDataGenerationJobRequest_UnstatedTypeStaysSimpleQnA(t *testing.T) {
+	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, nil, "")
+
+	require.NotNil(t, req)
+	assert.Equal(t, "simple_qna", req.Inputs.Options.Type)
+}
+
+// The literals are DataGenerationJobType in the published Foundry contract
+// (specification/ai-foundry/data-plane/Foundry/src/data_generation_jobs/models.tsp):
+//
+//	union DataGenerationJobType {
+//	  string,
+//	  simple_qna: "simple_qna",
+//	  traces: "traces",
+//	  tool_use: "tool_use",
+//	  simulation_seed: "simulation_seed",
+//	}
+//
+// A discriminator that is not a member of that union selects no options shape,
+// so this is pinned against the spelling rather than against whatever the CLI
+// happened to send.
+func TestTheGenerationTypesAreTheContractsDiscriminators(t *testing.T) {
+	assert.Equal(t, "simple_qna", DataGenerationTypeSimpleQnA)
+	assert.Equal(t, "simulation_seed", DataGenerationTypeSimulationSeed)
+
+	// Recognized on the way back only. The portal writes it into dataset tags
+	// and older builds of this CLI sent it, but it names no member of the
+	// union and must never go out on a request again.
+	assert.Equal(t, "conversation_simulation", DataGenerationTypeConversationSimulation)
+	assert.True(t, SimulationSeedGenerationType(DataGenerationTypeConversationSimulation))
+	assert.True(t, SimulationSeedGenerationType(DataGenerationTypeSimulationSeed))
+	assert.False(t, SimulationSeedGenerationType(DataGenerationTypeSimpleQnA))
+
+	// Whatever a caller asks for, only a contract member reaches the wire.
+	for _, level := range []string{DataGenerationTypeSimpleQnA, DataGenerationTypeSimulationSeed} {
+		req := NewDataGenerationJobRequest("n", "m", 5, nil, level)
+		assert.Contains(t, []string{"simple_qna", "traces", "tool_use", "simulation_seed"},
+			req.Inputs.Options.Type, "%q is not a DataGenerationJobType", req.Inputs.Options.Type)
+	}
+}
+
+// The job resource echoes the submission back. That echo is the only thing a
+// standalone `--no-wait` reattach has to learn what was generated, because
+// there is no azd environment for the CLI to have recorded it in.
+//
+// The body below is a real GET /data_generation_jobs response with the prompt
+// text shortened. Decoding it is what pins the field the recovery reads.
+func TestGenerationJobDecodesTheEchoedSubmission(t *testing.T) {
+	const body = `{
+      "status": "succeeded",
+      "inputs": {
+        "name": "support-regression",
+        "scenario": "evaluation",
+        "options": {
+          "type": "simple_qna",
+          "max_samples": 15,
+          "model_options": { "model": "gpt-4.1-nano" }
+        },
+        "sources": [
+          { "type": "prompt", "prompt": "be helpful" },
+          { "type": "agent", "agent_name": "support-agent" }
+        ]
+      },
+      "result": { "generated_samples": 12 },
+      "finished_at": 1789588248,
+      "id": "datagen-f443ba556076416aa6473efbd17ad9af",
+      "created_at": 1789588183
+    }`
+
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(body), &job))
+
+	assert.Equal(t, "datagen-f443ba556076416aa6473efbd17ad9af", job.ID)
+	assert.Equal(t, "succeeded", job.Status)
+	require.NotNil(t, job.Inputs, "the submission is echoed back")
+	assert.Equal(t, "simple_qna", job.GenerationType())
+	assert.Equal(t, "support-regression", job.Inputs.Name)
+	assert.Equal(t, "evaluation", job.Inputs.Scenario)
+	assert.Equal(t, 15, job.Inputs.Options.MaxSamples)
+	assert.Equal(t, "gpt-4.1-nano", job.Inputs.Options.ModelOptions.Model)
+	require.Len(t, job.Inputs.Sources, 2)
+	assert.Equal(t, "support-agent", job.Inputs.Sources[1].AgentName)
+
+	encoded, err := json.Marshal(job)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), `"inputs"`)
+	assert.NotContains(t, string(encoded), "be helpful")
+	assert.NotContains(t, string(encoded), "support-agent")
+}
+
+// A response without the echo is the older shape, and it has to decode to no
+// type rather than to the zero value of a real one. Reading "" as simple_qna
+// would relabel a conversation dataset as a turn dataset.
+func TestGenerationJobWithoutInputsStatesNoType(t *testing.T) {
+	for _, body := range []string{
+		`{"id":"datagen-1","status":"running"}`,
+		`{"id":"datagen-1","status":"running","inputs":null}`,
+	} {
+		job := GenerationJob{Inputs: &DataGenerationInputs{Options: DataGenerationOptions{Type: "simulation_seed"}}}
+		require.NoError(t, json.Unmarshal([]byte(body), &job))
+
+		assert.Nil(t, job.Inputs)
+		assert.Empty(t, job.GenerationType())
+	}
 }
 
 // The evaluator request sends the name twice, under two keys the service reads

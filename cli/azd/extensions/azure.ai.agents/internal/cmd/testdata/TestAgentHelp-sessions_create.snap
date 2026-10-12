@@ -1,0 +1,44 @@
+Create a new session for a hosted agent endpoint.
+
+Provisions a session with a persistent filesystem. The session
+is ready for invocations once the command completes.
+
+The agent name is auto-detected when only one azure.ai.agent service exists
+in azure.yaml. The version defaults to the deployed agent version from the
+azd environment (AGENT_{SERVICE}_VERSION) when omitted.
+
+Positional arguments can be used instead of flags:
+  azd ai agent sessions create [agent-name] [version]
+
+Usage
+  azd ai agent sessions create [agent-name] [version] [flags]
+
+Flags
+  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+      --session-id string    : Optional caller-provided session ID (auto-generated if omitted)
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --version string       : Agent version to back the session (auto-resolved from azd environment if omitted)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for create
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+  Create a session (auto-detect agent, latest version)
+    azd ai agent sessions create
+
+  Create a session for a specific agent
+    azd ai agent sessions create my-agent
+
+  Create a session backed by agent version 3
+    azd ai agent sessions create my-agent 3
+
+  Create with flags
+    azd ai agent sessions create --agent-name my-agent --version 3
+
+  Create with a specific session ID
+    azd ai agent sessions create --session-id my-session

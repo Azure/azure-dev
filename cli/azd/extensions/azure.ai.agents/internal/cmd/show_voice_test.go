@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -60,8 +61,8 @@ func TestShowVoiceServiceRouting(t *testing.T) {
 		}}, "", false, false},
 		{"prompt", map[string]any{"kind": "prompt"}, "", false, false},
 		{"unspecified", map[string]any{}, "", false, false},
-		{"voice-override", map[string]any{"kind": "hosted"}, "kind: voice\n", true, false},
-		{"hosted-override", map[string]any{"kind": "voice"}, "kind: hosted\n", false, false},
+		{"voice-override", map[string]any{"kind": "hosted"}, "kind: voice\n", false, true},
+		{"hosted-override", map[string]any{"kind": "voice"}, "kind: hosted\n", false, true},
 		{"malformed-override", map[string]any{"kind": "voice"}, "kind: [\n", false, true},
 		{"missing-override", map[string]any{"kind": "voice"}, "MISSING", false, true},
 	} {
@@ -91,7 +92,9 @@ func TestShowVoiceServiceRouting(t *testing.T) {
 			client := newHelpersTestAzdClient(t, project, &helpersPromptServer{}, env)
 			info, err := resolveAgentServiceFromProject(t.Context(), client, "voice-named-service", true, withVoiceKind())
 			if tt.invalid {
-				require.ErrorContains(t, err, "determining agent kind")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
 				require.Zero(t, env.getCurrentCalls)
 				return
 			}

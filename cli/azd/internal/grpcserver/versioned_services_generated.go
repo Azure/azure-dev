@@ -21,6 +21,8 @@ const (
 	BetaAccountService BetaService = "AccountService"
 	// BetaAiModelService identifies the beta AiModelService registration and its focused overrides.
 	BetaAiModelService BetaService = "AiModelService"
+	// BetaCommandResultService identifies the beta CommandResultService registration and its focused overrides.
+	BetaCommandResultService BetaService = "CommandResultService"
 	// BetaComposeService identifies the beta ComposeService registration and its focused overrides.
 	BetaComposeService BetaService = "ComposeService"
 	// BetaContainerService identifies the beta ContainerService registration and its focused overrides.
@@ -65,6 +67,11 @@ type BetaAccountServiceLookupTenantOverride interface {
 	LookupTenant(context.Context, *v1beta.LookupTenantRequest) (*v1beta.LookupTenantResponse, error)
 }
 
+// BetaAccountServiceGetCurrentPrincipalOverride overrides the beta AccountService.GetCurrentPrincipal method before stable adaptation.
+type BetaAccountServiceGetCurrentPrincipalOverride interface {
+	GetCurrentPrincipal(context.Context, *v1beta.GetCurrentPrincipalRequest) (*v1beta.GetCurrentPrincipalResponse, error)
+}
+
 func validateBetaAccountServiceOverride(override any) error {
 	return validateBetaServiceOverride(
 		"AccountService",
@@ -72,6 +79,7 @@ func validateBetaAccountServiceOverride(override any) error {
 		reflect.TypeFor[v1beta.AccountServiceServer](),
 		reflect.TypeFor[BetaAccountServiceListSubscriptionsOverride](),
 		reflect.TypeFor[BetaAccountServiceLookupTenantOverride](),
+		reflect.TypeFor[BetaAccountServiceGetCurrentPrincipalOverride](),
 	)
 }
 
@@ -574,6 +582,7 @@ func registerBetaServices(
 		switch service {
 		case BetaAccountService:
 		case BetaAiModelService:
+		case BetaCommandResultService:
 		case BetaComposeService:
 		case BetaContainerService:
 		case BetaCopilotService:
@@ -619,6 +628,15 @@ func registerBetaServices(
 		stable:   stableAiModelService,
 		override: overrideAiModelService,
 	})
+	overrideCommandResultService := overrides[BetaCommandResultService]
+	if overrideCommandResultService != nil {
+		return fmt.Errorf("beta-only service CommandResultService uses its native implementation and does not accept an override")
+	}
+	betaCommandResultService, ok := serviceImplementations[BetaCommandResultService].(v1beta.CommandResultServiceServer)
+	if !ok {
+		return fmt.Errorf("implementation for beta-only service CommandResultService does not satisfy v1beta.CommandResultServiceServer")
+	}
+	v1beta.RegisterCommandResultServiceServer(registrar, betaCommandResultService)
 	overrideComposeService := overrides[BetaComposeService]
 	if overrideComposeService != nil {
 		return fmt.Errorf("beta-only service ComposeService uses its native implementation and does not accept an override")
@@ -845,6 +863,16 @@ func (a *betaAccountServiceAdapter) LookupTenant(
 		new(v1beta.LookupTenantResponse),
 		"AccountService.LookupTenant",
 	)
+}
+
+func (a *betaAccountServiceAdapter) GetCurrentPrincipal(
+	ctx context.Context,
+	req *v1beta.GetCurrentPrincipalRequest,
+) (*v1beta.GetCurrentPrincipalResponse, error) {
+	if override, ok := a.override.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
+		return override.GetCurrentPrincipal(ctx, req)
+	}
+	return a.UnimplementedAccountServiceServer.GetCurrentPrincipal(ctx, req)
 }
 
 type betaAiModelServiceAdapter struct {

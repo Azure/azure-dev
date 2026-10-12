@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -72,6 +73,22 @@ func TestRunListTimestampsAreRFC3339UTC(t *testing.T) {
 	assert.Equal(t, "2026-08-01T09:15:22Z", timestampString(int64(1785575722)))
 	assert.Equal(t, "2026-08-01T09:15:22Z", timestampString("2026-08-01T09:15:22Z"))
 	assert.Empty(t, timestampString(nil))
+}
+
+func TestRunNumberTimestampsKeepHumanFormattingAndOrdering(t *testing.T) {
+	for _, value := range []string{"1785575722", "1785575722.75", "1.785575722e9"} {
+		t.Run(value, func(t *testing.T) {
+			var run eval_api.OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(`{"id":"new","created_at":`+value+
+				`,"modified_at":1785575782}`), &run))
+			assert.Equal(t, "2026-08-01T09:15:22Z", timestampString(run.CreatedAt))
+			assert.Equal(t, "1m00s", runDuration(&run))
+			assert.Equal(t, "new", newestRunIn([]eval_api.OpenAIEvalRun{
+				run, {ID: "old", CreatedAt: "2026-08-01T09:15:21Z"},
+			}).ID)
+			assert.Equal(t, "2026-08-01T09:15:22Z", startedRun(&run, "eval", nil).CreatedAt)
+		})
+	}
 }
 
 // The table shows one rate per run because a column per evaluator stops being

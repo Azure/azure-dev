@@ -39,7 +39,16 @@ func (c *DatasetClient) ListDatasetVersions(
 	if err != nil {
 		return nil, err
 	}
-	return c.followPages(ctx, first)
+	list, err := c.followPages(ctx, first)
+	if err != nil {
+		return nil, err
+	}
+	for _, dataset := range list.Value {
+		if strings.TrimSpace(dataset.Version) == "" {
+			return nil, fmt.Errorf("dataset %q version listing contains an entry without a version", name)
+		}
+	}
+	return list, nil
 }
 
 // DeleteDatasetVersion removes a single dataset version.

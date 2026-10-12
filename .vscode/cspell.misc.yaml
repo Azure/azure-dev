@@ -89,12 +89,29 @@ overrides:
           - azureai
           - entra
           - flexconsumption
+    - filename: .github/workflows/scripts-ci.yml
+      words:
+          - CODEOWNERS
+          - vitest
+    - filename:
+          - .github/workflows/codeowners-validation.yml
+          - .github/scripts/src/codeowners-validation.js
+          - .github/scripts/test/codeowners-validation.test.js
+      words:
+          - CODEOWNERS
     - filename: .github/instructions/**/*.md
       words:
           - azdext
           - Chdir
           - exterrors
           - userinfo
+    - filename: .github/skills/azd-grpc-contracts/**/*.md
+      words:
+          - azdext
+          - grpcserver
+          - oneofs
+          - protos
+          - Protos
     - filename: docs/architecture/**/*.md
       words:
           - azapi

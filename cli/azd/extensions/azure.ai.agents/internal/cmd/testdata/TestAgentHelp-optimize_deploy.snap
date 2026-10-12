@@ -1,0 +1,28 @@
+Deploy an optimization candidate directly via the Foundry agent API.
+
+This creates a new agent version with the optimized configuration applied.
+Use 'optimize apply' instead if you want to localize the config into your azd project first.
+
+Usage
+  azd ai agent optimize deploy [agent-name] [flags]
+
+Flags
+      --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
+      --candidate string        : Candidate ID from optimization results (required)
+      --endpoint string         : Optimization service endpoint (for local dev)
+  -p, --project-endpoint string : Foundry project endpoint URL
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for deploy
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Deploy candidate directly
+    azd ai agent optimize deploy --candidate candidate_abc123 --agent my-agent
+
+  Deploy with explicit endpoint
+    azd ai agent optimize deploy --candidate candidate_abc123 --agent my-agent --project-endpoint https://...

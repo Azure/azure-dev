@@ -43,6 +43,8 @@ The version fields in the config are updated after successful uploads.
 
 In interactive mode, you will be prompted for each asset type that has
 local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
+		Example: `  # Upload changes to the local dataset
+  azd ai agent eval update --dataset-only`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

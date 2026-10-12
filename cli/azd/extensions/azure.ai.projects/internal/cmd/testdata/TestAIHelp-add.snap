@@ -1,0 +1,29 @@
+Add or update a Microsoft Foundry project.
+
+Usage
+  azd ai project add [flags]
+
+Flags
+      --force                   : Replace a different configured project
+      --infra string[="bicep"]  : Eject Bicep or Terraform infrastructure (optional value)
+      --new-project             : Create a new Foundry project
+      --project-endpoint string : Existing Foundry project endpoint
+      --project-id string       : Existing Foundry project ARM resource ID
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for add
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: default, json, none) (default "default")
+
+Examples
+  Configure a Foundry project interactively
+    azd ai project add
+
+  Connect an existing project by its ARM resource ID
+    azd ai project add --project-id "<project-resource-id>"
+
+  Eject the configured infrastructure as Bicep
+    azd ai project add --infra=bicep

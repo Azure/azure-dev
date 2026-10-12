@@ -57,8 +57,8 @@ type foundryConnectionsProbeFn func(
 //     remediation.
 //   - state.ConnectionLoadErrors set → configuration could not be
 //     read. Fail without probing so a bad $ref is not Skip.
-//   - state.HasConnections == false → no enabled connection
-//     services or legacy resources; Skip rather than a vacuous Pass.
+//   - state.HasConnections == false → no enabled connection services;
+//     Skip rather than a vacuous Pass.
 //   - `AZURE_AI_PROJECT_ID` not set / cannot be parsed → can not
 //     derive the account + project to probe. Skip cleanly; the
 //     rbac check already emits the canonical `azd env set` fix.
@@ -133,8 +133,7 @@ func newCheckConnections(deps Dependencies) Check {
 						"failed to load configured connections: %s",
 						strings.Join(state.ConnectionLoadErrors, "; "),
 					),
-					Suggestion: "Fix azure.yaml, its $ref files, or the " +
-						"legacy agent.manifest.yaml, then retry " +
+					Suggestion: "Fix azure.yaml or its $ref files, then retry " +
 						"`azd ai agent doctor`.",
 					Details: map[string]any{
 						"loadErrors": state.ConnectionLoadErrors,
@@ -143,9 +142,8 @@ func newCheckConnections(deps Dependencies) Check {
 			}
 			if !state.HasConnections {
 				return Result{
-					Status: StatusSkip,
-					Message: "skipped: no enabled connection services " +
-						"or legacy connection resources found.",
+					Status:  StatusSkip,
+					Message: "skipped: no enabled connection services found.",
 				}
 			}
 
@@ -259,8 +257,8 @@ func parseAccountProjectFromProjectID(projectID string) (account, project string
 	return parts[8], parts[10], nil
 }
 
-// classifyConnections produces the Pass/Fail Result by joining the
-// manifest's `state.Connections` to the connection names returned by
+// classifyConnections produces the Pass/Fail Result by joining the supported
+// azure.yaml `state.Connections` to the connection names returned by
 // the Foundry project. Match is on connection name only — credential
 // type / target compatibility surfaces at runtime.
 //
@@ -337,9 +335,7 @@ func classifyConnections(
 			"%d configured connection(s) are missing on project %s: %s",
 			len(missing), project, sb.String()),
 		Suggestion: "Run `azd deploy --all` to create or reconcile the " +
-			"missing azure.ai.connection services. Migrate bundled or legacy " +
-			"connection resources to azure.ai.connection services and add them " +
-			"to agent uses before deploying.",
+			"missing azure.ai.connection services and add them to agent uses before deploying.",
 		Details: map[string]any{
 			"missingConnections": missing,
 			"matchedCount":       matched,

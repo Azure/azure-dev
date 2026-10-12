@@ -314,7 +314,7 @@ func TestCreateVoiceAgentAPIRequest_RejectsInvalidAdvancedConfig(t *testing.T) {
 		ParallelToolCalls: &parallelToolCalls,
 	}
 	_, err := CreateVoiceAgentAPIRequest(agent)
-	if err == nil || !strings.Contains(err.Error(), "parallel_tool_calls is not currently supported") {
+	if err == nil || !strings.Contains(err.Error(), "parallelToolCalls is not currently supported") {
 		t.Fatalf("expected parallel_tool_calls validation error, got: %v", err)
 	}
 }

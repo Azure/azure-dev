@@ -2,33 +2,31 @@
 name: foundry-extension-scenario-authoring
 license: MIT
 metadata:
-  version: "1.2"
+  version: "1.4"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or authoring rules.
   # 1.0: initial authoring + validation skill for the azure.ai.agents cli-interactive-tester
   # scenarios. Taxonomy (tiers/tags/profile/hooks/fixtures/requires) is single-sourced in the
   # scenarios README; this skill adds the authoring procedure and a no-execution validation loop.
   # 1.1: require deterministic input for every executed invoke command.
   # 1.2: document the run-scoped identity placeholders supplied by orchestration.
+  # 1.3: shorten description to Copilot's 1,024-character limit; procedural
+  # detail (INVOKES tool list) moved to the body below.
+  # 1.4: recognize shared model version/SKU and bounded Foundry project placeholders.
 description: >-
-  **WORKFLOW SKILL** — Authors and validates cli-interactive-tester **scenarios** for the
-  azure.ai.agents extension: writes a new goal-based scenario YAML (or edits an existing one) so
-  it follows the framework's tier / tag / hook / fixtures / requires conventions and the goals-
-  are-the-contract judging rules, then lint-validates it **without running it** (no Azure cost).
+  **WORKFLOW SKILL** — Authors and validates cli-interactive-tester scenarios for the
+  azure.ai.agents extension: writes a new scenario YAML (or fixes an existing one) so it
+  follows the tier/tag/hook/fixtures/requires conventions and goals-are-the-contract judging
+  rules, then lint-validates it via list_scenarios (never start_session — no Azure cost).
   Typically driven through the foundry-extension-scenario-author agent.
 
-  INVOKES: cli-interactive-tester MCP tool list_scenarios (for tag/lint validation only — never
-  start_session), read/edit of scenario YAML files, ask_user.
+  USE FOR: write a new scenario, add coverage for a command/flag, fix a scenario's
+  tags/hooks/requires, add a fixture, close a coverage gap flagged by a PR regression run.
 
-  USE FOR: write a new scenario, add scenario coverage for a command or flag, author a
-  cli-interactive-tester scenario, fix a scenario's tags / hooks / requires, add a fixture for a
-  scenario, bring a scenario up to the authoring contract, close a coverage gap flagged by a PR
-  regression run.
-
-  DO NOT USE FOR: RUNNING scenarios or a suite (use foundry-extension-scenario-suite-run, or foundry-extension-scenario-pr-regression
-  for a PR — this skill never drives a scenario or incurs Azure cost), driving a single scenario
-  (that is the foundry-extension-scenario-worker agent), azd core preflight (use azd-preflight), changelog (use
-  changelog-generation), creating PRs (use pull-request), scenarios for any extension other than
-  azure.ai.agents.
+  DO NOT USE FOR: RUNNING scenarios or a suite — never drives a scenario or incurs Azure cost
+  (use foundry-extension-scenario-suite-run for a sweep, or foundry-extension-scenario-pr-regression
+  for a PR), driving a single scenario (foundry-extension-scenario-worker), azd core preflight
+  (azd-preflight), changelog (changelog-generation), creating PRs (pull-request), scenarios for
+  other extensions.
 ---
 
 # foundry-extension-scenario-authoring
@@ -39,6 +37,10 @@ Authors and validates goal-based **scenarios** for the `azure.ai.agents`
 **writes and lints** scenarios; it never **runs** them (running is `foundry-extension-scenario-suite-run` /
 `foundry-extension-scenario-pr-regression`, driven by the `foundry-extension-scenario-worker` agent, and incurs Azure cost for
 Tier 1b / Tier 2).
+
+**Tools invoked**: the cli-interactive-tester MCP `list_scenarios` tool (for tag/lint validation
+only — never `start_session`, which would incur Azure cost), read/edit of scenario YAML files,
+and `ask_user`.
 
 ## The authoring contract (read this first)
 
@@ -117,7 +119,8 @@ Field references (do not restate these — link to them):
 - **`produces:`** — the verified Tier 1 scaffold handed to Tier 1b:
   [README § Producer/consumer scaffold handoff](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#producerconsumer-scaffold-handoff).
 - **Profile/session placeholders** (`{prefix}`, `{subscription}`, `{region}`, `{model}`,
-  `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{fixtures_dir}`, `{instance}`):
+  `{model_version}`, `{model_sku}`, `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{foundry_project_name}`,
+  `{fixtures_dir}`, `{instance}`):
   [README § Profile / overrides](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#profile--overrides).
 - **Pre/post hooks** — semantics (host-side, sequential, fail-fast), fields, and the reset /
   fixture-seed / auth-guard patterns:
@@ -190,7 +193,9 @@ Field references (do not restate these — link to them):
    An already-correct selection advances without changing any choice. Keep action names, indices,
    payloads, and keystrokes out of scenario goals; the worker owns those mechanics.
    For resource-creating flows, include the RESOURCE NAMING and AGENT NAME goals (prefix
-   `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
+   `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide. Foundry project prompts
+   must use the orchestrator-derived `{foundry_project_name}` because the service limits those
+   names to 32 characters.
 
 ## Validation loop (no execution)
 
@@ -209,8 +214,10 @@ Validate **statically** — never `start_session`, never drive the scenario, nev
 4. **Fixture / hook paths resolve.** If a `pre` hook seeds a fixture, confirm the referenced
    `fixtures/<name>/` tree exists and the hook uses `{fixtures_dir}` (not a hardcoded path).
 5. **Placeholders only reference known variables.** Every `{name}`-shaped token in `command` /
-   `cwd` / hooks / goals is processed as a placeholder and must be a profile placeholder or
-   `{instance}` or, for Tier 1b, `{prerequisite_scaffold_dir}`. This includes embedded shell
+   `cwd` / hooks / goals is processed as a placeholder and must be a documented
+   profile/session placeholder (including `{model_version}`, `{model_sku}`, and
+   `{foundry_project_name}`) or, for
+   Tier 1b, `{prerequisite_scaffold_dir}`. This includes embedded shell
    syntax: format an awk action as `{ print }`, not `{print}`, so it cannot be mistaken for an
    unknown placeholder. Reject every unknown brace-delimited token during static validation.
 6. **Invoke input is explicit.** For every goal or `command` that executes

@@ -39,16 +39,28 @@ evaluators:
 evals:
   - name: support-quality
     dataset: support-golden
-    evaluation_level: turn
+    evaluationLevel: turn
     evaluators:
       - evaluator: builtin.task_adherence
-        initialization_parameters:
+        initializationParameters:
           model: gpt-4.1-nano
       - evaluator: support-quality
     target:
       type: agent
       name: support-agent
 ```
+
+Keys in the configuration are camelCase, like the rest of `azure.yaml`:
+`evaluationLevel`, `maxSamples`, `initializationParameters`, `dataMapping`, the
+`source` keys (`lookbackHours`, `maxTraces`, `agentName`, `agentVersion`,
+`responseIds`, `maxTurns`, `startTime`, `endTime`), the `simulation` keys
+(`numConversations`, `maxTurns`) and an evaluator's catalog metadata
+(`displayName`, `supportedEvaluationLevels`). That is the only spelling read: a
+snake_case key such as `evaluation_level` is reported as an unknown key, with
+the camelCase key suggested. Only the configuration's own keys are camelCase.
+What a key holds (an evaluator's `initializationParameters`, a `dataMapping`'s
+inputs, a rubric's `definition`) and the JSON the service returns, which `-o json`
+prints as the service sent it, keep the service's names.
 
 `azd up` reconciles **datasets → evaluators → eval groups**, in that order,
 because a group references the versions the first two resolve to.
@@ -60,6 +72,13 @@ The same holds for a `$ref` on a single catalog entry: `file:` and `source:` are
 registered as this extension's path keys, so a relative `source:` written inside
 `evals/evaluators/quality.yaml` means `evals/evaluators/quality.json` — beside
 the file it was written in, wherever that file is pulled in from.
+
+Properties beside a `$ref` override the referenced definition and use the same
+camelCase keys and value types as its inline configuration shape. For example,
+`$ref: ./quality.yaml` with `maxSamples: 5` overrides an eval's cap;
+`max_samples` is rejected by both the editor schema and the CLI. Required fields
+may come from the referenced file and are checked after resolution. Rubric
+`definition:` overlays retain the evaluator service's own vocabulary instead.
 
 A rubric kept in its own file is named by `source:`, which is what `generate`
 writes:
@@ -85,7 +104,225 @@ in the referenced file, so `azd ai eval generate` will not update it in place an
 says so rather than writing a second declaration of the same rubric beside the
 directive. Edit the referenced file, or generate under a different name.
 
+### Registered dataset identity
+
+Runs bind registered datasets using the service-issued version ID, including
+datasets whose catalog entry still has a local `file:` after publication.
+An explicit `version:` takes precedence over the recorded publication version;
+without either, the latest registered version is resolved from the service.
+Run metadata records that same resolved version.
+
+Registered versions cannot be sampled by this run API. A positive `maxSamples:`
+or `--max-samples` is refused rather than ignored or sent as anonymous inline
+rows. Remove the cap, or publish and select a smaller dataset.
+
+For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
+clears its configured cap. Trace/response sources and reruns selected by a bare
+eval ID reject every explicit `--max-samples` value, including zero, rather than
+silently ignoring it. Omit the flag to repeat a previous run's source; use
+`source.maxTraces` to limit a declared trace source. Simulation declarations
+with a positive configured cap remain invalid even when the flag is zero.
+
+A local dataset file with no registered version runs inline and supports a cap,
+once a complete empty version listing (or a not-found response) and not-found
+first-version probes confirm that no version exists. Permissions, transient
+failures, and malformed listings fail the run instead of selecting local data.
+
+`job show --dataset` recovers the registered evaluation level even when the local
+artifact already exists. It preserves edited bytes unless `--force` is given,
+does not download content when preserving the file, and does not record a new
+deployed fingerprint for those unverified local bytes. Job inputs and recorded
+generation state keep precedence over the registered tag. A metadata lookup
+failure is reported as a collection error; an untagged version stays unspecified.
+Within registered metadata, an explicit `evaluation_level` wins over a recognized
+`data_generation_type`, followed by the portal's `scenario: conversation_simulation`.
+This recovers older service/portal seed datasets without guessing from unknown tags.
+Echoed generation inputs remain internal to level recovery and are omitted from
+job JSON output, including source prompts and instructions.
+
+### Simulating multi-turn conversations
+
+The example above grades rows that already hold an exchange. A `simulation:`
+block instead has the service hold the conversation first — a simulator model
+plays the user against your deployed agent — and grades the transcript it
+produces:
+
+```yaml
+evals:
+  - name: retail-conversations
+    dataset: retail-seeds
+    evaluationLevel: conversation
+    simulation:
+      model: model-connection/gpt-4.1-nano # plays the user, not the agent under test
+      numConversations: 3      # per seed row, 1–5
+      maxTurns: 8              # 1–20; omit to leave it to the service
+    evaluators:
+      - evaluator: builtin.task_completion
+        initializationParameters:
+          model: gpt-4.1-nano
+    target:
+      type: agent
+      name: support-agent
+```
+
+`simulation:` requires `evaluationLevel: conversation` and an agent target:
+there is no turn to score before the conversation exists, and nothing to hold it
+with if the target is a model. It is also exclusive with `source:` and positive
+`maxSamples:` caps; `maxSamples: 0` means uncapped. The run creates its
+conversations rather than collecting or sampling ones that already happened.
+Every evaluator listed has to support
+conversation level; one that does not is refused at deploy rather than bound to
+a column the graded rows do not have.
+
+Omit `numConversations` to use one conversation per seed, and omit `maxTurns`
+to use the service default. Explicit zero or null values for either of these
+simulation counts are rejected by both file-based and inline service configuration
+loaders.
+
+The authored `simulation:` block accepts 1 to 5 conversations per seed and
+1 to 20 turns when those defaults are explicitly set. These are azd's current
+authoring limits from the CLI feature specification, not maxima imposed by the
+Foundry preview service. They remain unchanged here; per-case settings follow
+the override rules below.
+
+`simulation.model` must name an existing connection and deployment as
+`connection-name/model-deployment`. Bare deployment names are rejected before a
+run is submitted; the CLI does not guess a connection or reuse the judge model.
+This follows the published Foundry preview contract. Earlier live checks that
+accepted bare deployment names used the older service behavior; they do not
+establish live compatibility for this qualified-reference validation. The current
+request shape is covered by local contract fixtures, not a new live run.
+
+The dataset holds **seeds**, not exchanges. One row describes one conversation
+to have:
+
+```jsonl
+{"test_case_description": "A customer asks why a delivered order never arrived.", "simulation_configuration": {"desired_num_turns": 4}}
+{"test_case_description": "A customer disputes a charge and wants it reversed."}
+```
+
+Only `test_case_description` is required; it is the scenario the simulator opens
+with and must contain non-whitespace text of 1 to 2,500 Unicode characters. Per-row turn settings belong
+inside `simulation_configuration`, matching
+the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
+The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
+the per-row maximum overrides `simulation.maxTurns`, and the service default is
+20 when neither is set. Generation can return a flat top-level `desired_num_turns`.
+When collecting generated conversation seeds, the CLI moves that value into
+`simulation_configuration` in the downloaded local file. Canonical rows remain
+byte-identical, and unrelated fields are preserved without rounding numeric IDs.
+The returned artifact version identifies the original generation job's output,
+not the normalized local bytes. The CLI clears stale local publication state
+instead of recording a deployed fingerprint for those transformed bytes:
+`azd ai eval create` or `azd up` publishes the file explicitly before a simulation run
+binds the resulting service-issued version ID. Collection never silently publishes
+a replacement version, and an existing edited file is still preserved unless
+`--force` is supplied.
+
+An independently registered dataset still carrying a flat turn field is rejected
+at run time because the simulator would ignore it. Move the field into
+`simulation_configuration` and explicitly publish a new version before running.
+
+Runs send `data_mapping` for `test_case_description` and
+`simulation_configuration` as column names, not `{{item...}}` templates. Registered
+seed content stays bound by version ID rather than being rewritten inline.
+The simulated eval's graded `messages` column is a required array of message
+objects, not a string. Ordinary static dataset schemas keep their existing
+optional-column behavior.
+
+Local seed files are checked row by row before `create` or `azd up` publishes
+dependencies; the run checks registered seed rows as well. Completed `messages`
+and turn-level `query`/`response` fields cannot be mixed with simulation seeds,
+even when those fields are empty or null. Keep these dataset modes in separate
+evaluations.
+
+Seed rows carry no `query` or `response`, because nobody has asked anything yet.
+That is why the evaluators bind `messages` — the transcript the run produces —
+and why a run over seed rows whose target reads a column the seeds do not have
+is refused instead of scored against the seeded text.
+
+`azd ai eval generate --evaluation-level conversation` writes seeds in this
+shape and tags the registered dataset so a later run knows what it holds.
+
+Simulation run summaries, `run show`, and `run output list` retain the run's
+dataset name and version and distinguish **requested configuration** from
+**observed results**:
+
+- Seed scenarios count the validated dataset rows submitted to the run.
+- Repetitions are the requested conversations per seed, not completed conversations.
+- Maximum turns is a requested ceiling. An omitted ceiling leaves the service
+  default and is not an observed conversation length.
+- Conversation evaluation results use the service's `result_counts`, keeping
+  failed verdicts separate from errored and skipped evaluations.
+
+The CLI has no verified service counters for generated conversations, completed
+conversations, or actual turns. These are shown as **not
+reported**, never calculated by multiplying seeds and repetitions or treating
+evaluation totals as successful generation. Older runs without recorded
+settings also show **not reported** for those settings. Static conversation
+and turn-level runs keep their existing output.
+
+When a waited `run start` successfully reads all output rows for its mean-score
+summary, it also shows **observed conversation output**. This block counts
+unique `datasource_item.id` values and the associated output-item lifecycle
+statuses, not generated or completed conversations. A completed output item can
+still have failed evaluation verdicts. Duplicate conversation IDs count once;
+conflicting or unknown statuses and rows without conversation IDs are reported
+separately. These observations describe all rows returned by that listing, not
+a guarantee that every requested conversation produced output. Paged or filtered
+listings, and detail views that have not fetched all rows, do not supply this
+block. Only an explicitly reported zero evaluation total skips this best-effort
+fetch; missing or null totals do not imply empty output. No additional output
+fetch or transcript-based turn inference is used.
+
+JSON retains the service's run fields, including unrecognized nested fields;
+missing or null result-count members remain missing or null. It does not add
+zero counters to partial `per_testing_criteria_results` entries or a score/verdict
+to an output result that omitted those fields. Explicit zero, false, and null
+values remain distinct; changed typed values and reported score normalization
+are still reflected in JSON. It does not add
+estimated conversation or turn counts. Numbers in echoed inline datasets,
+including nested source content, retain their exact precision in run JSON.
+Newly submitted
+simulation runs record configuration under `metadata.azd_simulation_*`, with
+`metadata.azd_run_mode` identifying the simulation mode. The JSON handoff from
+`run start --no-wait` is unchanged; read `run show -o json` for the run object.
+
 ### Repeated deploys do not create redundant versions
+
+Before publishing dependencies, `azd ai eval create <name>` validates the selected
+eval, its local JSONL/rubric files, and its registered dataset/evaluator references,
+including version pins. An unavailable reference lookup is an error, not a reason
+to publish optimistically. A valid, complete empty evaluator-version listing
+allows the first publication of a local rubric; it does not create an evaluator
+for an existing-only reference. An initial evaluator-version listing 404 also
+permits first publication; a 404 when reading a specific version does not establish
+that the evaluator is absent. Missing or malformed list data and failed
+continuation pages remain errors. Unrelated invalid evals do not block this targeted
+command; `azd up` validates the entire evaluation service before publishing any
+of its dependencies. Validation does not write private reconciliation state.
+The target-input check for a local dataset invoking an agent or model requires
+`query` in at least one row, using the union of row fields. This is separate from
+required evaluator inputs and explicit item bindings, whose columns must occur
+in every row. Static dataset-only evaluations do not impose the target-input
+requirement. A rubric must supply a `dimensions` array; omission and `null` are
+invalid, while an explicit empty array retains its existing meaning. Rubric
+dimension weights, when supplied, must be whole numbers
+from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
+Bounds and whole-number checks use the exact authored JSON value, including
+decimal and scientific notation, without floating-point rounding. A missing
+definition `type` is accepted for a hand-authored rubric; an explicitly null,
+empty, or whitespace-only type is invalid. These checks apply before publication and before replacing
+downloaded or collected rubric files.
+
+This is not a transaction across Foundry resources. If a later service operation
+fails, successfully published shared versions are retained, not deleted. Fix the
+reported error and repeat the same command to reuse unchanged artifacts.
+For a partial `create -o json` failure, the single output document includes
+`status: "failed"`, the resolved `artifacts` with their versions and `published`
+flags, the error, and a `recovery_command`. When the error supplies remediation,
+`error.suggestion` preserves it alongside `error.message`. The command still exits nonzero.
+URLs in both `error.message` and `error.suggestion` omit user information, query strings, and fragments.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -93,11 +330,167 @@ deploy. Evaluator definitions are compared against the service, but only on the
 keys you authored — the service adds `data_schema`, `init_parameters` and
 `metrics` of its own.
 
-Eval groups are immutable, so a change to a group's evaluators, target or
-  sampling creates a new group and a new id. The id is cached in the extension's
-  own private state (`eval.state`) so repeat runs stay comparable. That is not
-  an azd environment value: it does not appear in `azd env get-values`, which
-  shows only what you put there.
+An evaluator reference inherits an explicit `version` from its catalog entry
+unless the reference sets its own version. Changing or removing that inherited
+pin changes the immutable eval criteria and creates a new eval. An unchanged
+effective pin keeps the same eval, including when the pin moves between the
+catalog and reference. With neither pin set, the evaluator continues tracking
+the service's latest version without recreating the eval on each new version.
+Whole-service deployment rejects identical effective eval definitions, including
+when equivalent pins are spelled in different places. Targeted create still
+validates only its selected declaration and reserves the other evals' IDs.
+Renaming before older pin fingerprints have been migrated can reuse the prior
+eval only when its stored criteria confirm the same effective pins and no other
+declared eval owns it.
+When upgrading from a version that ignored catalog pins, the first reconciliation
+creates a new eval if its stored criteria were unpinned or used a different pin.
+Earlier runs remain on the old eval; they are not deleted or moved. Builds that
+already sent the correct pin but omitted it from their fingerprint can retain
+the existing eval only when its stored criterion identities and pins match.
+
+After a local rubric is reconciled, its evaluator contract is read from that
+exact service version rather than a potentially stale discovery listing.
+This contract read does not add an authored version pin. An unavailable or
+malformed contract is an error, not permission to reuse an older schema.
+Preflight uses the same digest-aware reuse decision: when the rubric will not
+be republished, its existing service contract wins over authored metadata
+overrides. A genuine edit that will publish a new version keeps authored
+metadata precedence.
+If that prospective publication would overwrite an externally advanced evaluator,
+preflight reports the drift before publishing any dataset. Reconciliation checks
+again before evaluator publication to catch changes that occur after preflight.
+
+Registered dataset references are checked against the JSONL rows of the settled
+version before publication. This uses the existing read-credential/content
+path and requires permission to read those rows; unavailable or malformed
+content is not treated as an unknown schema that accepts every binding.
+Required evaluator columns must be present in every row. Reconciliation keeps
+the inspected version even if a newer version appears during the command.
+Primary interaction bindings in the prepared criteria are also checked:
+mapped `messages`, or mapped `query` and `response`, must resolve to columns
+present in every dataset row. Optional tool columns are not made required by
+this check, and generated sample bindings and simulation outputs are not
+mistaken for input dataset columns.
+An explicitly authored `dataMapping` is stricter than an optional default:
+each item column it names must exist in the known source rows, including explicit
+tool, context, and ground-truth bindings. Simulation default inference remains
+`messages`-only. An explicit `tool_definitions` binding opts into a generated field
+rather than a seed column; it does not expand inferred defaults or guarantee that
+a service response supplies that optional field.
+When an unchanged local dataset file is repinned to another registered version,
+preflight reads that selected version's content. The original file-to-published-
+version baseline is retained; denied metadata or content reads stop reconciliation.
+For unchanged, unpinned local datasets, an empty version listing requires a
+successful point read of the recorded version. A denied or failed point read
+stops preflight before any mutation; a successful read tolerates listing delays.
+
+Eval groups are immutable, so a change to a group's evaluators, target,
+evaluation level, or source type creates a new group and a new id. Per-run sampling,
+response IDs, and trace filters retain the same ID while the stored contract remains compatible.
+The id is cached in the extension's own private state (`eval.state`) so repeat
+runs stay comparable. That is not an azd environment value: it does not appear
+in `azd env get-values`, which shows only what you put there.
+
+Stored-response evaluations (`source.type: responses`) use Foundry's
+`azure_ai_source` schema with `scenario: responses`. Human `azd ai eval show <eval>`
+output displays `Data Source` and `Scenario` for non-custom definitions so a
+response eval can be distinguished from a legacy custom-schema eval. JSON output
+retains the complete `data_source_config`.
+A deployment replaces an
+older custom-schema response eval with a compatible eval once, even when the
+declaration is unchanged. The old eval and its runs are retained; subsequent
+unchanged deployments reuse the new ID. Other evaluation modes retain compatible
+custom schemas without recreating their histories. Trace declarations also accept
+existing SDK-created `azure_ai_source` definitions with `scenario: traces` or
+`traces_preview`; declarations do not assume unknown schema types are compatible. Switching a declaration from stored
+responses to another source also creates an eval with the required custom schema.
+
+Stored-response turn evaluations bind retrieved output through the sample
+namespace without invoking a target. A published evaluator contract that requires
+a string uses `{{sample.output_text}}`; structured or unspecified response types
+retain `{{sample.output_items}}`. Conversation mappings retain `{{item.messages}}`,
+and explicit `dataMapping` values take precedence.
+
+Managed response evals with positively identified stale item/sample bindings or
+incompatible text/items response bindings are replaced once, retaining the original
+eval and its run history. Missing inferred mappings and unrelated service enrichment do not
+trigger blanket migration. An explicit `id:` with conflicting response or trace
+source contracts is refused before dependency publication; remove the `id:` and deploy the
+declaration to migrate. Each explicitly authored `dataMapping` field must match the
+stored criterion exactly, including the column name, not just the item/sample namespace.
+Missing authored bindings or a missing/renamed stored criterion for those bindings
+are also conflicts; inferred defaults retain the narrower source-compatibility checks.
+These checks apply to both built-in and custom evaluator references.
+
+A trace target names an agent filter, not a new invocation. Managed trace evals
+with positively identified legacy sample bindings or conflicting custom sample-schema
+settings migrate to completed-item bindings once, including when the agent filter
+is declared with `target.name`. The old eval and its runs are retained. Explicit
+`dataMapping` values still win, and compatible SDK trace scenarios ignore unrelated
+sample-schema enrichment. Missing or unknown evidence does not trigger this migration;
+unrelated optional/default mapping changes require a deliberate criterion change.
+
+An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
+schema. An incompatible response eval fails before starting a run. Remove the
+explicit `id:`, deploy the response-source declaration, then run it by name.
+Legacy rerun sources with bare response-ID rows are also rejected; running the
+declaration by name builds the required `item` envelopes without invoking an
+agent or changing the selected response IDs. Stored-response runs reject
+`--max-samples` (including explicit zero) and configured row caps; select
+`source.responseIds` to control which stored responses are evaluated.
+Inline reruns must map `response_id` to `{{item.<field>}}`, with a non-blank
+string ID at that field in every item. Invalid reruns identify the zero-based item
+index and reason without printing stored response IDs. Response-source IDs must not be blank.
+The current [Foundry deployed-interaction evaluation guidance](https://github.com/MicrosoftDocs/azure-ai-docs/blob/9d5bbd1edaf03beacdf92af2b0dcaacbff82d895/articles/foundry/observability/how-to/cloud-evaluation-deployed-interactions.md#evaluate-interactions-by-response-id)
+supports only `file_content` response retrieval on the OpenAI v1 evaluation-run
+route. Although the SDK model union includes `file_id`, the service documents that
+it returns HTTP 400. Such reruns are rejected locally; the CLI never silently
+downloads or expands a selected file into response IDs.
+The run checks schema compatibility in both directions, including a trace source
+switch or `--dataset` override of a response eval, before submitting a run.
+Bare-ID reruns retain other source/schema pairs from their previous run unless
+there is a known response/trace scenario mismatch. The schema read is required:
+an unreadable definition does not establish compatibility.
+Editor validation and create/deploy preflight reject positive `maxSamples`
+for source-backed declarations, including sources loaded through `$ref`.
+
+### Recovering partial generation
+
+Dataset and evaluator generation are independent. If one fails, a successful
+artifact remains registered, downloaded, and declared in the catalog. A failed
+catalog update is reported separately from a failed generation or download;
+it does not discard the downloaded artifact.
+Recollecting an existing evaluator artifact without `--force` preserves its
+authored catalog metadata, including explicit empty values, while filling
+missing metadata from the job. `--force` replaces the artifact and refreshes
+those catalog fields, including explicitly empty category and evaluation-level
+lists. An omitted list does not clear an existing field.
+
+Use the printed `azd ai eval job show <job-id> --dataset` or `--evaluator`
+command to inspect or collect the existing job without starting another one.
+The recovery command preserves the configuration path, output directory,
+project endpoint, and environment. If submission returned no job ID, inspect
+the printed `job list` command first: a lost response does not prove that the
+service never accepted the job. If a new generation is needed, repeat the
+original command with **only the failed artifact selector**, keeping that
+artifact's original input flags. Do not regenerate the successful artifact.
+
+With `-o json`, generation emits one document keyed by `dataset` and `evaluator`,
+including each outcome's `status`, `job_id`, and, on failure, `error`,
+`recovery_command`, and `retry_guidance`. An optional `suggestion` preserves
+structured remediation while keeping `error` a string. A failed outcome also
+carries the same stable `code` every other command's failure reports. Status is
+`submitted`, `succeeded`, `failed`, or `catalog_failed`. Any failed outcome
+makes the command exit nonzero.
+URLs in both `error` and `suggestion` omit user information, query strings, and fragments.
+
+Generation changes catalog declarations, not an existing eval's references.
+When an existing eval does not reference a generated artifact, the command
+explains that it remains declaration-only. Use `init` to create a new eval or
+deliberately edit a compatible eval's references. A trace-backed eval cannot
+also consume a dataset; keep it unchanged and create a separate dataset-backed
+eval instead.
+
 ## Commands
 
 | Group | Commands |
@@ -115,13 +508,181 @@ auto-increments and nothing mutates in place.
 question, which is what a pipeline passes. `job delete` is the exception: it
 discards a record of finished work, not the artifact the job produced.
 
+After a successful eval deletion, the command removes its local named aliases,
+fingerprints, and scoped identity references, including when given a service ID.
+Unrelated eval scopes and shared dataset/evaluator versions are preserved.
+Failed or ambiguous deletes do not clear state. If local cleanup fails after
+the service has deleted the eval, a warning reports that failure separately.
+
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
+
+Known-command flag-validation failures also return one JSON error document
+under `-o json`, including mutually exclusive flags such as `--wait --no-wait`
+and missing required flag groups. They still fail without running command hooks
+or writing evaluation artifacts.
+
+Every command's `-o json` failure document carries a stable `error.code`
+alongside `error.message` (and `error.suggestion` when one applies); `generate`'s
+own partial-result document (below) carries the same `code` per failed outcome
+instead. A local validation failure (an invalid `--evaluation-level`,
+`--evaluator`, `--fail-on`, or `--max-samples`, or a malformed local dataset row)
+reports its own code. Cobra's own Args and flag-group failures, and any other
+error this CLI does not classify, report a stable unclassified code rather than
+omitting the field or guessing one from the message text. A refused request
+from the backing service (for example a missing run or a conflicting delete)
+keeps its diagnostic sentence and, when the service supplied one, its own code;
+the JSON document omits the full internal service endpoint that sentence would
+otherwise carry, while the human-readable and stderr diagnostics still name
+which service
+answered.
+
+`azd ai eval run output list --failed-only` displays a page of failing test
+cases, not the full run's failure count. Its footer separates the number shown
+on that page from the service-reported failures and total test cases for the
+whole run once it reaches a terminal state. While a run is still moving, partial
+counters are not labeled as full-run totals and export guidance describes the
+available results, not a completed run. For example, a page of 10 failures can
+belong to a run with 12 failures among 18 test cases. Follow the printed page token to read the rest,
+or use `run output export` to save the complete results. Errored rows remain
+separate from failed verdicts and can be selected with `--status errored`.
+The same outcome filters apply to paged output, `--all`, and `--output-file`,
+in both human and JSON modes. `--failed-only` adds failed cases to any outcomes
+selected by `--status`; `--status failed` alone has the same page-count footer.
+An empty selection is reported as no matching results, not as a run with no
+scored rows. `--all` summaries omit the page-only qualifier.
+
+After a terminal run, waited `run start` summaries and `run show` details
+include an unfiltered output-list command and a JSON export command, both with
+the resolved eval and run identities. Suggested commands use the immutable eval
+ID when known, rather than a friendly name that might point to a different
+eval after a later deployment. Friendly labels remain in the human run header;
+service JSON is not rewritten. A failed-only listing is additional
+guidance when the service reports failed verdicts, not a replacement for the
+unfiltered listing. Errored rows get a separate `--status errored` command;
+they are not included by `--failed-only`.
+
+For older responses without a status, reported counters still provide useful
+available-result guidance, including all-passed and explicit-zero counts,
+without asserting that the run has completed. If a run lookup omits its `id`,
+follow-up requests retain the explicit or remembered lookup ID separately;
+JSON and exports preserve the original service fields.
+
+Human summaries, run details, and listings also distinguish unreported counters
+from explicit zeros. Partial counters are marked `not reported` rather than
+inventing a failure/error split or a pass rate without known operands.
+Waited summaries also show a complete set of explicitly reported zero counters;
+their pass rate is `-` because no rows were scored.
+Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
+between the total and reported result counts does not replace an explicit zero
+with inferred errors.
+When reported totals leave rows unaccounted for, a neutral warning names that
+gap and the scored denominator without assigning failed, errored, or skipped
+outcomes. A pass-rate gate requires reported `passed` and `failed` counts and
+does not require a total; `any-failure` requires reported `total` and `passed`
+counts because it counts every non-passing row against the run. Missing or null
+required counters make the gate indeterminate: the command returns an
+operational error (extension exit 1), never a quality verdict based on invented
+zeros. An explicitly reported zero total still breaches either gate, and a
+reported zero scored denominator still breaches a pass-rate gate. Determinate
+quality breaches retain extension exit 2; the azd host exposes extension
+failures as exit 1.
+
+An operationally failed run can have no result counts or output rows. Its
+follow-up commands inspect **available** output and export the run's diagnostics
+plus any available results; they do not imply that grading succeeded or that
+failing rows exist. `run show` also prints the service's run-level failure
+message when one was returned, removing URL credentials, query strings, and
+fragments from the human message. `--output json` keeps its existing document
+shape and exit behavior without appending human guidance.
+Human portal/report links also remove URL credentials, query strings, and
+fragments before display, without rewriting the underlying service fields.
+Each link is validated as a whole URL. Malformed, ambiguous, or raw
+whitespace/control-bearing values display as `<redacted-url>` rather than
+exposing any part of the rejected value.
+Sanitized links are labeled as redacted and may open a general portal page
+when query-based routing was removed. Use the resolved output-list/detail
+commands to inspect the exact run; routing parameters are not exempted from redaction.
+
+CLI-generated JSON error envelopes, accompanying stderr diagnostics, and the
+run's known `error.code`/`error.message` fields in JSON and exports also redact
+embedded URL credentials, including malformed HTTP(S) URLs concatenated to
+identifiers without a separator. A value separated from an unfinished URL query
+assignment by whitespace is redacted with that malformed URL candidate, rather
+than copied into the remaining diagnostic prose. This projection does not mutate the service response
+or rewrite dataset/output content and unknown fields. Those other fields can
+still contain sensitive source data; keep exported files private.
+
+`run output show <item>` uses the lookup ID from the listing in its human
+header. The service may return a result-version URI as the detail object's
+`id`; JSON keeps that returned identity rather than replacing it with the
+lookup ID.
+
+For rubric results, the detail view displays returned
+`properties.dimension_scores` alongside the overall evaluator score. Each
+dimension can include its score, applicability, weight, and full reason.
+Applicability is not a pass/fail verdict, and missing values are not treated
+as zero or false. Separate dimension metrics in `results` remain supported.
+The CLI does not derive dimension results from the rubric definition when
+they are absent from the response.
+Malformed dimension properties are identified by a warning without hiding valid
+aggregate results or other evaluators. The human command still returns an error;
+`--output json` retains the original data for inspection.
+Each `dimension_scores` entry must be an object; null or scalar entries are
+malformed data, not unnamed dimensions with unreported values.
+
+Output-item JSON preserves unrecognized nested service fields, including
+evaluator `properties` and `sample` details; modeled scores keep their existing
+numeric normalization. Numeric dataset values retain their precision rather
+than being rounded through floating-point decoding. These fields can contain
+prompts, answers, and other sensitive evaluation content. Prefer a private destination with
+`run output list --output-file` or `run output export --output-file` over
+writing JSON into shared terminal or CI logs.
+
+A command that needs an eval and was not told which one offers a picker.
+Selecting **Cancel** is an answer, not a failure: the command says the selection
+was cancelled and exits 0, at every command that offers it. Pressing Ctrl+C
+interrupts the prompt and exits nonzero, without reporting a successful
+cancellation. Under `--no-prompt` or `-o json`, no picker is shown; an ambiguous
+eval still produces an error, and no cancellation prose is written to stdout.
+
+`azd ai eval create` closes with a link to the eval in the Portal, for a
+newly created eval and for one that already existed unchanged.
+
+### Downloading a dataset
+
+`azd ai eval dataset download <name> --version <version> --output-file <path>`
+supports single-file datasets even when their download credentials grant access
+to the parent container. Container-backed downloads require a complete listing
+with exactly one file and dataset metadata reporting `isSingleFile: true`.
+Folders (including one-file folders) and multi-file datasets require
+`--output-dir` and retain their relative layout.
+
+Single-file downloads without `--output-file` land as
+`<name>-<version><extension>` under `--output-dir` (the current directory by
+default), while folders land under `<name>-<version>/`. Omitting `--version`
+selects the latest version. Existing destinations require `--force` to replace,
+including with `--no-prompt`. JSON output reports the resolved version, path,
+file count, and single-file status.
+
+Overwrite protection also applies to destinations created while a download is
+in progress. A cancelled transfer leaves existing content unchanged and removes
+its temporary download files, even with `--force`.
 
 ## Evaluators
 
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
+
+`init` offers a few common built-ins in its picker; that is a shortlist, not
+the catalogue. Any built-in the project publishes works with
+`--evaluator builtin.<name>`, including ones the picker never shows.
+
+`init` checks that reference against the project's catalogue when it can reach
+one, so a name that does not exist is refused there rather than at `create`.
+When no project is reachable — offline, unauthenticated, or outside an azd
+environment — the reference is left as written and `init` behaves as it always
+has. The check never turns a working offline `init` into a failure.
 
 Evaluators do not share an input contract, so the CLI reads each one's
 published contract and shapes the request to match. An evaluator needing an
@@ -141,6 +702,55 @@ A custom rubric is a JSON list of weighted dimensions:
 
 `weight` is an **integer from 1 to 10**. Weights do not need to sum to
 anything.
+
+### Editing a registered rubric
+
+Download a version, edit its dimensions or pass threshold, then publish the edit:
+
+```bash
+azd ai eval evaluator download support-quality --version 3 --output-file ./support-quality.json
+azd ai eval evaluator update support-quality --from-file ./support-quality.json
+```
+
+A rubric download uses the same editable JSON shape as generation and job
+collection: `type: "rubric"`, `dimensions`, and `pass_threshold` when supplied.
+Each dimension retains `id`, `description`, `weight`, and `always_applicable`.
+Unknown definition and dimension fields are preserved for future authoring
+contracts, including their numeric precision. Only known service-envelope and
+catalog fields, service metadata (`metadata`, creation details, generation
+details, and warnings), and generated wiring (`data_schema`, `init_parameters`,
+`metrics`, and `prompt_text`, including camel-case aliases) are omitted.
+Prompt-based evaluators retain their
+separate full document, including their authored prompt. To inspect or export the full service response,
+use `azd ai eval evaluator show support-quality --version 3 -o json`.
+Malformed recognized rubrics fail download and collection before replacing an
+artifact or updating its catalog entry, rather than falling back to a full
+service-envelope export.
+Download and generation results must be JSON objects: null, arrays, strings,
+numbers, and booleans are rejected before writing files or catalog entries.
+Unknown object-shaped evaluator documents remain supported without dropping fields.
+`create` and `azd up` also reject null or non-array `dimensions`, non-object
+dimension entries, and wrong-typed `id`, `description`, or `always_applicable`
+values during preflight, before uploading or tagging datasets or publishing
+evaluators. Validation preserves authored bytes for digest and drift decisions.
+
+Standalone `evaluator update` preserves the existing display name, description,
+categories, and supported evaluation levels. A full input document can explicitly
+replace those fields. The download does not modify configuration or attach the
+evaluator to an eval. When using the downloaded rubric as a declaration's
+`source`, `create` and `azd up` preserve missing catalog fields from the current
+published version. Explicit fields in a full input document take precedence
+over catalog declarations, which take precedence over inherited service
+metadata. Explicit empty category and evaluation-level lists clear those
+fields. Metadata joins the publication body after digest and reuse decisions,
+so an unchanged rubric remains unpublished.
+Definition comparisons preserve exact JSON numeric values, including unknown
+dimension fields: adjacent large integers and precise decimal edits are changes,
+while equivalent spellings such as `1`, `1.0`, and `1e0` compare equal even before
+a local publication fingerprint has been recorded.
+
+Omitting `--version` downloads the latest version and reports which one was used.
+Existing files are not replaced unless `--force` is supplied.
 
 ## Choosing a project
 
@@ -164,7 +774,7 @@ the variable exported in this shell. `--debug` prints which level answered.
 
 | Variable | Description |
 | --- | --- |
-| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval run. |
+| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval and its runs. |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The model deployment `azd ai eval init` offers as the judge when one is not named on the command line. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | A detection signal, not a credential this extension consumes: `azd ai eval init` and `generate` check only whether it is set, and default to a trace-backed source when it is. The value is never read or transmitted by the extension — Foundry reads the traces server-side. |
 
@@ -221,6 +831,28 @@ They clean up every resource they create.
 Request tracing is off by default. `--debug`, or `AZD_EXT_DEBUG=true`, writes it
 to a dated log file in the temporary directory rather than the terminal, and
 prints that path on stderr.
+
+## Telemetry
+
+When installed from the official registry, the extension reports the
+`init.completed` usage event once `azd ai eval init` has written a scaffold and
+wired the eval service into `azure.yaml`. Its `ext.source` attribute is exactly
+one of:
+
+- `traces` when the eval will grade rows read from project telemetry;
+- `dataset` when it will grade rows from a declared dataset; or
+- `unknown` for a source this extension does not recognize.
+
+The event is reported after the scaffold is committed, not while the prompts
+run, because a confirmation can send the reader back through the questions and
+only the last pass describes what was written.
+
+Event names, attribute keys, and their finite value sets live in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+code, and never include eval, dataset, evaluator, or agent names, file paths,
+project endpoints, model deployments, or anything else a user typed. Failures
+and their structured error codes are already reported separately by the
+extension SDK; this event records usage only.
 
 ## TODO before release
 

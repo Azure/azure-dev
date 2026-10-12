@@ -42,7 +42,7 @@ func TestMemoryNode_ReportsDrift(t *testing.T) {
 			live: azure.MemoryStoreDefinition{
 				ChatModel: "gpt-4o", EmbeddingModel: "text-embedding-3-small",
 			},
-			wantWarning: []string{`chat_model (declared "gpt-4.1", current "gpt-4o")`},
+			wantWarning: []string{`chatModel (declared "gpt-4.1", current "gpt-4o")`},
 		},
 		{
 			name: "both drifted",
@@ -53,8 +53,8 @@ func TestMemoryNode_ReportsDrift(t *testing.T) {
 				ChatModel: "gpt-4o", EmbeddingModel: "text-embedding-3-small",
 			},
 			wantWarning: []string{
-				`chat_model (declared "gpt-4.1", current "gpt-4o")`,
-				`embedding_model (declared "text-embedding-3-large", current "text-embedding-3-small")`,
+				`chatModel (declared "gpt-4.1", current "gpt-4o")`,
+				`embeddingModel (declared "text-embedding-3-large", current "text-embedding-3-small")`,
 			},
 		},
 	}

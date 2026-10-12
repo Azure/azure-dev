@@ -195,6 +195,7 @@ func TestProjectCommandsRegistered(t *testing.T) {
 	assertOutputFlagOptions(t, addCommand, "default", []string{"default", "json", "none"})
 
 	assert.Equal(t, "bicep", addCommand.Flags().Lookup("infra").NoOptDefVal)
+	assert.NotNil(t, addCommand.Flags().Lookup("new-project"))
 	_, _, err = root.Find([]string{"init"})
 	require.Error(t, err)
 }
@@ -246,6 +247,41 @@ func TestProjectAddRejectsExplicitForceWithoutTarget(t *testing.T) {
 	var localErr *azdext.LocalError
 	require.ErrorAs(t, err, &localErr)
 	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+}
+
+func TestProjectAddRejectsNewProjectWithExistingTarget(t *testing.T) {
+	action := &ProjectAddAction{
+		flags: &projectAddFlags{
+			newProject:      true,
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		},
+	}
+
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+}
+
+func TestResolveProjectTargetExplicitNewProjectIgnoresExistingConfiguration(t *testing.T) {
+	target, err := resolveProjectTarget(
+		t.Context(),
+		nil,
+		nil,
+		&projectServiceInfo{
+			Resolved: map[string]any{
+				"endpoint": "https://old.services.ai.azure.com/api/projects/old",
+			},
+		},
+		map[string]string{
+			"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/old",
+		},
+		&projectAddFlags{newProject: true, noPrompt: true},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, projectModeNew, target.Mode)
 }
 
 func TestConfirmExplicitProjectReplacementUsesEnvironmentEndpoint(t *testing.T) {
@@ -933,7 +969,7 @@ func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
 	assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
 }
 
-func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
+func TestExistingEndpointModeAllowsUnchangedManagedDeployments(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 	service := &projectServiceInfo{
 		Raw: map[string]any{
@@ -946,7 +982,53 @@ func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
 		},
 	}
 
-	err := validateExistingEndpointMode(service, endpoint, "", nil)
+	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil))
+}
+
+func TestExistingEndpointModeRejectsClearingIdentityWithUnchangedDeployments(
+	t *testing.T,
+) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+		Resolved: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+	}
+
+	err := validateExistingEndpointMode(
+		service,
+		endpoint,
+		"",
+		map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "while clearing project identity")
+}
+
+func TestExistingEndpointModeRejectsManagedDeploymentsWhenEndpointChanges(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+		Resolved: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+	}
+
+	err := validateExistingEndpointMode(
+		service,
+		"https://other.services.ai.azure.com/api/projects/p",
+		"",
+		nil,
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }
@@ -1102,10 +1184,12 @@ func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
 func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
 	tests := []struct {
-		name    string
-		agents  string
-		sibling string
-		reject  bool
+		name               string
+		agents             string
+		sibling            string
+		managedDeployments bool
+		projectID          string
+		reject             bool
 	}{
 		{
 			name:   "inline hosted agent",
@@ -1125,6 +1209,13 @@ func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 			name:   "inline code agent",
 			agents: "    agents:\n      - name: code\n        kind: hosted\n        codeConfiguration:\n          runtime: python\n          entryPoint: main.py\n",
 		},
+		{
+			name:               "managed deployments with project identity",
+			managedDeployments: true,
+			projectID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/project",
+			reject: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1143,11 +1234,17 @@ services:
 				0600,
 			))
 
+			projectService := map[string]any{
+				"host":     aiProjectHost,
+				"endpoint": endpoint,
+			}
+			if tt.managedDeployments {
+				projectService["deployments"] = []any{
+					map[string]any{"name": "chat"},
+				}
+			}
 			section, err := structpb.NewStruct(map[string]any{
-				"project": map[string]any{
-					"host":     aiProjectHost,
-					"endpoint": endpoint,
-				},
+				"project": projectService,
 			})
 			require.NoError(t, err)
 			projectServer := &recordingProjectConfigServer{
@@ -1167,6 +1264,9 @@ services:
 					"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": endpoint,
 					"USE_EXISTING_AI_PROJECT":                       "true",
 				},
+			}
+			if tt.projectID != "" {
+				envServer.values["AZURE_AI_PROJECT_ID"] = tt.projectID
 			}
 			server := grpc.NewServer()
 			azdext.RegisterProjectServiceServer(server, projectServer)
@@ -1190,8 +1290,10 @@ services:
 			action := &ProjectAddAction{
 				client: client,
 				flags: &projectAddFlags{
-					noPrompt: true,
-					output:   "none",
+					projectEndpoint: endpoint,
+					force:           tt.projectID != "",
+					noPrompt:        true,
+					output:          "none",
 				},
 				extCtx: &azdext.ExtensionContext{Environment: "test"},
 			}

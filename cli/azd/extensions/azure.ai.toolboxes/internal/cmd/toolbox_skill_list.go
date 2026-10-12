@@ -22,7 +22,9 @@ func newToolboxSkillListCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd := &cobra.Command{
 		Use:   "list <toolbox>",
 		Short: "List the skill references attached to a toolbox.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # Inspect skill references on the default toolbox version
+  azd ai toolbox skill list research`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSkillList(cmd.Context(), args[0], readToolboxFlags(cmd, extCtx))
 		},

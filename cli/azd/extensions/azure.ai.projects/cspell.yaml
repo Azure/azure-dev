@@ -6,5 +6,6 @@ words:
   - idempotently
   - ondisk
   - purgeable
+  - recordproxy
   # Contributors
   - hemarina

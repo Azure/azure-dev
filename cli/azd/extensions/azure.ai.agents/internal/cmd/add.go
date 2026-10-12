@@ -31,6 +31,8 @@ func newAgentDependencyCommand(
 	cmd := &cobra.Command{
 		Use:   dependencyType + " <command>",
 		Short: fmt.Sprintf("Manage %s service dependencies for an agent.", dependencyType),
+		Example: fmt.Sprintf(`  # Attach an existing %s service to an agent
+  azd ai agent %s add <service> --agent <agent-service>`, dependencyType, dependencyType),
 	}
 	cmd.AddCommand(newAgentAddDependencyCommand(extCtx, dependencyType, expectedHost))
 	return cmd
@@ -45,7 +47,14 @@ func newAgentAddDependencyCommand(
 	cmd := &cobra.Command{
 		Use:   "add <service>",
 		Short: fmt.Sprintf("Add a %s service dependency to an agent service.", dependencyType),
-		Args:  cobra.ExactArgs(1),
+		Long: fmt.Sprintf(`Add a %s service dependency to an agent service.
+
+Both services must already be declared in azure.yaml. This adds a uses entry
+to the agent service; it does not create the dependency resource.
+Use --agent to identify the agent service to update.`, dependencyType),
+		Example: fmt.Sprintf(`  # Attach an existing %s service to an agent
+  azd ai agent %s add <service> --agent <agent-service>`, dependencyType, dependencyType),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentServiceName, dependencyServiceName := normalizeAgentDependencyNames(flags.agent, args[0])
 			azdClient, err := azdext.NewAzdClient()
@@ -162,6 +171,10 @@ func addAgentServiceDependency(
 	currentUses, err := getServiceUses(ctx, azdClient, agentServiceName)
 	if err != nil {
 		return false, err
+	}
+	if currentUses == nil {
+		// A service-level $ref may supply the effective uses list.
+		currentUses = slices.Clone(agentService.GetUses())
 	}
 	if slices.Contains(currentUses, dependencyServiceName) {
 		return false, nil

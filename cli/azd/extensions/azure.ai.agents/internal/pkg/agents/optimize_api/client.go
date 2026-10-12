@@ -38,6 +38,10 @@ type OptimizeClient struct {
 // optimization API. It is sent on every request via foundryFeaturesPolicy.
 const optimizeFeatureHeader = "AgentsOptimization=V2Preview"
 
+// PromotionReportOnlyHeader tells the promote endpoint to record an existing
+// agent version without creating another version.
+const PromotionReportOnlyHeader = "x-ms-optimization-agent-promotion-report-only"
+
 // foundryFeaturesPolicy sets the Foundry-Features header on every request so
 // the optimization service enables the required preview feature.
 type foundryFeaturesPolicy struct{}
@@ -248,6 +252,16 @@ func (c *OptimizeClient) ReportDeployment(
 	jobID string,
 	report *DeploymentReport,
 ) error {
+	return c.ReportDeploymentWithHeaders(ctx, jobID, report, nil)
+}
+
+// ReportDeploymentWithHeaders reports a deployment with additional service headers.
+func (c *OptimizeClient) ReportDeploymentWithHeaders(
+	ctx context.Context,
+	jobID string,
+	report *DeploymentReport,
+	headers map[string]string,
+) error {
 	url := fmt.Sprintf(
 		"%s/%s/%s/candidates/%s:promote?api-version=%s",
 		c.endpoint, optimizeJobsPath, netURL.PathEscape(jobID), netURL.PathEscape(report.CandidateID), APIVersion,
@@ -261,6 +275,9 @@ func (c *OptimizeClient) ReportDeployment(
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
+	}
+	for key, value := range headers {
+		req.Raw().Header.Set(key, value)
 	}
 
 	if err := req.SetBody(

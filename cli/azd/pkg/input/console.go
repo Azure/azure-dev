@@ -98,7 +98,8 @@ type Console interface {
 	MessageUxItem(ctx context.Context, item ux.UxItem)
 	WarnForFeature(ctx context.Context, id alpha.FeatureId)
 	// Prints progress spinner with the given title.
-	// If a previous spinner is running, the title is updated.
+	// If a previous spinner is running, the title is updated only when it changes.
+	// Repeating the current title is a no-op while running, but resumes a paused spinner or starts a stopped one.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
 	// Stop the current spinner from the console and change the spinner bar for the lastMessage
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
@@ -113,8 +114,8 @@ type Console interface {
 	// Determines if there is a current spinner running.
 	IsSpinnerRunning(ctx context.Context) bool
 	// Determines if the current spinner is an interactive spinner, where messages are updated periodically.
-	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
-	// call to ShowSpinner, even when the title is unchanged.
+	// If false, the spinner is non-interactive: starting, resuming, or changing its title prints a console message.
+	// Repeating an unchanged title while running does not print another message.
 	IsSpinnerInteractive() bool
 	// IsNoPromptMode returns true when --no-prompt is active and interactive prompts are disabled.
 	IsNoPromptMode() bool
@@ -174,9 +175,11 @@ type AskerConsole struct {
 	spinnerTerminalMode yacspin.TerminalMode
 	spinnerCurrentTitle string
 
-	previewer           syncatomic.Pointer[progressLog]
-	previewerRefCount   int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
-	previewerSuppressed syncatomic.Bool
+	previewer            syncatomic.Pointer[progressLog]
+	previewerRefCount    int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
+	previewerSuppressed  syncatomic.Bool
+	previewerStopPending bool
+	previewerKeepLogs    bool
 
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
@@ -347,13 +350,13 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
 	if c.previewerSuppressed.Load() {
 		log.Printf("ShowPreviewer suppressed — progress table active")
 		return io.Discard
 	}
-
-	c.showProgressMu.Lock()
-	defer c.showProgressMu.Unlock()
 
 	if c.previewer.Load() != nil {
 		// Previewer already active from a concurrent caller (e.g. concurrent graph steps).
@@ -397,10 +400,6 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
-	if c.previewerSuppressed.Load() {
-		return
-	}
-
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
@@ -415,9 +414,22 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 		return
 	}
 
+	if c.previewerSuppressed.Load() {
+		// The progress table owns the terminal. Defer teardown until resume.
+		c.previewerStopPending = true
+		c.previewerKeepLogs = keepLogs
+		return
+	}
+
+	c.stopPreviewerLocked(keepLogs)
+}
+
+func (c *AskerConsole) stopPreviewerLocked(keepLogs bool) {
 	c.previewer.Load().Stop(keepLogs)
 	c.previewer.Store(nil)
 	c.writer = c.defaultWriter
+	c.previewerStopPending = false
+	c.previewerKeepLogs = false
 
 	_ = c.spinner.Unpause()
 }
@@ -426,12 +438,21 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 // is called. Use this when a progress table owns the terminal output and previewer
 // content would corrupt the display.
 func (c *AskerConsole) PausePreviewer() {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
 	c.previewerSuppressed.Store(true)
 }
 
 // ResumePreviewer re-enables previewer rendering.
 func (c *AskerConsole) ResumePreviewer() {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
 	c.previewerSuppressed.Store(false)
+	if c.previewerStopPending && c.previewerRefCount == 0 {
+		c.stopPreviewerLocked(c.previewerKeepLogs)
+	}
 }
 
 // truncationDots is the text we use to indicate that text has been truncated.
@@ -501,6 +522,11 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 
 	c.spinnerLineMu.Lock()
+	defer c.spinnerLineMu.Unlock()
+
+	if c.spinner.Status() == yacspin.SpinnerRunning && c.spinnerCurrentTitle == title {
+		return
+	}
 	c.spinnerCurrentTitle = title
 
 	indentPrefix := c.getIndent()
@@ -517,7 +543,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		// calling Start may result in an additional line of output being written in non-tty scenarios
 		_ = c.spinner.Start()
 	}
-	c.spinnerLineMu.Unlock()
 }
 
 // spinnerTerminalMode determines the appropriate terminal mode.

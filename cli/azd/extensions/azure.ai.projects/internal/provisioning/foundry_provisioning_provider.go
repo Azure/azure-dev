@@ -1,12 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-// cspell:ignore idtyp
 
 package provisioning
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,12 +23,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -40,6 +38,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Compile-time interface check.
@@ -831,7 +831,7 @@ func sameExistingProjectEndpoint(a, b string) bool {
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core. It does
-// no Azure work; that is deferred to ensureCredential.
+// no Azure work; principal resolution and credentials are deferred until needed.
 func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	envClient := p.azdClient.Environment()
 
@@ -993,37 +993,6 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	return nil
 }
 
-type principalTokenClaims struct {
-	ObjectID string `json:"oid"`
-	IDType   string `json:"idtyp"`
-	Scopes   string `json:"scp"`
-}
-
-func principalFromAccessToken(token string) (string, string, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", "", errors.New("malformed access token")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "", "", fmt.Errorf("decode access token claims: %w", err)
-	}
-	var claims principalTokenClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", "", fmt.Errorf("parse access token claims: %w", err)
-	}
-	if claims.ObjectID == "" {
-		return "", "", errors.New("access token has no oid claim")
-	}
-
-	principalType := "User"
-	if strings.EqualFold(claims.IDType, "app") ||
-		(claims.IDType == "" && claims.Scopes == "") {
-		principalType = "ServicePrincipal"
-	}
-	return claims.ObjectID, principalType, nil
-}
-
 func (p *FoundryProvisioningProvider) ensurePrincipalID(ctx context.Context) error {
 	if p.principalIDConfigured || p.principalID != "" {
 		if p.principalID != "" && p.principalType == "" {
@@ -1031,30 +1000,39 @@ func (p *FoundryProvisioningProvider) ensurePrincipalID(ctx context.Context) err
 		}
 		return nil
 	}
-	if err := p.ensureCredential(ctx); err != nil {
-		return err
-	}
-
-	token, err := p.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
+	principal, err := p.azdClient.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
+		SubscriptionId: p.subID,
 	})
 	if err != nil {
-		return exterrors.Auth(
+		if status.Code(err) == codes.Unimplemented {
+			return exterrors.Compatibility(
+				exterrors.CodePrincipalLookupFailed,
+				"the azd host does not support Account.GetCurrentPrincipal",
+				"upgrade azd to version 1.34.2 or later",
+			)
+		}
+		return fmt.Errorf("resolve current principal for subscription %s: %w", p.subID, err)
+	}
+	if strings.TrimSpace(principal.GetObjectId()) == "" {
+		return exterrors.Internal(
 			exterrors.CodePrincipalLookupFailed,
-			fmt.Sprintf("get access token to resolve current principal: %s", err),
-			"run 'azd auth login' with an identity that can access the subscription",
+			"the azd host returned an empty current principal object ID",
 		)
 	}
 
-	principalID, principalType, err := principalFromAccessToken(token.Token)
-	if err != nil {
-		return exterrors.Auth(
+	var principalType string
+	switch principal.GetPrincipalType() {
+	case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+		principalType = "User"
+	case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+		principalType = "ServicePrincipal"
+	default:
+		return exterrors.Internal(
 			exterrors.CodePrincipalLookupFailed,
-			fmt.Sprintf("resolve current principal from access token: %s", err),
-			"run 'azd auth login' with an identity that can access the subscription",
+			fmt.Sprintf("the azd host returned an unsupported current principal type: %v", principal.GetPrincipalType()),
 		)
 	}
-	p.principalID = principalID
+	p.principalID = principal.GetObjectId()
 	p.principalType = principalType
 	return nil
 }
@@ -1470,7 +1448,7 @@ func (p *FoundryProvisioningProvider) resolveProvisioningTemplate(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*templateSource, error) {
-	// Compile and validate the template before acquiring credentials. Invalid
+	// Compile and validate the template before resolving the principal. Invalid
 	// local configuration should fail without making an Azure request.
 	source, err := p.resolveTemplate(ctx, progress)
 	if err != nil {

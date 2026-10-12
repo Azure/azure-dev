@@ -48,6 +48,8 @@ and service results depend on the protocol; unsupported operations are rejected.
 
 When --id is omitted, use the latest ID saved for the selected agent and
 protocol. Explicit IDs do not change the saved selection.`,
+		Example: `  # Show the current invocation result
+  azd ai agent invocations show`,
 	}
 	cmd.AddCommand(newInvocationsShowCommand(extCtx))
 	cmd.AddCommand(newInvocationsFollowCommand(extCtx))

@@ -22,6 +22,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/require"
+
+	"azureaiagent/internal/pkg/recordproxy"
 )
 
 // fakeTransport is a test HTTP transport that returns a canned response.
@@ -69,6 +71,20 @@ func (fakeCredential) GetToken(context.Context, policy.TokenRequestOptions) (azc
 	}, nil
 }
 
+type captureRoundTripper struct {
+	request *http.Request
+}
+
+func (t *captureRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.request = req
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       http.NoBody,
+		Request:    req,
+	}, nil
+}
+
 // newTestClient creates an AgentClient backed by fakeTransport (no auth).
 func newTestClient(endpoint string, transport policy.Transporter) *AgentClient {
 	pipeline := runtime.NewPipeline(
@@ -80,6 +96,25 @@ func newTestClient(endpoint string, transport policy.Transporter) *AgentClient {
 		endpoint: endpoint,
 		pipeline: pipeline,
 	}
+}
+
+func TestNewAgentClientUsesRecordProxyTransport(t *testing.T) {
+	transport := &captureRoundTripper{}
+	originalTransport := recordproxy.Transport
+	recordproxy.Transport = transport
+	t.Cleanup(func() {
+		recordproxy.Transport = originalTransport
+	})
+
+	client := NewAgentClient("https://test.example.com/api/projects/proj", fakeCredential{})
+	_, err := client.GetAgent(t.Context(), "test-agent", AgentEndpointAPIVersion, false)
+
+	require.Error(t, err)
+	require.NotNil(t, transport.request)
+	require.Equal(t,
+		"https://test.example.com/api/projects/proj/agents/test-agent?api-version=v1",
+		transport.request.URL.String(),
+	)
 }
 
 func newCaptureClient(statusCode int, body string) (*AgentClient, *captureTransport) {
@@ -904,6 +939,32 @@ func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T)
 	_, err := client.GetAgentVersion(t.Context(), "simple-agent", "1", "v1", false)
 	require.NoError(t, err)
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestGetPromptAgentVersionContract(t *testing.T) {
+	t.Parallel()
+
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"name":"prompt","version":"7","definition":{"kind":"prompt",`+
+			`"harness":{"type":"github_copilot_preview"}}}`,
+	)
+	version, err := client.GetPromptAgentVersion(t.Context(), "prompt", "7", AgentEndpointAPIVersion)
+	require.NoError(t, err)
+	require.Equal(t, "7", version.Version)
+	require.Len(t, transport.requests, 1)
+
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/prompt/versions/7", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, GitHubCopilotPreviewFeature, req.Header.Get("Foundry-Features"))
+
+	definition, ok := version.Definition.(map[string]any)
+	require.True(t, ok)
+	harness, ok := definition["harness"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, ManagedAgentHarnessGitHubCopilot, harness["type"])
 }
 
 func TestGetVoiceAgentVersionContract(t *testing.T) {

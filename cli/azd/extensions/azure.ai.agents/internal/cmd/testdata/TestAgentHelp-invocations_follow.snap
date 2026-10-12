@@ -1,0 +1,26 @@
+Replay and follow invocation output.
+
+Usage
+  azd ai agent invocations follow [flags]
+
+Flags
+      --agent-endpoint string : Full protocol endpoint URL of a deployed agent
+  -n, --agent-name string     : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+      --id string             : Service-assigned ID; defaults to the current ID for the agent and protocol
+  -p, --protocol string       : Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)
+      --user-identity string  : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for follow
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: default) (default "default")
+
+Examples
+  Use the current ID for the selected agent and protocol
+    azd ai agent invocations follow
+
+  Target a Responses resource explicitly
+    azd ai agent invocations follow --protocol responses --id <id>

@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/azurecleanup"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
@@ -253,44 +253,28 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 	})
 }
 
-// cleanupDeployments deletes all subscription level deployments tagged with `azd-env-name` equal to envName. If the session
-// indcates we are in playback mode, this function is a no-op.
-func cleanupDeployments(ctx context.Context, t *testing.T, azCLI *azdcli.CLI, session *recording.Session, envName string) {
+func cleanupDeployments(
+	_ context.Context,
+	t *testing.T,
+	azCLI *azdcli.CLI,
+	session *recording.Session,
+	envName string,
+) {
 	if session != nil && session.Playback {
 		return
 	}
 
-	client, err := armresources.NewDeploymentsClient(cfg.SubscriptionID, azdcli.NewTestCredential(azCLI), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	err := azurecleanup.CleanupSubscriptionDeployments(
+		ctx,
+		azdcli.NewTestCredential(azCLI),
+		cfg.SubscriptionID,
+		envName,
+	)
 	if err != nil {
-		return
-	}
-
-	pager := client.NewListAtSubscriptionScopePager(nil)
-	var deploymentNames []string
-
-	for pager.More() {
-		resp, err := pager.NextPage(ctx)
-		if err != nil {
-			t.Logf("cleanupDeployments: failed to list next deployments page: %v", err)
-			break
-		}
-
-		for _, deployment := range resp.Value {
-			if deployment != nil && deployment.Tags != nil {
-				tagVal := deployment.Tags[azure.TagKeyAzdEnvName]
-				if tagVal != nil && *tagVal == envName {
-					deploymentNames = append(deploymentNames, *deployment.Name)
-				}
-			}
-		}
-	}
-
-	for _, deploymentName := range deploymentNames {
-		t.Logf("cleanupDeployments: deleting deployment %s", deploymentName)
-		_, err := client.BeginDeleteAtSubscriptionScope(ctx, deploymentName, nil)
-		if err != nil {
-			t.Logf("cleanupDeployments: failed to delete deployment %s: %v", deploymentName, err)
-		}
+		t.Logf("warning: cleanup subscription deployments for environment %q: %v", envName, err)
 	}
 }
 

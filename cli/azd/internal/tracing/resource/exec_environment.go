@@ -130,6 +130,9 @@ func execEnvModifiers() []string {
 	if strings.Contains(userAgent, "microsoft_foundry_skill") {
 		modifiers = append(modifiers, fields.EnvModifierMicrosoftFoundrySkill)
 	}
+	if os.Getenv("AGENCY_SESSION_ID") != "" {
+		modifiers = append(modifiers, fields.EnvModifierAgency)
+	}
 
 	return modifiers
 }

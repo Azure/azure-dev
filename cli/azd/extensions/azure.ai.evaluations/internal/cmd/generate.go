@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -246,8 +243,17 @@ func (ec *evalContext) generateRubric(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingRubric(plan.Name))
 
+	// `init` writes the azure.yaml service key here, which is a local label. The
+	// agent is published under whatever the service declares, so the key has to
+	// be resolved before it is sent, or the rubric is seeded from an agent the
+	// service does not know.
+	agent, err := ec.remoteAgentName(ctx, plan.Agent)
+	if err != nil {
+		return nil, err
+	}
+
 	sources, unbuildable := eval_api.BuildGenerationSources(
-		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+		plan.From, agent, "", plan.Instruction, plan.traceOptions(),
 	)
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
@@ -338,16 +344,26 @@ func (ec *evalContext) collectRubric(
 	}
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
+	ref := &project.ArtifactRef{
+		Name:    name,
+		Source:  relativeSource(baseDir, path),
+		Version: version,
+		// Recovered declarations need the same metadata even when the rubric
+		// was already collected and must be preserved for local edits.
+		DisplayName:               completed.ResultString("display_name"),
+		Categories:                completed.ResultStringList("categories"),
+		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
+	}
 	// A rubric is meant to be edited -- that is what the local file is for -- and
 	// `job show` is documented as safe to re-run while polling. Collecting again
 	// over an edited file made those two claims contradict each other.
 	if !replaceExisting && artifactAlreadyCollected(path) {
+		if _, err := evaluatorDocument(completed.Result); err != nil {
+			return nil, err
+		}
 		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
-		return &project.ArtifactRef{
-			Name:    name,
-			Source:  relativeSource(baseDir, path),
-			Version: version,
-		}, nil
+		ref.PreserveCatalogMetadata = true
+		return ref, nil
 	}
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
@@ -355,18 +371,7 @@ func (ec *evalContext) collectRubric(
 	fmt.Fprint(out, messages.WroteArtifact(path))
 	writeJobWarnings(out, "evaluator", completed, path)
 
-	return &project.ArtifactRef{
-		Name:    name,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Catalog metadata, preserved exactly as the service returned it. The
-		// declaration is what `azd up` republishes from, and a version published
-		// without these arrives with a blank catalog name and narrower level
-		// compatibility than the one before it.
-		DisplayName:               completed.ResultString("display_name"),
-		Categories:                completed.ResultStringList("categories"),
-		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
-	}, nil
+	return ref, nil
 }
 
 // writeJobWarnings reports what the service said about a job it completed.
@@ -440,6 +445,20 @@ func reportSubmitted(out io.Writer, group, jobID string) {
 // rather than a recovery.
 type retryConsent func(agent, jobID string, why error) (bool, error)
 
+// dataGenerationType is the seed-generation type that produces rows the given
+// evaluation level can actually grade.
+//
+// A conversation eval simulates its conversations from scenario seeds, so it
+// needs seeds; asking for simple_qna returns the query/response pairs a turn
+// eval grades, which a conversation evaluator has nothing to do with. Any other
+// level, including an unstated one, keeps the turn-shaped default.
+func dataGenerationType(evaluationLevel string) string {
+	if evaluationLevel == project.EvaluationLevelConversation {
+		return eval_api.DataGenerationTypeSimulationSeed
+	}
+	return eval_api.DataGenerationTypeSimpleQnA
+}
+
 func (ec *evalContext) generateDataset(
 	ctx context.Context,
 	plan generationPlan,
@@ -450,8 +469,17 @@ func (ec *evalContext) generateDataset(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
+	// `init` writes the azure.yaml service key here, which is a local label. The
+	// agent is published under whatever the service declares, so the key has to
+	// be resolved before it is sent, or the generated rows are attributed to an
+	// agent the service does not know. The run path resolves the same way.
+	agent, err := ec.remoteAgentName(ctx, plan.Agent)
+	if err != nil {
+		return nil, err
+	}
+
 	sources, unbuildable := eval_api.BuildGenerationSources(
-		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+		plan.From, agent, "", plan.Instruction, plan.traceOptions(),
 	)
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
@@ -465,17 +493,21 @@ func (ec *evalContext) generateDataset(
 	if noWait {
 		if promptOnly := eval_api.WithoutAgentSource(sources); len(promptOnly) != len(sources) &&
 			eval_api.HasPromptSource(promptOnly) {
-			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(plan.Agent))
+			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(agent))
 			sources = promptOnly
 		}
 	}
-	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
+	req := eval_api.NewDataGenerationJobRequest(
+		plan.Name, plan.Model, plan.SampleSize, sources, dataGenerationType(plan.EvaluationLevel))
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 	if err != nil {
 		return nil, messages.SubmittingDataJob(err)
 	}
 	report.record(job.ID)
+	// Before the --no-wait return below: that path ends here, and the dataset
+	// it will produce is tagged by whatever reattaches to the job.
+	ec.rememberGenerationLevel(ctx, job.ID, plan.EvaluationLevel)
 	if noWait {
 		reportSubmitted(out, "dataset", job.ID)
 		return nil, nil
@@ -501,7 +533,7 @@ func (ec *evalContext) generateDataset(
 			fmt.Fprint(out, messages.RetryingWithPromptSource())
 
 			req = eval_api.NewDataGenerationJobRequest(
-				plan.Name, plan.Model, plan.SampleSize, promptOnly)
+				plan.Name, plan.Model, plan.SampleSize, promptOnly, dataGenerationType(plan.EvaluationLevel))
 			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 			if err != nil {
 				return nil, messages.SubmittingDataJob(err)
@@ -511,6 +543,7 @@ func (ec *evalContext) generateDataset(
 			// has to move with it. Leaving it on the abandoned first job points
 			// every resume and every `job show` at the wrong one.
 			report.record(job.ID)
+			ec.rememberGenerationLevel(ctx, job.ID, plan.EvaluationLevel)
 			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 				ec.evalClient.GetDataGenerationJob)
 		}
@@ -523,15 +556,7 @@ func (ec *evalContext) generateDataset(
 	if err := refuseArtifactThatAppeared(plan, ".jsonl", report.jobID); err != nil {
 		return nil, err
 	}
-	ref, err := ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
-	if err != nil || ref == nil {
-		return ref, err
-	}
-	// Carried from the plan rather than read back: the level is what this run
-	// asked for, and it is what the rows are. Reattaching through `job show`
-	// has no plan, so the tag is simply omitted there rather than guessed.
-	ref.EvaluationLevel = plan.EvaluationLevel
-	return ref, nil
+	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, plan.EvaluationLevel, out, true)
 }
 
 // collectDataset downloads a finished data job's dataset and records what a
@@ -543,7 +568,7 @@ func (ec *evalContext) generateDataset(
 func (ec *evalContext) collectDataset(
 	ctx context.Context,
 	completed *eval_api.GenerationJob,
-	declaredName, baseDir, outputDir string,
+	declaredName, baseDir, outputDir, preferredLevel string,
 	out io.Writer,
 	replaceExisting bool,
 ) (*project.ArtifactRef, error) {
@@ -565,55 +590,56 @@ func (ec *evalContext) collectDataset(
 		return nil, messages.ServiceNameNotAFileName("dataset", localName)
 	}
 
-	// Before the download, not after: re-running `job show` while polling should
-	// cost nothing and must not write over rows somebody has since edited.
-	if !replaceExisting {
-		if path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl"); artifactAlreadyCollected(path) {
-			fmt.Fprint(out, messages.ArtifactLeftAlone(path))
-			return &project.ArtifactRef{
-				Name:    localName,
-				Source:  relativeSource(baseDir, path),
-				Version: version,
-			}, nil
-		}
-	}
-
-	// Confirm the version exists before reading it, so a missing dataset is
-	// reported as such rather than as a download failure.
-	if _, err := ec.datasetClient.GetDataset(
+	// Metadata is needed even when an edited local file must stay untouched.
+	// Failure to read it is the same collection error as on a first download.
+	registered, err := ec.datasetClient.GetDataset(
 		ctx, name, version, ProjectEndpointAPIVersion,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, messages.ReadingGeneratedDataset(name, err)
 	}
-	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
-	if err != nil {
-		return nil, messages.DownloadingGeneratedDataset(name, err)
-	}
-
 	path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, messages.Creating(filepath.Dir(path), err)
+	ref := &project.ArtifactRef{
+		Name:            localName,
+		Source:          relativeSource(baseDir, path),
+		Version:         version,
+		EvaluationLevel: registeredEvaluationLevel(registered),
 	}
-	// Atomic, because regenerating writes over the dataset already sitting
-	// there: os.WriteFile truncates first, so a failure mid-write destroys the
-	// copy the caller had while still reporting the generation as failed.
-	if err := writeFileAtomic(path, content); err != nil {
-		return nil, err
+	ref.EvaluationLevel = evaluationLevelForRef(preferredLevel, ref)
+	if !replaceExisting && artifactAlreadyCollected(path) {
+		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
+	} else {
+		content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+		if err != nil {
+			return nil, messages.DownloadingGeneratedDataset(name, err)
+		}
+		normalized := false
+		if ref.EvaluationLevel == project.EvaluationLevelConversation {
+			content, normalized, err = normalizeGeneratedSeedRows(content)
+			if err != nil {
+				return nil, messages.DatasetProblem(name, err)
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			return nil, messages.Creating(filepath.Dir(path), err)
+		}
+		if err := writeFileAtomic(path, content); err != nil {
+			return nil, err
+		}
+		fmt.Fprint(out, messages.WroteArtifact(path))
+		writeJobWarnings(out, "dataset", completed, path)
+
+		// Transformed bytes must be published by the explicit create/deploy step,
+		// not fingerprinted as though the original generated version held them.
+		if normalized {
+			ec.forget(ctx, project.FingerprintKey("dataset", localName), versionKey("dataset", localName))
+			fmt.Fprint(out, messages.NormalizedSimulationSeeds())
+		} else {
+			ec.recordDeployedDataset(ctx, localName, path, version)
+		}
 	}
-	fmt.Fprint(out, messages.WroteArtifact(path))
-	writeJobWarnings(out, "dataset", completed, path)
-
-	// The job registered the version and this file is a copy of it, so the
-	// state a deploy would have left behind is recorded now. Without it the
-	// next `azd up` finds no fingerprint for this dataset, reads the file as
-	// new, and publishes a second version identical to the one just generated.
-	ec.recordDeployedDataset(ctx, localName, path, version)
-
-	return &project.ArtifactRef{
-		Name:    localName,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-	}, nil
+	ec.applyGeneratedDatasetTags(ctx, registered, ref.EvaluationLevel)
+	return ref, nil
 }
 
 // artifactAlreadyCollected reports a destination a previous collection filled.
@@ -672,121 +698,103 @@ func (ec *evalContext) pollGeneration(
 // writeRubric persists the rubric so the developer can edit weights and
 // descriptions and publish a new version.
 //
-// The definition is written through as it arrived rather than re-marshalled
-// from a struct. Re-marshalling keeps only the fields the struct models, and
-// dropped pass_threshold: the file then differed from the version that had just
-// been published, so the next deploy republished it, silently without a
-// threshold. Anything the service adds later would have been lost the same way.
+// Results must be JSON objects. Known service fields are omitted; unknown fields
+// are preserved for future authoring contracts. Raw JSON keeps numeric values exact.
 func writeRubric(path string, result json.RawMessage) error {
 	if len(result) == 0 {
 		return messages.RubricJobReturnedNoResult()
+	}
+	body := result
+	var envelope *struct {
+		Definition json.RawMessage `json:"definition"`
+	}
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return notAnObject(result, err)
+	}
+	if envelope == nil {
+		return messages.DefinitionIsNull()
+	}
+	if len(envelope.Definition) > 0 {
+		editable, err := editableRubric(envelope.Definition)
+		if err != nil {
+			return err
+		}
+		if editable != nil {
+			body = editable
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return messages.Creating(filepath.Dir(path), err)
 	}
 
-	var envelope struct {
-		Definition json.RawMessage `json:"definition"`
-	}
-	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
-		if editable, ok := editableRubric(envelope.Definition); ok {
-			return writeFileAtomic(path, editable)
-		}
-	}
-
-	// Fall back to the raw payload rather than losing the result.
-	return writeFileAtomic(path, result)
+	return writeFileAtomic(path, body)
 }
 
-// rubricOwnedByTheService names the keys a reader cannot usefully edit.
+// editableRubric removes known service fields without discarding unknown
+// authored fields. Catalog metadata and runtime schemas stay on the registered resource.
 //
-// init_parameters, metrics and data_schema are the service's description of how
-// the evaluator is wired, and prompt_text on a rubric is generated from the
-// dimensions rather than authored. Left in the file they outnumbered the
-// dimensions several times over, so the one thing this artifact exists to be
-// edited for was the hardest part of it to find.
-var rubricOwnedByTheService = []string{
-	"init_parameters", "initParameters",
-	"metrics",
-	"data_schema", "dataSchema",
-	"prompt_text", "promptText",
-}
-
-// editableRubric reduces a returned rubric to the part worth editing.
-//
-// It reports false for anything that is not a rubric, so a payload this does
-// not understand is written whole rather than filtered down to nothing: losing
-// a generated artifact is far worse than a wide one.
-func editableRubric(definition json.RawMessage) ([]byte, bool) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(definition, &fields); err != nil {
-		return nil, false
+// A nil result identifies another evaluator kind. A recognized malformed rubric
+// is an error, never permission to export the service envelope.
+func editableRubric(definition json.RawMessage) ([]byte, error) {
+	var kind struct {
+		Type       json.RawMessage `json:"type"`
+		Dimensions json.RawMessage `json:"dimensions"`
 	}
-	var probe struct {
-		Dimensions []json.RawMessage `json:"dimensions"`
+	if json.Unmarshal(definition, &kind) != nil {
+		return nil, nil
 	}
-	if json.Unmarshal(definition, &probe) != nil || len(probe.Dimensions) == 0 {
-		return nil, false
-	}
-	for _, key := range rubricOwnedByTheService {
-		delete(fields, key)
-	}
-
-	// Ordered, because this file is committed and read in diffs: Go ranges maps
-	// at random, so marshalling the map directly rewrote the whole rubric on
-	// every regeneration whether or not anything about it had changed.
-	pretty, err := json.MarshalIndent(orderedJSON(fields), "", "  ")
+	definitionKind, err := evaluatorDefinitionKind(kind.Type)
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
 	}
-	return append(pretty, '\n'), true
-}
+	if (definitionKind != "" && definitionKind != rubricDefinitionType) ||
+		(definitionKind == "" && len(kind.Dimensions) == 0) {
+		return nil, nil
+	}
+	var rubric map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &rubric); err != nil {
+		return nil, fmt.Errorf("reading rubric definition: %w", err)
+	}
+	rubric["type"] = json.RawMessage(`"rubric"`)
+	typed, err := json.Marshal(rubric)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
+	}
+	if _, err := validateRubricDefinition(typed); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: %w", err)
+	}
+	var dimensions []map[string]json.RawMessage
+	if err := json.Unmarshal(rubric["dimensions"], &dimensions); err != nil {
+		return nil, fmt.Errorf("invalid rubric definition: reading dimensions: %w", err)
+	}
+	if dimensions == nil {
+		return nil, fmt.Errorf("invalid rubric definition: dimensions must be an array")
+	}
+	for _, key := range []string{
+		"metadata", "created_at", "createdAt", "creator", "generation", "warnings",
+		"init_parameters", "initParameters", "metrics", "data_schema", "dataSchema", "prompt_text", "promptText",
+	} {
+		delete(rubric, key)
+		for _, dimension := range dimensions {
+			delete(dimension, key)
+		}
+	}
+	for _, key := range []string{
+		"id", "name", "version", "display_name", "description", "categories",
+		"supported_evaluation_levels", "agent_metadata",
+	} {
+		delete(rubric, key)
+	}
+	rubric["dimensions"], err = json.Marshal(dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric dimensions: %w", err)
+	}
 
-// orderedJSON marshals a decoded object with its keys in a fixed order.
-//
-// The rubric's own three come first, in the order someone reads them, and
-// anything the service adds later follows in sorted order rather than being
-// dropped.
-type orderedJSON map[string]json.RawMessage
-
-func (o orderedJSON) MarshalJSON() ([]byte, error) {
-	leading := []string{"type", "dimensions", "pass_threshold", "passThreshold"}
-	rest := make([]string, 0, len(o))
-	for key := range o {
-		if !slices.Contains(leading, key) {
-			rest = append(rest, key)
-		}
+	pretty, err := json.MarshalIndent(rubric, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("formatting rubric definition: %w", err)
 	}
-	sort.Strings(rest)
-
-	var b bytes.Buffer
-	b.WriteByte('{')
-	first := true
-	write := func(key string) {
-		raw, ok := o[key]
-		if !ok {
-			return
-		}
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		name, err := json.Marshal(key)
-		if err != nil {
-			return
-		}
-		b.Write(name)
-		b.WriteByte(':')
-		b.Write(raw)
-	}
-	for _, key := range leading {
-		write(key)
-	}
-	for _, key := range rest {
-		write(key)
-	}
-	b.WriteByte('}')
-	return b.Bytes(), nil
+	return append(pretty, '\n'), nil
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

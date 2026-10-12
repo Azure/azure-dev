@@ -271,6 +271,7 @@ func (a *DeleteAction) cleanupEnvVars(
 	serviceKey := toServiceKey(serviceName)
 	keys := []string{
 		envkey.AgentProtocolEndpointsVersion(serviceName),
+		envkey.AgentPromptEndpointVersion(serviceName),
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
@@ -314,6 +315,7 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	serviceKey := toServiceKey(serviceName)
 	keys := []string{
 		envkey.AgentProtocolEndpointsVersion(serviceName),
+		envkey.AgentPromptEndpointVersion(serviceName),
 		versionKey,
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
 		fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey),
@@ -458,7 +460,7 @@ func (a *DeleteAction) runPromptDelete(
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
 			"agent name is required but could not be resolved",
-			"set 'name' in agent.yaml or pass the agent name as a positional argument",
+			"set 'name' on the agent service in azure.yaml or pass the agent name as a positional argument",
 		)
 	}
 

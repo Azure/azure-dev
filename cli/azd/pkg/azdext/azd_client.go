@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -22,6 +23,12 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
+// BetaServiceTarget returns the experimental v1beta service target client.
+// Preview capabilities are not available through the stable ServiceTarget client.
+func (c *AzdClient) BetaServiceTarget() v1beta.ServiceTargetServiceClient {
+	return v1beta.NewServiceTargetServiceClient(c.connection)
+}
+
 // AzdClient is the client for the `azd` gRPC server.
 type AzdClient struct {
 	connection          *grpc.ClientConn
@@ -31,6 +38,9 @@ type AzdClient struct {
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
+	betaEventsClient    v1beta.EventServiceClient
+	commandResultClient v1beta.CommandResultServiceClient
+	commandResultOnce   sync.Once
 	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
@@ -213,6 +223,25 @@ func (c *AzdClient) Events() EventServiceClient {
 	return c.eventsClient
 }
 
+// EventsBeta returns the preview event service client.
+func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
+	if c.betaEventsClient == nil {
+		c.betaEventsClient = v1beta.NewEventServiceClient(c.connection)
+	}
+	return c.betaEventsClient
+}
+
+// CommandResult returns the preview command result service client.
+func (c *AzdClient) CommandResult() v1beta.CommandResultServiceClient {
+	c.commandResultOnce.Do(func() {
+		if c.commandResultClient == nil {
+			c.commandResultClient = v1beta.NewCommandResultServiceClient(c.connection)
+		}
+	})
+
+	return c.commandResultClient
+}
+
 // Compose returns the preview compose service client.
 func (c *AzdClient) Compose() v1beta.ComposeServiceClient {
 	if c.composeClient == nil {
@@ -269,6 +298,11 @@ func (c *AzdClient) Account() AccountServiceClient {
 	}
 
 	return c.accountClient
+}
+
+// AccountBeta returns the preview account service client, including current principal lookup.
+func (c *AzdClient) AccountBeta() v1beta.AccountServiceClient {
+	return v1beta.NewAccountServiceClient(c.connection)
 }
 
 // Ai returns the AI model service client.

@@ -35,6 +35,8 @@ message ServiceTargetMessage {
     ServiceTargetPublishResponse publish_response = 18;
     ServiceTargetEndpointsRequest endpoints_request = 19;
     ServiceTargetEndpointsResponse endpoints_response = 20;
+    ServiceTargetPreviewRequest preview_request = 21;
+    ServiceTargetPreviewResponse preview_response = 22;
   }
 }
 
@@ -75,6 +77,8 @@ message ServiceTargetOptions {
 
 message RegisterServiceTargetRequest {
   string host = 1;// unique identifier for the provider
+  // Explicit opt-in; older extensions do not support deployment preview.
+  bool supports_preview = 2;
 }
 
 message RegisterServiceTargetResponse {
@@ -115,6 +119,22 @@ message ServiceTargetDeployRequest {
 
 message ServiceTargetDeployResponse {
   ServiceDeployResult result = 1;
+}
+
+// ServiceTargetPreviewRequest requests a read-only preview without initialization or deployment preparation.
+message ServiceTargetPreviewRequest {
+  ServiceConfig service_config = 1;
+}
+
+// ServiceTargetPreviewResponse contains the read-only deployment preview.
+message ServiceTargetPreviewResponse {
+  ServiceDeployPreviewResult result = 1;
+}
+
+// ServiceDeployPreviewResult describes a deployment without performing it.
+message ServiceDeployPreviewResult {
+  string message = 1;
+  google.protobuf.Struct data = 2;
 }
 
 // ServicePackageResult represents the package result for deployment

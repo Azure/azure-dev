@@ -439,6 +439,7 @@ type extensionAutoInstallManager interface {
 		opts extensions.InstallOptions,
 	) (*extensions.ExtensionVersion, error)
 	ListInstalled() (map[string]*extensions.Extension, error)
+	MarkExplicitlyInstalled(id string) error
 }
 
 func tryAutoInstallExtensionVersion(
@@ -456,6 +457,13 @@ func tryAutoInstallExtensionVersion(
 	if err == nil {
 		if err := validateInstalledExtensionVersion(installedExtension, versionPreference); err != nil {
 			return false, err
+		}
+		// The project requires this extension in its own right, so a record that only a
+		// pack pulled in becomes explicit and survives when that pack is uninstalled.
+		if installedExtension.InstalledAsDependency {
+			if err := extensionManager.MarkExplicitlyInstalled(extension.Id); err != nil {
+				return false, fmt.Errorf("marking extension %s as explicitly installed: %w", extension.Id, err)
+			}
 		}
 		return false, nil
 	}
@@ -642,6 +650,16 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		return result
 	}
 
+	return executeWithAutoInstallCommand(ctx, rootContainer, rootCmd, globalOpts, result)
+}
+
+func executeWithAutoInstallCommand(
+	ctx context.Context,
+	rootContainer *ioc.NestedContainer,
+	rootCmd *cobra.Command,
+	globalOpts *internal.GlobalCommandOptions,
+	result *ExecuteResult,
+) *ExecuteResult {
 	var extensionManager *extensions.Manager
 	var console input.Console
 
@@ -726,21 +744,22 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = commandErr
 			return result
 		}
+
+		if childConsole, err := newChildCommandConsole(globalOpts, foundCmd); err != nil {
+			result.Err = errors.Join(commandErr, err)
+			return result
+		} else {
+			console = childConsole
+		}
+
 		if projectExtensions.handled {
-			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
-				fmt.Fprintln(os.Stderr, unsupportedErr.ErrorMessage)
-			} else {
-				console.Message(ctx, unsupportedErr.ErrorMessage)
-			}
+			console.Message(ctx, unsupportedErr.ErrorMessage)
 			result.Err = commandErr
 			return result
 		}
 
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
-		}
-		if err := rootContainer.Resolve(&console); err != nil {
-			log.Panic("failed to resolve console for unknown flags error:", err)
 		}
 
 		requiredHost := unsupportedErr.Host
@@ -934,6 +953,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// Normal execution path - either no args, no matching extension, or user declined install
 	result.Err = rootCmd.ExecuteContext(ctx)
 	return result
+}
+
+// newChildCommandConsole creates a console using the child's std streams, so we can stay consistent with any console
+// output format changes. Without this, our default root input.Console would write out inconsistent output (ie, plain text
+// when the user requested JSON, for instance).
+func newChildCommandConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
+	formatter, err := output.GetCommandFormatter(foundCmd)
+	if err != nil {
+		return nil, fmt.Errorf("resolving output format for %s: %w", foundCmd.CommandPath(), err)
+	}
+
+	return newCommandConsole(globalOpts, formatter, foundCmd), nil
 }
 
 // CreateGlobalFlagSet creates a new flag set with all global flags defined.

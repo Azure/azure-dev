@@ -1,0 +1,23 @@
+Add a connection service dependency to an agent service.
+
+Both services must already be declared in azure.yaml. This adds a uses entry
+to the agent service; it does not create the dependency resource.
+Use --agent to identify the agent service to update.
+
+Usage
+  azd ai agent connection add <service> [flags]
+
+Flags
+      --agent string : Agent service name in azure.yaml.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for add
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Attach an existing connection service to an agent
+    azd ai agent connection add <service> --agent <agent-service>

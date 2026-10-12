@@ -56,7 +56,7 @@ type CopilotAgent struct {
 
 	// Runtime state
 	clientStarted          bool
-	session                *copilot.Session
+	session                copilotSession
 	sessionID              string
 	activeCtx              atomic.Pointer[context.Context] // current SendMessage context for SDK callbacks
 	display                *AgentDisplay                   // last display for usage metrics (interactive mode)
@@ -74,6 +74,12 @@ type CopilotAgent struct {
 type cleanupTask struct {
 	name string
 	fn   func() error
+}
+
+type copilotSession interface {
+	On(copilot.SessionEventHandler) func()
+	Send(context.Context, copilot.MessageOptions) (string, error)
+	GetEvents(context.Context) ([]copilot.SessionEvent, error)
 }
 
 const (
@@ -271,15 +277,20 @@ func (a *CopilotAgent) sendMessageInteractive(
 		return nil, fmt.Errorf("copilot agent error: %w", err)
 	}
 
-	if err := display.WaitForIdle(ctx); err != nil {
-		return nil, err
-	}
-
+	err = display.WaitForIdle(ctx)
 	turnUsage := display.GetUsageMetrics()
+
 	a.mu.Lock()
 	a.accumulateUsage(turnUsage)
-	turnFileChanges := a.collectFileChanges(watcher)
+	var turnFileChanges watch.FileChanges
+	if err == nil {
+		turnFileChanges = a.collectFileChanges(watcher)
+	}
 	a.mu.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &AgentResult{
 		SessionID:   a.sessionID,
@@ -312,15 +323,20 @@ func (a *CopilotAgent) sendMessageHeadless(
 		return nil, fmt.Errorf("copilot agent error: %w", err)
 	}
 
-	if err := collector.WaitForIdle(ctx); err != nil {
-		return nil, err
-	}
-
+	err = collector.WaitForIdle(ctx)
 	turnUsage := collector.GetUsageMetrics()
+
 	a.mu.Lock()
 	a.accumulateUsage(turnUsage)
-	turnFileChanges := a.collectFileChanges(watcher)
+	var turnFileChanges watch.FileChanges
+	if err == nil {
+		turnFileChanges = a.collectFileChanges(watcher)
+	}
 	a.mu.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &AgentResult{
 		SessionID:   a.sessionID,
@@ -333,6 +349,7 @@ func (a *CopilotAgent) sendMessageHeadless(
 func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
 	a.cumulativeUsage.InputTokens += turn.InputTokens
 	a.cumulativeUsage.OutputTokens += turn.OutputTokens
+	a.cumulativeUsage.AICredits += turn.AICredits
 	a.cumulativeUsage.DurationMS += turn.DurationMS
 	a.cumulativeUsage.PremiumRequests += turn.PremiumRequests
 	// These are per-request values, not cumulative — use latest
@@ -405,8 +422,7 @@ func (a *CopilotAgent) Stop() error {
 		fields.CopilotMessageModel.String(a.cumulativeUsage.Model),
 		fields.CopilotMessageInputTokens.Float64(a.cumulativeUsage.InputTokens),
 		fields.CopilotMessageOutputTokens.Float64(a.cumulativeUsage.OutputTokens),
-		fields.CopilotMessageBillingRate.Float64(a.cumulativeUsage.BillingRate),
-		fields.CopilotMessagePremiumRequests.Float64(a.cumulativeUsage.PremiumRequests),
+		fields.CopilotMessageAICredits.Float64(a.cumulativeUsage.AICredits),
 		fields.CopilotMessageDurationMs.Float64(a.cumulativeUsage.DurationMS),
 		fields.CopilotConsentApprovedCount.Int(a.consentApprovedCount),
 		fields.CopilotConsentDeniedCount.Int(a.consentDeniedCount),

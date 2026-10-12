@@ -59,7 +59,7 @@ func TestAnUnreachableRememberedRunIsReportedNotSwapped(t *testing.T) {
 		ec := evalContextRememberingRun(t, "evalrun_mine", "evalrun_theirs", status)
 
 		var out, errOut bytes.Buffer
-		_, err := ec.latestOrNamedRun(
+		_, _, err := ec.latestOrNamedRun(
 			commandWritingTo(t, &out, &errOut, false), "eval_1", "", true)
 
 		require.Error(t, err, "status %d", status)
@@ -75,7 +75,7 @@ func TestARememberedRunThatIsGoneFallsThrough(t *testing.T) {
 	ec := evalContextRememberingRun(t, "evalrun_deleted", "evalrun_newest", http.StatusNotFound)
 
 	var out, errOut bytes.Buffer
-	run, err := ec.latestOrNamedRun(
+	run, _, err := ec.latestOrNamedRun(
 		commandWritingTo(t, &out, &errOut, false), "eval_1", "", true)
 
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestAMutatingCommandWillNotGuessARun(t *testing.T) {
 	ec := evalContextListingOneRun(t, "evalrun_theirs")
 
 	var out, errOut bytes.Buffer
-	_, err := ec.latestOrNamedRun(
+	_, _, err := ec.latestOrNamedRun(
 		commandWritingTo(t, &out, &errOut, false), "eval_1", "", false)
 
 	require.Error(t, err)
@@ -120,7 +120,7 @@ func TestAMutatingCommandStillUsesTheRunThisEnvironmentStarted(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	run, err := ec.latestOrNamedRun(
+	run, _, err := ec.latestOrNamedRun(
 		commandWritingTo(t, &out, &errOut, false), "eval_1", "", false)
 
 	require.NoError(t, err)

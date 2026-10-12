@@ -19,6 +19,7 @@ func TestValidateStoreField(t *testing.T) {
 	}{
 		{"sessions", false},
 		{"conversations", false},
+		{"stateStores", false},
 		{"invalid", true},
 		{"", true},
 		{"Sessions", true}, // case-sensitive

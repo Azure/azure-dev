@@ -91,6 +91,7 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForHeadlessNewProject(t *tes
 				true,
 				false,
 				false,
+				false,
 			)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "requires an existing Foundry project")
@@ -112,8 +113,119 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForInteractiveNewProject(t *
 		false,
 		false,
 		false,
+		false,
 	)
 
 	require.ErrorContains(t, err, "requires an existing Foundry project")
 	require.Equal(t, int32(1), promptServer.selectCalls.Load())
+}
+
+func TestConfigureFoundryProjectDefersAuthoringWhenAzureContextIsMissing(t *testing.T) {
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test-env": {},
+		},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t,
+		&helpersProjectServer{},
+		&helpersPromptServer{},
+		envServer,
+	)
+
+	result, err := configureFoundryProject(
+		t.Context(),
+		azdClient,
+		&azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		"test-env",
+		"",
+		"",
+		true,
+		false,
+		false,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.Nil(t, result.FoundryProject)
+	require.Equal(t, projectAuthoringCurrent, result.AuthoringMode)
+}
+
+func TestConfigureFoundryProjectPreservesExistingServiceWhenDeferred(t *testing.T) {
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test-env": {},
+		},
+	}
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"my-project": {Host: AiProjectHost},
+			},
+		},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t,
+		projectServer,
+		&helpersPromptServer{},
+		envServer,
+	)
+
+	_, err := configureFoundryProject(
+		t.Context(),
+		azdClient,
+		&azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		"test-env",
+		"",
+		"",
+		true,
+		false,
+		false,
+		true,
+	)
+
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"true",
+		envServer.values["test-env"]["USE_EXISTING_AI_PROJECT"],
+	)
+}
+
+func TestConfigureFoundryProjectPreservesExistingServiceWithAzureContext(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test-env": {},
+		},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t,
+		&helpersProjectServer{},
+		&helpersPromptServer{},
+		envServer,
+	)
+
+	result, err := configureFoundryProject(
+		t.Context(),
+		azdClient,
+		&azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: "subscription-id",
+			Location:       "eastus2",
+		}},
+		"test-env",
+		"",
+		"",
+		true,
+		false,
+		false,
+		true,
+	)
+
+	require.NoError(t, err)
+	require.Nil(t, result.FoundryProject)
+	require.Equal(t, projectAuthoringCurrent, result.AuthoringMode)
 }

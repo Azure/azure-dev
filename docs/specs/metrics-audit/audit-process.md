@@ -211,6 +211,7 @@ Automatically label PRs that modify telemetry files for review.
 - `cli/azd/internal/tracing/events/events.go`
 - `cli/azd/internal/tracing/fields/key.go`
 - `cli/azd/internal/tracing/resource/resource.go`
+- `cli/azd/extensions/telemetry/fields.go` (first-party extension field inventory)
 - Any file containing `SetUsageAttributes`
 
 **Implementation:** Use a CODEOWNERS entry to require telemetry team review:
@@ -222,6 +223,10 @@ cli/azd/internal/tracing/ @AzureDevCLI/telemetry-reviewers
 
 This is preferred over a separate GitHub Actions workflow because it integrates directly
 with the existing PR review flow and requires no additional CI configuration.
+
+Changes to the first-party extension field inventory are additionally validated in CI by the
+`ext-telemetry-ci` workflow (`go test ./extensions/telemetry`), which fails when an extension emits an
+attribute key not declared in `cli/azd/extensions/telemetry/fields.go`.
 
 ## Telemetry Validation Pipeline
 

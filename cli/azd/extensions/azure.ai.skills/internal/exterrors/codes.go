@@ -13,11 +13,13 @@ const (
 
 // Codes shared across the extension surface.
 const (
-	CodeConflictingArguments   = "conflicting_arguments"
-	CodeInvalidParameter       = "invalid_parameter"
-	CodeMissingProjectEndpoint = "missing_project_endpoint"
-	CodeMissingRequiredField   = "missing_required_field"
-	CodeMissingForceFlag       = "missing_force_flag"
+	CodeConflictingArguments    = "conflicting_arguments"
+	CodeInvalidParameter        = "invalid_parameter"
+	CodeMissingProjectEndpoint  = "missing_project_endpoint"
+	CodeMissingRequiredField    = "missing_required_field"
+	CodeMissingForceFlag        = "missing_force_flag"
+	CodeProjectManifestNotFound = "project_manifest_not_found"
+	CodeSkillServiceConflict    = "skill_service_conflict"
 )
 
 const (

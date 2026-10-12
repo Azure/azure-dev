@@ -46,7 +46,10 @@ func newRoutineUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Update fields on an existing Foundry routine.
 
 Only the named flags change; all other fields are preserved verbatim.
-To change the trigger or action type, delete and recreate the routine.`,
+The trigger, action type, and dispatch identity are create-only. To change
+one, delete and recreate the routine.`,
+		Example: `  # Change the description while preserving other fields
+  azd ai routine update nightly-summary --description "Summarize the day's activity"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
@@ -91,6 +94,20 @@ To change the trigger or action type, delete and recreate the routine.`,
 }
 
 func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpdateFlags) error {
+	return runRoutineUpdateWithClientFactory(
+		ctx,
+		cmd,
+		flags,
+		routineUpsertClientFactoryFromCommand(cmd),
+	)
+}
+
+func runRoutineUpdateWithClientFactory(
+	ctx context.Context,
+	cmd *cobra.Command,
+	flags *routineUpdateFlags,
+	clientFactory routineUpsertClientFactory,
+) error {
 	// Type-switch guard: --trigger and --action are not allowed on update.
 	if flags.trigger != "" {
 		return exterrors.Validation(
@@ -107,7 +124,7 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 		)
 	}
 
-	client, _, err := newRoutineClient(ctx, cmd)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return err
 	}
@@ -126,6 +143,14 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	var changed int
 	if flags.file != "" {
 		manifest, err := readRoutineManifest(flags.file)
+		if err != nil {
+			return err
+		}
+		existing.Authorization, err = routineAuthorizationForUpsert(
+			flags.name,
+			existing,
+			manifest.Authorization,
+		)
 		if err != nil {
 			return err
 		}
@@ -176,7 +201,13 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	changed += flagChanged
 
 	if changed == 0 && flags.file == "" {
-		fmt.Printf("No changes specified for routine '%s'.\n", flags.name)
+		if _, err := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"No changes specified for routine '%s'.\n",
+			flags.name,
+		); err != nil {
+			return fmt.Errorf("failed to write routine update output: %w", err)
+		}
 		return nil
 	}
 
@@ -191,10 +222,16 @@ func runRoutineUpdate(ctx context.Context, cmd *cobra.Command, flags *routineUpd
 	}
 
 	if flags.output == "json" {
-		return printJSON(result)
+		return printJSONTo(cmd.OutOrStdout(), result)
 	}
 
-	fmt.Printf("Routine '%s' updated (%d field(s) changed).\n\n", result.Name, changed)
-	routineSummaryTable(result)
-	return nil
+	if _, err := fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"Routine '%s' updated (%d field(s) changed).\n\n",
+		result.Name,
+		changed,
+	); err != nil {
+		return fmt.Errorf("failed to write routine update output: %w", err)
+	}
+	return routineSummaryTable(cmd.OutOrStdout(), result)
 }

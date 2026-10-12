@@ -44,20 +44,20 @@ const (
 > non-command operations (sub-spans, background work, etc.).
 
 > [!IMPORTANT]
-> The GDPR classifier discovers events by statically scanning the `events` package for **exported
-> string constants whose Go identifier contains `Event`** (e.g. `MyFeatureEvent`). A constant that
-> omits `Event` from its identifier is silently skipped and never classified, even if it is emitted.
+> Repository metadata tooling discovers events from **exported string constants whose Go identifier
+> contains `Event`** (e.g. `MyFeatureEvent`). A constant that omits `Event` from its identifier is
+> not included in telemetry metadata, even if it is emitted.
 > End the identifier with `Prefix` (e.g. `MyFeatureEventPrefix`) to register a prefix group that
 > classifies every event name starting with that prefix. See
-> [Telemetry Schema → Event discovery contract](../specs/metrics-audit/telemetry-schema.md#event-discovery-contract).
+> [Telemetry Schema → Event declaration contract](../specs/metrics-audit/telemetry-schema.md#event-declaration-contract).
 
 ## Step 2: Define Your Fields
 
 **File:** `cli/azd/internal/tracing/fields/fields.go`
 
-Add **exported, package-level** `AttributeKey` variables for any new properties your feature emits
-(the GDPR classifier only discovers exported `AttributeKey` vars declared in the `fields` package —
-see [Field discovery contract](../specs/metrics-audit/telemetry-schema.md#field-attribute-discovery-contract)).
+Add **exported, package-level** `AttributeKey` variables for any new properties your feature emits.
+Repository metadata tooling uses these declarations; see the
+[Field declaration contract](../specs/metrics-audit/telemetry-schema.md#field-declaration-contract).
 Every field must have:
 
 1. **A key name** — descriptive, dot-separated, lowercase
@@ -127,7 +127,10 @@ tracing.SetUsageAttributes(
 > with a literal key is invisible to that scan, so the property still flows to App Insights but its
 > data-catalog row stays **Unclassified / `Complete=false`**. The `TestNoRawTelemetryAttributes` guard
 > (`cli/azd/cmd/telemetry_test.go`) fails the build on raw string-literal keys in
-> product code. Dynamic, non-fixed keys (e.g. the `ext.*` extension path) are the only exception.
+> product code. Dynamic, non-fixed keys chosen at runtime (the open-ended `ext.*` extension path)
+> are the only exception to this core scan. First-party extension `ext.*` keys with fixed values are
+> still governed: they are declared in a separate inventory, `cli/azd/extensions/telemetry/fields.go`,
+> and verified by `go test ./extensions/telemetry` rather than by `TestNoRawTelemetryAttributes`.
 
 ### For Command Actions
 

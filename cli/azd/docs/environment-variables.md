@@ -221,10 +221,9 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
-| `AZD_AI_AGENT_MANIFEST_PARAMETER_<NAME>` | Supplies a value for the `<NAME>` agent manifest parameter. When unset, init uses the declared default, the first enum value, or an empty value for optional parameters; unresolved required parameters fail. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
-| `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
+| `AGENT_DEFINITION_PATH` | Unsupported for AI agent runtime workflows. Non-empty values are rejected; put the definition on the `azure.ai.agent` service in `azure.yaml` or use its explicit root `$ref`. |
 
 ### azure.ai.routines
 
@@ -246,6 +245,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
 | `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
+| `AGENCY_SESSION_ID` | Set by Agency when launching subprocesses. Any non-empty value appends the fixed `agency` modifier to telemetry's `execution.environment`, preserving the primary environment (for example, `GitHub Copilot CLI;agency`). Unset or empty values have no effect. The session ID itself is not emitted. This does not affect agent detection or prompting and is independent of `AZD_DISABLE_AGENT_DETECT`. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Read by the embedded OpenTelemetry SDK, but not supported for customizing azd telemetry. Its attributes are not included in resources exported by azd. |
 | `OTEL_SERVICE_NAME` | Read by the embedded OpenTelemetry SDK, but does not override azd's exported `service.name`, which is always `azd`. |
 | `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |

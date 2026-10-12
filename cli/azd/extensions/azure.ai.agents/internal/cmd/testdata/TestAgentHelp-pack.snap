@@ -1,0 +1,37 @@
+Build a Teams app package (appPackage.zip) for a deployed Activity (Teams) agent.
+
+The Microsoft 365 service assembles the package (manifest, icons, and a bot entry
+bound to the agent's instance identity) from the agent and the Azure Bot created
+during 'azd deploy'. The package is written next to the agent source (or to
+--output-dir) so you can sideload it in Teams.
+
+This command requires the agent to have been deployed first ('azd deploy'). Unlike
+the best-effort packaging done during deploy, any failure here (tenant policy,
+permissions, service outage) is reported as a command failure.
+
+Usage
+  azd ai agent pack [name] [flags]
+
+Flags
+      --app-version string  : Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.
+      --display-name string : Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.
+      --output-dir string   : Directory to write appPackage.zip to (defaults to the agent source directory)
+      --scope string        : Publish scope for the package (personal: per-user sideload (no admin approval required); shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval))
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for pack
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Pack the agent resolved from azure.yaml (personal scope)
+    azd ai agent pack
+
+  Pack a specific agent for shareable-link distribution
+    azd ai agent pack my-agent --scope shared
+
+  Pack with a custom display name and output directory
+    azd ai agent pack --display-name "Contoso Helper" --output-dir ./dist

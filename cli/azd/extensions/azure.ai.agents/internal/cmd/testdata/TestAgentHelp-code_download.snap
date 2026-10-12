@@ -1,0 +1,36 @@
+Download the source code of a code-based hosted agent.
+
+Downloads the deployed source code as a zip archive and extracts it to
+the output directory. Use --zip to save the raw zip file instead.
+
+The [service] argument identifies the azd service whose agent name is resolved
+from the azd environment. When omitted, the default agent service is used.
+
+Usage
+  azd ai agent code download [service] [flags]
+
+Flags
+  -d, --dest string    : Destination path (default: ./<agent-name>/ or ./<agent-name>.zip)
+  -v, --version string : Agent version to download (default: latest)
+      --zip            : Save as zip file instead of extracting
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for download
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Download latest version (extracts to ./my-agent/)
+    azd ai agent code download my-agent
+
+  Download a specific version
+    azd ai agent code download my-agent --version 3
+
+  Save as zip file without extracting
+    azd ai agent code download my-agent --zip
+
+  Download to a custom directory
+    azd ai agent code download my-agent --dest ./backup

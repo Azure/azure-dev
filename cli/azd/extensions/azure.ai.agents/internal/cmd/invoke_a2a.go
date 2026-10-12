@@ -17,6 +17,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/google/uuid"
 )
@@ -124,6 +125,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
+	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolA2A, rc)
 
 	agentKey := rc.agentKey
 	if agentKey == "" && rc.azdClient != nil {

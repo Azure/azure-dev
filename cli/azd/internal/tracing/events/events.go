@@ -35,6 +35,9 @@ const (
 	ExtensionInstallEvent = "ext.install"
 	// ExtensionUpdateEvent tracks a single extension update attempt.
 	ExtensionUpdateEvent = "ext.update"
+	// ExtensionUninstallEvent tracks a single extension uninstall attempt by
+	// `azd extension uninstall`, including attempts for dependencies removed alongside it.
+	ExtensionUninstallEvent = "ext.uninstall"
 	// ExtensionPromoteEvent tracks a registry promotion (e.g., dev → main).
 	ExtensionPromoteEvent = "ext.promote"
 	// ExtensionUsageEvent carries one usage event an extension reported

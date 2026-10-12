@@ -95,12 +95,45 @@ type GenerationJob struct {
 	Status string          `json:"status"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *JobError       `json:"error,omitempty"`
+	// Inputs is the submission echoed back. It is what a reattach has instead
+	// of the plan it never saw: `--no-wait` returns at submission, and the
+	// `job show` that finishes the generation arrives with only a job id.
+	//
+	// Recovering the type from here rather than from local state is what makes
+	// a reattach work with no azd environment to have recorded it in, and it is
+	// authoritative -- it is the request, not a guess from row shape.
+	// Decode-only: job output must not expose echoed prompts and instructions.
+	Inputs *DataGenerationInputs `json:"-"`
 	// Warnings is what the service said about a job it nonetheless completed --
 	// most often that the input it was given was too thin to generate from. It
 	// was decoded nowhere, so a job that came back qualified was reported as an
 	// unqualified success and the artifact went into a configuration with
 	// nothing saying to look at it first.
 	Warnings []JobWarning `json:"warnings,omitempty"`
+}
+
+// UnmarshalJSON recovers the submitted type without adding inputs to job output.
+func (j *GenerationJob) UnmarshalJSON(data []byte) error {
+	type plain GenerationJob
+	var decoded struct {
+		plain
+		Inputs *DataGenerationInputs `json:"inputs"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*j = GenerationJob(decoded.plain)
+	j.Inputs = decoded.Inputs
+	return nil
+}
+
+// GenerationType is the kind of data a job was submitted to produce, or empty
+// when the service did not echo the submission back.
+func (j *GenerationJob) GenerationType() string {
+	if j == nil || j.Inputs == nil {
+		return ""
+	}
+	return j.Inputs.Options.Type
 }
 
 // JobWarning is one qualification on a completed job.
@@ -267,7 +300,7 @@ func (j *GenerationJob) ResultStringList(key string) []string {
 	}
 	if raw, ok := m[key]; ok {
 		var list []string
-		if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+		if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 			return list
 		}
 	}
@@ -276,7 +309,7 @@ func (j *GenerationJob) ResultStringList(key string) []string {
 		if err := json.Unmarshal(rawOutputs, &outputs); err == nil && len(outputs) > 0 {
 			if raw, ok := outputs[0][key]; ok {
 				var list []string
-				if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+				if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 					return list
 				}
 			}
@@ -369,8 +402,21 @@ type Dataset struct {
 // DataSourceConfig describes the data source for an OpenAI eval.
 type DataSourceConfig struct {
 	Type                string         `json:"type"`
+	Scenario            string         `json:"scenario,omitempty"`
 	ItemSchema          map[string]any `json:"item_schema"`
 	IncludeSampleSchema bool           `json:"include_sample_schema"`
+}
+
+// MarshalJSON keeps custom-schema fields out of the service-defined scenario.
+func (c DataSourceConfig) MarshalJSON() ([]byte, error) {
+	if c.Type == "azure_ai_source" {
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			Scenario string `json:"scenario"`
+		}{c.Type, c.Scenario})
+	}
+	type plain DataSourceConfig
+	return json.Marshal(plain(c))
 }
 
 // DataSourceSchema defines the item and sample schemas for an eval data source.
@@ -437,9 +483,13 @@ type OpenAIEvalList struct {
 
 // CreateOpenAIEvalRunRequest is the request body for CreateOpenAIEvalRun.
 type CreateOpenAIEvalRunRequest struct {
-	Name       string             `json:"name"`
-	DataSource *EvalRunDataSource `json:"data_source,omitempty"`
-	Metadata   map[string]string  `json:"metadata,omitempty"`
+	Name string `json:"name"`
+	// EvaluationLevel is what the service reads to decide the shape of the rows
+	// it builds. Sent only under Metadata it is opaque, so every run was built
+	// turn-shaped and a conversation evaluator received rows it cannot score.
+	EvaluationLevel string             `json:"evaluation_level,omitempty"`
+	DataSource      *EvalRunDataSource `json:"data_source,omitempty"`
+	Metadata        map[string]string  `json:"metadata,omitempty"`
 }
 
 // EvalRunDataSourceType defines the type for an eval run data source.
@@ -499,6 +549,16 @@ type EvalRunDataSource struct {
 
 	// Responses only.
 	ItemGenerationParams *ItemGenerationParams `json:"item_generation_params,omitempty"`
+
+	// Conversation simulation only. The model the simulated user speaks with is
+	// separate from any evaluator's judge model, and the bounds are separate
+	// from the parameters that generated the seeds.
+	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
+	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
+	DataMapping                    map[string]string        `json:"data_mapping,omitempty"`
+	// SimulationSeedCount is captured from the validated dataset at submission,
+	// not sent as an unsupported service data-source field.
+	SimulationSeedCount *int `json:"-"`
 }
 
 // ItemGenerationParams says how the service should turn a source into the items
@@ -642,18 +702,13 @@ func NewModelTargetDataSource(model string) *EvalRunDataSource {
 
 // NewResponsesDataSource evaluates responses the project already stored.
 //
-// The ids travel as ordinary JSONL rows and a data_mapping points the service
-// at the field holding each one, which is how it retrieves the chat history
-// behind the response.
-//
-// The id sits at the row root. `{{item.response_id}}` already means "the
-// response_id of this item", so a row that wrapped it in another `item` was
-// asking the service for `item.item.response_id` and resolved to nothing --
-// the same shape every other file_content source here uses.
+// Response retrieval uses EvalJsonlFileContentSourceContent: each source entry
+// wraps its fields in the required item object. The mapping remains nested in
+// item_generation_params and addresses that item's response_id.
 func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSource {
 	rows := make([]map[string]any, 0, len(responseIDs))
 	for _, id := range responseIDs {
-		rows = append(rows, map[string]any{"response_id": id})
+		rows = append(rows, map[string]any{"item": map[string]any{"response_id": id}})
 	}
 
 	return &EvalRunDataSource{
@@ -672,10 +727,8 @@ func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSour
 
 // SetFileContent sets the data source to use inline file content.
 //
-// There is no by-reference counterpart. A run's `file_id` means an uploaded
-// file, and a dataset name is not one — sending it is rejected with "invalid
-// data source file ids" — so registered datasets are fetched and sent inline
-// too. See readRegisteredDataset.
+// Unregistered local rows use this shape. Registered dataset versions use
+// SetFileID to preserve identity rather than submitting a copy of their rows.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
 		Type:    EvalRunDataContentTypeFileContent,
@@ -683,18 +736,38 @@ func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	}
 }
 
+// SetFileID binds the data source to a registered dataset by its service-issued
+// resource id.
+//
+// This is what makes the run reference the dataset rather than a copy of it:
+// inline rows lose the version binding and lineage, and the portal reports
+// "Inline data" for a run the author pointed at a catalog dataset. The id is
+// the one the service returned for that version -- a bare dataset name is not
+// one, which is what "invalid data source file ids" was rejecting.
+func (ds *EvalRunDataSource) SetFileID(id string) {
+	ds.Source = &EvalRunDataContent{
+		Type: EvalRunDataContentTypeFileID,
+		ID:   id,
+	}
+}
+
 // OpenAIEvalRun is the response for an OpenAI eval run.
 type OpenAIEvalRun struct {
-	ID         string             `json:"id"`
-	EvalID     string             `json:"eval_id,omitempty"`
-	Name       string             `json:"name,omitempty"`
-	Status     string             `json:"status,omitempty"`
-	CreatedAt  any                `json:"created_at,omitempty"`
-	ModifiedAt any                `json:"modified_at,omitempty"`
-	CreatedBy  string             `json:"created_by,omitempty"`
-	DataSource *EvalRunDataSource `json:"data_source,omitempty"`
-	Metadata   map[string]string  `json:"metadata,omitempty"`
-	ReportURL  string             `json:"report_url,omitempty"`
+	ID     string `json:"id"`
+	EvalID string `json:"eval_id,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+	// EvaluationLevel is the level the service recorded for the run. A run
+	// created by the portal or an SDK carries it here and carries none of the
+	// metadata this extension writes, so reading it is the only way to rerun
+	// such a run at the level it was made for.
+	EvaluationLevel string             `json:"evaluation_level,omitempty"`
+	CreatedAt       any                `json:"created_at,omitempty"`
+	ModifiedAt      any                `json:"modified_at,omitempty"`
+	CreatedBy       string             `json:"created_by,omitempty"`
+	DataSource      *EvalRunDataSource `json:"data_source,omitempty"`
+	Metadata        map[string]string  `json:"metadata,omitempty"`
+	ReportURL       string             `json:"report_url,omitempty"`
 	// PortalURL is built by the extension, not returned by the service, so that
 	// `-o json` carries the same link the terminal prints.
 	PortalURL string `json:"portal_url,omitempty"`
@@ -703,6 +776,9 @@ type OpenAIEvalRun struct {
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
 	Error              *JobError               `json:"error,omitempty"`
+	raw                json.RawMessage
+	initial            json.RawMessage
+	reportedCounts     map[string]bool
 }
 
 // Failure returns why the run failed, or "" when it did not.
@@ -760,6 +836,8 @@ type OutputItem struct {
 	Status         string         `json:"status"`
 	DataSourceItem map[string]any `json:"datasource_item,omitempty"`
 	Results        []OutputResult `json:"results,omitempty"`
+	raw            json.RawMessage
+	initial        json.RawMessage
 }
 
 // OutputResult is one evaluator's verdict on one row.
@@ -784,6 +862,9 @@ type OutputResult struct {
 	// Reason is the judge's explanation, which is the part a failing row is
 	// actually looked at for.
 	Reason string `json:"reason,omitempty"`
+	// Properties includes service-specific details such as rubric dimension
+	// scores. Retained verbatim; human views interpret only known fields.
+	Properties json.RawMessage `json:"properties,omitempty"`
 }
 
 // OutputSample is the evaluator's record of the call it made.

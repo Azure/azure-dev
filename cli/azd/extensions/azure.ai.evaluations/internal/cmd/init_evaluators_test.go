@@ -36,10 +36,10 @@ func TestEvaluatorChoicesOfferTheFourBuiltins(t *testing.T) {
 	}, evaluatorChoices(nil))
 }
 
-// The prompt offers what is knowable without a service call -- init makes none
-// -- which is the four built-ins plus whatever the catalog already declares. A
-// declaration is offered because its file already exists; nothing that would
-// have to be generated first appears here.
+// The prompt offers what is knowable without a service call -- the picker makes
+// none -- which is the four built-ins plus whatever the catalog already
+// declares. A declaration is offered because its file already exists; nothing
+// that would have to be generated first appears here.
 func TestEvaluatorChoicesOfferTheCatalogToo(t *testing.T) {
 	cfg := &project.EvalConfig{Evaluators: []project.EvaluatorDecl{
 		{Name: "support-agent-quality"},

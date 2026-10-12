@@ -12,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 )
 
-// GetCurrentPrincipalId returns the object ID of the current principal authenticated with the CLI.
+// GetCurrentPrincipalId returns a non-empty object ID of the current principal authenticated with the CLI.
 // It prefers the oid claim from an ARM access token, falling back to Graph /me when acquiring the
 // token fails or when the token does not include a usable oid.
 func GetCurrentPrincipalId(ctx context.Context, userProfile *azapi.UserProfileService, tenantId string) (string, error) {
@@ -30,7 +30,10 @@ func GetCurrentPrincipalId(ctx context.Context, userProfile *azapi.UserProfileSe
 
 	principalId, graphErr := userProfile.GetSignedInUserId(ctx, tenantId)
 	if graphErr == nil {
-		return principalId, nil
+		if principalId != "" {
+			return principalId, nil
+		}
+		graphErr = errors.New("signed-in user response did not contain an object id")
 	}
 
 	return "", fmt.Errorf(

@@ -92,7 +92,7 @@ func TestParseSkillServiceConfig_ServiceLevel(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "code review skill", cfg.Description)
-	assert.Equal(t, "Review code for correctness.", cfg.Instructions)
+	assert.Equal(t, skillInstructions{Value: "Review code for correctness."}, cfg.Instructions)
 	assert.Equal(t, "MIT", cfg.License)
 	assert.Equal(t, "gpt-5", cfg.Compatibility)
 	assert.Equal(t, map[string]string{"owner": "platform"}, cfg.Metadata)
@@ -115,7 +115,7 @@ func TestParseSkillServiceConfig_ConfigFallback(t *testing.T) {
 		Config: props,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "legacy shape", cfg.Instructions)
+	assert.Equal(t, skillInstructions{Value: "legacy shape"}, cfg.Instructions)
 }
 
 func TestParseSkillServiceConfig_Empty(t *testing.T) {
@@ -153,7 +153,7 @@ func TestValidateSkillServiceConfig(t *testing.T) {
 	}{
 		{
 			name:   "inline",
-			config: skillServiceConfig{Instructions: "Review code."},
+			config: skillServiceConfig{Instructions: skillInstructions{Value: "Review code."}},
 		},
 		{
 			name:   "archive",
@@ -163,7 +163,7 @@ func TestValidateSkillServiceConfig(t *testing.T) {
 			name: "archive with inline fields",
 			config: skillServiceConfig{
 				Archive:      "skills/review",
-				Instructions: "Review code.",
+				Instructions: skillInstructions{Value: "Review code."},
 			},
 			wantErr: "cannot combine archive",
 		},
@@ -213,7 +213,7 @@ func TestResolveSkillInstructions_Inline(t *testing.T) {
 	got, err := resolveSkillInstructions(
 		"",
 		&azdext.ServiceConfig{Name: "inline"},
-		"Review code for correctness.",
+		skillInstructions{Value: "Review code for correctness."},
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "Review code for correctness.", got)
@@ -223,7 +223,16 @@ func TestResolveSkillInstructions_MultilineBodyEndingInFileExtensionIsInline(t *
 	t.Parallel()
 
 	instructions := "# Rules\nSee CONTRIBUTING.md"
-	got, err := resolveSkillInstructions("", &azdext.ServiceConfig{Name: "inline"}, instructions)
+	got, err := resolveSkillInstructions("", &azdext.ServiceConfig{Name: "inline"}, skillInstructions{Value: instructions})
+	require.NoError(t, err)
+	assert.Equal(t, instructions, got)
+}
+
+func TestResolveSkillInstructions_SingleLineBodyEndingInFileExtensionIsInline(t *testing.T) {
+	t.Parallel()
+
+	instructions := "Follow README.md"
+	got, err := resolveSkillInstructions("", &azdext.ServiceConfig{Name: "inline"}, skillInstructions{Value: instructions})
 	require.NoError(t, err)
 	assert.Equal(t, instructions, got)
 }
@@ -243,10 +252,58 @@ func TestResolveSkillInstructions_FilePath(t *testing.T) {
 	got, err := resolveSkillInstructions(
 		projectDir,
 		&azdext.ServiceConfig{Name: "file", RelativePath: filepath.Join("skills", "review")},
-		"instructions.md",
+		skillInstructions{Value: "instructions.md", IsFile: true},
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "Review from file.", got)
+}
+
+func TestResolveSkillInstructions_FilePathsWithSpaces(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		path     string
+		absolute bool
+		explicit bool
+	}{
+		{name: "relative", path: "docs/review instructions.md"},
+		{name: "spaced directory", path: "./skill files/rules.md"},
+		{name: "spaced filename", path: "./review instructions.txt"},
+		{name: "absolute", path: "skill files/review instructions.md", absolute: true},
+		{name: "explicit bare filename", path: "review instructions.md", explicit: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			serviceDir := filepath.Join(projectDir, "skills", "review")
+			path := filepath.Join(serviceDir, tt.path)
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0750))
+			require.NoError(t, os.WriteFile(path, []byte("Review from file."), 0600))
+
+			var reference any = tt.path
+			if tt.absolute {
+				reference = path
+			}
+			if tt.explicit {
+				reference = map[string]any{"file": reference}
+			}
+			props, err := structpb.NewStruct(map[string]any{"instructions": reference})
+			require.NoError(t, err)
+			service := &azdext.ServiceConfig{
+				Name:                 "file",
+				RelativePath:         filepath.Join("skills", "review"),
+				AdditionalProperties: props,
+			}
+			cfg, err := parseSkillServiceConfig(service)
+			require.NoError(t, err)
+			got, err := resolveSkillInstructions(projectDir, service, cfg.Instructions)
+			require.NoError(t, err)
+			assert.Equal(t, "Review from file.", got)
+		})
+	}
 }
 
 func TestResolveSkillInstructions_EmptyFile(t *testing.T) {
@@ -258,9 +315,32 @@ func TestResolveSkillInstructions_EmptyFile(t *testing.T) {
 	_, err := resolveSkillInstructions(
 		"",
 		&azdext.ServiceConfig{Name: "empty", RelativePath: dir},
-		"instructions.md",
+		skillInstructions{Value: "instructions.md", IsFile: true},
 	)
 	require.ErrorContains(t, err, "resolved to empty instructions")
+}
+
+func TestResolveSkillInstructions_RejectsInvalidFileReferences(t *testing.T) {
+	t.Parallel()
+
+	for _, reference := range []any{
+		"docs/missing instructions.md",
+		"../private files/secret.md",
+		map[string]any{"file": "missing instructions.md"},
+		map[string]any{"file": "../private files/secret.md"},
+	} {
+		props, err := structpb.NewStruct(map[string]any{"instructions": reference})
+		require.NoError(t, err)
+		service := &azdext.ServiceConfig{
+			Name:                 "invalid-file",
+			AdditionalProperties: props,
+		}
+		cfg, err := parseSkillServiceConfig(service)
+		require.NoError(t, err)
+		got, err := resolveSkillInstructions(t.TempDir(), service, cfg.Instructions)
+		require.Error(t, err)
+		assert.Empty(t, got)
+	}
 }
 
 // TestResolveSkillInstructions_PathTraversal verifies a relative instructions
@@ -273,7 +353,7 @@ func TestResolveSkillInstructions_PathTraversal(t *testing.T) {
 		_, err := resolveSkillInstructions(
 			"",
 			&azdext.ServiceConfig{Name: "traversal", RelativePath: t.TempDir()},
-			instructions,
+			skillInstructions{Value: instructions, IsFile: true},
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must not contain '..'")
@@ -304,7 +384,8 @@ func TestResolveSkillPaths_FromNestedWorkingDirectory(t *testing.T) {
 	t.Chdir(nestedDir)
 
 	service := &azdext.ServiceConfig{Name: "code-review", RelativePath: "skills"}
-	instructions, err := resolveSkillInstructions(projectDir, service, "instructions.md")
+	instructions, err := resolveSkillInstructions(
+		projectDir, service, skillInstructions{Value: "instructions.md", IsFile: true})
 	require.NoError(t, err)
 	assert.Equal(t, "Review.", instructions)
 
@@ -373,6 +454,17 @@ func TestPrepareSkillArchive_RejectsOversizedZip(t *testing.T) {
 	archive, err := prepareSkillArchive(path)
 	require.ErrorContains(t, err, "exceeds the 25 MB upload size limit")
 	assert.Nil(t, archive)
+}
+
+func TestValidateSkillArchiveUploadSize_RejectsOversizedArchive(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateSkillArchiveUploadSize("skill.zip", skill_api.MaxUploadBytes))
+	require.ErrorContains(
+		t,
+		validateSkillArchiveUploadSize("skill.zip", skill_api.MaxUploadBytes+1),
+		"exceeds the 25 MB upload size limit",
+	)
 }
 
 func TestPrepareSkillArchive_RejectsNonRegularZip(t *testing.T) {

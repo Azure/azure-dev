@@ -20,7 +20,12 @@ func newRoutineListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all routines in the Foundry project.",
-		Args:  cobra.NoArgs,
+		Example: `  # List routines in the resolved project
+  azd ai routine list
+
+  # Return routines as JSON
+  azd ai routine list --output json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			output = extCtx.OutputFormat
 			ctx := azdext.WithAccessToken(cmd.Context())

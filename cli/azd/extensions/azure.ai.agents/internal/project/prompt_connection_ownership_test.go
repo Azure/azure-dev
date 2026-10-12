@@ -61,7 +61,7 @@ func TestAgentConnectionReferencesConfigAndSchema(t *testing.T) {
 					} else {
 						require.Error(t, schema.validate(values))
 					}
-					for _, shape := range []string{"inline", "legacy", "file reference"} {
+					for _, shape := range []string{"inline", "file reference"} {
 						t.Run(shape, func(t *testing.T) {
 							t.Parallel()
 							root := t.TempDir()
@@ -70,8 +70,6 @@ func TestAgentConnectionReferencesConfigAndSchema(t *testing.T) {
 								Name: "assistant", Host: foundryAgentHost, AdditionalProperties: props,
 							}
 							switch shape {
-							case "legacy":
-								svc.Config, svc.AdditionalProperties = props, nil
 							case "file reference":
 								data, err := json.Marshal(values)
 								require.NoError(t, err)

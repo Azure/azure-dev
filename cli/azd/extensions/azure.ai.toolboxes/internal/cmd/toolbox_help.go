@@ -11,7 +11,7 @@ package cmd
 // existing version's description forward).
 func fileShapeBlurb(includeDescription bool) string {
 	if includeDescription {
-		return `File shape (JSON example):
+		return `JSON File Shape:
 
   {
     "name": "research",
@@ -19,7 +19,7 @@ func fileShapeBlurb(includeDescription bool) string {
     "connections": [
       { "name": "my-mcp" },
       { "name": "my-search", "index": "products" },
-      { "name": "my-bing",   "instance_name": "docs-config" },
+      { "name": "my-bing",   "instanceName": "docs-config" },
       { "name": "my-a2a" }
     ],
     "skills": [
@@ -31,12 +31,12 @@ func fileShapeBlurb(includeDescription bool) string {
       { "type": "file_search",  "name": "files" }
     ],
     "policies": {
-      "rai_config": { "rai_policy_name": "Microsoft.Default" }
+      "raiConfig": { "raiPolicyName": "Microsoft.Default" }
     },
     "metadata": { "owner": "research-team" }
   }
 
-Equivalent YAML:
+YAML File Shape:
 
   name: research
   description: research toolbox
@@ -45,7 +45,7 @@ Equivalent YAML:
     - name: my-search
       index: products
     - name: my-bing
-      instance_name: docs-config
+      instanceName: docs-config
     - name: my-a2a
   skills:
     - name: my-skill
@@ -57,8 +57,8 @@ Equivalent YAML:
     - type: file_search
       name: files
   policies:
-    rai_config:
-      rai_policy_name: Microsoft.Default
+    raiConfig:
+      raiPolicyName: Microsoft.Default
   metadata:
     owner: research-team
 
@@ -68,7 +68,7 @@ Fields:
   connections     List of existing project connections to attach. Each entry
                   needs 'name' (the project connection short name).
                   'index' is required only for CognitiveSearch connections.
-                  'instance_name' is required only for
+                  'instanceName' is required only for
                   GroundingWithCustomSearch connections.
                   Supported connection categories: RemoteTool (MCP),
                   CognitiveSearch (Azure AI Search), RemoteA2A,
@@ -83,7 +83,7 @@ Fields:
                   exposed by 'connections'. Each entry must include 'type';
                   an optional 'name' must match ^[A-Za-z0-9_-]+$.
   policies        Optional. Per-version governance settings.
-                  policies.rai_config.rai_policy_name selects the Responsible
+                  policies.raiConfig.raiPolicyName selects the Responsible
                   AI content-filter policy applied to this toolbox version
                   (the alias 'name' is also accepted).
   metadata        Optional string key-value metadata stored on the version.
@@ -95,32 +95,32 @@ does not create them. Run 'azd ai connection list' to see available
 connections.`
 	}
 
-	return `File shape (JSON example):
+	return `JSON File Shape:
 
   {
     "connections": [
       { "name": "my-mcp" },
       { "name": "my-search", "index": "products" },
-      { "name": "my-bing",   "instance_name": "docs-config" },
+      { "name": "my-bing",   "instanceName": "docs-config" },
       { "name": "my-a2a" }
     ]
   }
 
-Equivalent YAML:
+YAML File Shape:
 
   connections:
     - name: my-mcp
     - name: my-search
       index: products
     - name: my-bing
-      instance_name: docs-config
+      instanceName: docs-config
     - name: my-a2a
 
 Fields:
   connections     Required. List of existing project connections to attach.
                   Each entry needs 'name' (the project connection short name).
                   'index' is required only for CognitiveSearch connections.
-                  'instance_name' is required only for
+                  'instanceName' is required only for
                   GroundingWithCustomSearch connections.
                   Supported connection categories: RemoteTool (MCP),
                   CognitiveSearch (Azure AI Search), RemoteA2A,

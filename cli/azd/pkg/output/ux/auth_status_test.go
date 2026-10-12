@@ -51,6 +51,15 @@ func TestAuthStatusView_ToString(t *testing.T) {
 			authMode: "azd built in",
 		},
 		{
+			name: "authenticated service principal without client ID",
+			result: &contracts.StatusResult{
+				Status: contracts.AuthStatusAuthenticated,
+				Type:   contracts.AccountTypeServicePrincipal,
+			},
+			authMode: "azd built in",
+			want:     "Logged in to Azure",
+		},
+		{
 			name: "authenticated service principal",
 			result: &contracts.StatusResult{
 				Status:   contracts.AuthStatusAuthenticated,
@@ -69,7 +78,7 @@ func TestAuthStatusView_ToString(t *testing.T) {
 			}
 			got := v.ToString("")
 
-			if tt.result.Status == contracts.AuthStatusUnauthenticated {
+			if tt.want != "" {
 				assert.Equal(t, tt.want, got)
 			} else {
 				assert.Contains(t, got, "Logged in to Azure")

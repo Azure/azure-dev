@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "**/internal/agent/types.go"
+    words:
+      - billionized
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock
@@ -188,6 +191,21 @@ overrides:
   - filename: cmd/mcp.go
     words:
       - internalcmd
+  - filename: cmd/{build,container}{,_test}.go
+    words:
+      - commandresult
+  - filename: cmd/middleware/ux{,_test}.go
+    words:
+      - commandresult
+  - filename: internal/commandresult/*.go
+    words:
+      - commandresult
+  - filename: internal/grpcserver/{beta_event_service,beta_event_service_test,event_service_test}.go
+    words:
+      - commandresult
+  - filename: internal/cmd/{deploy,service_event_messages,up_graph}.go
+    words:
+      - commandresult
   - filename: cmd/extension.go
     words:
       - compatResult
@@ -288,6 +306,7 @@ overrides:
       - Chdir
       - creds
       - Moby
+      - postflight
       - upsert
   - filename: docs/proxy-configuration.md
     words:
@@ -298,6 +317,12 @@ overrides:
   - filename: test/recording/proxy.go
     words:
       - WSAECONNRESET
+  - filename: test/azurecleanup/**
+    words:
+      - azurecleanup
+  - filename: test/cmd/cleanup-subscription-deployments/**
+    words:
+      - azurecleanup
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
@@ -539,6 +564,11 @@ overrides:
   - filename: pkg/azdext/contracts_v1_aliases.go
     words:
       - generatefacade
+  - filename: extensions/telemetry/*.go
+    words:
+      - elts
+      - fset
+      - unkeyed
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

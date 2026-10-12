@@ -180,16 +180,15 @@ func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment
 	} else {
 		newDotenv = envMap
 	}
-	env.replaceState(newDotenv, make(map[string]struct{}))
-
-	// Reload env config
-	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewEmptyConfig()
+	// Load both files before changing the live environment.
+	cfg, err := fs.configManager.Load(fs.ConfigPath(env))
+	if errors.Is(err, os.ErrNotExist) {
+		cfg = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
 	}
+	env.replaceState(newDotenv, make(map[string]struct{}))
+	env.Config = cfg
 
 	if env.Name() != "" {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

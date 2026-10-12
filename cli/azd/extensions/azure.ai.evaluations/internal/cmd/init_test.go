@@ -143,7 +143,7 @@ func TestScaffold_AppendsToAnExistingConfiguration(t *testing.T) {
 	require.NoError(t, loaded.Validate())
 }
 
-// A trace-backed eval invokes nothing, so agent_name filters instead of
+// A trace-backed eval invokes nothing, so agentName filters instead of
 // targeting, and a scaffolded cap keeps the first run bounded rather than
 // taking the service's default of 1000.
 func TestScaffold_TraceSourceHasNoTarget(t *testing.T) {
@@ -171,7 +171,7 @@ func TestScaffold_TraceCapIsOmittedWhenZero(t *testing.T) {
 
 	body, err := yaml.Marshal(plan.eval)
 	require.NoError(t, err)
-	require.NotContains(t, string(body), "max_traces")
+	require.NotContains(t, string(body), "maxTraces")
 }
 
 // The default set is one built-in. It used to add a rubric generated from the
@@ -360,7 +360,7 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 		// resolved relative to the eval config, so it has to be rebased.
 		dataset := filepath.Join(t.TempDir(), "tests", "golden.jsonl")
 		require.NoError(t, os.MkdirAll(filepath.Dir(dataset), 0o750))
-		require.NoError(t, os.WriteFile(dataset, []byte("{}\n"), 0o600))
+		require.NoError(t, os.WriteFile(dataset, []byte("{\"query\":\"q\"}\n"), 0o600))
 
 		plan, cfg := scaffoldFor(t, scaffoldInput{
 			evalName: "smoke", target: "a", dataset: dataset, evalDir: "evals",

@@ -107,7 +107,7 @@ const (
 type RaiInvocationContentType string
 
 const (
-	// RaiInvocationContentTypeJSON extracts text from a JSON body using JSONPath expressions.
+	// RaiInvocationContentTypeJSON extracts text from a JSON body using selector expressions.
 	RaiInvocationContentTypeJSON RaiInvocationContentType = "json"
 	// RaiInvocationContentTypeText treats the whole body as the text to moderate.
 	RaiInvocationContentTypeText RaiInvocationContentType = "text"
@@ -129,9 +129,12 @@ const (
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is the SSE event name the selector applies to.
+	// EventType is matched exactly against the value of the "type" field inside the frame's
+	// `data:` payload, not against the SSE `event:` line.
 	EventType string `json:"event_type"`
-	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	// TextField is the name of a field on the frame payload that holds the text, for example
+	// "delta". It is an exact field name, not a selector expression. Defaults to "delta" when
+	// omitted.
 	TextField string `json:"text_field,omitempty"`
 }
 
@@ -310,7 +313,7 @@ type ContainerConfigurationAPI struct {
 // its own defaults.
 type SessionConfigurationAPI struct {
 	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
-	// range is 120–3600 (inclusive). When the field is unset the whole
+	// range is 120–14400 (inclusive). When the field is unset the whole
 	// session_configuration block is omitted and the service default (900) applies.
 	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
 }
@@ -395,6 +398,7 @@ const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
 // published. Skills are published before the agent version is created, so the
 // version is always known by then.
 type SkillReference struct {
+	Type    string `json:"type"`
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }

@@ -1,0 +1,45 @@
+Create a new Foundry skill in one of four mutually exclusive modes:
+
+  1. Inline:    --description "..." --instructions "..."
+  2. SKILL.md:  --file ./SKILL.md   (CLI parses YAML front matter + body)
+  3. Package:   --file ./skill.zip  (CLI uploads the archive as multipart/form-data)
+  4. Directory: --file ./skill-src  (CLI packages the directory as a zip and uploads it)
+
+Directory mode requires SKILL.md at the root of the directory — the same
+layout that `azd ai skill download` writes by default, so the natural
+round-trip works without a manual zip step.
+
+Skills are versioned. `create` creates a new skill (if it does not exist)
+and uploads its first version as the default. Pass --force to delete an existing
+skill of the same name before creating.
+
+Usage
+  azd ai skill create <name> [flags]
+
+Flags
+      --description string  : Inline mode: human-readable summary of the skill
+      --file string         : Path to SKILL.md (.md), a ZIP package (.zip), or a directory containing SKILL.md at its root
+      --force               : Delete an existing skill of the same name before creating
+      --instructions string : Inline mode: Markdown body defining skill behavior
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for create
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "json")
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
+
+Examples
+  Create a skill from inline instructions
+    azd ai skill create greet-user --description "Welcomes a new user" --instructions "Greet the user by name."
+
+  Create a skill from a Markdown file
+    azd ai skill create greet-user --file ./SKILL.md
+
+  Replace an existing skill with a packaged archive
+    azd ai skill create greet-user --file ./skill.zip --force
+
+  Replace an existing skill with a directory containing SKILL.md
+    azd ai skill create greet-user --file ./skill-src/ --force

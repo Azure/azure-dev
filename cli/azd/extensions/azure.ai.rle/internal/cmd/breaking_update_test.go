@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -28,33 +27,21 @@ func (f extensionUpdateCheckerFunc) Check(
 	return f(ctx, currentVersion)
 }
 
-func TestNewRegistryExtensionUpdateCheckerUsesConfiguredRegistry(t *testing.T) {
-	checker := newRegistryExtensionUpdateChecker()
-	expected := os.Getenv("RLE_TEST_EXPECTED_REGISTRY_URL")
-	if expected == "" {
-		expected = RegistryURL
+func TestRegistryExtensionUpdateCheckerRequiresInstalledSource(t *testing.T) {
+	checker := &registryExtensionUpdateChecker{
+		resolveSource: func() (extensionUpdateSource, error) {
+			return extensionUpdateSource{}, errors.New("source is missing")
+		},
 	}
-
-	if checker.registryURL != expected {
-		t.Fatalf("expected configured registry %q, got %q", expected, checker.registryURL)
+	if update, err := checker.Check(t.Context(), "0.8.5-preview"); err == nil || update != nil {
+		t.Fatalf("expected missing release registry error, got update=%#v, err=%v", update, err)
 	}
-}
-
-func TestNewRegistryExtensionUpdateCheckerUsesBuildRegistry(t *testing.T) {
-	originalRegistryURL := RegistryURL
-	RegistryURL = "https://example.test/registry.rle-ext.json"
-	t.Cleanup(func() {
-		RegistryURL = originalRegistryURL
-	})
-
-	checker := newRegistryExtensionUpdateChecker()
-
-	if checker.registryURL != RegistryURL {
-		t.Fatalf("expected build registry %q, got %q", RegistryURL, checker.registryURL)
+	if update, err := checker.Check(t.Context(), "dev"); err != nil || update != nil {
+		t.Fatalf("expected unversioned build to skip update checks, got update=%#v, err=%v", update, err)
 	}
 }
 
-func TestUpdateMessagesUseReleaseSource(t *testing.T) {
+func TestUpdateMessagesUseInstalledSource(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -62,25 +49,21 @@ func TestUpdateMessagesUseReleaseSource(t *testing.T) {
 	}{
 		{"customer", "rle", "azd extension update azure.ai.rle --source rle"},
 		{"development", "rle-dev", "azd extension update azure.ai.rle --source rle-dev"},
+		{"custom", "team.preview", "azd extension update azure.ai.rle --source team.preview"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			oldSource := RegistrySource
-			RegistrySource = tt.source
-			t.Cleanup(func() {
-				RegistrySource = oldSource
-			})
-			if got := extensionUpdateCommand(); got != tt.command {
+			if got := extensionUpdateCommand(tt.source); got != tt.command {
 				t.Fatalf("expected update command %q, got %q", tt.command, got)
 			}
-			update := &extensionUpdate{LatestVersion: "0.8.6-preview", IsBreaking: true}
+			update := &extensionUpdate{LatestVersion: "0.8.6-preview", IsBreaking: true, Source: tt.source}
 			localError, ok := errors.AsType[*azdext.LocalError](breakingUpdateError(update))
 			if !ok || localError.Suggestion != "Run: "+tt.command {
 				t.Fatalf("expected channel-specific breaking suggestion, got %#v", localError)
 			}
 
 			checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
-				return &extensionUpdate{LatestVersion: "0.8.6-preview"}, nil
+				return &extensionUpdate{LatestVersion: "0.8.6-preview", Source: tt.source}, nil
 			})
 			rootCmd := newRootCommand(checker)
 			var output bytes.Buffer
@@ -113,8 +96,10 @@ func TestRegistryBreakingUpdateCheckerRequiresUpdateAcrossBreakingVersion(t *tes
 	}`)
 
 	checker := &registryExtensionUpdateChecker{
-		client:      server.Client(),
-		registryURL: server.URL,
+		client: server.Client(),
+		resolveSource: func() (extensionUpdateSource, error) {
+			return extensionUpdateSource{Name: "rle", Type: "url", Location: server.URL}, nil
+		},
 	}
 	update, err := checker.Check(t.Context(), "0.8.5-preview")
 	if err != nil {
@@ -140,8 +125,10 @@ func TestRegistryUpdateCheckerReportsNonBreakingUpdate(t *testing.T) {
 	}`)
 
 	checker := &registryExtensionUpdateChecker{
-		client:      server.Client(),
-		registryURL: server.URL,
+		client: server.Client(),
+		resolveSource: func() (extensionUpdateSource, error) {
+			return extensionUpdateSource{Name: "rle-dev", Type: "url", Location: server.URL}, nil
+		},
 	}
 	update, err := checker.Check(t.Context(), "0.8.5-preview")
 	if err != nil {
@@ -157,8 +144,11 @@ func TestRegistryUpdateCheckerReportsNonBreakingUpdate(t *testing.T) {
 
 func TestRegistryBreakingUpdateCheckerSkipsDevelopmentBuild(t *testing.T) {
 	checker := &registryExtensionUpdateChecker{
-		client:      http.DefaultClient,
-		registryURL: "://invalid",
+		client: http.DefaultClient,
+		resolveSource: func() (extensionUpdateSource, error) {
+			t.Fatal("development build attempted source resolution")
+			return extensionUpdateSource{}, nil
+		},
 	}
 	update, err := checker.Check(t.Context(), "dev")
 	if err != nil {
@@ -177,7 +167,7 @@ func TestRootCommandBlocksNormalCommandForBreakingUpdate(t *testing.T) {
 	})
 
 	checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
-		return &extensionUpdate{LatestVersion: "0.8.6-preview", IsBreaking: true}, nil
+		return &extensionUpdate{LatestVersion: "0.8.6-preview", IsBreaking: true, Source: "rle"}, nil
 	})
 	rootCmd := newRootCommand(checker)
 	ran := false
@@ -200,7 +190,7 @@ func TestRootCommandBlocksNormalCommandForBreakingUpdate(t *testing.T) {
 	if localError.Message != "Update the RLE extension to 0.8.6-preview before continuing." {
 		t.Fatalf("unexpected blocking message: %q", localError.Message)
 	}
-	if localError.Suggestion != "Run: "+extensionUpdateCommand() {
+	if localError.Suggestion != "Run: "+extensionUpdateCommand("rle") {
 		t.Fatalf("unexpected update suggestion: %q", localError.Suggestion)
 	}
 }
@@ -219,7 +209,7 @@ func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
 	})
 
 	checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
-		return &extensionUpdate{LatestVersion: "0.8.6-preview"}, nil
+		return &extensionUpdate{LatestVersion: "0.8.6-preview", Source: "rle"}, nil
 	})
 	rootCmd := newRootCommand(checker)
 	var output bytes.Buffer
@@ -243,7 +233,7 @@ func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
 		t.Fatal("expected command to run for a non-breaking update")
 	}
 	expectedNotice := "RLE extension update available: 0.8.6-preview\n" +
-		"To update, run `" + extensionUpdateCommand() + "`\n\n"
+		"To update, run `" + extensionUpdateCommand("rle") + "`\n\n"
 	plainOutput := strings.ReplaceAll(output.String(), "\x1b[33m", "")
 	plainOutput = strings.ReplaceAll(plainOutput, "\x1b[0m", "")
 	if !strings.Contains(plainOutput, expectedNotice) {
@@ -260,7 +250,7 @@ func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
 	}
 }
 
-func TestRootCommandSilentlyAllowsCommandWhenRegistryCheckFails(t *testing.T) {
+func TestRootCommandWarnsAndAllowsCommandWhenRegistryCheckFails(t *testing.T) {
 	checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
 		return nil, errors.New("registry unavailable")
 	})
@@ -282,8 +272,8 @@ func TestRootCommandSilentlyAllowsCommandWhenRegistryCheckFails(t *testing.T) {
 	if !ran {
 		t.Fatal("expected command to run when the registry check is unavailable")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("expected no registry warning during normal use, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "Warning: unable to check for RLE updates: registry unavailable") {
+		t.Fatalf("expected explicit registry warning, got %q", stderr.String())
 	}
 }
 
@@ -300,7 +290,7 @@ func TestRootCommandReportsRegistryCheckFailureInDebugMode(t *testing.T) {
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stderr.String(), "Debug: unable to check for RLE updates: registry unavailable") {
+	if !strings.Contains(stderr.String(), "Warning: unable to check for RLE updates: registry unavailable") {
 		t.Fatalf("expected registry diagnostic in debug mode, got %q", stderr.String())
 	}
 }

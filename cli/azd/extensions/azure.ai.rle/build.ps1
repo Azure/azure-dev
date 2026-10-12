@@ -42,14 +42,6 @@ else {
 }
 
 $APP_PATH = "$env:EXTENSION_ID/internal/cmd"
-$REGISTRY_URL = if ($env:RLE_REGISTRY_URL) {
-    $env:RLE_REGISTRY_URL
-}
-else {
-    "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/registry.rle-dev.json"
-}
-$REGISTRY_SOURCE = if ($env:RLE_REGISTRY_SOURCE) { $env:RLE_REGISTRY_SOURCE } else { "rle-dev" }
-
 # Loop through platforms and build
 foreach ($PLATFORM in $PLATFORMS) {
     $OS, $ARCH = $PLATFORM -split '/'
@@ -72,7 +64,7 @@ foreach ($PLATFORM in $PLATFORMS) {
     $env:GOARCH = $ARCH
 
     go build `
-        -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE' -X '$APP_PATH.RegistryURL=$REGISTRY_URL' -X '$APP_PATH.RegistrySource=$REGISTRY_SOURCE'" `
+        -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
         -o $OUTPUT_NAME
 
     if ($LASTEXITCODE -ne 0) {

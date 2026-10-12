@@ -72,11 +72,14 @@ For the internal development team:
 azd extension source add `
   --name rle-dev `
   --type url `
-  --location https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/registry.rle-dev.json
+  --location "https://raw.githubusercontent.com/<owner>/<repository>/main/cli/azd/extensions/registry.rle-dev.json"
 
 azd extension install azure.ai.rle --source rle-dev
 azd ai rle version
 ```
+
+Replace `<owner>/<repository>` with the GitHub repository configured as `origin`
+in the implementation checkout.
 
 Private preview customers use the public distribution branch:
 
@@ -108,9 +111,13 @@ azd extension source list
 
 ### Extension updates
 
-The extension checks the same release channel from which its artifact was
-built: internal artifacts check the development registry, while customer artifacts
-check `registry.rle.json`. Releases in one channel never notify or block users of the other.
+The extension resolves its installed source from the active azd profile and
+checks that source's registered registry. Dev and customer installations use
+identical binaries; their source registrations keep update checks isolated.
+Custom source aliases are supported, and update suggestions use the installed
+alias rather than a build-time channel name. URL and file registries are supported.
+The resolver honors `AZD_CONFIG_DIR` and verifies that the running executable is
+the one recorded for the installed RLE extension.
 A non-breaking update does not interrupt the command. After the command
 completes, the CLI displays:
 
@@ -130,7 +137,13 @@ azd extension update azure.ai.rle --source rle
 azd ai rle version
 ```
 
-Development builds instead suggest `--source rle-dev`, matching their registry.
+Development installations instead suggest `--source rle-dev`, matching their
+registered source. If source resolution or registry access fails, the command
+continues with an explicit warning on stderr; it never falls back to another
+channel. `version`, help, and metadata remain available. Unversioned `dev` builds
+skip update checks, and versioned standalone binaries warn rather than borrow
+another installed binary's source. Bundle sources without a live registry are
+reported as unsupported for RLE update checks.
 
 Harness scaffolds, samples hidden from the default catalog, and other
 internal-only surfaces are gated by a single flag for the RLE team's own
@@ -920,24 +933,26 @@ The script preserves the existing prerelease suffix. For example,
 `0.8.8-preview` becomes `0.8.9-preview` with `-VersionBump patch`. It updates
 `version.txt` and `extension.yaml`, cross-compiles the extension for every
 supported platform (`windows`, `darwin`, and `linux` on both `amd64` and
-`arm64`), writes artifacts under `artifacts\<channel>\<version>`, and updates
+`arm64`), writes development artifacts under `artifacts\rle-dev\<version>`, and updates
 the development registry or public `registry.rle.json` with each artifact's
 checksum and GitHub URL.
 `azd x pack` archives linux artifacts as `.tar.gz` and every other platform as
-`.zip`. It also embeds that channel's registry URL in every binary, which keeps
-internal and external update enforcement isolated. The script runs on any host
+`.zip`. Registry URLs and source aliases are not embedded in the binaries;
+the installed azd source determines update enforcement. The script runs on any host
 Go can cross-compile from.
 
-Both channels share `version.txt` and `extension.yaml`. Each release advances
-the same version counter, so a customer release can skip versions previously
-used for development releases. Update checks remain isolated to each channel's
-registry; a development-only release does not notify customer installations.
+Both channels share `version.txt` and `extension.yaml`. A development release
+prepares only the dev channel. An external release advances the version once and
+prepares that same version for both dev and customer distribution. It builds
+and packages once, then updates both registries and copies the identical archives
+to the public checkout. Update checks remain isolated by installed source;
+a development-only release does not notify customer installations.
 
-Prepare an external release with GitHub CLI (`gh`) authenticated as an account
-with write access to `Azure/azure-dev`:
+Prepare an external release by supplying an existing, separate `Azure/azure-dev`
+checkout on the `rle-releases` branch:
 
 ```powershell
-.\prepare-ext-release.ps1 -VersionBump patch
+.\prepare-ext-release.ps1 -AzureDevRepositoryPath "C:\repos\azure-dev" -VersionBump patch
 ```
 
 Both wrappers accept `-VersionBump major|minor|patch` and the optional
@@ -945,37 +960,64 @@ Both wrappers accept `-VersionBump major|minor|patch` and the optional
 
 ```powershell
 .\prepare-dev-release.ps1
-.\prepare-ext-release.ps1
+.\prepare-ext-release.ps1 -AzureDevRepositoryPath "C:\repos\azure-dev"
 ```
 
 Mark a release as breaking only when users must update before continuing:
 
 ```powershell
 .\prepare-dev-release.ps1 -VersionBump patch -BreakingChanges
-.\prepare-ext-release.ps1 -VersionBump patch -BreakingChanges
+.\prepare-ext-release.ps1 -AzureDevRepositoryPath "C:\repos\azure-dev" -VersionBump patch -BreakingChanges
 ```
 
 Non-breaking is the default; do not pass `-BreakingChanges` for a normal release.
 For internal releases, review and commit the two version files, generated
 artifacts, and registry change together. The development registry targets the
 implementation repository's `main` branch.
+The repository owner/name is inferred from the local checkout's `origin` remote;
+it is not tied to a particular fork. GitHub HTTPS and SSH origins are supported.
+Missing or unsupported origins are rejected before the version changes.
+The publication branch remains `main`, regardless of the current working branch.
+Standalone `build.ps1` and `build.sh` build only the implementation and version
+metadata, without selecting a distribution registry or source.
 
-For external releases, the script creates a separate sparse distribution
-checkout at `$HOME\.azd\rle-releases`, or uses the path supplied with
-`-PublicRepositoryPath`. Its origin must be `Azure/azure-dev` and its branch
-must be `rle-releases`. The checkout must be clean and contain no
-non-release changes relative to upstream `main`.
+For external releases, `-AzureDevRepositoryPath` is required on each invocation.
+There is no environment-variable fallback or automatic default. The script never
+creates a checkout. Its fetch and push origin must be `Azure/azure-dev` and its
+branch must be `rle-releases`. The checkout must be clean, have no unpublished
+or diverged commits or unfinished Git operations, and contain no non-release
+changes relative to upstream `main`. The script fetches the remote state and
+fast-forwards to `origin/rle-releases` before building. Invalid state is rejected
+before the source version is changed.
 
-The external script embeds the public branch registry URL in all six platform
-binaries. It commits only the packaged archives and registry to the distribution
-branch, pushes it, and creates an open draft PR against `Azure/azure-dev` if one does
-not already exist. Artifacts use commit-pinned URLs and SHA-256 checksums; the
-registry uses the stable branch URL. Customers can install without a PR merge.
+The external script reuses all six dev packages without rebuilding or repacking.
+It writes only those customer packages and the customer registry into the supplied
+checkout and prints commands for reviewing, staging, committing, and pushing.
+It does not stage files, create commits, push, or manage PRs. Publishing is manual
+and requires working Git authentication and write access to `Azure/azure-dev`.
+Pushing `rle-releases` updates the existing distribution PR.
+
+New artifacts use version-specific branch URLs and SHA-256 checksums. Earlier
+entries and their URLs remain unchanged. A published version must never be
+overwritten; the script rejects an existing version. Commit the registry and
+all six archives together; the printed staging commands handle ignored archives.
+Customers can install after the push without a PR merge.
+External packages are stored at `azure.ai.rle/artifacts/<version>/` in the public
+checkout. Development packages retain the existing `artifacts/rle-dev/<version>/`
+layout and `registry.rle-dev.json` in the implementation checkout. The external
+path setting is not used by `prepare-dev-release.ps1`. The obsolete fork external
+registry and tracked packages have been removed; customer distribution is exclusively
+in `Azure/azure-dev`. After copying and verifying all six customer package
+checksums, the script deletes temporary `bin` build output. No separate external
+staging directory is created. If copying or verification fails, local output is retained.
+Dev packages, the dev registry, and source version-file changes are retained
+for manual commit; the script does not reset the implementation checkout.
 Do not delete this branch while customers use the registry. New releases update
 the same branch and PR without changing previous artifact URLs.
 
-Commit `version.txt`, `extension.yaml`, and release tooling changes separately
-in the implementation repository. Never include implementation source changes
+For an external release, commit `version.txt`, `extension.yaml`, the dev registry,
+and dev packages together in the implementation repository. Commit release tooling
+changes there as well. Never include implementation source changes
 in the public distribution PR. The external script does not change repository
 visibility or migrate samples/SDK dependencies. Source already published remains
 public. GitHub Release assets can replace binary commits in a follow-up while

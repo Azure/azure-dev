@@ -776,8 +776,10 @@ func TestNoTrainingOptionsLeavesTheRequestUnchanged(t *testing.T) {
 
 // ptrTo returns a pointer to v, for populating the optional *T fields of
 // project.RleTrainDefaults and friends inline in a test literal.
+//
+//go:fix inline
 func ptrTo[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 // writeTrainRleConfigWithDefaults writes a manifest carrying [train], the
@@ -865,7 +867,7 @@ func TestTrainRequiresModelAndTrainingFileFlagsDespiteManifestDefaults(t *testin
 	t.Chdir(dir)
 	writeTrainRleConfigWithDefaults(t, dir, "code_rl", "1.2.3", &project.RleTrainDefaults{
 		Grpo: &project.RleGrpoDefaults{
-			LearningRate: ptrTo(2e-5),
+			LearningRate: new(2e-5),
 		},
 	})
 
@@ -899,7 +901,7 @@ func TestTrainValidationFileAndSuffixAreOptional(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeTrainRleConfigWithDefaults(t, dir, "code_rl", "1.2.3", &project.RleTrainDefaults{
-		Grpo: &project.RleGrpoDefaults{LearningRate: ptrTo(2e-5)},
+		Grpo: &project.RleGrpoDefaults{LearningRate: new(2e-5)},
 	})
 
 	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t"}}
@@ -919,10 +921,10 @@ func TestTrainValidationFileAndSuffixAreOptional(t *testing.T) {
 func TestTrainDefaultsOptionsFlattensGrpoAndExcludesRollout(t *testing.T) {
 	train := &project.RleTrainDefaults{
 		Grpo: &project.RleGrpoDefaults{
-			LearningRate:               ptrTo(2e-5),
-			GroupSize:                  ptrTo(4),
-			RemoveConstantRewardGroups: ptrTo(true),
-			RolloutFailureRateAbort:    ptrTo(0.5),
+			LearningRate:               new(2e-5),
+			GroupSize:                  new(4),
+			RemoveConstantRewardGroups: new(true),
+			RolloutFailureRateAbort:    new(0.5),
 		},
 	}
 

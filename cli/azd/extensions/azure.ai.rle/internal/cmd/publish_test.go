@@ -48,7 +48,7 @@ func TestPublishDisplaysReleaseIdentityAndPreservesJSON(t *testing.T) {
 		Harness: project.RleHarnessManifest{
 			Type: project.RleTypeGym, Subtype: project.RleSubtypeOpenEnv,
 		},
-		Model: &project.RleModelDefaults{Name: ptrTo("test-model")},
+		Model: &project.RleModelDefaults{Name: new("test-model")},
 	}
 	if err := project.WriteRleConfig(dir, config); err != nil {
 		t.Fatal(err)

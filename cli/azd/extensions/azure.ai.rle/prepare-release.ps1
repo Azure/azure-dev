@@ -4,9 +4,10 @@ Shared implementation for building and publishing an RLE release channel.
 
 .PARAMETER Channel
 Selects the internal rle-dev or customer rle-ext build channel.
+The customer channel also prepares the same version for development.
 Customer publication uses the public registry.rle.json distribution registry.
-The selected registry URL is embedded in the extension binaries so update
-checks remain isolated to that channel.
+Packages are built once. Installed-source configuration selects the update
+registry at runtime.
 
 .PARAMETER VersionBump
 Increments the current semantic version by major, minor, or patch and preserves
@@ -42,22 +43,26 @@ function Set-ContentUtf8NoBom {
 
 $extensionId = "azure.ai.rle"
 $artifactPrefix = "azure-ai-rle"
-$repository = "sujit-kamireddy/azure-dev"
-$repositoryBranch = "main"
-$channelDescription = if ($Channel -eq "rle-dev") { "internal development" } else { "external customer" }
-$registryPath = Join-Path $PSScriptRoot "..\registry.$Channel.json"
-$outputDirectory = Join-Path $PSScriptRoot "artifacts\$Channel"
-$registryURL = "https://raw.githubusercontent.com/$repository/$repositoryBranch/" +
-    "cli/azd/extensions/registry.$Channel.json"
+$developmentRepository = & (Join-Path $PSScriptRoot "get-development-repository.ps1")
+$outputDirectory = Join-Path $PSScriptRoot "artifacts\rle-dev"
+$targets = @(@{
+    channel = "rle-dev"
+    description = "internal development"
+    path = Join-Path $PSScriptRoot "..\registry.rle-dev.json"
+    baseURL = "https://raw.githubusercontent.com/$developmentRepository/main"
+    artifactRoot = "cli/azd/extensions/azure.ai.rle/artifacts/rle-dev"
+})
 if ($Channel -eq "rle-ext") {
     if (-not $PublicRepositoryPath) {
         throw "Use prepare-ext-release.ps1 to prepare releases in a separate public distribution checkout."
     }
-    $repository = "Azure/azure-dev"
-    $repositoryBranch = "rle-releases"
-    $registryPath = Join-Path $PublicRepositoryPath "cli\azd\extensions\registry.rle.json"
-    $registryURL = "https://raw.githubusercontent.com/$repository/$repositoryBranch/" +
-        "cli/azd/extensions/registry.rle.json"
+    $targets += @{
+        channel = "rle-ext"
+        description = "external customer"
+        path = Join-Path $PublicRepositoryPath "cli\azd\extensions\registry.rle.json"
+        baseURL = "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases"
+        artifactRoot = "cli/azd/extensions/azure.ai.rle/artifacts"
+    }
 }
 # Both channels ship the same platform matrix as build.ps1 and build.sh.
 # azd x pack archives linux artifacts as .tar.gz and every other platform as .zip.
@@ -116,12 +121,12 @@ switch ($VersionBump) {
 $version = "$major.$minor.$patch$suffix"
 
 if ($Channel -eq "rle-ext") {
-    $publicArtifactPath = Join-Path $PublicRepositoryPath "cli\azd\extensions\azure.ai.rle\artifacts\rle\$version"
+    $publicArtifactPath = Join-Path $PublicRepositoryPath "cli\azd\extensions\azure.ai.rle\artifacts\$version"
     if (Test-Path -LiteralPath $publicArtifactPath) {
         throw "Public artifacts for '$version' already exist; published versions must not be overwritten."
     }
-    if (Test-Path -LiteralPath $registryPath) {
-        $publicRegistry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+    if (Test-Path -LiteralPath $targets[1].path) {
+        $publicRegistry = Get-Content -LiteralPath $targets[1].path -Raw | ConvertFrom-Json
         $publishedVersion = @($publicRegistry.extensions | Where-Object id -eq $extensionId).versions |
             Where-Object version -eq $version
         if ($publishedVersion) {
@@ -137,11 +142,6 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 $resolvedOutputDirectory = Join-Path $outputDirectory $version
 $buildDirectory = "bin"
 $resolvedBuildDirectory = Join-Path $PSScriptRoot $buildDirectory
-$resolvedRegistryPath = [IO.Path]::GetFullPath($registryPath)
-$artifactPath = "cli/azd/extensions/azure.ai.rle/artifacts/$Channel/$version"
-if ($Channel -eq "rle-ext") {
-    $artifactPath = "cli/azd/extensions/azure.ai.rle/artifacts/rle/$version"
-}
 
 Set-ContentUtf8NoBom -Path $versionFilePath -Value $version
 # Get-Content -Raw keeps the file's trailing newline and the writer adds one of
@@ -159,11 +159,6 @@ if (Test-Path $resolvedBuildDirectory) {
 }
 New-Item -ItemType Directory -Path $resolvedOutputDirectory | Out-Null
 New-Item -ItemType Directory -Path $resolvedBuildDirectory | Out-Null
-
-$previousRegistryURL = $env:RLE_REGISTRY_URL
-$previousRegistrySource = $env:RLE_REGISTRY_SOURCE
-$env:RLE_REGISTRY_URL = $registryURL
-$env:RLE_REGISTRY_SOURCE = if ($Channel -eq "rle-ext") { "rle" } else { "rle-dev" }
 
 Push-Location $PSScriptRoot
 try {
@@ -192,6 +187,15 @@ try {
         throw "Unexpected packaged artifacts: $($unexpectedArtifacts -join ', ')."
     }
 
+}
+finally {
+    Pop-Location
+}
+
+foreach ($target in $targets) {
+    $resolvedRegistryPath = [IO.Path]::GetFullPath($target.path)
+    $channelDescription = $target.description
+    $artifactBaseUrl = "$($target.baseURL)/$($target.artifactRoot)/$version"
     if (-not (Test-Path $resolvedRegistryPath)) {
         $registryDirectory = Split-Path -Parent $resolvedRegistryPath
         New-Item -ItemType Directory -Path $registryDirectory -Force | Out-Null
@@ -218,87 +222,86 @@ try {
         (Join-Path $resolvedOutputDirectory "*.tar.gz")
     ) -join ","
 
-    azd x publish `
-        --registry $resolvedRegistryPath `
-        --artifacts $artifactPattern `
-        --version $version
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to update the RLE $channelDescription registry."
-    }
-}
-finally {
-    Pop-Location
-    $env:RLE_REGISTRY_URL = $previousRegistryURL
-    $env:RLE_REGISTRY_SOURCE = $previousRegistrySource
-}
-
-$registry = Get-Content -LiteralPath $resolvedRegistryPath -Raw | ConvertFrom-Json
-foreach ($registryExtension in @($registry.extensions)) {
-    foreach ($registryVersion in @($registryExtension.versions)) {
-        $key = "$($registryExtension.id)|$($registryVersion.version)"
-        if ($existingBreakingChanges.ContainsKey($key)) {
-            $registryVersion | Add-Member `
-                -NotePropertyName "breakingChanges" `
-                -NotePropertyValue $existingBreakingChanges[$key] `
-                -Force
+    Push-Location $PSScriptRoot
+    try {
+        azd x publish `
+            --registry $resolvedRegistryPath `
+            --artifacts $artifactPattern `
+            --version $version
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update the RLE $channelDescription registry."
         }
     }
-}
-
-$extension = @($registry.extensions | Where-Object { $_.id -eq $extensionId })
-if ($extension.Count -ne 1) {
-    throw "Expected one '$extensionId' entry in the registry, but found $($extension.Count)."
-}
-
-$versionEntry = @($extension[0].versions | Where-Object { $_.version -eq $version })
-if ($versionEntry.Count -ne 1) {
-    throw "Expected one '$version' entry in the registry, but found $($versionEntry.Count)."
-}
-
-if ($PSBoundParameters.ContainsKey("BreakingChanges")) {
-    if ($BreakingChanges) {
-        $versionEntry[0] | Add-Member `
-            -NotePropertyName "breakingChanges" `
-            -NotePropertyValue $true `
-            -Force
+    finally {
+        Pop-Location
     }
-    else {
-        $versionEntry[0].PSObject.Properties.Remove("breakingChanges")
+
+    $registry = Get-Content -LiteralPath $resolvedRegistryPath -Raw | ConvertFrom-Json
+    foreach ($registryExtension in @($registry.extensions)) {
+        foreach ($registryVersion in @($registryExtension.versions)) {
+            $key = "$($registryExtension.id)|$($registryVersion.version)"
+            if ($existingBreakingChanges.ContainsKey($key)) {
+                $registryVersion | Add-Member `
+                    -NotePropertyName "breakingChanges" `
+                    -NotePropertyValue $existingBreakingChanges[$key] `
+                    -Force
+            }
+        }
     }
-}
 
-$artifactBaseUrl = "https://raw.githubusercontent.com/$repository/$repositoryBranch/$artifactPath"
-$artifactProperties = @($versionEntry[0].artifacts.PSObject.Properties)
-$publishedPlatforms = @($artifactProperties | ForEach-Object { $_.Name } | Sort-Object)
-$expectedPlatformNames = @($expectedPlatforms.Keys | Sort-Object)
-$missingPlatforms = @($expectedPlatformNames | Where-Object { $publishedPlatforms -notcontains $_ })
-if ($missingPlatforms.Count -gt 0) {
-    throw "Registry is missing platform entries: $($missingPlatforms -join ', ')."
-}
-$unexpectedPlatforms = @($publishedPlatforms | Where-Object { $expectedPlatformNames -notcontains $_ })
-if ($unexpectedPlatforms.Count -gt 0) {
-    throw "Registry has unexpected platform entries: $($unexpectedPlatforms -join ', ')."
-}
+    $extension = @($registry.extensions | Where-Object { $_.id -eq $extensionId })
+    if ($extension.Count -ne 1) {
+        throw "Expected one '$extensionId' entry in the registry, but found $($extension.Count)."
+    }
 
-foreach ($artifactProperty in $artifactProperties) {
-    $artifactName = Split-Path -Leaf $artifactProperty.Value.url
-    $artifactProperty.Value.url = "$artifactBaseUrl/$artifactName"
-}
+    $versionEntry = @($extension[0].versions | Where-Object { $_.version -eq $version })
+    if ($versionEntry.Count -ne 1) {
+        throw "Expected one '$version' entry in the registry, but found $($versionEntry.Count)."
+    }
 
-$registryContent = $registry | ConvertTo-Json -Depth 100
-Set-ContentUtf8NoBom -Path $resolvedRegistryPath -Value $registryContent
+    if ($PSBoundParameters.ContainsKey("BreakingChanges")) {
+        if ($BreakingChanges) {
+            $versionEntry[0] | Add-Member `
+                -NotePropertyName "breakingChanges" `
+                -NotePropertyValue $true `
+                -Force
+        }
+        else {
+            $versionEntry[0].PSObject.Properties.Remove("breakingChanges")
+        }
+    }
 
-Write-Host ""
-Write-Host "RLE $channelDescription release prepared."
-Write-Host "Channel:   $Channel"
-Write-Host "Artifacts: $resolvedOutputDirectory"
-Write-Host "Registry:  $resolvedRegistryPath"
-Write-Host "Updates:   $registryURL"
-if ($null -ne $versionEntry[0].PSObject.Properties["breakingChanges"]) {
-    Write-Host "Breaking changes: $($versionEntry[0].breakingChanges)"
-}
-Write-Host ""
-Write-Host "Include these files in the pull request:"
-$artifacts | Sort-Object Name | ForEach-Object {
-    Write-Host "  $($_.FullName)"
+    $artifactProperties = @($versionEntry[0].artifacts.PSObject.Properties)
+    $publishedPlatforms = @($artifactProperties | ForEach-Object { $_.Name } | Sort-Object)
+    $expectedPlatformNames = @($expectedPlatforms.Keys | Sort-Object)
+    $missingPlatforms = @($expectedPlatformNames | Where-Object { $publishedPlatforms -notcontains $_ })
+    if ($missingPlatforms.Count -gt 0) {
+        throw "Registry is missing platform entries: $($missingPlatforms -join ', ')."
+    }
+    $unexpectedPlatforms = @($publishedPlatforms | Where-Object { $expectedPlatformNames -notcontains $_ })
+    if ($unexpectedPlatforms.Count -gt 0) {
+        throw "Registry has unexpected platform entries: $($unexpectedPlatforms -join ', ')."
+    }
+
+    foreach ($artifactProperty in $artifactProperties) {
+        $artifactName = Split-Path -Leaf $artifactProperty.Value.url
+        $artifactProperty.Value.url = "$artifactBaseUrl/$artifactName"
+    }
+
+    $registryContent = $registry | ConvertTo-Json -Depth 100
+    Set-ContentUtf8NoBom -Path $resolvedRegistryPath -Value $registryContent
+
+    Write-Host ""
+    Write-Host "RLE $channelDescription release prepared."
+    Write-Host "Channel:   $($target.channel)"
+    Write-Host "Artifacts: $resolvedOutputDirectory"
+    Write-Host "Registry:  $resolvedRegistryPath"
+    if ($null -ne $versionEntry[0].PSObject.Properties["breakingChanges"]) {
+        Write-Host "Breaking changes: $($versionEntry[0].breakingChanges)"
+    }
+    Write-Host ""
+    Write-Host "Include these files in the pull request:"
+    $artifacts | Sort-Object Name | ForEach-Object {
+        Write-Host "  $($_.FullName)"
+    }
 }

@@ -46,9 +46,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 
 		update, err := updateChecker.Check(cmd.Context(), Version)
 		if err != nil {
-			if extCtx.Debug {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Debug: unable to check for RLE updates: %v\n", err)
-			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: unable to check for RLE updates: %v\n", err)
 			return nil
 		}
 		if update == nil {
@@ -74,7 +72,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 				color.YellowString(
 					"RLE extension update available: %s\nTo update, run `%s`",
 					availableUpdate.LatestVersion,
-					extensionUpdateCommand(),
+					extensionUpdateCommand(availableUpdate.Source),
 				),
 			)
 			fmt.Fprintln(cmd.OutOrStdout())

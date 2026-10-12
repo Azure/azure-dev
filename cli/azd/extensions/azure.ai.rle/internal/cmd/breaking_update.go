@@ -6,31 +6,24 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const (
-	rleDevRegistryURL = "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/" +
-		"cli/azd/extensions/registry.rle-dev.json"
-	maxRegistryResponseBytes = 4 * 1024 * 1024
-)
-
-// RegistryURL and RegistrySource are set at build time to keep update checks
-// and suggested commands on the artifact's release channel.
-var (
-	RegistryURL    = rleDevRegistryURL
-	RegistrySource = "rle-dev"
-)
+const maxRegistryResponseBytes = 4 * 1024 * 1024
 
 type extensionUpdate struct {
 	LatestVersion string
 	IsBreaking    bool
+	Source        string
 }
 
 type extensionUpdateChecker interface {
@@ -38,8 +31,8 @@ type extensionUpdateChecker interface {
 }
 
 type registryExtensionUpdateChecker struct {
-	client      *http.Client
-	registryURL string
+	client        *http.Client
+	resolveSource func() (extensionUpdateSource, error)
 }
 
 type rleRegistry struct {
@@ -54,8 +47,8 @@ type rleRegistry struct {
 
 func newRegistryExtensionUpdateChecker() *registryExtensionUpdateChecker {
 	return &registryExtensionUpdateChecker{
-		client:      &http.Client{Timeout: 5 * time.Second},
-		registryURL: RegistryURL,
+		client:        &http.Client{Timeout: 5 * time.Second},
+		resolveSource: resolveInstalledUpdateSource,
 	}
 }
 
@@ -66,29 +59,23 @@ func (c *registryExtensionUpdateChecker) Check(
 	if currentVersion == "dev" {
 		return nil, nil
 	}
-
 	installedVersion, err := semver.NewVersion(currentVersion)
 	if err != nil {
 		return nil, fmt.Errorf("parse installed RLE version %q: %w", currentVersion, err)
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.registryURL, nil)
+	source, err := c.resolveSource()
 	if err != nil {
-		return nil, fmt.Errorf("create RLE registry request: %w", err)
+		return nil, err
 	}
-	response, err := c.client.Do(request)
+	reader, err := c.openRegistry(ctx, source)
 	if err != nil {
-		return nil, fmt.Errorf("download RLE registry: %w", err)
+		return nil, err
 	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download RLE registry: HTTP %d", response.StatusCode)
-	}
+	defer reader.Close()
 
 	var registry rleRegistry
-	reader := io.LimitReader(response.Body, maxRegistryResponseBytes+1)
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(io.LimitReader(reader, maxRegistryResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read RLE registry: %w", err)
 	}
@@ -132,7 +119,38 @@ func (c *registryExtensionUpdateChecker) Check(
 	return &extensionUpdate{
 		LatestVersion: latestVersion.Original(),
 		IsBreaking:    hasBreakingUpdate,
+		Source:        source.Name,
 	}, nil
+}
+
+func (c *registryExtensionUpdateChecker) openRegistry(
+	ctx context.Context, source extensionUpdateSource,
+) (io.ReadCloser, error) {
+	if source.Type == "file" {
+		file, err := os.Open(source.Location)
+		if err != nil {
+			return nil, fmt.Errorf("open RLE registry file: %w", err)
+		}
+		return file, nil
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, source.Location, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create RLE registry request: %w", err)
+	}
+	response, err := c.client.Do(request)
+	if err != nil {
+		if requestError, ok := errors.AsType[*url.Error](err); ok {
+			err = requestError.Err
+		}
+		return nil, fmt.Errorf("download RLE registry: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		if err := response.Body.Close(); err != nil {
+			return nil, fmt.Errorf("download RLE registry: HTTP %d; close response: %w", response.StatusCode, err)
+		}
+		return nil, fmt.Errorf("download RLE registry: HTTP %d", response.StatusCode)
+	}
+	return response.Body, nil
 }
 
 func breakingUpdateError(update *extensionUpdate) error {
@@ -140,10 +158,10 @@ func breakingUpdateError(update *extensionUpdate) error {
 		Message:    fmt.Sprintf("Update the RLE extension to %s before continuing.", update.LatestVersion),
 		Code:       "rle_breaking_update_required",
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Run: " + extensionUpdateCommand(),
+		Suggestion: "Run: " + extensionUpdateCommand(update.Source),
 	}
 }
 
-func extensionUpdateCommand() string {
-	return fmt.Sprintf("azd extension update azure.ai.rle --source %s", RegistrySource)
+func extensionUpdateCommand(source string) string {
+	return fmt.Sprintf("azd extension update azure.ai.rle --source %s", source)
 }

@@ -14,11 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// ptr returns a pointer to a copy of value, for building test fixtures inline.
-func ptr[T any](value T) *T {
-	return &value
-}
-
 func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	dir := t.TempDir()
 	agentName := " support-agent "
@@ -101,9 +96,9 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 		},
 		Train: &RleTrainDefaults{
 			Grpo: &RleGrpoDefaults{
-				GroupSize:      ptr(8),
-				GroupsPerBatch: ptr(16),
-				MaxSteps:       ptr(100),
+				GroupSize:      new(8),
+				GroupsPerBatch: new(16),
+				MaxSteps:       new(100),
 			},
 		},
 		Rollout: &RleRolloutDefaults{
@@ -195,7 +190,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 		{
 			name: "unsupported schema version",
 			config: RleConfig{
-				SchemaVersion: ptr("2.0.0"),
+				SchemaVersion: new("2.0.0"),
 				Rle:           base,
 				Harness:       baseHarness,
 			},
@@ -208,7 +203,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				Rle:           base,
 				Harness:       baseHarness,
 				Train: &RleTrainDefaults{
-					Grpo: &RleGrpoDefaults{GroupSize: ptr(0)},
+					Grpo: &RleGrpoDefaults{GroupSize: new(0)},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
@@ -220,7 +215,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				Rle:           base,
 				Harness:       baseHarness,
 				Train: &RleTrainDefaults{
-					Grpo: &RleGrpoDefaults{LearningRate: ptr(math.Inf(1))},
+					Grpo: &RleGrpoDefaults{LearningRate: new(math.Inf(1))},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
@@ -232,7 +227,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				Rle:           base,
 				Harness:       baseHarness,
 				Train: &RleTrainDefaults{
-					Grpo: &RleGrpoDefaults{RolloutFailureRateAbort: ptr(1.5)},
+					Grpo: &RleGrpoDefaults{RolloutFailureRateAbort: new(1.5)},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
@@ -245,7 +240,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				Harness:       baseHarness,
 				Rollout: &RleRolloutDefaults{
 					GymOpenEnv: &RleGymOpenEnvDefaults{
-						ModelResponseField: ptr(strings.Repeat("a", maxRleModelResponseFieldLength+1)),
+						ModelResponseField: new(strings.Repeat("a", maxRleModelResponseFieldLength+1)),
 					},
 				},
 			},
@@ -460,8 +455,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    ptr("support-agent"),
-				AgentVersion: ptr("12"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("12"),
 			},
 		},
 		{
@@ -473,8 +468,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    ptr("support-agent"),
-				AgentVersion: ptr("draft-1767225600"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("draft-1767225600"),
 			},
 		},
 		{
@@ -486,7 +481,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:          RleTypeHarness,
 				Subtype:       RleSubtypeBYOH,
-				InvocationURL: ptr("https://Harness.Example.com/rle/"),
+				InvocationURL: new("https://Harness.Example.com/rle/"),
 			},
 			wantURL: "https://harness.example.com/rle/",
 		},
@@ -521,7 +516,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:      RleTypeGym,
 				Subtype:   RleSubtypeOpenEnv,
-				AgentName: ptr("support-agent"),
+				AgentName: new("support-agent"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -546,8 +541,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    ptr("support-agent"),
-				AgentVersion: ptr("v12"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("v12"),
 			},
 			wantCode: "rle_agent_version_invalid",
 		},
@@ -560,9 +555,9 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:          RleTypeHarness,
 				Subtype:       RleSubtypeHostedAgent,
-				AgentName:     ptr("support-agent"),
-				AgentVersion:  ptr("12"),
-				InvocationURL: ptr("https://agent.example.com"),
+				AgentName:     new("support-agent"),
+				AgentVersion:  new("12"),
+				InvocationURL: new("https://agent.example.com"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -575,8 +570,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:          RleTypeHarness,
 				Subtype:       RleSubtypeBYOH,
-				AgentName:     ptr("support-agent"),
-				InvocationURL: ptr("https://harness.example.com"),
+				AgentName:     new("support-agent"),
+				InvocationURL: new("https://harness.example.com"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -589,7 +584,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:          RleTypeHarness,
 				Subtype:       RleSubtypeBYOH,
-				InvocationURL: ptr("http://harness.example.com"),
+				InvocationURL: new("http://harness.example.com"),
 			},
 			wantCode: "rle_harness_invocation_url_invalid",
 		},
@@ -602,7 +597,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:          RleTypeHarness,
 				Subtype:       RleSubtypeBYOH,
-				InvocationURL: ptr("https://user@harness.example.com"),
+				InvocationURL: new("https://user@harness.example.com"),
 			},
 			wantCode: "rle_harness_invocation_url_invalid",
 		},
@@ -615,7 +610,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			harness: RleHarnessManifest{
 				Type:          RleTypeHarness,
 				Subtype:       RleSubtypeBYOH,
-				InvocationURL: ptr("https://harness.example.com?token=secret"),
+				InvocationURL: new("https://harness.example.com?token=secret"),
 			},
 			wantCode: "rle_harness_invocation_url_invalid",
 		},

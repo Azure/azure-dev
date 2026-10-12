@@ -58,7 +58,7 @@ the script entirely:
 |---|---|
 | `version.txt` | what `-VersionBump` reads |
 | `extension.yaml` (`version:`) | shipped inside every artifact |
-| `registry.rle-dev.json` or `registry.rle-ext.json` | what users in the selected channel resolve against |
+| fork `registry.rle-dev.json` or upstream `registry.rle.json` | what users in the selected channel resolve against |
 
 ```bash
 cat version.txt
@@ -77,20 +77,21 @@ Then pick a path:
 
 Registry versions need not be contiguous. Skipped versions that were never published are
 harmless; the update check compares by semver ordering. The channels have independent
-histories: external users see only versions deliberately promoted to `rle-ext`.
+histories: external users see only versions published to `Azure/azure-dev`.
 
 ### Step 3 — Select the channel and decide whether the release is breaking
 
 | channel | audience | registry | artifacts |
 |---|---|---|---|
-| `rle-dev` | internal development team | `registry.rle-dev.json` | `artifacts/rle-dev/<version>` |
-| `rle-ext` | external preview customers | `registry.rle-ext.json` | `artifacts/rle-ext/<version>` |
+| `rle-dev` | internal development team | fork `registry.rle-dev.json` on `main` | fork `artifacts/rle-dev/<version>` |
+| `rle-ext` | external preview customers | upstream `registry.rle.json` on `rle-releases` | upstream `artifacts/<version>` |
 
-Use `prepare-dev-release.ps1` for internal releases and
-`prepare-ext-release.ps1` for external releases. Both are thin wrappers over
-`prepare-release.ps1`, which embeds the wrapper-selected registry URL in the
-binaries. An external artifact therefore never checks the internal registry for
-updates. `VersionBump` defaults to `patch`; pass `minor` or `major` explicitly
+Use `prepare-dev-release.ps1` for dev-only releases and
+`prepare-ext-release.ps1` to prepare the same version for both dev and customer
+distribution with one version bump. Both are wrappers over
+`prepare-release.ps1`, which builds channel-neutral packages once. The installed
+azd source selects the update registry at runtime, not build-time flags.
+`VersionBump` defaults to `patch`; pass `minor` or `major` explicitly
 only when needed.
 
 `internal/cmd/breaking_update.go` OR-accumulates `breakingChanges` over **every registry
@@ -116,19 +117,34 @@ The switch is three-state — this matters:
 # preferred, versions already aligned
 pwsh -NoProfile -File ./prepare-dev-release.ps1 -VersionBump patch -BreakingChanges
 
-# external customer channel
-pwsh -NoProfile -File ./prepare-ext-release.ps1 -VersionBump patch
+# external customer channel (existing, clean upstream checkout on rle-releases)
+pwsh -NoProfile -File ./prepare-ext-release.ps1 -AzureDevRepositoryPath "<local Azure/azure-dev checkout>" -VersionBump patch
 ```
 
-Takes several minutes — it cross-compiles six binaries. Allow at least 300s before treating it
-as hung.
+Takes several minutes — it cross-compiles six binaries once, including for an
+external release. Allow at least 300s before treating it as hung.
 
-It wipes and recreates `bin/` and `artifacts/<channel>/<version>/`, runs
+It wipes and recreates `bin/` and the selected local package directory, runs
 `azd x build --all --skip-install` then `azd x pack`, validates the artifact set, re-reads the
 selected registry to **preserve `breakingChanges` flags on older versions** (`azd x publish` drops
 them), publishes, applies the new flag, and rewrites artifact URLs to
-the channel's fixed location under
-`https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/`.
+the selected repository's branch. Development packages are written to
+`artifacts/rle-dev/<version>/` in the implementation checkout. External releases
+reuse the exact same archives and copy them to `artifacts/<version>/`
+in the supplied public checkout. The obsolete fork external registry and tracked
+external packages must not be recreated.
+After a verified customer package copy, `bin/` is removed; no separate external
+package staging is needed. Copy or verification failure retains local output for recovery. Dev
+packages, the dev registry, and version-file changes remain for manual commit.
+
+Development repository URLs are inferred from the implementation checkout's
+GitHub HTTPS or SSH `origin`, with `main` as the publication branch. Unsupported
+or missing origins fail before changing the version.
+
+The external wrapper requires `-AzureDevRepositoryPath` with no environment
+fallback and validates that checkout's origin, branch, clean
+state, and release-only branch changes, then fetches and fast-forwards if needed.
+Neither channel stages, commits, pushes, or opens a PR automatically.
 
 `Skipped Building extension` in the **pack** phase is normal — `azd x pack --input bin`
 consumes the binaries the build phase already produced.
@@ -140,7 +156,7 @@ The script validates the artifact set and platform keys itself, so check the thi
 ```bash
 python3 -c "
 import json
-ext = json.load(open('../registry.<channel>.json'))['extensions'][0]
+ext = json.load(open('../registry.rle-dev.json'))['extensions'][0]
 print('versions:', [v['version'] for v in ext['versions']])
 print('flags:', {v['version']: v.get('breakingChanges') for v in ext['versions'] if 'breakingChanges' in v})
 "
@@ -157,7 +173,7 @@ print('flags:', {v['version']: v.get('breakingChanges') for v in ext['versions']
 
 ```bash
 mkdir -p /tmp/rlecheck
-tar xzf artifacts/<channel>/<version>/azure-ai-rle-linux-amd64.tar.gz -C /tmp/rlecheck
+tar xzf artifacts/rle-dev/<version>/azure-ai-rle-linux-amd64.tar.gz -C /tmp/rlecheck
 /tmp/rlecheck/azure-ai-rle-linux-amd64 version     # must print the new version
 grep '^version:' /tmp/rlecheck/extension.yaml      # must match
 ```
@@ -167,13 +183,13 @@ The binary name inside the archive is platform-suffixed and matches the registry
 
 ### Step 6 — Commit and open the PR
 
-Artifacts **are** checked in: `.gitignore` ignores `bin/` but explicitly negates
-both channel artifact trees. Commit them with the selected registry and version files in a single commit, or
-the registry will reference URLs that 404.
+Development artifacts **are** checked in. Commit them with the fork registry and
+version files in a single commit, or the registry will reference URLs that 404.
+No separate external package tree is generated in the implementation checkout.
 
 ```bash
 git checkout -b rle/release-<version>
-git add version.txt extension.yaml ../registry.<channel>.json artifacts/<channel>/<version>
+git add version.txt extension.yaml ../registry.rle-dev.json artifacts/rle-dev/<version>
 git commit   # include the Co-authored-by trailer if an agent authored the change
 git push -u origin rle/release-<version>
 gh pr create --base main --title "Release RLE extension <version>"
@@ -182,8 +198,16 @@ gh pr create --base main --title "Release RLE extension <version>"
 State in the PR body: why the release is (or is not) breaking, any skipped versions, and the
 verification evidence from Step 5.
 
-**Artifact URLs target the branch, not the PR head — the release is not installable until this
-merges.** Users will resolve 404s if the registry lands without the artifacts.
+For external releases, follow the wrapper's printed staging commands in the
+supplied public checkout: force-add only the new version's archives, add
+`registry.rle.json`, then commit and push `rle-releases` together. This updates the
+existing distribution PR and makes the new release available without merging it.
+Commit the source version files, dev registry, and dev packages together in the
+implementation checkout; do not include source code
+or the dev registry in the upstream distribution PR.
+
+**Development artifact URLs target `main`, not the PR head — the release is not
+installable until this merges.** Users will resolve 404s if the registry lands without the artifacts.
 
 ---
 
@@ -196,7 +220,7 @@ merges.** Users will resolve 404s if the registry lands without the artifacts.
   wrong set; inspect `bin/` and re-run. A stale `bin/` cannot cause this (the script wipes it),
   so suspect a build failure for one `GOOS`/`GOARCH`.
 - `Registry is missing platform entries: …` → `azd x publish` did not ingest every artifact;
-  confirm all six exist under `artifacts/<channel>/<version>/`.
+  confirm all six exist in the selected package directory.
 - `Expected one '<version>' entry in the registry, but found 0.` → the publish silently
   no-op'd; check the `azd x publish` output above the throw.
 - Registry `breakingChanges` flags vanished from older versions → the preservation pass did not
@@ -207,5 +231,3 @@ merges.** Users will resolve 404s if the registry lands without the artifacts.
 - `breakingChanges` is **not** in `registry.schema.json`, so a schema check will not catch a
   typo. The Go struct tag at `internal/cmd/breaking_update.go:43` is the source of truth, and it
   is camelCase.
-- The extension README's claim that the script "currently builds the Windows AMD64 extension
-  artifact" is stale — it cross-compiles all six.

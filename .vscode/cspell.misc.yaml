@@ -116,6 +116,7 @@ overrides:
       words:
           - azapi
           - appinsights
+          - BYOH
           - Errorf
           - grpcbroker
           - Pseudonymized

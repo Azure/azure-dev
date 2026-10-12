@@ -1,10 +1,12 @@
-# Tier 0 (offline) — breaking-command migration: reject standalone deploy and old add ordering.
-# One migration flow, separate from the happy-path composition scenarios; all commands are local.
-# The removed deploy invocation must fail at command resolution, never execute deployment work.
+# Tier 0: reject standalone deploy and legacy Agent add ordering.
+# Keep this migration flow separate from composition scenarios.
+# All commands stay local.
+# Removed deploy must fail at command resolution.
+# It must never execute deployment work.
 name: "standalone-deploy-migration"
 command: "azd ai agent deploy . --no-prompt"
 cwd: "~/working/azd-agents-t0-standalone-deploy-migration-{instance}"
-tags: ["tier:0", "cmd:deploy", "cmd:toolbox", "cmd:connection", "cmd:help", "negative-path", "parallel-safe"]
+tags: ["tier:0", "cmd:deploy", "cmd:add", "cmd:toolbox", "cmd:connection", "cmd:help", "negative-path", "parallel-safe"]
 
 env:
   AZURE_ENV_NAME: ""
@@ -42,17 +44,17 @@ goals:
     environment, infrastructure, or deployment state may be created. Keep evidence outside the project.
   - >-
     Run exactly 'azd ai agent add toolbox support-tools --agent research-agent --output json --no-prompt'
-    in the same cwd. Confirm a non-zero exit and an error containing 'unknown command "add"', rather
-    than a successful add, an alias redirect, or a prompt. Recheck that azure.yaml and the entire
-    working tree are unchanged from the fixture, with no .azure directory.
+    in the same cwd. Confirm a non-zero exit and an error containing 'unknown flag: --agent', rather
+    than an unknown-command error, successful add, alias redirect, or prompt. Recheck that azure.yaml
+    and the entire working tree are unchanged from the fixture, with no .azure directory.
   - >-
     Run exactly 'azd ai agent add connection search-connection --agent research-agent --output json --no-prompt'
-    in the same cwd. Confirm a non-zero exit and an error containing 'unknown command "add"', rather
-    than a successful add, an alias redirect, or a prompt. Recheck that azure.yaml and the entire
-    working tree are unchanged from the fixture, with no .azure directory.
+    in the same cwd. Confirm a non-zero exit and an error containing 'unknown flag: --agent', rather
+    than an unknown-command error, successful add, alias redirect, or prompt. Recheck that azure.yaml
+    and the entire working tree are unchanged from the fixture, with no .azure directory.
   - >-
-    Run exactly 'azd ai agent --help'. Confirm exit code 0, toolbox and connection appear as command
-    groups, and neither deploy nor add appears as a root agent command. Judge the command list, not
+    Run exactly 'azd ai agent --help'. Confirm exit code 0, add, toolbox, and connection appear as
+    command groups, and deploy does not appear as a root agent command. Judge the command list, not
     incidental mentions of deployment in descriptions or examples.
   - >-
     Run exactly 'azd deploy --help'. Confirm exit code 0, usage contains 'deploy <service>', and the
@@ -64,7 +66,8 @@ goals:
     fixture, including absence of .azure. Take best-effort screenshots of the rejection errors and
     core deploy help; capture failure is an observation and must not block the remaining goals.
   - >-
-    Report a finding if a removed command is accepted, rejection is not an unknown-command error,
-    root command discovery or core help differs, local project state changes, or any prompt,
-    Azure/network activity, build/deployment work, panic, or stack trace occurs. Never retry a failed
-    goal or work around a failure by switching commands, logging in, or initializing an environment.
+    Report a finding if standalone deploy is accepted, a legacy add ordering is accepted, rejection
+    is not an unknown-flag error, root command discovery or core help differs, local project state
+    changes, or any prompt, Azure/network activity, build/deployment work, panic, or stack trace
+    occurs. Never retry a failed goal or work around a failure by switching commands, logging in, or
+    initializing an environment.

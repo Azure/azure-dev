@@ -333,7 +333,7 @@ in any order, any time.
 | `tier0/0.18-connection-add.yaml` | `connection add` (noun-first, local `uses` edit, JSON, idempotency) |
 | `tier0/0.18-invoke-long-running-validation.yaml` | `invoke --long-running` / `--no-wait` help and invalid combinations |
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
-| `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
+| `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy`, legacy `agent add <type>` argument-order rejection, agent command discovery, and core `azd deploy --help` only |
 | `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
 | `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
 | `tier0/0.22-state-stores-help-validation.yaml` | State Store command discovery, forward-pagination help, input-size guidance, and offline validation |

@@ -48,6 +48,11 @@ func connectionsNode(g *promptGraph) *promptNode {
 					)
 				}
 
+				// Shared validation has no project context for sibling lookup.
+				if g.projectServices == nil {
+					continue
+				}
+
 				identity, err := ResolveFoundryConnectionServiceIdentity(
 					g.projectServices,
 					serviceRef,

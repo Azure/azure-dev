@@ -119,7 +119,6 @@ func (a *publishAction) Run() error {
 		AgentName:              stringFromPointer(environment.Harness.AgentName),
 		AgentVersion:           stringFromPointer(environment.Harness.AgentVersion),
 		InvocationURL:          stringFromPointer(environment.Harness.InvocationURL),
-		EnvironmentProtocol:    config.Rle.EnvironmentProtocol,
 		SchemaVersion:          environment.SchemaVersion,
 		Model:                  environment.Model,
 		Train:                  environment.Train,
@@ -195,11 +194,10 @@ func buildEnvironmentCreateRequest(
 			AgentVersion:  config.Harness.AgentVersion,
 			InvocationURL: config.Harness.InvocationURL,
 		},
-		EnvironmentProtocol: config.Rle.EnvironmentProtocol,
-		SchemaVersion:       config.SchemaVersion,
-		Model:               config.Model,
-		Train:               config.Train,
-		Rollout:             config.Rollout,
+		SchemaVersion: config.SchemaVersion,
+		Model:         config.Model,
+		Train:         config.Train,
+		Rollout:       config.Rollout,
 	}
 }
 
@@ -310,21 +308,20 @@ func resolvePublishImage(environmentName string, version string, projectEndpoint
 }
 
 type environmentOutput struct {
-	EnvironmentId          string                          `json:"environmentId"`
-	EnvironmentVersion     string                          `json:"environmentVersion"`
-	EnvironmentName        string                          `json:"environmentName"`
-	FoundryProjectEndpoint string                          `json:"foundryProjectEndpoint"`
-	AcrImage               string                          `json:"acrImage"`
-	Type                   string                          `json:"type"`
-	Subtype                string                          `json:"subtype"`
-	AgentName              string                          `json:"agent_name,omitempty"`
-	AgentVersion           string                          `json:"agent_version,omitempty"`
-	InvocationURL          string                          `json:"invocation_url,omitempty"`
-	EnvironmentProtocol    *project.RleEnvironmentProtocol `json:"environmentProtocol,omitempty"`
-	SchemaVersion          *string                         `json:"schema_version,omitempty"`
-	Model                  *project.RleModelDefaults       `json:"model,omitempty"`
-	Train                  *project.RleTrainDefaults       `json:"train,omitempty"`
-	Rollout                *project.RleRolloutDefaults     `json:"rollout,omitempty"`
-	CreatedAt              string                          `json:"createdAt"`
-	UpdatedAt              string                          `json:"updatedAt"`
+	EnvironmentId          string                      `json:"environmentId"`
+	EnvironmentVersion     string                      `json:"environmentVersion"`
+	EnvironmentName        string                      `json:"environmentName"`
+	FoundryProjectEndpoint string                      `json:"foundryProjectEndpoint"`
+	AcrImage               string                      `json:"acrImage"`
+	Type                   string                      `json:"type"`
+	Subtype                string                      `json:"subtype"`
+	AgentName              string                      `json:"agent_name,omitempty"`
+	AgentVersion           string                      `json:"agent_version,omitempty"`
+	InvocationURL          string                      `json:"invocation_url,omitempty"`
+	SchemaVersion          *string                     `json:"schema_version,omitempty"`
+	Model                  *project.RleModelDefaults   `json:"model,omitempty"`
+	Train                  *project.RleTrainDefaults   `json:"train,omitempty"`
+	Rollout                *project.RleRolloutDefaults `json:"rollout,omitempty"`
+	CreatedAt              string                      `json:"createdAt"`
+	UpdatedAt              string                      `json:"updatedAt"`
 }

@@ -217,52 +217,14 @@ without credentials, a query string, or a fragment.
 
 ### Environment protocol
 
-An environment declares how RLE should drive it during a rollout. MCP is supported
-for Gym/OpenEnv and Harness/HostedAgent or Harness/BYOH environments:
+RLE always drives environments with the MCP environment protocol, so `rle.toml` has no
+`environment_protocol` / `environmentProtocol` key and the CLI no longer sends one to the
+service. MCP Gym samples submit their final response using `GradeAction.answer`, rather than
+a schema-driven `defaults.gym_openenv.model_response_field`.
 
-```toml
-[rle]
-name = "support_rle"
-version = "2.0.0"
-type = "Harness"
-subtype = "HostedAgent"
-agentName = "support-agent"
-agentVersion = "12"
-environmentProtocol = "mcp_environment"
-```
-
-SDK Gym samples may declare the same protocol at the manifest root:
-
-```toml
-schema_version = "1.0.0"
-environment_protocol = "mcp_environment"
-
-[rle]
-name = "math_rl"
-version = "1.0.0"
-type = "Gym"
-subtype = "OpenEnv"
-```
-
-The CLI accepts either spelling and preserves the protocol when rewriting a
-manifest. If both are supplied, they must agree. MCP Gym samples submit their
-final response using `GradeAction.answer`, rather than a schema-driven
-`defaults.gym_openenv.model_response_field`.
-
-`mcp_environment` is the only value. Omit the field to publish an environment on the
-legacy protocol; that is what an absent value means to the service, which is why
-there is no name for it.
-
-The protocol is fixed when the version is published and cannot be changed
-afterwards, because a run is only reproducible if the environment it trained
-against still behaves the same way. Switching protocols means publishing a new
-version. `publish` prints the protocol the service recorded and fails if it does
-not match the manifest, so a silently legacy environment is caught at publish
-rather than in a training run.
-
-Only `Harness`/`HostedAgent` and `Harness`/`BYOH` may declare a protocol. A
-`Gym`/`OpenEnv` environment already speaks one callable interface, so naming a
-protocol there is rejected.
+Manifests from before this change must remove `environment_protocol` (root) or
+`environmentProtocol` (under `[rle]`): the manifest is parsed in strict mode, so either key
+now fails to load.
 
 ### Version-scoped defaults
 

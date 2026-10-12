@@ -319,49 +319,9 @@ func TestVerifyPublishedEnvironmentRequiresManifestDefaults(t *testing.T) {
 	}
 }
 
-func TestPublishRequestSendsTheEnvironmentProtocolUnderItsWireName(t *testing.T) {
-	config := project.RleConfig{Rle: project.RleManifest{
-		Name:                "competitive_intelligence_agent",
-		Version:             "2.0.0",
-		EnvironmentProtocol: ptrTo(project.RleEnvironmentProtocolMcpEnvironment),
-	}, Harness: project.RleHarnessManifest{
-		Type:         project.RleTypeHarness,
-		Subtype:      project.RleSubtypeHostedAgent,
-		AgentName:    ptrTo("ci-agent"),
-		AgentVersion: ptrTo("15"),
-	}}
-
-	body, err := json.Marshal(buildEnvironmentCreateRequest(config, "registry.azurecr.io/ci:2.0.0"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sent map[string]any
-	if err := json.Unmarshal(body, &sent); err != nil {
-		t.Fatal(err)
-	}
-	// The service deserializes this one key as snake_case while its neighbours
-	// are camelCase, so the name is asserted literally rather than through the
-	// struct: a camelCase slip would be dropped and publish would succeed with
-	// a legacy environment.
-	if sent["environment_protocol"] != "mcp_environment" {
-		t.Fatalf("environment_protocol = %v, want mcp_environment; body %s", sent["environment_protocol"], body)
-	}
-
-	config.Rle.EnvironmentProtocol = nil
-	body, err = json.Marshal(buildEnvironmentCreateRequest(config, "registry.azurecr.io/ci:2.0.0"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(body), "environment_protocol") {
-		t.Fatalf("a legacy environment must omit the key entirely, got %s", body)
-	}
-}
-
-func TestPublishTopLevelMcpGymManifest(t *testing.T) {
+func TestPublishGymManifestOmitsEnvironmentProtocol(t *testing.T) {
 	dir := t.TempDir()
-	content := `environment_protocol = "mcp_environment"
-
-[rle]
+	content := `[rle]
 name = "math_rl"
 version = "1.0.0"
 
@@ -380,13 +340,8 @@ subtype = "OpenEnv"
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sent map[string]any
-	if err := json.Unmarshal(body, &sent); err != nil {
-		t.Fatal(err)
-	}
-	harness, ok := sent["harness"].(map[string]any)
-	if !ok || sent["environment_protocol"] != "mcp_environment" || harness["type"] != "Gym" || harness["subtype"] != "OpenEnv" {
-		t.Fatalf("MCP Gym manifest did not reach the publish request: %s", body)
+	if strings.Contains(strings.ToLower(string(body)), "protocol") {
+		t.Fatalf("the request must not carry an environment protocol, got %s", body)
 	}
 	published := &environmentResource{
 		Name: "math_rl", Version: "1.0.0", Harness: rleHarness{Type: "Gym", Subtype: "OpenEnv"},
@@ -395,7 +350,6 @@ subtype = "OpenEnv"
 		t.Fatal(err)
 	}
 }
-
 func TestPublishRequiresManifestBeforeProjectConfiguration(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)

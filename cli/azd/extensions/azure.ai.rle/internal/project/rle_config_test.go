@@ -283,55 +283,6 @@ func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedDefaults(t *t
 	}
 }
 
-func TestNormalizeRleConfigDefaultsEnvironmentProtocolForCurrentSchemaVersion(t *testing.T) {
-	t.Run("current schema version defaults to mcp_environment", func(t *testing.T) {
-		schemaVersion := CurrentRleManifestSchemaVersion
-		config, err := NormalizeRleConfig(RleConfig{
-			SchemaVersion: &schemaVersion,
-			Rle: RleManifest{
-				Name:    "code_rl",
-				Version: "1.0.0",
-			},
-			Harness: RleHarnessManifest{
-				Type:    RleTypeGym,
-				Subtype: RleSubtypeOpenEnv,
-			},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if config.Rle.EnvironmentProtocol == nil ||
-			*config.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-			t.Fatalf(
-				"expected an absent protocol with schema_version %q to default to %q, got %v",
-				CurrentRleManifestSchemaVersion, RleEnvironmentProtocolMcpEnvironment, config.Rle.EnvironmentProtocol,
-			)
-		}
-	})
-
-	t.Run("absent schema version stays legacy", func(t *testing.T) {
-		config, err := NormalizeRleConfig(RleConfig{
-			Rle: RleManifest{
-				Name:    "code_rl",
-				Version: "1.0.0",
-			},
-			Harness: RleHarnessManifest{
-				Type:    RleTypeGym,
-				Subtype: RleSubtypeOpenEnv,
-			},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if config.Rle.EnvironmentProtocol != nil {
-			t.Fatalf(
-				"expected a manifest with no schema_version to stay legacy, got %v",
-				config.Rle.EnvironmentProtocol,
-			)
-		}
-	})
-}
-
 func TestLoadRleConfigRejectsRemovedDefaultsAndMetadata(t *testing.T) {
 	base := `schema_version = "1.0.0"
 
@@ -432,211 +383,40 @@ agent_version = "15"
 	}
 }
 
-func TestLoadRleConfigCarriesTheMcpEnvironmentProtocol(t *testing.T) {
-	dir := t.TempDir()
-	content := `[rle]
-name = "competitive_intelligence_agent"
+func TestLoadRleConfigRejectsEnvironmentProtocol(t *testing.T) {
+	for name, content := range map[string]string{
+		"nested": `[rle]
+name = "ci"
 version = "2.0.0"
-environmentProtocol = "  MCP_Environment  "
+environmentProtocol = "mcp_environment"
 
 [harness]
 type = "Harness"
 subtype = "HostedAgent"
 agent_name = "ci-agent"
 agent_version = "15"
-`
-	if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	config, err := LoadRleConfig(dir)
-	if err != nil {
-		t.Fatalf("a manifest that names the MCP protocol should load, got %v", err)
-	}
-	if config.Rle.EnvironmentProtocol == nil {
-		t.Fatal("environmentProtocol was dropped: publish would silently register a legacy environment")
-	}
-	if *config.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-		t.Fatalf("environmentProtocol = %q, want %q", *config.Rle.EnvironmentProtocol, RleEnvironmentProtocolMcpEnvironment)
-	}
-
-	roundTrip := t.TempDir()
-	if err := WriteRleConfig(roundTrip, config); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	reloaded, err := LoadRleConfig(roundTrip)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if reloaded.Rle.EnvironmentProtocol == nil ||
-		*reloaded.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-		t.Fatalf("protocol did not survive a canonical write, got %v", reloaded.Rle.EnvironmentProtocol)
-	}
-}
-
-func TestNormalizeRleConfigRestrictsTheEnvironmentProtocol(t *testing.T) {
-	hostedAgent := func(protocol *RleEnvironmentProtocol) RleConfig {
-		return RleConfig{
-			Rle: RleManifest{
-				Name:                "competitive_intelligence_agent",
-				Version:             "2.0.0",
-				EnvironmentProtocol: protocol,
-			},
-			Harness: RleHarnessManifest{
-				Type:         RleTypeHarness,
-				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    ptr("ci-agent"),
-				AgentVersion: ptr("15"),
-			},
-		}
-	}
-
-	t.Run("omitted means legacy", func(t *testing.T) {
-		config, err := NormalizeRleConfig(hostedAgent(nil))
-		if err != nil {
-			t.Fatalf("omitting the protocol must stay valid, got %v", err)
-		}
-		if config.Rle.EnvironmentProtocol != nil {
-			t.Fatal("an absent protocol must not be defaulted: the service reads absence as legacy")
-		}
-	})
-
-	t.Run("empty is absent, not invalid", func(t *testing.T) {
-		config, err := NormalizeRleConfig(hostedAgent(ptr(RleEnvironmentProtocol(""))))
-		if err != nil {
-			t.Fatalf("an empty protocol should normalize away, got %v", err)
-		}
-		if config.Rle.EnvironmentProtocol != nil {
-			t.Fatalf("empty protocol survived as %v", config.Rle.EnvironmentProtocol)
-		}
-	})
-
-	t.Run("byoh may carry it", func(t *testing.T) {
-		_, err := NormalizeRleConfig(RleConfig{
-			Rle: RleManifest{
-				Name:                "customer_agent",
-				Version:             "2.0.0",
-				EnvironmentProtocol: ptr(RleEnvironmentProtocolMcpEnvironment),
-			},
-			Harness: RleHarnessManifest{
-				Type:          RleTypeHarness,
-				Subtype:       RleSubtypeBYOH,
-				InvocationURL: ptr("https://harness.example.com/rle/"),
-			},
-		})
-		if err != nil {
-			t.Fatalf("BYOH is one of the two subtypes the service allows, got %v", err)
-		}
-	})
-
-	t.Run("no other protocol is nameable", func(t *testing.T) {
-		_, err := NormalizeRleConfig(hostedAgent(ptr(RleEnvironmentProtocol("legacy"))))
-		assertLocalErrorCode(t, err, "rle_manifest_environment_protocol_invalid")
-	})
-
-	t.Run("gym openenv may carry it", func(t *testing.T) {
-		config, err := NormalizeRleConfig(RleConfig{
-			Rle: RleManifest{
-				Name:                "code_rl",
-				Version:             "2.0.0",
-				EnvironmentProtocol: ptr(RleEnvironmentProtocolMcpEnvironment),
-			},
-			Harness: RleHarnessManifest{
-				Type:    RleTypeGym,
-				Subtype: RleSubtypeOpenEnv,
-			},
-		})
-		if err != nil {
-			t.Fatalf("Gym/OpenEnv must support MCP, got %v", err)
-		}
-		if config.Rle.EnvironmentProtocol == nil ||
-			*config.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-			t.Fatal("Gym/OpenEnv protocol was dropped")
-		}
-	})
-}
-
-func TestLoadRleConfigTopLevelEnvironmentProtocol(t *testing.T) {
-	for _, sample := range []string{"math_rl", "code_rl"} {
-		t.Run(sample, func(t *testing.T) {
-			dir := t.TempDir()
-			content := `schema_version = "1.0.0"
-environment_protocol = "  MCP_Environment  "
+`,
+		"top-level": `environment_protocol = "mcp_environment"
 
 [rle]
-name = "` + sample + `"
-version = "1.0.0"
+name = "ci"
+version = "2.0.0"
 
 [harness]
-type = "Gym"
-subtype = "OpenEnv"
-
-[rollout.gym_openenv]
-model_response_field = "answer"
-`
+type = "Harness"
+subtype = "HostedAgent"
+agent_name = "ci-agent"
+agent_version = "15"
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0600); err != nil {
 				t.Fatal(err)
 			}
-			config, err := LoadRleConfig(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if config.Rle.EnvironmentProtocol == nil ||
-				*config.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-				t.Fatal("top-level MCP protocol was dropped")
-			}
-			if config.EnvironmentProtocol != nil {
-				t.Fatal("normalized protocol must have only one canonical location")
-			}
-			if err := WriteRleConfig(dir, config); err != nil {
-				t.Fatal(err)
-			}
-			reloaded, err := LoadRleConfig(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if reloaded.Rle.EnvironmentProtocol == nil ||
-				*reloaded.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-				t.Fatal("top-level protocol did not survive a canonical write")
-			}
-		})
-	}
-}
 
-func TestNormalizeRleConfigValidatesBothProtocolLocations(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		top    RleEnvironmentProtocol
-		nested RleEnvironmentProtocol
-		valid  bool
-	}{
-		{"matching aliases", "mcp_environment", " MCP_Environment ", true},
-		{"invalid top-level", "legacy", "mcp_environment", false},
-		{"invalid nested", "mcp_environment", "legacy", false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			config, err := NormalizeRleConfig(RleConfig{
-				EnvironmentProtocol: ptr(test.top),
-				Rle: RleManifest{
-					Name: "code_rl", Version: "1.0.0",
-					EnvironmentProtocol: ptr(test.nested),
-				},
-				Harness: RleHarnessManifest{
-					Type:    RleTypeGym,
-					Subtype: RleSubtypeOpenEnv,
-				},
-			})
-			if !test.valid {
-				assertLocalErrorCode(t, err, "rle_manifest_environment_protocol_invalid")
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if config.Rle.EnvironmentProtocol == nil ||
-				*config.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
-				t.Fatal("matching MCP aliases were dropped")
-			}
+			_, err := LoadRleConfig(dir)
+			assertLocalErrorCode(t, err, "rle_manifest_invalid")
 		})
 	}
 }

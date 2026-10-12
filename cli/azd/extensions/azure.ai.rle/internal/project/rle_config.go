@@ -45,35 +45,23 @@ const (
 	RleSubtypeBYOH        RleSubtype = "BYOH"
 )
 
-// RleEnvironmentProtocol selects how RLE drives an environment during a rollout.
-//
-// There is deliberately no constant for the legacy protocol. The service models
-// this as an optional field whose absence means legacy, and rejects every value
-// but the one below, so a legacy environment is published by omitting the field
-// rather than by naming it.
-type RleEnvironmentProtocol string
-
-// RleEnvironmentProtocolMcpEnvironment is the MCP reset, step, and close protocol.
-const RleEnvironmentProtocolMcpEnvironment RleEnvironmentProtocol = "mcp_environment"
-
 // RleConfig is the host-agnostic source configuration for one immutable RLE release.
 //
 // Model, Train, and Rollout are reusable, version-scoped defaults declared at the top
 // level ([model], [train], [rollout]) rather than nested under a "defaults" table: they
 // are what train and (eventually) eval actually consume, not metadata about the manifest.
 type RleConfig struct {
-	SchemaVersion       *string                 `toml:"schema_version,omitempty"`
-	EnvironmentProtocol *RleEnvironmentProtocol `toml:"environment_protocol,omitempty"`
-	Rle                 RleManifest             `toml:"rle"`
-	Harness             RleHarnessManifest      `toml:"harness"`
-	Model               *RleModelDefaults       `toml:"model,omitempty"`
-	Train               *RleTrainDefaults       `toml:"train,omitempty"`
-	Rollout             *RleRolloutDefaults     `toml:"rollout,omitempty"`
+	SchemaVersion *string             `toml:"schema_version,omitempty"`
+	Rle           RleManifest         `toml:"rle"`
+	Harness       RleHarnessManifest  `toml:"harness"`
+	Model         *RleModelDefaults   `toml:"model,omitempty"`
+	Train         *RleTrainDefaults   `toml:"train,omitempty"`
+	Rollout       *RleRolloutDefaults `toml:"rollout,omitempty"`
 }
 
 // RleManifest uses the control-plane field names so the [rle] table maps directly to an RLE release.
-// It carries pure identity only -- name and version -- plus the two legacy/parse-compatibility
-// fields below; everything about how RLE calls the environment lives in [harness] instead.
+// It carries pure identity only -- name and version -- plus ImageTag below; everything about
+// how RLE calls the environment lives in [harness] instead.
 type RleManifest struct {
 	Name    string `toml:"name"`
 	Version string `toml:"version"`
@@ -85,13 +73,6 @@ type RleManifest struct {
 	// manifest is parsed in strict mode and an environment whose build scripts
 	// pin a tag would otherwise fail every command with a schema error.
 	ImageTag *string `toml:"imageTag,omitempty"`
-
-	// EnvironmentProtocol is immutable for a published version, because RLE
-	// resolves the rollout path from it and a version that changed protocol
-	// mid-life would not be the environment a finished run was trained against.
-	// Omit it to publish a legacy environment; that is what the service reads an
-	// absent value as.
-	EnvironmentProtocol *RleEnvironmentProtocol `toml:"environmentProtocol,omitempty"`
 }
 
 // RleHarnessManifest is the [harness] table: how RLE calls this environment. Type and Subtype
@@ -229,27 +210,6 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	if err != nil {
 		return RleConfig{}, err
 	}
-	manifest.EnvironmentProtocol, err = normalizeRleEnvironmentProtocol(
-		manifest.EnvironmentProtocol,
-	)
-	if err != nil {
-		return RleConfig{}, err
-	}
-	protocol, err := normalizeRleEnvironmentProtocol(config.EnvironmentProtocol)
-	if err != nil {
-		return RleConfig{}, err
-	}
-	if protocol != nil {
-		if manifest.EnvironmentProtocol != nil && *manifest.EnvironmentProtocol != *protocol {
-			return RleConfig{}, localError(
-				"environment_protocol conflicts with rle.environmentProtocol.",
-				"rle_manifest_environment_protocol_invalid",
-				"Declare the environment protocol in only one location.",
-			)
-		}
-		manifest.EnvironmentProtocol = protocol
-	}
-	config.EnvironmentProtocol = nil
 
 	switch harness.Type {
 	case RleTypeGym:
@@ -352,15 +312,6 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	)
 	if err != nil {
 		return RleConfig{}, err
-	}
-
-	// An absent protocol defaults to the current MCP protocol once the manifest declares the
-	// current schema version, so a manifest written against the locked schema opts in to MCP
-	// without having to spell out the protocol by hand. A manifest with no schema_version at
-	// all predates this default and keeps resolving to legacy.
-	if manifest.EnvironmentProtocol == nil && schemaVersion != nil && *schemaVersion == CurrentRleManifestSchemaVersion {
-		mcpProtocol := RleEnvironmentProtocolMcpEnvironment
-		manifest.EnvironmentProtocol = &mcpProtocol
 	}
 
 	config.SchemaVersion = schemaVersion
@@ -696,30 +647,6 @@ func normalizeRleSubtype(value RleSubtype) (RleSubtype, error) {
 			`Set harness.subtype to "OpenEnv", "HostedAgent", or "BYOH".`,
 		)
 	}
-}
-
-// normalizeRleEnvironmentProtocol preserves an absent legacy protocol and validates MCP.
-func normalizeRleEnvironmentProtocol(
-	value *RleEnvironmentProtocol,
-) (*RleEnvironmentProtocol, error) {
-	if value == nil {
-		return nil, nil
-	}
-	normalized := RleEnvironmentProtocol(strings.ToLower(strings.TrimSpace(string(*value))))
-	if normalized == "" {
-		return nil, nil
-	}
-	if normalized != RleEnvironmentProtocolMcpEnvironment {
-		return nil, localError(
-			fmt.Sprintf("The environment protocol must be %q.", RleEnvironmentProtocolMcpEnvironment),
-			"rle_manifest_environment_protocol_invalid",
-			fmt.Sprintf(
-				"Set rle.environmentProtocol = %q, or remove it to publish the legacy protocol.",
-				RleEnvironmentProtocolMcpEnvironment,
-			),
-		)
-	}
-	return &normalized, nil
 }
 
 func normalizeRequiredAgentField(value *string, fieldName string, maximumLength int, requiredCode string) (string, error) {

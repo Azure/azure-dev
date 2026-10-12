@@ -54,12 +54,6 @@ type v1EnvironmentRequest struct {
 	Model         *project.RleModelDefaults   `json:"model,omitempty"`
 	Train         *project.RleTrainDefaults   `json:"train,omitempty"`
 	Rollout       *project.RleRolloutDefaults `json:"rollout,omitempty"`
-
-	// EnvironmentProtocol is snake_case where its neighbors are camelCase
-	// because that is the name the service deserializes, and it refuses every
-	// value but mcp_environment, so it has to be omitted rather than sent empty
-	// to publish a legacy environment.
-	EnvironmentProtocol *project.RleEnvironmentProtocol `json:"environment_protocol,omitempty"`
 }
 
 type environmentResource struct {

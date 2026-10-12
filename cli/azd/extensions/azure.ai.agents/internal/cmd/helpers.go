@@ -461,6 +461,11 @@ func fetchOpenAPISpec(
 	}
 
 	client := &http.Client{Timeout: openAPIProbeTimeout}
+	if remote {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
 		return "", false, &openAPIProbeError{stage: "HTTP request failed", cause: err}

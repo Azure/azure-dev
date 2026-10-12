@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -172,6 +173,69 @@ func TestOpenAPIProbeCacheAndFailures(t *testing.T) {
 	}
 }
 
+func TestOpenAPIProbeRedirectPolicy(t *testing.T) {
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		for _, target := range []string{"/redirected", "https://other.example/redirected"} {
+			for _, suffix := range []string{"remote", "local"} {
+				t.Run(fmt.Sprintf("%d/%s/%s", code, target, suffix), func(t *testing.T) {
+					root := t.TempDir()
+					client := newOpenAPIProbeClient(t, &helpersProjectServer{
+						project: &azdext.ProjectConfig{Path: root},
+					})
+					directory := filepath.Join(root, ".azure", "test")
+					require.NoError(t, os.MkdirAll(directory, 0o700))
+					redirectBody := &openAPIResponseBody{Reader: strings.NewReader("redirect")}
+					requests := 0
+					headers := http.Header{
+						"X-Client-Test":      []string{"private-client"},
+						"X-Ms-User-Identity": []string{"private-user"},
+					}
+					sid, token := "private-session", "private-token"
+					if suffix == "local" {
+						headers, sid, token = nil, "", ""
+					}
+					setOpenAPIProbeTransport(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						requests++
+						if requests == 1 {
+							assert.Equal(t, sid, req.URL.Query().Get("agent_session_id"))
+							if suffix == "remote" {
+								assert.Equal(t, "private-client", req.Header.Get("x-client-test"))
+								assert.Equal(t, "private-user", req.Header.Get("x-ms-user-identity"))
+								assert.Equal(t, "Bearer "+token, req.Header.Get("Authorization"))
+							}
+							resp := openAPITestResponse(req, code, redirectBody)
+							resp.Header.Set("Location", target)
+							return resp, nil
+						}
+						assert.Equal(t, "local", suffix, "remote probe followed a redirect")
+						return openAPITestResponse(req, 200, io.NopCloser(strings.NewReader("{}"))), nil
+					}))
+					path, fresh, err := fetchOpenAPISpec(
+						t.Context(), client, "https://example.com", "agent", suffix,
+						token, "", sid, headers, true,
+					)
+					assert.True(t, redirectBody.closed)
+					if suffix == "remote" {
+						require.ErrorContains(t, err, fmt.Sprintf("HTTP status %d", code))
+						assert.Equal(t, 1, requests)
+						assert.Empty(t, path)
+						assert.False(t, fresh)
+						for _, private := range []string{target, sid, token, "private-client", "private-user"} {
+							assert.NotContains(t, err.Error(), private)
+						}
+						_, cacheErr := os.Stat(filepath.Join(directory, "openapi-agent-remote.json"))
+						assert.ErrorIs(t, cacheErr, os.ErrNotExist)
+					} else {
+						require.NoError(t, err)
+						assert.Equal(t, 2, requests)
+						assert.True(t, fresh)
+					}
+				})
+			}
+		}
+	}
+}
+
 type brokenInvocationReader struct{}
 
 func (brokenInvocationReader) Read([]byte) (int, error) {
@@ -290,6 +354,7 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 		{name: "unreadable 202", status: 202, readErr: true, wantError: "read accepted"},
 		{name: "canceled successful body", status: 200, body: `{"result":"ok"}`, cancel: true},
 		{name: "optional metadata failure", status: 200, body: `{"result":"ok"}`, metadata: 503, wantProbe: true},
+		{name: "optional metadata redirect", status: 200, body: `{"result":"ok"}`, metadata: 302, wantProbe: true},
 		{name: "optional metadata transport failure", status: 200, body: `{"result":"ok"}`, probeTransportErr: true, wantProbe: true},
 		{name: "optional metadata cancellation", status: 200, body: `{"result":"ok"}`, probeCancel: true, wantProbe: true},
 		{name: "HTTP failure", status: 503, body: `{}`, wantError: "503"},
@@ -355,6 +420,9 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 						}
 						response := openAPITestResponse(request, status, io.NopCloser(strings.NewReader("metadata-only")))
 						response.Header.Set("x-agent-session-id", "unrelated-session")
+						if status == http.StatusFound {
+							response.Header.Set("Location", "/redirected")
+						}
 						return response, nil
 					default:
 						assert.True(t, strings.HasSuffix(request.URL.Path, "/invocations/inv-1"))

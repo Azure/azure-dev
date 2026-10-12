@@ -888,8 +888,10 @@ ID from a fresh invocation. If no session ID is available, azd skips discovery
 rather than sending a request without one. Explicit `--agent-endpoint` calls
 do not use project metadata discovery.
 
-Metadata failures do not replace a completed invocation's result. Failure
-categories appear only with `--debug`; metadata does not enter normal or raw
+Metadata failures do not replace a completed invocation's result.
+Remote metadata redirects are not followed: 3xx responses are optional discovery
+failures, so redirects cannot forward caller headers or drop the session binding.
+Failure categories appear only with `--debug`; metadata does not enter normal or raw
 invocation output. Raw response handling remains unchanged, including its
 existing treatment of agent-error bodies.
 

@@ -56,7 +56,7 @@ For a **subset** (e.g. "just the `init` scenarios" or "everything in Tier 0") na
 instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via
 `list_scenarios`. The concrete plan automatically adds every selected scenario's `requires:`
 prerequisites; for example, a `verify-deploy` filter also adds the Tier 1 scenarios that create
-the scaffolds. If any Tier 2 scenario matches, the plan also adds `2.00-setup` and
+the scaffolds. If any shared-agent Tier 2 scenario matches, the plan also adds `2.00-setup` and
 `2.99-teardown` so filtered runs retain their full resource lifecycle. See [Tags](#tags) for
 the taxonomy.
 
@@ -462,10 +462,13 @@ Foundry SDK. Traces must identify the metadata route's actual session, not only 
 status. Do not seed an OpenAPI cache. Missing seed, permissions, or traces cannot count as
 a passing live test.
 
-This is a `manual-seed` scenario: selecting its tags does not deploy its separate fixture.
+This is a `manual-seed` scenario: ordinary command/tier filters and whole-suite
+sweeps exclude it by default. Explicitly name `2.19` or request the `manual-seed`
+tag to opt in; neither that selection nor cost consent deploys the fixture.
+Selection and readiness follow `driving-mechanics.md`'s manual-seed gate.
 The external seed lifecycle owns cleanup, including sessions created if the test fails;
 always clean up and verify deletion of only its proven run-owned resources afterward.
-The shared `2.99` teardown does not clean up this separate project. A full sweep must arrange
+The shared `2.99` teardown does not clean up this separate project. An opted-in sweep must arrange
 this seed and cleanup explicitly. There is no `requires` dependency on `2.00`, whose
 Responses agent cannot satisfy the Invocations prerequisite.
 
@@ -476,7 +479,7 @@ only after this step and before `2.18` deletes the agent. Its pre-hook verifies 
 and fails if absent; a missing store is never counted as a passed live test. The scenario uses
 only a run-unique item (`azd-probe-{run_id}`), which its post-hook removes even if a goal fails.
 Remove the disposable store using the seeding tool after the scenario, then run `2.99` teardown.
-A full Tier 2 sweep must arrange this seed between `2.00` and `2.14`; otherwise `2.14` fails
+An explicitly opted-in Tier 2 sweep must arrange this seed between `2.00` and `2.14`; otherwise `2.14` fails
 its prerequisite rather than silently skipping the live check. Do not seed a user-isolated
 store: the CLI does not supply an end-user call ID for item operations.
 
@@ -495,6 +498,11 @@ grouping — colons are treated as ordinary characters by the filter):
 | `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
 | `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:state-stores`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy`, `manual-seed` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. `manual-seed` flags an opt-in scenario that needs an externally prepared fixture before it runs; filtering by this tag does not create the fixture. |
+
+The tool returns matching `manual-seed` rows, but runner plans exclude them
+unless explicitly named or selected via the `manual-seed` tag. See
+`driving-mechanics.md` for the seed readiness and independent cleanup gates.
+This applies equally to whole-suite, command, and tier filters.
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
 

@@ -1832,7 +1832,12 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", "", true); fresh {
+		specRequest := &http.Request{Header: make(http.Header)}
+		applyCustomHeaders(specRequest, a.clientHeaders)
+		applyLocalUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
+		if path, fresh := fetchOpenAPISpec(
+			ctx, azdClient, localBaseURL, agentName, "local", "", "", sid, specRequest.Header, true,
+		); fresh {
 			if !raw {
 				fmt.Printf("OpenAPI spec saved to %s\n", path)
 			}
@@ -1949,13 +1954,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", rc.projectEndpoint, rc.name)
 
-	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
-	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
-	// the user is one-off targeting a remote endpoint.
-	if rc.azdClient != nil && a.endpoint == nil {
-		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
-	}
-
 	invURL := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, sid)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
@@ -2006,7 +2004,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if raw {
 		sessionLabel = ""
 	}
-	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
+	effectiveSessionID := captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(
@@ -2040,6 +2038,26 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 			return err
 		}
 		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+	}
+
+	// Fetch remote metadata only after the invocation establishes its session.
+	// The metadata endpoint may otherwise allocate an unrelated session.
+	if rc.azdClient != nil && a.endpoint == nil && effectiveSessionID != "" {
+		specRequest := &http.Request{Header: make(http.Header)}
+		applyCustomHeaders(specRequest, a.clientHeaders)
+		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
+		fetchOpenAPISpec(
+			ctx,
+			rc.azdClient,
+			remoteBaseURL,
+			rc.name,
+			"remote",
+			rc.bearerToken,
+			rc.apiVersion,
+			effectiveSessionID,
+			specRequest.Header,
+			false,
+		)
 	}
 	return nil
 }

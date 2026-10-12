@@ -338,11 +338,8 @@ func printSessionStatus(label, sid string) {
 	}
 }
 
-// captureResponseSession reads the x-agent-session-id header from a response
-// and saves it when the caller had no pre-existing session (sid == "").
-// label is the formatted prefix for printing (e.g. "Session:  "). When label
-// is empty the session is persisted silently (used by --output raw mode so
-// stdout stays pristine).
+// captureResponseSession persists a server-assigned session and returns the
+// effective session ID. label is empty for --output raw mode.
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -350,23 +347,30 @@ func captureResponseSession(
 	sid string,
 	resp *http.Response,
 	label string,
-) {
-	if sid != "" || azdClient == nil {
-		return
+) string {
+	if sid != "" {
+		return sid
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
-		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
-		if label != "" {
+		if azdClient != nil {
+			saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
+		}
+		if label != "" && azdClient != nil {
 			fmt.Printf("%s%s (assigned by server)\n", label, newSid)
 		}
+		return newSid
 	}
+	return ""
 }
 
 // fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
 // baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
 // suffix is "local" or "remote", used in the cached filename.
-// apiVersion, when non-empty, is appended as the "?api-version=<v>" query parameter.
-// Local agents do not require this; remote Foundry endpoints reject requests without it.
+// apiVersion, when non-empty, is added as the api-version query parameter.
+// sessionID binds the metadata request to the invocation's session; an empty
+// ID skips the fetch.
+// requestHeaders contains additional headers required by the invocation.
+// Local agents do not require apiVersion; remote Foundry endpoints do.
 // If forceRefresh is false and the file already exists, the fetch is skipped.
 //
 // Returns the on-disk path to the cached spec on success (whether freshly
@@ -383,8 +387,14 @@ func fetchOpenAPISpec(
 	suffix string,
 	bearerToken string,
 	apiVersion string,
+	sessionID string,
+	requestHeaders http.Header,
 	forceRefresh bool,
 ) (string, bool) {
+	if sessionID == "" {
+		return "", false
+	}
+
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
 		return "", false
@@ -405,12 +415,22 @@ func fetchOpenAPISpec(
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
+	query := url.Values{}
 	if apiVersion != "" {
-		specURL += "?api-version=" + url.QueryEscape(apiVersion)
+		query.Set("api-version", apiVersion)
 	}
+	query.Set("agent_session_id", sessionID)
+	specURL += "?" + query.Encode()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
 		return "", false
+	}
+	if requestHeaders != nil {
+		req.Header = requestHeaders.Clone()
+	}
+	if req.Header == nil {
+		req.Header = make(http.Header)
 	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)

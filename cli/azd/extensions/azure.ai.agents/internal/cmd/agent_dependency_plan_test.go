@@ -131,6 +131,52 @@ skills:
 	require.Equal(t, beforeAgentProperties, oldAgent.GetAdditionalProperties().AsMap())
 }
 
+func TestPlanAgentServiceUsesIncludesSingularToolboxAndCleansOldUse(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	definition := loadAgentDependencyDefinition(t, root, "agent", `kind: prompt
+name: new-agent
+model: gpt-4.1-mini
+instructions: Help the user.
+harness:
+  type: github_copilot_preview
+toolbox:
+  name: new-tools
+`)
+	oldAgent := agentDependencyService(t, "agent", AiAgentHost, map[string]any{
+		"kind":         "prompt",
+		"name":         "old-agent",
+		"model":        "gpt-4.1-mini",
+		"instructions": "Old instructions.",
+		"harness": map[string]any{
+			"type": "github_copilot_preview",
+		},
+		"toolbox": map[string]any{
+			"name": "old-tools",
+		},
+	}, "old-tools", "manual-agent", "project")
+	services := map[string]*azdext.ServiceConfig{
+		"project":      agentDependencyService(t, "project", AiProjectHost, nil),
+		"agent":        oldAgent,
+		"new-tools":    agentDependencyService(t, "new-tools", AiToolboxHost, nil),
+		"old-tools":    agentDependencyService(t, "old-tools", AiToolboxHost, nil),
+		"manual-agent": agentDependencyService(t, "manual-agent", AiAgentHost, nil),
+	}
+
+	plan, err := planAgentServiceUses(
+		"agent",
+		definition,
+		[]string{"old-tools", "manual-agent", "project"},
+		services,
+		root,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"project", "new-tools", "manual-agent"}, plan.Uses)
+	require.Empty(t, plan.Warnings)
+}
+
 func TestPlanAgentServiceUsesIncludesHostedVoiceTarget(t *testing.T) {
 	t.Parallel()
 

@@ -72,8 +72,9 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 			fmt.Fprintln(
 				cmd.OutOrStdout(),
 				color.YellowString(
-					"RLE extension update available: %s\nTo update, run `azd extension update azure.ai.rle`",
+					"RLE extension update available: %s\nTo update, run `%s`",
 					availableUpdate.LatestVersion,
+					extensionUpdateCommand(),
 				),
 			)
 			fmt.Fprintln(cmd.OutOrStdout())

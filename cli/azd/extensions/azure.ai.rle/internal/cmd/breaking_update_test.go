@@ -54,6 +54,52 @@ func TestNewRegistryExtensionUpdateCheckerUsesBuildRegistry(t *testing.T) {
 	}
 }
 
+func TestUpdateMessagesUseReleaseSource(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  string
+		command string
+	}{
+		{"customer", "rle", "azd extension update azure.ai.rle --source rle"},
+		{"development", "rle-dev", "azd extension update azure.ai.rle --source rle-dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldSource := RegistrySource
+			RegistrySource = tt.source
+			t.Cleanup(func() {
+				RegistrySource = oldSource
+			})
+			if got := extensionUpdateCommand(); got != tt.command {
+				t.Fatalf("expected update command %q, got %q", tt.command, got)
+			}
+			update := &extensionUpdate{LatestVersion: "0.8.6-preview", IsBreaking: true}
+			localError, ok := errors.AsType[*azdext.LocalError](breakingUpdateError(update))
+			if !ok || localError.Suggestion != "Run: "+tt.command {
+				t.Fatalf("expected channel-specific breaking suggestion, got %#v", localError)
+			}
+
+			checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
+				return &extensionUpdate{LatestVersion: "0.8.6-preview"}, nil
+			})
+			rootCmd := newRootCommand(checker)
+			var output bytes.Buffer
+			rootCmd.SetOut(&output)
+			rootCmd.AddCommand(&cobra.Command{
+				Use: "probe",
+				Run: func(cmd *cobra.Command, args []string) {},
+			})
+			rootCmd.SetArgs([]string{"probe"})
+			if err := rootCmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(output.String(), "To update, run `"+tt.command+"`") {
+				t.Fatalf("expected channel-specific non-breaking notice, got %q", output.String())
+			}
+		})
+	}
+}
+
 func TestRegistryBreakingUpdateCheckerRequiresUpdateAcrossBreakingVersion(t *testing.T) {
 	server := newRegistryServer(t, `{
 		"extensions": [{
@@ -154,7 +200,7 @@ func TestRootCommandBlocksNormalCommandForBreakingUpdate(t *testing.T) {
 	if localError.Message != "Update the RLE extension to 0.8.6-preview before continuing." {
 		t.Fatalf("unexpected blocking message: %q", localError.Message)
 	}
-	if localError.Suggestion != "Run: azd extension update azure.ai.rle" {
+	if localError.Suggestion != "Run: "+extensionUpdateCommand() {
 		t.Fatalf("unexpected update suggestion: %q", localError.Suggestion)
 	}
 }
@@ -197,7 +243,7 @@ func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
 		t.Fatal("expected command to run for a non-breaking update")
 	}
 	expectedNotice := "RLE extension update available: 0.8.6-preview\n" +
-		"To update, run `azd extension update azure.ai.rle`\n\n"
+		"To update, run `" + extensionUpdateCommand() + "`\n\n"
 	plainOutput := strings.ReplaceAll(output.String(), "\x1b[33m", "")
 	plainOutput = strings.ReplaceAll(plainOutput, "\x1b[0m", "")
 	if !strings.Contains(plainOutput, expectedNotice) {

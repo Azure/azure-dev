@@ -116,7 +116,7 @@ completes, the CLI displays:
 
 ```text
 RLE extension update available: <version>
-To update, run `azd extension update azure.ai.rle`
+To update, run `azd extension update azure.ai.rle --source rle`
 ```
 
 If the update path includes a release marked as breaking, lifecycle commands are
@@ -126,9 +126,11 @@ such as `azd ai rle version` and help, remain available.
 Update to the latest release from the registered source:
 
 ```powershell
-azd extension update azure.ai.rle
+azd extension update azure.ai.rle --source rle
 azd ai rle version
 ```
+
+Development builds instead suggest `--source rle-dev`, matching their registry.
 
 Harness scaffolds, samples hidden from the default catalog, and other
 internal-only surfaces are gated by a single flag for the RLE team's own
@@ -963,6 +965,11 @@ checksum and GitHub URL.
 `.zip`. It also embeds that channel's registry URL in every binary, which keeps
 internal and external update enforcement isolated. The script runs on any host
 Go can cross-compile from.
+
+Both channels share `version.txt` and `extension.yaml`. Each release advances
+the same version counter, so a customer release can skip versions previously
+used for development releases. Update checks remain isolated to each channel's
+registry; a development-only release does not notify customer installations.
 
 Prepare an external release with GitHub CLI (`gh`) authenticated as an account
 with write access to `Azure/azure-dev`:

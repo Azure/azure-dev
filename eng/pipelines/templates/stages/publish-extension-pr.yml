@@ -131,8 +131,8 @@ stages:
         environment: none
 
         pool:
-          name: azsdk-pool
-          image: ubuntu-22.04
+          name: azsdk-pool-mms-ubuntu-2204-general
+          image: ubuntu-22.04-starter-linux
           os: linux
 
         templateContext:

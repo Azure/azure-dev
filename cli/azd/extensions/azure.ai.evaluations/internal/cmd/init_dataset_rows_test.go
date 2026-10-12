@@ -303,6 +303,9 @@ func TestValidateInitStaticConversationRequiresMessagesEveryRow(t *testing.T) {
 		{"mixed later turn", "{\"messages\":[]}\n{\"query\":\"q\",\"response\":\"a\"}", `row 2 has no "messages"`},
 		{"mixed first turn", "{\"query\":\"q\",\"response\":\"a\"}\n{\"messages\":[]}", `row 1 has no "messages"`},
 		{"blank line before turn", "{\"messages\":[]}\n\n{\"query\":\"q\"}", `row 2 has no "messages"`},
+		{"messages string", `{"messages":"not an array"}`, `"messages" must be an array of message objects`},
+		{"messages null", `{"messages":null}`, `"messages" must be an array of message objects`},
+		{"non-object message", `{"messages":[{"role":"user"},"not an object"]}`, `"messages" element 2 must be an object`},
 		{"empty messages", `{"messages":[]}`, ""},
 		{"completed messages", `{"messages":[{"role":"user","content":"hi"}]}`, ""},
 		{"mixed optional fields", "{\"messages\":[],\"category\":\"a\"}\n{\"messages\":[]}", ""},
@@ -331,6 +334,7 @@ func TestInitStaticConversationMissingMessagesPrecedesWrites(t *testing.T) {
 	for _, rows := range []string{
 		`{"query":"q","response":"a"}`,
 		"{\"messages\":[]}\n{\"query\":\"q\",\"response\":\"a\"}",
+		`{"messages":"not an array"}`,
 	} {
 		for _, datasetKind := range []string{"path", "named", "ref-only"} {
 			for _, format := range []string{"default", "json"} {

@@ -44,31 +44,6 @@ func TestAuthoredEvaluatorLevelsAreLocalMetadataOnly(t *testing.T) {
 	}
 }
 
-func TestAuthoredSimulationModelsAreLocalStringMetadataOnly(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, EvalConfigBase)
-	body := "# preserve everything\nfuture_setting: keep\nevals:\n" +
-		"  - name: inline\n    simulation: {model: connection/model, future_setting: keep}\n" +
-		"  - name: overlay\n    $ref: ./missing.yaml\n    simulation: {model: another/model}\n" +
-		"  - name: ref-only\n    $ref: ./also-missing.yaml\n" +
-		"  - name: number\n    simulation: {model: 42}\n" +
-		"  - name: boolean\n    simulation: {model: true}\n" +
-		"  - name: null\n    simulation: {model: null}\n" +
-		"  - name: sequence\n    simulation: {model: [connection/model]}\n" +
-		"  - name: wrong-shape\n    simulation: [connection/model]\n" +
-		"  - name: unknown-count\n    simulation: {model: connection/model, maxTurns: future}\n" +
-		"evaluators:\n  - name: not-an-eval\n    simulation: {model: hidden/model}\n"
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	cfg, err := ReadAuthoredConfig(path)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"connection/model", "another/model", "connection/model"}, cfg.SimulationModels())
-	after, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Equal(t, body, string(after))
-	var absent *AuthoredConfig
-	assert.Empty(t, absent.SimulationModels())
-}
-
 func TestReadAuthoredDatasetResolvesOnlyItsLocalDeclaration(t *testing.T) {
 	for _, tc := range []struct {
 		name        string

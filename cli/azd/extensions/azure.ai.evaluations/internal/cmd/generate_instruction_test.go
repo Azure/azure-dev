@@ -278,10 +278,20 @@ func TestGenerationEmptyOrConflictingInstructionFlagsFailBeforeWrites(t *testing
 			root.SetOut(&out)
 			root.SetErr(&bytes.Buffer{})
 			root.SetArgs(append([]string{"generate", "--no-prompt", "--output", "json"}, args...))
-			require.ErrorContains(t, root.Execute(), "agent-instruction")
-			var doc map[string]any
+			err := root.Execute()
+			require.ErrorContains(t, err, "agent-instruction")
+			// Cobra's own flag-group rejection is wrapped the same as every other
+			// instruction-flag validation failure: reportFailuresAsJSON checks
+			// ValidateFlagGroups from inside the wrapped Args hook, so a caller who
+			// asked for --output json gets one JSON document for every refusal in
+			// this table, never empty output.
+			var doc struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
 			require.NoError(t, json.Unmarshal(out.Bytes(), &doc), "refusal must be one JSON document")
-			assert.Contains(t, doc, "error")
+			assert.Equal(t, err.Error(), doc.Error.Message, "JSON must preserve the actual validation error")
 			assert.Equal(t, before, initFileSnapshot(t, h.dir))
 			assert.Zero(t, h.project.wiringAttempts())
 		})

@@ -13,13 +13,16 @@ import (
 	"sync"
 	"testing"
 
+	"azureaieval/internal/hostproject"
 	"azureaieval/internal/pkg/eval_api"
-	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 // The scaffold is only real once azure.yaml references it, so the usage report
@@ -69,6 +72,11 @@ type initProjectServer struct {
 	dir           string
 	addServiceErr error
 	onAddService  func(context.Context, *azdext.AddServiceRequest) error
+	ackSaveError  bool
+	supportsAck   bool
+	capabilityErr error
+	betaAck       func(string, error) error
+	betaCalls     int
 
 	mu         sync.Mutex
 	addCalls   int
@@ -104,6 +112,18 @@ func (s *initProjectServer) AddService(
 		return nil, err
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *initProjectServer) setAddServiceHandler(handler func(context.Context, *azdext.AddServiceRequest) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onAddService = handler
+}
+
+func (s *initProjectServer) setSaveFailureAcknowledgement(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ackSaveError = enabled
 }
 
 func (s *initProjectServer) wiringAttempts() int {
@@ -142,6 +162,14 @@ func newInitHarnessWithOptions(
 	t *testing.T, addServiceErr error, options []grpc.ServerOption, prompts ...azdext.PromptServiceServer,
 ) *initHarness {
 	t.Helper()
+	return newInitHarnessWithCapabilities(t, addServiceErr, options, true, prompts...)
+}
+
+func newInitHarnessWithCapabilities(
+	t *testing.T, addServiceErr error, options []grpc.ServerOption, betaAvailable bool,
+	prompts ...azdext.PromptServiceServer,
+) *initHarness {
+	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "azure.yaml"), []byte(usageAzureYaml), 0o600))
@@ -153,12 +181,16 @@ func newInitHarnessWithOptions(
 	harness := &initHarness{
 		dir:      dir,
 		usage:    &usageRecorder{accepted: true},
-		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr},
+		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr, ackSaveError: true},
 		seedRows: seed,
 	}
 
 	server := grpc.NewServer(options...)
 	azdext.RegisterProjectServiceServer(server, harness.project)
+	harness.project.supportsAck = true
+	if betaAvailable {
+		registerInitBetaProject(t, server, harness.project)
+	}
 	azdext.RegisterTelemetryServiceServer(server, harness.usage)
 	if len(prompts) > 0 {
 		azdext.RegisterPromptServiceServer(server, prompts[0])
@@ -176,6 +208,94 @@ func newInitHarnessWithOptions(
 	t.Chdir(dir)
 
 	return harness
+}
+
+func registerInitBetaProject(t *testing.T, server *grpc.Server, project *initProjectServer) {
+	t.Helper()
+	client, err := hostproject.NewClient(nil)
+	require.NoError(t, err)
+	handler := func(name string, invoke func(context.Context, proto.Message) (proto.Message, error)) grpc.MethodDesc {
+		return grpc.MethodDesc{MethodName: name, Handler: func(
+			_ any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor,
+		) (any, error) {
+			requestName := "EmptyRequest"
+			if name == "AddService" {
+				requestName = "AddServiceRequest"
+			}
+			request, err := client.Message(requestName)
+			if err != nil {
+				return nil, err
+			}
+			if err := decode(request); err != nil {
+				return nil, err
+			}
+			call := func(ctx context.Context, req any) (any, error) {
+				message, ok := req.(proto.Message)
+				require.True(t, ok)
+				return invoke(ctx, message)
+			}
+			if interceptor != nil {
+				return interceptor(ctx, request, &grpc.UnaryServerInfo{
+					FullMethod: "/azd.extensions.v1beta.ProjectService/" + name,
+				}, call)
+			}
+			return call(ctx, request)
+		}}
+	}
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "azd.extensions.v1beta.ProjectService",
+		HandlerType: (*any)(nil),
+		Methods: []grpc.MethodDesc{
+			handler("GetAddServiceCapabilities", func(context.Context, proto.Message) (proto.Message, error) {
+				project.mu.Lock()
+				supported, err := project.supportsAck, project.capabilityErr
+				project.mu.Unlock()
+				response, messageErr := client.Message("GetAddServiceCapabilitiesResponse")
+				if messageErr != nil {
+					return nil, messageErr
+				}
+				response.Set(response.Descriptor().Fields().ByName("acknowledgment_supported"),
+					protoreflect.ValueOfBool(supported))
+				return response, err
+			}),
+			handler("AddService", func(ctx context.Context, request proto.Message) (proto.Message, error) {
+				project.mu.Lock()
+				project.betaCalls++
+				ackEnabled, customAck := project.ackSaveError, project.betaAck
+				project.mu.Unlock()
+				wire, err := proto.Marshal(request)
+				if err != nil {
+					return nil, err
+				}
+				stable := &azdext.AddServiceRequest{}
+				if err := proto.Unmarshal(wire, stable); err != nil {
+					return nil, err
+				}
+				operation := request.ProtoReflect().Get(
+					request.ProtoReflect().Descriptor().Fields().ByName("operation_id")).String()
+				_, err = project.AddService(ctx, stable)
+				if err != nil {
+					if customAck != nil {
+						return nil, customAck(operation, err)
+					}
+					if ackEnabled {
+						ack, messageErr := client.Message("AddServiceAcknowledgment")
+						if messageErr != nil {
+							return nil, messageErr
+						}
+						ack.Set(ack.Descriptor().Fields().ByName("operation_id"), protoreflect.ValueOfString(operation))
+						st, detailErr := status.Convert(err).WithDetails(ack)
+						if detailErr != nil {
+							return nil, detailErr
+						}
+						return nil, st.Err()
+					}
+					return nil, err
+				}
+				return client.Message("EmptyResponse")
+			}),
+		},
+	}, project)
 }
 
 // runInit drives the shipped init command the way azd does.
@@ -235,25 +355,22 @@ func TestInitReportsADatasetScaffold(t *testing.T) {
 	assertOneInitCompleted(t, h, "dataset")
 }
 
-// The report follows the wiring, so an uncertain project-save outcome is not
-// an init that completed.
+// The report follows the wiring, so a scaffold azd never accepted is not an
+// init that completed.
 //
 // This is the placement guard: move the call above ensureRootEvalService and
 // this is the test that notices, because the files are on disk by then and
-// only the wiring outcome is unknown.
-func TestInitReportsNothingWhenTheWiringOutcomeIsUncertain(t *testing.T) {
+// only the wiring failed.
+func TestInitReportsNothingWhenTheWiringFails(t *testing.T) {
 	h := newInitHarness(t, errors.New("azure.yaml is read-only"))
 
 	err := h.runInit(t,
 		"--name", "unwired", "--target", "agent", "--source", "traces",
 		"--judge-model", "gpt-4.1-nano")
 
-	require.Error(t, err, "an uncertain project save is a failure")
-	assert.ErrorContains(t, err, "project-save outcome is uncertain")
-	assert.ErrorContains(t, err, "was retained")
+	require.Error(t, err, "a scaffold azd cannot see is a failure")
 	assert.Positive(t, h.project.wiringAttempts(),
 		"the test is worthless if the command never got as far as wiring")
-	assert.FileExists(t, filepath.Join(h.dir, project.DefaultEvalDir, project.EvalConfigBase))
 	assert.Empty(t, h.usage.reported(),
 		"nothing completed, so nothing is reported")
 }

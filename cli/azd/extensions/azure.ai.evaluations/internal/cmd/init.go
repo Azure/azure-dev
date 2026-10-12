@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -19,6 +22,7 @@ import (
 	"sync"
 
 	"azureaieval/internal/exterrors"
+	"azureaieval/internal/hostproject"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
@@ -241,6 +245,11 @@ func (a *initAction) Run() error {
 	if len(evaluatorsToValidate) == 0 && noPrompt(a.cmd) {
 		evaluatorsToValidate = defaultEvaluators()
 	}
+	// Asked once, and only when there is a builtin. reference for the catalogue
+	// to answer about. A builtin. reference names something only the project can
+	// confirm, so it used to scaffold cleanly and fail at create. Unreachable
+	// projects answer nothing and leave the reference as written, so this adds a
+	// check offline rather than a requirement.
 	if hasBuiltinRef(evaluatorsToValidate) {
 		known := knownBuiltins()
 		// The lookup's own five-second bound is best effort, but the command's
@@ -419,15 +428,6 @@ func (a *initAction) Run() error {
 	declaredEvaluators := len(cfg.Evaluators)
 	declaredEvals := len(cfg.Evals)
 
-	// The location may be the file azure.yaml names rather than the
-	// directory holding it, and artifacts sit beside the configuration.
-	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
-		return messages.CreatingDatasetsDir(err)
-	}
-	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
-		return messages.CreatingEvaluatorsDir(err)
-	}
-
 	// --target names the azure.yaml service, which is a local label. The eval's
 	// target has to be the name the agent is published under, or the run grades
 	// a different agent -- or none. Resolved here, once, so the written config
@@ -467,6 +467,14 @@ func (a *initAction) Run() error {
 	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
 		return err
 	}
+	var rootBefore []byte
+	if rootPath != "" {
+		// #nosec G304 -- snapshot the current azd project's root before wiring it.
+		rootBefore, err = os.ReadFile(rootPath)
+		if err != nil {
+			return messages.ReadingPath(rootPath, err)
+		}
+	}
 	// Recheck resolution and identity, then write the same exact filename the user confirmed.
 	if err := checkInitConfigDestination(path, configPath); err != nil {
 		return err
@@ -476,7 +484,16 @@ func (a *initAction) Run() error {
 			return err
 		}
 	}
-	err = project.ApplyScaffold(configPath, project.ScaffoldWrite{
+	// The location may be the file azure.yaml names rather than the
+	// directory holding it, and artifacts sit beside the configuration.
+	// Create these only after every planning and path check has succeeded.
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
+		return messages.CreatingDatasetsDir(err)
+	}
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
+		return messages.CreatingEvaluatorsDir(err)
+	}
+	rollback, err := project.ApplyScaffoldWithRollback(configPath, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],
 		Evaluators: cfg.Evaluators[declaredEvaluators:],
 		Evals:      cfg.Evals[declaredEvals:],
@@ -490,7 +507,34 @@ func (a *initAction) Run() error {
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
 	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath, rootFilename)
 	if err != nil {
-		return messages.InitWiringUncertain(configPath, err)
+		if _, uncertain := errors.AsType[*initWiringUncertainError](err); uncertain {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				errors.New("the host may still finish saving the project configuration; the scaffold was retained"))
+		}
+		currentRoot, rootErr := initRootConfigPath(azdProject.GetPath())
+		if rootErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, rootErr)
+		}
+		if rootPath == "" || currentRoot != rootPath {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				errors.New("the project configuration path was unavailable or changed during wiring; "+
+					"the scaffold was retained"))
+		}
+		// A lost RPC response can follow a successful root save. Do not remove
+		// a scaffold the root may already reference, or overwrite another edit.
+		// #nosec G304 -- re-read the same project root to determine whether rollback is safe.
+		rootAfter, readErr := os.ReadFile(rootPath)
+		if readErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, readErr)
+		}
+		if !bytes.Equal(rootBefore, rootAfter) {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				fmt.Errorf("%s changed during wiring; the scaffold was retained", filepath.Base(rootPath)))
+		}
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, rollbackErr)
+		}
+		return messages.InitWiringRolledBack(configPath, err)
 	}
 
 	// Reported here rather than from the prompt sequence, which a confirmation
@@ -560,6 +604,12 @@ func (a *initAction) Run() error {
 		fmt.Fprint(out, messages.WholeProjectAlternative(deployCmd))
 	}
 	return nil
+}
+
+type initWiringUncertainError struct{ error }
+
+func (e *initWiringUncertainError) Unwrap() error {
+	return e.error
 }
 
 func checkInitConfigDestination(location, expected string) error {
@@ -1144,7 +1194,23 @@ func (s scaffold) nextSteps() []string {
 // that it touches one eval: without the name it reconciles whatever the file
 // happens to declare, which is what the reader was choosing to avoid.
 func (s scaffold) targetedCreate() string {
-	return s.withPath("azd ai eval create " + s.evalName())
+	name := s.evalName()
+	if !messages.CanInlineShellArg(name) {
+		return ""
+	}
+	// Some hosts strip joined cwd flags even after "--"; do not suggest a lossy handoff.
+	if strings.HasPrefix(name, "--cwd=") ||
+		len(name) > 2 && strings.HasPrefix(name, "-C") && name[2] != '-' {
+		return ""
+	}
+	if strings.HasPrefix(name, "-") {
+		step := s.withPath("azd ai eval create")
+		if step == "" {
+			return ""
+		}
+		return step + " -- " + messages.ShellArg(name)
+	}
+	return s.withPath("azd ai eval create " + messages.ShellArg(name))
 }
 
 // evalName is the name of the eval this scaffold adds.
@@ -1505,15 +1571,39 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
-		Service: &azdext.ServiceConfig{
-			Name:                 name,
-			Host:                 project.EvalHost,
-			Uses:                 evalServiceUses(resp.GetProject(), target),
-			AdditionalProperties: props,
-		},
-	}, grpc.MaxRetryRPCBufferSize(0))
+	preview, closePreview, err := hostproject.Connect()
 	if err != nil {
+		return "", "", messages.ConnectingToAzd(err)
+	}
+	defer func() {
+		if closeErr := closePreview(); closeErr != nil {
+			// Closing a completed transport does not change the mutation outcome.
+			log.Printf("closing azd project transport: %v", closeErr)
+		}
+	}()
+	capable, err := preview.SupportsAcknowledgment(ctx)
+	if err != nil {
+		return "", "", messages.AddingServiceTo(rootFilename, err)
+	}
+	service := &azdext.ServiceConfig{
+		Name:                 name,
+		Host:                 project.EvalHost,
+		Uses:                 evalServiceUses(resp.GetProject(), target),
+		AdditionalProperties: props,
+	}
+	completed := false
+	if capable {
+		completed, err = preview.AddService(ctx, service, rand.Text())
+	} else {
+		// Backward compatibility only: older hosts cannot confirm a failed save completed.
+		// TODO: Remove this fallback after the SDK/core release and minimum host version update.
+		_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: service},
+			grpc.MaxRetryRPCBufferSize(0))
+	}
+	if err != nil {
+		if !completed {
+			err = &initWiringUncertainError{error: err}
+		}
 		return "", "", messages.AddingServiceTo(rootFilename, err)
 	}
 	return wiringAdded, name, nil

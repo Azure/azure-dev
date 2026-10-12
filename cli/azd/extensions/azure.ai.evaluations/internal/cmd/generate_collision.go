@@ -68,7 +68,11 @@ func resolveArtifactCollision(
 		return "", false, messages.ArtifactExists(filepath.ToSlash(path))
 	}
 
-	proposed := nextFreeArtifactName(name, path)
+	maxLength := 0
+	if kind == "Dataset" {
+		maxLength = generatedDatasetNameMaxLength
+	}
+	proposed := nextFreeArtifactName(name, path, maxLength)
 	choice, err := promptArtifactCollision(cmd, kind, name, path, proposed)
 	if err != nil {
 		return "", false, err
@@ -146,11 +150,17 @@ func promptArtifactCollision(
 //
 // Empty when none is, which is the caller's cue to stop offering the choice
 // rather than propose a name that collides in turn.
-func nextFreeArtifactName(name, path string) string {
+func nextFreeArtifactName(name, path string, maxLength int) string {
 	dir, file := filepath.Split(path)
 	ext := filepath.Ext(file)
+	stem := []rune(name)
+	base := string(stem)
 	for n := 2; n <= collisionSuffixLimit; n++ {
-		candidate := name + "-" + strconv.Itoa(n)
+		suffix := "-" + strconv.Itoa(n)
+		if maxLength > 0 && len(stem)+len(suffix) > maxLength {
+			return ""
+		}
+		candidate := base + suffix
 		if _, err := os.Stat(filepath.Join(dir, candidate+ext)); os.IsNotExist(err) {
 			return candidate
 		}

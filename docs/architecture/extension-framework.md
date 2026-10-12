@@ -131,6 +131,11 @@ environments for Gym/OpenEnv as well as Harness/HostedAgent and Harness/BYOH.
 This environment protocol is separate from the extension's `mcp-server`
 capability. See the [RLE manifest contract](../../cli/azd/extensions/azure.ai.rle/README.md#environment-protocol).
 
+RLE training cancellation uses the high-level Azure OpenAI fine-tuning cancel
+API, sharing endpoint resolution and Cognitive Services authentication with
+training submission. It does not target individual RLE rollouts or Loom sessions
+and does not remove local artifacts. See [Cancel a training job](../../cli/azd/extensions/azure.ai.rle/README.md#cancel-a-training-job).
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

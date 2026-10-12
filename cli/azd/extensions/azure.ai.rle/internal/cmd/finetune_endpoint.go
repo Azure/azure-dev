@@ -25,7 +25,7 @@ const (
 
 // resolveFinetuneEndpoint picks the fine-tuning API the RLE commands talk to:
 // the --endpoint flag, then RLE_TRAIN_ENDPOINT, else the endpoint derived from
-// the Foundry project. Train and jobs share it; monitoring reads RLE APIs only.
+// the Foundry project. Train, jobs and cancel share it; monitoring reads RLE APIs only.
 func resolveFinetuneEndpoint(flagValue string, projectEndpoint string) (string, error) {
 	if raw := strings.TrimSpace(flagValue); raw != "" {
 		return normalizeFinetuneEndpoint(raw)
@@ -60,7 +60,7 @@ func finetuneEndpointFromFoundryProject(projectEndpoint string) (string, error) 
 func normalizeFinetuneEndpoint(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", invalidFinetuneEndpointError(fmt.Sprintf("invalid fine-tuning API endpoint: %v", err))
+		return "", invalidFinetuneEndpointError("invalid fine-tuning API endpoint URL")
 	}
 	if !strings.EqualFold(u.Scheme, "https") {
 		return "", invalidFinetuneEndpointError("fine-tuning API endpoint must use https")
@@ -70,9 +70,11 @@ func normalizeFinetuneEndpoint(raw string) (string, error) {
 	}
 
 	u.Scheme = "https"
+	u.User = nil
 	u.Host = strings.ToLower(u.Host)
 	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawQuery = ""
+	u.ForceQuery = false
 	u.Fragment = ""
 	return u.String(), nil
 }

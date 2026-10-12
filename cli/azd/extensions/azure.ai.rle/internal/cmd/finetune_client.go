@@ -148,6 +148,26 @@ func finetuneUploadServiceError(err error) error {
 	return result
 }
 
+func finetuneCancelServiceError(err error) error {
+	result := &azdext.ServiceError{
+		Message:     err.Error(),
+		ServiceName: "finetunesapi",
+		Suggestion:  "Check the job status and verify the fine-tuning endpoint and job ID before retrying cancellation.",
+	}
+	if httpErr, ok := errors.AsType[*finetuneHTTPError](err); ok {
+		result.StatusCode = httpErr.statusCode
+		switch httpErr.statusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			result.Suggestion = "Verify your Azure sign-in and access to the fine-tuning resource, then retry."
+		case http.StatusNotFound:
+			result.Suggestion = "Verify the job ID and use the same fine-tuning endpoint that submitted the job."
+		case http.StatusBadRequest, http.StatusConflict:
+			result.Suggestion = "Check the service error and job status. The job may no longer be cancellable."
+		}
+	}
+	return result
+}
+
 func newFinetuneClient(endpoint string) (*finetuneClient, error) {
 	normalizedEndpoint, err := normalizeFinetuneEndpoint(endpoint)
 	if err != nil {
@@ -228,6 +248,31 @@ func (c *finetuneClient) listRleJobs(
 	}
 	if err := c.do(ctx, http.MethodGet, finetuneJobsPath+"?"+query.Encode(), headers, nil, &result); err != nil {
 		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *finetuneClient) cancelJob(
+	ctx context.Context,
+	jobID string,
+	azureAIProject string,
+) (*finetuneJobResource, error) {
+	if err := validateRleJobID(jobID); err != nil {
+		return nil, err
+	}
+	headers := map[string]string{
+		"azureai-project":            azureAIProject,
+		"azureai-project-is-default": "true",
+	}
+	var result finetuneJobResource
+	if err := c.do(ctx, http.MethodPost, finetuneJobsPath+"/"+jobID+"/cancel", headers, nil, &result); err != nil {
+		return nil, err
+	}
+	if result.Id != jobID || strings.TrimSpace(result.Status) == "" {
+		return nil, errors.New(
+			"fine-tuning cancel request succeeded but the response did not contain the requested job ID and a status; " +
+				"check the job status before retrying",
+		)
 	}
 	return &result, nil
 }

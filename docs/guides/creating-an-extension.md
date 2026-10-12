@@ -111,6 +111,7 @@ service response rather than silently publishing a legacy environment.
 - **Reuse parameter patterns** — Use established flags like `--subscription`, `--name`, `--type`
 - **Integrate with help** — Make your extension discoverable through `azd help`
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
+- **Job cancellation** — Target the service's high-level job cancellation API rather than stopping individual execution sessions. The [RLE `cancel` command](../../cli/azd/extensions/azure.ai.rle/README.md#cancel-a-training-job) reuses training endpoint resolution and reports the returned status without assuming cancellation has completed.
 - **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
   first-party `ReportUsage` attributes must be declared and classified in
   `cli/azd/extensions/telemetry/fields.go`

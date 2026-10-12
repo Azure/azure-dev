@@ -663,7 +663,7 @@ azd ai rle train `
 `FOUNDRY_PROJECT_ENDPOINT` identifies the project that owns the named RLE. The
 fine-tuning endpoint is normally derived from the same account as
 `https://<account>.openai.azure.com`. Set `RLE_TRAIN_ENDPOINT` to route `train`,
-and `jobs` to a facade or mock service instead. An explicit
+`jobs`, and `cancel` to a facade or mock service instead. An explicit
 `--endpoint` still takes precedence.
 Job creation automatically acquires a Foundry token
 (`https://ai.azure.com/.default`) and forwards it in `aml-user-token` for
@@ -678,6 +678,31 @@ to reach `processed`, then uses the returned file ID when it submits the job.
 The validation file is optional and follows the same local-file upload flow.
 Use `--endpoint` to target a different fine-tuning resource for a single
 invocation.
+
+### Cancel a training job
+
+Cancel the high-level training job with the job ID returned by `train` or `jobs`:
+
+```powershell
+azd ai rle cancel --job-id ftjob-7898670d3ae8453e89e591f9
+```
+
+Like `train`, `cancel` is experimental and hidden from help unless
+`AZD_AI_RLE_ENABLE_ALL=true`. Sign-in and `FOUNDRY_PROJECT_ENDPOINT` are required.
+No local manifest, dataset, log mirror, or running monitor is needed.
+
+Cancellation uses the [Foundry Azure OpenAI fine-tuning cancel API](https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/fine-tuning#cancel-fine-tuning-job):
+`POST /openai/v1/fine_tuning/jobs/<job-id>/cancel`. It does not cancel an
+individual RLE rollout or Loom session. Use the same endpoint that submitted
+the job: `--endpoint` overrides `RLE_TRAIN_ENDPOINT`, which overrides the
+Azure OpenAI account endpoint derived from the Foundry project.
+
+The command prints the returned job status and exits without polling or opening
+a browser. A successful request does not imply the job has reached `cancelled`
+unless that is the returned status. Use `--output json` for the returned job
+object. Service failures return an error and include a request ID when available.
+The command does not delete local artifacts or stop an existing monitor.
+Ctrl+C in `train` or `monitor` still stops local monitoring, not the remote job.
 
 ### Real-service monitoring (default endpoint)
 

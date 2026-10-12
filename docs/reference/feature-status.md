@@ -79,6 +79,12 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
 
+## Extension Commands
+
+| Feature | Stage |
+|---|---|
+| [RLE training job cancellation (`ai rle cancel`)](../../cli/azd/extensions/azure.ai.rle/README.md#cancel-a-training-job) | Alpha (experimental; hidden unless `AZD_AI_RLE_ENABLE_ALL=true`) |
+
 ---
 
 For the full feature tracking table, see [cli/azd/docs/feature-stages.md](../../cli/azd/docs/feature-stages.md).

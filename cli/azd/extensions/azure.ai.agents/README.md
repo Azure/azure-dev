@@ -407,6 +407,13 @@ before the command writes. `--project` can confirm that service key, and
 `--source` overrides the Agent service's project directory with an existing
 directory inside the current project.
 
+When updating a service, the command rejects numeric scalar tokens that cannot
+survive the project API's double-precision representation without changing their
+value. Quote YAML dates and timestamps, such as `apiVersion: "2025-01-01"`,
+to keep them as strings. These checks also apply to dependency service
+properties. Validation failures and unchanged declarations leave the project
+tree untouched; the shared Agent authoring lock lives in the user cache.
+
 Move a direct agent definition to service-level properties in `azure.yaml`:
 
 ```yaml

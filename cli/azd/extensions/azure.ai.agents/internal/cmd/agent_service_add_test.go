@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"net"
 	"os"
@@ -374,6 +375,112 @@ func TestAgentServiceAddCommand_RejectsUnsafeDependencyProperties(t *testing.T) 
 	require.Equal(t, before, after)
 }
 
+func TestAgentServiceAddCommand_RejectsLossyScalarTokens(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		fields string
+		path   string
+		value  string
+	}{
+		{"date", "apiVersion: 2025-01-01", "apiVersion", "2025-01-01"},
+		{"timestamp", "custom: 2025-01-01T12:00:00Z", "custom", "2025-01-01T12:00:00Z"},
+		{"decimal", "custom: 0.123456789012345678901", "custom", "0.123456789012345678901"},
+		{"exponent", "custom: 1.23456789012345678901e-1", "custom", "1.23456789012345678901e-1"},
+		{"nested decimal", "custom: {items: [{token: 9007199254740993.0}]}",
+			"custom.items[0].token", "9007199254740993.0"},
+		{"alias", "custom: {original: &value 0.123456789012345678901, copied: *value}",
+			"custom.original", "0.123456789012345678901"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    $ref: ./definitions/old.yaml
+    `+test.fields+"\n")
+			writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+			before := snapshotAgentServiceAddProjectTree(t, projectRoot)
+			client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+			stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+				t, client, "support-agent", "--file", "./definitions/support.yaml",
+			)
+			require.ErrorContains(t, err, test.path)
+			require.ErrorContains(t, err, "cannot be preserved losslessly")
+			localError, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, "invalid_service_config", localError.Code)
+			require.NotContains(t, err.Error()+stdout+stderr, test.value)
+			require.Empty(t, client.addRequests)
+			require.Empty(t, client.setRequests)
+			require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
+		})
+	}
+}
+
+func TestReadAgentServiceAddProject_PreservesSafeScalarTokens(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    apiVersion: "2025-01-01"
+    custom:
+      date: "2025-01-01"
+      decimal: 0.1
+      exponent: 1e-3
+      underscored: 1_000.5
+      hexadecimal: 0x10
+      leadingPoint: .5
+      trailingPoint: 1.
+      integerFloat: 9007199254740994.0
+      original: &number 0.25
+      copied: *number
+`)
+	project, err := readAgentServiceAddProject(projectRoot)
+	require.NoError(t, err)
+	service, err := agentServiceAddStruct(project.rawServices["support-agent"])
+	require.NoError(t, err)
+	require.Equal(t, "2025-01-01", service.GetFields()["apiVersion"].GetStringValue())
+	custom := service.GetFields()["custom"].GetStructValue()
+	require.Equal(t, "2025-01-01", custom.GetFields()["date"].GetStringValue())
+	for key, expected := range map[string]float64{
+		"decimal": 0.1, "exponent": 0.001, "underscored": 1000.5,
+		"hexadecimal": 16, "leadingPoint": 0.5, "trailingPoint": 1,
+		"integerFloat": 9007199254740994, "original": 0.25, "copied": 0.25,
+	} {
+		require.Equal(t, expected, custom.GetFields()[key].GetNumberValue(), key)
+	}
+}
+
+func snapshotAgentServiceAddProjectTree(t *testing.T, projectRoot string) map[string]string {
+	t.Helper()
+	root, err := os.OpenRoot(projectRoot)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
+	snapshot := map[string]string{}
+	require.NoError(t, fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			snapshot[path] = "directory"
+			return nil
+		}
+		content, err := root.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		snapshot[path] = "file:" + string(content)
+		return nil
+	}))
+	return snapshot
+}
+
 func TestAgentServiceAddCommand_RejectsOutputBeforeClient(t *testing.T) {
 	t.Parallel()
 	for _, format := range []string{"table", "none", "invalid"} {
@@ -536,6 +643,7 @@ func TestAgentServiceAddCommand_UnchangedDoesNotWrite(t *testing.T) {
     $ref: ./definitions/support.yaml
 `)
 	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+	before := snapshotAgentServiceAddProjectTree(t, projectRoot)
 
 	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
 	stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
@@ -553,6 +661,7 @@ func TestAgentServiceAddCommand_UnchangedDoesNotWrite(t *testing.T) {
 	var result map[string]any
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	assert.Equal(t, "unchanged", result["mutation"])
+	require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
 }
 
 func TestAgentServiceAddCommand_ValidationErrorsDoNotWrite(t *testing.T) {
@@ -630,6 +739,7 @@ func TestAgentServiceAddCommand_ValidationErrorsDoNotWrite(t *testing.T) {
 			projectRoot := t.TempDir()
 			writeAgentServiceAddProject(t, projectRoot, test.services)
 			writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+			before := snapshotAgentServiceAddProjectTree(t, projectRoot)
 			client := &recordingAgentServiceAddClient{projectPath: projectRoot}
 			flags := append(
 				[]string{"--file", "./definitions/support.yaml"},
@@ -645,6 +755,7 @@ func TestAgentServiceAddCommand_ValidationErrorsDoNotWrite(t *testing.T) {
 			assert.Contains(t, err.Error(), test.want)
 			assert.Empty(t, client.addRequests)
 			assert.Empty(t, client.setRequests)
+			require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
 		})
 	}
 }

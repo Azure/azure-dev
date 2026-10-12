@@ -25,6 +25,11 @@ Stable event handlers and default language scaffolds do not expose follow-up API
 See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
 for the preview SDK contract.
 
+`AzdClient.ProjectBeta()` exposes the generated preview project client
+alongside the stable `Project()` accessor. Clients whose SDK exposes it use
+`ProjectBeta().GetAddServiceCapabilities` before opting into
+typed `AddService` completion acknowledgments.
+
 ## Channel policy
 
 `v1` is the compatibility-protected stable contract. Changes must be additive:
@@ -88,11 +93,20 @@ The beta lifecycle `EventStream` override selects compatibility behavior from
 the first subscription. A subscription without `request_id` is delegated to
 the stable event implementation, preserving legacy correlation for existing
 beta clients. This mode has no beta subscription acknowledgements or
-invocation IDs and cannot use beta-only follow-up APIs. A subscription with
-`request_id` selects the current beta mode; later subscriptions and project
-handler status messages must also carry IDs. Missing IDs on those messages
-are rejected; service handler statuses retain their existing service/event
-correlation. Stable `v1` behavior is unchanged.
+invocation IDs and cannot use beta-only follow-up or structured deploy
+messages. A subscription with `request_id` selects the current beta mode;
+later subscriptions and project handler statuses must also carry IDs.
+Every modern service invocation uses a unique `request_id`. A status carrying
+structured messages must echo that ID. For compatibility, an ID-less status
+without messages is correlated only when exactly one matching service/event
+invocation is outstanding and no canceled invocation could have replied late.
+An unmatched status is not assigned to a new invocation. If multiple calls or
+a canceled call make the mapping ambiguous, the host returns
+`InvalidArgument` instead of guessing. Clients that omit response IDs should
+serialize calls for each service/event pair and open a new stream after
+cancellation uncertainty. A status with a known ID for a different
+service/event pair is rejected with `InvalidArgument`; unknown IDs remain
+unmatched, including late canceled responses. Stable `v1` behavior is unchanged.
 
 An override implements one or more generated
 `Beta<Service><Method>Override` interfaces and is installed with
@@ -109,6 +123,16 @@ message even when stable does not define that value. Such a preview value also
 requires a beta method override; stable business logic must not be expected to
 interpret it.
 
+The lifecycle `EventService.EventStream` uses one focused beta override for
+project follow-up contributions and structured service deploy messages.
+`ServiceHandlerStatus.messages` is collected from the final response, so a
+hook can return guidance even when it also fails. The same override handles
+subscription acknowledgements, invocation IDs, and follow-up
+commit/discard behavior; registering a separate message override would
+replace those behaviors. Stable event messages and stable handler APIs remain
+unchanged. Go extensions opt in with
+`ExtensionHost.WithBetaServiceEventHandler`.
+
 An additive beta-only method does not require a matching stable method.
 `make proto` generates a beta handler that calls a focused override when
 present and otherwise returns `codes.Unimplemented`. Adding the method cannot
@@ -116,6 +140,19 @@ make host registration fail. Wire the override through the existing
 `NewServer` options rather than adding another constructor dependency. After
 the capability graduates to stable, the regenerated adapter automatically
 uses stable business logic when no override is configured.
+
+Built-in focused project overrides compose with caller overrides per method.
+A caller override for `Get`, for example, does not suppress the built-in
+`AddService` acknowledgment or read-only capability handler. Custom `AddService`
+implementations must explicitly supply their own capability response to advertise
+acknowledgment support.
+
+For preview fields absent from released SDKs, the evaluations extension snapshots
+canonical descriptors with `grpc/generateprojectclient` during `make proto` and
+uses a private dynamic registry. This avoids duplicate global registration and
+does not introduce a second schema. The private client selects the stable
+host path when the read-only beta capability RPC explicitly reports unsupported
+or returns `Unimplemented`.
 
 Stable handlers can return gRPC statuses containing stable contract messages
 in `Any` details. Before a beta response is sent, the host translates every

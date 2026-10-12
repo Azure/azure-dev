@@ -53,6 +53,13 @@ If your Go extension creates role assignments, use the preview [`AccountBeta().G
 
 Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
+The default scaffolds and SDK `EventManager` use the stable `v1` contract.
+Go extensions can opt into beta structured messages for service
+`predeploy`/`postdeploy` handlers with
+`ExtensionHost.WithBetaServiceEventHandler`. See
+[contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
+for the stream requirements and legacy-client behavior.
+
 ### 4. Build
 
 ```bash
@@ -114,6 +121,19 @@ multiple handlers and workflow steps are resolved.
   build, deploy, or persist deployment state.
 
 ## Detailed Reference
+
+Treat failed mutating RPCs as uncertain unless the host confirms completion.
+For `Project.AddService`, use the optional
+[save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),
+the read-only beta `GetAddServiceCapabilities` RPC, a fresh typed operation ID,
+and local ownership checks before compensating local edits. Only an explicit
+unsupported response or `Unimplemented` from the capability RPC selects the stable
+host path. Never retry a failed mutating RPC on another channel. Unacknowledged failures
+require retention and explicit inspection guidance rather than status-code-based
+rollback; do not trust custom metadata/trailers as a substitute for the typed API.
+The acknowledgment covers completed pre-save rejections only on host builds
+that implement that behavior. It proves that the operation cannot write later;
+it does not replace a root-file comparison or ownership checks.
 
 For comprehensive extension development documentation, see:
 

@@ -177,7 +177,14 @@ func agentDependencyReferencesFromFile(
 		references.toolboxes = append(references.toolboxes, name)
 	}
 
+	var singularToolbox *agent_yaml.ToolboxReference
 	switch definition.Kind {
+	case agent_yaml.AgentKindHosted:
+		var hosted agent_yaml.ContainerAgent
+		if err := projectpkg.UnmarshalStruct(properties, &hosted); err != nil {
+			return agentDependencyReferences{}, invalidAgentDependencyDefinition(err)
+		}
+		singularToolbox = hosted.Toolbox
 	case agent_yaml.AgentKindPrompt:
 		var prompt agent_yaml.PromptAgent
 		if err := projectpkg.UnmarshalStruct(properties, &prompt); err != nil {
@@ -187,15 +194,7 @@ func agentDependencyReferencesFromFile(
 			return agentDependencyReferences{}, invalidAgentDependencyDefinition(err)
 		}
 		references.connections = slices.Clone(prompt.Connections)
-		if prompt.Toolbox != nil {
-			name := strings.TrimSpace(prompt.Toolbox.Name)
-			if name == "" {
-				return agentDependencyReferences{}, invalidAgentDependencyDefinition(
-					fmt.Errorf("toolbox reference requires a non-empty name"),
-				)
-			}
-			references.toolboxes = append(references.toolboxes, name)
-		}
+		singularToolbox = prompt.Toolbox
 		for _, skill := range agent_yaml.PromptAgentSkillReferences(prompt) {
 			if strings.TrimSpace(skill.Version) == "" {
 				references.skills = append(
@@ -216,6 +215,16 @@ func agentDependencyReferencesFromFile(
 			) {
 			references.voiceAgent = strings.TrimSpace(voice.ConversationEngine.Name)
 		}
+	}
+
+	if singularToolbox != nil {
+		name := strings.TrimSpace(singularToolbox.Name)
+		if name == "" {
+			return agentDependencyReferences{}, invalidAgentDependencyDefinition(
+				fmt.Errorf("toolbox reference requires a non-empty name"),
+			)
+		}
+		references.toolboxes = append(references.toolboxes, name)
 	}
 
 	return references, nil

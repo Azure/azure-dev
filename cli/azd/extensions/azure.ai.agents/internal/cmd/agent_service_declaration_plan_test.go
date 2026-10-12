@@ -300,6 +300,83 @@ func TestPlanAgentServiceDeclarationPreservesEmptyExistingProject(t *testing.T) 
 	require.Equal(t, agentServiceMutationUpdated, plan.Mutation)
 }
 
+func TestPlanAgentServiceDeclarationSourcePaths(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	definition := loadAgentServiceDeclarationDefinition(t, root, "definitions/agent.yaml", "agent-service")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("not a directory"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(root, "source"), 0o750))
+	tests := []struct {
+		name        string
+		source      string
+		preserve    bool
+		wantProject string
+		wantError   string
+	}{
+		{name: "source file override", source: "./source.txt", wantError: "path must identify a directory"},
+		{
+			name: "absolute source file override", source: filepath.Join(root, "source.txt"),
+			wantError: "path must identify a directory",
+		},
+		{
+			name: "preserved source file", source: "./source.txt", preserve: true,
+			wantError: "path must identify a directory",
+		},
+		{name: "filesystem path failure", source: "invalid\x00source", wantError: "invalid argument"},
+		{name: "future source", source: "./future/source", wantProject: "future/source"},
+		{name: "preserved future source", source: "./future/source", preserve: true, wantProject: "./future/source"},
+		{name: "template source", source: "${AGENT_PROJECT}", wantProject: "${AGENT_PROJECT}"},
+		{name: "preserved template source", source: "${AGENT_PROJECT}", preserve: true, wantProject: "${AGENT_PROJECT}"},
+		{name: "existing directory", source: "./source", wantProject: "source"},
+		{name: "preserved existing directory", source: "./source", preserve: true, wantProject: "./source"},
+		{name: "absolute directory", source: filepath.Join(root, "source"), wantProject: "source"},
+		{name: "root source", source: ".", wantProject: "."},
+		{name: "absolute root source", source: root, wantProject: "."},
+		{name: "preserved root source", source: ".", preserve: true, wantProject: "."},
+		{name: "preserved empty root source", source: "", preserve: true, wantProject: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := agentServiceDeclarationInput{
+				ServiceName:  "agent-service",
+				ProjectRoot:  root,
+				Definition:   definition,
+				Dependencies: agentDependencyPlan{Uses: []string{"ai-project"}},
+			}
+			var beforeExisting *structpb.Struct
+			if test.preserve {
+				input.ExistingService = agentServiceDeclarationStruct(t, map[string]any{
+					"host": AiAgentHost, "project": test.source,
+				})
+				beforeExisting = proto.Clone(input.ExistingService).(*structpb.Struct)
+			} else {
+				input.SourceOverride = new(test.source)
+			}
+
+			plan, err := planAgentServiceDeclaration(input)
+
+			if test.wantError != "" {
+				require.ErrorContains(t, err, "invalid project source")
+				require.ErrorContains(t, err, test.wantError)
+				require.Nil(t, plan.DesiredService)
+				require.Nil(t, plan.NewServiceConfig)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, test.wantProject, plan.DesiredService.GetFields()["project"].GetStringValue())
+				if !test.preserve {
+					require.Equal(t, test.wantProject, plan.NewServiceConfig.GetRelativePath())
+				}
+			}
+			if test.preserve {
+				require.True(t, proto.Equal(beforeExisting, input.ExistingService))
+			}
+		})
+	}
+}
+
 func TestPlanAgentServiceDeclarationIsDeterministic(t *testing.T) {
 	t.Parallel()
 

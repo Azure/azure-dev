@@ -21,7 +21,8 @@ services:
       API_KEY: ${AGENT_API_KEY}
     hooks:
       predeploy:
-        - echo ${MESSAGE}
+        - run: echo ${MESSAGE}
+          shell: sh
     image: ${AGENT_IMAGE}
     infra:
       path: infra

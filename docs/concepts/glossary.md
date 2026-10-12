@@ -24,7 +24,7 @@ Local environment paths are resolved against the canonical project directory bef
 
 The same checks protect the resource cache (`.azure/<environment-name>/.state.json`), state-change notification (`.azure/.state-change`), and all reads and writes of project configuration (`.azure/config.json`), including saved session state. Environment listing skips invalid names from both local and remote stores, as well as local entries with links or unsupported filesystem types in their directories, state files, or lock files, logging the reason, so unrelated entries do not prevent selecting a valid environment. Errors accessing the base directory or project configuration still fail the listing.
 
-Remote state is loaded only when the local environment is absent. Errors reading existing local state are reported rather than treated as a reason to replace it with remote state. Remote-only listing entries must also pass local state and cache path validation before they can be selected.
+Remote state is loaded only when the local environment is absent. Errors reading existing local state are reported rather than treated as a reason to replace it with remote state. Remote-only listing entries must also pass local state and cache path validation before they can be selected. Blob-backed listings accept only `<environment-name>/.env` and `<environment-name>/config.json` keys; unrelated or nested blob layouts are skipped with a diagnostic.
 
 ### Service
 

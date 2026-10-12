@@ -635,7 +635,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 		if cleaned == "" || cleaned == "-" || cleaned == "." || cleaned == ".." {
 			return fmt.Errorf(
-				"cannot generate valid environment name from directory '%s'. "+
+				"cannot generate valid environment name from directory %q. "+
 					"Specify one explicitly with -e or as an argument", dirName)
 		}
 
@@ -645,7 +645,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 		if !IsValidEnvironmentName(cleaned) {
 			return fmt.Errorf(
-				"auto-generated environment name '%s' from directory '%s' is invalid. "+
+				"auto-generated environment name %q from directory %q is invalid. "+
 					"Specify one explicitly with -e or as an argument", cleaned, dirName)
 		}
 

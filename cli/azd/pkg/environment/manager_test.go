@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -994,6 +995,22 @@ func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
 		require.NotNil(t, env)
 		require.Equal(t, "my-explicit-env", env.Name())
 	})
+}
+
+func Test_EnvManager_AutoNameQuotesDirectory(t *testing.T) {
+	for _, name := range []string{"\x1b", strings.Repeat(".", 64) + "\x1b"} {
+		t.Run(strconv.Quote(name), func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.Console.SetNoPromptMode(true)
+			ctx := azdcontext.NewAzdContextWithDirectory(filepath.Join(t.TempDir(), name))
+			manager := &manager{azdContext: ctx, console: mockContext.Console}
+
+			err := manager.ensureValidEnvironmentName(t.Context(), &Spec{})
+
+			require.ErrorContains(t, err, "directory "+strconv.Quote(name))
+			require.NotContains(t, err.Error(), "\x1b")
+		})
+	}
 }
 
 func Test_CleanName_EdgeCases(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -54,7 +55,7 @@ var validBlobItems []*storage.Blob = []*storage.Blob{
 	},
 	{
 		Name: "config.json",
-		Path: "env1/config.env",
+		Path: "env1/config.json",
 	},
 	{
 		Name: ".env",
@@ -62,8 +63,34 @@ var validBlobItems []*storage.Blob = []*storage.Blob{
 	},
 	{
 		Name: "config.json",
-		Path: "env2/config.env",
+		Path: "env2/config.json",
 	},
+}
+
+func TestStorageBlobDataStore_ListSkipsInvalidLayouts(t *testing.T) {
+	client := &MockBlobClient{}
+	items := append([]*storage.Blob{}, validBlobItems...)
+	for _, key := range []string{
+		"archive/prod/.env", "other/prod/config.json", "/prod/.env", "prod//.env",
+		"prod/.env/extra", "prod/config.env", "prod/unrelated", ".env", "../.env",
+		`prod\.env`, "invalid name/.env", "bad\nname/.env",
+	} {
+		items = append(items, &storage.Blob{Name: DotEnvFileName, Path: key})
+	}
+	client.On("Items", t.Context()).Return(items, nil).Twice()
+	store := NewStorageBlobDataStore(config.NewManager(), client)
+
+	envs, err := store.List(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, []*contracts.EnvListEnvironment{
+		{Name: "env1", DotEnvPath: "env1/.env", ConfigPath: "env1/config.json"},
+		{Name: "env2", DotEnvPath: "env2/.env", ConfigPath: "env2/config.json"},
+	}, envs)
+	_, err = store.Get(t.Context(), "prod")
+	require.ErrorIs(t, err, ErrNotFound)
+	client.AssertNotCalled(t, "Download", mock.Anything, mock.Anything)
+	client.AssertExpectations(t)
 }
 
 func Test_StorageBlobDataStore_List(t *testing.T) {

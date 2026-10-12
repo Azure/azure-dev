@@ -8,8 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -71,7 +71,14 @@ func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvList
 	envMap := map[string]*contracts.EnvListEnvironment{}
 
 	for _, blob := range blobs {
-		envName := filepath.Base(filepath.Dir(blob.Path))
+		// Blob keys use forward slashes on every platform. Only direct state files
+		// match the keys used by Save and Reload.
+		envName, fileName, found := strings.Cut(blob.Path, "/")
+		if !found || !IsValidEnvironmentName(envName) ||
+			(fileName != DotEnvFileName && fileName != ConfigFileName) {
+			log.Printf("skipping environment blob %q: invalid state layout", blob.Path)
+			continue
+		}
 		env, has := envMap[envName]
 		if !has {
 			env = &contracts.EnvListEnvironment{
@@ -80,7 +87,7 @@ func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvList
 			envMap[envName] = env
 		}
 
-		switch blob.Name {
+		switch fileName {
 		case ConfigFileName:
 			env.ConfigPath = blob.Path
 		case DotEnvFileName:

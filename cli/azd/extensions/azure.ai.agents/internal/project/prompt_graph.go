@@ -125,8 +125,14 @@ func newPromptGraph(
 		bindings:   map[string]any{},
 	}
 
-	// The model deployment is resolved first: create-if-missing so the harness
-	// has a model to bind to before the agent version is published.
+	// Gate graph resolution on Connection readiness before
+	// later nodes can mutate resources such as a Memory Store.
+	if node := connectionsNode(g); node != nil {
+		g.nodes = append(g.nodes, *node)
+	}
+
+	// Resolve the model before the harness binds to it and publishes the
+	// agent.
 	if node := deploymentNode(g, func() (deploymentResolver, error) {
 		return provisionedDeploymentResolver{}, nil
 	}); node != nil {
@@ -170,12 +176,6 @@ func newPromptGraph(
 		if node := skillsShellNode(g, skills, managed.Toolbox); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
-	}
-
-	// Connections are deployed by sibling azure.ai.connection services. This
-	// node only verifies their deployment markers before publishing the agent.
-	if node := connectionsNode(g); node != nil {
-		g.nodes = append(g.nodes, *node)
 	}
 
 	// The agent node is terminal and validated last.

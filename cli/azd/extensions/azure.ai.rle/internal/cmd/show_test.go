@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,20 +21,25 @@ import (
 func TestShowTelemetryIdentity(t *testing.T) {
 	tests := []struct {
 		name      string
+		traces    string
 		telemetry string
+		enabled   string
 		scope     string
 		runID     string
 		format    string
 	}{
-		{"readable environment", `{"run_scope":"Environment","lime_run_id":"rle-v1|p=one|e=two|v=1.0","run_id_format":"readable"}`,
-			"Environment", "rle-v1|p=one|e=two|v=1.0", "readable"},
-		{"opaque environment", `{"run_scope":"Environment",` +
+		{"readable environment", `{"enabled":true}`,
+			`{"run_scope":"Environment","lime_run_id":"rle-v1|p=one|e=two|v=1.0","run_id_format":"readable"}`,
+			"Enabled", "Environment", "rle-v1|p=one|e=two|v=1.0", "readable"},
+		{"opaque environment", `{"enabled":true}`, `{"run_scope":"Environment",` +
 			`"lime_run_id":"rle-v1-sha256|h=abcdef","run_id_format":"opaque"}`,
-			"Environment", "rle-v1-sha256|h=abcdef", "opaque"},
-		{"rollout", `{"run_scope":"Rollout"}`, "Rollout", "Per rollout", "Unavailable"},
-		{"disabled", `{"run_scope":"Disabled"}`, "Disabled", "Disabled", "Unavailable"},
-		{"invalid version", `null`, "Unavailable", "Unavailable", "Unavailable"},
-		{"older service", ``, "Unavailable", "Unavailable", "Unavailable"},
+			"Enabled", "Environment", "rle-v1-sha256|h=abcdef", "opaque"},
+		{"rollout", `{"enabled":true}`, `{"run_scope":"Rollout"}`,
+			"Enabled", "Rollout", "Per rollout", "Unavailable"},
+		{"disabled", `{"enabled":false}`, `null`,
+			"Disabled", "Unavailable", "Unavailable", "Unavailable"},
+		{"omitted traces", ``, `null`, "Disabled", "Unavailable", "Unavailable", "Unavailable"},
+		{"older service", ``, ``, "Disabled", "Unavailable", "Unavailable", "Unavailable"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -42,7 +48,11 @@ func TestShowTelemetryIdentity(t *testing.T) {
 			if test.telemetry != "" {
 				descriptor = `,"telemetry":` + test.telemetry
 			}
-			resource := `{"id":"version-id","name":"echo_env","version":"1.0.0"` + descriptor + `}`
+			traces := ""
+			if test.traces != "" {
+				traces = `,"traces":` + test.traces
+			}
+			resource := `{"id":"version-id","name":"echo_env","version":"1.0.0"` + traces + descriptor + `}`
 			for _, exact := range []bool{false, true} {
 				for _, format := range []string{"default", "json"} {
 					t.Run(fmt.Sprintf("exact=%t/%s", exact, format), func(t *testing.T) {
@@ -92,19 +102,22 @@ func TestShowTelemetryIdentity(t *testing.T) {
 							t.Fatalf("expected one request, got %d", count)
 						}
 						if format == "default" {
-							for _, expected := range []string{test.scope, test.runID} {
+							for _, expected := range []string{test.enabled, test.scope, test.runID} {
 								if !strings.Contains(output.String(), expected) {
 									t.Errorf("expected %q in output %q", expected, output.String())
 								}
 							}
 							if exact {
-								for _, expected := range []string{"Run scope", "Lime run ID", "Run ID format", test.format} {
+								for _, expected := range []string{
+									"Traces", "Trace identity scope", "Trace run ID", "Trace run ID format", test.format,
+								} {
 									if !strings.Contains(output.String(), expected) {
 										t.Errorf("expected %q in detail output %q", expected, output.String())
 									}
 								}
-							} else if !strings.Contains(output.String(), "RUN SCOPE") ||
-								!strings.Contains(output.String(), "LIME RUN ID") {
+							} else if !strings.Contains(output.String(), "TRACES") ||
+								!strings.Contains(output.String(), "IDENTITY SCOPE") ||
+								!strings.Contains(output.String(), "TRACE RUN ID") {
 								t.Errorf("expected history columns, got %q", output.String())
 							}
 							return
@@ -147,6 +160,13 @@ func TestShowTelemetryIdentity(t *testing.T) {
 							if test.scope == "Rollout" && strings.Contains(output.String(), `"lime_run_id"`) {
 								t.Errorf("invented rollout ID: %s", output.String())
 							}
+						}
+						if test.traces == "" {
+							if strings.Contains(output.String(), `"traces"`) {
+								t.Errorf("invented traces field: %s", output.String())
+							}
+						} else if !strings.Contains(output.String(), `"enabled"`) {
+							t.Errorf("missing traces descriptor: %s", output.String())
 						}
 					})
 				}
@@ -231,8 +251,9 @@ func TestShowMixedHistoryUsesOnlyPagedGETAndOmitsUnsafeFields(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[
 			{"id":"one","version":"1.0","telemetry":{"run_scope":"Environment",
 				"lime_run_id":"` + longID + `","run_id_format":"opaque",
-				"project_endpoint":"https://secret.example","authorization":"secret-token"}},
-			{"id":"two","version":"2.0","telemetry":{"run_scope":"Rollout"}},
+				"project_endpoint":"https://secret.example","authorization":"secret-token"},
+				"traces":{"enabled":true}},
+			{"id":"two","version":"2.0","telemetry":{"run_scope":"Rollout"},"traces":{"enabled":true}},
 			{"id":"three","version":"3.0"}]}`))
 	}))
 	defer server.Close()
@@ -278,6 +299,28 @@ func TestShowRejectsEmptyExplicitVersion(t *testing.T) {
 	}
 	if localErr.Suggestion != "Provide a semantic version, for example --version 2.1.0." {
 		t.Fatalf("expected actionable version suggestion, got %q", localErr.Suggestion)
+	}
+}
+
+func TestShowTrimsExplicitVersionBeforeUse(t *testing.T) {
+	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := testFoundryProjectPath + environmentCollectionPath + "/env/versions/1.2.3"
+		if r.URL.EscapedPath() != want {
+			t.Errorf("path %q, want %q", r.URL.EscapedPath(), want)
+		}
+		_, _ = w.Write([]byte(`{"id":"id","version":"1.2.3","traces":{"enabled":true}}`))
+	}))
+	defer server.Close()
+	stubRleClientEndpoint(t, server.URL)
+
+	format := "json"
+	cmd := newShowCommand(&format)
+	cmd.SetArgs([]string{"env", "--version", "  1.2.3  "})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
 	}
 }
 

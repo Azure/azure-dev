@@ -192,11 +192,12 @@ Show the full details for a specific environment, including version history:
 azd ai rle show code_rl
 ```
 
-The version-history table shows run scope and the service-provided Lime run ID
-when available. A rollout-scoped version displays `Per rollout` rather than
-inventing an ID; older services without telemetry display `Unavailable`.
-`--output json` preserves the complete optional `telemetry` descriptor.
-To inspect one exact version with a single request (including its run ID format):
+The version-history table shows whether traces are enabled and the authoritative
+service-provided trace identity when available. A rollout-scoped version displays
+`Per rollout` rather than inventing an ID; older services without an identity
+display `Unavailable`. `--output json` preserves the optional `traces` and
+`telemetry` descriptors. To inspect one exact version with a single request
+(including its trace run ID format):
 
 ```powershell
 azd ai rle show code_rl --version 1.2.0

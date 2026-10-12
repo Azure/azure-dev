@@ -64,12 +64,15 @@ func (a *showAction) Run() error {
 		ErrWriter: a.cmd.ErrOrStderr(),
 	})
 
-	if a.versionSet && strings.TrimSpace(a.version) == "" {
-		return &azdext.LocalError{
-			Message:    "An exact environment version is required for --version.",
-			Code:       "rle_environment_version_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Provide a semantic version, for example --version 2.1.0.",
+	if a.versionSet {
+		a.version = strings.TrimSpace(a.version)
+		if a.version == "" {
+			return &azdext.LocalError{
+				Message:    "An exact environment version is required for --version.",
+				Code:       "rle_environment_version_required",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Provide a semantic version, for example --version 2.1.0.",
+			}
 		}
 	}
 	environmentName, client, err := a.resolveTarget()
@@ -94,9 +97,10 @@ func (a *showAction) Run() error {
 			{"Disk image", version.DiskImageConversionStatus},
 			{"Environment ID", version.Id},
 			{"Updated", version.UpdatedAt},
-			{"Run scope", telemetryRunScope(version.Telemetry)},
-			{"Lime run ID", telemetryRunID(version.Telemetry)},
-			{"Run ID format", telemetryRunIDFormat(version.Telemetry)},
+			{"Traces", traceEnablement(version.Traces)},
+			{"Trace identity scope", telemetryRunScope(version.Telemetry)},
+			{"Trace run ID", telemetryRunID(version.Telemetry)},
+			{"Trace run ID format", telemetryRunIDFormat(version.Telemetry)},
 		}, "")
 		return nil
 	}
@@ -116,16 +120,24 @@ func (a *showAction) Run() error {
 			version.DiskImageConversionStatus,
 			version.Id,
 			version.UpdatedAt,
+			traceEnablement(version.Traces),
 			telemetryRunScope(version.Telemetry),
 			telemetryRunID(version.Telemetry),
 		})
 	}
 	renderTableOrNoResults(output,
-		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED", "RUN SCOPE", "LIME RUN ID"},
+		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED", "TRACES", "IDENTITY SCOPE", "TRACE RUN ID"},
 		rows,
 		noEnvironmentVersionsMessage,
 	)
 	return nil
+}
+
+func traceEnablement(traces *environmentTraces) string {
+	if traces != nil && traces.Enabled {
+		return "Enabled"
+	}
+	return "Disabled"
 }
 
 func telemetryRunScope(telemetry *environmentTelemetry) string {
@@ -145,8 +157,6 @@ func telemetryRunID(telemetry *environmentTelemetry) string {
 	switch {
 	case strings.EqualFold(telemetry.RunScope, "Rollout"):
 		return "Per rollout"
-	case strings.EqualFold(telemetry.RunScope, "Disabled"):
-		return "Disabled"
 	default:
 		return "Unavailable"
 	}

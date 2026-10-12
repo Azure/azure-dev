@@ -52,7 +52,12 @@ type environmentResource struct {
 	VersionLabel              string                `json:"versionLabel,omitempty"`
 	DiskImageConversionStatus string                `json:"diskImageConversionStatus,omitempty"`
 	DiskImageConversionError  string                `json:"diskImageConversionError,omitempty"`
+	Traces                    *environmentTraces    `json:"traces,omitempty"`
 	Telemetry                 *environmentTelemetry `json:"telemetry,omitempty"`
+}
+
+type environmentTraces struct {
+	Enabled bool `json:"enabled"`
 }
 
 type environmentTelemetry struct {

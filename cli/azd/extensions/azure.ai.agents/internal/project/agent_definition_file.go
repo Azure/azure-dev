@@ -112,11 +112,14 @@ func LoadAgentDefinitionFile(
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
 
-	serviceProperties, err := structpb.NewStruct(properties)
+	// Root-ref resolution preserves file-relative and rebased paths.
+	definitionReference, err := structpb.NewStruct(map[string]any{
+		"$ref": relativePath,
+	})
 	if err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
-	resolved, err := resolveServiceProps(serviceProperties, serviceName, projectRoot)
+	resolved, err := resolveServiceProps(definitionReference, serviceName, projectRoot)
 	if err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}

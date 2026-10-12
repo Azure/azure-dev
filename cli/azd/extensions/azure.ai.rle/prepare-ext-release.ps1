@@ -3,7 +3,8 @@
 Prepares dev and customer packages for one version, with customer files in a supplied public checkout.
 
 .PARAMETER AzureDevRepositoryPath
-Root of an existing, separate Azure/azure-dev checkout on rle-releases.
+Root of an existing, separate Azure/azure-dev checkout.
+The script fetches and switches to the existing remote rle-releases branch.
 
 .EXAMPLE
 .\prepare-ext-release.ps1 -AzureDevRepositoryPath "C:\repos\azure-dev" -VersionBump patch
@@ -12,8 +13,6 @@ Root of an existing, separate Azure/azure-dev checkout on rle-releases.
 .\prepare-ext-release.ps1 -AzureDevRepositoryPath "C:\repos\azure-dev" -BreakingChanges
 #>
 param(
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
     [string] $AzureDevRepositoryPath,
     [ValidateSet("major", "minor", "patch")]
     [string] $VersionBump = "patch",
@@ -23,11 +22,9 @@ param(
 $ErrorActionPreference = "Stop"
 $repository = "Azure/azure-dev"
 $branch = "rle-releases"
-$registryRelativePath = "cli/azd/extensions/registry.rle.json"
-$artifactRelativeRoot = "cli/azd/extensions/azure.ai.rle/artifacts"
 $PublicRepositoryPath = $AzureDevRepositoryPath
 if ([string]::IsNullOrWhiteSpace($PublicRepositoryPath)) {
-    throw "AzureDevRepositoryPath must not be blank."
+    throw "AzureDevRepositoryPath is required. Supply -AzureDevRepositoryPath with an existing Azure/azure-dev checkout."
 }
 
 function Invoke-ReleaseGit {
@@ -75,10 +72,6 @@ foreach ($arguments in @(
         }
     }
 }
-$currentBranch = Invoke-ReleaseGit @("branch", "--show-current")
-if ($currentBranch -ne $branch) {
-    throw "The distribution checkout must be on '$branch', not '$currentBranch'."
-}
 if (Invoke-ReleaseGit @("status", "--porcelain")) {
     throw "The distribution checkout must be clean. Commit or discard previous changes before preparing a release."
 }
@@ -89,55 +82,35 @@ foreach ($state in @("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-me
     }
 }
 
-Invoke-ReleaseGit @("fetch", "origin", "main:refs/remotes/origin/main",
-    "${branch}:refs/remotes/origin/$branch") | Out-Host
-$unpublished = Invoke-ReleaseGit @("rev-list", "--count", "origin/$branch..HEAD")
-if ([int]$unpublished -ne 0) {
-    throw "The distribution checkout has unpublished or diverged commits. Synchronize it before preparing a release."
+Invoke-ReleaseGit @("fetch", "origin", "${branch}:refs/remotes/origin/$branch") | Out-Host
+$localBranch = Invoke-ReleaseGit @("branch", "--list", $branch)
+if ($localBranch) {
+    $unpublished = Invoke-ReleaseGit @("rev-list", "--count", "origin/$branch..refs/heads/$branch")
+    if ([int]$unpublished -ne 0) {
+        throw "The distribution checkout has unpublished or diverged commits. Synchronize it before preparing a release."
+    }
+    if ((Invoke-ReleaseGit @("branch", "--show-current")) -ne $branch) {
+        Invoke-ReleaseGit @("switch", $branch) | Out-Host
+    }
+}
+else {
+    # Single-branch clones need this refspec before Git can configure tracking.
+    Invoke-ReleaseGit @("remote", "set-branches", "--add", "origin", $branch) | Out-Host
+    Invoke-ReleaseGit @("switch", "--track", "-c", $branch, "origin/$branch") | Out-Host
 }
 Invoke-ReleaseGit @("merge", "--ff-only", "origin/$branch") | Out-Host
-$base = Invoke-ReleaseGit @("merge-base", "HEAD", "origin/main")
-foreach ($path in @(Invoke-ReleaseGit @("diff", "--name-only", "$base..HEAD"))) {
-    if ($path -ne $registryRelativePath -and
-        $path -notmatch "^$([regex]::Escape($artifactRelativeRoot))/[^/]+/azure-ai-rle-(windows|darwin|linux)-(amd64|arm64)\.(zip|tar\.gz)$") {
-        throw "Distribution branch contains a non-release change: $path"
-    }
+if (Invoke-ReleaseGit @("status", "--porcelain")) {
+    throw "The distribution checkout must be clean after switching and synchronizing '$branch'. Commit or discard previous changes before preparing a release."
 }
 
 & "$PSScriptRoot/prepare-release.ps1" -Channel rle-ext -VersionBump $VersionBump `
     -BreakingChanges:$BreakingChanges -PublicRepositoryPath $PublicRepositoryPath
 
 $version = (Get-Content -LiteralPath (Join-Path $PSScriptRoot "version.txt") -Raw).Trim()
-$artifactRelativePath = "$artifactRelativeRoot/$version"
-$artifactDirectory = Join-Path $PublicRepositoryPath $artifactRelativePath
-$packageDirectory = Join-Path $PSScriptRoot "artifacts\rle-dev\$version"
-$artifacts = @(Get-ChildItem -LiteralPath $packageDirectory -File |
-    Where-Object { $_.Name -match "\.(zip|tar\.gz)$" })
-foreach ($file in $artifacts) {
-    if ($file.Length -ge 100MB) {
-        throw "Artifact '$($file.Name)' exceeds GitHub's Git file-size limit."
-    }
-}
-New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
-foreach ($file in $artifacts) {
-    Copy-Item -LiteralPath $file.FullName -Destination $artifactDirectory
-}
-foreach ($file in $artifacts) {
-    $copiedFile = Join-Path $artifactDirectory $file.Name
-    if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne
-        (Get-FileHash -LiteralPath $copiedFile -Algorithm SHA256).Hash) {
-        throw "Copied artifact '$($file.Name)' failed checksum verification. Local build output was retained."
-    }
-}
 Remove-Item -LiteralPath (Join-Path $PSScriptRoot "bin") -Recurse -Force
 
 Write-Host ""
 Write-Host "Release $version prepared locally. No files were staged, committed, or pushed."
-Write-Host "Review the registry and all six archives, then run:"
-Write-Host "  git -C `"$PublicRepositoryPath`" add --force -- `"$artifactRelativePath`""
-Write-Host "  git -C `"$PublicRepositoryPath`" add -- `"$registryRelativePath`""
-Write-Host "  git -C `"$PublicRepositoryPath`" diff --cached --stat"
-Write-Host "  git -C `"$PublicRepositoryPath`" commit -m `"Publish RLE $version`""
-Write-Host "  git -C `"$PublicRepositoryPath`" push origin $branch"
-Write-Host "The push updates the existing distribution PR. Versioned archive URLs use the $branch branch."
-Write-Host "Commit version.txt, extension.yaml, registry.rle-dev.json and dev packages together in the implementation repository."
+Write-Host "Review the changes and raise or update PRs in:"
+Write-Host "  Implementation: $sourceRoot"
+Write-Host "  Distribution:   $PublicRepositoryPath"

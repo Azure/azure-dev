@@ -21,3 +21,6 @@ param(
 $ErrorActionPreference = "Stop"
 
 & "$PSScriptRoot/prepare-release.ps1" -Channel rle-dev @PSBoundParameters
+
+Write-Host ""
+Write-Host "Review the changes and raise a PR in the implementation repository."

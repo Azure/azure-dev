@@ -117,7 +117,7 @@ The switch is three-state — this matters:
 # preferred, versions already aligned
 pwsh -NoProfile -File ./prepare-dev-release.ps1 -VersionBump patch -BreakingChanges
 
-# external customer channel (existing, clean upstream checkout on rle-releases)
+# external customer channel (existing, clean upstream checkout)
 pwsh -NoProfile -File ./prepare-ext-release.ps1 -AzureDevRepositoryPath "<local Azure/azure-dev checkout>" -VersionBump patch
 ```
 
@@ -141,10 +141,22 @@ Development repository URLs are inferred from the implementation checkout's
 GitHub HTTPS or SSH `origin`, with `main` as the publication branch. Unsupported
 or missing origins fail before changing the version.
 
-The external wrapper requires `-AzureDevRepositoryPath` with no environment
-fallback and validates that checkout's origin, branch, clean
-state, and release-only branch changes, then fetches and fast-forwards if needed.
+The external wrapper requires `-AzureDevRepositoryPath` and fails immediately
+without an input prompt or environment fallback when omitted. It validates the
+checkout's origin and clean state, fetches the existing remote `rle-releases`,
+and switches to that branch. If no local release branch exists, it creates a
+tracking branch from the fetched remote, never from local HEAD. A missing remote
+branch fails. Single-branch clones have the release branch added to the remote's
+fetch configuration before setting up local tracking.
+The release branch must have no unpublished or diverged commits and is
+fast-forwarded before building. Committed branch contents are not compared
+with upstream `main`; previously committed files do not make the checkout dirty.
+Customer archives are copied and verified before the customer registry is updated
+or customer preparation success is reported. Summaries show each channel's actual
+artifact directory and registry, without listing individual archives.
 Neither channel stages, commits, pushes, or opens a PR automatically.
+Branch-specific ignore rules expose only versioned customer archives for ordinary
+Git staging and keep dev/build output ignored.
 
 `Skipped Building extension` in the **pack** phase is normal — `azd x pack --input bin`
 consumes the binaries the build phase already produced.
@@ -198,8 +210,8 @@ gh pr create --base main --title "Release RLE extension <version>"
 State in the PR body: why the release is (or is not) breaking, any skipped versions, and the
 verification evidence from Step 5.
 
-For external releases, follow the wrapper's printed staging commands in the
-supplied public checkout: force-add only the new version's archives, add
+For external releases, review the changes and raise or update PRs in both
+repositories. In the supplied public checkout, stage only the new version's archives, add
 `registry.rle.json`, then commit and push `rle-releases` together. This updates the
 existing distribution PR and makes the new release available without merging it.
 Commit the source version files, dev registry, and dev packages together in the

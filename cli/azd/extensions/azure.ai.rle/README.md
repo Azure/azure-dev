@@ -949,7 +949,7 @@ to the public checkout. Update checks remain isolated by installed source;
 a development-only release does not notify customer installations.
 
 Prepare an external release by supplying an existing, separate `Azure/azure-dev`
-checkout on the `rle-releases` branch:
+checkout. The script fetches and switches to the existing remote `rle-releases` branch:
 
 ```powershell
 .\prepare-ext-release.ps1 -AzureDevRepositoryPath "C:\repos\azure-dev" -VersionBump patch
@@ -982,17 +982,27 @@ Standalone `build.ps1` and `build.sh` build only the implementation and version
 metadata, without selecting a distribution registry or source.
 
 For external releases, `-AzureDevRepositoryPath` is required on each invocation.
-There is no environment-variable fallback or automatic default. The script never
-creates a checkout. Its fetch and push origin must be `Azure/azure-dev` and its
-branch must be `rle-releases`. The checkout must be clean, have no unpublished
-or diverged commits or unfinished Git operations, and contain no non-release
-changes relative to upstream `main`. The script fetches the remote state and
-fast-forwards to `origin/rle-releases` before building. Invalid state is rejected
-before the source version is changed.
+Omitting it fails immediately without prompting for input. There is no
+environment-variable fallback or automatic default. The script never creates a
+checkout. Its fetch and push origin must be `Azure/azure-dev`. The checkout must
+be clean and have no unfinished Git operations. The script fetches the remote
+state and switches to `rle-releases`, creating a local tracking branch only from
+the fetched `origin/rle-releases` if needed. It never creates a release branch
+from the current local branch; a missing remote branch fails before building.
+Single-branch clones are supported by adding the release branch to the remote's
+fetch configuration before setting up local tracking.
+The release branch must have no unpublished or diverged commits and is
+fast-forwarded before building. Invalid state is rejected before the source
+version is changed. Committed branch contents are not compared with upstream
+`main`; previously committed files, including branch-specific ignore rules,
+do not make the checkout dirty.
 
 The external script reuses all six dev packages without rebuilding or repacking.
-It writes only those customer packages and the customer registry into the supplied
-checkout and prints commands for reviewing, staging, committing, and pushing.
+It copies and verifies all six customer packages in the supplied checkout before
+updating the customer registry or reporting customer preparation success. Each
+channel summary shows its own artifact directory and registry, followed by a
+short reminder to review the changes and raise or update PRs in the corresponding
+repositories. Individual archives and publication commands are not printed.
 It does not stage files, create commits, push, or manage PRs. Publishing is manual
 and requires working Git authentication and write access to `Azure/azure-dev`.
 Pushing `rle-releases` updates the existing distribution PR.
@@ -1000,7 +1010,9 @@ Pushing `rle-releases` updates the existing distribution PR.
 New artifacts use version-specific branch URLs and SHA-256 checksums. Earlier
 entries and their URLs remain unchanged. A published version must never be
 overwritten; the script rejects an existing version. Commit the registry and
-all six archives together; the printed staging commands handle ignored archives.
+all six archives together. On `rle-releases`, the RLE ignore rules expose the six
+customer archives in version directories to Git and Git GUI without force-staging,
+while dev packages and other build output remain ignored.
 Customers can install after the push without a PR merge.
 External packages are stored at `azure.ai.rle/artifacts/<version>/` in the public
 checkout. Development packages retain the existing `artifacts/rle-dev/<version>/`

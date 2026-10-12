@@ -196,6 +196,29 @@ foreach ($target in $targets) {
     $resolvedRegistryPath = [IO.Path]::GetFullPath($target.path)
     $channelDescription = $target.description
     $artifactBaseUrl = "$($target.baseURL)/$($target.artifactRoot)/$version"
+    $targetArtifactDirectory = $resolvedOutputDirectory
+    if ($target.channel -eq "rle-ext") {
+        $targetArtifactDirectory = $publicArtifactPath
+        foreach ($file in $artifacts) {
+            if ($file.Length -ge 100MB) {
+                throw "Artifact '$($file.Name)' exceeds GitHub's Git file-size limit."
+            }
+        }
+        New-Item -ItemType Directory -Path $targetArtifactDirectory -Force | Out-Null
+        foreach ($file in $artifacts) {
+            Copy-Item -LiteralPath $file.FullName -Destination $targetArtifactDirectory
+        }
+        foreach ($file in $artifacts) {
+            $copiedFile = Join-Path $targetArtifactDirectory $file.Name
+            if (-not (Test-Path -LiteralPath $copiedFile -PathType Leaf)) {
+                throw "Copied artifact '$($file.Name)' is missing from '$targetArtifactDirectory'. Local build output was retained."
+            }
+            if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $copiedFile -Algorithm SHA256).Hash) {
+                throw "Copied artifact '$($file.Name)' failed checksum verification. Local build output was retained."
+            }
+        }
+    }
     if (-not (Test-Path $resolvedRegistryPath)) {
         $registryDirectory = Split-Path -Parent $resolvedRegistryPath
         New-Item -ItemType Directory -Path $registryDirectory -Force | Out-Null
@@ -294,14 +317,9 @@ foreach ($target in $targets) {
     Write-Host ""
     Write-Host "RLE $channelDescription release prepared."
     Write-Host "Channel:   $($target.channel)"
-    Write-Host "Artifacts: $resolvedOutputDirectory"
+    Write-Host "Artifacts: $targetArtifactDirectory"
     Write-Host "Registry:  $resolvedRegistryPath"
     if ($null -ne $versionEntry[0].PSObject.Properties["breakingChanges"]) {
         Write-Host "Breaking changes: $($versionEntry[0].breakingChanges)"
-    }
-    Write-Host ""
-    Write-Host "Include these files in the pull request:"
-    $artifacts | Sort-Object Name | ForEach-Object {
-        Write-Host "  $($_.FullName)"
     }
 }

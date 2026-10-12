@@ -12,9 +12,11 @@ $global:rleReleaseTestState = @{
     packCount = 0
     publishCount = 0
     corruptCopy = $false
+    skipCopy = $false
 }
 
 function Copy-Item {
+    if ($global:rleReleaseTestState.skipCopy) { return }
     & $copyItemCommand @args
     if ($global:rleReleaseTestState.corruptCopy) {
         $destination = $args[[Array]::IndexOf($args, "-Destination") + 1]
@@ -86,7 +88,8 @@ function azd {
 }
 
 function Publish-TestCheckout {
-    & $gitExecutable -C $public add --force -- "cli/azd/extensions/azure.ai.rle/artifacts"
+    & $gitExecutable -C $public add -- "cli/azd/extensions/azure.ai.rle/artifacts"
+    if ($LASTEXITCODE -ne 0) { throw "Customer archives required force-staging." }
     & $gitExecutable -C $public add -- "cli/azd/extensions/registry.rle.json"
     & $gitExecutable -C $public commit -m "Fixture release" | Out-Null
     & $gitExecutable -C $public push $global:rleReleaseTestState.remote rle-releases | Out-Null
@@ -142,7 +145,35 @@ try {
     & $gitExecutable init --bare $global:rleReleaseTestState.remote | Out-Null
     & $gitExecutable -C $public push $global:rleReleaseTestState.remote main | Out-Null
     & $gitExecutable -C $public switch -c rle-releases | Out-Null
+    $publicExtension = Join-Path $public "cli\azd\extensions\azure.ai.rle"
+    New-Item -ItemType Directory -Path $publicExtension -Force | Out-Null
+    $artifactIgnorePath = Join-Path $publicExtension ".gitignore"
+    $customerIgnoreRules = @'
+bin/
+registry-artifacts/
+
+# Customer release archives are checked in; other generated output stays ignored.
+!artifacts/
+artifacts/*
+!artifacts/[0-9]*.[0-9]*.[0-9]*/
+artifacts/[0-9]*.[0-9]*.[0-9]*/*
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-windows-amd64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-windows-arm64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-darwin-amd64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-darwin-arm64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-linux-amd64.tar.gz
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-linux-arm64.tar.gz
+'@
+    Set-Content -LiteralPath $artifactIgnorePath -Value $customerIgnoreRules
+    Set-Content -LiteralPath (Join-Path $public "source.txt") -Value "committed distribution content"
+    & $gitExecutable -C $public add -- "cli/azd/extensions/azure.ai.rle/.gitignore" source.txt
+    & $gitExecutable -C $public commit -m "Configure distribution branch" | Out-Null
+    & $gitExecutable -C $public switch main | Out-Null
+    & $gitExecutable -C $public merge --ff-only rle-releases | Out-Null
+    & $gitExecutable -C $public switch rle-releases | Out-Null
     & $gitExecutable -C $public push $global:rleReleaseTestState.remote rle-releases | Out-Null
+    & $gitExecutable "--git-dir=$($global:rleReleaseTestState.remote)" update-ref -d refs/heads/main
+    if ($LASTEXITCODE -ne 0) { throw "Could not remove the fixture remote main branch." }
     & $gitExecutable -C $public remote add origin https://github.com/Azure/azure-dev.git
     $wrapper = Join-Path $extension "prepare-ext-release.ps1"
     $registryPath = Join-Path $public "cli\azd\extensions\registry.rle.json"
@@ -151,10 +182,16 @@ try {
     $head = & $gitExecutable -C $public rev-parse HEAD
 
     $env:AZURE_DEV_REPOSITORY_PATH = $public
+    $pathParameter = (Get-Command $wrapper).Parameters["AzureDevRepositoryPath"]
+    Assert-Release (@($pathParameter.Attributes | Where-Object {
+        $_ -is [Management.Automation.ParameterAttribute] -and $_.Mandatory
+    }).Count -eq 0) "Missing path must not trigger a PowerShell parameter prompt."
     $missingParameter = & pwsh -NoProfile -NonInteractive -File $wrapper 2>&1 | Out-String
-    Assert-Release ($LASTEXITCODE -ne 0 -and $missingParameter.Contains("AzureDevRepositoryPath")) "Missing path parameter did not fail; the environment variable must not provide a fallback."
-    Assert-ReleaseFailure { Invoke-TestRelease "" } "empty"
-    Assert-ReleaseFailure { Invoke-TestRelease "   " } "must not be blank"
+    Assert-Release ($LASTEXITCODE -ne 0 -and $missingParameter.Contains("AzureDevRepositoryPath is required")) "Missing path parameter did not fail; the environment variable must not provide a fallback."
+    Assert-Release (-not $missingParameter.Contains("Supply values for")) "Missing path prompted for input."
+    Assert-ReleaseFailure { & $wrapper } "is required"
+    Assert-ReleaseFailure { Invoke-TestRelease "" } "is required"
+    Assert-ReleaseFailure { Invoke-TestRelease "   " } "is required"
     $env:AZURE_DEV_REPOSITORY_PATH = Join-Path $testRoot "ignored-environment-path"
     Assert-ReleaseFailure { Invoke-TestRelease (Join-Path $testRoot "missing") } "existing"
     Assert-Release (-not (Test-Path (Join-Path $testRoot "missing"))) "Script created a checkout."
@@ -163,8 +200,17 @@ try {
     New-Item -ItemType Directory -Path $subdirectory | Out-Null
     Assert-ReleaseFailure { Invoke-TestRelease $subdirectory } "must be the root"
     & $gitExecutable -C $public switch main | Out-Null
-    Assert-ReleaseFailure { Invoke-TestRelease $public } "must be on"
-    & $gitExecutable -C $public switch rle-releases | Out-Null
+    & $gitExecutable -C $public branch -d rle-releases | Out-Null
+    & $gitExecutable "--git-dir=$($global:rleReleaseTestState.remote)" update-ref -d refs/heads/rle-releases
+    if ($LASTEXITCODE -ne 0) { throw "Could not remove the fixture remote release branch." }
+    Assert-ReleaseFailure { Invoke-TestRelease $public } "fetch"
+    Assert-Release ((& $gitExecutable -C $public branch --show-current) -eq "main") "Missing remote branch switched the checkout."
+    Assert-Release (-not (& $gitExecutable -C $public branch --list rle-releases)) "Missing remote branch created a local release branch."
+    & $gitExecutable "--git-dir=$($global:rleReleaseTestState.remote)" update-ref refs/heads/rle-releases $head
+    if ($LASTEXITCODE -ne 0) { throw "Could not restore the fixture remote release branch." }
+    & $gitExecutable -C $public fetch $global:rleReleaseTestState.remote "rle-releases:refs/remotes/origin/rle-releases" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not fetch the fixture remote release branch." }
+    & $gitExecutable -C $public switch --track -c rle-releases origin/rle-releases | Out-Null
     & $gitExecutable -C $public remote set-url origin https://github.com/example/fork.git
     Assert-ReleaseFailure { Invoke-TestRelease $public } "not a fork"
     & $gitExecutable -C $public remote set-url origin https://github.com/Azure/azure-dev.git
@@ -182,9 +228,35 @@ try {
     Remove-Item -LiteralPath (Join-Path $public ".git\MERGE_HEAD")
     Assert-Release ((Get-Content (Join-Path $extension "version.txt")).Trim() -eq "1.2.3-preview") "Rejected checkout bumped source version."
 
+    & $gitExecutable -C $public switch main | Out-Null
+    & $gitExecutable -C $public branch -d rle-releases | Out-Null
+    & $gitExecutable -C $public commit --allow-empty -m "Main-only commit" | Out-Null
+    & $gitExecutable -C $public config --replace-all remote.origin.fetch "+refs/heads/main:refs/remotes/origin/main"
+    Add-Content -LiteralPath (Join-Path $public ".gitignore") -Value "switch-only.txt"
+    & $gitExecutable -C $public add .gitignore
+    & $gitExecutable -C $public commit -m "Ignore local output on main" | Out-Null
+    Set-Content -LiteralPath (Join-Path $public "switch-only.txt") -Value "previous local output"
+    Assert-Release (-not (& $gitExecutable -C $public status --porcelain)) "Branch-switch test must start with a clean main checkout."
+    $beforeSwitchBuilds = $global:rleReleaseTestState.buildCount
+    Assert-ReleaseFailure { Invoke-TestRelease $public } "must be clean after switching"
+    Assert-Release ($global:rleReleaseTestState.buildCount -eq $beforeSwitchBuilds) "Dirty release checkout triggered a build."
+    Assert-Release ((Get-Content (Join-Path $extension "version.txt")).Trim() -eq "1.2.3-preview") "Dirty release checkout bumped source version."
+    Remove-Item -LiteralPath (Join-Path $public "switch-only.txt")
+    & $gitExecutable -C $public switch main | Out-Null
+    & $gitExecutable -C $public branch -d rle-releases | Out-Null
     $global:rleReleaseTestState.gitCalls = @()
-    Invoke-TestRelease $public -BreakingChanges | Out-Null
+    $firstOutput = Invoke-TestRelease $public -BreakingChanges 6>&1 | Out-String
+    Assert-Release ((& $gitExecutable -C $public branch --show-current) -eq "rle-releases") "Checkout did not switch to the release branch."
+    Assert-Release ((& $gitExecutable -C $public rev-parse --abbrev-ref '@{upstream}') -eq "origin/rle-releases") "Release branch did not track the fetched remote."
+    Assert-Release (@($global:rleReleaseTestState.gitCalls | Where-Object {
+        $_ -like "*switch --track -c rle-releases origin/rle-releases"
+    }).Count -eq 1) "Release branch must be created from the fetched remote, not local main."
     Assert-Release ((& $gitExecutable -C $public rev-parse HEAD) -eq $head) "Script committed changes."
+    Assert-Release ((Get-Content -LiteralPath (Join-Path $public "source.txt") -Raw).Trim() -eq
+        "committed distribution content") "Preparation changed previously committed distribution content."
+    Assert-Release (@($global:rleReleaseTestState.gitCalls | Where-Object {
+        $_ -match " (merge-base|diff --name-only) " -or $_ -match " fetch .*main:"
+    }).Count -eq 0) "Preparation compared committed content or fetched upstream main."
     Assert-Release (-not (& $gitExecutable -C $public diff --cached --name-only)) "Script staged changes."
     Assert-Release (@($global:rleReleaseTestState.gitCalls | Where-Object { $_ -match " (clone|add|commit|push) " }).Count -eq 0) "Script published or staged changes."
     $first = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
@@ -201,6 +273,30 @@ try {
     Assert-Release (-not (Test-Path (Join-Path $extension "bin"))) "External binaries were not cleaned."
     Assert-Release (Test-Path (Join-Path $extension "artifacts\rle-dev\1.2.4-preview")) "Dev packages were removed."
     Assert-Release ((Get-Content (Join-Path $extension "version.txt")).Trim() -eq "1.2.4-preview") "External preparation bumped version more than once."
+    $customerArtifacts = Join-Path $public "cli\azd\extensions\azure.ai.rle\artifacts\1.2.4-preview"
+    Assert-Release (@(Get-ChildItem -LiteralPath $customerArtifacts -File).Count -eq 6) "Customer checkout must contain all six archives."
+    $visibleArtifacts = @(& $gitExecutable -C $public status --porcelain --untracked-files=all -- "cli/azd/extensions/azure.ai.rle/artifacts/1.2.4-preview")
+    Assert-Release ($visibleArtifacts.Count -eq 6 -and
+        @($visibleArtifacts | Where-Object { $_ -notlike "?? *" }).Count -eq 0) "All six customer archives must appear in Git status without force-staging."
+    foreach ($path in @(
+        "bin/fixture.exe",
+        "registry-artifacts/fixture.zip",
+        "artifacts/rle-dev/1.2.4-preview/azure-ai-rle-windows-amd64.zip",
+        "artifacts/rle-ext/1.2.4-preview/azure-ai-rle-windows-amd64.zip",
+        "artifacts/cache/fixture.zip",
+        "artifacts/1.2.4-preview/debug.log",
+        "artifacts/1.2.4-preview/azure-ai-rle-unknown.zip",
+        "artifacts/1.2.4-preview/nested/azure-ai-rle-windows-amd64.zip"
+    )) {
+        & $gitExecutable -C $public check-ignore --quiet --no-index -- "cli/azd/extensions/azure.ai.rle/$path"
+        Assert-Release ($LASTEXITCODE -eq 0) "Unexpected generated file is not ignored: $path"
+    }
+    Assert-Release ($firstOutput.Contains("Artifacts: $customerArtifacts")) "Customer summary must show the copied distribution folder."
+    Assert-Release ($firstOutput.Contains("Review the changes and raise or update PRs in:") -and
+        $firstOutput.Contains("Implementation: $source") -and $firstOutput.Contains("Distribution:   $public")) "Missing concise PR guidance for both repositories."
+    Assert-Release (-not $firstOutput.Contains("Include these files") -and
+        -not $firstOutput.Contains("git -C") -and -not $firstOutput.Contains(".zip") -and
+        -not $firstOutput.Contains(".tar.gz")) "Release summary listed individual archives or publication commands."
     foreach ($artifact in $firstVersion.artifacts.PSObject.Properties) {
         Assert-Release ($artifact.Value.url.StartsWith("https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/")) "Wrong branch artifact URL."
         $file = Join-Path $public ("cli\azd\extensions\azure.ai.rle\artifacts\1.2.4-preview\" + (Split-Path -Leaf $artifact.Value.url))
@@ -215,16 +311,6 @@ try {
     Assert-Release ($env:RLE_REGISTRY_URL -eq "test-url" -and $env:RLE_REGISTRY_SOURCE -eq "test-source") "Build environment was not restored."
     Assert-ReleaseFailure { Invoke-TestRelease $public } "must be clean"
     Publish-TestCheckout
-    Set-Content -LiteralPath (Join-Path $public "source.txt") -Value "not a release"
-    & $gitExecutable -C $public add source.txt
-    & $gitExecutable -C $public commit -m "Invalid distribution change" | Out-Null
-    $beforeValidationBuilds = $global:rleReleaseTestState.buildCount
-    & $gitExecutable -C $public push $global:rleReleaseTestState.remote rle-releases | Out-Null
-    Assert-ReleaseFailure { Invoke-TestRelease $public } "non-release change"
-    Assert-Release ($global:rleReleaseTestState.buildCount -eq $beforeValidationBuilds) "Invalid branch triggered a build."
-    & $gitExecutable -C $public rm source.txt | Out-Null
-    & $gitExecutable -C $public commit -m "Remove invalid change" | Out-Null
-    & $gitExecutable -C $public push $global:rleReleaseTestState.remote rle-releases | Out-Null
 
     # Simulate another publisher advancing the remote; this checkout must fast-forward.
     $publisher = Join-Path $testRoot "publisher"
@@ -236,9 +322,14 @@ try {
     $remoteHead = & $gitExecutable -C $publisher rev-parse HEAD
     $beforeDivergence = & $gitExecutable -C $public rev-parse HEAD
     & $gitExecutable -C $public commit --allow-empty -m "Diverged local change" | Out-Null
+    & $gitExecutable -C $public switch main | Out-Null
     Assert-ReleaseFailure { Invoke-TestRelease $public } "unpublished or diverged"
+    Assert-Release ((& $gitExecutable -C $public branch --show-current) -eq "main") "Diverged release branch switched the checkout."
+    & $gitExecutable -C $public switch rle-releases | Out-Null
     & $gitExecutable -C $public reset --soft $beforeDivergence
+    & $gitExecutable -C $public switch main | Out-Null
     Invoke-TestRelease $public | Out-Null
+    Assert-Release ((& $gitExecutable -C $public branch --show-current) -eq "rle-releases") "Checkout did not switch to the existing local release branch."
     Assert-Release ((& $gitExecutable -C $public rev-parse HEAD) -eq $remoteHead) "Checkout did not fast-forward."
     $second = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
     Assert-Release ($second.extensions[0].versions.Count -eq 2) "Previous version lost."
@@ -260,7 +351,9 @@ try {
     $beforeDevBuilds = $global:rleReleaseTestState.buildCount
     $beforeDevPublishes = $global:rleReleaseTestState.publishCount
     $global:rleReleaseTestState.gitCalls = @()
-    & (Join-Path $extension "prepare-dev-release.ps1") | Out-Null
+    $devOutput = & (Join-Path $extension "prepare-dev-release.ps1") 6>&1 | Out-String
+    Assert-Release ($devOutput.Contains("Review the changes and raise a PR in the implementation repository.") -and
+        -not $devOutput.Contains("Include these files")) "Development release guidance was not simplified."
     Assert-Release ($global:rleReleaseTestState.buildCount -eq $beforeDevBuilds + 1) "Dev preparation must build once."
     Assert-Release ($global:rleReleaseTestState.publishCount -eq $beforeDevPublishes + 1) "Dev preparation must update only one registry."
     Assert-Release ((Get-Content -LiteralPath $registryPath -Raw) -eq $publicJSON) "Dev preparation modified the customer registry."
@@ -274,12 +367,22 @@ try {
         $file = Join-Path $extension ("artifacts\rle-dev\1.2.6-preview\" + (Split-Path -Leaf $artifact.Value.url))
         Assert-Release ((Get-FileHash $file -Algorithm SHA256).Hash -eq $artifact.Value.checksum.value) "Development checksum mismatch."
     }
+    $beforeCopyPublishes = $global:rleReleaseTestState.publishCount
     $global:rleReleaseTestState.corruptCopy = $true
-    Assert-ReleaseFailure { Invoke-TestRelease $public } "failed checksum verification"
+    $copyFailureOutput = & { Assert-ReleaseFailure { Invoke-TestRelease $public } "failed checksum verification" } 6>&1 | Out-String
+    Assert-Release (-not $copyFailureOutput.Contains("RLE external customer release prepared.")) "Failed copy reported customer release success."
+    Assert-Release ($global:rleReleaseTestState.publishCount -eq $beforeCopyPublishes + 1 -and
+        (Get-Content -LiteralPath $registryPath -Raw) -eq $publicJSON) "Failed copy updated the customer registry."
     Assert-Release (Test-Path (Join-Path $extension "bin")) "Failed copy removed recovery binaries."
     Assert-Release (Test-Path (Join-Path $extension "artifacts\rle-dev\1.2.7-preview")) "Failed copy removed dev packages."
     $global:rleReleaseTestState.corruptCopy = $false
-    Write-Host "PASS: required path parameter with no environment fallback, origin inference, checkout validation, dev-only and dual registries, one build/pack/version bump, identical checksums, history, flags, local-only state, cleanup and failed-copy retention."
+    Remove-Item -LiteralPath (Join-Path $publicExtension "artifacts\1.2.7-preview") -Recurse -Force
+    $global:rleReleaseTestState.skipCopy = $true
+    Assert-ReleaseFailure { Invoke-TestRelease $public } "is missing from"
+    Assert-Release (Test-Path (Join-Path $extension "bin")) "Missing copy removed recovery binaries."
+    Assert-Release ((Get-Content -LiteralPath $registryPath -Raw) -eq $publicJSON) "Missing copy updated the customer registry."
+    $global:rleReleaseTestState.skipCopy = $false
+    Write-Host "PASS: committed distribution content accepted without upstream main, visible customer archives without force-staging, ignored generated output, fail-fast path validation without prompts, remote-only branch selection, checkout validation, verified customer copies, concise summaries, dev-only and dual registries, one build/pack/version bump, identical checksums, history, flags, local-only state, cleanup and failed-copy retention."
 }
 finally {
     $env:RLE_REGISTRY_URL = $previousRegistryURL

@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -177,6 +178,74 @@ toolbox:
 	require.Empty(t, plan.Warnings)
 }
 
+func TestPlanAgentServiceUsesHostedSingularToolbox(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		existing bool
+		extra    string
+		wantUses []string
+	}{
+		{
+			name:     "add",
+			extra:    "toolbox:\n  name: new-tools\n",
+			wantUses: []string{"project", "new-tools"},
+		},
+		{
+			name:     "update and deduplicate plural toolbox",
+			existing: true,
+			extra:    "toolbox:\n  name: new-tools\ntoolboxes:\n  - new-tools\n",
+			wantUses: []string{"project", "new-tools", "manual-agent"},
+		},
+		{
+			name:     "remove stale toolbox",
+			existing: true,
+			wantUses: []string{"project", "manual-agent"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			definition := loadAgentDependencyDefinition(t, root, "agent", `kind: hosted
+name: agent
+codeConfiguration:
+  runtime: python_3_13
+  entryPoint: app.py
+`+test.extra)
+			services := map[string]*azdext.ServiceConfig{
+				"project":      agentDependencyService(t, "project", AiProjectHost, nil),
+				"new-tools":    agentDependencyService(t, "new-tools", AiToolboxHost, nil),
+				"old-tools":    agentDependencyService(t, "old-tools", AiToolboxHost, nil),
+				"manual-agent": agentDependencyService(t, "manual-agent", AiAgentHost, nil),
+			}
+			var beforeAgent *azdext.ServiceConfig
+			if test.existing {
+				oldAgent := hostedAgentDependencyService(t, "agent")
+				oldAgent.AdditionalProperties.Fields["toolbox"] = structpb.NewStructValue(
+					&structpb.Struct{Fields: map[string]*structpb.Value{
+						"name": structpb.NewStringValue("old-tools"),
+					}},
+				)
+				oldAgent.Uses = []string{"old-tools", "manual-agent", "project"}
+				services["agent"] = oldAgent
+				beforeAgent = proto.Clone(oldAgent).(*azdext.ServiceConfig)
+			}
+
+			plan, err := planAgentServiceUses("agent", definition, nil, services, root)
+
+			require.NoError(t, err)
+			require.Equal(t, test.wantUses, plan.Uses)
+			require.Empty(t, plan.Warnings)
+			if test.existing {
+				require.True(t, proto.Equal(beforeAgent, services["agent"]))
+			}
+		})
+	}
+}
+
 func TestPlanAgentServiceUsesIncludesHostedVoiceTarget(t *testing.T) {
 	t.Parallel()
 
@@ -231,6 +300,14 @@ conversationEngine:
 name: agent
 model: gpt-4.1-mini
 instructions: Help the user.
+` + extra
+	}
+	hostedDefinition := func(extra string) string {
+		return `kind: hosted
+name: agent
+codeConfiguration:
+  runtime: python_3_13
+  entryPoint: app.py
 ` + extra
 	}
 	tests := []struct {
@@ -296,6 +373,20 @@ instructions: Help the user.
 		{
 			name:       "wrong Toolbox host",
 			definition: promptDefinition("toolboxes:\n  - wrong\n"),
+			setup: func(t *testing.T, services map[string]*azdext.ServiceConfig) {
+				services["wrong"] = agentDependencyService(t, "wrong", AiConnectionHost, nil)
+			},
+			wantError: "instead of \"azure.ai.toolbox\"",
+		},
+		{
+			name:       "missing hosted singular Toolbox",
+			definition: hostedDefinition("toolbox:\n  name: missing\n"),
+			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
+			wantError:  "does not match a local service with host \"azure.ai.toolbox\"",
+		},
+		{
+			name:       "wrong hosted singular Toolbox host",
+			definition: hostedDefinition("toolbox:\n  name: wrong\n"),
 			setup: func(t *testing.T, services map[string]*azdext.ServiceConfig) {
 				services["wrong"] = agentDependencyService(t, "wrong", AiConnectionHost, nil)
 			},

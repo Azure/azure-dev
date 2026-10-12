@@ -501,11 +501,19 @@ func agentServiceAddEnvironment(values map[string]any) (map[string]string, error
 		return nil, nil
 	}
 
-	environment := make(map[string]string, len(values))
+	normalized := make(map[string]any, len(values))
 	for name, value := range values {
+		normalized[name] = value
+	}
+	if err := projectconfig.NormalizeEnvironment(map[string]any{"env": normalized}); err != nil {
+		return nil, err
+	}
+
+	environment := make(map[string]string, len(normalized))
+	for name, value := range normalized {
 		stringValue, ok := value.(string)
 		if !ok {
-			return nil, fmt.Errorf("environment variable %q must be a string", name)
+			return nil, fmt.Errorf("environment variable %q must be a scalar", name)
 		}
 		environment[name] = stringValue
 	}

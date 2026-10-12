@@ -113,7 +113,8 @@ func connectionsNode(g *promptGraph) *promptNode {
 							identity.ResourceName,
 						),
 						fmt.Sprintf(
-							"add %q to the agent service's uses list and run 'azd deploy --all'",
+							"deploy or redeploy connection service %q in the agent's Foundry project "+
+								"with 'azd deploy --all'",
 							identity.ServiceKey,
 						),
 					)

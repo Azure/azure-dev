@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,11 +109,46 @@ func TestConnectionsNodeRequiresUsesDependency(t *testing.T) {
 
 	node := connectionsNode(graph)
 	require.NoError(t, node.Validate())
-	require.ErrorContains(
-		t,
-		node.Resolve(t.Context()),
-		`connection service "search" is not declared in agent service "agent" uses`,
-	)
+	err := node.Resolve(t.Context())
+	require.ErrorContains(t, err, `connection service "search" is not declared in agent service "agent" uses`)
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, `add "search" to the agent service's uses list and run 'azd deploy --all'`, localError.Suggestion)
+}
+
+func TestConnectionsNodeMarkerSuggestionForDeclaredDependency(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/current"
+	for _, marker := range []string{"", "https://acct.services.ai.azure.com/api/projects/other"} {
+		t.Run(marker, func(t *testing.T) {
+			graph := &promptGraph{
+				managed: &agent_yaml.PromptAgent{Connections: []string{"search-resource"}},
+				agentService: &azdext.ServiceConfig{
+					Name: "agent",
+					Uses: []string{"search-service"},
+				},
+				projectServices: map[string]*azdext.ServiceConfig{
+					"search-service": promptConnectionService(t, "search-service", "search-resource"),
+				},
+				env: map[string]string{
+					"FOUNDRY_PROJECT_ENDPOINT":                                endpoint,
+					envkey.ConnectionServiceProjectEndpoint("search-service"): marker,
+				},
+			}
+			node := connectionsNode(graph)
+			require.NoError(t, node.Validate())
+			err := node.Resolve(t.Context())
+			require.ErrorContains(t, err, `connection "search-resource" has not been deployed`)
+			localError, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t,
+				`deploy or redeploy connection service "search-service" in the agent's Foundry project `+
+					`with 'azd deploy --all'`,
+				localError.Suggestion,
+			)
+			require.NotContains(t, localError.Suggestion, "uses")
+		})
+	}
 }
 
 func TestConnectionsNodeRejectsDisabledDependency(t *testing.T) {

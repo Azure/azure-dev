@@ -333,6 +333,7 @@ func TestBuildBicepParam_SuccessAndError(t *testing.T) {
 	tests := []struct {
 		name      string
 		fail      bool
+		exact     bool
 		env       []string
 		wantOut   string
 		wantErrLn string
@@ -340,6 +341,10 @@ func TestBuildBicepParam_SuccessAndError(t *testing.T) {
 		{name: "success-no-env", wantOut: "compiled", wantErrLn: ""},
 		{name: "success-with-env", env: []string{"FOO=bar", "BAZ=qux"}, wantOut: "compiled2"},
 		{name: "failure", fail: true},
+		{name: "exact-nil-env", exact: true, wantOut: "compiled"},
+		{name: "exact-empty-env", exact: true, env: []string{}, wantOut: "compiled"},
+		{name: "exact-with-env", exact: true, env: []string{"FOO=bar"}, wantOut: "compiled"},
+		{name: "exact-failure", exact: true, fail: true},
 	}
 
 	for _, tc := range tests {
@@ -359,7 +364,12 @@ func TestBuildBicepParam_SuccessAndError(t *testing.T) {
 			})
 
 			cli := newCliWithTransporter(mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient)
-			res, err := cli.BuildBicepParam(t.Context(), "main.bicepparam", tc.env)
+			build := cli.BuildBicepParam
+			if tc.exact {
+				build = cli.BuildBicepParamWithExactEnv
+			}
+			res, err := build(t.Context(), "main.bicepparam", tc.env)
+			require.Equal(t, tc.exact, capturedArgs.EnvIsExact)
 			if tc.fail {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "failed running bicep build")

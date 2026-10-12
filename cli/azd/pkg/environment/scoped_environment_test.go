@@ -5,6 +5,9 @@ package environment
 
 import (
 	"fmt"
+	"os"
+	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,7 +62,17 @@ func TestMappedScopedEnvironmentTranslatesProviderViewAndProjectView(t *testing.
 	require.Equal(t, "one", env.Getenv("B"))
 	require.Equal(t, "input", env.Getenv("LOCAL_INPUT"))
 	require.Empty(t, env.Getenv("MISSING_LOCAL"))
-	require.Equal(t, "", env.Dotenv()["MISSING_LOCAL"])
+	_, found := env.LookupEnv("MISSING_LOCAL")
+	require.False(t, found)
+	require.NotContains(t, env.Dotenv(), "MISSING_LOCAL")
+	require.NotContains(t, env.Environ(), "MISSING_LOCAL=")
+
+	env.DotenvSet("MISSING_LOCAL", "created")
+	require.Equal(t, "created", backing.Getenv("MISSING_SHARED"))
+	require.Equal(t, "created", env.Getenv("MISSING_LOCAL"))
+	require.Equal(t, "created", env.Dotenv()["MISSING_LOCAL"])
+	env.DotenvDelete("MISSING_LOCAL")
+	require.NotContains(t, env.Dotenv(), "MISSING_LOCAL")
 
 	env.DotenvSet("LOCAL_OUTPUT", "new-output")
 	require.Equal(t, "new-output", backing.Getenv("SHARED_OUTPUT"))
@@ -203,28 +216,112 @@ func TestMappedScopedEnvironmentExcludesAliasedLoaderControls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, processSource := range []bool{false, true} {
-				t.Run(fmt.Sprintf("processSource=%t", processSource), func(t *testing.T) {
+			for _, processEnvironmentSource := range []bool{false, true} {
+				t.Run(fmt.Sprintf("processEnvironmentSource=%t", processEnvironmentSource), func(t *testing.T) {
 					backing := New("test")
-					if processSource {
+					if processEnvironmentSource {
 						t.Setenv("SHARED_INPUT", "value")
 					} else {
 						backing.DotenvSet("SHARED_INPUT", "value")
 					}
 					env := NewMappedScopedEnvironment(backing, map[string]string{tt.name: "SHARED_INPUT"})
 
-					if tt.blocked {
+					if tt.blocked || processEnvironmentSource {
 						require.NotContains(t, env.Dotenv(), tt.name)
 						require.NotContains(t, env.Environ(), tt.name+"=value")
 					} else {
 						require.Equal(t, "value", env.Dotenv()[tt.name])
 						require.Contains(t, env.Environ(), tt.name+"=value")
 					}
+					processEnv := env.ProcessEnviron(os.Environ())
+					if tt.blocked {
+						require.NotContains(t, processEnv, tt.name+"=value")
+					} else {
+						require.Contains(t, processEnv, tt.name+"=value")
+					}
 					require.Equal(t, "value", env.Getenv(tt.name), "direct lookups remain compatible")
 					require.Equal(t, "value", backing.Getenv("SHARED_INPUT"))
 				})
 			}
 		})
+	}
+}
+
+func TestEnvironmentProcessEnviron(t *testing.T) {
+	t.Parallel()
+
+	env := NewWithValues("test", map[string]string{"KEY": "dotenv", "LD_PRELOAD": "blocked"})
+	inherited := []string{"KEY=inherited", "KEEP=preserved"}
+	before := slices.Clone(inherited)
+	values := env.ProcessEnviron(inherited)
+	value, found := lookupProcessEnv(values, "KEY")
+	require.True(t, found)
+	require.Equal(t, "dotenv", value)
+	require.Contains(t, values, "KEEP=preserved")
+	require.NotContains(t, values, "LD_PRELOAD=blocked")
+	require.Equal(t, before, inherited)
+	values[0] = "changed"
+	require.Equal(t, before, inherited)
+	require.NotNil(t, New("test").ProcessEnviron(nil))
+}
+
+func TestMappedScopedEnvironmentProcessEnvironMissingAndEmptySources(t *testing.T) {
+	t.Setenv("AZD_TEST_ALIAS_MISSING", "ambient-value-must-not-be-used")
+	inherited := []string{"TARGET=stale-process", "SOURCE=process-value", "KEEP=preserved"}
+	before := slices.Clone(inherited)
+	tests := []struct {
+		name   string
+		source string
+		dotenv map[string]string
+		want   string
+		found  bool
+	}{
+		{name: "ProcessEnvironmentSource", source: "SOURCE", want: "process-value", found: true},
+		{name: "DotenvWins", source: "SOURCE", dotenv: map[string]string{"SOURCE": "dotenv"}, want: "dotenv", found: true},
+		{name: "EmptySourceIsPresent", source: "SOURCE", dotenv: map[string]string{"SOURCE": ""}, found: true},
+		{name: "MissingSource", source: "AZD_TEST_ALIAS_MISSING"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backing := NewWithValues("test", tt.dotenv)
+			backing.DotenvSet("TARGET", "stale-dotenv")
+			env := NewMappedScopedEnvironment(backing, map[string]string{"TARGET": tt.source})
+			values := env.ProcessEnviron(inherited)
+			value, found := lookupProcessEnv(values, "TARGET")
+			require.Equal(t, tt.found, found)
+			require.Equal(t, tt.want, value)
+			require.Contains(t, values, "KEEP=preserved")
+			require.Equal(t, before, inherited)
+			require.Equal(t, "stale-dotenv", backing.Getenv("TARGET"))
+		})
+	}
+}
+
+func TestMappedScopedEnvironmentProcessEnvironOverlappingAliases(t *testing.T) {
+	t.Parallel()
+
+	backing := NewWithValues("test", map[string]string{"A": "one", "B": "two", "C": "three"})
+	env := NewMappedScopedEnvironment(backing, map[string]string{"A": "B", "B": "C"})
+	values := env.ProcessEnviron([]string{"KEEP=preserved"})
+	require.ElementsMatch(t, []string{"KEEP=preserved", "A=two", "B=three", "C=three"}, values)
+
+	nested := NewMappedScopedEnvironment(env, map[string]string{"LOCAL": "A"})
+	require.Contains(t, nested.ProcessEnviron(nil), "LOCAL=two")
+}
+
+func TestMappedScopedEnvironmentProcessEnvironNameMatching(t *testing.T) {
+	t.Parallel()
+
+	env := NewMappedScopedEnvironment(New("test"), map[string]string{"TARGET": "SOURCE"})
+	values := env.ProcessEnviron([]string{"target=stale", "SOURCE=first", "source=last"})
+	value, found := lookupProcessEnv(values, "TARGET")
+	require.True(t, found)
+	if runtime.GOOS == "windows" {
+		require.Equal(t, "last", value)
+		require.NotContains(t, values, "target=stale")
+	} else {
+		require.Equal(t, "first", value)
+		require.Contains(t, values, "target=stale")
 	}
 }
 

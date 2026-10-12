@@ -14,6 +14,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -122,6 +123,237 @@ func TestBicepLoadParameters_UsesScopedEnvironment(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, value, parameters.parameters["value"].Value)
 			require.Equal(t, "backing", backing.Getenv("LAYER_VALUE"))
+		})
+	}
+}
+
+func TestBicepCompile_MissingEnvironmentVariableUsesDefault(t *testing.T) {
+	prepareBicepCompileEnvironmentTest(t)
+
+	const providerKey = "AZD_TEST_ALIAS_PROVIDER_VALUE"
+	const projectKey = "AZD_TEST_ALIAS_PROJECT_VALUE"
+	unsetProcessEnvironmentVariable(t, providerKey)
+	unsetProcessEnvironmentVariable(t, projectKey)
+
+	tests := []struct {
+		name    string
+		aliases map[string]string
+	}{
+		// The provider reads its own variable name when no project mapping exists.
+		{name: "Unaliased"},
+		// The provider name maps to a different project variable, which is also absent.
+		{name: "Aliased", aliases: map[string]string{
+			providerKey: projectKey,
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := environment.NewMappedScopedEnvironment(environment.New("test"), tt.aliases)
+			_, found := env.LookupEnv(providerKey)
+			require.False(t, found)
+
+			result, err := compileBicepEnvironmentVariable(t, env, providerKey, true)
+			require.NoError(t, err)
+			parameter, found := result.Parameters["value"]
+			require.True(t, found)
+			assert.Equal(t, "fallback", parameter.Value)
+		})
+	}
+}
+
+func TestBicepCompile_MissingRequiredEnvironmentVariableFails(t *testing.T) {
+	prepareBicepCompileEnvironmentTest(t)
+
+	const providerKey = "AZD_TEST_ALIAS_PROVIDER_VALUE"
+	const projectKey = "AZD_TEST_ALIAS_PROJECT_VALUE"
+	unsetProcessEnvironmentVariable(t, providerKey)
+	unsetProcessEnvironmentVariable(t, projectKey)
+
+	tests := []struct {
+		name    string
+		aliases map[string]string
+	}{
+		// A required provider variable must fail when it is absent directly.
+		{name: "Unaliased"},
+		// A required provider variable must also fail when its mapped project variable is absent.
+		{name: "Aliased", aliases: map[string]string{providerKey: projectKey}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := environment.NewMappedScopedEnvironment(environment.New("test"), tt.aliases)
+			_, found := env.LookupEnv(providerKey)
+			require.False(t, found)
+
+			_, err := compileBicepEnvironmentVariable(t, env, providerKey, false)
+			require.Error(t, err, "Bicep must reject an absent required project variable")
+			require.ErrorContains(t, err, providerKey)
+		})
+	}
+}
+
+func TestBicepCompile_AliasedEnvironmentVariableUsesProjectValue(t *testing.T) {
+	prepareBicepCompileEnvironmentTest(t)
+
+	const providerKey = "AZD_TEST_ALIAS_PROVIDER_VALUE"
+	const projectKey = "AZD_TEST_ALIAS_PROJECT_VALUE"
+	unsetProcessEnvironmentVariable(t, providerKey)
+	unsetProcessEnvironmentVariable(t, projectKey)
+
+	values := []string{
+		// An explicitly empty project value is present and must not select the Bicep default.
+		"",
+		// A non-empty project value must reach Bicep through the provider alias.
+		"project-value",
+	}
+	for _, value := range values {
+		t.Run(fmt.Sprintf("value=%q", value), func(t *testing.T) {
+			backing := environment.New("test")
+			backing.DotenvSet(projectKey, value)
+			env := environment.NewMappedScopedEnvironment(
+				backing,
+				map[string]string{providerKey: projectKey},
+			)
+			actual, found := env.LookupEnv(providerKey)
+			require.True(t, found)
+			require.Equal(t, value, actual)
+
+			result, err := compileBicepEnvironmentVariable(t, env, providerKey, true)
+			require.NoError(t, err)
+			parameter, found := result.Parameters["value"]
+			require.True(t, found)
+			assert.Equal(t, value, parameter.Value)
+		})
+	}
+}
+
+func TestBicepCompile_MissingAliasedEnvironmentVariableIgnoresProcessEnvironmentValue(t *testing.T) {
+	prepareBicepCompileEnvironmentTest(t)
+
+	const providerKey = "AZD_TEST_ALIAS_PROVIDER_VALUE"
+	const projectKey = "AZD_TEST_ALIAS_PROJECT_VALUE"
+	// Only the provider-named process environment variable exists; the mapped project variable remains absent.
+	t.Setenv(providerKey, "process-value")
+	unsetProcessEnvironmentVariable(t, projectKey)
+
+	env := environment.NewMappedScopedEnvironment(
+		environment.New("test"),
+		map[string]string{providerKey: projectKey},
+	)
+	_, found := env.LookupEnv(providerKey)
+	require.False(t, found)
+
+	result, err := compileBicepEnvironmentVariable(t, env, providerKey, true)
+	require.NoError(t, err)
+	parameter, found := result.Parameters["value"]
+	require.True(t, found)
+	assert.Equal(t, "fallback", parameter.Value)
+}
+
+func prepareBicepCompileEnvironmentTest(t *testing.T) {
+	t.Helper()
+
+	bicepPath := os.Getenv("AZD_BICEP_TOOL_PATH")
+	if bicepPath == "" {
+		var err error
+		bicepPath, err = osexec.LookPath("bicep")
+		if errors.Is(err, osexec.ErrNotFound) {
+			t.Skip("requires Bicep on PATH or AZD_BICEP_TOOL_PATH; this test does not download tools")
+		}
+		require.NoError(t, err)
+	}
+	t.Setenv("AZD_BICEP_TOOL_PATH", bicepPath)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("NO_COLOR", "1")
+}
+
+func unsetProcessEnvironmentVariable(t *testing.T, key string) {
+	t.Helper()
+
+	// we're removing the variable from the environment but setting "" ensures
+	// it gets restored to its previous value after our test exits.
+	t.Setenv(key, "")
+	require.NoError(t, os.Unsetenv(key))
+}
+
+// compileBicepEnvironmentVariable compiles a minimal parameter file that reads providerKey from env.
+// withDefault controls whether the read uses "fallback" when the variable is absent.
+func compileBicepEnvironmentVariable(
+	t *testing.T,
+	env environment.ScopedEnvironment,
+	providerKey string,
+	withDefault bool,
+) (*compileBicepResult, error) {
+	t.Helper()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.bicep"), []byte(
+		"targetScope = 'subscription'\nparam value string\n"), 0o600))
+	expression := fmt.Sprintf("readEnvironmentVariable('%s')", providerKey)
+	if withDefault {
+		expression = fmt.Sprintf("readEnvironmentVariable('%s', 'fallback')", providerKey)
+	}
+	paramPath := filepath.Join(dir, "main.bicepparam")
+	require.NoError(t, os.WriteFile(paramPath, []byte(
+		"using './main.bicep'\nparam value = "+expression+"\n"), 0o600))
+
+	mockContext := mocks.NewMockContext(t.Context())
+	runner := exec.NewCommandRunner(&exec.RunnerOptions{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+	})
+	provider := &BicepProvider{
+		env: env, path: paramPath, mode: bicepparamMode,
+		bicepCli:     bicep.NewCli(mockContext.Console, runner),
+		curPrincipal: &mockCurrentPrincipal{},
+	}
+
+	return provider.compileBicep(t.Context())
+}
+
+func TestBicepEnsureParameters_PersistsLocationFromProcessEnvironmentUnderProjectName(t *testing.T) {
+	for _, aliased := range []bool{false, true} {
+		t.Run(fmt.Sprintf("aliased=%t", aliased), func(t *testing.T) {
+			const projectLocation = "AZD_TEST_ALIAS_PROJECT_LOCATION"
+			for _, key := range []string{environment.LocationEnvVarName, projectLocation} {
+				t.Setenv(key, "")
+				require.NoError(t, os.Unsetenv(key))
+			}
+			locationKey := environment.LocationEnvVarName
+			var aliases map[string]string
+			if aliased {
+				locationKey = projectLocation
+				aliases = map[string]string{environment.LocationEnvVarName: projectLocation}
+			}
+			t.Setenv(locationKey, "westus2")
+
+			backing := environment.New("test")
+			env := environment.NewMappedScopedEnvironment(backing, aliases)
+			require.Equal(t, "westus2", env.GetLocation())
+			require.NotContains(t, backing.Dotenv(), locationKey)
+
+			var savedValues map[string]string
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Save", mock.Anything, backing).Run(func(mock.Arguments) {
+				savedValues = backing.Dotenv()
+			}).Return(nil)
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "main.parameters.json"), []byte(
+				`{"parameters":{"location":{"value":"${AZURE_LOCATION}"}}}`), 0o600))
+			provider := &BicepProvider{
+				env: env, envManager: envManager, curPrincipal: &mockCurrentPrincipal{},
+				path: filepath.Join(dir, "main.bicep"), options: provisioning.Options{Module: "main"},
+			}
+			parameters, err := provider.ensureParameters(t.Context(), azure.ArmTemplate{
+				Parameters: azure.ArmTemplateParameterDefinitions{"location": {Type: "string"}},
+			})
+			require.NoError(t, err)
+			require.Equal(t, "westus2", parameters["location"].Value, "resolution alone is not persistence")
+			assert.Equal(t, "westus2", backing.Dotenv()[locationKey], "persist under the project name")
+			assert.Equal(t, "westus2", savedValues[locationKey], "Save must receive the resolved location")
+			envManager.AssertCalled(t, "Save", mock.Anything, backing)
+			if aliased {
+				assert.NotContains(t, backing.Dotenv(), environment.LocationEnvVarName)
+			}
 		})
 	}
 }

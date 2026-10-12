@@ -170,6 +170,13 @@ Do not use `BackingEnv()` to bypass scoped variable or configuration access.
 Provisioning output writes and destroy-time invalidation use the scoped environment
 so layer mappings are applied symmetrically, then save the backing environment.
 
+`Dotenv()` and `Environ()` expose the dotenv view, not inherited process-environment values.
+For child processes, use `env.ProcessEnviron(os.Environ())` to build the complete
+environment. Aliases resolve against that snapshot: missing project variables remove
+their provider names, while explicitly empty values remain present. Pass the result
+through `exec.RunArgs.WithExactEnv` so the runner does not restore excluded inherited
+variables. Bicep parameter compilation uses this path.
+
 ### Choosing the environment boundary
 
 Use `ScopedEnvironment` only when a consumer must observe a provisioning override.

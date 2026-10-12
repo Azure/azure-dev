@@ -6,6 +6,9 @@ package environment
 import (
 	"fmt"
 	"maps"
+	"runtime"
+	"slices"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
@@ -20,13 +23,26 @@ type ScopedEnvironment interface {
 	// It may be a layer-local snapshot rather than the shared environment.
 	BackingEnv() *Environment
 
+	// Name returns the backing environment name, falling back to AZURE_ENV_NAME when it is empty.
 	Name() string
+	// Getenv returns a provider-scoped value, preferring dotenv over the process environment.
 	Getenv(key string) string
+	// LookupEnv is like Getenv, but distinguishes an unset value from an explicitly empty value.
 	LookupEnv(key string) (string, bool)
+	// Dotenv returns a copy of the provider-visible dotenv values without process environment fallbacks.
 	Dotenv() map[string]string
+	// DotenvSet writes a provider-scoped value to the backing dotenv state; Save persists the change.
 	DotenvSet(key, value string)
+	// DotenvDelete removes a provider-scoped value from backing dotenv state; process fallback may remain.
 	DotenvDelete(key string)
+	// Environ formats only the provider-visible dotenv values as KEY=VALUE entries.
 	Environ() []string
+	// ProcessEnviron builds a complete environment for a child process.
+	// base is typically os.Environ(), which supplies the real process environment.
+	//
+	//	childEnv := env.ProcessEnviron(os.Environ())
+	//	runArgs := exec.NewRunArgs("tool").WithExactEnv(childEnv)
+	ProcessEnviron(base []string) []string
 	GetSubscriptionId() string
 	SetSubscriptionId(id string)
 	GetTenantId() string
@@ -47,6 +63,14 @@ func (e *Environment) BackingEnv() *Environment {
 // GetConfig returns the environment configuration.
 func (e *Environment) GetConfig() config.Config {
 	return e.Config
+}
+
+// ProcessEnviron returns inherited values followed by dotenv values, which take precedence.
+func (e *Environment) ProcessEnviron(base []string) []string {
+	dotenv := e.Environ()
+	values := make([]string, 0, len(base)+len(dotenv))
+	values = append(values, base...)
+	return append(values, dotenv...)
 }
 
 type mappedScopedEnvironment struct {
@@ -88,7 +112,12 @@ func (e *mappedScopedEnvironment) Dotenv() map[string]string {
 		if isLoaderControlKey(localName) {
 			continue
 		}
-		mapped[localName], _ = e.ScopedEnvironment.LookupEnv(sharedName)
+		if value, found := values[sharedName]; found {
+			mapped[localName] = value
+		}
+	}
+	for localName := range e.aliases {
+		delete(values, localName)
 	}
 	maps.Copy(values, mapped)
 
@@ -111,6 +140,48 @@ func (e *mappedScopedEnvironment) Environ() []string {
 	}
 
 	return env
+}
+
+// ProcessEnviron applies aliases to the complete underlying environment.
+// Missing sources remove their provider names; explicitly empty sources remain present.
+func (e *mappedScopedEnvironment) ProcessEnviron(base []string) []string {
+	resolvedBase := e.ScopedEnvironment.ProcessEnviron(base)
+	providerNames := slices.Sorted(maps.Keys(e.aliases))
+	values := slices.DeleteFunc(slices.Clone(resolvedBase), func(entry string) bool {
+		name, _, found := strings.Cut(entry, "=")
+		return found && slices.ContainsFunc(providerNames, func(providerName string) bool {
+			return processEnvNameEqual(name, providerName)
+		})
+	})
+
+	// Resolve sources from one snapshot so overlapping aliases apply only once.
+	for _, providerName := range providerNames {
+		if isLoaderControlKey(providerName) {
+			continue
+		}
+		if value, found := lookupProcessEnv(resolvedBase, e.aliases[providerName]); found {
+			values = append(values, providerName+"="+value)
+		}
+	}
+	return values
+}
+
+func lookupProcessEnv(values []string, key string) (string, bool) {
+	for _, entry := range slices.Backward(values) {
+		name, value, found := strings.Cut(entry, "=")
+		if found && processEnvNameEqual(name, key) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func processEnvNameEqual(name, key string) bool {
+	// Windows treats process environment names as case-insensitive, unlike Unix.
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(name, key)
+	}
+	return name == key
 }
 
 func (e *mappedScopedEnvironment) GetSubscriptionId() string {

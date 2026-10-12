@@ -74,9 +74,10 @@ infra:
       path: infra/a
     - name: b
       path: infra/b
+      dependsOn: [a]
 `), 0o600))
 
-	// Two layers: a single layer runs sequentially with the shared manager, which has no layer-local persistence.
+	// Keep the graph deterministic: this test covers provider DI and persistence, not concurrent provider mutations.
 	// Scoped, because command scopes re-register scoped bindings and would shadow a root-level instance.
 	container.MustRegisterScoped(func() middleware.CurrentUserAuthManager { return offlineAuth{} })
 	container.MustRegisterNamedTransient(string(provisioning.Test), func(

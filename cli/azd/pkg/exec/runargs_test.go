@@ -21,6 +21,7 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, "", runArgs.Cwd)
 		require.Nil(t, runArgs.DebugLogging)
 		require.Len(t, runArgs.Env, 0)
+		require.False(t, runArgs.EnvIsExact)
 	})
 
 	t.Run("WithOverrides", func(t *testing.T) {
@@ -41,5 +42,15 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, true, *runArgs.DebugLogging)
 		require.Len(t, runArgs.Env, 2)
 		require.Equal(t, runArgs.Env, []string{"foo", "bar"})
+	})
+
+	t.Run("EnvironmentModes", func(t *testing.T) {
+		exact := NewRunArgs("tool").WithEnv([]string{"OLD=value"}).WithExactEnv(nil)
+		require.True(t, exact.EnvIsExact)
+		require.Nil(t, exact.Env)
+
+		overrides := exact.WithEnv([]string{"NEW=value"})
+		require.False(t, overrides.EnvIsExact)
+		require.Equal(t, []string{"NEW=value"}, overrides.Env)
 	})
 }

@@ -143,6 +143,11 @@ Each provider name maps to one project variable for all operations. Aliases appl
 once: with `A: B` and `B: C`, a provider reference to `A` refers to project variable
 `B`, not `C`.
 
+Missing project variables remain missing through their provider names, including
+in Bicep parameter-file compilation. An explicitly empty project variable remains
+present with an empty value. Writing through the provider name creates or updates
+the project variable.
+
 Names on both sides of the alias map must match `^[A-Za-z_][A-Za-z0-9_]*$`.
 azd checks this when it loads the project configuration.
 

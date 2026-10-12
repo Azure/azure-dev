@@ -2417,7 +2417,7 @@ func (p *BicepProvider) compileBicep(ctx context.Context) (*compileBicepResult, 
 	var parameters azure.ArmParameters
 
 	if p.mode == bicepparamMode {
-		azdEnv := p.env.Environ()
+		azdEnv := p.env.ProcessEnviron(os.Environ())
 		// append principalID (not stored to .env by default). For non-bicepparam, principalId is resolved
 		// without looking at .env
 		if _, exists := p.env.LookupEnv(environment.PrincipalIdEnvVarName); !exists {
@@ -2427,7 +2427,7 @@ func (p *BicepProvider) compileBicep(ctx context.Context) (*compileBicepResult, 
 			}
 			azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
 		}
-		compiledResult, err := p.bicepCli.BuildBicepParam(ctx, p.path, azdEnv)
+		compiledResult, err := p.bicepCli.BuildBicepParamWithExactEnv(ctx, p.path, azdEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicepparam template: %w", err)
 		}
@@ -3483,8 +3483,8 @@ func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	//snapshot the AZURE_LOCATIOn in azd env if it is set in System env
-	locationSystemEnv, hasLocation := os.LookupEnv(environment.LocationEnvVarName)
+	// Persist a location supplied by the process environment before resolving parameters.
+	locationSystemEnv, hasLocation := p.env.LookupEnv(environment.LocationEnvVarName)
 	_, hasAzdLocation := p.env.Dotenv()[environment.LocationEnvVarName]
 	if hasLocation && !hasAzdLocation && locationSystemEnv != "" {
 		p.env.SetLocation(locationSystemEnv)

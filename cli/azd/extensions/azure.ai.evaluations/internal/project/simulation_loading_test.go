@@ -109,3 +109,9 @@ func TestSimulationProductionDecoderRemainsStrict(t *testing.T) {
 		"<<: &defaults {maxTurn: 2}")), "azure.eval.yaml")
 	require.ErrorContains(t, err, `unknown key "maxTurn"`)
 }
+
+func TestProductionDecoderRejectsTrailingDocument(t *testing.T) {
+	body := []byte("evals:\n  - name: first\n---\nevals:\n  - name: ignored\n")
+	_, err := DecodeEvalConfig(body, "azure.eval.yaml")
+	require.ErrorContains(t, err, "multiple YAML documents are not supported")
+}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -502,9 +503,7 @@ func agentServiceAddEnvironment(values map[string]any) (map[string]string, error
 	}
 
 	normalized := make(map[string]any, len(values))
-	for name, value := range values {
-		normalized[name] = value
-	}
+	maps.Copy(normalized, values)
 	if err := projectconfig.NormalizeEnvironment(map[string]any{"env": normalized}); err != nil {
 		return nil, err
 	}

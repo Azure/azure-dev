@@ -6,7 +6,7 @@ tags:
     - ai
     - foundry
 version: 1.0.0-beta.3
-requiredAzdVersion: ">=1.32.0"
+requiredAzdVersion: ">=1.33.0"
 dependencies:
   - id: azure.ai.agents
     version: "~1.0.0-beta.16"

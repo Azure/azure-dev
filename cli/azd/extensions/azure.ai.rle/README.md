@@ -78,17 +78,27 @@ azd extension install azure.ai.rle --source rle-dev
 azd ai rle version
 ```
 
-After the first external version is published, external preview customers use:
+Private preview customers use the public distribution branch:
 
 ```powershell
 azd extension source add `
-  --name rle-ext `
+  --name rle `
   --type url `
-  --location https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/registry.rle-ext.json
+  --location https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/registry.rle.json
 
-azd extension install azure.ai.rle --source rle-ext
+azd extension install azure.ai.rle --source rle
 azd ai rle version
 ```
+
+If the extension was previously installed from `rle-ext` or a local build,
+register the `rle` source above and reinstall from it:
+
+```powershell
+azd extension install azure.ai.rle --source rle --force
+```
+
+The private preview label describes product access; this distribution branch
+and its binaries are public.
 
 List registered extension sources at any time with:
 
@@ -99,8 +109,8 @@ azd extension source list
 ### Extension updates
 
 The extension checks the same release channel from which its artifact was
-built: internal artifacts check `rle-dev`, while external artifacts check
-`rle-ext`. Releases in one channel never notify or block users of the other.
+built: internal artifacts check the development registry, while customer artifacts
+check `registry.rle.json`. Releases in one channel never notify or block users of the other.
 A non-breaking update does not interrupt the command. After the command
 completes, the CLI displays:
 
@@ -947,19 +957,21 @@ The script preserves the existing prerelease suffix. For example,
 `version.txt` and `extension.yaml`, cross-compiles the extension for every
 supported platform (`windows`, `darwin`, and `linux` on both `amd64` and
 `arm64`), writes artifacts under `artifacts\<channel>\<version>`, and updates
-`registry.<channel>.json` with each artifact's checksum and GitHub URL.
+the development registry or public `registry.rle.json` with each artifact's
+checksum and GitHub URL.
 `azd x pack` archives linux artifacts as `.tar.gz` and every other platform as
 `.zip`. It also embeds that channel's registry URL in every binary, which keeps
 internal and external update enforcement isolated. The script runs on any host
 Go can cross-compile from.
 
-Prepare an external release the same way:
+Prepare an external release with GitHub CLI (`gh`) authenticated as an account
+with write access to `Azure/azure-dev`:
 
 ```powershell
 .\prepare-ext-release.ps1 -VersionBump patch
 ```
 
-Each wrapper accepts only `-VersionBump major|minor|patch` and the optional
+Both wrappers accept `-VersionBump major|minor|patch` and the optional
 `-BreakingChanges` switch. When omitted, `-VersionBump` defaults to `patch`:
 
 ```powershell
@@ -975,6 +987,27 @@ Mark a release as breaking only when users must update before continuing:
 ```
 
 Non-breaking is the default; do not pass `-BreakingChanges` for a normal release.
-Review and commit the two version files, generated artifacts, and registry change
-together. The registry URLs target `main`, so the release becomes installable
-after those files are merged.
+For internal releases, review and commit the two version files, generated
+artifacts, and registry change together. The development registry targets the
+implementation repository's `main` branch.
+
+For external releases, the script creates a separate sparse distribution
+checkout at `$HOME\.azd\rle-releases`, or uses the path supplied with
+`-PublicRepositoryPath`. Its origin must be `Azure/azure-dev` and its branch
+must be `rle-releases`. The checkout must be clean and contain no
+non-release changes relative to upstream `main`.
+
+The external script embeds the public branch registry URL in all six platform
+binaries. It commits only the packaged archives and registry to the distribution
+branch, pushes it, and creates an open draft PR against `Azure/azure-dev` if one does
+not already exist. Artifacts use commit-pinned URLs and SHA-256 checksums; the
+registry uses the stable branch URL. Customers can install without a PR merge.
+Do not delete this branch while customers use the registry. New releases update
+the same branch and PR without changing previous artifact URLs.
+
+Commit `version.txt`, `extension.yaml`, and release tooling changes separately
+in the implementation repository. Never include implementation source changes
+in the public distribution PR. The external script does not change repository
+visibility or migrate samples/SDK dependencies. Source already published remains
+public. GitHub Release assets can replace binary commits in a follow-up while
+retaining the same registry URL and keeping older downloads available.

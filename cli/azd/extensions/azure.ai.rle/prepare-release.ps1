@@ -3,7 +3,8 @@
 Shared implementation for building and publishing an RLE release channel.
 
 .PARAMETER Channel
-Selects the internal rle-dev or external rle-ext registry and artifact tree.
+Selects the internal rle-dev or customer rle-ext build channel.
+Customer publication uses the public registry.rle.json distribution registry.
 The selected registry URL is embedded in the extension binaries so update
 checks remain isolated to that channel.
 
@@ -23,7 +24,8 @@ param(
     [switch] $BreakingChanges,
     [Parameter(Mandatory)]
     [ValidateSet("rle-dev", "rle-ext")]
-    [string] $Channel
+    [string] $Channel,
+    [string] $PublicRepositoryPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +49,16 @@ $registryPath = Join-Path $PSScriptRoot "..\registry.$Channel.json"
 $outputDirectory = Join-Path $PSScriptRoot "artifacts\$Channel"
 $registryURL = "https://raw.githubusercontent.com/$repository/$repositoryBranch/" +
     "cli/azd/extensions/registry.$Channel.json"
+if ($Channel -eq "rle-ext") {
+    if (-not $PublicRepositoryPath) {
+        throw "Use prepare-ext-release.ps1 to prepare releases in a separate public distribution checkout."
+    }
+    $repository = "Azure/azure-dev"
+    $repositoryBranch = "rle-releases"
+    $registryPath = Join-Path $PublicRepositoryPath "cli\azd\extensions\registry.rle.json"
+    $registryURL = "https://raw.githubusercontent.com/$repository/$repositoryBranch/" +
+        "cli/azd/extensions/registry.rle.json"
+}
 # Both channels ship the same platform matrix as build.ps1 and build.sh.
 # azd x pack archives linux artifacts as .tar.gz and every other platform as .zip.
 $expectedPlatforms = [ordered]@{
@@ -103,6 +115,21 @@ switch ($VersionBump) {
 
 $version = "$major.$minor.$patch$suffix"
 
+if ($Channel -eq "rle-ext") {
+    $publicArtifactPath = Join-Path $PublicRepositoryPath "cli\azd\extensions\azure.ai.rle\artifacts\rle\$version"
+    if (Test-Path -LiteralPath $publicArtifactPath) {
+        throw "Public artifacts for '$version' already exist; published versions must not be overwritten."
+    }
+    if (Test-Path -LiteralPath $registryPath) {
+        $publicRegistry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+        $publishedVersion = @($publicRegistry.extensions | Where-Object id -eq $extensionId).versions |
+            Where-Object version -eq $version
+        if ($publishedVersion) {
+            throw "External version '$version' is already registered."
+        }
+    }
+}
+
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw "Go is required to cross-compile the RLE extension for every supported platform."
 }
@@ -112,6 +139,9 @@ $buildDirectory = "bin"
 $resolvedBuildDirectory = Join-Path $PSScriptRoot $buildDirectory
 $resolvedRegistryPath = [IO.Path]::GetFullPath($registryPath)
 $artifactPath = "cli/azd/extensions/azure.ai.rle/artifacts/$Channel/$version"
+if ($Channel -eq "rle-ext") {
+    $artifactPath = "cli/azd/extensions/azure.ai.rle/artifacts/rle/$version"
+}
 
 Set-ContentUtf8NoBom -Path $versionFilePath -Value $version
 # Get-Content -Raw keeps the file's trailing newline and the writer adds one of

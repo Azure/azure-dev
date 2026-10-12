@@ -114,14 +114,21 @@ endpoints, or anything else a user typed. Failures and their structured error
 codes are already reported separately by the extension SDK; this event records
 usage only.
 
-## TODO before release
+## Installation and release prerequisites
 
-Both are files the azd extensions team owns, so they are not changed here:
+Install the released extension from the official registry:
 
-- [ ] **`cli/azd/extensions/registry.json`** — add the `azure.ai.dataset` entry.
-  Until it exists `azd extension install azure.ai.dataset` cannot resolve, so
-  the extension is only reachable through `azd x pack` + `azd x publish` into
-  the local source registry.
-- [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
-  after the registry entry lands. Declaring a dependency that cannot resolve
-  breaks installing the bundle.
+```bash
+azd extension install azure.ai.dataset
+```
+
+Release prerequisites, listed here because the azd extensions team owns the files they touch:
+
+- [x] **`cli/azd/extensions/registry.json`**: the `azure.ai.dataset` entry exists
+  (since 1.0.0-beta.1), so the install command above resolves.
+- [x] **Azure DevOps release pipeline**: `eng/pipelines/release-ext-azure-ai-dataset.yml`
+  is registered and builds this extension's pull requests.
+- [x] **`ext-dataset` issue label**: routes issues to this extension.
+- [ ] **`microsoft.foundry/extension.yaml`**: add the dependency only after the release is
+  published to the registry. Declaring a dependency that cannot resolve breaks installing
+  the bundle.

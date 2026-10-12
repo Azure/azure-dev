@@ -442,10 +442,13 @@ func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	const endpoint = "https://test.services.ai.azure.com/api/projects/test"
 
 	t.Setenv("AZD_ACCESS_TOKEN", accessToken)
+	t.Setenv(foundryProjectEndpointEnvVar, "")
+	t.Setenv(legacyProjectEndpointEnvVar, "")
 
 	server := &routineAuthMetadataServer{
 		projectEndpoint: endpoint,
 		environmentAuth: make(chan string, 5),
+		environmentKeys: make(chan string, 3),
 		accountAuth:     make(chan string, 1),
 	}
 	azdClient := newRoutineAuthAzdClient(t, server)
@@ -471,6 +474,11 @@ func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	for range len(server.environmentAuth) {
 		assert.Equal(t, accessToken, <-server.environmentAuth)
 	}
+	keys := make([]string, 0, len(server.environmentKeys))
+	for range len(server.environmentKeys) {
+		keys = append(keys, <-server.environmentKeys)
+	}
+	assert.Contains(t, keys, foundryProjectEndpointEnvVar)
 	assert.Equal(t, accessToken, <-server.accountAuth)
 }
 
@@ -593,6 +601,7 @@ type routineAuthMetadataServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	projectEndpoint string
 	environmentAuth chan string
+	environmentKeys chan string
 	accountAuth     chan string
 }
 
@@ -611,6 +620,7 @@ func (s *routineAuthMetadataServer) GetValue(
 	request *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
 	s.environmentAuth <- incomingAuthorization(ctx)
+	s.environmentKeys <- request.GetKey()
 	value := "subscription-id"
 	switch request.GetKey() {
 	case foundryProjectEndpointEnvVar:

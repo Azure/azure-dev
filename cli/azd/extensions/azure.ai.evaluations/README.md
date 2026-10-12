@@ -154,6 +154,161 @@ in the referenced file, so `azd ai eval generate` will not update it in place an
 says so rather than writing a second declaration of the same rubric beside the
 directive. Edit the referenced file, or generate under a different name.
 
+### Authoring conversation evaluations
+
+Choose how conversation datasets are used during `init`:
+
+```bash
+# Score completed message transcripts, without invoking an agent.
+azd ai eval init --conversation-mode static --dataset completed-transcripts --judge-model judge-deployment
+
+# Create conversations from scenario seeds, then grade the resulting messages.
+azd ai eval init --conversation-mode simulation --target support-agent --dataset retail-seeds --simulation-model model-connection/simulator-deployment --judge-model judge-deployment --num-conversations 1 --max-turns 5 --no-prompt
+```
+
+`--conversation-mode` implies `--source dataset` and
+`--evaluation-level conversation` when they are omitted. Without this flag,
+interactive init offers **Static** or **Simulation** for a conversation dataset;
+`--no-prompt` and `--output json` default to static. Static mode writes neither
+`target:` nor `simulation:` and rejects `--target`, because completed transcripts
+are scored as they stand. Trace-backed conversations use
+`--source traces --evaluation-level conversation` and filter by the selected agent.
+
+Default eval names identify the source, conversation mode where applicable, and
+evaluation level, rather than distinguishing different flows only by a number:
+
+| Authoring flow | Default name |
+|---|---|
+| Turn dataset | `<target>-dataset-turn-eval` |
+| Turn traces | `<target>-trace-turn-eval` |
+| Conversation traces | `<target>-trace-conversation-eval` |
+| Static conversation dataset | `<local-agent>-static-conversation-eval` |
+| Simulated conversation dataset | `<target>-simulation-conversation-eval` |
+
+An explicit `--name` still wins. Only a collision with the descriptive name adds
+`-2`, `-3`, and so on. Existing eval names and declarations are not renamed.
+Static mode uses the sole local agent service only as a naming hint, not an
+invocation target. With no single local agent, the fallback is
+`static-conversation-eval`; init does not invent an agent identity.
+
+| Init flag | Applies to | Meaning |
+|---|---|---|
+| `--conversation-mode static\|simulation` | Conversation datasets | Completed messages or scenario-seed simulation. |
+| `--simulation-model` | Simulation only | `connection-name/model-deployment` for the simulated user; required, or prompted interactively. |
+| `--num-conversations` | Simulation only | Conversations per seed, 1 to 5; default 1. |
+| `--max-turns` | Simulation only | Maximum turns, 1 to 20; omission preserves the service default. |
+
+Explicit zero is invalid for both numeric flags. Simulation flags with static,
+turn, or trace evaluation are rejected rather than ignored. Simulation needs an
+agent target, seed dataset, simulation model, and judge model. Non-interactive
+init reports all unresolved required inputs together, naming the flags to supply.
+Init is add-only, preserves existing YAML and unknown fields, and performs
+a bounded built-in evaluator catalogue check.
+Authored evaluation configuration must contain one YAML document with unique,
+literal string top-level keys. Init and catalog edits reject multiple documents,
+duplicate keys, and merge, alias or complex top-level keys rather than silently dropping
+or ambiguously updating content. Aliases in values remain supported.
+Authoring rejects a symbolic link selected as the config file or directory before
+creating locks or editing configuration, leaving both the link and its target
+unchanged. Trailing separators and normalized `.` components do not bypass this
+check. Select the target config file or real directory directly to edit it.
+If adding the root project service fails and the host acknowledges that
+the operation finished unsuccessfully, init rolls back its eval-config edit so the
+same command can be retried after restoring root write access.
+The root snapshot uses the host's `azure.yaml`, then `azure.yml` filename
+preference. A missing or changed root filename is an uncertain snapshot and
+requires retaining the scaffold for inspection.
+The initially selected root filename is retained across confirmation; if the
+selection changes before writing, init refuses instead of following a new file
+that the running host did not select. This includes a root appearing after
+initially being absent.
+Existing config bytes are restored; only a new config written by that attempt
+is removed. Dataset files, artifact directories, lock files, and existing
+`.gitignore` rules are retained. If either configuration changes during wiring,
+the host's save outcome is uncertain after cancellation or a connection failure,
+or rollback fails, init reports that recovery is incomplete and leaves an
+explicit inspection instruction rather than overwriting concurrent edits.
+Init first checks the read-only beta `ProjectService.GetAddServiceCapabilities`
+RPC. Capable hosts receive a typed `operation_id`; rollback requires exactly one
+matching `AddServiceAcknowledgment` status detail. Missing, malformed, stale,
+wrong-type, or duplicate details retain the scaffold. Cancellation, authentication
+and transport errors never cause a mutating request to be replayed.
+An explicit unsupported response or `Unimplemented` from the read-only capability
+RPC selects the stable path. Other capability failures stop before the root mutation.
+Without a matching typed acknowledgment, init retains the scaffold and reports
+manual inspection instead of an automatic retry. Inspect the retained eval and
+its root service reference; do not delete preexisting evaluations.
+The minimum supported host version is `>=1.33.0`.
+Canonical beta descriptors are generated into a private registry so this extension
+continues to build against its released SDK pin without local dependency overrides.
+A matching completed-operation acknowledgment can cover rejection before a save,
+including unsupported layered projects. Completion is not proof that the root
+file stayed unchanged; byte comparisons and ownership checks also apply.
+For every dataset mode, init checks locally available files for non-empty JSONL
+object rows before creating locks, ignore files, artifact directories, or
+configuration. Malformed JSON, empty datasets, arrays, scalars, and empty objects
+are rejected without those writes. This structural check does not invent required
+columns for an evaluator; evaluator-specific contracts are checked separately.
+For simulation, init also checks every locally available seed row before writing
+configuration, including files in declared datasets and local nested `$ref`
+entries. Dataset lookup skips broken unnamed includes when a later unnamed
+include matches the requested name; if none matches, the first include error is
+reported. Each row needs a non-whitespace text `test_case_description` of at most
+2,500 Unicode characters and cannot carry `messages`, `query`, or `response`
+fields (even empty or null). Per-row turn settings use the nested
+`simulation_configuration` contract described below, including its effective
+maximum and service default. Omitted turn settings remain valid.
+Interactive init reports invalid rows and asks for a corrected or different
+dataset before confirmation; press Ctrl+C at that prompt to cancel without
+authored changes. Under `--no-prompt` or `--output json`, invalid local rows
+fail immediately without writing configuration.
+When the effective turn cap is too low, init names a valid `--max-turns` value
+to use on a new invocation, or asks you to lower the row's desired turns.
+Correcting the dataset never silently changes the selected cap.
+Local files derive their dataset name from the filename without its extension.
+That name must be non-empty, cannot be `.` or `..`, and must satisfy the existing
+dataset lookup-name rules: at most 255 bytes, with no path separators or
+Unicode control characters (C0, DEL, and C1); safe Unicode names remain supported.
+If that name is already declared for a different file (or has no local file),
+init refuses the collision rather than replacing the declaration or ignoring
+the supplied path. Interactive init asks for another dataset; use a unique
+filename to add the new file, or the existing dataset's name or file path to
+reuse it. Equivalent paths to the same file are accepted, preserving references,
+version pins, and other authored metadata.
+When `--path` names a configuration file, dataset lookup uses that exact file,
+while artifact paths remain relative to its directory.
+The configuration destination must not be the selected local dataset itself,
+including equivalent paths, hard links, or symbolic links to the same file.
+Init rejects that conflict before authoring and rechecks identity before writing;
+choose a separate `--path` destination rather than replacing the input rows.
+If a directory's selected canonical or legacy configuration filename changes
+while init is awaiting confirmation, init refuses the changed destination.
+Review the files and retry with an exact `--path` filename. Under the configuration
+lock, validation, scaffold writes, and root wiring all use that same filename.
+The successful human `eval create` next step retains that filename rather than
+selecting the default config in the artifact directory.
+For an evaluation name beginning with `-`, the next step places `--path` before
+`--` and the literal name, so the name cannot be interpreted as a flag.
+If the name or path cannot be portably quoted or contains a Unicode control
+character, init displays escaped exact-name/path values and manual create guidance
+instead of a runnable placeholder command.
+The same fallback applies to names that look like a joined `-C` working-directory
+flag, which some azd hosts consume even after `--`; the authored name is not changed.
+New paths ending in `.yaml` or `.yml` are treated as configuration files,
+including absolute paths and paths containing spaces. Existing directories
+remain directories, even if their names end in `.yaml`.
+Init supports `--output default` for human-readable output and `--output json`
+for structured output. Unsupported formats are rejected before any authored writes.
+Registered datasets with no local file are not fetched or checked by init.
+The evaluator picker excludes custom evaluators whose local
+`supportedEvaluationLevels` explicitly excludes the selected level (compared
+case-insensitively); an explicit incompatible `--evaluator` is rejected.
+Missing or unfamiliar metadata remains
+unknown, with authoritative compatibility checked when the eval is created.
+Omitting `--evaluator` keeps the default selection or opens the interactive
+picker. An explicitly empty `--evaluator` is rejected rather than silently
+restoring the default.
+
 ### Evaluator data mappings
 
 The CLI sends explicit `data_mapping` entries; it does not rely on server
@@ -297,6 +452,7 @@ The JSON handoff from `run start --no-wait -o json` retains the submitted datase
 name and registered version even when the create response omits that metadata.
 Local unregistered runs do not invent a version, and anonymous reruns remain
 unattributed.
+
 `job show --dataset` recovers the registered evaluation level even when the local
 artifact already exists. It preserves edited bytes unless `--force` is given,
 does not download content when preserving the file, and does not record a new
@@ -608,7 +764,7 @@ evals:
     dataset: retail-seeds
     evaluationLevel: conversation
     simulation:
-      model: model-connection/gpt-4.1-nano # plays the user, not the agent under test
+      model: model-connection/gpt-4.1-nano # plays the user, not the judge or generation model
       numConversations: 3      # per seed row, 1–5
       maxTurns: 8              # 1–20; omit to leave it to the service
     evaluators:
@@ -640,11 +796,9 @@ authoring limits from the CLI feature specification, not maxima imposed by the
 Foundry preview service. Per-case settings follow
 the override rules below.
 
-`simulation.model` accepts a plain model name or a
-`connection-name/model-deployment` reference, without Unicode whitespace or
-control characters. Plain names are sent unchanged without guessing a connection
-or reusing the judge model. During init, qualified references validate the selected
-Azure OpenAI project connection; interactive discovery offers eligible connections.
+`simulation.model` must name an existing connection and deployment as
+`connection-name/model-deployment`. Bare deployment names are rejected before a
+run is submitted; the CLI does not guess a connection or reuse the judge model.
 Local validation does not establish model deployment readiness or service acceptance.
 
 The dataset holds **seeds**, not exchanges. One row describes one conversation
@@ -718,10 +872,12 @@ its `builtin.task_completion` default, which the user can replace; the incompati
 rubric remains in the catalogue.
 If any handoff value contains shell expansion syntax or cannot be portably quoted,
 including a dollar sign, backtick, double quote, percent sign, exclamation mark,
-backslash, caret, or any Unicode terminal control,
+backslash, caret, or any Unicode control character (C0, DEL, or C1),
 generation displays the exact escaped values and manual initialization guidance
 instead of a copyable command. Quote that path for your shell when supplying
 `--path`; generation never substitutes a different path into a runnable handoff.
+Control characters, including ESC, BEL, and tabs, are escaped rather than emitted
+raw in this guidance. Safe Unicode names and paths are unchanged.
 
 Simulation run summaries, `run show`, and `run output list` retain the run's
 dataset name and version and distinguish **requested configuration** from
@@ -898,7 +1054,7 @@ text/items response bindings require a compatible eval, retaining the original
 eval and its runs. Missing inferred mappings and unrelated service enrichment do not
 require replacement. An explicit `id:` with conflicting response or trace
 source contracts is refused before dependency publication; remove the `id:` and deploy the
-declaration to create a compatible eval. Each explicitly authored `dataMapping` field must match the
+declaration to migrate. Each explicitly authored `dataMapping` field must match the
 stored criterion exactly, including the column name, not just the item/sample namespace.
 Missing authored bindings or a missing/renamed stored criterion for those bindings
 are also conflicts; inferred defaults retain the narrower source-compatibility checks.
@@ -934,9 +1090,7 @@ Bare-ID reruns retain other source/schema pairs from their previous run unless
 there is a known response/trace scenario mismatch. The schema read is required:
 an unreadable definition does not establish compatibility.
 Editor validation and create/deploy preflight reject positive `maxSamples`
-for trace- and response-source declarations, including sources loaded through
-`$ref`. Explicit local sources support positive `maxSamples` caps; zero means
-uncapped.
+for source-backed declarations, including sources loaded through `$ref`.
 
 ### Recovering partial generation
 
@@ -1087,24 +1241,20 @@ Human summaries, run details, and listings also distinguish unreported counters
 from explicit zeros. Partial counters are marked `not reported` rather than
 inventing a failure/error split or a pass rate without known operands.
 Waited summaries also show a complete set of explicitly reported zero counters;
-their pass rate is `-` because the total is zero.
-Displayed run pass rates and `--fail-on pass-rate=<0..1>` use `passed / total`
-test cases. Failed, errored, skipped, and otherwise unaccounted rows count
-against the run. Per-evaluator criterion rates use only rows with a passed or
-failed verdict.
-
-Both pass-rate and `any-failure` gates require reported `total` and `passed`
-counts; neither requires a reported `failed` count. Missing or null required
-counters make the gate indeterminate: the command returns an operational error
-(extension exit 1), never a quality verdict based on invented zeros.
-A reported zero total breaches either gate when `passed` is absent or zero.
-Inconsistent counts outside `0 <= passed <= total` make either gate indeterminate
-and display the run pass rate as `not reported`, without changing service JSON.
-For a pass-rate gate, when all outcome counts are reported but their sum leaves
-rows unaccounted for, a neutral warning names that gap without assigning failed,
-errored, or skipped outcomes. The pass-rate denominator still includes all reported test cases;
-explicit zero error/skip counts are preserved. Determinate quality breaches
-retain extension exit 2; the azd host exposes extension
+their pass rate is `-` because no rows were scored.
+Pass-rate gate warnings honor those same explicit error/skip counts. A mismatch
+between the total and reported result counts does not replace an explicit zero
+with inferred errors.
+When reported totals leave rows unaccounted for, a neutral warning names that
+gap and the scored denominator without assigning failed, errored, or skipped
+outcomes. A pass-rate gate requires reported `passed` and `failed` counts and
+does not require a total; `any-failure` requires reported `total` and `passed`
+counts because it counts every non-passing row against the run. Missing or null
+required counters make the gate indeterminate: the command returns an
+operational error (extension exit 1), never a quality verdict based on invented
+zeros. An explicitly reported zero total still breaches either gate, and a
+reported zero scored denominator still breaches a pass-rate gate. Determinate
+quality breaches retain extension exit 2; the azd host exposes extension
 failures as exit 1.
 
 An operationally failed run can have no result counts or output rows. Its
@@ -1112,8 +1262,26 @@ follow-up commands inspect **available** output and export the run's diagnostics
 plus any available results; they do not imply that grading succeeded or that
 failing rows exist. `run show` also prints the service's run-level failure
 message when one was returned, removing URL credentials, query strings, and
-fragments from the human message. `--output json` keeps its existing document
-shape and exit behavior without appending human guidance.
+fragments from the human message. The message is read from `error.message`,
+otherwise from the first nested explanation (`error.details`,
+`error.innererror`, or `error.inner_error`); an `error` sent as a bare string is
+read as the message. When the error has its own message and also a `details`
+array (the specific findings behind a summary such as "Evaluation validation
+failed"), the summary and `run show` list those detail messages under it, each
+with its `target` when the service sent one, skipping any that only repeat the
+message (and name no target) or read exactly like an earlier detail, and showing up
+to five followed by a count of the rest. `job show` lists them the same way. The error line a failed `--wait` or
+`--fail-on` run exits with repeats the reason on one line, with up to three
+details appended in parentheses, redacted and limited to 300 characters each.
+When rows errored, the `run start --wait` summary also lists up to three
+distinct evaluator errors, most common first, with the number of rows each
+affected; `run show` makes no extra requests, so use the follow-up commands to
+list errored rows. `--output json` keeps its existing document
+shape and exit behavior without appending human guidance, except that an
+`error` sent in an unconventional shape (a bare string, an array, or a `message`
+that is not a string) is read for its text and emitted as `{ "message": ... }`;
+`run output export` still
+refuses an `error` it cannot redact reliably.
 Human portal/report links also remove URL credentials, query strings, and
 fragments before display, without rewriting the underlying service fields.
 Each link is validated as a whole URL. Malformed, ambiguous, or raw
@@ -1192,14 +1360,9 @@ its temporary download files, even with `--force`.
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
 
-`init` offers `builtin.task_completion`, `builtin.customer_satisfaction`,
-`builtin.coherence`, and `builtin.groundedness` in its picker, with only
-`builtin.task_completion` preselected or used under `--no-prompt`. This is a
-shortlist, not the catalogue. Any built-in the project publishes works with
-`--evaluator builtin.<name>`, including ones the picker never shows. Composites
-such as `builtin.output_quality` and `builtin.tool_use_quality` require explicit
-selection; they are not init defaults. Explicit selections replace the default,
-and existing evaluator references, parameters, and mappings remain unchanged.
+`init` offers a few common built-ins in its picker; that is a shortlist, not
+the catalogue. Any built-in the project publishes works with
+`--evaluator builtin.<name>`, including ones the picker never shows.
 
 `init` checks that reference against the project's catalogue when it can reach
 one, so a name that does not exist is refused there rather than at `create`.
@@ -1224,15 +1387,6 @@ A custom rubric is a JSON list of weighted dimensions:
 
 `weight` is an **integer from 1 to 10**. Weights do not need to sum to
 anything.
-
-### Validating explicit local rows
-
-Primary mapped `query`, `response`, or `messages` values follow the same rules as
-declared datasets: empty or whitespace-only strings and non-string/non-array
-values are rejected, even when the evaluator schema permits them. Empty arrays
-remain accepted. The entire file is checked, including rows beyond a configured
-cap, using both authored and stored mappings before publishing dependencies or
-submitting a run.
 
 ### Editing a registered rubric
 

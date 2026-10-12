@@ -33,7 +33,10 @@ type generateCancellationPrompts struct {
 	azdext.UnimplementedPromptServiceServer
 	mu               sync.Mutex
 	source           int32
+	scope            int32
+	scopeSelections  []int32
 	decision         int32
+	decisions        []int32
 	cancelCorrection bool
 	file             string
 	instruction      string
@@ -50,10 +53,20 @@ func (s *generateCancellationPrompts) Select(
 	case messages.SelectInstructionSourcePrompt():
 		return &azdext.SelectResponse{Value: new(s.source)}, nil
 	case messages.SelectGenerateScopePrompt():
-		return &azdext.SelectResponse{Value: new(int32(0))}, nil
+		value := s.scope
+		if len(s.scopeSelections) > 0 {
+			value = s.scopeSelections[0]
+			s.scopeSelections = s.scopeSelections[1:]
+		}
+		return &azdext.SelectResponse{Value: new(value)}, nil
 	case messages.ConfirmGenerationPrompt():
 		s.confirmations++
-		return &azdext.SelectResponse{Value: new(s.decision)}, nil
+		value := s.decision
+		if len(s.decisions) > 0 {
+			value = s.decisions[0]
+			s.decisions = s.decisions[1:]
+		}
+		return &azdext.SelectResponse{Value: new(value)}, nil
 	default:
 		return nil, fmt.Errorf("unexpected selection: %s", request.GetOptions().GetMessage())
 	}
@@ -83,7 +96,9 @@ func (s *generateCancellationPrompts) Prompt(
 
 func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
 	for _, scenario := range []string{
-		"file correction", "type then cancel", "load then cancel", "absolute load then cancel", "confirmed control",
+		"file correction", "type then cancel", "load then cancel", "absolute load then cancel",
+		"evaluator only refuses dataset flags", "change to evaluator only refuses dataset flags",
+		"confirmed control",
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Setenv("AZD_NO_PROMPT", "false")
@@ -105,6 +120,11 @@ func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
 				}
 			case "confirmed control":
 				prompts.decision = generateProceed
+			case "evaluator only refuses dataset flags":
+				prompts.scope = 2
+			case "change to evaluator only refuses dataset flags":
+				prompts.scopeSelections = []int32{0, 2}
+				prompts.decisions = []int32{generateChange}
 			}
 			location := filepath.Join("team evals", "custom.yml")
 			require.NoError(t, os.MkdirAll(filepath.Dir(location), 0o700))
@@ -159,6 +179,11 @@ func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
 				require.ErrorContains(t, err, "recorded submission")
 				assert.Equal(t, int32(1), datasetPosts.Load(), "the recorder must observe a real dataset POST")
 				assert.Equal(t, int32(1), rubricPosts.Load(), "the recorder must observe a real rubric POST")
+			} else if strings.Contains(scenario, "evaluator only refuses dataset flags") {
+				require.ErrorContains(t, err, "--from")
+				require.ErrorContains(t, err, "--evaluator")
+				assert.Zero(t, datasetPosts.Load())
+				assert.Zero(t, rubricPosts.Load())
 			} else {
 				assert.Zero(t, datasetPosts.Load())
 				assert.Zero(t, rubricPosts.Load())
@@ -180,6 +205,9 @@ func TestGenerateCommandCancellationPrecedesSubmissionAndWrites(t *testing.T) {
 			if scenario == "file correction" {
 				assert.Equal(t, 2, prompts.filePrompts)
 				assert.Zero(t, prompts.confirmations)
+			} else if scenario == "evaluator only refuses dataset flags" {
+				assert.Zero(t, prompts.confirmations)
+				assert.NotContains(t, out.String(), "Generation plan")
 			} else {
 				assert.Equal(t, 1, prompts.confirmations)
 				assert.Contains(t, out.String(), "Generation plan")

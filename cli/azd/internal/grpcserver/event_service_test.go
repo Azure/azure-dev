@@ -246,6 +246,7 @@ func createBrokerForEventHandler(
 	t *testing.T,
 	extensionID string,
 	responseFn func(*azdext.EventMessage) *azdext.EventMessage,
+	progressFns ...func(*azdext.EventMessage) *azdext.EventMessage,
 ) (*grpcbroker.MessageBroker[azdext.EventMessage], context.Context, func()) {
 	t.Helper()
 
@@ -260,6 +261,11 @@ func createBrokerForEventHandler(
 		recvCh: make(chan *azdext.EventMessage, 1),
 	}
 	stream.sendFn = func(msg *azdext.EventMessage) error {
+		if len(progressFns) > 0 && progressFns[0] != nil {
+			if progress := progressFns[0](msg); progress != nil {
+				stream.recvCh <- progress
+			}
+		}
 		if response := responseFn(msg); response != nil {
 			stream.recvCh <- response
 		}
@@ -565,6 +571,20 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 
 	// Test that the handler function is created correctly
 	assert.NotNil(t, handler)
+}
+
+func TestEventService_syncExtensionOutputCleansUpPreview(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(), extension, "Test Extension (predeploy)")
+	_, err := extension.StdOut().Write([]byte("preview output\n"))
+	require.NoError(t, err)
+	cleanup()
+
+	console := service.console.(*mockinput.MockConsole)
+	require.Empty(t, console.Output())
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {

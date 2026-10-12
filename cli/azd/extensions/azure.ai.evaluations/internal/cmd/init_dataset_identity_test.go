@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,7 +95,8 @@ func TestInitDatasetFileCollisionPreservesState(t *testing.T) {
 }
 
 func TestInitDatasetRefusesInvalidFilenameDerivedNames(t *testing.T) {
-	for _, filename := range []string{".jsonl", "..jsonl", "...jsonl"} {
+	for _, filename := range []string{".jsonl", "..jsonl", "...jsonl", "seed\u0080.jsonl", "seed\u0085.jsonl",
+		"seed\u009b.jsonl", "seed\u009f.jsonl"} {
 		for _, mode := range []string{"simulation", "static", "turn"} {
 			for _, output := range []string{"human", "json"} {
 				t.Run(filename+"/"+mode+"/"+output, func(t *testing.T) {
@@ -118,7 +120,7 @@ func TestInitDatasetRefusesInvalidFilenameDerivedNames(t *testing.T) {
 					before := initFileSnapshot(t, h.dir)
 					text, err := executeConversationInit(t, args...)
 					require.ErrorContains(t, err, "invalid catalog name")
-					assert.Contains(t, err.Error(), filename)
+					assert.Contains(t, err.Error(), strconv.Quote(dataset))
 					validation, ok := errors.AsType[*azdext.LocalError](err)
 					require.True(t, ok)
 					assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
@@ -155,10 +157,9 @@ func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
 }
 
 func TestInitDatasetDerivedNameUsesCreateRules(t *testing.T) {
-	for _, name := range []string{
-		"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1), strings.Repeat("é", 128),
-	} {
-		t.Run("invalid/"+name, func(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "control\n", "control\u0085", "control\u009b",
+		strings.Repeat("a", assetNameMaxLength+1), strings.Repeat("é", 128)} {
+		t.Run("invalid lookup/"+name, func(t *testing.T) {
 			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
 			require.ErrorContains(t, err, "invalid catalog name")
 			validation, ok := errors.AsType[*azdext.LocalError](err)
@@ -168,18 +169,14 @@ func TestInitDatasetDerivedNameUsesCreateRules(t *testing.T) {
 		})
 	}
 	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
-		t.Run("invalid create/"+name, func(t *testing.T) {
-			dir := t.TempDir()
-			path := filepath.Join(dir, name+".jsonl")
+		t.Run("invalid asset/"+name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name+".jsonl")
 			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
-			_, err := resolveInitLocalDataset(dir, path, &project.EvalConfig{})
+			_, err := planScaffold(localDatasetScaffold(t, path))
 			require.ErrorContains(t, err, "invalid catalog name")
-			validation, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok)
-			assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
 		})
 	}
-	for _, name := range []string{"seeds", "seeds_v2", "seeds-v2", "123"} {
+	for _, name := range []string{"seeds", "seed_data", "seeds-v2", "A1"} {
 		t.Run("valid/"+name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name+".jsonl")
 			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
@@ -385,7 +382,7 @@ func TestInitDatasetReusesEquivalentFiles(t *testing.T) {
 				path := "./original/seeds.jsonl"
 				require.NoError(t, os.WriteFile(filepath.FromSlash(path),
 					[]byte(`{"test_case_description":"help",`+
-						`"simulation_configuration":{"max_num_turns":21,"desired_num_turns":21}}`), 0o600))
+						`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
 				switch spelling {
 				case "canonical":
 					path = "./original/../original/seeds.jsonl"
@@ -471,7 +468,7 @@ func TestInitDatasetIdentityUsesExactConfigPath(t *testing.T) {
 						h := initIdentityFixture(t, initIdentityDeclarations[declaration], &seedCorrectionPromptServer{})
 						require.NoError(t, os.WriteFile(filepath.Join("original", "seeds.jsonl"),
 							[]byte(`{"test_case_description":"help",`+
-								`"simulation_configuration":{"max_num_turns":21,"desired_num_turns":21}}`), 0o600))
+								`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
 						require.NoError(t, os.Rename("evals", "config"))
 						config := filepath.Join("config", location.filename)
 						if location.filename != project.EvalConfigBase {

@@ -171,6 +171,7 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 			require.Equal(t, "resource-object-id", response.ObjectId)
 			require.Equal(t, tt.protoType, response.PrincipalType)
 
+			//nolint:staticcheck // Verify deprecated beta clients still resolve the same principal.
 			betaResponse, err := client.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
 				SubscriptionId: "sub-123",
 			})
@@ -181,14 +182,12 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 			connection, err := grpc.NewClient(info.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, connection.Close()) })
-			for _, service := range []string{"azdext.AccountService"} {
-				err := connection.Invoke(
-					ctx, "/"+service+"/GetCurrentPrincipal",
-					&v1beta.GetCurrentPrincipalRequest{SubscriptionId: "sub-123"},
-					&v1beta.GetCurrentPrincipalResponse{},
-				)
-				require.Equal(t, codes.Unimplemented, status.Code(err))
-			}
+			err = connection.Invoke(
+				ctx, "/azdext.AccountService/GetCurrentPrincipal",
+				&azdext.GetCurrentPrincipalRequest{SubscriptionId: "sub-123"},
+				&azdext.GetCurrentPrincipalResponse{},
+			)
+			require.Equal(t, codes.Unimplemented, status.Code(err))
 			require.EqualValues(t, 2, tokenCalls.Load())
 			subscriptions.AssertExpectations(t)
 			principalTypes.AssertExpectations(t)

@@ -54,6 +54,7 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	const telemetryService = "azd.extensions.v1beta.TelemetryService"
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
 	require.IsType(t, &betaTelemetryServiceAdapter{}, registrar.implementations[telemetryService])
+	//nolint:staticcheck // The adapter must still implement the deprecated beta server interface.
 	require.Implements(t, (*v1beta.TelemetryServiceServer)(nil), registrar.implementations[telemetryService])
 
 	const commandResultService = "azd.extensions.v1beta.CommandResultService"

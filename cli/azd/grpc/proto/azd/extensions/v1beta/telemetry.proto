@@ -24,8 +24,8 @@ service TelemetryService {
   }
 }
 
+// Deprecated: use azd.extensions.v1.ReportUsageRequest in azd 1.36.0 or later.
 message ReportUsageRequest {
-  // Deprecated: use azd.extensions.v1.ReportUsageRequest in azd 1.36.0 or later.
   option deprecated = true;
   // Event name owned by the extension. Recorded as extension.event so
   // queries can filter an extension's events without parsing attributes.
@@ -39,8 +39,8 @@ message ReportUsageRequest {
   map<string, string> attributes = 2;
 }
 
+// Deprecated: use azd.extensions.v1.ReportUsageResponse in azd 1.36.0 or later.
 message ReportUsageResponse {
-  // Deprecated: use azd.extensions.v1.ReportUsageResponse in azd 1.36.0 or later.
   option deprecated = true;
   // Accepted reports whether the host recorded the event. A false value is
   // not an error: the extension was not installed from the official azd

@@ -2027,7 +2027,7 @@ func (a *betaTelemetryServiceAdapter) ReportUsage(
 	ctx context.Context,
 	req *v1beta.ReportUsageRequest,
 ) (*v1beta.ReportUsageResponse, error) {
-	if override, ok := a.override.(BetaTelemetryServiceReportUsageOverride); ok {
+	if override, ok := findBetaOverride[BetaTelemetryServiceReportUsageOverride](a.override); ok {
 		return override.ReportUsage(ctx, req)
 	}
 	return adaptBetaUnary(

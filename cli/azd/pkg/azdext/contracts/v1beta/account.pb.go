@@ -24,6 +24,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Deprecated: use azd.extensions.v1.PrincipalType in azd 1.36.0 or later.
+//
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/account.proto.
 type PrincipalType int32
 
@@ -253,6 +255,8 @@ func (x *LookupTenantResponse) GetTenantId() string {
 	return ""
 }
 
+// Deprecated: use azd.extensions.v1.GetCurrentPrincipalRequest in azd 1.36.0 or later.
+//
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/account.proto.
 type GetCurrentPrincipalRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -299,6 +303,8 @@ func (x *GetCurrentPrincipalRequest) GetSubscriptionId() string {
 	return ""
 }
 
+// Deprecated: use azd.extensions.v1.GetCurrentPrincipalResponse in azd 1.36.0 or later.
+//
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/account.proto.
 type GetCurrentPrincipalResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`

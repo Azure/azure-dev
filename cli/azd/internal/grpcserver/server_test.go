@@ -387,7 +387,9 @@ func Test_Server_Start(t *testing.T) {
 		}()
 
 		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		//nolint:staticcheck // Verify the deprecated beta SDK still reaches the stable implementation.
 		client := v1beta.NewTelemetryServiceClient(connection)
+		//nolint:staticcheck // Preserve beta request and response coverage for existing binaries.
 		resp, err := client.ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			EventName:  "deploy.completed",
 			Attributes: map[string]string{"deploy.mode": "code"},
@@ -496,7 +498,9 @@ func Test_Server_Start(t *testing.T) {
 			"/azdext.TelemetryService/ReportUsage",
 		}
 		for i := range remaining + len(routes) {
+			//nolint:staticcheck // Send and receive the deprecated beta wire shape on every route.
 			response := &v1beta.ReportUsageResponse{}
+			//nolint:staticcheck // Verify beta payloads share the stable service's invocation budget.
 			require.NoError(t, connection.Invoke(
 				ctx, routes[i%len(routes)],
 				&v1beta.ReportUsageRequest{
@@ -514,10 +518,12 @@ func Test_Server_Start(t *testing.T) {
 			require.Equal(t, "stable", attributes["ext.mode"].AsString())
 		}
 		for _, route := range routes {
+			//nolint:staticcheck // Deprecated beta clients retain request validation.
 			err := connection.Invoke(
 				ctx, route, &v1beta.ReportUsageRequest{}, &v1beta.ReportUsageResponse{},
 			)
 			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			//nolint:staticcheck // Deprecated beta clients retain authentication enforcement.
 			err = connection.Invoke(
 				t.Context(), route,
 				&v1beta.ReportUsageRequest{EventName: "graduation.test"}, &v1beta.ReportUsageResponse{},

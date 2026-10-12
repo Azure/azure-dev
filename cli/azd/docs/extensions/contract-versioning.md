@@ -174,6 +174,10 @@ compatibility alias does not make those services part of stable `v1`.
 
 ## October 2026 graduation (azd 1.36.0)
 
+The [graduation history issue](https://github.com/Azure/azure-dev/issues/10436)
+records this first batch, compatibility decisions, consumer follow-ups, and
+actual release completion.
+
 The first graduation adds `TelemetryService.ReportUsage` and
 `AccountService.GetCurrentPrincipal` (including their complete message and enum
 shapes) to `v1`. Their beta symbols are deprecated, but both beta routes remain
@@ -194,7 +198,13 @@ keep working on new hosts. Extensions pinned to older SDK versions do not need
 to change until adopting the new SDK. New stable consumers must use the
 published `cli/azd/v1.36.0` SDK or later and declare
 `requiredAzdVersion: ">=1.36.0"`. First-party migrations and releases are
-tracked separately from the host graduation.
+tracked separately from the host graduation, except for the demo extension:
+it shares the core Go module and migrates in the host PR to keep core builds
+working. Its next published version also requires azd 1.36.0.
+
+Consumer migration and release follow-ups:
+[extension usage telemetry](https://github.com/Azure/azure-dev/issues/10438)
+and [current Azure principal](https://github.com/Azure/azure-dev/issues/10437).
 
 For every graduation, record the capability, complete stable surface, target
 release, beta deprecation/retention policy, SDK migration decisions,

@@ -24,6 +24,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Deprecated: use azd.extensions.v1.ReportUsageRequest in azd 1.36.0 or later.
+//
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/telemetry.proto.
 type ReportUsageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -84,6 +86,8 @@ func (x *ReportUsageRequest) GetAttributes() map[string]string {
 	return nil
 }
 
+// Deprecated: use azd.extensions.v1.ReportUsageResponse in azd 1.36.0 or later.
+//
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/telemetry.proto.
 type ReportUsageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`

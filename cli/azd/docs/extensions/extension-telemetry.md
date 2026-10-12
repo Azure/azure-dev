@@ -121,7 +121,7 @@ later unrelated failure does not lose the signal.
 
 An event with no attributes is valid — "this happened" is a legitimate signal.
 
-The demo extension still uses the deprecated beta API pending its separate migration:
+There is a complete stable API example in the demo extension:
 [`extensions/microsoft.azd.demo/internal/cmd/telemetry.go`](../../extensions/microsoft.azd.demo/internal/cmd/telemetry.go),
 runnable with `azd demo telemetry`.
 

@@ -41,15 +41,15 @@ message LookupTenantResponse {
   string tenant_id = 1;
 }
 
+// Deprecated: use azd.extensions.v1.GetCurrentPrincipalRequest in azd 1.36.0 or later.
 message GetCurrentPrincipalRequest {
-  // Deprecated: use azd.extensions.v1.GetCurrentPrincipalRequest in azd 1.36.0 or later.
   option deprecated = true;
   // Required subscription ID. The active environment is not used as a default.
   string subscription_id = 1;
 }
 
+// Deprecated: use azd.extensions.v1.GetCurrentPrincipalResponse in azd 1.36.0 or later.
 message GetCurrentPrincipalResponse {
-  // Deprecated: use azd.extensions.v1.GetCurrentPrincipalResponse in azd 1.36.0 or later.
   option deprecated = true;
   // Object ID in the subscription's resource tenant, not the user's home tenant or an application client ID.
   string object_id = 1;
@@ -57,8 +57,8 @@ message GetCurrentPrincipalResponse {
   PrincipalType principal_type = 2;
 }
 
+// Deprecated: use azd.extensions.v1.PrincipalType in azd 1.36.0 or later.
 enum PrincipalType {
-  // Deprecated: use azd.extensions.v1.PrincipalType in azd 1.36.0 or later.
   option deprecated = true;
   PRINCIPAL_TYPE_UNSPECIFIED = 0;
   PRINCIPAL_TYPE_USER = 1;

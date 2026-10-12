@@ -4,6 +4,7 @@ services:
     host: azure.ai.project
   manual-tool:
     host: containerapp
+    language: python
   support-agent:
     host: azure.ai.agent
     project: src/support-agent

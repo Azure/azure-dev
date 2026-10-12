@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -20,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -28,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -66,7 +69,7 @@ func TestProvisionServiceEnvUpdatedEventPreservesOutputsWithoutAliases(t *testin
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			eventOutputs, providerOutputs, dotenv := runProvisionServiceEnvUpdatedEvent(t, single, false, nil)
+			eventOutputs, providerOutputs, dotenv, _ := runProvisionServiceEnvUpdatedEvent(t, single, false, nil)
 			require.Equal(t, providerOutputs, eventOutputs)
 			for name, param := range providerOutputs {
 				require.Equal(t, param.Value, dotenv[name])
@@ -94,7 +97,7 @@ func TestProvisionServiceEnvUpdatedEventAppliesOutputAliases(t *testing.T) {
 			// Event consumers need the same names as the saved environment. These aliases overlap
 			// to catch accidental remapping of an already-translated name.
 			aliases := map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT", "SHARED_OUTPUT": "OTHER_OUTPUT"}
-			eventOutputs, providerOutputs, dotenv := runProvisionServiceEnvUpdatedEvent(t, tt.single, tt.skipped, aliases)
+			eventOutputs, providerOutputs, dotenv, _ := runProvisionServiceEnvUpdatedEvent(t, tt.single, tt.skipped, aliases)
 			expectedOutputs := map[string]provisioning.OutputParameter{
 				"SHARED_OUTPUT": providerOutputs["LOCAL_OUTPUT"],
 				"OTHER_OUTPUT":  providerOutputs["SHARED_OUTPUT"],
@@ -109,12 +112,48 @@ func TestProvisionServiceEnvUpdatedEventAppliesOutputAliases(t *testing.T) {
 	}
 }
 
+func TestProvisionServiceEnvUpdatedEventWritesAliasedDotNetSecrets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		single  bool
+		skipped bool
+	}{
+		{name: "single layer", single: true},
+		{name: "multi-layer"},
+		{name: "skipped multi-layer", skipped: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			aliases := map[string]string{
+				"LOCAL_OUTPUT":  "ConnectionStrings__Database",
+				"SHARED_OUTPUT": "OTHER_OUTPUT",
+			}
+			_, _, dotenv, secrets := runProvisionServiceEnvUpdatedEvent(t, tt.single, tt.skipped, aliases)
+
+			// .NET uses ":" for hierarchical secret keys, while the environment keeps "__".
+			require.Equal(t, map[string]string{
+				"ConnectionStrings:Database": "local-value",
+				"OTHER_OUTPUT":               "shared-value",
+				"UNCHANGED":                  "unchanged-value",
+			}, secrets)
+			require.Equal(t, dotenv["ConnectionStrings__Database"], secrets["ConnectionStrings:Database"])
+		})
+	}
+}
+
 func runProvisionServiceEnvUpdatedEvent(
 	t *testing.T,
 	single bool,
 	skipped bool,
 	aliases map[string]string,
-) (eventOutputs, providerOutputs map[string]provisioning.OutputParameter, dotenv map[string]string) {
+) (
+	eventOutputs, providerOutputs map[string]provisioning.OutputParameter,
+	dotenv, secrets map[string]string,
+) {
 	t.Helper()
 
 	deps, envMu, _ := newPropagationTestDeps(t)
@@ -139,10 +178,42 @@ func runProvisionServiceEnvUpdatedEvent(
 		EventDispatcher: ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](project.ProjectEvents...),
 	}
 	service := &project.ServiceConfig{
-		Name: "api", Project: projectConfig,
+		Name: "api", Project: projectConfig, RelativePath: "api.csproj",
+		Host: project.AppServiceTarget, Language: project.ServiceLanguageDotNet,
 		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
 	}
 	projectConfig.Services = map[string]*project.ServiceConfig{service.Name: service}
+
+	require.NoError(t, os.WriteFile(service.Path(), []byte("<Project />\n"), 0o600))
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) >= 2 &&
+			args.Args[0] == "user-secrets" && args.Args[1] == "init"
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	// Service enumeration checks .NET projects for Aspire; this fixture is a regular App Service project.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) > 0 && args.Args[0] == "msbuild"
+	}).Respond(exec.NewRunResult(0,
+		`{"Properties":{"IsAspireHost":"false"},"Items":{"ProjectCapability":[]}}`, ""))
+
+	secretsWriteCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) >= 2 &&
+			args.Args[0] == "user-secrets" && args.Args[1] == "set"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		assert.Equal(t, []string{"user-secrets", "set", "--project", service.Path()}, args.Args)
+		if args.StdIn == nil {
+			return exec.RunResult{}, fmt.Errorf("user-secrets command is missing JSON input")
+		}
+		if err := json.NewDecoder(args.StdIn).Decode(&secrets); err != nil {
+			return exec.RunResult{}, fmt.Errorf("decoding user-secrets command input: %w", err)
+		}
+		secretsWriteCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
+	dotnetProject := project.NewDotNetProject(dotnetCli, deps.env)
+	require.NoError(t, dotnetProject.Initialize(t.Context(), service))
 
 	eventCount := 0
 	require.NoError(t, service.AddHandler(t.Context(), project.ServiceEventEnvUpdated,
@@ -162,7 +233,9 @@ func runProvisionServiceEnvUpdatedEvent(
 	deps.cloud = cloud.AzurePublic()
 	deps.projectPath = projectConfig.Path
 	deps.projectConfig = projectConfig
-	deps.importManager = project.NewImportManager(nil)
+	deps.importManager = project.NewImportManager(project.NewDotNetImporter(
+		dotnetCli, mockContext.Console, nil, nil, mockContext.AlphaFeaturesManager,
+	))
 	deps.hookMu = &sync.Mutex{}
 	layer := provisioning.Options{
 		Name: "producer", Provider: provisioning.Test, Path: "infra", OutputAliases: aliases,
@@ -191,8 +264,9 @@ func runProvisionServiceEnvUpdatedEvent(
 	}
 
 	require.Equal(t, 1, eventCount)
+	require.Equal(t, 1, secretsWriteCount)
 	require.Equal(t, providerOutputs, provider.deployResult.Deployment.Outputs)
-	return eventOutputs, providerOutputs, deps.env.Dotenv()
+	return eventOutputs, providerOutputs, deps.env.Dotenv(), secrets
 }
 
 type savingParametersProvider struct {

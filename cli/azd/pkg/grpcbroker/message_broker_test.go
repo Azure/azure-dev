@@ -658,7 +658,7 @@ func TestRun_ContextCancellation(t *testing.T) {
 			}
 			envelope := &SimpleMessageEnvelope{}
 			broker := NewMessageBroker(stream, envelope, "test", nil)
-			response := make(chan *TestMessage, 1)
+			response := newResponseChannel[TestMessage](ctx, 1)
 			broker.responseChans.Store("pending", response)
 
 			// Start broker
@@ -683,7 +683,7 @@ func TestRun_ContextCancellation(t *testing.T) {
 				t.Fatal("Run did not exit after context cancellation")
 			}
 			select {
-			case _, open := <-response:
+			case _, open := <-response.messages:
 				require.False(t, open, "Run should close pending response channels")
 			default:
 				t.Fatal("Run did not close pending response channels")
@@ -832,7 +832,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 }
 
 func TestSendAndWait_ReturnsBufferedResponseAfterBrokerClose(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
@@ -877,7 +877,7 @@ func TestSendAndWait_ReturnsBufferedResponseAfterBrokerClose(t *testing.T) {
 }
 
 func TestProcessMessage_CancellationUnblocksFullResponseChannel(t *testing.T) {
-	sim := NewSimulatedBidiStream()
+	sim := NewSimulatedBidiStream(t.Context())
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}

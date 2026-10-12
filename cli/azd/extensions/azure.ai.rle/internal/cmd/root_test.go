@@ -478,6 +478,8 @@ func (c *testRleSampleCatalog) Copy(
 		Rle: project.RleManifest{
 			Name:    sampleName,
 			Version: project.DefaultRleVersion,
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},

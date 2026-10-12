@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -84,14 +83,13 @@ instead of blocking.`,
 		"Name of the published RLE environment to train against. Defaults to rle.name in ./rle.toml.")
 	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "",
 		"Version of the published RLE environment. Defaults to rle.version in ./rle.toml.")
-	cmd.Flags().StringVar(&flags.model, "model", "", "Base model id to fine-tune. Defaults to train.model in ./rle.toml.")
+	cmd.Flags().StringVar(&flags.model, "model", "", "Base model id to fine-tune (required).")
 	cmd.Flags().StringVar(&flags.trainingFile, "training-file", "",
-		"Path to the local training dataset uploaded as the Loom job input. "+
-			"Defaults to train.training_file in ./rle.toml.")
+		"Path to the local training dataset uploaded as the Loom job input (required).")
 	cmd.Flags().StringVar(&flags.validationFile, "validation-file", "",
-		"Path to a local validation dataset to upload. Defaults to train.validation_file in ./rle.toml.")
+		"Path to a local validation dataset to upload.")
 	cmd.Flags().StringVar(&flags.suffix, "suffix", "",
-		"Suffix appended to the resulting fine-tuned model name. Defaults to train.suffix in ./rle.toml.")
+		"Suffix appended to the resulting fine-tuned model name.")
 	cmd.Flags().IntVar(&flags.maxEpisodeSteps, "max-episode-steps", 0,
 		"Maximum steps the RLE executes per rollout (0 uses the service default).")
 	cmd.Flags().BoolVar(&flags.noFollow, "no-follow", false,
@@ -114,14 +112,16 @@ instead of blocking.`,
 	return cmd
 }
 
-// resolveTrainSettings fills in everything train can take from rle.toml in the
-// current folder: the RLE name and version, and the [train] section's model,
-// dataset paths, suffix and options. Flags win over the manifest, so a saved
-// configuration stays overridable for one run without editing it.
+// resolveTrainSettings fills in the RLE name and version from rle.toml in the
+// current folder when a flag does not set them, and flattens the manifest's
+// [train.grpo] defaults into the hyperparameters map sent to finetunesapi.
+// model, training-file, validation-file and suffix come only from their
+// flags: [train] is a reusable default for the published environment, not a
+// local-only training invocation.
 //
-// The manifest is optional. It is only required when a flag left something
-// unresolved, so `train --rle-name ... --model ... --training-file ...` still
-// works from a folder that has no rle.toml.
+// The manifest is optional. It is only required when rle-name or rle-version was
+// not passed as a flag, so `train --rle-name ... --rle-version ... --model ... --training-file
+// ...` still works from a folder that has no rle.toml.
 func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
 	name := strings.TrimSpace(a.flags.rleName)
 	version := strings.TrimSpace(a.flags.rleVersion)
@@ -139,26 +139,9 @@ func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
 		if version == "" {
 			version = config.Rle.Version
 		}
-		if train := config.Train; train != nil {
-			if model == "" && train.Model != nil {
-				model = strings.TrimSpace(*train.Model)
-			}
-			if trainingFile == "" && train.TrainingFile != nil {
-				trainingFile = strings.TrimSpace(*train.TrainingFile)
-			}
-			if validationFile == "" && train.ValidationFile != nil {
-				validationFile = strings.TrimSpace(*train.ValidationFile)
-			}
-			if suffix == "" && train.Suffix != nil {
-				suffix = strings.TrimSpace(*train.Suffix)
-			}
-			if a.flags.maxEpisodeSteps == 0 && train.MaxEpisodeSteps != nil {
-				a.flags.maxEpisodeSteps = *train.MaxEpisodeSteps
-			}
-			maps.Copy(options, train.Options)
-			if len(options) > 0 {
-				a.flags.optionsSource = project.RleConfigFile
-			}
+		options = trainDefaultsOptions(config.Train)
+		if len(options) > 0 {
+			a.flags.optionsSource = project.RleConfigFile
 		}
 	} else if name == "" || version == "" {
 		// Only the environment identity structurally needs the manifest. A missing
@@ -179,10 +162,10 @@ func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
 	}
 
 	if model == "" {
-		return nil, missingTrainSettingError("model", "--model", "train.model")
+		return nil, missingTrainSettingError("model", "--model")
 	}
 	if trainingFile == "" {
-		return nil, missingTrainSettingError("training file", "--training-file", "train.training_file")
+		return nil, missingTrainSettingError("training file", "--training-file")
 	}
 
 	normalized, err := project.NormalizeRleVersion(version)
@@ -198,17 +181,69 @@ func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
 	return options, nil
 }
 
+// trainDefaultsOptions flattens the manifest's [train.grpo] defaults into the
+// hyperparameters map, field by field, so each entry's wire key stays obviously
+// identical to its rle.toml key. Rollout is deliberately excluded: its only field,
+// GymOpenEnv, is part of the rollout contract the environment already knows, not a
+// training hyperparameter.
+func trainDefaultsOptions(train *project.RleTrainDefaults) map[string]any {
+	options := map[string]any{}
+	if train == nil || train.Grpo == nil {
+		return options
+	}
+
+	grpo := train.Grpo
+	if grpo.LearningRate != nil {
+		options["learning_rate"] = *grpo.LearningRate
+	}
+	if grpo.GroupSize != nil {
+		options["group_size"] = *grpo.GroupSize
+	}
+	if grpo.GroupsPerBatch != nil {
+		options["groups_per_batch"] = *grpo.GroupsPerBatch
+	}
+	if grpo.LoraRank != nil {
+		options["lora_rank"] = *grpo.LoraRank
+	}
+	if grpo.NumEpochs != nil {
+		options["num_epochs"] = *grpo.NumEpochs
+	}
+	if grpo.MaxSteps != nil {
+		options["max_steps"] = *grpo.MaxSteps
+	}
+	if grpo.EvalEvery != nil {
+		options["eval_every"] = *grpo.EvalEvery
+	}
+	if grpo.SaveEvery != nil {
+		options["save_every"] = *grpo.SaveEvery
+	}
+	if grpo.RemoveConstantRewardGroups != nil {
+		options["remove_constant_reward_groups"] = *grpo.RemoveConstantRewardGroups
+	}
+	if grpo.SamplingSeed != nil {
+		options["sampling_seed"] = *grpo.SamplingSeed
+	}
+	if grpo.RolloutFailureRateAbort != nil {
+		options["rollout_failure_rate_abort"] = *grpo.RolloutFailureRateAbort
+	}
+	if grpo.MinTrainableGroupMembers != nil {
+		options["min_trainable_group_members"] = *grpo.MinTrainableGroupMembers
+	}
+
+	return options
+}
+
 // trainTaskCountOption is the training option --task-count sets. The service
 // applies it as the dataset limit for the run; the CLI only forwards it.
 const trainTaskCountOption = "max_train_examples"
 
-func missingTrainSettingError(what string, flag string, manifestKey string) error {
+func missingTrainSettingError(what string, flag string) error {
 	return &azdext.LocalError{
 		Message:  fmt.Sprintf("A %s is required for train.", what),
 		Code:     "rle_train_setting_required",
 		Category: azdext.LocalErrorCategoryUser,
 		Suggestion: fmt.Sprintf(
-			"Pass %s, or set %s in %s.", flag, manifestKey, project.RleConfigFile,
+			"Pass %s.", flag,
 		),
 	}
 }

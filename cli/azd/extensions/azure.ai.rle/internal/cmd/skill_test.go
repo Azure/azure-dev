@@ -74,6 +74,8 @@ func TestFindRleProjectRootFromSubdirectory(t *testing.T) {
 		Rle: project.RleManifest{
 			Name:    "skill_test",
 			Version: "1.0.0",
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},

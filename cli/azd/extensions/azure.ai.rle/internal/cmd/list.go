@@ -70,8 +70,8 @@ func (a *listAction) Run() error {
 		rows = append(rows, []string{
 			environment.Name,
 			environment.Version,
-			firstNonEmpty(environment.Type, "-"),
-			firstNonEmpty(environment.Subtype, "-"),
+			firstNonEmpty(environment.Harness.Type, "-"),
+			firstNonEmpty(environment.Harness.Subtype, "-"),
 			firstNonEmpty(environment.DiskImageConversionStatus, "-"),
 			environment.UpdatedAt,
 		})

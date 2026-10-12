@@ -51,8 +51,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 					"id": "env-1",
 					"name": "echo_env",
 					"version": "1.2.0",
-					"type": "Gym",
-					"subtype": "OpenEnv",
+					"harness": {"type": "Gym", "subtype": "OpenEnv"},
 					"diskImageConversionStatus": "Ready",
 					"updatedAtUtc": "2026-07-30T05:00:00Z"
 				},
@@ -60,8 +59,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 					"id": "env-2",
 					"name": "code_rl",
 					"version": "2.0.0",
-					"type": "Harness",
-					"subtype": "BYOH",
+					"harness": {"type": "Harness", "subtype": "BYOH"},
 					"diskImageConversionStatus": "Pending",
 					"updatedAtUtc": "2026-07-30T06:00:00Z"
 				}
@@ -182,15 +180,16 @@ func TestEnvironmentTablesDisplayMissingValues(t *testing.T) {
 			t.Run(commandName+"/"+tt.name, func(t *testing.T) {
 				resource := environmentResource{
 					Id: "opaque-id", Name: "math_rl", Version: "1.0.0",
-					Type: tt.typeName, Subtype: tt.subtype, DiskImageConversionStatus: tt.status,
-					UpdatedAt: "2026-07-30T05:00:00Z",
-					ProjectId: "project-id", AcrImagePath: "example.azurecr.io/math-rl:1.0.0",
-					AgentName: "agent", AgentVersion: "2", BaseURL: "https://harness.example.com",
-					SchemaVersion: new(project.CurrentRleManifestSchemaVersion),
-					Defaults: &project.RleEnvironmentDefaults{
-						Model: &project.RleModelDefaults{Name: new("test-model")},
+					Harness: rleHarness{
+						Type: tt.typeName, Subtype: tt.subtype,
+						AgentName: new(string), AgentVersion: new(string), InvocationURL: new(string),
 					},
-					CreatedAt: "2026-07-30T04:00:00Z", VersionLabel: "test-label",
+					DiskImageConversionStatus: tt.status,
+					UpdatedAt:                 "2026-07-30T05:00:00Z",
+					ProjectId:                 "project-id", AcrImagePath: "example.azurecr.io/math-rl:1.0.0",
+					SchemaVersion: new(project.CurrentRleManifestSchemaVersion),
+					Model:         &project.RleModelDefaults{Name: new("test-model")},
+					CreatedAt:     "2026-07-30T04:00:00Z", VersionLabel: "test-label",
 					DiskImageConversionError: "test-error",
 				}
 				controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -480,8 +479,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 						"id":"env-version-1",
 						"name":"echo_env",
 						"version":"1.0.0",
-						"type":"Gym",
-						"subtype":"OpenEnv",
+						"harness":{"type":"Gym","subtype":"OpenEnv"},
 						"diskImageConversionStatus":"Failed",
 						"updatedAtUtc":"2026-07-28T06:00:00Z",
 						"createdAtUtc":"2026-07-28T05:00:00Z",
@@ -491,8 +489,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 						"id":"env-1",
 						"name":"echo_env",
 						"version":"1.2.0",
-						"type":"Harness",
-						"subtype":"HostedAgent",
+						"harness":{"type":"Harness","subtype":"HostedAgent"},
 						"diskImageConversionStatus":"Ready",
 						"updatedAtUtc":"2026-07-30T05:00:00Z",
 						"createdAtUtc":"2026-07-30T05:00:00Z",
@@ -825,6 +822,8 @@ func TestShowUsesEnvironmentNameFromManifestAndRuntimeProjectEndpoint(t *testing
 		Rle: project.RleManifest{
 			Name:    "echo_env",
 			Version: "1.0.0",
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},

@@ -37,17 +37,23 @@ type rleClient struct {
 
 var createRleClient = newRleClient
 
+type rleHarness struct {
+	Type          string  `json:"type"`
+	Subtype       string  `json:"subtype"`
+	AgentName     *string `json:"agent_name,omitempty"`
+	AgentVersion  *string `json:"agent_version,omitempty"`
+	InvocationURL *string `json:"invocation_url,omitempty"`
+}
+
 type v1EnvironmentRequest struct {
-	Name          string                          `json:"name,omitempty"`
-	AcrImagePath  string                          `json:"acrImagePath"`
-	Version       string                          `json:"version"`
-	Type          string                          `json:"type"`
-	Subtype       string                          `json:"subtype"`
-	AgentName     *string                         `json:"agentName,omitempty"`
-	AgentVersion  *string                         `json:"agentVersion,omitempty"`
-	BaseURL       *string                         `json:"baseUrl,omitempty"`
-	SchemaVersion *string                         `json:"schemaVersion,omitempty"`
-	Defaults      *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
+	Name          string                      `json:"name,omitempty"`
+	AcrImagePath  string                      `json:"acrImagePath"`
+	Version       string                      `json:"version"`
+	Harness       rleHarness                  `json:"harness"`
+	SchemaVersion *string                     `json:"schema_version,omitempty"`
+	Model         *project.RleModelDefaults   `json:"model,omitempty"`
+	Train         *project.RleTrainDefaults   `json:"train,omitempty"`
+	Rollout       *project.RleRolloutDefaults `json:"rollout,omitempty"`
 
 	// EnvironmentProtocol is snake_case where its neighbors are camelCase
 	// because that is the name the service deserializes, and it refuses every
@@ -57,24 +63,21 @@ type v1EnvironmentRequest struct {
 }
 
 type environmentResource struct {
-	Id                        string                          `json:"id"`
-	ProjectId                 string                          `json:"projectId,omitempty"`
-	Name                      string                          `json:"name,omitempty"`
-	AcrImagePath              string                          `json:"acrImagePath,omitempty"`
-	Version                   string                          `json:"version,omitempty"`
-	Type                      string                          `json:"type,omitempty"`
-	Subtype                   string                          `json:"subtype,omitempty"`
-	AgentName                 string                          `json:"agentName,omitempty"`
-	AgentVersion              string                          `json:"agentVersion,omitempty"`
-	BaseURL                   string                          `json:"baseUrl,omitempty"`
-	EnvironmentProtocol       *project.RleEnvironmentProtocol `json:"environment_protocol,omitempty"`
-	SchemaVersion             *string                         `json:"schemaVersion,omitempty"`
-	Defaults                  *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
-	CreatedAt                 string                          `json:"createdAtUtc,omitempty"`
-	UpdatedAt                 string                          `json:"updatedAtUtc,omitempty"`
-	VersionLabel              string                          `json:"versionLabel,omitempty"`
-	DiskImageConversionStatus string                          `json:"diskImageConversionStatus,omitempty"`
-	DiskImageConversionError  string                          `json:"diskImageConversionError,omitempty"`
+	Id                        string                      `json:"id"`
+	ProjectId                 string                      `json:"projectId,omitempty"`
+	Name                      string                      `json:"name,omitempty"`
+	AcrImagePath              string                      `json:"acrImagePath,omitempty"`
+	Version                   string                      `json:"version,omitempty"`
+	Harness                   rleHarness                  `json:"harness"`
+	SchemaVersion             *string                     `json:"schema_version,omitempty"`
+	Model                     *project.RleModelDefaults   `json:"model,omitempty"`
+	Train                     *project.RleTrainDefaults   `json:"train,omitempty"`
+	Rollout                   *project.RleRolloutDefaults `json:"rollout,omitempty"`
+	CreatedAt                 string                      `json:"createdAtUtc,omitempty"`
+	UpdatedAt                 string                      `json:"updatedAtUtc,omitempty"`
+	VersionLabel              string                      `json:"versionLabel,omitempty"`
+	DiskImageConversionStatus string                      `json:"diskImageConversionStatus,omitempty"`
+	DiskImageConversionError  string                      `json:"diskImageConversionError,omitempty"`
 }
 
 type pagedEnvironmentResponse struct {

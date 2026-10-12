@@ -301,12 +301,12 @@ func loadLocalRunConfig(flags *localRunFlags) (project.RleConfig, error) {
 // The check is here rather than in the action so that the watch/restart path,
 // which reloads the manifest through this same function, cannot bypass it.
 func ensureLocalRunSupported(config project.RleConfig) error {
-	if config.Rle.Type == project.RleTypeGym && config.Rle.Subtype == project.RleSubtypeOpenEnv {
+	if config.Harness.Type == project.RleTypeGym && config.Harness.Subtype == project.RleSubtypeOpenEnv {
 		return nil
 	}
-	declared := string(config.Rle.Type)
-	if config.Rle.Subtype != "" {
-		declared = fmt.Sprintf("%s: %s", config.Rle.Type, config.Rle.Subtype)
+	declared := string(config.Harness.Type)
+	if config.Harness.Subtype != "" {
+		declared = fmt.Sprintf("%s: %s", config.Harness.Type, config.Harness.Subtype)
 	}
 	return &azdext.LocalError{
 		Message: fmt.Sprintf(
@@ -319,7 +319,7 @@ func ensureLocalRunSupported(config project.RleConfig) error {
 		Category: azdext.LocalErrorCategoryUser,
 		Suggestion: "run drives the container over the OpenEnv WebSocket session, which a harness " +
 			"container does not serve. To exercise a harness RLE, deploy the agent, point rle.toml's " +
-			"baseUrl/agentName/agentVersion at it, run azd ai rle publish, then azd ai rle rollout.",
+			"invocation_url/agent_name/agent_version at it, run azd ai rle publish, then azd ai rle rollout.",
 	}
 }
 

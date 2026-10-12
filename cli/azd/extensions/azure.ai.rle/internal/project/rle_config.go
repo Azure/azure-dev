@@ -24,7 +24,7 @@ const (
 	CurrentRleManifestSchemaVersion = "1.0.0"
 	maxAgentNameLength              = 256
 	maxAgentVersionLen              = 128
-	maxHarnessBaseURLLen            = 2048
+	maxHarnessInvocationURLLen      = 2048
 	maxRleModelNameLength           = 256
 	maxRleRendererNameLength        = 256
 	maxRleModelResponseFieldLength  = 128
@@ -57,20 +57,26 @@ type RleEnvironmentProtocol string
 const RleEnvironmentProtocolMcpEnvironment RleEnvironmentProtocol = "mcp_environment"
 
 // RleConfig is the host-agnostic source configuration for one immutable RLE release.
+//
+// Model, Train, and Rollout are reusable, version-scoped defaults declared at the top
+// level ([model], [train], [rollout]) rather than nested under a "defaults" table: they
+// are what train and (eventually) eval actually consume, not metadata about the manifest.
 type RleConfig struct {
 	SchemaVersion       *string                 `toml:"schema_version,omitempty"`
 	EnvironmentProtocol *RleEnvironmentProtocol `toml:"environment_protocol,omitempty"`
 	Rle                 RleManifest             `toml:"rle"`
-	Defaults            *RleEnvironmentDefaults `toml:"defaults,omitempty"`
-	Train               *RleTrainSettings       `toml:"train,omitempty"`
+	Harness             RleHarnessManifest      `toml:"harness"`
+	Model               *RleModelDefaults       `toml:"model,omitempty"`
+	Train               *RleTrainDefaults       `toml:"train,omitempty"`
+	Rollout             *RleRolloutDefaults     `toml:"rollout,omitempty"`
 }
 
 // RleManifest uses the control-plane field names so the [rle] table maps directly to an RLE release.
+// It carries pure identity only -- name and version -- plus the two legacy/parse-compatibility
+// fields below; everything about how RLE calls the environment lives in [harness] instead.
 type RleManifest struct {
-	Name    string     `toml:"name"`
-	Version string     `toml:"version"`
-	Type    RleType    `toml:"type"`
-	Subtype RleSubtype `toml:"subtype"`
+	Name    string `toml:"name"`
+	Version string `toml:"version"`
 
 	// ImageTag pins the harness container independently of Version. A Harness
 	// environment can be republished against the same, unchanged image, so the
@@ -80,10 +86,6 @@ type RleManifest struct {
 	// pin a tag would otherwise fail every command with a schema error.
 	ImageTag *string `toml:"imageTag,omitempty"`
 
-	AgentName    *string `toml:"agentName,omitempty"`
-	AgentVersion *string `toml:"agentVersion,omitempty"`
-	BaseURL      *string `toml:"baseUrl,omitempty"`
-
 	// EnvironmentProtocol is immutable for a published version, because RLE
 	// resolves the rollout path from it and a version that changed protocol
 	// mid-life would not be the environment a finished run was trained against.
@@ -92,33 +94,16 @@ type RleManifest struct {
 	EnvironmentProtocol *RleEnvironmentProtocol `toml:"environmentProtocol,omitempty"`
 }
 
-// RleEnvironmentDefaults contains reusable version-scoped training defaults.
-type RleEnvironmentDefaults struct {
-	Model         *RleModelDefaults         `toml:"model,omitempty" json:"model,omitempty"`
-	Reinforcement *RleReinforcementDefaults `toml:"reinforcement,omitempty" json:"reinforcement,omitempty"`
-	Grpo          *RleGrpoDefaults          `toml:"grpo,omitempty" json:"grpo,omitempty"`
-	GymOpenEnv    *RleGymOpenEnvDefaults    `toml:"gym_openenv,omitempty" json:"gym_openenv,omitempty"`
-}
+// RleHarnessManifest is the [harness] table: how RLE calls this environment. Type and Subtype
+// apply to every environment (Gym included); AgentName/AgentVersion/InvocationURL are
+// Harness-type-only identity fields, left unset (and rejected) for Gym.
+type RleHarnessManifest struct {
+	Type    RleType    `toml:"type"`
+	Subtype RleSubtype `toml:"subtype"`
 
-// RleTrainSettings records how this environment is usually trained, so that a run
-// is `azd ai rle train` rather than a line of flags nobody remembers.
-//
-// This is deliberately separate from Defaults. Defaults describes the published
-// environment version -- publish sends it to the service and rejects a local copy
-// that has drifted -- and versions are immutable, so a value that changes from run
-// to run cannot live there. These settings are local, are never published, and are
-// free to change without republishing.
-//
-// Options is left opaque. The service owns the option vocabulary and validates it
-// per recipe, naming the offending field and the supported set; duplicating that
-// list here would only add a second place to be out of date.
-type RleTrainSettings struct {
-	Model           *string        `toml:"model,omitempty" json:"model,omitempty"`
-	TrainingFile    *string        `toml:"training_file,omitempty" json:"training_file,omitempty"`
-	ValidationFile  *string        `toml:"validation_file,omitempty" json:"validation_file,omitempty"`
-	Suffix          *string        `toml:"suffix,omitempty" json:"suffix,omitempty"`
-	MaxEpisodeSteps *int           `toml:"max_episode_steps,omitempty" json:"max_episode_steps,omitempty"`
-	Options         map[string]any `toml:"options,omitempty" json:"options,omitempty"`
+	AgentName     *string `toml:"agent_name,omitempty"`
+	AgentVersion  *string `toml:"agent_version,omitempty"`
+	InvocationURL *string `toml:"invocation_url,omitempty"`
 }
 
 // RleModelDefaults contains the optional model and renderer selection.
@@ -127,14 +112,18 @@ type RleModelDefaults struct {
 	RendererName *string `toml:"renderer_name,omitempty" json:"renderer_name,omitempty"`
 }
 
-// RleReinforcementDefaults contains the environment-owned Training Jobs settings.
-type RleReinforcementDefaults struct {
-	Hyperparameters *RleReinforcementHyperparameters `toml:"hyperparameters,omitempty" json:"hyperparameters,omitempty"`
-	MaxEpisodeSteps *int                             `toml:"max_episode_steps,omitempty" json:"max_episode_steps,omitempty"`
-	// MaxCompletionTokens is the output budget for a single model turn. Left unset, the
-	// request inherits the sampler's default and can hand the environment an action that
-	// was truncated mid-thought.
-	MaxCompletionTokens *int `toml:"max_completion_tokens,omitempty" json:"max_completion_tokens,omitempty"`
+// RleTrainDefaults contains the version-scoped recipe training defaults.
+type RleTrainDefaults struct {
+	Grpo *RleGrpoDefaults `toml:"grpo,omitempty" json:"grpo,omitempty"`
+}
+
+// RleRolloutDefaults contains the version-scoped rollout defaults consumed by RLE's
+// server-owned policy loop. Sampling and payload-size ceilings (completion tokens,
+// sequence length, vocab size, timeouts, response size) are not settable here: they are
+// hardcoded/configured server-side and may be exposed in the manifest later once there is
+// user feedback on which ones are actually needed per environment.
+type RleRolloutDefaults struct {
+	GymOpenEnv *RleGymOpenEnvDefaults `toml:"gym_openenv,omitempty" json:"gym_openenv,omitempty"`
 }
 
 // RleGymOpenEnvDefaults is the Gym/OpenEnv contract between an environment and RLE's
@@ -146,22 +135,24 @@ type RleGymOpenEnvDefaults struct {
 	ModelResponseField *string `toml:"model_response_field,omitempty" json:"model_response_field,omitempty"`
 }
 
-// RleReinforcementHyperparameters mirrors the Training Jobs reinforcement wire fields.
-type RleReinforcementHyperparameters struct {
-	NumberOfEpochs         *int     `toml:"n_epochs,omitempty" json:"n_epochs,omitempty"`
-	BatchSize              *int     `toml:"batch_size,omitempty" json:"batch_size,omitempty"`
-	LearningRateMultiplier *float64 `toml:"learning_rate_multiplier,omitempty" json:"learning_rate_multiplier,omitempty"`
-	EvalInterval           *int     `toml:"eval_interval,omitempty" json:"eval_interval,omitempty"`
-	EvalSamples            *int     `toml:"eval_samples,omitempty" json:"eval_samples,omitempty"`
-	ComputeMultiplier      *float64 `toml:"compute_multiplier,omitempty" json:"compute_multiplier,omitempty"`
-	ReasoningEffort        *string  `toml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
-}
-
 // RleGrpoDefaults retains recipe-level GRPO settings without aliasing Training Jobs batch size.
 type RleGrpoDefaults struct {
-	GroupSize      *int `toml:"group_size,omitempty" json:"group_size,omitempty"`
-	GroupsPerBatch *int `toml:"groups_per_batch,omitempty" json:"groups_per_batch,omitempty"`
-	MaxSteps       *int `toml:"max_steps,omitempty" json:"max_steps,omitempty"`
+	LearningRate   *float64 `toml:"learning_rate,omitempty" json:"learning_rate,omitempty"`
+	GroupSize      *int     `toml:"group_size,omitempty" json:"group_size,omitempty"`
+	GroupsPerBatch *int     `toml:"groups_per_batch,omitempty" json:"groups_per_batch,omitempty"`
+	LoraRank       *int     `toml:"lora_rank,omitempty" json:"lora_rank,omitempty"`
+	NumEpochs      *int     `toml:"num_epochs,omitempty" json:"num_epochs,omitempty"`
+	MaxSteps       *int     `toml:"max_steps,omitempty" json:"max_steps,omitempty"`
+	EvalEvery      *int     `toml:"eval_every,omitempty" json:"eval_every,omitempty"`
+	SaveEvery      *int     `toml:"save_every,omitempty" json:"save_every,omitempty"`
+
+	RemoveConstantRewardGroups *bool `toml:"remove_constant_reward_groups,omitempty" json:"remove_constant_reward_groups,omitempty"`
+
+	SamplingSeed *int `toml:"sampling_seed,omitempty" json:"sampling_seed,omitempty"`
+
+	RolloutFailureRateAbort *float64 `toml:"rollout_failure_rate_abort,omitempty" json:"rollout_failure_rate_abort,omitempty"`
+
+	MinTrainableGroupMembers *int `toml:"min_trainable_group_members,omitempty" json:"min_trainable_group_members,omitempty"`
 }
 
 var semanticVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -212,6 +203,7 @@ func WriteRleConfig(dir string, config RleConfig) error {
 // NormalizeRleConfig validates the manifest against the RLE control-plane type contract.
 func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	manifest := config.Rle
+	harness := config.Harness
 
 	name, err := ValidateEnvironmentName(strings.TrimSpace(manifest.Name))
 	if err != nil {
@@ -229,11 +221,11 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	}
 	manifest.Version = version
 
-	manifest.Type, err = normalizeRleType(manifest.Type)
+	harness.Type, err = normalizeRleType(harness.Type)
 	if err != nil {
 		return RleConfig{}, err
 	}
-	manifest.Subtype, err = normalizeRleSubtype(manifest.Subtype)
+	harness.Subtype, err = normalizeRleSubtype(harness.Subtype)
 	if err != nil {
 		return RleConfig{}, err
 	}
@@ -259,35 +251,39 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	}
 	config.EnvironmentProtocol = nil
 
-	switch manifest.Type {
+	switch harness.Type {
 	case RleTypeGym:
-		if manifest.Subtype != RleSubtypeOpenEnv {
+		if harness.Subtype != RleSubtypeOpenEnv {
 			return RleConfig{}, localError(
-				"Only the OpenEnv subtype is supported when rle.type is Gym.",
+				"Only the OpenEnv subtype is supported when harness.type is Gym.",
 				"rle_manifest_type_configuration_invalid",
-				`Set rle.type = "Gym" and rle.subtype = "OpenEnv".`,
+				`Set harness.type = "Gym" and harness.subtype = "OpenEnv".`,
 			)
 		}
-		if manifest.AgentName != nil || manifest.AgentVersion != nil || manifest.BaseURL != nil {
+		if harness.AgentName != nil || harness.AgentVersion != nil || harness.InvocationURL != nil {
 			return RleConfig{}, localError(
-				"agentName, agentVersion, and baseUrl are allowed only when rle.type is Harness.",
+				"agent_name, agent_version, and invocation_url are allowed only when harness.type is Harness.",
 				"rle_manifest_type_configuration_invalid",
 				"Remove harness configuration from this Gym: OpenEnv manifest.",
 			)
 		}
+		harness = RleHarnessManifest{Type: harness.Type, Subtype: harness.Subtype}
 	case RleTypeHarness:
-		switch manifest.Subtype {
+		harnessAgentName := harness.AgentName
+		harnessAgentVersion := harness.AgentVersion
+		harnessInvocationURL := harness.InvocationURL
+		switch harness.Subtype {
 		case RleSubtypeHostedAgent:
-			if manifest.BaseURL != nil {
+			if harnessInvocationURL != nil {
 				return RleConfig{}, localError(
-					"baseUrl must be omitted when rle.subtype is HostedAgent.",
+					"invocation_url must be omitted when harness.subtype is HostedAgent.",
 					"rle_manifest_type_configuration_invalid",
-					"Remove baseUrl or set rle.subtype to BYOH.",
+					"Remove invocation_url or set harness.subtype to BYOH.",
 				)
 			}
 			agentName, err := normalizeRequiredAgentField(
-				manifest.AgentName,
-				"agentName",
+				harnessAgentName,
+				"agent_name",
 				maxAgentNameLength,
 				"rle_agent_name_required",
 			)
@@ -295,8 +291,8 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 				return RleConfig{}, err
 			}
 			agentVersion, err := normalizeRequiredAgentField(
-				manifest.AgentVersion,
-				"agentVersion",
+				harnessAgentVersion,
+				"agent_version",
 				maxAgentVersionLen,
 				"rle_agent_version_required",
 			)
@@ -305,51 +301,74 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 			}
 			if !isValidHostedAgentVersion(agentVersion) {
 				return RleConfig{}, localError(
-					"agentVersion must be a positive integer or a 'draft-{positive-unix-timestamp}' value.",
+					"agent_version must be a positive integer or a 'draft-{positive-unix-timestamp}' value.",
 					"rle_agent_version_invalid",
 					`Use a value such as "12" or "draft-1767225600".`,
 				)
 			}
-			manifest.AgentName = &agentName
-			manifest.AgentVersion = &agentVersion
+			harness = RleHarnessManifest{
+				Type:         harness.Type,
+				Subtype:      harness.Subtype,
+				AgentName:    &agentName,
+				AgentVersion: &agentVersion,
+			}
 		case RleSubtypeBYOH:
-			if manifest.AgentName != nil || manifest.AgentVersion != nil {
+			if harnessAgentName != nil || harnessAgentVersion != nil {
 				return RleConfig{}, localError(
-					"agentName and agentVersion must be omitted when rle.subtype is BYOH.",
+					"agent_name and agent_version must be omitted when harness.subtype is BYOH.",
 					"rle_manifest_type_configuration_invalid",
-					"Remove the Hosted Agent fields or set rle.subtype to HostedAgent.",
+					"Remove the Hosted Agent fields or set harness.subtype to HostedAgent.",
 				)
 			}
-			baseURL, err := normalizeHarnessBaseURL(manifest.BaseURL)
+			invocationURL, err := normalizeHarnessInvocationURL(harnessInvocationURL)
 			if err != nil {
 				return RleConfig{}, err
 			}
-			manifest.BaseURL = &baseURL
+			harness = RleHarnessManifest{
+				Type:          harness.Type,
+				Subtype:       harness.Subtype,
+				InvocationURL: &invocationURL,
+			}
 		default:
 			return RleConfig{}, localError(
-				"Only the HostedAgent and BYOH subtypes are supported when rle.type is Harness.",
+				"Only the HostedAgent and BYOH subtypes are supported when harness.type is Harness.",
 				"rle_manifest_type_configuration_invalid",
-				`Set rle.subtype to "HostedAgent" or "BYOH".`,
+				`Set harness.subtype to "HostedAgent" or "BYOH".`,
 			)
 		}
 	default:
 		return RleConfig{}, localError(
-			"rle.type must be Gym or Harness.",
+			"harness.type must be Gym or Harness.",
 			"rle_manifest_type_invalid",
-			`Set rle.type to "Gym" or "Harness".`,
+			`Set harness.type to "Gym" or "Harness".`,
 		)
 	}
 
-	schemaVersion, defaults, err := normalizeRleManifestDefaults(
+	schemaVersion, model, train, rollout, err := normalizeRleManifestDefaults(
 		config.SchemaVersion,
-		config.Defaults,
+		config.Model,
+		config.Train,
+		config.Rollout,
 	)
 	if err != nil {
 		return RleConfig{}, err
 	}
+
+	// An absent protocol defaults to the current MCP protocol once the manifest declares the
+	// current schema version, so a manifest written against the locked schema opts in to MCP
+	// without having to spell out the protocol by hand. A manifest with no schema_version at
+	// all predates this default and keeps resolving to legacy.
+	if manifest.EnvironmentProtocol == nil && schemaVersion != nil && *schemaVersion == CurrentRleManifestSchemaVersion {
+		mcpProtocol := RleEnvironmentProtocolMcpEnvironment
+		manifest.EnvironmentProtocol = &mcpProtocol
+	}
+
 	config.SchemaVersion = schemaVersion
 	config.Rle = manifest
-	config.Defaults = defaults
+	config.Harness = harness
+	config.Model = model
+	config.Train = train
+	config.Rollout = rollout
 	return config, nil
 }
 
@@ -384,28 +403,38 @@ func ValidateInitialRleVersion(value string) error {
 
 func normalizeRleManifestDefaults(
 	schemaVersion *string,
-	defaults *RleEnvironmentDefaults,
-) (*string, *RleEnvironmentDefaults, error) {
+	model *RleModelDefaults,
+	train *RleTrainDefaults,
+	rollout *RleRolloutDefaults,
+) (*string, *RleModelDefaults, *RleTrainDefaults, *RleRolloutDefaults, error) {
 	normalizedSchemaVersion, err := normalizeRleSchemaVersion(
 		schemaVersion,
-		defaults != nil,
+		model != nil || train != nil || rollout != nil,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	normalizedDefaults, err := normalizeRleDefaults(defaults)
+	normalizedModel, err := normalizeRleModelDefaults(model)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return normalizedSchemaVersion, normalizedDefaults, nil
+	normalizedTrain, err := normalizeRleTrainDefaults(train)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	normalizedRollout, err := normalizeRleRolloutDefaults(rollout)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return normalizedSchemaVersion, normalizedModel, normalizedTrain, normalizedRollout, nil
 }
 
 func normalizeRleSchemaVersion(value *string, required bool) (*string, error) {
 	if value == nil {
 		if required {
 			return nil, localError(
-				"schema_version is required when defaults are supplied.",
+				"schema_version is required when model, train, or rollout settings are supplied.",
 				"rle_manifest_schema_version_required",
 				fmt.Sprintf("Set root-level schema_version to %q.", CurrentRleManifestSchemaVersion),
 			)
@@ -431,47 +460,18 @@ func normalizeRleSchemaVersion(value *string, required bool) (*string, error) {
 	return &normalized, nil
 }
 
-func normalizeRleDefaults(value *RleEnvironmentDefaults) (*RleEnvironmentDefaults, error) {
-	if value == nil {
-		return nil, nil
-	}
-
-	model, err := normalizeRleModelDefaults(value.Model)
-	if err != nil {
-		return nil, err
-	}
-	reinforcement, err := normalizeRleReinforcementDefaults(value.Reinforcement)
-	if err != nil {
-		return nil, err
-	}
-	grpo, err := normalizeRleGrpoDefaults(value.Grpo)
-	if err != nil {
-		return nil, err
-	}
-	gymOpenEnv, err := normalizeRleGymOpenEnvDefaults(value.GymOpenEnv)
-	if err != nil {
-		return nil, err
-	}
-	return &RleEnvironmentDefaults{
-		Model:         model,
-		Reinforcement: reinforcement,
-		Grpo:          grpo,
-		GymOpenEnv:    gymOpenEnv,
-	}, nil
-}
-
 func normalizeRleModelDefaults(value *RleModelDefaults) (*RleModelDefaults, error) {
 	if value == nil {
 		return nil, nil
 	}
 
-	name, err := normalizeOptionalRleString(value.Name, "defaults.model.name", maxRleModelNameLength)
+	name, err := normalizeOptionalRleString(value.Name, "model.name", maxRleModelNameLength)
 	if err != nil {
 		return nil, err
 	}
 	rendererName, err := normalizeOptionalRleString(
 		value.RendererName,
-		"defaults.model.renderer_name",
+		"model.renderer_name",
 		maxRleRendererNameLength,
 	)
 	if err != nil {
@@ -480,28 +480,29 @@ func normalizeRleModelDefaults(value *RleModelDefaults) (*RleModelDefaults, erro
 	return &RleModelDefaults{Name: name, RendererName: rendererName}, nil
 }
 
-func normalizeRleReinforcementDefaults(value *RleReinforcementDefaults) (*RleReinforcementDefaults, error) {
+func normalizeRleTrainDefaults(value *RleTrainDefaults) (*RleTrainDefaults, error) {
 	if value == nil {
 		return nil, nil
 	}
 
-	if err := validatePositiveInt(value.MaxEpisodeSteps, "defaults.reinforcement.max_episode_steps"); err != nil {
-		return nil, err
-	}
-	if err := validatePositiveInt(
-		value.MaxCompletionTokens,
-		"defaults.reinforcement.max_completion_tokens",
-	); err != nil {
-		return nil, err
-	}
-	hyperparameters, err := normalizeRleReinforcementHyperparameters(value.Hyperparameters)
+	grpo, err := normalizeRleGrpoDefaults(value.Grpo)
 	if err != nil {
 		return nil, err
 	}
-	return &RleReinforcementDefaults{
-		Hyperparameters:     hyperparameters,
-		MaxEpisodeSteps:     cloneInt(value.MaxEpisodeSteps),
-		MaxCompletionTokens: cloneInt(value.MaxCompletionTokens),
+	return &RleTrainDefaults{Grpo: grpo}, nil
+}
+
+func normalizeRleRolloutDefaults(value *RleRolloutDefaults) (*RleRolloutDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	gymOpenEnv, err := normalizeRleGymOpenEnvDefaults(value.GymOpenEnv)
+	if err != nil {
+		return nil, err
+	}
+	return &RleRolloutDefaults{
+		GymOpenEnv: gymOpenEnv,
 	}, nil
 }
 
@@ -512,59 +513,13 @@ func normalizeRleGymOpenEnvDefaults(value *RleGymOpenEnvDefaults) (*RleGymOpenEn
 
 	modelResponseField, err := normalizeOptionalRleString(
 		value.ModelResponseField,
-		"defaults.gym_openenv.model_response_field",
+		"rollout.gym_openenv.model_response_field",
 		maxRleModelResponseFieldLength,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &RleGymOpenEnvDefaults{ModelResponseField: modelResponseField}, nil
-}
-
-func normalizeRleReinforcementHyperparameters(
-	value *RleReinforcementHyperparameters,
-) (*RleReinforcementHyperparameters, error) {
-	if value == nil {
-		return nil, nil
-	}
-
-	for _, parameter := range []struct {
-		value *int
-		name  string
-	}{
-		{value.NumberOfEpochs, "defaults.reinforcement.hyperparameters.n_epochs"},
-		{value.BatchSize, "defaults.reinforcement.hyperparameters.batch_size"},
-		{value.EvalInterval, "defaults.reinforcement.hyperparameters.eval_interval"},
-		{value.EvalSamples, "defaults.reinforcement.hyperparameters.eval_samples"},
-	} {
-		if err := validatePositiveInt(parameter.value, parameter.name); err != nil {
-			return nil, err
-		}
-	}
-	for _, parameter := range []struct {
-		value *float64
-		name  string
-	}{
-		{value.LearningRateMultiplier, "defaults.reinforcement.hyperparameters.learning_rate_multiplier"},
-		{value.ComputeMultiplier, "defaults.reinforcement.hyperparameters.compute_multiplier"},
-	} {
-		if err := validateFinitePositiveFloat(parameter.value, parameter.name); err != nil {
-			return nil, err
-		}
-	}
-	reasoningEffort, err := normalizeReasoningEffort(value.ReasoningEffort)
-	if err != nil {
-		return nil, err
-	}
-	return &RleReinforcementHyperparameters{
-		NumberOfEpochs:         cloneInt(value.NumberOfEpochs),
-		BatchSize:              cloneInt(value.BatchSize),
-		LearningRateMultiplier: cloneFloat64(value.LearningRateMultiplier),
-		EvalInterval:           cloneInt(value.EvalInterval),
-		EvalSamples:            cloneInt(value.EvalSamples),
-		ComputeMultiplier:      cloneFloat64(value.ComputeMultiplier),
-		ReasoningEffort:        reasoningEffort,
-	}, nil
 }
 
 func normalizeRleGrpoDefaults(value *RleGrpoDefaults) (*RleGrpoDefaults, error) {
@@ -576,40 +531,47 @@ func normalizeRleGrpoDefaults(value *RleGrpoDefaults) (*RleGrpoDefaults, error) 
 		value *int
 		name  string
 	}{
-		{value.GroupSize, "defaults.grpo.group_size"},
-		{value.GroupsPerBatch, "defaults.grpo.groups_per_batch"},
-		{value.MaxSteps, "defaults.grpo.max_steps"},
+		{value.GroupSize, "train.grpo.group_size"},
+		{value.GroupsPerBatch, "train.grpo.groups_per_batch"},
+		{value.LoraRank, "train.grpo.lora_rank"},
+		{value.NumEpochs, "train.grpo.num_epochs"},
+		{value.MaxSteps, "train.grpo.max_steps"},
+		{value.EvalEvery, "train.grpo.eval_every"},
+		{value.SaveEvery, "train.grpo.save_every"},
+		{value.SamplingSeed, "train.grpo.sampling_seed"},
+		{value.MinTrainableGroupMembers, "train.grpo.min_trainable_group_members"},
 	} {
 		if err := validatePositiveInt(parameter.value, parameter.name); err != nil {
 			return nil, err
 		}
 	}
+	if err := validateFinitePositiveFloat(value.LearningRate, "train.grpo.learning_rate"); err != nil {
+		return nil, err
+	}
+	for _, parameter := range []struct {
+		value *float64
+		name  string
+	}{
+		{value.RolloutFailureRateAbort, "train.grpo.rollout_failure_rate_abort"},
+	} {
+		if err := validateFiniteRate(parameter.value, parameter.name); err != nil {
+			return nil, err
+		}
+	}
 	return &RleGrpoDefaults{
-		GroupSize:      cloneInt(value.GroupSize),
-		GroupsPerBatch: cloneInt(value.GroupsPerBatch),
-		MaxSteps:       cloneInt(value.MaxSteps),
+		LearningRate:               cloneFloat64(value.LearningRate),
+		GroupSize:                  cloneInt(value.GroupSize),
+		GroupsPerBatch:             cloneInt(value.GroupsPerBatch),
+		LoraRank:                   cloneInt(value.LoraRank),
+		NumEpochs:                  cloneInt(value.NumEpochs),
+		MaxSteps:                   cloneInt(value.MaxSteps),
+		EvalEvery:                  cloneInt(value.EvalEvery),
+		SaveEvery:                  cloneInt(value.SaveEvery),
+		RemoveConstantRewardGroups: cloneBool(value.RemoveConstantRewardGroups),
+		SamplingSeed:               cloneInt(value.SamplingSeed),
+		RolloutFailureRateAbort:    cloneFloat64(value.RolloutFailureRateAbort),
+		MinTrainableGroupMembers:   cloneInt(value.MinTrainableGroupMembers),
 	}, nil
-}
-
-func normalizeReasoningEffort(value *string) (*string, error) {
-	if value == nil {
-		return nil, nil
-	}
-
-	normalized := strings.ToLower(strings.TrimSpace(*value))
-	if normalized == "" {
-		return nil, nil
-	}
-	switch normalized {
-	case "low", "medium", "high":
-		return &normalized, nil
-	default:
-		return nil, localError(
-			"defaults.reinforcement.hyperparameters.reasoning_effort must be low, medium, or high.",
-			"rle_manifest_default_invalid",
-			"Set reasoning_effort to low, medium, or high.",
-		)
-	}
 }
 
 func normalizeOptionalRleString(value *string, fieldName string, maximumLength int) (*string, error) {
@@ -661,7 +623,26 @@ func cloneInt(value *int) *int {
 	return &result
 }
 
+func validateFiniteRate(value *float64, fieldName string) error {
+	if value == nil || (!math.IsNaN(*value) && !math.IsInf(*value, 0) && *value > 0 && *value <= 1) {
+		return nil
+	}
+	return localError(
+		fmt.Sprintf("%s must be a finite value greater than zero and at most one.", fieldName),
+		"rle_manifest_default_invalid",
+		fmt.Sprintf("Set %s to a finite value in (0, 1].", fieldName),
+	)
+}
+
 func cloneFloat64(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
+}
+
+func cloneBool(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
@@ -693,9 +674,9 @@ func normalizeRleType(value RleType) (RleType, error) {
 		return RleTypeHarness, nil
 	default:
 		return "", localError(
-			"rle.type must be Gym or Harness.",
+			"harness.type must be Gym or Harness.",
 			"rle_manifest_type_invalid",
-			`Set rle.type to "Gym" or "Harness".`,
+			`Set harness.type to "Gym" or "Harness".`,
 		)
 	}
 }
@@ -710,9 +691,9 @@ func normalizeRleSubtype(value RleSubtype) (RleSubtype, error) {
 		return RleSubtypeBYOH, nil
 	default:
 		return "", localError(
-			"rle.subtype must be OpenEnv, HostedAgent, or BYOH.",
+			"harness.subtype must be OpenEnv, HostedAgent, or BYOH.",
 			"rle_manifest_subtype_invalid",
-			`Set rle.subtype to "OpenEnv", "HostedAgent", or "BYOH".`,
+			`Set harness.subtype to "OpenEnv", "HostedAgent", or "BYOH".`,
 		)
 	}
 }
@@ -744,7 +725,7 @@ func normalizeRleEnvironmentProtocol(
 func normalizeRequiredAgentField(value *string, fieldName string, maximumLength int, requiredCode string) (string, error) {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return "", localError(
-			fmt.Sprintf("%s is required when rle.subtype is HostedAgent.", fieldName),
+			fmt.Sprintf("%s is required when harness.subtype is HostedAgent.", fieldName),
 			requiredCode,
 			fmt.Sprintf("Add %s to rle.toml.", fieldName),
 		)
@@ -760,20 +741,20 @@ func normalizeRequiredAgentField(value *string, fieldName string, maximumLength 
 	return normalized, nil
 }
 
-func normalizeHarnessBaseURL(value *string) (string, error) {
+func normalizeHarnessInvocationURL(value *string) (string, error) {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return "", localError(
-			"baseUrl is required when rle.subtype is BYOH.",
-			"rle_harness_base_url_required",
-			"Add an absolute HTTPS baseUrl to rle.toml.",
+			"invocation_url is required when harness.subtype is BYOH.",
+			"rle_harness_invocation_url_required",
+			"Add an absolute HTTPS invocation_url to rle.toml.",
 		)
 	}
 	normalized := strings.TrimSpace(*value)
-	if utf16Length(normalized) > maxHarnessBaseURLLen {
+	if utf16Length(normalized) > maxHarnessInvocationURLLen {
 		return "", localError(
-			fmt.Sprintf("baseUrl must be at most %d characters.", maxHarnessBaseURLLen),
-			"rle_harness_base_url_invalid",
-			"Use a shorter absolute HTTPS baseUrl without credentials, query, or fragment.",
+			fmt.Sprintf("invocation_url must be at most %d characters.", maxHarnessInvocationURLLen),
+			"rle_harness_invocation_url_invalid",
+			"Use a shorter absolute HTTPS invocation_url without credentials, query, or fragment.",
 		)
 	}
 	parsed, err := url.ParseRequestURI(normalized)
@@ -788,8 +769,8 @@ func normalizeHarnessBaseURL(value *string) (string, error) {
 		strings.Contains(normalized, "#") ||
 		parsed.Opaque != "" {
 		return "", localError(
-			"baseUrl must be an absolute HTTPS URL without credentials, query, or fragment.",
-			"rle_harness_base_url_invalid",
+			"invocation_url must be an absolute HTTPS URL without credentials, query, or fragment.",
+			"rle_harness_invocation_url_invalid",
 			"Use a URL such as https://harness.example.com/rle/.",
 		)
 	}

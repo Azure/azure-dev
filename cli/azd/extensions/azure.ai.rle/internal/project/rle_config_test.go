@@ -14,6 +14,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// ptr returns a pointer to a copy of value, for building test fixtures inline.
+func ptr[T any](value T) *T {
+	return &value
+}
+
 func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	dir := t.TempDir()
 	agentName := " support-agent "
@@ -22,8 +27,10 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	config := RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle: RleManifest{
-			Name:         "support_agent",
-			Version:      "1.0.0",
+			Name:    "support_agent",
+			Version: "1.0.0",
+		},
+		Harness: RleHarnessManifest{
 			Type:         RleTypeHarness,
 			Subtype:      RleSubtypeHostedAgent,
 			AgentName:    &agentName,
@@ -45,8 +52,9 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 		`version = '1.0.0'`,
 		`type = 'Harness'`,
 		`subtype = 'HostedAgent'`,
-		`agentName = 'support-agent'`,
-		`agentVersion = '12'`,
+		`agent_name = 'support-agent'`,
+		`agent_version = '12'`,
+		`[harness]`,
 	} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, data)
@@ -63,11 +71,11 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Rle.AgentName == nil || *loaded.Rle.AgentName != "support-agent" {
-		t.Fatalf("expected normalized HostedAgent name, got %#v", loaded.Rle.AgentName)
+	if loaded.Harness.AgentName == nil || *loaded.Harness.AgentName != "support-agent" {
+		t.Fatalf("expected normalized HostedAgent name, got %#v", loaded.Harness.AgentName)
 	}
-	if loaded.Rle.AgentVersion == nil || *loaded.Rle.AgentVersion != "12" {
-		t.Fatalf("expected HostedAgent version, got %#v", loaded.Rle.AgentVersion)
+	if loaded.Harness.AgentVersion == nil || *loaded.Harness.AgentVersion != "12" {
+		t.Fatalf("expected HostedAgent version, got %#v", loaded.Harness.AgentVersion)
 	}
 }
 
@@ -76,40 +84,31 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 	schemaVersion := " 1.0.0 "
 	modelName := " Qwen/Qwen3-32B "
 	rendererName := " qwen3_disable_thinking "
-	reasoningEffort := " HIGH "
+	modelResponseField := " answer_text "
 	config := RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle: RleManifest{
 			Name:    "code_rl",
 			Version: "1.0.0",
+		},
+		Harness: RleHarnessManifest{
 			Type:    RleTypeGym,
 			Subtype: RleSubtypeOpenEnv,
 		},
-		Defaults: &RleEnvironmentDefaults{
-			Model: &RleModelDefaults{
-				Name:         &modelName,
-				RendererName: &rendererName,
-			},
-			Reinforcement: &RleReinforcementDefaults{
-				MaxEpisodeSteps:     new(5),
-				MaxCompletionTokens: new(8192),
-				Hyperparameters: &RleReinforcementHyperparameters{
-					NumberOfEpochs:         new(3),
-					BatchSize:              new(8),
-					LearningRateMultiplier: new(0.25),
-					EvalInterval:           new(10),
-					EvalSamples:            new(20),
-					ComputeMultiplier:      new(1.5),
-					ReasoningEffort:        &reasoningEffort,
-				},
-			},
+		Model: &RleModelDefaults{
+			Name:         &modelName,
+			RendererName: &rendererName,
+		},
+		Train: &RleTrainDefaults{
 			Grpo: &RleGrpoDefaults{
-				GroupSize:      new(8),
-				GroupsPerBatch: new(16),
-				MaxSteps:       new(100),
+				GroupSize:      ptr(8),
+				GroupsPerBatch: ptr(16),
+				MaxSteps:       ptr(100),
 			},
+		},
+		Rollout: &RleRolloutDefaults{
 			GymOpenEnv: &RleGymOpenEnvDefaults{
-				ModelResponseField: new(" answer_text "),
+				ModelResponseField: &modelResponseField,
 			},
 		},
 	}
@@ -125,17 +124,23 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 	for _, expected := range []string{
 		`schema_version = '1.0.0'`,
 		`renderer_name = 'qwen3_disable_thinking'`,
-		`n_epochs = 3`,
-		`reasoning_effort = 'high'`,
 		`groups_per_batch = 16`,
-		`max_completion_tokens = 8192`,
+		`group_size = 8`,
+		`max_steps = 100`,
 		`model_response_field = 'answer_text'`,
+		`[train.grpo]`,
+		`[rollout.gym_openenv]`,
 	} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, data)
 		}
 	}
-	for _, unexpected := range []string{"seed", "loom", "metadata"} {
+	for _, unexpected := range []string{
+		"seed", "loom", "metadata",
+		"n_epochs", "reasoning_effort", "batch_size", "learning_rate_multiplier",
+		"eval_interval", "eval_samples", "compute_multiplier", "max_episode_steps",
+		"max_completion_tokens",
+	} {
 		if strings.Contains(string(data), unexpected) {
 			t.Fatalf("expected config to omit removed field %q, got:\n%s", unexpected, data)
 		}
@@ -148,21 +153,18 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 	if loaded.SchemaVersion == nil || *loaded.SchemaVersion != CurrentRleManifestSchemaVersion {
 		t.Fatalf("expected normalized schema version, got %#v", loaded.SchemaVersion)
 	}
-	if loaded.Defaults == nil ||
-		loaded.Defaults.Model == nil ||
-		loaded.Defaults.Model.Name == nil || *loaded.Defaults.Model.Name != "Qwen/Qwen3-32B" ||
-		loaded.Defaults.Reinforcement == nil ||
-		loaded.Defaults.Reinforcement.Hyperparameters == nil ||
-		loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort == nil ||
-		*loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort != "high" {
+	if loaded.Model == nil ||
+		loaded.Model.Name == nil || *loaded.Model.Name != "Qwen/Qwen3-32B" ||
+		loaded.Train == nil ||
+		loaded.Train.Grpo == nil ||
+		loaded.Train.Grpo.GroupsPerBatch == nil || *loaded.Train.Grpo.GroupsPerBatch != 16 {
 		t.Fatalf("expected normalized defaults, got %#v", loaded)
 	}
-	if loaded.Defaults.Reinforcement.MaxCompletionTokens == nil ||
-		*loaded.Defaults.Reinforcement.MaxCompletionTokens != 8192 ||
-		loaded.Defaults.GymOpenEnv == nil ||
-		loaded.Defaults.GymOpenEnv.ModelResponseField == nil ||
-		*loaded.Defaults.GymOpenEnv.ModelResponseField != "answer_text" {
-		t.Fatalf("expected normalized Gym/OpenEnv defaults, got %#v", loaded.Defaults)
+	if loaded.Rollout == nil ||
+		loaded.Rollout.GymOpenEnv == nil ||
+		loaded.Rollout.GymOpenEnv.ModelResponseField == nil ||
+		*loaded.Rollout.GymOpenEnv.ModelResponseField != "answer_text" {
+		t.Fatalf("expected normalized Gym/OpenEnv rollout defaults, got %#v", loaded.Rollout)
 	}
 }
 
@@ -171,6 +173,8 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 	base := RleManifest{
 		Name:    "code_rl",
 		Version: "1.0.0",
+	}
+	baseHarness := RleHarnessManifest{
 		Type:    RleTypeGym,
 		Subtype: RleSubtypeOpenEnv,
 	}
@@ -182,16 +186,18 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 		{
 			name: "schema version is required for defaults",
 			config: RleConfig{
-				Rle:      base,
-				Defaults: &RleEnvironmentDefaults{},
+				Rle:     base,
+				Harness: baseHarness,
+				Model:   &RleModelDefaults{},
 			},
 			wantCode: "rle_manifest_schema_version_required",
 		},
 		{
 			name: "unsupported schema version",
 			config: RleConfig{
-				SchemaVersion: new("2.0.0"),
+				SchemaVersion: ptr("2.0.0"),
 				Rle:           base,
+				Harness:       baseHarness,
 			},
 			wantCode: "rle_manifest_schema_version_invalid",
 		},
@@ -200,8 +206,9 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 			config: RleConfig{
 				SchemaVersion: &schemaVersion,
 				Rle:           base,
-				Defaults: &RleEnvironmentDefaults{
-					Grpo: &RleGrpoDefaults{GroupSize: new(0)},
+				Harness:       baseHarness,
+				Train: &RleTrainDefaults{
+					Grpo: &RleGrpoDefaults{GroupSize: ptr(0)},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
@@ -211,38 +218,21 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 			config: RleConfig{
 				SchemaVersion: &schemaVersion,
 				Rle:           base,
-				Defaults: &RleEnvironmentDefaults{
-					Reinforcement: &RleReinforcementDefaults{
-						Hyperparameters: &RleReinforcementHyperparameters{
-							LearningRateMultiplier: new(math.Inf(1)),
-						},
-					},
+				Harness:       baseHarness,
+				Train: &RleTrainDefaults{
+					Grpo: &RleGrpoDefaults{LearningRate: ptr(math.Inf(1))},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
 		},
 		{
-			name: "unsupported reasoning effort",
+			name: "rate out of bounds",
 			config: RleConfig{
 				SchemaVersion: &schemaVersion,
 				Rle:           base,
-				Defaults: &RleEnvironmentDefaults{
-					Reinforcement: &RleReinforcementDefaults{
-						Hyperparameters: &RleReinforcementHyperparameters{
-							ReasoningEffort: new("maximum"),
-						},
-					},
-				},
-			},
-			wantCode: "rle_manifest_default_invalid",
-		},
-		{
-			name: "nonpositive max completion tokens",
-			config: RleConfig{
-				SchemaVersion: &schemaVersion,
-				Rle:           base,
-				Defaults: &RleEnvironmentDefaults{
-					Reinforcement: &RleReinforcementDefaults{MaxCompletionTokens: new(0)},
+				Harness:       baseHarness,
+				Train: &RleTrainDefaults{
+					Grpo: &RleGrpoDefaults{RolloutFailureRateAbort: ptr(1.5)},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
@@ -252,9 +242,10 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 			config: RleConfig{
 				SchemaVersion: &schemaVersion,
 				Rle:           base,
-				Defaults: &RleEnvironmentDefaults{
+				Harness:       baseHarness,
+				Rollout: &RleRolloutDefaults{
 					GymOpenEnv: &RleGymOpenEnvDefaults{
-						ModelResponseField: new(strings.Repeat("a", maxRleModelResponseFieldLength+1)),
+						ModelResponseField: ptr(strings.Repeat("a", maxRleModelResponseFieldLength+1)),
 					},
 				},
 			},
@@ -278,6 +269,8 @@ func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedDefaults(t *t
 		Rle: RleManifest{
 			Name:    "code_rl",
 			Version: "1.0.0",
+		},
+		Harness: RleHarnessManifest{
 			Type:    RleTypeGym,
 			Subtype: RleSubtypeOpenEnv,
 		},
@@ -285,9 +278,58 @@ func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedDefaults(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.SchemaVersion != nil || config.Defaults != nil {
+	if config.SchemaVersion != nil || config.Model != nil || config.Train != nil || config.Rollout != nil {
 		t.Fatalf("expected legacy manifest defaults to remain omitted, got %#v", config)
 	}
+}
+
+func TestNormalizeRleConfigDefaultsEnvironmentProtocolForCurrentSchemaVersion(t *testing.T) {
+	t.Run("current schema version defaults to mcp_environment", func(t *testing.T) {
+		schemaVersion := CurrentRleManifestSchemaVersion
+		config, err := NormalizeRleConfig(RleConfig{
+			SchemaVersion: &schemaVersion,
+			Rle: RleManifest{
+				Name:    "code_rl",
+				Version: "1.0.0",
+			},
+			Harness: RleHarnessManifest{
+				Type:    RleTypeGym,
+				Subtype: RleSubtypeOpenEnv,
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Rle.EnvironmentProtocol == nil ||
+			*config.Rle.EnvironmentProtocol != RleEnvironmentProtocolMcpEnvironment {
+			t.Fatalf(
+				"expected an absent protocol with schema_version %q to default to %q, got %v",
+				CurrentRleManifestSchemaVersion, RleEnvironmentProtocolMcpEnvironment, config.Rle.EnvironmentProtocol,
+			)
+		}
+	})
+
+	t.Run("absent schema version stays legacy", func(t *testing.T) {
+		config, err := NormalizeRleConfig(RleConfig{
+			Rle: RleManifest{
+				Name:    "code_rl",
+				Version: "1.0.0",
+			},
+			Harness: RleHarnessManifest{
+				Type:    RleTypeGym,
+				Subtype: RleSubtypeOpenEnv,
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Rle.EnvironmentProtocol != nil {
+			t.Fatalf(
+				"expected a manifest with no schema_version to stay legacy, got %v",
+				config.Rle.EnvironmentProtocol,
+			)
+		}
+	})
 }
 
 func TestLoadRleConfigRejectsRemovedDefaultsAndMetadata(t *testing.T) {
@@ -296,6 +338,8 @@ func TestLoadRleConfigRejectsRemovedDefaultsAndMetadata(t *testing.T) {
 [rle]
 name = "code_rl"
 version = "1.0.0"
+
+[harness]
 type = "Gym"
 subtype = "OpenEnv"
 `
@@ -305,15 +349,19 @@ subtype = "OpenEnv"
 	}{
 		{
 			name:    "seed",
-			content: base + "\n[defaults]\nseed = 17\n",
+			content: base + "\n[train]\nseed = 17\n",
 		},
 		{
 			name:    "loom",
-			content: base + "\n[defaults.loom]\nlora_rank = 32\n",
+			content: base + "\n[rollout.loom]\nlora_rank = 32\n",
 		},
 		{
 			name:    "metadata",
 			content: base + "\n[metadata]\nowner = \"rle-platform\"\n",
+		},
+		{
+			name:    "reinforcement",
+			content: base + "\n[train.reinforcement]\nmax_episode_steps = 4\n",
 		},
 	}
 
@@ -339,6 +387,8 @@ func TestLoadRleConfigRejectsSchemaVersionInsideRleTable(t *testing.T) {
 schema_version = "1.0.0"
 name = "code_rl"
 version = "1.0.0"
+
+[harness]
 type = "Gym"
 subtype = "OpenEnv"
 `
@@ -359,10 +409,12 @@ func TestLoadRleConfigAcceptsAPinnedImageTag(t *testing.T) {
 name = "competitive_intelligence_agent"
 version = "1.0.16"
 imageTag = "1.0.3"
+
+[harness]
 type = "Harness"
 subtype = "HostedAgent"
-agentName = "ci-agent"
-agentVersion = "15"
+agent_name = "ci-agent"
+agent_version = "15"
 `
 	if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0600); err != nil {
 		t.Fatal(err)
@@ -385,11 +437,13 @@ func TestLoadRleConfigCarriesTheMcpEnvironmentProtocol(t *testing.T) {
 	content := `[rle]
 name = "competitive_intelligence_agent"
 version = "2.0.0"
+environmentProtocol = "  MCP_Environment  "
+
+[harness]
 type = "Harness"
 subtype = "HostedAgent"
-agentName = "ci-agent"
-agentVersion = "15"
-environmentProtocol = "  MCP_Environment  "
+agent_name = "ci-agent"
+agent_version = "15"
 `
 	if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0600); err != nil {
 		t.Fatal(err)
@@ -422,15 +476,19 @@ environmentProtocol = "  MCP_Environment  "
 
 func TestNormalizeRleConfigRestrictsTheEnvironmentProtocol(t *testing.T) {
 	hostedAgent := func(protocol *RleEnvironmentProtocol) RleConfig {
-		return RleConfig{Rle: RleManifest{
-			Name:                "competitive_intelligence_agent",
-			Version:             "2.0.0",
-			Type:                RleTypeHarness,
-			Subtype:             RleSubtypeHostedAgent,
-			AgentName:           new("ci-agent"),
-			AgentVersion:        new("15"),
-			EnvironmentProtocol: protocol,
-		}}
+		return RleConfig{
+			Rle: RleManifest{
+				Name:                "competitive_intelligence_agent",
+				Version:             "2.0.0",
+				EnvironmentProtocol: protocol,
+			},
+			Harness: RleHarnessManifest{
+				Type:         RleTypeHarness,
+				Subtype:      RleSubtypeHostedAgent,
+				AgentName:    ptr("ci-agent"),
+				AgentVersion: ptr("15"),
+			},
+		}
 	}
 
 	t.Run("omitted means legacy", func(t *testing.T) {
@@ -444,7 +502,7 @@ func TestNormalizeRleConfigRestrictsTheEnvironmentProtocol(t *testing.T) {
 	})
 
 	t.Run("empty is absent, not invalid", func(t *testing.T) {
-		config, err := NormalizeRleConfig(hostedAgent(new(RleEnvironmentProtocol(""))))
+		config, err := NormalizeRleConfig(hostedAgent(ptr(RleEnvironmentProtocol(""))))
 		if err != nil {
 			t.Fatalf("an empty protocol should normalize away, got %v", err)
 		}
@@ -454,32 +512,40 @@ func TestNormalizeRleConfigRestrictsTheEnvironmentProtocol(t *testing.T) {
 	})
 
 	t.Run("byoh may carry it", func(t *testing.T) {
-		_, err := NormalizeRleConfig(RleConfig{Rle: RleManifest{
-			Name:                "customer_agent",
-			Version:             "2.0.0",
-			Type:                RleTypeHarness,
-			Subtype:             RleSubtypeBYOH,
-			BaseURL:             new("https://harness.example.com/rle/"),
-			EnvironmentProtocol: new(RleEnvironmentProtocolMcpEnvironment),
-		}})
+		_, err := NormalizeRleConfig(RleConfig{
+			Rle: RleManifest{
+				Name:                "customer_agent",
+				Version:             "2.0.0",
+				EnvironmentProtocol: ptr(RleEnvironmentProtocolMcpEnvironment),
+			},
+			Harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeBYOH,
+				InvocationURL: ptr("https://harness.example.com/rle/"),
+			},
+		})
 		if err != nil {
 			t.Fatalf("BYOH is one of the two subtypes the service allows, got %v", err)
 		}
 	})
 
 	t.Run("no other protocol is nameable", func(t *testing.T) {
-		_, err := NormalizeRleConfig(hostedAgent(new(RleEnvironmentProtocol("legacy"))))
+		_, err := NormalizeRleConfig(hostedAgent(ptr(RleEnvironmentProtocol("legacy"))))
 		assertLocalErrorCode(t, err, "rle_manifest_environment_protocol_invalid")
 	})
 
 	t.Run("gym openenv may carry it", func(t *testing.T) {
-		config, err := NormalizeRleConfig(RleConfig{Rle: RleManifest{
-			Name:                "code_rl",
-			Version:             "2.0.0",
-			Type:                RleTypeGym,
-			Subtype:             RleSubtypeOpenEnv,
-			EnvironmentProtocol: new(RleEnvironmentProtocolMcpEnvironment),
-		}})
+		config, err := NormalizeRleConfig(RleConfig{
+			Rle: RleManifest{
+				Name:                "code_rl",
+				Version:             "2.0.0",
+				EnvironmentProtocol: ptr(RleEnvironmentProtocolMcpEnvironment),
+			},
+			Harness: RleHarnessManifest{
+				Type:    RleTypeGym,
+				Subtype: RleSubtypeOpenEnv,
+			},
+		})
 		if err != nil {
 			t.Fatalf("Gym/OpenEnv must support MCP, got %v", err)
 		}
@@ -500,11 +566,13 @@ environment_protocol = "  MCP_Environment  "
 [rle]
 name = "` + sample + `"
 version = "1.0.0"
+
+[harness]
 type = "Gym"
 subtype = "OpenEnv"
 
-[defaults.reinforcement]
-max_episode_steps = 4
+[rollout.gym_openenv]
+model_response_field = "answer"
 `
 			if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0600); err != nil {
 				t.Fatal(err)
@@ -548,10 +616,14 @@ func TestNormalizeRleConfigValidatesBothProtocolLocations(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			config, err := NormalizeRleConfig(RleConfig{
-				EnvironmentProtocol: new(test.top),
+				EnvironmentProtocol: ptr(test.top),
 				Rle: RleManifest{
-					Name: "code_rl", Version: "1.0.0", Type: RleTypeGym, Subtype: RleSubtypeOpenEnv,
-					EnvironmentProtocol: new(test.nested),
+					Name: "code_rl", Version: "1.0.0",
+					EnvironmentProtocol: ptr(test.nested),
+				},
+				Harness: RleHarnessManifest{
+					Type:    RleTypeGym,
+					Subtype: RleSubtypeOpenEnv,
 				},
 			})
 			if !test.valid {
@@ -584,6 +656,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 	tests := []struct {
 		name     string
 		manifest RleManifest
+		harness  RleHarnessManifest
 		wantCode string
 		wantURL  string
 	}{
@@ -592,6 +665,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "code_rl",
 				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:    "gym",
 				Subtype: "openenv",
 			},
@@ -599,23 +674,27 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 		{
 			name: "hosted agent released version",
 			manifest: RleManifest{
-				Name:         "support_agent",
-				Version:      "1.0.0",
+				Name:    "support_agent",
+				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    new("support-agent"),
-				AgentVersion: new("12"),
+				AgentName:    ptr("support-agent"),
+				AgentVersion: ptr("12"),
 			},
 		},
 		{
 			name: "hosted agent draft version",
 			manifest: RleManifest{
-				Name:         "support_agent",
-				Version:      "1.0.0",
+				Name:    "support_agent",
+				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    new("support-agent"),
-				AgentVersion: new("draft-1767225600"),
+				AgentName:    ptr("support-agent"),
+				AgentVersion: ptr("draft-1767225600"),
 			},
 		},
 		{
@@ -623,9 +702,11 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "customer_agent",
 				Version: "1.0.0",
-				Type:    RleTypeHarness,
-				Subtype: RleSubtypeBYOH,
-				BaseURL: new("https://Harness.Example.com/rle/"),
+			},
+			harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeBYOH,
+				InvocationURL: ptr("https://Harness.Example.com/rle/"),
 			},
 			wantURL: "https://harness.example.com/rle/",
 		},
@@ -634,6 +715,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "code_rl",
 				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Subtype: RleSubtypeOpenEnv,
 			},
 			wantCode: "rle_manifest_type_invalid",
@@ -643,18 +726,22 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "code_rl",
 				Version: "1.0.0",
-				Type:    RleTypeGym,
+			},
+			harness: RleHarnessManifest{
+				Type: RleTypeGym,
 			},
 			wantCode: "rle_manifest_subtype_invalid",
 		},
 		{
 			name: "gym rejects harness configuration",
 			manifest: RleManifest{
-				Name:      "code_rl",
-				Version:   "1.0.0",
+				Name:    "code_rl",
+				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:      RleTypeGym,
 				Subtype:   RleSubtypeOpenEnv,
-				AgentName: new("support-agent"),
+				AgentName: ptr("support-agent"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -663,6 +750,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "code_rl",
 				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:    RleTypeGym,
 				Subtype: RleSubtypeHostedAgent,
 			},
@@ -671,37 +760,43 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 		{
 			name: "hosted agent requires valid version",
 			manifest: RleManifest{
-				Name:         "support_agent",
-				Version:      "1.0.0",
+				Name:    "support_agent",
+				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    new("support-agent"),
-				AgentVersion: new("v12"),
+				AgentName:    ptr("support-agent"),
+				AgentVersion: ptr("v12"),
 			},
 			wantCode: "rle_agent_version_invalid",
 		},
 		{
 			name: "hosted agent rejects base url",
 			manifest: RleManifest{
-				Name:         "support_agent",
-				Version:      "1.0.0",
-				Type:         RleTypeHarness,
-				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    new("support-agent"),
-				AgentVersion: new("12"),
-				BaseURL:      new("https://agent.example.com"),
+				Name:    "support_agent",
+				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeHostedAgent,
+				AgentName:     ptr("support-agent"),
+				AgentVersion:  ptr("12"),
+				InvocationURL: ptr("https://agent.example.com"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
 		{
 			name: "byoh rejects hosted fields",
 			manifest: RleManifest{
-				Name:      "customer_agent",
-				Version:   "1.0.0",
-				Type:      RleTypeHarness,
-				Subtype:   RleSubtypeBYOH,
-				AgentName: new("support-agent"),
-				BaseURL:   new("https://harness.example.com"),
+				Name:    "customer_agent",
+				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeBYOH,
+				AgentName:     ptr("support-agent"),
+				InvocationURL: ptr("https://harness.example.com"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -710,39 +805,47 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "customer_agent",
 				Version: "1.0.0",
-				Type:    RleTypeHarness,
-				Subtype: RleSubtypeBYOH,
-				BaseURL: new("http://harness.example.com"),
 			},
-			wantCode: "rle_harness_base_url_invalid",
+			harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeBYOH,
+				InvocationURL: ptr("http://harness.example.com"),
+			},
+			wantCode: "rle_harness_invocation_url_invalid",
 		},
 		{
 			name: "byoh rejects credentials",
 			manifest: RleManifest{
 				Name:    "customer_agent",
 				Version: "1.0.0",
-				Type:    RleTypeHarness,
-				Subtype: RleSubtypeBYOH,
-				BaseURL: new("https://user@harness.example.com"),
 			},
-			wantCode: "rle_harness_base_url_invalid",
+			harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeBYOH,
+				InvocationURL: ptr("https://user@harness.example.com"),
+			},
+			wantCode: "rle_harness_invocation_url_invalid",
 		},
 		{
 			name: "byoh rejects query",
 			manifest: RleManifest{
 				Name:    "customer_agent",
 				Version: "1.0.0",
-				Type:    RleTypeHarness,
-				Subtype: RleSubtypeBYOH,
-				BaseURL: new("https://harness.example.com?token=secret"),
 			},
-			wantCode: "rle_harness_base_url_invalid",
+			harness: RleHarnessManifest{
+				Type:          RleTypeHarness,
+				Subtype:       RleSubtypeBYOH,
+				InvocationURL: ptr("https://harness.example.com?token=secret"),
+			},
+			wantCode: "rle_harness_invocation_url_invalid",
 		},
 		{
 			name: "legacy agent type is rejected",
 			manifest: RleManifest{
 				Name:    "support_agent",
 				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:    "Agent",
 				Subtype: RleSubtypeHostedAgent,
 			},
@@ -753,6 +856,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "customer_agent",
 				Version: "1.0.0",
+			},
+			harness: RleHarnessManifest{
 				Type:    RleTypeHarness,
 				Subtype: "BYOA",
 			},
@@ -763,6 +868,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 			manifest: RleManifest{
 				Name:    "code_rl",
 				Version: "1.0",
+			},
+			harness: RleHarnessManifest{
 				Type:    RleTypeGym,
 				Subtype: RleSubtypeOpenEnv,
 			},
@@ -772,16 +879,18 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config, err := NormalizeRleConfig(RleConfig{Rle: test.manifest})
+			config, err := NormalizeRleConfig(RleConfig{Rle: test.manifest, Harness: test.harness})
 			if test.wantCode == "" {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if config.Rle.Type == "" || config.Rle.Subtype == "" {
-					t.Fatalf("expected canonical type/subtype, got %#v", config.Rle)
+				if config.Harness.Type == "" || config.Harness.Subtype == "" {
+					t.Fatalf("expected canonical type/subtype, got %#v", config.Harness)
 				}
-				if test.wantURL != "" && (config.Rle.BaseURL == nil || *config.Rle.BaseURL != test.wantURL) {
-					t.Fatalf("expected base URL %q, got %#v", test.wantURL, config.Rle.BaseURL)
+				if test.wantURL != "" {
+					if config.Harness.InvocationURL == nil || *config.Harness.InvocationURL != test.wantURL {
+						t.Fatalf("expected base URL %q, got %#v", test.wantURL, config.Harness)
+					}
 				}
 				return
 			}

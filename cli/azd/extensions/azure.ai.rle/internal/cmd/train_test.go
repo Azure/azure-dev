@@ -93,8 +93,9 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 }
 
 func TestTrainCommandRequiresTrainingFile(t *testing.T) {
-	// rle.toml can supply the training file, so this is no longer a required flag.
-	// It is still a required setting, and the error has to name it.
+	// --training-file is not marked required on the cobra command (cobra would
+	// reject the run before rle-name/rle-version fallback is ever attempted),
+	// but resolveTrainSettings still requires it and the error has to name it.
 	t.Chdir(t.TempDir())
 	cmd := newTrainCommand()
 	cmd.SetArgs([]string{
@@ -468,6 +469,8 @@ func writeTrainRleConfig(t *testing.T, dir string, name string, version string) 
 		Rle: project.RleManifest{
 			Name:    name,
 			Version: version,
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},
@@ -771,15 +774,26 @@ func TestNoTrainingOptionsLeavesTheRequestUnchanged(t *testing.T) {
 	}
 }
 
-// writeTrainRleConfigWithTrain writes a manifest carrying a [train] section.
-func writeTrainRleConfigWithTrain(t *testing.T, dir string, train *project.RleTrainSettings) {
+// ptrTo returns a pointer to v, for populating the optional *T fields of
+// project.RleTrainDefaults and friends inline in a test literal.
+func ptrTo[T any](v T) *T {
+	return &v
+}
+
+// writeTrainRleConfigWithDefaults writes a manifest carrying [train], the
+// only part of rle.toml that still feeds training options.
+func writeTrainRleConfigWithDefaults(
+	t *testing.T, dir string, name string, version string, train *project.RleTrainDefaults,
+) {
 	t.Helper()
 	schemaVersion := project.CurrentRleManifestSchemaVersion
 	if err := project.WriteRleConfig(dir, project.RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle: project.RleManifest{
-			Name:    "code_rl",
-			Version: "1.2.3",
+			Name:    name,
+			Version: version,
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},
@@ -789,80 +803,12 @@ func writeTrainRleConfigWithTrain(t *testing.T, dir string, train *project.RleTr
 	}
 }
 
-func TestTrainReadsSettingsFromRleConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	steps := 7
-	writeTrainRleConfigWithTrain(t, dir, &project.RleTrainSettings{
-		Model:           new("qwen3-32b-1"),
-		TrainingFile:    new("job_data/train.jsonl"),
-		ValidationFile:  new("job_data/validation.jsonl"),
-		Suffix:          new("nightly"),
-		MaxEpisodeSteps: &steps,
-		Options:         map[string]any{"group_size": int64(4)},
-	})
-
-	action := &trainAction{flags: &rleTrainFlags{}}
-	options, err := action.resolveTrainSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if action.flags.model != "qwen3-32b-1" {
-		t.Fatalf("model: %q", action.flags.model)
-	}
-	if action.flags.trainingFile != "job_data/train.jsonl" {
-		t.Fatalf("training file: %q", action.flags.trainingFile)
-	}
-	if action.flags.validationFile != "job_data/validation.jsonl" {
-		t.Fatalf("validation file: %q", action.flags.validationFile)
-	}
-	if action.flags.suffix != "nightly" {
-		t.Fatalf("suffix: %q", action.flags.suffix)
-	}
-	if action.flags.maxEpisodeSteps != 7 {
-		t.Fatalf("max episode steps: %d", action.flags.maxEpisodeSteps)
-	}
-	if options["group_size"] != int64(4) {
-		t.Fatalf("options: %#v", options)
-	}
-}
-
-func TestTrainFlagsOverrideRleConfigTrainSection(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfigWithTrain(t, dir, &project.RleTrainSettings{
-		Model:        new("from-manifest"),
-		TrainingFile: new("manifest.jsonl"),
-		Suffix:       new("manifest"),
-	})
-
-	action := &trainAction{flags: &rleTrainFlags{
-		model:        "from-flag",
-		trainingFile: "flag.jsonl",
-		suffix:       "flag",
-	}}
-	if _, err := action.resolveTrainSettings(); err != nil {
-		t.Fatal(err)
-	}
-
-	if action.flags.model != "from-flag" || action.flags.trainingFile != "flag.jsonl" {
-		t.Fatalf("flags must win: %q %q", action.flags.model, action.flags.trainingFile)
-	}
-	if action.flags.suffix != "flag" {
-		t.Fatalf("suffix: %q", action.flags.suffix)
-	}
-}
-
 func TestTaskCountSetsTheDatasetLimitOption(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	writeTrainRleConfigWithTrain(t, dir, &project.RleTrainSettings{
-		Model:        new("qwen3-32b-1"),
-		TrainingFile: new("train.jsonl"),
-	})
+	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
 
-	action := &trainAction{flags: &rleTrainFlags{taskCount: 12}}
+	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t", taskCount: 12}}
 	options, err := action.resolveTrainSettings()
 	if err != nil {
 		t.Fatal(err)
@@ -872,36 +818,12 @@ func TestTaskCountSetsTheDatasetLimitOption(t *testing.T) {
 	}
 }
 
-func TestTaskCountOverridesTheManifestLimit(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfigWithTrain(t, dir, &project.RleTrainSettings{
-		Model:        new("qwen3-32b-1"),
-		TrainingFile: new("train.jsonl"),
-		Options:      map[string]any{trainTaskCountOption: int64(500)},
-	})
-
-	action := &trainAction{flags: &rleTrainFlags{taskCount: 12}}
-	options, err := action.resolveTrainSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// One option cannot be sent twice, so the flag has to replace the manifest's
-	// value rather than being appended alongside it.
-	if options[trainTaskCountOption] != 12 {
-		t.Fatalf("expected the flag to win, got %#v", options[trainTaskCountOption])
-	}
-}
-
 func TestTaskCountIsOmittedWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	writeTrainRleConfigWithTrain(t, dir, &project.RleTrainSettings{
-		Model:        new("qwen3-32b-1"),
-		TrainingFile: new("train.jsonl"),
-	})
+	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
 
-	action := &trainAction{flags: &rleTrainFlags{}}
+	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t"}}
 	options, err := action.resolveTrainSettings()
 	if err != nil {
 		t.Fatal(err)
@@ -925,31 +847,113 @@ func TestTrainReportsWhatIsMissingWithoutFlagsOrManifestSettings(t *testing.T) {
 	if !errors.As(err, &localErr) || localErr.Code != "rle_train_setting_required" {
 		t.Fatalf("expected a user-facing error, got %#v", err)
 	}
-	if !strings.Contains(localErr.Suggestion, "rle.toml") {
-		t.Fatalf("the suggestion should point at rle.toml: %q", localErr.Suggestion)
+	// There is no manifest fallback for model/training-file/validation-file/suffix
+	// anymore, so the suggestion must point at the flag, not at rle.toml.
+	if !strings.Contains(localErr.Suggestion, "--model") {
+		t.Fatalf("the suggestion should point at --model: %q", localErr.Suggestion)
+	}
+	if strings.Contains(localErr.Suggestion, "rle.toml") {
+		t.Fatalf("the suggestion must not point at rle.toml: %q", localErr.Suggestion)
 	}
 }
 
-// A [train] section must not be mistaken for the published defaults: publish sends
-// Defaults to the service and rejects a local copy that has drifted, so a per-run
-// value landing there would make every tweak look like a mismatch.
-func TestTrainSectionIsSeparateFromPublishedDefaults(t *testing.T) {
+// resolveTrainSettings requires --model and --training-file as flags on every
+// invocation; there is no [train] manifest section to fall back to anymore, even
+// when a manifest with [train] exists in the directory.
+func TestTrainRequiresModelAndTrainingFileFlagsDespiteManifestDefaults(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	writeTrainRleConfigWithTrain(t, dir, &project.RleTrainSettings{
-		Model:        new("qwen3-32b-1"),
-		TrainingFile: new("train.jsonl"),
-		Options:      map[string]any{"group_size": int64(4)},
+	writeTrainRleConfigWithDefaults(t, dir, "code_rl", "1.2.3", &project.RleTrainDefaults{
+		Grpo: &project.RleGrpoDefaults{
+			LearningRate: ptrTo(2e-5),
+		},
 	})
 
-	config, err := project.LoadRleConfig(dir)
-	if err != nil {
+	tests := []struct {
+		name  string
+		flags *rleTrainFlags
+		want  string
+	}{
+		{name: "missing model", flags: &rleTrainFlags{trainingFile: "t"}, want: "model"},
+		{name: "missing training file", flags: &rleTrainFlags{model: "m"}, want: "training file"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			action := &trainAction{flags: test.flags}
+			_, err := action.resolveTrainSettings()
+			var localErr *azdext.LocalError
+			if !errors.As(err, &localErr) || localErr.Code != "rle_train_setting_required" {
+				t.Fatalf("expected a missing setting error, got %v", err)
+			}
+			if !strings.Contains(localErr.Message, test.want) {
+				t.Fatalf("expected the error to name %q, got %q", test.want, localErr.Message)
+			}
+		})
+	}
+}
+
+// resolveTrainSettings treats --validation-file and --suffix as optional: a
+// manifest with [train] but no flags for either must still succeed.
+func TestTrainValidationFileAndSuffixAreOptional(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeTrainRleConfigWithDefaults(t, dir, "code_rl", "1.2.3", &project.RleTrainDefaults{
+		Grpo: &project.RleGrpoDefaults{LearningRate: ptrTo(2e-5)},
+	})
+
+	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t"}}
+	if _, err := action.resolveTrainSettings(); err != nil {
 		t.Fatal(err)
 	}
-	if config.Defaults != nil {
-		t.Fatalf("[train] must not populate the published defaults: %#v", config.Defaults)
+	if action.flags.validationFile != "" || action.flags.suffix != "" {
+		t.Fatalf("expected validation file and suffix to stay empty, got %q %q",
+			action.flags.validationFile, action.flags.suffix)
 	}
-	if config.Train == nil || config.Train.Model == nil {
-		t.Fatal("expected the train section to round-trip through rle.toml")
+}
+
+// trainDefaultsOptions flattens [train.grpo] into the hyperparameters map,
+// using each field's toml key verbatim as the wire key. Rollout settings are part
+// of the rollout contract the environment already knows, not a training
+// hyperparameter, and the function signature does not even accept them.
+func TestTrainDefaultsOptionsFlattensGrpoAndExcludesRollout(t *testing.T) {
+	train := &project.RleTrainDefaults{
+		Grpo: &project.RleGrpoDefaults{
+			LearningRate:               ptrTo(2e-5),
+			GroupSize:                  ptrTo(4),
+			RemoveConstantRewardGroups: ptrTo(true),
+			RolloutFailureRateAbort:    ptrTo(0.5),
+		},
+	}
+
+	options := trainDefaultsOptions(train)
+
+	want := map[string]any{
+		"learning_rate":                 2e-5,
+		"group_size":                    4,
+		"remove_constant_reward_groups": true,
+		"rollout_failure_rate_abort":    0.5,
+	}
+	if len(options) != len(want) {
+		t.Fatalf("expected %d options, got %#v", len(want), options)
+	}
+	for key, value := range want {
+		if options[key] != value {
+			t.Fatalf("option %q = %#v, want %#v", key, options[key], value)
+		}
+	}
+	if _, present := options["model_response_field"]; present {
+		t.Fatal("GymOpenEnv's model_response_field must not reach the hyperparameters map")
+	}
+}
+
+// Train that is entirely nil (or whose Grpo sub-section is nil)
+// must flatten to an empty map rather than panicking.
+func TestTrainDefaultsOptionsHandlesNilDefaults(t *testing.T) {
+	if options := trainDefaultsOptions(nil); len(options) != 0 {
+		t.Fatalf("expected an empty map for nil defaults, got %#v", options)
+	}
+	if options := trainDefaultsOptions(&project.RleTrainDefaults{}); len(options) != 0 {
+		t.Fatalf("expected an empty map when Grpo is unset, got %#v", options)
 	}
 }

@@ -72,8 +72,8 @@ func (a *showAction) Run() error {
 	for _, version := range versions {
 		rows = append(rows, []string{
 			version.Version,
-			firstNonEmpty(version.Type, "-"),
-			firstNonEmpty(version.Subtype, "-"),
+			firstNonEmpty(version.Harness.Type, "-"),
+			firstNonEmpty(version.Harness.Subtype, "-"),
 			firstNonEmpty(version.DiskImageConversionStatus, "-"),
 			version.UpdatedAt,
 		})

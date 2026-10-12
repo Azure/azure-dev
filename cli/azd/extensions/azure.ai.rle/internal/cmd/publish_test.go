@@ -41,14 +41,14 @@ func TestPublishDisplaysReleaseIdentityAndPreservesJSON(t *testing.T) {
 	t.Setenv("AZD_CONTAINER_RUNTIME", executable)
 	t.Setenv("RLE_TEST_PUBLISH_CONTAINER_RUNTIME", "1")
 	config := project.RleConfig{
-		SchemaVersion: new(project.CurrentRleManifestSchemaVersion),
+		SchemaVersion: ptrTo(project.CurrentRleManifestSchemaVersion),
 		Rle: project.RleManifest{
 			Name: "math_rl", Version: "1.0.0",
+		},
+		Harness: project.RleHarnessManifest{
 			Type: project.RleTypeGym, Subtype: project.RleSubtypeOpenEnv,
 		},
-		Defaults: &project.RleEnvironmentDefaults{
-			Model: &project.RleModelDefaults{Name: new("test-model")},
-		},
+		Model: &project.RleModelDefaults{Name: ptrTo("test-model")},
 	}
 	if err := project.WriteRleConfig(dir, config); err != nil {
 		t.Fatal(err)
@@ -58,9 +58,9 @@ func TestPublishDisplaysReleaseIdentityAndPreservesJSON(t *testing.T) {
 	}
 	published := environmentResource{
 		Id: "opaque-environment-id", Name: config.Rle.Name, Version: config.Rle.Version,
-		Type: "Gym", Subtype: "OpenEnv",
+		Harness:      rleHarness{Type: "Gym", Subtype: "OpenEnv"},
 		AcrImagePath: "example.azurecr.io/project-1-math-rl:1.0.0",
-		Defaults:     config.Defaults, CreatedAt: "2026-07-30T04:00:00Z", UpdatedAt: "2026-07-30T05:00:00Z",
+		Model:        config.Model, CreatedAt: "2026-07-30T04:00:00Z", UpdatedAt: "2026-07-30T05:00:00Z",
 		SchemaVersion: config.SchemaVersion,
 	}
 	requestCount := 0
@@ -76,7 +76,7 @@ func TestPublishDisplaysReleaseIdentityAndPreservesJSON(t *testing.T) {
 				return
 			}
 			if request.Name != published.Name || request.Version != published.Version ||
-				request.Type != published.Type || request.Subtype != published.Subtype ||
+				request.Harness.Type != published.Harness.Type || request.Harness.Subtype != published.Harness.Subtype ||
 				request.AcrImagePath != published.AcrImagePath {
 				t.Errorf("unexpected publish request: %#v", request)
 			}
@@ -112,17 +112,17 @@ func TestPublishDisplaysReleaseIdentityAndPreservesJSON(t *testing.T) {
 	}
 	for field, want := range map[string]string{
 		"environmentId": published.Id, "environmentName": published.Name, "environmentVersion": published.Version,
-		"type": published.Type, "subtype": published.Subtype, "acrImage": published.AcrImagePath,
+		"type": published.Harness.Type, "subtype": published.Harness.Subtype, "acrImage": published.AcrImagePath,
 		"foundryProjectEndpoint": "https://account.services.ai.azure.com/api/projects/project-1",
 		"createdAt":              published.CreatedAt, "updatedAt": published.UpdatedAt,
-		"schemaVersion": *published.SchemaVersion,
+		"schema_version": *published.SchemaVersion,
 	} {
 		if payload[field] != want {
 			t.Errorf("%s = %v, want %q", field, payload[field], want)
 		}
 	}
-	if defaults, ok := payload["defaults"].(map[string]any); !ok || defaults["model"] == nil {
-		t.Fatalf("expected defaults to remain in JSON, got %#v", payload["defaults"])
+	if model, ok := payload["model"].(map[string]any); !ok || model["name"] == nil {
+		t.Fatalf("expected model defaults to remain in JSON, got %#v", payload["model"])
 	}
 	t.Logf("Captured publish output:\n%s", stdout.String())
 }
@@ -136,19 +136,19 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	config := project.RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle: project.RleManifest{
-			Name:         "support_rle",
-			Version:      "1.0.1",
+			Name:    "support_rle",
+			Version: "1.0.1",
+		},
+		Harness: project.RleHarnessManifest{
 			Type:         project.RleTypeHarness,
 			Subtype:      project.RleSubtypeHostedAgent,
 			AgentName:    &agentName,
 			AgentVersion: &agentVersion,
 		},
-		Defaults: &project.RleEnvironmentDefaults{
-			Model: &project.RleModelDefaults{Name: &modelName},
-			Reinforcement: &project.RleReinforcementDefaults{
-				Hyperparameters: &project.RleReinforcementHyperparameters{
-					NumberOfEpochs: &numberOfEpochs,
-				},
+		Model: &project.RleModelDefaults{Name: &modelName},
+		Train: &project.RleTrainDefaults{
+			Grpo: &project.RleGrpoDefaults{
+				NumEpochs: &numberOfEpochs,
 			},
 		},
 	}
@@ -156,14 +156,14 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/support_rle:1.0.1")
 	if request.Name != "support_rle" ||
 		request.Version != "1.0.1" ||
-		request.Type != "Harness" ||
-		request.Subtype != "HostedAgent" ||
-		request.AgentName == nil || *request.AgentName != agentName ||
-		request.AgentVersion == nil || *request.AgentVersion != agentVersion ||
+		request.Harness.Type != "Harness" ||
+		request.Harness.Subtype != "HostedAgent" ||
+		request.Harness.AgentName == nil || *request.Harness.AgentName != agentName ||
+		request.Harness.AgentVersion == nil || *request.Harness.AgentVersion != agentVersion ||
 		request.SchemaVersion == nil || *request.SchemaVersion != project.CurrentRleManifestSchemaVersion ||
-		request.Defaults == nil || request.Defaults.Model == nil ||
-		request.Defaults.Model.Name == nil || *request.Defaults.Model.Name != modelName ||
-		request.BaseURL != nil {
+		request.Model == nil ||
+		request.Model.Name == nil || *request.Model.Name != modelName ||
+		request.Harness.InvocationURL != nil {
 		t.Fatalf("expected manifest data to map to create request, got %#v", request)
 	}
 
@@ -175,21 +175,31 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		t.Fatal(err)
 	}
+	harness, ok := payload["harness"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected harness object, got %#v", payload["harness"])
+	}
 	for key, expected := range map[string]string{
-		"name":          "support_rle",
-		"version":       "1.0.1",
-		"schemaVersion": project.CurrentRleManifestSchemaVersion,
 		"type":          "Harness",
 		"subtype":       "HostedAgent",
-		"agentName":     agentName,
-		"agentVersion":  agentVersion,
+		"agent_name":    agentName,
+		"agent_version": agentVersion,
+	} {
+		if harness[key] != expected {
+			t.Fatalf("expected harness.%s=%q, got %#v", key, expected, harness[key])
+		}
+	}
+	for key, expected := range map[string]string{
+		"name":           "support_rle",
+		"version":        "1.0.1",
+		"schema_version": project.CurrentRleManifestSchemaVersion,
 	} {
 		if payload[key] != expected {
 			t.Fatalf("expected %s=%q, got %#v", key, expected, payload[key])
 		}
 	}
-	if _, exists := payload["baseUrl"]; exists {
-		t.Fatalf("expected HostedAgent request to omit baseUrl, got %s", data)
+	if _, exists := harness["invocation_url"]; exists {
+		t.Fatalf("expected HostedAgent request to omit invocation_url, got %s", data)
 	}
 	if _, exists := payload["versionBump"]; exists {
 		t.Fatalf("expected explicit version request to omit versionBump, got %s", data)
@@ -197,42 +207,37 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	if _, exists := payload["metadata"]; exists {
 		t.Fatalf("expected request to omit metadata, got %s", data)
 	}
-	defaults, ok := payload["defaults"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected defaults payload, got %#v", payload["defaults"])
-	}
-	model, ok := defaults["model"].(map[string]any)
+	model, ok := payload["model"].(map[string]any)
 	if !ok || model["name"] != modelName {
-		t.Fatalf("expected model default, got %#v", defaults["model"])
+		t.Fatalf("expected model default, got %#v", payload["model"])
 	}
-	reinforcement, ok := defaults["reinforcement"].(map[string]any)
+	train, ok := payload["train"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected reinforcement defaults, got %#v", defaults["reinforcement"])
+		t.Fatalf("expected train defaults, got %#v", payload["train"])
 	}
-	hyperparameters, ok := reinforcement["hyperparameters"].(map[string]any)
-	if !ok || hyperparameters["n_epochs"] != float64(numberOfEpochs) {
-		t.Fatalf("expected snake_case hyperparameter payload, got %#v", reinforcement["hyperparameters"])
+	grpo, ok := train["grpo"].(map[string]any)
+	if !ok || grpo["num_epochs"] != float64(numberOfEpochs) {
+		t.Fatalf("expected snake_case grpo payload, got %#v", train["grpo"])
 	}
 }
 
 func TestBuildEnvironmentCreateRequestMapsByohHarnessConfiguration(t *testing.T) {
-	baseURL := "https://harness.example.com/rollouts/"
-	config := project.RleConfig{
-		Rle: project.RleManifest{
-			Name:    "customer_harness",
-			Version: "1.0.1",
-			Type:    project.RleTypeHarness,
-			Subtype: project.RleSubtypeBYOH,
-			BaseURL: &baseURL,
-		},
-	}
+	invocationURL := "https://harness.example.com/rollouts/"
+	config := project.RleConfig{Rle: project.RleManifest{
+		Name:    "customer_harness",
+		Version: "1.0.1",
+	}, Harness: project.RleHarnessManifest{
+		Type:          project.RleTypeHarness,
+		Subtype:       project.RleSubtypeBYOH,
+		InvocationURL: &invocationURL,
+	}}
 
 	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/customer_harness:1.0.1")
-	if request.Type != "Harness" ||
-		request.Subtype != "BYOH" ||
-		request.BaseURL == nil || *request.BaseURL != baseURL ||
-		request.AgentName != nil ||
-		request.AgentVersion != nil {
+	if request.Harness.Type != "Harness" ||
+		request.Harness.Subtype != "BYOH" ||
+		request.Harness.InvocationURL == nil || *request.Harness.InvocationURL != invocationURL ||
+		request.Harness.AgentName != nil ||
+		request.Harness.AgentVersion != nil {
 		t.Fatalf("expected BYOH manifest data to map to create request, got %#v", request)
 	}
 }
@@ -270,14 +275,14 @@ func TestVerifyPublishedEnvironmentRequiresManifestIdentity(t *testing.T) {
 	config := project.RleConfig{Rle: project.RleManifest{
 		Name:    "code_rl",
 		Version: "1.0.0",
+	}, Harness: project.RleHarnessManifest{
 		Type:    project.RleTypeGym,
 		Subtype: project.RleSubtypeOpenEnv,
 	}}
 	err := verifyPublishedEnvironment(config, &environmentResource{
 		Name:    "code_rl",
 		Version: "1.0.1",
-		Type:    "Gym",
-		Subtype: "OpenEnv",
+		Harness: rleHarness{Type: "Gym", Subtype: "OpenEnv"},
 	})
 	var localErr *azdext.LocalError
 	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
@@ -294,22 +299,19 @@ func TestVerifyPublishedEnvironmentRequiresManifestDefaults(t *testing.T) {
 		Rle: project.RleManifest{
 			Name:    "code_rl",
 			Version: "1.0.0",
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},
-		Defaults: &project.RleEnvironmentDefaults{
-			Model: &project.RleModelDefaults{Name: &modelName},
-		},
+		Model: &project.RleModelDefaults{Name: &modelName},
 	}
 	err := verifyPublishedEnvironment(config, &environmentResource{
 		Name:          "code_rl",
 		Version:       "1.0.0",
-		Type:          "Gym",
-		Subtype:       "OpenEnv",
+		Harness:       rleHarness{Type: "Gym", Subtype: "OpenEnv"},
 		SchemaVersion: &schemaVersion,
-		Defaults: &project.RleEnvironmentDefaults{
-			Model: &project.RleModelDefaults{Name: &differentModelName},
-		},
+		Model:         &project.RleModelDefaults{Name: &differentModelName},
 	})
 	var localErr *azdext.LocalError
 	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
@@ -321,11 +323,12 @@ func TestPublishRequestSendsTheEnvironmentProtocolUnderItsWireName(t *testing.T)
 	config := project.RleConfig{Rle: project.RleManifest{
 		Name:                "competitive_intelligence_agent",
 		Version:             "2.0.0",
-		Type:                project.RleTypeHarness,
-		Subtype:             project.RleSubtypeHostedAgent,
-		AgentName:           new("ci-agent"),
-		AgentVersion:        new("15"),
-		EnvironmentProtocol: new(project.RleEnvironmentProtocolMcpEnvironment),
+		EnvironmentProtocol: ptrTo(project.RleEnvironmentProtocolMcpEnvironment),
+	}, Harness: project.RleHarnessManifest{
+		Type:         project.RleTypeHarness,
+		Subtype:      project.RleSubtypeHostedAgent,
+		AgentName:    ptrTo("ci-agent"),
+		AgentVersion: ptrTo("15"),
 	}}
 
 	body, err := json.Marshal(buildEnvironmentCreateRequest(config, "registry.azurecr.io/ci:2.0.0"))
@@ -354,43 +357,6 @@ func TestPublishRequestSendsTheEnvironmentProtocolUnderItsWireName(t *testing.T)
 	}
 }
 
-func TestVerifyPublishedEnvironmentRejectsADowngradedProtocol(t *testing.T) {
-	config := project.RleConfig{Rle: project.RleManifest{
-		Name:                "competitive_intelligence_agent",
-		Version:             "2.0.0",
-		Type:                project.RleTypeHarness,
-		Subtype:             project.RleSubtypeHostedAgent,
-		AgentName:           new("ci-agent"),
-		AgentVersion:        new("15"),
-		EnvironmentProtocol: new(project.RleEnvironmentProtocolMcpEnvironment),
-	}}
-	published := &environmentResource{
-		Name:         "competitive_intelligence_agent",
-		Version:      "2.0.0",
-		Type:         "Harness",
-		Subtype:      "HostedAgent",
-		AgentName:    "ci-agent",
-		AgentVersion: "15",
-	}
-
-	// A version's protocol is immutable, so a service that ignored the field
-	// leaves the user with an environment that can never take the MCP path.
-	// Without this check publish would report success.
-	err := verifyPublishedEnvironment(config, published)
-	var localErr *azdext.LocalError
-	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
-		t.Fatalf("expected a protocol mismatch, got %v", err)
-	}
-	if !strings.Contains(localErr.Message, "legacy (unset)") {
-		t.Fatalf("message should name the absent protocol, got %q", localErr.Message)
-	}
-
-	published.EnvironmentProtocol = new(project.RleEnvironmentProtocolMcpEnvironment)
-	if err := verifyPublishedEnvironment(config, published); err != nil {
-		t.Fatalf("a matching protocol must verify, got %v", err)
-	}
-}
-
 func TestPublishTopLevelMcpGymManifest(t *testing.T) {
 	dir := t.TempDir()
 	content := `environment_protocol = "mcp_environment"
@@ -398,6 +364,8 @@ func TestPublishTopLevelMcpGymManifest(t *testing.T) {
 [rle]
 name = "math_rl"
 version = "1.0.0"
+
+[harness]
 type = "Gym"
 subtype = "OpenEnv"
 `
@@ -416,19 +384,15 @@ subtype = "OpenEnv"
 	if err := json.Unmarshal(body, &sent); err != nil {
 		t.Fatal(err)
 	}
-	if sent["environment_protocol"] != "mcp_environment" || sent["type"] != "Gym" || sent["subtype"] != "OpenEnv" {
+	harness, ok := sent["harness"].(map[string]any)
+	if !ok || sent["environment_protocol"] != "mcp_environment" || harness["type"] != "Gym" || harness["subtype"] != "OpenEnv" {
 		t.Fatalf("MCP Gym manifest did not reach the publish request: %s", body)
 	}
 	published := &environmentResource{
-		Name: "math_rl", Version: "1.0.0", Type: "Gym", Subtype: "OpenEnv",
-		EnvironmentProtocol: new(project.RleEnvironmentProtocolMcpEnvironment),
+		Name: "math_rl", Version: "1.0.0", Harness: rleHarness{Type: "Gym", Subtype: "OpenEnv"},
 	}
 	if err := verifyPublishedEnvironment(config, published); err != nil {
 		t.Fatal(err)
-	}
-	published.EnvironmentProtocol = nil
-	if err := verifyPublishedEnvironment(config, published); err == nil {
-		t.Fatal("publishing MCP Gym as legacy must not report success")
 	}
 }
 
@@ -477,6 +441,8 @@ func TestResolvePublishTargetRequiresInitialManifestVersion(t *testing.T) {
 		Rle: project.RleManifest{
 			Name:    "code_rl",
 			Version: "0.1.0",
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},

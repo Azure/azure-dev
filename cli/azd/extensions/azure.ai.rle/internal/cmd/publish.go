@@ -114,14 +114,16 @@ func (a *publishAction) Run() error {
 		EnvironmentName:        environment.Name,
 		FoundryProjectEndpoint: projectEndpoint,
 		AcrImage:               environment.AcrImagePath,
-		Type:                   environment.Type,
-		Subtype:                environment.Subtype,
-		AgentName:              environment.AgentName,
-		AgentVersion:           environment.AgentVersion,
-		BaseURL:                environment.BaseURL,
-		EnvironmentProtocol:    environment.EnvironmentProtocol,
+		Type:                   environment.Harness.Type,
+		Subtype:                environment.Harness.Subtype,
+		AgentName:              stringFromPointer(environment.Harness.AgentName),
+		AgentVersion:           stringFromPointer(environment.Harness.AgentVersion),
+		InvocationURL:          stringFromPointer(environment.Harness.InvocationURL),
+		EnvironmentProtocol:    config.Rle.EnvironmentProtocol,
 		SchemaVersion:          environment.SchemaVersion,
-		Defaults:               environment.Defaults,
+		Model:                  environment.Model,
+		Train:                  environment.Train,
+		Rollout:                environment.Rollout,
 		CreatedAt:              environment.CreatedAt,
 		UpdatedAt:              environment.UpdatedAt,
 	}, "", "  ")
@@ -183,22 +185,27 @@ func buildEnvironmentCreateRequest(
 	image string,
 ) v1EnvironmentRequest {
 	return v1EnvironmentRequest{
-		Name:                config.Rle.Name,
-		AcrImagePath:        image,
-		Version:             config.Rle.Version,
-		Type:                string(config.Rle.Type),
-		Subtype:             string(config.Rle.Subtype),
-		AgentName:           config.Rle.AgentName,
-		AgentVersion:        config.Rle.AgentVersion,
-		BaseURL:             config.Rle.BaseURL,
+		Name:         config.Rle.Name,
+		AcrImagePath: image,
+		Version:      config.Rle.Version,
+		Harness: rleHarness{
+			Type:          string(config.Harness.Type),
+			Subtype:       string(config.Harness.Subtype),
+			AgentName:     config.Harness.AgentName,
+			AgentVersion:  config.Harness.AgentVersion,
+			InvocationURL: config.Harness.InvocationURL,
+		},
 		EnvironmentProtocol: config.Rle.EnvironmentProtocol,
 		SchemaVersion:       config.SchemaVersion,
-		Defaults:            config.Defaults,
+		Model:               config.Model,
+		Train:               config.Train,
+		Rollout:             config.Rollout,
 	}
 }
 
 func verifyPublishedEnvironment(config project.RleConfig, environment *environmentResource) error {
 	manifest := config.Rle
+	harness := config.Harness
 	if environment == nil {
 		return publishedEnvironmentMismatchError(
 			"RLE service did not return the published environment.",
@@ -217,44 +224,40 @@ func verifyPublishedEnvironment(config project.RleConfig, environment *environme
 			"Resolve the concurrent or deleted-version conflict, then publish the version declared in rle.toml.",
 		)
 	}
-	if environment.Type != string(manifest.Type) || environment.Subtype != string(manifest.Subtype) {
+	if environment.Harness.Type != string(harness.Type) || environment.Harness.Subtype != string(harness.Subtype) {
 		return publishedEnvironmentMismatchError(
 			fmt.Sprintf(
 				"RLE service returned type %s/%s, but rle.toml declares %s/%s.",
-				environment.Type,
-				environment.Subtype,
-				manifest.Type,
-				manifest.Subtype,
+				environment.Harness.Type,
+				environment.Harness.Subtype,
+				harness.Type,
+				harness.Subtype,
 			),
 			"Check the RLE service response and retry.",
 		)
 	}
-	if manifest.AgentName != nil && environment.AgentName != *manifest.AgentName {
+	manifestAgentName := harness.AgentName
+	manifestAgentVersion := harness.AgentVersion
+	manifestInvocationURL := harness.InvocationURL
+	if manifestAgentName != nil &&
+		(environment.Harness.AgentName == nil || *environment.Harness.AgentName != *manifestAgentName) {
 		return publishedEnvironmentMismatchError(
 			"RLE service returned a different HostedAgent name than rle.toml.",
 			"Check the RLE service response and retry.",
 		)
 	}
-	if manifest.AgentVersion != nil && environment.AgentVersion != *manifest.AgentVersion {
+	if manifestAgentVersion != nil &&
+		(environment.Harness.AgentVersion == nil || *environment.Harness.AgentVersion != *manifestAgentVersion) {
 		return publishedEnvironmentMismatchError(
 			"RLE service returned a different HostedAgent version than rle.toml.",
 			"Check the RLE service response and retry.",
 		)
 	}
-	if manifest.BaseURL != nil && environment.BaseURL != *manifest.BaseURL {
+	if manifestInvocationURL != nil &&
+		(environment.Harness.InvocationURL == nil || *environment.Harness.InvocationURL != *manifestInvocationURL) {
 		return publishedEnvironmentMismatchError(
-			"RLE service returned a different BYOH baseUrl than rle.toml.",
+			"RLE service returned a different BYOH invocation_url than rle.toml.",
 			"Check the RLE service response and retry.",
-		)
-	}
-	if !reflect.DeepEqual(manifest.EnvironmentProtocol, environment.EnvironmentProtocol) {
-		return publishedEnvironmentMismatchError(
-			fmt.Sprintf(
-				"RLE service returned environment protocol %s, but rle.toml declares %s.",
-				describeRleEnvironmentProtocol(environment.EnvironmentProtocol),
-				describeRleEnvironmentProtocol(manifest.EnvironmentProtocol),
-			),
-			"A version's protocol is immutable. Publish a new version with the protocol you want.",
 		)
 	}
 	if !reflect.DeepEqual(config.SchemaVersion, environment.SchemaVersion) {
@@ -263,23 +266,15 @@ func verifyPublishedEnvironment(config project.RleConfig, environment *environme
 			"Check the RLE service response and retry.",
 		)
 	}
-	if !reflect.DeepEqual(config.Defaults, environment.Defaults) {
+	if !reflect.DeepEqual(config.Model, environment.Model) ||
+		!reflect.DeepEqual(config.Train, environment.Train) ||
+		!reflect.DeepEqual(config.Rollout, environment.Rollout) {
 		return publishedEnvironmentMismatchError(
 			"RLE service returned different reusable defaults than rle.toml.",
 			"Check the RLE service response and retry.",
 		)
 	}
 	return nil
-}
-
-// describeRleEnvironmentProtocol names an absent protocol, so that the common
-// mismatch -- asking for mcp_environment and being published as legacy -- does
-// not read as a comparison against an empty string.
-func describeRleEnvironmentProtocol(protocol *project.RleEnvironmentProtocol) string {
-	if protocol == nil {
-		return "legacy (unset)"
-	}
-	return string(*protocol)
 }
 
 func publishedEnvironmentMismatchError(message string, suggestion string) error {
@@ -322,12 +317,14 @@ type environmentOutput struct {
 	AcrImage               string                          `json:"acrImage"`
 	Type                   string                          `json:"type"`
 	Subtype                string                          `json:"subtype"`
-	AgentName              string                          `json:"agentName,omitempty"`
-	AgentVersion           string                          `json:"agentVersion,omitempty"`
-	BaseURL                string                          `json:"baseUrl,omitempty"`
+	AgentName              string                          `json:"agent_name,omitempty"`
+	AgentVersion           string                          `json:"agent_version,omitempty"`
+	InvocationURL          string                          `json:"invocation_url,omitempty"`
 	EnvironmentProtocol    *project.RleEnvironmentProtocol `json:"environmentProtocol,omitempty"`
-	SchemaVersion          *string                         `json:"schemaVersion,omitempty"`
-	Defaults               *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
+	SchemaVersion          *string                         `json:"schema_version,omitempty"`
+	Model                  *project.RleModelDefaults       `json:"model,omitempty"`
+	Train                  *project.RleTrainDefaults       `json:"train,omitempty"`
+	Rollout                *project.RleRolloutDefaults     `json:"rollout,omitempty"`
 	CreatedAt              string                          `json:"createdAt"`
 	UpdatedAt              string                          `json:"updatedAt"`
 }

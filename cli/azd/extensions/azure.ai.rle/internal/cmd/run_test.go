@@ -20,6 +20,8 @@ func writeRunRleConfig(t *testing.T, dir string, rleType project.RleType, subtyp
 	manifest := project.RleManifest{
 		Name:    "code_repair",
 		Version: "1.0.0",
+	}
+	harness := project.RleHarnessManifest{
 		Type:    rleType,
 		Subtype: subtype,
 	}
@@ -27,18 +29,19 @@ func writeRunRleConfig(t *testing.T, dir string, rleType project.RleType, subtyp
 	// BYOH is reached at a baseUrl, HostedAgent by agent name and version.
 	switch {
 	case rleType == project.RleTypeHarness && subtype == project.RleSubtypeBYOH:
-		baseURL := "https://agent.example.test"
-		manifest.BaseURL = &baseURL
+		invocationURL := "https://agent.example.test"
+		harness.InvocationURL = &invocationURL
 	case rleType == project.RleTypeHarness && subtype == project.RleSubtypeHostedAgent:
 		agentName := "code-repair-agent"
 		agentVersion := "1"
-		manifest.AgentName = &agentName
-		manifest.AgentVersion = &agentVersion
+		harness.AgentName = &agentName
+		harness.AgentVersion = &agentVersion
 	}
 
 	if err := project.WriteRleConfig(dir, project.RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle:           manifest,
+		Harness:       harness,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +122,7 @@ func TestLocalRunGateAppliesToRestartPath(t *testing.T) {
 
 func TestEnsureLocalRunSupportedReportsTypeWithoutSubtype(t *testing.T) {
 	err := ensureLocalRunSupported(project.RleConfig{
-		Rle: project.RleManifest{Type: project.RleTypeHarness},
+		Harness: project.RleHarnessManifest{Type: project.RleTypeHarness},
 	})
 	if err == nil {
 		t.Fatal("expected a harness manifest to be rejected")

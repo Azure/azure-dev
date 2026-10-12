@@ -19,14 +19,14 @@ import (
 )
 
 type rleInitFlags struct {
-	force        bool
-	rleType      string
-	rleSubtype   string
-	rleVersion   string
-	agentName    string
-	agentVersion string
-	baseURL      string
-	sample       string
+	force         bool
+	rleType       string
+	rleSubtype    string
+	rleVersion    string
+	agentName     string
+	agentVersion  string
+	invocationURL string
+	sample        string
 }
 
 type initAction struct {
@@ -130,7 +130,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "", "RLE semantic version")
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "HostedAgent name")
 	cmd.Flags().StringVar(&flags.agentVersion, "agent-version", "", "HostedAgent version")
-	cmd.Flags().StringVar(&flags.baseURL, "base-url", "", "BYOH harness base URL")
+	cmd.Flags().StringVar(&flags.invocationURL, "base-url", "", "BYOH harness base URL")
 	cmd.Flags().StringVar(
 		&flags.sample,
 		"sample",
@@ -250,8 +250,8 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 		return err
 	}
 	config.Rle.Name = folderName
-	config.Rle.Type = target.rleType
-	config.Rle.Subtype = target.rleSubtype
+	config.Harness.Type = target.rleType
+	config.Harness.Subtype = target.rleSubtype
 	schemaVersion := project.CurrentRleManifestSchemaVersion
 	config.SchemaVersion = &schemaVersion
 	if strings.TrimSpace(a.flags.rleVersion) != "" {
@@ -273,10 +273,10 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 }
 
 func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
-	if strings.TrimSpace(a.flags.baseURL) != "" {
+	if strings.TrimSpace(a.flags.invocationURL) != "" {
 		return &azdext.LocalError{
 			Message:    "--base-url can only be used with --type Harness --subtype BYOH.",
-			Code:       "rle_harness_base_url_not_supported",
+			Code:       "rle_harness_invocation_url_not_supported",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Remove --base-url or select --type Harness --subtype BYOH.",
 		}
@@ -344,8 +344,8 @@ func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 		return err
 	}
 	config.Rle.Name = folderName
-	config.Rle.Type = target.rleType
-	config.Rle.Subtype = target.rleSubtype
+	config.Harness.Type = target.rleType
+	config.Harness.Subtype = target.rleSubtype
 	schemaVersion := project.CurrentRleManifestSchemaVersion
 	config.SchemaVersion = &schemaVersion
 	if strings.TrimSpace(a.flags.rleVersion) != "" {
@@ -356,15 +356,15 @@ func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 	}
 	if strings.TrimSpace(a.flags.agentName) != "" {
 		agentName := a.flags.agentName
-		config.Rle.AgentName = &agentName
+		config.Harness.AgentName = &agentName
 	}
 	if strings.TrimSpace(a.flags.agentVersion) != "" {
 		agentVersion := a.flags.agentVersion
-		config.Rle.AgentVersion = &agentVersion
+		config.Harness.AgentVersion = &agentVersion
 	}
-	if strings.TrimSpace(a.flags.baseURL) != "" {
-		baseURL := a.flags.baseURL
-		config.Rle.BaseURL = &baseURL
+	if strings.TrimSpace(a.flags.invocationURL) != "" {
+		invocationURL := a.flags.invocationURL
+		config.Harness.InvocationURL = &invocationURL
 	}
 	if err := project.WriteRleConfig(rleDir, config); err != nil {
 		return err
@@ -426,7 +426,7 @@ func normalizeInitRleVersion(value string) (string, error) {
 func (a *initAction) hasHarnessInputFlags() bool {
 	return strings.TrimSpace(a.flags.agentName) != "" ||
 		strings.TrimSpace(a.flags.agentVersion) != "" ||
-		strings.TrimSpace(a.flags.baseURL) != ""
+		strings.TrimSpace(a.flags.invocationURL) != ""
 }
 
 func rleInitTargetOptions(includeHarnessTypes bool) []rleInitTargetOption {
@@ -666,7 +666,7 @@ func initHarnessSampleNextSteps(displayDir string, goos string, shell string) st
 		"Copied a working sample to: %s\n"+
 			"  %s  (the harness/agent implementation -- build and deploy this yourself)\n"+
 			"  %s  (the RLE wrapper -- this is what azd ai rle acts on)\n"+
-			"\nDeploy %s, then update %s/rle.toml's baseUrl/agentName/agentVersion "+
+			"\nDeploy %s, then update %s/rle.toml's invocation_url/agent_name/agent_version "+
 			"to point at it.\n"+
 			"\nPublish to RLE when ready:\n"+
 			"  cd \"%s\"\n"+

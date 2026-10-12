@@ -80,12 +80,12 @@ func TestReadJSONFlagOrFileDoesNotRepairWhenDisabled(t *testing.T) {
 func TestIsGymOpenEnv(t *testing.T) {
 	tests := []struct {
 		name     string
-		manifest project.RleManifest
+		manifest project.RleHarnessManifest
 		want     bool
 	}{
 		{
 			name: "Gym OpenEnv",
-			manifest: project.RleManifest{
+			manifest: project.RleHarnessManifest{
 				Type:    project.RleTypeGym,
 				Subtype: project.RleSubtypeOpenEnv,
 			},
@@ -93,7 +93,7 @@ func TestIsGymOpenEnv(t *testing.T) {
 		},
 		{
 			name: "Harness HostedAgent",
-			manifest: project.RleManifest{
+			manifest: project.RleHarnessManifest{
 				Type:    project.RleTypeHarness,
 				Subtype: project.RleSubtypeHostedAgent,
 			},
@@ -173,12 +173,12 @@ func TestRolloutFallsBackToRleConfigModelDefault(t *testing.T) {
 		Rle: project.RleManifest{
 			Name:    "code_rl",
 			Version: "1.0.0",
+		},
+		Harness: project.RleHarnessManifest{
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},
-		Defaults: &project.RleEnvironmentDefaults{
-			Model: &project.RleModelDefaults{Name: &modelName},
-		},
+		Model: &project.RleModelDefaults{Name: &modelName},
 	}); err != nil {
 		t.Fatal(err)
 	}

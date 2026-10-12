@@ -361,24 +361,24 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 		version:         version,
 		isGymOpenEnv: localConfigErr == nil &&
 			localConfig.Rle.Name == environmentName &&
-			isGymOpenEnv(localConfig.Rle),
+			isGymOpenEnv(localConfig.Harness),
 	}, client, nil
 }
 
-func isGymOpenEnv(manifest project.RleManifest) bool {
-	return manifest.Type == project.RleTypeGym && manifest.Subtype == project.RleSubtypeOpenEnv
+func isGymOpenEnv(harness project.RleHarnessManifest) bool {
+	return harness.Type == project.RleTypeGym && harness.Subtype == project.RleSubtypeOpenEnv
 }
 
 // defaultModelFromRleConfig best-effort loads rle.toml from the current folder and returns
-// defaults.model.name, so --model can be omitted when the manifest already declares one.
+// model.name, so --model can be omitted when the manifest already declares one.
 // Any load error (including no rle.toml present) is treated as "no default available"
 // rather than a hard failure, since --model is only required when no default exists.
 func defaultModelFromRleConfig() string {
 	config, err := project.LoadRleConfig(".")
-	if err != nil || config.Defaults == nil || config.Defaults.Model == nil || config.Defaults.Model.Name == nil {
+	if err != nil || config.Model == nil || config.Model.Name == nil {
 		return ""
 	}
-	return strings.TrimSpace(*config.Defaults.Model.Name)
+	return strings.TrimSpace(*config.Model.Name)
 }
 
 // readJSONFlagOrFile reads a JSON payload from an inline flag or a file flag (at most one

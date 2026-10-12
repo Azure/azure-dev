@@ -88,18 +88,22 @@ func (f *fakeRleHarnessSampleCatalog) Copy(
 		rleToml = "[rle]\n" +
 			"name = \"code_repair_byoh\"\n" +
 			"version = \"1.0.0\"\n" +
+			"\n" +
+			"[harness]\n" +
 			"type = \"Harness\"\n" +
 			"subtype = \"BYOH\"\n" +
-			"baseUrl = \"https://harness.example.com/invoke\"\n"
+			"invocation_url = \"https://harness.example.com/invoke\"\n"
 	default:
 		rleToml = "[rle]\n" +
 			"name = \"code_repair_hosted_agent\"\n" +
 			"version = \"1.0.0\"\n" +
+			"environmentProtocol = \"mcp_environment\"\n" +
+			"\n" +
+			"[harness]\n" +
 			"type = \"Harness\"\n" +
 			"subtype = \"HostedAgent\"\n" +
-			"agentName = \"code-repair-agent\"\n" +
-			"agentVersion = \"1\"\n" +
-			"environmentProtocol = \"mcp_environment\"\n"
+			"agent_name = \"code-repair-agent\"\n" +
+			"agent_version = \"1\"\n"
 	}
 	if err := os.WriteFile(filepath.Join(sessionDir, "rle", project.RleConfigFile), []byte(rleToml), 0600); err != nil {
 		return "", err
@@ -170,8 +174,8 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 		`name = 'my_hosted_agent'`,
 		`type = 'Harness'`,
 		`subtype = 'HostedAgent'`,
-		`agentName = 'code-repair-agent'`,
-		`agentVersion = '1'`,
+		`agent_name = 'code-repair-agent'`,
+		`agent_version = '1'`,
 		// init rewrites identity but must carry the sample's protocol through
 		// untouched: dropping it here would scaffold a project that publishes
 		// as legacy and never takes the MCP rollout path.
@@ -300,7 +304,7 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 	}
 }
 
-func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
+func TestInitBYOHSampleSourceAppliesInvocationURLOverride(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(rleEnableAllEnvVar, "true")
@@ -335,7 +339,7 @@ func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `baseUrl = 'https://my-real-harness.example.com/invoke'`) {
+	if !strings.Contains(string(config), `invocation_url = 'https://my-real-harness.example.com/invoke'`) {
 		t.Fatalf("expected overridden BYOH base URL, got:\n%s", config)
 	}
 	if !strings.Contains(string(config), `name = 'my_byoh'`) {
@@ -558,8 +562,8 @@ func TestInitNoPromptHostedAgentFlagsOverrideSampleDefaults(t *testing.T) {
 	for _, expected := range []string{
 		`name = 'support_rle'`,
 		`subtype = 'HostedAgent'`,
-		`agentName = 'support-agent'`,
-		`agentVersion = '202609'`,
+		`agent_name = 'support-agent'`,
+		`agent_version = '202609'`,
 	} {
 		if !strings.Contains(string(config), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, config)

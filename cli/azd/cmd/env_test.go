@@ -1519,7 +1519,7 @@ func Test_EnvRefreshAction_Run_RefreshesOutputs(t *testing.T) {
 	pm.AssertExpectations(t)
 }
 
-func Test_EnvRefreshAction_Run_AppliesOutputAliases(t *testing.T) {
+func Test_EnvRefreshAction_Run_AppliesAliases(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockRefreshProvider{stateResult: &provisioning.StateResult{
@@ -1533,10 +1533,10 @@ func Test_EnvRefreshAction_Run_AppliesOutputAliases(t *testing.T) {
 	action.projectConfig.Infra = provisioning.Options{
 		Provider: provisioning.Test,
 		Layers: []provisioning.Options{{
-			Name:          "infra",
-			Provider:      provisioning.Test,
-			Path:          "infra",
-			OutputAliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
+			Name:     "infra",
+			Provider: provisioning.Test,
+			Path:     "infra",
+			Aliases:  map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
 		}},
 	}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)

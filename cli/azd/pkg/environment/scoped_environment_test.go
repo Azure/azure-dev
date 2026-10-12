@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,8 +51,8 @@ func TestMappedScopedEnvironmentTranslatesProviderViewAndProjectView(t *testing.
 			"B":             "A",
 			"LOCAL_INPUT":   "SHARED_INPUT",
 			"MISSING_LOCAL": "MISSING_SHARED",
+			"LOCAL_OUTPUT":  "SHARED_OUTPUT",
 		},
-		map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
 	)
 
 	require.Equal(t, "two", env.Getenv("A"))
@@ -63,9 +64,124 @@ func TestMappedScopedEnvironmentTranslatesProviderViewAndProjectView(t *testing.
 	env.DotenvSet("LOCAL_OUTPUT", "new-output")
 	require.Equal(t, "new-output", backing.Getenv("SHARED_OUTPUT"))
 	require.Empty(t, backing.Getenv("LOCAL_OUTPUT"))
+	require.Equal(t, "new-output", env.Getenv("LOCAL_OUTPUT"))
 
 	env.DotenvDelete("LOCAL_OUTPUT")
 	require.Empty(t, backing.Getenv("SHARED_OUTPUT"))
+}
+
+func TestMappedScopedEnvironmentPersistsAliasedInputs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Subscription", func(t *testing.T) {
+		t.Parallel()
+
+		backing := New("test")
+		env := NewMappedScopedEnvironment(backing, map[string]string{
+			SubscriptionIdEnvVarName: "LAYER_SUBSCRIPTION",
+		})
+
+		env.SetSubscriptionId("prompted-value")
+		assert.Equal(t, "prompted-value", env.GetSubscriptionId(), "the next read must see the prompted value")
+
+		assert.Equal(t, "prompted-value", backing.Getenv("LAYER_SUBSCRIPTION"), "persist under the project name")
+		assert.NotContains(t, backing.Dotenv(), SubscriptionIdEnvVarName, "do not persist a duplicate provider name")
+		assert.Equal(t, "prompted-value", env.GetSubscriptionId(), "the next read must see the prompted value")
+	})
+
+	t.Run("Location", func(t *testing.T) {
+		t.Parallel()
+
+		backing := New("test")
+		env := NewMappedScopedEnvironment(backing, map[string]string{
+			LocationEnvVarName: "LAYER_LOCATION",
+		})
+
+		env.SetLocation("prompted-value")
+
+		assert.Equal(t, "prompted-value", backing.Getenv("LAYER_LOCATION"), "persist under the project name")
+		assert.NotContains(t, backing.Dotenv(), LocationEnvVarName, "do not persist a duplicate provider name")
+		assert.Equal(t, "prompted-value", env.GetLocation(), "the next read must see the prompted value")
+	})
+
+	t.Run("ResourceGroup", func(t *testing.T) {
+		t.Parallel()
+
+		backing := New("test")
+		env := NewMappedScopedEnvironment(backing, map[string]string{
+			"AZURE_RESOURCE_GROUP": "LAYER_RESOURCE_GROUP",
+		})
+
+		env.DotenvSet("AZURE_RESOURCE_GROUP", "prompted-value")
+
+		assert.Equal(t, "prompted-value", backing.Getenv("LAYER_RESOURCE_GROUP"), "persist under the project name")
+		assert.NotContains(t, backing.Dotenv(), "AZURE_RESOURCE_GROUP", "do not persist a duplicate provider name")
+		assert.Equal(t, "prompted-value", env.Getenv("AZURE_RESOURCE_GROUP"), "the next read must see the prompted value")
+	})
+}
+
+func TestMappedScopedEnvironmentReadsAliasedOutputsAfterWrite(t *testing.T) {
+	t.Parallel()
+
+	backing := NewWithValues("test", map[string]string{"SHARED_OUTPUT": "old-output"})
+	env := NewMappedScopedEnvironment(backing, map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"})
+
+	env.DotenvSet("LOCAL_OUTPUT", "new-output")
+
+	require.Equal(t, "new-output", backing.Getenv("SHARED_OUTPUT"))
+	require.NotContains(t, backing.Dotenv(), "LOCAL_OUTPUT")
+	assert.Equal(t, "new-output", env.Getenv("LOCAL_OUTPUT"))
+	value, found := env.LookupEnv("LOCAL_OUTPUT")
+	assert.True(t, found)
+	assert.Equal(t, "new-output", value)
+	assert.Equal(t, "new-output", env.Dotenv()["LOCAL_OUTPUT"])
+	assert.Contains(t, env.Environ(), "LOCAL_OUTPUT=new-output")
+}
+
+func TestMappedScopedEnvironmentOverlappingAliasesApplyOnce(t *testing.T) {
+	t.Parallel()
+
+	backing := NewWithValues("test", map[string]string{"A": "one", "B": "two", "C": "three"})
+	env := NewMappedScopedEnvironment(backing, map[string]string{"A": "B", "B": "C"})
+
+	require.Equal(t, "two", env.Getenv("A"))
+	require.Equal(t, "three", env.Getenv("B"))
+	require.Equal(t, "two", env.Dotenv()["A"])
+	require.Equal(t, "three", env.Dotenv()["B"])
+
+	env.DotenvSet("A", "updated")
+
+	require.Equal(t, "updated", backing.Getenv("B"))
+	require.Equal(t, "updated", env.Getenv("A"))
+	require.Equal(t, "three", env.Getenv("B"))
+	require.Equal(t, "updated", env.Dotenv()["A"])
+	require.Equal(t, "three", env.Dotenv()["B"])
+
+	env.DotenvDelete("A")
+
+	require.NotContains(t, backing.Dotenv(), "B")
+	require.Equal(t, "one", backing.Getenv("A"))
+	require.Equal(t, "three", backing.Getenv("C"))
+}
+
+func TestMappedScopedEnvironmentDistinctAliasesRemainIndependent(t *testing.T) {
+	t.Parallel()
+
+	backing := NewWithValues("test", map[string]string{"SHARED_FIRST": "first", "SHARED_SECOND": "second"})
+	env := NewMappedScopedEnvironment(backing, map[string]string{"FIRST": "SHARED_FIRST", "SECOND": "SHARED_SECOND"})
+
+	require.Equal(t, "first", env.Getenv("FIRST"))
+	require.Equal(t, "second", env.Getenv("SECOND"))
+
+	env.DotenvSet("FIRST", "updated")
+
+	require.Equal(t, "updated", env.Getenv("FIRST"))
+	require.Equal(t, "second", env.Getenv("SECOND"))
+	require.Equal(t, map[string]string{"SHARED_FIRST": "updated", "SHARED_SECOND": "second"}, backing.Dotenv())
+
+	env.DotenvDelete("SECOND")
+
+	require.Equal(t, map[string]string{"SHARED_FIRST": "updated"}, backing.Dotenv())
 }
 
 func TestMappedScopedEnvironmentExcludesAliasedLoaderControls(t *testing.T) {
@@ -95,7 +211,7 @@ func TestMappedScopedEnvironmentExcludesAliasedLoaderControls(t *testing.T) {
 					} else {
 						backing.DotenvSet("SHARED_INPUT", "value")
 					}
-					env := NewMappedScopedEnvironment(backing, map[string]string{tt.name: "SHARED_INPUT"}, nil)
+					env := NewMappedScopedEnvironment(backing, map[string]string{tt.name: "SHARED_INPUT"})
 
 					if tt.blocked {
 						require.NotContains(t, env.Dotenv(), tt.name)
@@ -121,8 +237,8 @@ func TestCompat_NoAliasesDoesNotWrapEnvironment(t *testing.T) {
 	backing := New("test")
 
 	for _, env := range []ScopedEnvironment{
-		NewMappedScopedEnvironment(backing, nil, nil),
-		NewMappedScopedEnvironment(backing, map[string]string{}, map[string]string{}),
+		NewMappedScopedEnvironment(backing, nil),
+		NewMappedScopedEnvironment(backing, map[string]string{}),
 	} {
 		require.Same(t, backing, env)
 		require.Same(t, backing, env.BackingEnv())
@@ -135,7 +251,7 @@ func TestCompat_MappedEnvironmentExposesBackingEnvironmentAndConfig(t *testing.T
 	t.Parallel()
 
 	backing := NewWithValues("test", map[string]string{"SHARED_INPUT": "input"})
-	env := NewMappedScopedEnvironment(backing, map[string]string{"LOCAL": "SHARED_INPUT"}, nil)
+	env := NewMappedScopedEnvironment(backing, map[string]string{"LOCAL": "SHARED_INPUT"})
 
 	require.NotSame(t, backing, env)
 	require.Same(t, backing, env.BackingEnv())
@@ -153,9 +269,14 @@ func TestCompat_UnaliasedNamesPassThrough(t *testing.T) {
 	t.Parallel()
 
 	backing := NewWithValues("test", map[string]string{"PLAIN": "p", "LD_PRELOAD": "evil"})
-	env := NewMappedScopedEnvironment(backing, map[string]string{"LOCAL": "PLAIN"}, nil)
+	env := NewMappedScopedEnvironment(backing, map[string]string{"LOCAL": "PLAIN"})
 
 	require.Equal(t, "p", env.Getenv("PLAIN"))
 	require.Equal(t, map[string]string{"PLAIN": "p", "LOCAL": "p"}, env.Dotenv())
 	require.NotContains(t, env.Dotenv(), "LD_PRELOAD")
+
+	env.DotenvSet("PLAIN", "updated")
+	require.Equal(t, "updated", backing.Getenv("PLAIN"))
+	env.DotenvDelete("PLAIN")
+	require.NotContains(t, backing.Dotenv(), "PLAIN")
 }

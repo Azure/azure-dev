@@ -49,17 +49,15 @@ infra:
       provider: terraform
       path: infra/app
       module: main
-      paramAliases:
+      aliases:
         LAYER_VALUE: APP_INPUT
-      outputAliases:
         OUTPUT: APP_OUTPUT
     - name: data
       provider: terraform
       path: infra/data
       module: main
-      paramAliases:
+      aliases:
         LAYER_VALUE: DATA_INPUT
-      outputAliases:
         OUTPUT: DATA_OUTPUT
 `), 0o600))
 
@@ -110,8 +108,7 @@ infra:
 		outputKey := strings.ToUpper(layer.Name) + "_OUTPUT"
 		scoped := environment.NewMappedScopedEnvironment(
 			backing,
-			layer.ParamAliases,
-			layer.OutputAliases,
+			layer.Aliases,
 		)
 
 		manager := newTerraformLifecycleManager(t, projectDir, layer, scoped, envManager, commands)

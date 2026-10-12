@@ -250,7 +250,7 @@ func Test_DownAction_Run_Deleted(t *testing.T) {
 	require.Contains(t, result.Message.Header, "Your application was removed")
 }
 
-func Test_DownAction_Run_AppliesOutputAliases(t *testing.T) {
+func Test_DownAction_Run_AppliesAliases(t *testing.T) {
 	provider := &mockDownProvider{
 		mockRefreshProvider: &mockRefreshProvider{},
 		destroyResult: &provisioning.DestroyResult{
@@ -258,7 +258,7 @@ func Test_DownAction_Run_AppliesOutputAliases(t *testing.T) {
 		},
 	}
 	action, _, _ := newTestDownAction(t, provider)
-	action.projectConfig.Infra.Layers[0].OutputAliases = map[string]string{
+	action.projectConfig.Infra.Layers[0].Aliases = map[string]string{
 		"LOCAL_OUTPUT": "SHARED_OUTPUT",
 	}
 	action.env.DotenvSet("LOCAL_OUTPUT", "unrelated")

@@ -136,16 +136,16 @@ func TestAnalyzeLayerDependencies_AliasedInputsAndOutputs(t *testing.T) {
 
 	layers := []provisioning.Options{
 		{
-			Name:          "producer",
-			Path:          "producer",
-			Module:        "main",
-			OutputAliases: map[string]string{"LOCAL_ENDPOINT": "SHARED_ENDPOINT"},
+			Name:    "producer",
+			Path:    "producer",
+			Module:  "main",
+			Aliases: map[string]string{"LOCAL_ENDPOINT": "SHARED_ENDPOINT"},
 		},
 		{
-			Name:         "consumer",
-			Path:         "consumer",
-			Module:       "main",
-			ParamAliases: map[string]string{"LOCAL_INPUT": "SHARED_ENDPOINT"},
+			Name:    "consumer",
+			Path:    "consumer",
+			Module:  "main",
+			Aliases: map[string]string{"LOCAL_INPUT": "SHARED_ENDPOINT"},
 		},
 	}
 

@@ -1086,7 +1086,7 @@ func (p *paramsOnlyProvider) Parameters(context.Context) ([]provisioning.Paramet
 	return p.parameters, nil
 }
 
-// CI must use project variable names so the provider can read their values through its input aliases.
+// CI must use project variable names so the provider can read their values through its aliases.
 func Test_mergeProjectVariablesAndSecrets_usesStorageProjectVariables(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	provider := &paramsOnlyProvider{parameters: []provisioning.Parameter{
@@ -1114,7 +1114,7 @@ func Test_mergeProjectVariablesAndSecrets_usesStorageProjectVariables(t *testing
 		Name:     "primary-storage",
 		Provider: provisioning.Test,
 		Path:     "infra/storage",
-		ParamAliases: map[string]string{
+		Aliases: map[string]string{
 			"STORAGE_INSTANCE_NAME": "PRIMARY_STORAGE_INSTANCE_NAME",
 		},
 	})
@@ -1177,7 +1177,7 @@ func Test_mergeProjectVariablesAndSecrets_aliasesSecretsAndCombinedInputs(t *tes
 
 	err := manager.Initialize(t.Context(), "", provisioning.Options{
 		Provider: provisioning.Test,
-		ParamAliases: map[string]string{
+		Aliases: map[string]string{
 			// The provider reads project values through its provider variable names.
 			"PROVIDER_LOCATION": "PROJECT_LOCATION",
 			"PROVIDER_DB_CONN":  "PROJECT_DB_CONN",

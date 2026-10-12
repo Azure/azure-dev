@@ -1305,7 +1305,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 			continue
 		}
 
-		sharedOutputs, err := provisioning.ApplyOutputAliases(result.State.Outputs, layer.OutputAliases)
+		sharedOutputs, err := provisioning.ApplyOutputAliases(result.State.Outputs, layer.Aliases)
 		if err != nil {
 			return nil, fmt.Errorf("applying output aliases for layer %s: %w", layer.Name, err)
 		}

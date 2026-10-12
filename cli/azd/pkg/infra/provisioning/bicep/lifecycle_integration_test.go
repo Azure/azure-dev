@@ -162,17 +162,15 @@ infra:
       provider: bicep
       path: infra
       module: main
-      paramAliases:
+      aliases:
         LAYER_VALUE: APP_INPUT
-      outputAliases:
         OUTPUT: APP_OUTPUT
     - name: data
       provider: bicep
       path: infra
       module: main
-      paramAliases:
+      aliases:
         LAYER_VALUE: DATA_INPUT
-      outputAliases:
         OUTPUT: DATA_OUTPUT
 `), 0o600))
 	require.NoError(t, os.WriteFile(
@@ -212,8 +210,7 @@ infra:
 		outputKey := strings.ToUpper(layer.Name) + "_OUTPUT"
 		scoped := environment.NewMappedScopedEnvironment(
 			backing,
-			layer.ParamAliases,
-			layer.OutputAliases,
+			layer.Aliases,
 		)
 		layer.IgnoreDeploymentState = true
 

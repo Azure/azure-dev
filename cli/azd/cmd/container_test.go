@@ -173,7 +173,7 @@ func Test_ProvisioningRegistrations_ProviderScope(t *testing.T) {
 					environment.LocationEnvVarName:       "LAYER_LOCATION",
 				}
 				require.NoError(t, manager.Initialize(t.Context(), ".", provisioning.Options{
-					Provider: provisioning.Test, ParamAliases: aliases, OutputAliases: aliases,
+					Provider: provisioning.Test, Aliases: aliases,
 				}))
 
 				require.NotNil(t, providerEnv)

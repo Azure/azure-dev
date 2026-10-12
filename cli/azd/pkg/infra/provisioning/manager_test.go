@@ -294,11 +294,7 @@ func TestManagerPipelineMetadataUsesProjectView(t *testing.T) {
 	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
 		Provider: provisioning.Test,
 		// PROJECT_VARIABLE is also a provider-view name here; each alias must be applied only once.
-		ParamAliases: map[string]string{
-			"PROVIDER_VARIABLE": "PROJECT_VARIABLE",
-			"PROJECT_VARIABLE":  "OTHER_PROJECT_VARIABLE",
-		},
-		OutputAliases: map[string]string{
+		Aliases: map[string]string{
 			"PROVIDER_VARIABLE": "PROJECT_VARIABLE",
 			"PROJECT_VARIABLE":  "OTHER_PROJECT_VARIABLE",
 		},
@@ -354,7 +350,7 @@ func TestManagerVirtualInputsUseProviderView(t *testing.T) {
 	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
 		Provider:   provisioning.Test,
 		VirtualEnv: virtualEnv,
-		ParamAliases: map[string]string{
+		Aliases: map[string]string{
 			"FIRST": "SECOND", "SECOND": "FIRST", "LOCAL": "FIRST", "UNCHANGED": "MISSING",
 		},
 	}))
@@ -416,7 +412,7 @@ func TestManagerDeployValidatesOutputAliasDestinations(t *testing.T) {
 				mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
 			)
 			require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
-				Provider: provisioning.Test, OutputAliases: tt.aliases,
+				Provider: provisioning.Test, Aliases: tt.aliases,
 			}))
 
 			result, err := manager.Deploy(t.Context())
@@ -498,8 +494,9 @@ func TestCompat_ProviderKeepsDirectEnvironmentAccess(t *testing.T) {
 
 			options := provisioning.Options{Provider: provisioning.Test}
 			if aliases {
-				options.ParamAliases = map[string]string{"LOCAL_INPUT": "SHARED_INPUT"}
-				options.OutputAliases = map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"}
+				options.Aliases = map[string]string{
+					"LOCAL_INPUT": "SHARED_INPUT", "LOCAL_OUTPUT": "SHARED_OUTPUT",
+				}
 			}
 			manager := provisioning.NewManager(
 				mockContext.Container, defaultProvider, layerManager, layerEnv,
@@ -593,9 +590,8 @@ func TestCompat_ProviderViewMapsToProjectView(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 	options := provisioning.Options{
-		Provider:      provisioning.Test,
-		ParamAliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
-		OutputAliases: map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
+		Provider: provisioning.Test,
+		Aliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT", "LOCAL_OUTPUT": "SHARED_OUTPUT"},
 	}
 
 	require.NoError(t, manager.Initialize(t.Context(), "", options))

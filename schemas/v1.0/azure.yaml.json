@@ -108,22 +108,10 @@
                                 "description": "Optional. Configuration passed to the infrastructure provisioning provider.",
                                 "additionalProperties": true
                             },
-                            "paramAliases": {
+                            "aliases": {
                                 "type": "object",
-                                "title": "Layer input aliases",
-                                "description": "Optional. Maps environment variable names in the provider view to variable names in the project view. Keys are provider variables; values are project variables.",
-                                "propertyNames": {
-                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                                },
-                                "additionalProperties": {
-                                    "type": "string",
-                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                                }
-                            },
-                            "outputAliases": {
-                                "type": "object",
-                                "title": "Layer output aliases",
-                                "description": "Optional. Maps output names in the provider view to variable names in the project view. Keys are provider outputs; values are project variables.",
+                                "title": "Layer variable aliases",
+                                "description": "Optional. Maps provider-view variable names to project-view names for reads, writes, and deletes, including parameter inputs and deployment outputs. Keys are provider variables; values are project variables. Project-variable destinations must be unique within this infrastructure entry.",
                                 "propertyNames": {
                                     "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                                 },

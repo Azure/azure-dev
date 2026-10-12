@@ -40,11 +40,11 @@ An alternative IaC provider supported by azd. Terraform configurations use HCL s
 
 ### Provider View
 
-The variable names an infrastructure provider reads or emits. A provider input variable is an environment variable referenced by the provider's parameter file, not necessarily the IaC parameter name. Input and output aliases translate these names to the [project view](#project-view).
+The variable names an infrastructure provider reads or emits. A provider input variable is an environment variable referenced by the provider's parameter file, not necessarily the IaC parameter name. Variable aliases translate these names to the [project view](#project-view).
 
 ### Project View
 
-The environment variable names the project stores and supplies to CI. Both input and output aliases are written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`: inputs read a project variable through its provider name, and outputs save a provider output under its project name. These views describe naming, not separate persisted environments. See [Infrastructure Layer Variable Aliases](../reference/azure-yaml-schema.md#infrastructure-layer-variable-aliases).
+The environment variable names the project stores and supplies to CI. The `aliases` map is written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`: reads, writes, and deletes through a provider name use its project name, including prompted inputs and deployment outputs. These views describe naming, not separate persisted environments. See [Infrastructure Layer Variable Aliases](../reference/azure-yaml-schema.md#infrastructure-layer-variable-aliases).
 
 ### Provisioning
 

@@ -64,10 +64,9 @@ type Options struct {
 	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
-	// ParamAliases maps environment variable names in the provider view to names in the project view.
-	ParamAliases map[string]string `yaml:"paramAliases,omitempty" json:"paramAliases,omitempty"`
-	// OutputAliases maps output names in the provider view to variable names in the project view.
-	OutputAliases map[string]string `yaml:"outputAliases,omitempty" json:"outputAliases,omitempty"`
+	// Aliases maps provider-view variable names to project-view names for reads, writes, and deletes.
+	// Project-view names must be unique within each infrastructure entry.
+	Aliases map[string]string `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	// DependsOn lists the names of other infrastructure entries this entry must wait for
 	// before being provisioned. Use this to declare hook-mediated edges
 	// (for example, when a postprovision hook in another entry writes an
@@ -210,14 +209,14 @@ func (o *Options) validate(allowPathlessExtensionProviders bool) error {
 	if len(o.Hooks) > 0 {
 		return validateErr("infra", "'hooks' can only be declared under 'infra.layers[]'")
 	}
-	if len(o.ParamAliases) > 0 || len(o.OutputAliases) > 0 {
-		return validateErr("infra", "'paramAliases' and 'outputAliases' can only be declared under 'infra.layers[]'")
+	if len(o.Aliases) > 0 {
+		return validateErr("infra", "'aliases' can only be declared under 'infra.layers[]'")
 	}
 
 	if len(o.Layers) > 0 {
 		anyIncompatibleFieldsSet := func() bool {
 			return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil ||
-				len(o.ParamAliases) > 0 || len(o.OutputAliases) > 0
+				len(o.Aliases) > 0
 		}
 
 		if anyIncompatibleFieldsSet() {
@@ -290,29 +289,17 @@ func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 var aliasNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validateLayerAliases(layer Options) error {
-	for localName, sharedName := range layer.ParamAliases {
+	destinations := make(map[string]string, len(layer.Aliases))
+	for _, localName := range slices.Sorted(maps.Keys(layer.Aliases)) {
+		sharedName := layer.Aliases[localName]
 		if localName == "" || sharedName == "" {
-			return errors.New("input alias names cannot be empty in the provider view or project view")
+			return errors.New("alias names cannot be empty in the provider view or project view")
 		}
 		if !aliasNamePattern.MatchString(localName) || !aliasNamePattern.MatchString(sharedName) {
-			return fmt.Errorf("input alias %q to %q must use names matching %s", localName, sharedName, aliasNamePattern)
+			return fmt.Errorf("alias %q to %q must use names matching %s", localName, sharedName, aliasNamePattern)
 		}
-	}
-
-	// YAML does not declare provider outputs, so collisions with unaliased outputs need a runtime check.
-	destinations := make(map[string]string, len(layer.OutputAliases))
-	for localName, sharedName := range layer.OutputAliases {
-		if localName == "" || sharedName == "" {
-			return errors.New("output alias names cannot be empty in the provider view or project view")
-		}
-		if !aliasNamePattern.MatchString(localName) || !aliasNamePattern.MatchString(sharedName) {
-			return fmt.Errorf("output alias %q to %q must use names matching %s", localName, sharedName, aliasNamePattern)
-		}
-		if previous, has := destinations[sharedName]; has && previous != localName {
-			return fmt.Errorf(
-				"output aliases %q and %q cannot both target %q in the project view",
-				previous, localName, sharedName,
-			)
+		if previous, has := destinations[sharedName]; has {
+			return fmt.Errorf("aliases %q and %q cannot both target %q", previous, localName, sharedName)
 		}
 		destinations[sharedName] = localName
 	}

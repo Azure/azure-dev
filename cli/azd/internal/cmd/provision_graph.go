@@ -186,7 +186,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 					}
 
 					projectOutputs, err := provisioning.ApplyOutputAliases(
-						deployResult.Deployment.Outputs, layer.OutputAliases,
+						deployResult.Deployment.Outputs, layer.Aliases,
 					)
 					if err != nil {
 						return fmt.Errorf("applying output aliases for layer %s: %w", layer.Name, err)
@@ -983,7 +983,7 @@ func runProvisionSingleLayer(
 	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
 		if deployResult.Deployment != nil && len(deployResult.Deployment.Outputs) > 0 {
 			if err := mergeLayerOutputsLocked(
-				ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.OutputAliases,
+				ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.Aliases,
 			); err != nil {
 				return deployResult, fmt.Errorf(
 					"updating environment for skipped layer %s: %w", stepName, err,
@@ -994,7 +994,7 @@ func runProvisionSingleLayer(
 		// can react to cached outputs.
 	} else {
 		if err := mergeLayerOutputsLocked(
-			ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.OutputAliases,
+			ctx, deps, envMu, stepName, deployResult.Deployment.Outputs, layer.Aliases,
 		); err != nil {
 			return deployResult, fmt.Errorf(
 				"updating environment for layer %s: %w", stepName, err,
@@ -1008,7 +1008,7 @@ func runProvisionSingleLayer(
 	if deps.importManager != nil && deployResult.Deployment != nil &&
 		len(deployResult.Deployment.Outputs) > 0 {
 		projectOutputs, err := provisioning.ApplyOutputAliases(
-			deployResult.Deployment.Outputs, layer.OutputAliases,
+			deployResult.Deployment.Outputs, layer.Aliases,
 		)
 		if err != nil {
 			return deployResult, fmt.Errorf("applying output aliases for layer %s: %w", stepName, err)

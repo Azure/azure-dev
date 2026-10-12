@@ -51,42 +51,39 @@ func (e *Environment) GetConfig() config.Config {
 
 type mappedScopedEnvironment struct {
 	ScopedEnvironment
-	inputs  map[string]string
-	outputs map[string]string
+	aliases map[string]string
 }
 
-// NewMappedScopedEnvironment translates input and output variable names between the provider view
-// and the project view. Both alias maps use provider names as keys and project names as values.
+// NewMappedScopedEnvironment translates variable names between the provider view and the project view.
+// Aliases use provider names as keys and project names as values for reads, writes, and deletes.
 func NewMappedScopedEnvironment(
 	env ScopedEnvironment,
-	inputs map[string]string,
-	outputs map[string]string,
+	aliases map[string]string,
 ) ScopedEnvironment {
-	if len(inputs) == 0 && len(outputs) == 0 {
+	if len(aliases) == 0 {
 		return env
 	}
 
 	return &mappedScopedEnvironment{
 		ScopedEnvironment: env,
-		inputs:            inputs,
-		outputs:           outputs,
+		aliases:           aliases,
 	}
 }
 
 func (e *mappedScopedEnvironment) Getenv(key string) string {
-	return e.ScopedEnvironment.Getenv(e.inputKey(key))
+	return e.ScopedEnvironment.Getenv(e.projectKey(key))
 }
 
 func (e *mappedScopedEnvironment) LookupEnv(key string) (string, bool) {
-	return e.ScopedEnvironment.LookupEnv(e.inputKey(key))
+	return e.ScopedEnvironment.LookupEnv(e.projectKey(key))
 }
 
 func (e *mappedScopedEnvironment) Dotenv() map[string]string {
 	values := e.ScopedEnvironment.Dotenv()
 
 	// Resolve every project variable before adding provider names so overlapping aliases do not affect each other.
-	mapped := make(map[string]string, len(e.inputs))
-	for localName, sharedName := range e.inputs {
+	mapped := make(map[string]string, len(e.aliases))
+	for localName, sharedName := range e.aliases {
 		// Aliases must not restore loader controls excluded from the backing dotenv.
 		if isLoaderControlKey(localName) {
 			continue
@@ -99,11 +96,11 @@ func (e *mappedScopedEnvironment) Dotenv() map[string]string {
 }
 
 func (e *mappedScopedEnvironment) DotenvSet(key string, value string) {
-	e.ScopedEnvironment.DotenvSet(e.outputKey(key), value)
+	e.ScopedEnvironment.DotenvSet(e.projectKey(key), value)
 }
 
 func (e *mappedScopedEnvironment) DotenvDelete(key string) {
-	e.ScopedEnvironment.DotenvDelete(e.outputKey(key))
+	e.ScopedEnvironment.DotenvDelete(e.projectKey(key))
 }
 
 func (e *mappedScopedEnvironment) Environ() []string {
@@ -144,16 +141,8 @@ func (e *mappedScopedEnvironment) SetServiceProperty(serviceName, propertyName, 
 	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
 }
 
-func (e *mappedScopedEnvironment) inputKey(key string) string {
-	if mapped, ok := e.inputs[key]; ok {
-		return mapped
-	}
-
-	return key
-}
-
-func (e *mappedScopedEnvironment) outputKey(key string) string {
-	if mapped, ok := e.outputs[key]; ok {
+func (e *mappedScopedEnvironment) projectKey(key string) string {
+	if mapped, ok := e.aliases[key]; ok {
 		return mapped
 	}
 

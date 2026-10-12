@@ -78,7 +78,7 @@ func TestProvisionServiceEnvUpdatedEventPreservesOutputsWithoutAliases(t *testin
 	}
 }
 
-func TestProvisionServiceEnvUpdatedEventAppliesOutputAliases(t *testing.T) {
+func TestProvisionServiceEnvUpdatedEventAppliesAliases(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -238,7 +238,7 @@ func runProvisionServiceEnvUpdatedEvent(
 	))
 	deps.hookMu = &sync.Mutex{}
 	layer := provisioning.Options{
-		Name: "producer", Provider: provisioning.Test, Path: "infra", OutputAliases: aliases,
+		Name: "producer", Provider: provisioning.Test, Path: "infra", Aliases: aliases,
 	}
 
 	if single {
@@ -318,8 +318,8 @@ func TestLayerProviderInitialization_PersistsRealEnvironment(t *testing.T) {
 		mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
 	)
 	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
-		Provider:     provisioning.Test,
-		ParamAliases: map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
+		Provider: provisioning.Test,
+		Aliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
 	}))
 
 	contents, err := os.ReadFile(envPath)

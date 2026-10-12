@@ -74,13 +74,13 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 }
 
 func (m *Manager) virtualInputsForProviderView(projectInputs map[string]string) map[string]string {
-	if m.options.VirtualEnv == nil || len(m.options.ParamAliases) == 0 {
+	if m.options.VirtualEnv == nil || len(m.options.Aliases) == 0 {
 		return m.options.VirtualEnv
 	}
 
 	providerInputs := maps.Clone(m.options.VirtualEnv)
 	// Read from the project view, not the copy being translated, so overlapping aliases apply only once.
-	for providerName, projectName := range m.options.ParamAliases {
+	for providerName, projectName := range m.options.Aliases {
 		if value, has := projectInputs[projectName]; has {
 			providerInputs[providerName] = value
 		} else {
@@ -103,7 +103,7 @@ func (m *Manager) Parameters(ctx context.Context) ([]Parameter, error) {
 }
 
 func (m *Manager) parametersForProjectView(parameters []Parameter) []Parameter {
-	if len(m.options.ParamAliases) == 0 {
+	if len(m.options.Aliases) == 0 {
 		return parameters
 	}
 
@@ -114,7 +114,7 @@ func (m *Manager) parametersForProjectView(parameters []Parameter) []Parameter {
 		projectParameters[i].EnvVarMapping = slices.Clone(parameters[i].EnvVarMapping)
 
 		for j, providerName := range projectParameters[i].EnvVarMapping {
-			if projectName, has := m.options.ParamAliases[providerName]; has {
+			if projectName, has := m.options.Aliases[providerName]; has {
 				projectParameters[i].EnvVarMapping[j] = projectName
 			}
 		}
@@ -135,13 +135,13 @@ func (m *Manager) PlannedOutputs(ctx context.Context) ([]PlannedOutput, error) {
 }
 
 func (m *Manager) plannedOutputsForProjectView(outputs []PlannedOutput) []PlannedOutput {
-	if len(m.options.OutputAliases) == 0 {
+	if len(m.options.Aliases) == 0 {
 		return outputs
 	}
 
 	projectOutputs := slices.Clone(outputs)
 	for i := range projectOutputs {
-		if projectName, has := m.options.OutputAliases[projectOutputs[i].Name]; has {
+		if projectName, has := m.options.Aliases[projectOutputs[i].Name]; has {
 			projectOutputs[i].Name = projectName
 		}
 	}
@@ -181,8 +181,8 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	// YAML validation cannot see provider outputs without aliases. Check all destinations
 	// before writing any output, while retaining provider-view names in the deployment result.
-	if len(m.options.OutputAliases) > 0 {
-		if _, err := ApplyOutputAliases(deployResult.Deployment.Outputs, m.options.OutputAliases); err != nil {
+	if len(m.options.Aliases) > 0 {
+		if _, err := ApplyOutputAliases(deployResult.Deployment.Outputs, m.options.Aliases); err != nil {
 			return nil, fmt.Errorf("validating deployment output aliases: %w", err)
 		}
 	}
@@ -611,7 +611,7 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 
 	container, isNestedContainer := m.serviceLocator.(*ioc.NestedContainer)
 	if !isNestedContainer {
-		if len(m.options.ParamAliases) == 0 && len(m.options.OutputAliases) == 0 {
+		if len(m.options.Aliases) == 0 {
 			var provider Provider
 			if err := m.serviceLocator.ResolveNamed(string(providerKey), &provider); err != nil {
 				return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
@@ -635,7 +635,7 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		}
 
 		return environment.NewMappedScopedEnvironment(
-			env, m.options.ParamAliases, m.options.OutputAliases,
+			env, m.options.Aliases,
 		), nil
 	})
 
@@ -651,8 +651,7 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 func (m *Manager) scopedEnvironment() environment.ScopedEnvironment {
 	return environment.NewMappedScopedEnvironment(
 		m.env,
-		m.options.ParamAliases,
-		m.options.OutputAliases,
+		m.options.Aliases,
 	)
 }
 

@@ -173,7 +173,7 @@ func AnalyzeLayerDependencies(
 		}
 		for _, name := range outputs {
 			sharedName := name
-			if alias, has := layer.OutputAliases[name]; has {
+			if alias, has := layer.Aliases[name]; has {
 				sharedName = alias
 			}
 
@@ -207,7 +207,7 @@ func AnalyzeLayerDependencies(
 		refs, hasUnknown := discoverParamEnvRefs(ctx, resolved[i], projectPath)
 		for _, ref := range refs {
 			sharedName := ref
-			if alias, has := layer.ParamAliases[ref]; has {
+			if alias, has := layer.Aliases[ref]; has {
 				sharedName = alias
 			}
 

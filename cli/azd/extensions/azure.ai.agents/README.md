@@ -877,6 +877,37 @@ The target must be active, declare `invocations_ws/1.0.0`, and include
 instructions, tools, and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
+## Invocations metadata discovery
+
+For project-backed remote `azd ai agent invoke --protocol invocations` calls,
+azd optionally caches `/invocations/docs/openapi.json` **after** the invocation
+response has been handled successfully. For SSE and long-running invocations,
+discovery follows stream completion or terminal success, respectively. The GET
+uses the invocation's effective `agent_session_id`, including a server-assigned
+ID from a fresh invocation. If no session ID is available, azd skips discovery
+rather than sending a request without one. Explicit `--agent-endpoint` calls
+do not use project metadata discovery.
+
+Metadata failures do not replace a completed invocation's result. Failure
+categories appear only with `--debug`; metadata does not enter normal or raw
+invocation output. Raw response handling remains unchanged, including its
+existing treatment of agent-error bodies.
+
+Remote discovery has separate 10-second bounds for configuration RPCs and the
+HTTP request; those waits can total up to 20 seconds after invocation output.
+An earlier caller deadline or cancellation takes precedence. Synchronous
+filesystem operations are not covered by those network/RPC bounds. Invocation
+timing excludes discovery.
+
+Successful metadata is cached as `.azure/<env>/openapi-<agent>-remote.json`.
+A cache hit avoids another metadata request. Missing or failed metadata is not
+cached, so a 404 can be probed again on a later invocation. This does not remove
+sessions created by earlier azd versions.
+
+Local discovery keeps its existing behavior: a GET without a session ID before the POST,
+refreshed on every call, with no new identity or custom headers on the GET.
+The local POST still carries its own session and configured headers.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period

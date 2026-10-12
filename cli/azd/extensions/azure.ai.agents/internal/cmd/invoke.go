@@ -1832,12 +1832,13 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		specRequest := &http.Request{Header: make(http.Header)}
-		applyCustomHeaders(specRequest, a.clientHeaders)
-		applyLocalUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
-		if path, fresh := fetchOpenAPISpec(
-			ctx, azdClient, localBaseURL, agentName, "local", "", "", sid, specRequest.Header, true,
-		); fresh {
+		path, fresh, probeErr := fetchOpenAPISpec(
+			ctx, azdClient, localBaseURL, agentName, "local", "", "", "", nil, true,
+		)
+		if probeErr != nil {
+			log.Print(probeErr)
+		}
+		if fresh {
 			if !raw {
 				fmt.Printf("OpenAPI spec saved to %s\n", path)
 			}
@@ -1980,6 +1981,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	effectiveSessionID := captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "")
 	invocationID, err := invocationIDFromResponse(resp)
 	if err != nil {
 		return err
@@ -1997,14 +1999,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invocationID)
 	}
 
-	// Always capture session state from response headers (needed even in raw mode
-	// so subsequent invokes can reuse the session). Reads headers, not the body.
 	latency.captureResponse(resp)
-	sessionLabel := "Session:  "
-	if raw {
-		sessionLabel = ""
+	if !raw && sid == "" && effectiveSessionID != "" && rc.azdClient != nil {
+		fmt.Printf("Session:  %s (assigned by server)\n", effectiveSessionID)
 	}
-	effectiveSessionID := captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(
@@ -2032,6 +2030,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 	totalDuration := time.Since(invokeStart)
+	if err := resp.Body.Close(); err != nil {
+		log.Print("Invocation response cleanup failed")
+	}
 	if !raw {
 		printInvokeTiming(os.Stdout, totalDuration)
 		if err := latency.writeTo(os.Stdout); err != nil {
@@ -2042,11 +2043,11 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	// Fetch remote metadata only after the invocation establishes its session.
 	// The metadata endpoint may otherwise allocate an unrelated session.
-	if rc.azdClient != nil && a.endpoint == nil && effectiveSessionID != "" {
+	if rc.azdClient != nil && a.endpoint == nil && effectiveSessionID != "" && ctx.Err() == nil {
 		specRequest := &http.Request{Header: make(http.Header)}
 		applyCustomHeaders(specRequest, a.clientHeaders)
 		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
-		fetchOpenAPISpec(
+		_, _, probeErr := fetchOpenAPISpec(
 			ctx,
 			rc.azdClient,
 			remoteBaseURL,
@@ -2058,6 +2059,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 			specRequest.Header,
 			false,
 		)
+		if probeErr != nil {
+			log.Print(probeErr)
+		}
 	}
 	return nil
 }

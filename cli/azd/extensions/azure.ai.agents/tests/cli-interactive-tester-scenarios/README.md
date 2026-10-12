@@ -441,11 +441,33 @@ as their `cwd`.
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
+| `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 
-The shared Tier 2 agent supports the Responses protocol only. The suite does not yet cover
-successful Invocations calls or their session-bound memory semantics; that requires a separate
-Invocations-capable setup and lifecycle.
+The shared Tier 2 agent supports the Responses protocol only. Scenario `2.19` tests successful
+Invocations and metadata-session routing against a separate externally prepared agent, not that
+shared agent. It does not test conversation memory or successful OpenAPI caching.
+
+**Opt-in Invocations prerequisite:** Before running `2.19`, deploy a minimal echo agent to a
+disposable, run-owned Foundry project at `~/working/azd-agents-invocations-{run_id}`.
+It must support successful POST `/invocations` calls and return 404 for
+`/invocations/docs/openapi.json`. Use names prefixed with `{prefix}-` and suffixed with
+`{run_id}`; bounded Foundry project names use `{foundry_project_name}`. Keep the local project
+and active `.azure` environment in that directory. No model inference is required.
+
+Write `invocation-seed.json` there with the deployed agent/project identifiers, a successful
+readiness observation, this run's resource ownership evidence, and a working method for
+collecting POST/GET routing traces and complete paginated session inventories through the
+Foundry SDK. Traces must identify the metadata route's actual session, not only its HTTP
+status. Do not seed an OpenAPI cache. Missing seed, permissions, or traces cannot count as
+a passing live test.
+
+This is a `manual-seed` scenario: selecting its tags does not deploy its separate fixture.
+The external seed lifecycle owns cleanup, including sessions created if the test fails;
+always clean up and verify deletion of only its proven run-owned resources afterward.
+The shared `2.99` teardown does not clean up this separate project. A full sweep must arrange
+this seed and cleanup explicitly. There is no `requires` dependency on `2.00`, whose
+Responses agent cannot satisfy the Invocations prerequisite.
 
 **Opt-in State Store prerequisite:** After `2.00` deploys the shared agent, create a disposable,
 non-user-isolated store named `azd-state-stores-{run_id}` **for that agent** with the Foundry SDK

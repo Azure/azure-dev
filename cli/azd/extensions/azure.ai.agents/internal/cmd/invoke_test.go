@@ -27,6 +27,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
 
@@ -1106,7 +1107,7 @@ func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 
 func newInvokeRemoteContextTestAzdServer(
 	t *testing.T,
-	projectServer *helpersProjectServer,
+	projectServer azdext.ProjectServiceServer,
 	environmentServer azdext.EnvironmentServiceServer,
 	accountServers ...azdext.AccountServiceServer,
 ) string {
@@ -2154,6 +2155,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 		invocationCount            int
 		newSession                 bool
 		explicitSession            string
+		initialSavedSession        string
 		includeResponseSessionID   bool
 		invocationStatus           int
 		openAPIStatus              int
@@ -2193,6 +2195,25 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 			openAPIStatus:              http.StatusNotFound,
 			wantPostSessionIDs:         []string{"existing-session"},
 			wantOpenAPIProbeSessionIDs: []string{"existing-session"},
+		},
+		{
+			name:                       "explicit session query preserves encoded characters",
+			invocationCount:            1,
+			explicitSession:            "session +&/?",
+			includeResponseSessionID:   true,
+			invocationStatus:           http.StatusOK,
+			openAPIStatus:              http.StatusNotFound,
+			wantPostSessionIDs:         []string{"session +&/?"},
+			wantOpenAPIProbeSessionIDs: []string{"session +&/?"},
+		},
+		{
+			name:                "fresh invocation without ID does not use old saved session",
+			invocationCount:     1,
+			newSession:          true,
+			initialSavedSession: "old-session",
+			invocationStatus:    http.StatusOK,
+			wantPostSessionIDs:  []string{""},
+			wantCreatedSessions: 1,
 		},
 		{
 			name:                     "missing response session skips probe",
@@ -2243,6 +2264,14 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 			t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(
 				t, projectServer, environmentServer,
 			))
+			if tt.initialSavedSession != "" {
+				client, err := azdext.NewAzdClient()
+				require.NoError(t, err)
+				require.NoError(t, setAgentSpecificContextValue(
+					t.Context(), client, "sessions", "test-agent", tt.initialSavedSession,
+				))
+				client.Close()
+			}
 
 			type observedRequest struct {
 				method        string

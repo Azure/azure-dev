@@ -339,7 +339,7 @@ func printSessionStatus(label, sid string) {
 }
 
 // captureResponseSession persists a server-assigned session and returns the
-// effective session ID. label is empty for --output raw mode.
+// effective session ID. An empty label suppresses session output.
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -363,22 +363,26 @@ func captureResponseSession(
 	return ""
 }
 
-// fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
-// baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
-// suffix is "local" or "remote", used in the cached filename.
-// apiVersion, when non-empty, is added as the api-version query parameter.
-// sessionID binds the metadata request to the invocation's session; an empty
-// ID skips the fetch.
-// requestHeaders contains additional headers required by the invocation.
-// Local agents do not require apiVersion; remote Foundry endpoints do.
-// If forceRefresh is false and the file already exists, the fetch is skipped.
-//
-// Returns the on-disk path to the cached spec on success (whether freshly
-// written or already cached), plus a fresh flag that is true only when this
-// call actually wrote the file. Callers that want to surface the "OpenAPI
-// spec saved to ..." line gate on the fresh flag; callers that just need the
-// path (or want silence) ignore it. Returns ("", false) on any failure;
-// errors are silently swallowed because the spec is best-effort.
+const openAPIProbeTimeout = 10 * time.Second
+
+// openAPIProbeError omits URLs and bodies from diagnostics.
+type openAPIProbeError struct {
+	stage string
+	cause error
+}
+
+func (e *openAPIProbeError) Error() string {
+	return "OpenAPI metadata discovery: " + e.stage
+}
+
+func (e *openAPIProbeError) Unwrap() error {
+	return e.cause
+}
+
+// fetchOpenAPISpec caches metadata using the existing remote session.
+// Remote discovery requires sessionID and bounds configuration RPCs
+// separately from HTTP. Local discovery does not use a session ID.
+// The fresh result indicates that this call wrote the cache.
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -390,14 +394,28 @@ func fetchOpenAPISpec(
 	sessionID string,
 	requestHeaders http.Header,
 	forceRefresh bool,
-) (string, bool) {
-	if sessionID == "" {
-		return "", false
+) (string, bool, error) {
+	remote := suffix == "remote"
+	if remote && sessionID == "" {
+		return "", false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, &openAPIProbeError{stage: "canceled", cause: err}
 	}
 
-	configPath, err := resolveConfigPath(ctx, azdClient)
+	configCtx := ctx
+	cancel := func() {}
+	if remote {
+		configCtx, cancel = context.WithTimeout(ctx, openAPIProbeTimeout)
+		defer cancel()
+	}
+	configPath, err := resolveConfigPath(configCtx, azdClient)
+	cancel()
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "configuration lookup failed", cause: err}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, &openAPIProbeError{stage: "canceled", cause: err}
 	}
 	configDir := filepath.Dir(configPath)
 
@@ -410,7 +428,9 @@ func fetchOpenAPISpec(
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {
-			return specFile, false // already cached; surface the path without re-fetching
+			return specFile, false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", false, &openAPIProbeError{stage: "cache lookup failed", cause: err}
 		}
 	}
 
@@ -419,12 +439,16 @@ func fetchOpenAPISpec(
 	if apiVersion != "" {
 		query.Set("api-version", apiVersion)
 	}
-	query.Set("agent_session_id", sessionID)
-	specURL += "?" + query.Encode()
+	if sessionID != "" {
+		query.Set("agent_session_id", sessionID)
+	}
+	if len(query) > 0 {
+		specURL += "?" + query.Encode()
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "request construction failed", cause: err}
 	}
 	if requestHeaders != nil {
 		req.Header = requestHeaders.Clone()
@@ -436,27 +460,27 @@ func fetchOpenAPISpec(
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: openAPIProbeTimeout}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "HTTP request failed", cause: err}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return "", false, &openAPIProbeError{stage: fmt.Sprintf("HTTP status %d", resp.StatusCode)}
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "response read failed", cause: err}
 	}
 
 	if err := os.WriteFile(specFile, body, 0600); err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "cache write failed", cause: err}
 	}
 
-	return specFile, true
+	return specFile, true, nil
 }
 
 // resolveConversationID resolves a Foundry conversation ID.

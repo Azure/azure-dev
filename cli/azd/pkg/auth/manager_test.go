@@ -10,10 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -2226,42 +2229,124 @@ func TestLoginInteractive_Success(t *testing.T) {
 	require.IsType(t, new(azdCredential), cred)
 }
 
-func TestLoginInteractive_WithAllOptions(t *testing.T) {
+type msalInteractiveHTTPClient struct{}
+
+func (*msalInteractiveHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	var body string
+	switch {
+	case strings.HasSuffix(req.URL.Path, "/.well-known/openid-configuration"):
+		authority := strings.TrimSuffix(
+			"https://"+req.URL.Host+req.URL.Path,
+			"/v2.0/.well-known/openid-configuration",
+		)
+		body = fmt.Sprintf(`{
+			"authorization_endpoint": %q,
+			"token_endpoint": %q,
+			"issuer": %q,
+			"jwks_uri": %q,
+			"response_modes_supported": ["form_post"],
+			"response_types_supported": ["code"],
+			"scopes_supported": ["openid", "profile", "offline_access"],
+			"subject_types_supported": ["pairwise"],
+			"id_token_signing_alg_values_supported": ["RS256"]
+		}`,
+			authority+"/oauth2/v2.0/authorize",
+			authority+"/oauth2/v2.0/token",
+			authority+"/v2.0",
+			authority+"/discovery/v2.0/keys",
+		)
+	case strings.HasSuffix(req.URL.Path, "/oauth2/v2.0/token"):
+		body = `{
+			"access_token": "fake-access-token",
+			"expires_in": 3600,
+			"scope": "custom-scope openid profile offline_access",
+			"token_type": "Bearer"
+		}`
+	default:
+		return nil, fmt.Errorf("unexpected MSAL request: %s %s", req.Method, req.URL)
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+func (*msalInteractiveHTTPClient) CloseIdleConnections() {}
+
+func TestLoginInteractive_ForwardsOptionsToMsal(t *testing.T) {
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 
-	homeID := "interactive-opts"
-	openURLCalled := false
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	redirectPort := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
 
+	publicClient, err := public.New(
+		azdClientID,
+		public.WithAuthority("https://login.microsoftonline.com/organizations"),
+		public.WithHTTPClient(&msalInteractiveHTTPClient{}),
+		public.WithInstanceDiscovery(false),
+	)
+	require.NoError(t, err)
+
+	claims := `{"access_token":{"essential":true}}`
 	m := &Manager{
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		cloud:             cloud.AzurePublic(),
-		publicClient: &mockPublicClientFull{
-			interactiveRes: public.AuthResult{
-				Account: public.Account{
-					HomeAccountID: homeID,
-				},
-			},
-		},
+		publicClient:      &msalPublicClientAdapter{client: &publicClient},
 	}
 
 	cred, err := m.LoginInteractive(
 		t.Context(),
 		[]string{"custom-scope"},
-		`{"access_token":{"essential":true}}`,
+		claims,
 		&LoginInteractiveOptions{
-			RedirectPort: 8080,
+			RedirectPort: redirectPort,
 			TenantID:     "tenant-xyz",
-			WithOpenUrl: func(url string) error {
-				openURLCalled = true
+			WithOpenUrl: func(authURL string) error {
+				u, err := url.Parse(authURL)
+				if err != nil {
+					return fmt.Errorf("parsing authorization URL: %w", err)
+				}
+
+				query := u.Query()
+				expectedRedirectURI := fmt.Sprintf("http://localhost:%d", redirectPort)
+				if u.Path != "/tenant-xyz/oauth2/v2.0/authorize" {
+					return fmt.Errorf("unexpected authorization path %q", u.Path)
+				}
+				if query.Get("claims") != claims {
+					return fmt.Errorf("unexpected claims %q", query.Get("claims"))
+				}
+				if query.Get("redirect_uri") != expectedRedirectURI {
+					return fmt.Errorf("unexpected redirect URI %q", query.Get("redirect_uri"))
+				}
+				if query.Get("response_mode") != "form_post" {
+					return fmt.Errorf("unexpected response mode %q", query.Get("response_mode"))
+				}
+				if !slices.Contains(strings.Fields(query.Get("scope")), "custom-scope") {
+					return fmt.Errorf("custom scope missing from %q", query.Get("scope"))
+				}
+
+				resp, err := http.PostForm(expectedRedirectURI, url.Values{ //nolint:gosec // Test-owned localhost callback.
+					"code":  []string{"fake-auth-code"},
+					"state": []string{query.Get("state")},
+				})
+				if err != nil {
+					return fmt.Errorf("posting authorization response: %w", err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("unexpected callback status %d", resp.StatusCode)
+				}
 				return nil
 			},
 		})
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
-	// WithOpenUrl is appended but not invoked by LoginInteractive
-	// itself — it's passed through to the MSAL library.
-	_ = openURLCalled
 }
 
 func TestLoginInteractive_Error(t *testing.T) {

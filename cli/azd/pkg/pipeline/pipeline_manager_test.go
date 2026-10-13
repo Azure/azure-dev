@@ -691,6 +691,10 @@ func Test_promptForCiFiles(t *testing.T) {
 			generated,
 			`azd extension install "azure.ai.projects" --version "1.0.0-beta.10" --force --no-prompt`,
 		))
+		assert.Less(t, strings.Index(generated, "curl -fsSL https://aka.ms/install-azd.sh"), strings.Index(
+			generated,
+			`azd extension install "azure.ai.projects" --version "1.0.0-beta.10" --force --no-prompt`,
+		))
 	})
 
 	t.Run("no files - github selected - no app host - fed Cred", func(t *testing.T) {

@@ -13,6 +13,14 @@ steps:
   - task: setup-azd@1
     displayName: Install azd
 
+  # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
+  # - task: Bash@3
+  #   displayName: Install azd
+  #   inputs:
+  #     targetType: 'inline'
+  #     script: |
+  #       curl -fsSL https://aka.ms/install-azd.sh | bash
+
 {{- if .RequiredExtensions }}
   - task: Bash@3
     displayName: Install required azd extensions
@@ -25,13 +33,6 @@ steps:
 {{- end }}
 {{ end }}
 
-  # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
-  # - task: Bash@3
-  #   displayName: Install azd
-  #   inputs:
-  #     targetType: 'inline'
-  #     script: |
-  #       curl -fsSL https://aka.ms/install-azd.sh | bash
 {{ if .IsTerraform }}
   # Install task from https://marketplace.visualstudio.com/acquisition?itemName=ms-devlabs.custom-terraform-tasks
   - task: TerraformInstaller@1

@@ -789,36 +789,6 @@ func writeTrainRleConfigWithDefaults(
 	}
 }
 
-func TestTaskCountSetsTheDatasetLimitOption(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t", taskCount: 12}}
-	options, err := action.resolveTrainSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if options[trainTaskCountOption] != 12 {
-		t.Fatalf("expected --task-count to set %s, got %#v", trainTaskCountOption, options)
-	}
-}
-
-func TestTaskCountIsOmittedWhenUnset(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t"}}
-	options, err := action.resolveTrainSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, present := options[trainTaskCountOption]; present {
-		t.Fatalf("an unset --task-count must not limit the dataset: %#v", options)
-	}
-}
-
 func TestTrainReportsWhatIsMissingWithoutFlagsOrManifestSettings(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

@@ -28,8 +28,6 @@ type rleTrainFlags struct {
 	noFollow       bool
 	logsRoot       string
 	noBrowser      bool
-	taskCount      int
-	endpoint       string
 
 	// Where the merged settings came from, for the line printed before submitting.
 	optionsSource string
@@ -93,11 +91,6 @@ instead of blocking.`,
 			"~/loom-runs. Ignored with --no-follow.")
 	cmd.Flags().BoolVar(&flags.noBrowser, "no-browser", false,
 		"Print the job monitor address without opening a browser.")
-	cmd.Flags().IntVar(&flags.taskCount, "task-count", 0,
-		"Train on only the first N tasks of the training dataset, for a smaller run. "+
-			"Sets the max_train_examples training option (0 uses the whole dataset).")
-	cmd.Flags().StringVar(&flags.endpoint, "endpoint", "",
-		fmt.Sprintf("Fine-tuning API endpoint. Defaults to $%s, else the Foundry account endpoint.", rleTrainEndpointEnvVar))
 
 	// model and training-file are not marked required: rle.toml can supply either,
 	// and cobra would reject the run before the manifest is ever read.
@@ -129,17 +122,6 @@ func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
 	options = trainDefaultsOptions(config.Train)
 	if len(options) > 0 {
 		a.flags.optionsSource = project.RleConfigFile
-	}
-
-	// --task-count is shorthand for one training option, so it is applied the way
-	// any other flag overrides the manifest rather than being sent separately.
-	if a.flags.taskCount > 0 {
-		options[trainTaskCountOption] = a.flags.taskCount
-		if a.flags.optionsSource == "" {
-			a.flags.optionsSource = "--task-count"
-		} else {
-			a.flags.optionsSource = project.RleConfigFile + " and --task-count"
-		}
 	}
 
 	if model == "" {
@@ -211,10 +193,6 @@ func trainDefaultsOptions(train *project.RleTrainDefaults) map[string]any {
 	return options
 }
 
-// trainTaskCountOption is the training option --task-count sets. The service
-// applies it as the dataset limit for the run; the CLI only forwards it.
-const trainTaskCountOption = "max_train_examples"
-
 func missingTrainSettingError(what string, flag string) error {
 	return &azdext.LocalError{
 		Message:  fmt.Sprintf("A %s is required for train.", what),
@@ -256,7 +234,7 @@ func (a *trainAction) Run() error {
 			),
 		}
 	}
-	endpoint, err := resolveFinetuneEndpoint(a.flags.endpoint, projectEndpoint)
+	endpoint, err := resolveFinetuneEndpoint("", projectEndpoint)
 	if err != nil {
 		return err
 	}

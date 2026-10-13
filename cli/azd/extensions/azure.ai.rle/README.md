@@ -667,8 +667,7 @@ azd ai rle train `
 `FOUNDRY_PROJECT_ENDPOINT` identifies the project that owns the named RLE. The
 fine-tuning endpoint is normally derived from the same account as
 `https://<account>.openai.azure.com`. Set `RLE_TRAIN_ENDPOINT` to route `train`,
-`jobs`, and `cancel` to a facade or mock service instead. An explicit
-`--endpoint` still takes precedence.
+`jobs`, and `cancel` to a facade or mock service instead.
 Job creation automatically acquires a Foundry token
 (`https://ai.azure.com/.default`) and forwards it in `aml-user-token` for
 evaluation authentication. The request's `Authorization` header still uses
@@ -680,8 +679,6 @@ file. The extension uploads it to the selected fine-tuning resource with the
 `fine-tune` purpose, waits up to five minutes for the asynchronous file import
 to reach `processed`, then uses the returned file ID when it submits the job.
 The validation file is optional and follows the same local-file upload flow.
-Use `--endpoint` to target a different fine-tuning resource for a single
-invocation.
 
 ### Cancel a training job
 
@@ -710,7 +707,7 @@ Ctrl+C in `train` or `monitor` still stops local monitoring, not the remote job.
 
 ### Real-service monitoring (default endpoint)
 
-Without `--endpoint` or `RLE_TRAIN_ENDPOINT`, **train opens the job monitor
+Without `RLE_TRAIN_ENDPOINT`, **train opens the job monitor
 after submission by default**, even with redirected output or `--no-prompt`;
 pass `--no-follow` to skip it and exit immediately instead. Keep the process
 running to use the UI; Ctrl+C stops monitoring, not training. `--no-browser`
@@ -901,19 +898,6 @@ error lists every accepted name.
 `--model` and `--training-file` are not required flags, because the manifest can
 supply both. They are still required settings, and a run that resolves neither
 reports which one is missing and where it can be set.
-
-### Smaller runs
-
-`--task-count` trains on only the first N tasks of the dataset, which is the
-quickest way to check an environment end to end without editing the dataset or
-the manifest:
-
-```powershell
-azd ai rle train --task-count 8
-```
-
-It sets the `max_train_examples` training option, and takes precedence over the
-same option in `[train.options]`.
 
 ## List RLE-backed fine-tuning jobs (experimental)
 

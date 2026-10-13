@@ -656,3 +656,10 @@ td a:hover, td .link-button:hover { color: var(--accent); text-decoration: under
 :root[data-theme="dark"] .status-badge[data-status="cancelled"], :root[data-theme="dark"] .status-badge[data-status="canceled"] { color: #a1a1aa; background: #1f1f25; }
 @keyframes pulse { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .status-badge[data-status="running"]::before { animation: none; } }
+
+/* Whole row opens the rollout; the ID shows an arrow affordance. */
+.rollout-row { cursor: pointer; }
+.rollout-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.rollout-row .link-button { color: var(--accent); }
+.rollout-row .link-button::after { content: "\2192"; margin-left: 6px; opacity: 0; transition: opacity .15s, transform .15s; display: inline-block; }
+.rollout-row:hover .link-button::after, .rollout-row .link-button:focus-visible::after { opacity: 1; transform: translateX(2px); }

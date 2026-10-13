@@ -26,7 +26,7 @@ type SaveOptions struct {
 	// Whether or not the environment is new
 	IsNew bool
 	// DotenvKeys limits local persistence to these raw .env keys, deleting keys absent from the environment.
-	// Other values and config.json are reloaded without saving their in-memory changes.
+	// Other in-memory values and config.json changes are neither persisted nor replaced.
 	// Nil preserves the full-save behavior.
 	DotenvKeys []string
 }

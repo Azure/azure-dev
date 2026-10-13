@@ -252,6 +252,9 @@ func TestLocalFileDataStoreSaveSelectedKeys(t *testing.T) {
 			env.DotenvSet("DYLD_KEEP", "pending")
 			env.DotenvSet("PENDING", "pending")
 			env.DotenvDelete("UNSELECTED_DELETE")
+			env.mu.RLock()
+			memoryBefore := maps.Clone(env.dotenv)
+			env.mu.RUnlock()
 			require.NoError(t, store.Save(t.Context(), env, tt.options))
 			if tt.fullSave {
 				maps.Copy(want, map[string]string{
@@ -270,11 +273,15 @@ func TestLocalFileDataStoreSaveSelectedKeys(t *testing.T) {
 			persisted, err := godotenv.Read(envPath)
 			require.NoError(t, err)
 			require.Equal(t, want, persisted)
-			for key, value := range want {
-				actual, exists := env.LookupDotenv(key)
-				require.True(t, exists)
-				require.Equal(t, value, actual)
+			memoryWant := memoryBefore
+			if tt.fullSave {
+				memoryWant = want
 			}
+			marshalled, err := marshallDotEnv(env)
+			require.NoError(t, err)
+			memoryAfter, err := godotenv.Unmarshal(marshalled)
+			require.NoError(t, err)
+			require.Equal(t, memoryWant, memoryAfter)
 			configAfter, err := os.ReadFile(configPath)
 			require.NoError(t, err)
 			if tt.fullSave {
@@ -302,12 +309,138 @@ func TestLocalFileDataStoreSaveSelectedKeysInvalidConfig(t *testing.T) {
 	env.DotenvDelete("KEY")
 
 	require.ErrorContains(t, store.Save(t.Context(), env, &SaveOptions{DotenvKeys: []string{"KEY"}}), "loading config")
+	require.Contains(t, env.deletedKeys, "KEY", "failed saves must retain pending deletions")
 	after, err := os.ReadFile(envPath)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
 	cfg, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	require.Equal(t, "{invalid", string(cfg))
+}
+
+func TestLocalFileDataStoreSaveSelectedKeysPreservesPendingChanges(t *testing.T) {
+	t.Parallel()
+	for _, keys := range [][]string{{"REMOVE", "RESTORE"}, {}} {
+		name := "SelectedKeys"
+		if len(keys) == 0 {
+			name = "NoSelectedKeys"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			store := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+			seedValues := map[string]string{
+				"REMOVE": "original", "RESTORE": "original",
+				"PENDING_UPDATE": "original", "PENDING_DELETE": "original",
+			}
+			env := NewWithValues("test", maps.Clone(seedValues))
+			require.NoError(t, env.Config.Set("app.enabled", true))
+			require.NoError(t, store.Save(t.Context(), env, nil))
+			envPath, err := store.EnvPath(env)
+			require.NoError(t, err)
+			configPath, err := store.ConfigPath(env)
+			require.NoError(t, err)
+			env.DotenvDelete("REMOVE")
+			env.DotenvSet("RESTORE", "restored")
+			env.DotenvSet("PENDING_UPDATE", "updated")
+			env.DotenvSet("PENDING_ADD", "added")
+			env.DotenvSet("DYLD_PENDING", "raw-pending")
+			env.DotenvDelete("PENDING_DELETE")
+			require.NoError(t, env.Config.Set("app.enabled", false))
+
+			require.NoError(t, store.Save(t.Context(), env, &SaveOptions{DotenvKeys: keys}))
+			value, exists := env.LookupDotenv("PENDING_ADD")
+			require.True(t, exists, "an unrelated pending addition must survive a selected-key save")
+			require.Equal(t, "added", value)
+			require.Equal(t, "updated", env.Getenv("PENDING_UPDATE"))
+			value, exists = env.LookupDotenv("DYLD_PENDING")
+			require.True(t, exists)
+			require.Equal(t, "raw-pending", value)
+			_, exists = env.LookupDotenv("PENDING_DELETE")
+			require.False(t, exists)
+			require.Contains(t, env.deletedKeys, "PENDING_DELETE")
+			require.Equal(t, map[string]any{"app": map[string]any{"enabled": false}}, env.Config.Raw())
+
+			want := maps.Clone(seedValues)
+			if len(keys) > 0 {
+				delete(want, "REMOVE")
+				want["RESTORE"] = "restored"
+				require.NotContains(t, env.deletedKeys, "REMOVE", "committed deletions must be acknowledged")
+			} else {
+				require.Contains(t, env.deletedKeys, "REMOVE")
+			}
+			persisted, err := godotenv.Read(envPath)
+			require.NoError(t, err)
+			require.Equal(t, want, persisted)
+			cfg, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"app":{"enabled":true}}`, string(cfg))
+
+			finalWant := map[string]string{
+				"RESTORE": "restored", "PENDING_UPDATE": "updated",
+				"PENDING_ADD": "added", "DYLD_PENDING": "raw-pending",
+			}
+			if len(keys) > 0 {
+				want["REMOVE"] = "concurrent-reintroduction"
+				require.NoError(t, godotenv.Write(want, envPath))
+				finalWant["REMOVE"] = "concurrent-reintroduction"
+			}
+			require.NoError(t, store.Save(t.Context(), env, nil))
+			persisted, err = godotenv.Read(envPath)
+			require.NoError(t, err)
+			require.Equal(t, finalWant, persisted)
+			cfg, err = os.ReadFile(configPath)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"app":{"enabled":false}}`, string(cfg))
+		})
+	}
+}
+
+func TestLocalFileDataStoreConcurrentSelectedKeysSaveSharedEnvironment(t *testing.T) {
+	t.Parallel()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	store := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	env := New("test")
+	env.DotenvSet("KEEP", "unchanged")
+	const writers = 8
+	for i := range writers {
+		env.DotenvSet(fmt.Sprintf("UPDATE_%d", i), "original")
+		env.DotenvSet(fmt.Sprintf("REMOVE_%d", i), "original")
+	}
+	require.NoError(t, store.Save(t.Context(), env, nil))
+
+	var ready, wg sync.WaitGroup
+	ready.Add(writers)
+	start := make(chan struct{})
+	for i := range writers {
+		wg.Go(func() {
+			updateKey := fmt.Sprintf("UPDATE_%d", i)
+			addKey := fmt.Sprintf("ADDED_%d", i)
+			removeKey := fmt.Sprintf("REMOVE_%d", i)
+			env.DotenvSet(updateKey, "updated")
+			env.DotenvSet(addKey, "added")
+			env.DotenvDelete(removeKey)
+			ready.Done()
+			<-start
+			options := &SaveOptions{DotenvKeys: []string{updateKey, addKey, removeKey}}
+			if err := store.Save(t.Context(), env, options); err != nil {
+				t.Errorf("writer %d Save: %v", i, err)
+			}
+		})
+	}
+	ready.Wait()
+	close(start)
+	wg.Wait()
+
+	final, err := store.Get(t.Context(), "test")
+	require.NoError(t, err)
+	want := map[string]string{EnvNameEnvVarName: "test", "KEEP": "unchanged"}
+	for i := range writers {
+		want[fmt.Sprintf("UPDATE_%d", i)] = "updated"
+		want[fmt.Sprintf("ADDED_%d", i)] = "added"
+	}
+	require.Equal(t, want, final.Dotenv())
+	require.Equal(t, want, env.Dotenv())
 }
 
 func TestLocalFileDataStoreConcurrentSelectedKeysSave(t *testing.T) {

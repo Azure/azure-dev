@@ -190,9 +190,13 @@ This ensures the overlay writes don't race with concurrent `DotenvSet`/
 not a transaction. For selected-key operations, `SaveOptions.DotenvKeys`
 restricts the snapshot and overlay to the listed raw `.env` keys while the
 existing file lock covers reload, merge, and atomic write. Selected keys
-absent from memory are deleted. Unrelated values and configuration are
-reloaded from disk, not overwritten by stale or pending in-memory changes.
-The refreshed environment is then available to the optional remote save.
+absent from memory are deleted. The disk merge uses a private environment,
+so unrelated values and configuration come from disk without replacing
+the shared environment's pending updates, deletions, or configuration.
+After a successful write, only committed selected-key deletions are
+acknowledged in the shared environment. For an optional remote save, the
+manager reads a fresh local snapshot rather than sending unsaved shared
+state. Ordinary saves can subsequently persist the retained pending changes.
 `azd env unset` uses this option for both removal and error-path restoration.
 A nil `DotenvKeys` retains the existing full-snapshot merge and configuration
 save; an empty non-nil slice persists no in-memory changes.

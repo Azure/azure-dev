@@ -287,7 +287,7 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	}
 
 	scopedDotenvSave := options != nil && options.DotenvKeys != nil
-	// Scoped .env changes reload configuration instead of overwriting it with a stale snapshot.
+	// Scoped .env changes leave pending in-memory configuration untouched.
 	if !scopedDotenvSave {
 		if err := fs.configManager.Save(env.Config, configPath); err != nil {
 			return fmt.Errorf("saving config: %w", err)
@@ -315,22 +315,28 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	}
 	env.mu.RUnlock()
 
+	saveEnv := env
+	if scopedDotenvSave {
+		// Merge into private state so reloading disk cannot discard other services' pending changes.
+		saveEnv = New(env.Name())
+	}
+
 	// reloadLocked replaces env.dotenv via replaceState (acquires env.mu
 	// internally) — we must NOT hold env.mu here or we deadlock.
-	if err := fs.reloadLocked(ctx, env); err != nil {
+	if err := fs.reloadLocked(ctx, saveEnv); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}
 
 	// Overlay cached values and replay deletions under Lock so we don't race
 	// with concurrent DotenvSet/DotenvDelete on the new env.dotenv map.
-	env.mu.Lock()
-	maps.Copy(env.dotenv, currentValues)
+	saveEnv.mu.Lock()
+	maps.Copy(saveEnv.dotenv, currentValues)
 	for key := range deletedValues {
-		delete(env.dotenv, key)
+		delete(saveEnv.dotenv, key)
 	}
-	env.mu.Unlock()
+	saveEnv.mu.Unlock()
 
-	marshalled, err := marshallDotEnv(env)
+	marshalled, err := marshallDotEnv(saveEnv)
 	if err != nil {
 		return fmt.Errorf("marshalling .env: %w", err)
 	}
@@ -376,6 +382,16 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	if err := osutil.Rename(ctx, tmpPath, envPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp .env: %w", err)
+	}
+
+	if scopedDotenvSave {
+		env.mu.Lock()
+		for key := range deletedValues {
+			if _, exists := env.dotenv[key]; !exists {
+				delete(env.deletedKeys, key)
+			}
+		}
+		env.mu.Unlock()
 	}
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

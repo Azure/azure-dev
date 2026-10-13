@@ -20,7 +20,6 @@ func NewFrameworkServiceEnvelope() *FrameworkServiceEnvelope {
 
 // Verify interface implementation at compile time
 var _ grpcbroker.MessageEnvelope[FrameworkServiceMessage] = (*FrameworkServiceEnvelope)(nil)
-var _ grpcbroker.PersistentHandlerContextEnvelope[FrameworkServiceMessage] = (*FrameworkServiceEnvelope)(nil)
 
 // GetRequestId returns the request ID from the message
 func (ops *FrameworkServiceEnvelope) GetRequestId(ctx context.Context, msg *FrameworkServiceMessage) string {
@@ -82,11 +81,6 @@ func (ops *FrameworkServiceEnvelope) GetInnerMessage(msg *FrameworkServiceMessag
 		// Return nil for unhandled message types
 		return nil
 	}
-}
-
-func (ops *FrameworkServiceEnvelope) PreserveHandlerContext(_ context.Context, msg *FrameworkServiceMessage) bool {
-	_, ok := ops.GetInnerMessage(msg).(*RegisterFrameworkServiceRequest)
-	return ok
 }
 
 // IsProgressMessage returns true if the message contains a progress message

@@ -22,7 +22,6 @@ func NewServiceTargetPreviewEnvelope() *ServiceTargetPreviewEnvelope {
 }
 
 var _ grpcbroker.MessageEnvelope[v1beta.ServiceTargetMessage] = (*ServiceTargetPreviewEnvelope)(nil)
-var _ grpcbroker.PersistentHandlerContextEnvelope[v1beta.ServiceTargetMessage] = (*ServiceTargetPreviewEnvelope)(nil)
 
 func (ops *ServiceTargetPreviewEnvelope) GetRequestId(ctx context.Context, msg *v1beta.ServiceTargetMessage) string {
 	return msg.RequestId
@@ -72,13 +71,6 @@ func (ops *ServiceTargetPreviewEnvelope) GetInnerMessage(msg *v1beta.ServiceTarg
 	default:
 		return nil
 	}
-}
-
-func (ops *ServiceTargetPreviewEnvelope) PreserveHandlerContext(
-	_ context.Context, msg *v1beta.ServiceTargetMessage,
-) bool {
-	_, ok := ops.GetInnerMessage(msg).(*v1beta.RegisterServiceTargetRequest)
-	return ok
 }
 
 func (ops *ServiceTargetPreviewEnvelope) IsProgressMessage(msg *v1beta.ServiceTargetMessage) bool {

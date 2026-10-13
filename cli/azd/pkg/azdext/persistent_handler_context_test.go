@@ -4,21 +4,32 @@
 package azdext
 
 import (
+	"context"
 	"testing"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/stretchr/testify/require"
 )
 
-func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
+func preservesHandlerContext[T any](
+	ctx context.Context,
+	envelope grpcbroker.MessageEnvelope[T],
+	message *T,
+) bool {
+	persistentEnvelope, ok := envelope.(grpcbroker.PersistentHandlerContextEnvelope[T])
+	return ok && persistentEnvelope.PreserveHandlerContext(ctx, message)
+}
+
+func TestOnlyEventSubscriptionsPreserveHandlerContext(t *testing.T) {
 	t.Run("event", func(t *testing.T) {
 		envelope := NewEventMessageEnvelopeWithExtensionId("test.extension")
-		require.True(t, envelope.PreserveHandlerContext(t.Context(), &EventMessage{
+		require.True(t, preservesHandlerContext(t.Context(), envelope, &EventMessage{
 			MessageType: &EventMessage_SubscribeProjectEvent{
 				SubscribeProjectEvent: &SubscribeProjectEvent{EventNames: []string{"prepackage"}},
 			},
 		}))
-		require.False(t, envelope.PreserveHandlerContext(t.Context(), &EventMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &EventMessage{
 			MessageType: &EventMessage_InvokeProjectHandler{
 				InvokeProjectHandler: &InvokeProjectHandler{EventName: "prepackage"},
 			},
@@ -27,12 +38,12 @@ func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
 
 	t.Run("service target", func(t *testing.T) {
 		envelope := NewServiceTargetEnvelope()
-		require.True(t, envelope.PreserveHandlerContext(t.Context(), &ServiceTargetMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ServiceTargetMessage{
 			MessageType: &ServiceTargetMessage_RegisterServiceTargetRequest{
 				RegisterServiceTargetRequest: &RegisterServiceTargetRequest{},
 			},
 		}))
-		require.False(t, envelope.PreserveHandlerContext(t.Context(), &ServiceTargetMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ServiceTargetMessage{
 			MessageType: &ServiceTargetMessage_InitializeRequest{
 				InitializeRequest: &ServiceTargetInitializeRequest{},
 			},
@@ -41,12 +52,12 @@ func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
 
 	t.Run("service target preview", func(t *testing.T) {
 		envelope := NewServiceTargetPreviewEnvelope()
-		require.True(t, envelope.PreserveHandlerContext(t.Context(), &v1beta.ServiceTargetMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &v1beta.ServiceTargetMessage{
 			MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetRequest{
 				RegisterServiceTargetRequest: &v1beta.RegisterServiceTargetRequest{},
 			},
 		}))
-		require.False(t, envelope.PreserveHandlerContext(t.Context(), &v1beta.ServiceTargetMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &v1beta.ServiceTargetMessage{
 			MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
 				PreviewRequest: &v1beta.ServiceTargetPreviewRequest{},
 			},
@@ -55,12 +66,12 @@ func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
 
 	t.Run("framework service", func(t *testing.T) {
 		envelope := NewFrameworkServiceEnvelope()
-		require.True(t, envelope.PreserveHandlerContext(t.Context(), &FrameworkServiceMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &FrameworkServiceMessage{
 			MessageType: &FrameworkServiceMessage_RegisterFrameworkServiceRequest{
 				RegisterFrameworkServiceRequest: &RegisterFrameworkServiceRequest{},
 			},
 		}))
-		require.False(t, envelope.PreserveHandlerContext(t.Context(), &FrameworkServiceMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &FrameworkServiceMessage{
 			MessageType: &FrameworkServiceMessage_InitializeRequest{
 				InitializeRequest: &FrameworkServiceInitializeRequest{},
 			},
@@ -69,12 +80,12 @@ func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
 
 	t.Run("provisioning", func(t *testing.T) {
 		envelope := NewProvisioningEnvelope()
-		require.True(t, envelope.PreserveHandlerContext(t.Context(), &ProvisioningMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ProvisioningMessage{
 			MessageType: &ProvisioningMessage_RegisterProvisioningProviderRequest{
 				RegisterProvisioningProviderRequest: &RegisterProvisioningProviderRequest{},
 			},
 		}))
-		require.False(t, envelope.PreserveHandlerContext(t.Context(), &ProvisioningMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ProvisioningMessage{
 			MessageType: &ProvisioningMessage_InitializeRequest{
 				InitializeRequest: &ProvisioningInitializeRequest{},
 			},
@@ -83,12 +94,12 @@ func TestRegistrationMessagesPreserveHandlerContext(t *testing.T) {
 
 	t.Run("validation", func(t *testing.T) {
 		envelope := NewValidationEnvelope()
-		require.True(t, envelope.PreserveHandlerContext(t.Context(), &ValidationMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ValidationMessage{
 			MessageType: &ValidationMessage_RegisterValidationCheckRequest{
 				RegisterValidationCheckRequest: &RegisterValidationCheckRequest{},
 			},
 		}))
-		require.False(t, envelope.PreserveHandlerContext(t.Context(), &ValidationMessage{
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ValidationMessage{
 			MessageType: &ValidationMessage_ValidationCheckRequest{
 				ValidationCheckRequest: &ValidationCheckRequest{},
 			},

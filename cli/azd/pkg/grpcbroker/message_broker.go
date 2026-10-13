@@ -88,9 +88,9 @@ type CancellationMessageEnvelope[T any] interface {
 }
 
 // PersistentHandlerContextEnvelope identifies messages whose handlers retain
-// the stream context after returning, such as provider registrations and event
-// subscriptions. These handlers must not receive a request-scoped context that
-// is canceled as soon as the registration call completes.
+// the stream context after returning, such as event subscriptions. These
+// handlers must not receive a request-scoped context that is canceled as soon
+// as the subscription call completes.
 type PersistentHandlerContextEnvelope[T any] interface {
 	PreserveHandlerContext(ctx context.Context, msg *T) bool
 }

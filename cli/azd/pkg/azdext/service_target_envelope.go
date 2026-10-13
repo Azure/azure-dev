@@ -20,7 +20,6 @@ func NewServiceTargetEnvelope() *ServiceTargetEnvelope {
 
 // Verify interface implementation at compile time
 var _ grpcbroker.MessageEnvelope[ServiceTargetMessage] = (*ServiceTargetEnvelope)(nil)
-var _ grpcbroker.PersistentHandlerContextEnvelope[ServiceTargetMessage] = (*ServiceTargetEnvelope)(nil)
 
 // GetRequestId returns the request ID from the message
 func (ops *ServiceTargetEnvelope) GetRequestId(ctx context.Context, msg *ServiceTargetMessage) string {
@@ -82,11 +81,6 @@ func (ops *ServiceTargetEnvelope) GetInnerMessage(msg *ServiceTargetMessage) any
 		// Return nil for unhandled message types
 		return nil
 	}
-}
-
-func (ops *ServiceTargetEnvelope) PreserveHandlerContext(_ context.Context, msg *ServiceTargetMessage) bool {
-	_, ok := ops.GetInnerMessage(msg).(*RegisterServiceTargetRequest)
-	return ok
 }
 
 // IsProgressMessage returns true if the message contains a progress message

@@ -241,7 +241,9 @@ func TestCreateGATelephonyBinding_RequiresExact201(t *testing.T) {
 		return telephonyResponse(req, http.StatusOK, `{"id":"wrong-status"}`, nil), nil
 	})
 
-	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
+	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "+14255550123",
+	}, TelephonyRepeatabilityOptions{})
 	require.Error(t, err)
 }
 
@@ -300,8 +302,10 @@ func TestUpdateGATelephonyBinding_MergePatchIfMatchAndETag(t *testing.T) {
 func TestUpdateGATelephonyBinding_ExplicitNullClearsNullableFields(t *testing.T) {
 	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
 		requireJSONBody(t, req, `{"label":null,"phone_number":null}`)
-		return telephonyResponse(req, http.StatusOK,
-			`{"id":"binding","provider":"teams_phone_extensibility","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","resource_account_object_id":"00000000-0000-0000-0000-000000000001"}`,
+		return telephonyResponse(req, http.StatusOK, `{
+				"id":"binding","provider":"teams_phone_extensibility","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/call",
+				"resource_account_object_id":"00000000-0000-0000-0000-000000000001"}`,
 			http.Header{"ETag": {`"new-etag"`}}), nil
 	})
 

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -125,7 +126,7 @@ func (c *AgentClient) CreateGATelephonyBinding(
 	request TelephonyBindingCreateRequest,
 	repeatability TelephonyRepeatabilityOptions,
 ) (*GATelephonyBinding, error) {
-	if request == nil || (reflect.ValueOf(request).Kind() == reflect.Ptr && reflect.ValueOf(request).IsNil()) {
+	if request == nil || (reflect.ValueOf(request).Kind() == reflect.Pointer && reflect.ValueOf(request).IsNil()) {
 		return nil, fmt.Errorf("binding request is required")
 	}
 	switch typed := request.(type) {
@@ -382,7 +383,7 @@ func (c *AgentClient) gaTelephonyRequest(
 	if result != nil {
 		decoder := json.NewDecoder(resp.Body)
 		if err := decoder.Decode(result); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = fmt.Errorf("telephony response body is required")
 				if method != http.MethodGet {
 					return "", telephonyWriteOutcomeUnknown(err)
@@ -396,7 +397,7 @@ func (c *AgentClient) gaTelephonyRequest(
 			return "", err
 		}
 		var trailing any
-		if err := decoder.Decode(&trailing); err != io.EOF {
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 			err = fmt.Errorf("invalid telephony response JSON: multiple values")
 			if method != http.MethodGet {
 				return "", telephonyWriteOutcomeUnknown(err)

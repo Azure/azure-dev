@@ -240,8 +240,9 @@ func (c *AgentClient) CreateAgentWithHeaders(
 	return &agent, nil
 }
 
-// voiceAgentsPreviewFeature is the opt-in token required in the Foundry-Features
-// header while voice agents remain a preview capability.
+// voiceAgentsPreviewFeature is the opt-in token retained by Voice Agent write
+// operations and legacy telephony calls. Stable management reads use the shared
+// Agents API contract.
 const voiceAgentsPreviewFeature = "VoiceAgents=V1Preview"
 
 // TelephonyBindingAPIVersion is the preview API version for voice telephony bindings.
@@ -296,9 +297,8 @@ func (c *AgentClient) doVoiceJSONAgentRequest(
 	return &agent, nil
 }
 
-// GetVoiceAgent retrieves a voice agent through the unified /agents
-// endpoint with the voice preview opt-in header. Use this instead of GetAgent
-// when deciding whether to create or update a prompt voice agent.
+// GetVoiceAgent retrieves a voice agent through the unified /agents endpoint.
+// Use this instead of GetAgent when the internal overridden-host diagnostic is needed.
 func (c *AgentClient) GetVoiceAgent(
 	ctx context.Context,
 	agentName string,
@@ -311,7 +311,6 @@ func (c *AgentClient) GetVoiceAgent(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
 	if overriddenHost != "" {
 		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
 	}
@@ -843,13 +842,6 @@ func (c *AgentClient) GetPromptAgentVersion(
 	ctx context.Context, agentName, agentVersion, apiVersion string,
 ) (*AgentVersionObject, error) {
 	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, GitHubCopilotPreviewFeature)
-}
-
-// GetVoiceAgentVersion retrieves a voice version with the Voice Agents API contract.
-func (c *AgentClient) GetVoiceAgentVersion(
-	ctx context.Context, agentName, agentVersion, apiVersion string,
-) (*AgentVersionObject, error) {
-	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, voiceAgentsPreviewFeature)
 }
 
 func (c *AgentClient) getAgentVersion(

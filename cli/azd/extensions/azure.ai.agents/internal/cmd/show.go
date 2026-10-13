@@ -90,7 +90,7 @@ configuration and the current azd environment. Optionally specify the service na
 				return runPromptShow(ctx, flags, pctx)
 			}
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt, withVoiceKind())
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}

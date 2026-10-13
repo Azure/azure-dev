@@ -494,6 +494,8 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined event on a failed lifecycle-hook or service-target `cmd.*` span |
+| `extension.usage.dropped` | string[] | Unique `<extension-id-or-unattributed>@<reason>` entries for extension usage reports dropped during the invocation |
+| `extension.usage.dropped.count` | measurement | Total extension usage reports dropped during the invocation |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. First-party concrete keys are declared in `cli/azd/extensions/telemetry/fields.go` |
 | `ext.demo.mode` | string | Demo telemetry mode: currently `sample` (`demo.telemetry.reported`) |
 | `ext.demo.outcome` | string | Demo telemetry outcome: currently `completed` (`demo.telemetry.reported`) |
@@ -535,6 +537,9 @@ Service-target values are `service_target.initialize`, `service_target.package`,
 `service_target.publish`, `service_target.deploy`, `service_target.endpoints`,
 and `service_target.get_target_resource`.
 
+The dropped-report summary fields described below are `SystemMetadata` for
+`PerformanceAndHealth`.
+
 Each concrete first-party field has its own classification, purpose, and
 endpoint declaration. The currently declared fields are bounded enums
 classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
@@ -545,8 +550,16 @@ values low cardinality and free of customer content, and for having them
 privacy reviewed with their extension.
 
 Only eligible official-registry installations produce these spans. Other
-installations receive a normal response without recording an event, as does
+installations receive a normal response without producing an `ext.usage` span, as does
 any report past the limit of 100 spans per `azd` invocation.
+Rejected and dropped calls are summarized
+on the command span using `extension.usage.dropped` and
+`extension.usage.dropped.count`. The list contains an extension ID only after
+the installed record passes the official-source check; earlier failures use the
+fixed `unattributed` value. It never contains caller-supplied event or attribute
+content. These fields stay on the hosting command span and are not copied to
+the synthetic phase spans emitted by `azd up`, to workflow step command spans,
+or to VS RPC spans.
 
 Reviewed first-party extension usage events currently include:
 

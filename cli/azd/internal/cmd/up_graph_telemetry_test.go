@@ -10,10 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -636,6 +639,46 @@ func TestEmitDeploySpan_ErrorPath(t *testing.T) {
 	assert.NotEmpty(t, span.Status().Description, "failure must carry a ResultCode")
 	assert.True(t, start.Equal(span.StartTime()), "start = %s, want %s", span.StartTime(), start)
 	assert.True(t, end.Equal(span.EndTime()), "end = %s, want %s", span.EndTime(), end)
+}
+
+func TestUpPhaseSpansExcludeExtensionDrops(t *testing.T) {
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	const retainedKey = attribute.Key("test.retained")
+	tracing.SetUsageAttributes(
+		retainedKey.String("value"),
+		fields.ExtensionUsageDropped.StringSlice([]string{"publisher.extension@budget_exhausted"}),
+		fields.ExtensionUsageDroppedCount.Int64(1),
+	)
+
+	now := time.Now()
+	result := &exegraph.RunResult{Steps: []exegraph.StepTiming{
+		{
+			Name: "deploy-web", Status: exegraph.StepDone, Tags: []string{"deploy"},
+			Start: now, End: now.Add(time.Second),
+		},
+	}}
+
+	_, packageSpan := tracing.Start(t.Context(), "cmd.package")
+	_, provisionSpan := tracing.Start(t.Context(), "cmd.provision")
+	finishUpPhaseSpans(t.Context(), packageSpan, provisionSpan, result, nil, nil)
+
+	spans := newSpans()
+	for _, name := range []string{"cmd.package", "cmd.provision", "cmd.deploy"} {
+		span := findSpan(spans, name)
+		require.NotNil(t, span, "%s span must be emitted", name)
+
+		indexed := map[attribute.Key]attribute.Value{}
+		for _, attr := range span.Attributes() {
+			indexed[attr.Key] = attr.Value
+		}
+		require.Contains(t, indexed, retainedKey, name)
+		assert.NotContains(t, indexed, fields.ExtensionUsageDropped.Key, name)
+		assert.NotContains(t, indexed, fields.ExtensionUsageDroppedCount.Key, name)
+	}
 }
 
 // TestEmitDeploySpan_OmittedWhenDeployDidNotRun verifies the other half of the

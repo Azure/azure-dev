@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
@@ -162,6 +163,16 @@ func SetUsageAttributes(attributes ...attribute.KeyValue) {
 // Returns all usage attributes set.
 func GetUsageAttributes() []attribute.KeyValue {
 	return get(&usageVal)
+}
+
+// GetSecondaryUsageAttributes returns usage attributes for phase and RPC spans.
+// Invocation-wide drop aggregates stay on the hosting command span to avoid
+// counting the same reports again on each secondary span.
+func GetSecondaryUsageAttributes() []attribute.KeyValue {
+	return slices.DeleteFunc(GetUsageAttributes(), func(attr attribute.KeyValue) bool {
+		return attr.Key == fields.ExtensionUsageDropped.Key ||
+			attr.Key == fields.ExtensionUsageDroppedCount.Key
+	})
 }
 
 // ResetUsageAttributesForTest clears all usage attributes set via

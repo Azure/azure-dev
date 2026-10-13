@@ -218,7 +218,7 @@ func TestRolloutMonitorLifecycle(t *testing.T) {
 				return nil
 			}
 			command := newRolloutCommand()
-			args := []string{"code_rl", "--version", "1.0.0", "--model", "model", "--loom", "--rollout-id", monitorTestID}
+			args := []string{"code_rl", "--version", "1.0.0", "--model", "model", "--rollout-id", monitorTestID}
 			if tc.jsonOutput {
 				command.Flags().String("output", "", "")
 				args = append(args, "--output", "json")

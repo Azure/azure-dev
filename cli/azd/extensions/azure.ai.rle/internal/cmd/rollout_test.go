@@ -336,7 +336,7 @@ func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	outputDir := t.TempDir()
 	command.SetArgs([]string{
 		"code_rl", "--version", "1.0.0",
-		"--model", "Qwen/Qwen3-32B", "--loom",
+		"--model", "Qwen/Qwen3-32B",
 		"--task", `{"prompt":"hello"}`,
 		"--output-dir", outputDir,
 	})
@@ -423,7 +423,7 @@ func TestRolloutRunWithFoundryBackendSendsAFoundryPolicyAndCreatesNoLoomSession(
 	command := newRolloutCommand()
 	command.SetArgs([]string{
 		"code_rl", "--version", "1.0.0",
-		"--model", "gpt-5-mini",
+		"--mode", "eval", "--model", "gpt-5-mini",
 		"--task", `{"prompt":"hello"}`,
 		"--output-dir", t.TempDir(),
 	})
@@ -446,10 +446,10 @@ func TestRolloutRejectsAnInvalidBackendOrLoomOnlyFlagsOnFoundry(t *testing.T) {
 	}{
 		"unknown backend": {[]string{"--mode", "serve"}, "is not supported"},
 		"loom with train": {[]string{"--mode", "train", "--loom"}, "--loom"},
-		"lora rank":       {[]string{"--lora-rank", "8"}, "--lora-rank"},
-		"sequence id":     {[]string{"--sequence-id", "1"}, "--sequence-id"},
-		"renderer":        {[]string{"--renderer", "qwen3"}, "--renderer"},
-		"session timeout": {[]string{"--timeout", "30"}, "--timeout"},
+		"lora rank":       {[]string{"--mode", "eval", "--lora-rank", "8"}, "--lora-rank"},
+		"sequence id":     {[]string{"--mode", "eval", "--sequence-id", "1"}, "--sequence-id"},
+		"renderer":        {[]string{"--mode", "eval", "--renderer", "qwen3"}, "--renderer"},
+		"session timeout": {[]string{"--mode", "eval", "--timeout", "30"}, "--timeout"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

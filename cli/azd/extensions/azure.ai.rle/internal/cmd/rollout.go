@@ -62,7 +62,7 @@ type rolloutTarget struct {
 
 func newRolloutCommand() *cobra.Command {
 	flags := &rolloutFlags{
-		mode:      rolloutModeEval,
+		mode:      rolloutModeTrain,
 		loraRank:  16,
 		timeout:   600,
 		outputDir: defaultRolloutOutputDir,
@@ -79,11 +79,11 @@ Execute Rollout API with your task, prints the live execution milestones followe
 resulting reward and trajectory summary, then closes the Loom session. You never handle
 Loom session or checkpoint identifiers directly.
 
---mode eval (the default) samples a model deployment in the Foundry project (--model names
-the deployment) and creates no Loom session. Foundry rollouts are text-level: they carry no
-token ids and are never trainable. Add --loom to run the eval on a Loom session instead.
---mode train always uses Loom, because only Loom returns the token ids and logprobs training
-needs. --lora-rank, --sequence-id, --renderer and --timeout configure Loom and are rejected
+--mode train (the default) always uses Loom, because only Loom returns the token ids and
+logprobs training needs. --mode eval instead samples a model deployment in the Foundry project
+(--model names the deployment) and creates no Loom session. Foundry rollouts are text-level:
+they carry no token ids and are never trainable. Add --loom to run the eval on a Loom session
+instead. --lora-rank, --sequence-id, --renderer and --timeout configure Loom and are rejected
 for a Foundry eval.
 
 The response also carries the full capture graph — token ids, logprobs and loss masks —
@@ -112,14 +112,14 @@ rle.toml. To run an environment without local source, provide both its name and
 		&flags.mode,
 		"mode",
 		flags.mode,
-		"What the rollout is for: \"eval\" (sample a Foundry model deployment by default) or "+
-			"\"train\" (always a Loom session).",
+		"What the rollout is for: \"train\" (default, always a Loom session) or "+
+			"\"eval\" (sample a Foundry model deployment by default).",
 	)
 	cmd.Flags().BoolVar(
 		&flags.loom,
 		"loom",
 		false,
-		"Run an eval rollout on a Loom session instead of a Foundry deployment. Implied by --mode train.",
+		"With --mode eval, run on a Loom session instead of a Foundry deployment. Train always uses Loom.",
 	)
 	cmd.Flags().StringVar(
 		&flags.model,

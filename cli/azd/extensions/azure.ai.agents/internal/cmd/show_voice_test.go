@@ -19,7 +19,7 @@ import (
 )
 
 type showRecordingReader struct {
-	voice, standard           int
+	standard                  int
 	name, version, apiVersion string
 	digitalWorker             bool
 	err                       error
@@ -33,15 +33,7 @@ func (r *showRecordingReader) GetAgentVersion(
 	return &agent_api.AgentVersionObject{Name: name, Version: version, Status: "active"}, r.err
 }
 
-func (r *showRecordingReader) GetVoiceAgentVersion(
-	_ context.Context, name, version, apiVersion string,
-) (*agent_api.AgentVersionObject, error) {
-	r.voice++
-	r.name, r.version, r.apiVersion = name, version, apiVersion
-	return &agent_api.AgentVersionObject{Name: name, Version: version, Status: "active"}, r.err
-}
-
-func TestShowVoiceServiceRouting(t *testing.T) {
+func TestShowVoiceServiceUsesSharedVersionReader(t *testing.T) {
 	for _, tt := range []struct {
 		name           string
 		fields         map[string]any
@@ -102,7 +94,6 @@ func TestShowVoiceServiceRouting(t *testing.T) {
 			require.Equal(t, tt.voice, info.IsVoice)
 			action := &ShowAction{
 				AgentContext: &AgentContext{Name: info.AgentName, Version: info.Version},
-				isVoice:      info.IsVoice,
 			}
 			reader := &showRecordingReader{}
 			version, err := action.getVersion(t.Context(), reader)
@@ -111,8 +102,7 @@ func TestShowVoiceServiceRouting(t *testing.T) {
 			require.Equal(t, "deployed", reader.name)
 			require.Equal(t, "7", reader.version)
 			require.Equal(t, DefaultAgentAPIVersion, reader.apiVersion)
-			require.Equal(t, tt.voice, reader.voice == 1)
-			require.Equal(t, !tt.voice, reader.standard == 1)
+			require.Equal(t, 1, reader.standard)
 			require.False(t, reader.digitalWorker)
 
 			// Other shared consumers do not acquire a new classification dependency.
@@ -126,9 +116,7 @@ func TestShowVoiceServiceRouting(t *testing.T) {
 func TestShowVoiceReadErrorPreserved(t *testing.T) {
 	t.Parallel()
 	want := errors.New("service read failed")
-	for _, voice := range []bool{false, true} {
-		action := &ShowAction{AgentContext: &AgentContext{Name: "agent", Version: "1"}, isVoice: voice}
-		_, err := action.getVersion(t.Context(), &showRecordingReader{err: want})
-		require.ErrorIs(t, err, want)
-	}
+	action := &ShowAction{AgentContext: &AgentContext{Name: "agent", Version: "1"}}
+	_, err := action.getVersion(t.Context(), &showRecordingReader{err: want})
+	require.ErrorIs(t, err, want)
 }

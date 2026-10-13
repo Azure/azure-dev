@@ -624,7 +624,6 @@ func fileExists(path string) bool {
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
 	IsHosted                    bool                               // populated only when hosted classification is requested
-	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
 	EnvironmentName             string                             // environment used for deployed metadata, when available
 	AgentName                   string                             // deployed name; may use brownfield fallback
@@ -1115,7 +1114,6 @@ type agentServiceResolutionOptions struct {
 	rejectVoiceInvocation          bool
 	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
-	includeVoiceKind               bool
 	includeHostedKind              bool
 }
 
@@ -1138,12 +1136,6 @@ func withAgentEnvironment(name string) agentServiceResolutionOption {
 func withHostedAgentKind() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
 		options.requireHostedKind = true
-	}
-}
-
-func withVoiceKind() agentServiceResolutionOption {
-	return func(options *agentServiceResolutionOptions) {
-		options.includeVoiceKind = true
 	}
 }
 
@@ -1271,19 +1263,6 @@ func resolveAgentServiceFromProject(
 			info.IsHosted = hosted
 		}
 	}
-	if resolutionOptions.includeVoiceKind {
-		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path)
-		if err != nil {
-			return nil, exterrors.ValidationFromError(
-				err,
-				exterrors.CodeInvalidServiceConfig,
-				"determining agent kind",
-				"fix the agent service configuration in azure.yaml",
-			)
-		}
-		info.IsVoice = isVoice
-	}
-
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.
 		// Deployed name reflects the created resource.

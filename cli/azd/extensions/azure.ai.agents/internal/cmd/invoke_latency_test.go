@@ -311,7 +311,9 @@ func TestInvokeLatencyLROPolling(t *testing.T) {
 	resp.Body = io.NopCloser(strings.NewReader(`{"status":"accepted"}`))
 	var invokeErr error
 	withCapturedStdout(t, func() {
-		invokeErr = handleInvocationResponse(t.Context(), resp, "", "", "test-agent", time.Second, "v1", nil, false, latency)
+		invokeErr = handleInvocationResponse(
+			t.Context(), resp, "", "", "test-agent", time.Second, "v1", nil, false, latency, nil,
+		)
 	})
 	require.NoError(t, invokeErr)
 	require.EqualValues(t, 2, polls.Load())

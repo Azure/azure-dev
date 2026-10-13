@@ -4,9 +4,12 @@
 package messages
 
 import (
+	"errors"
 	"fmt"
 
 	"azureaieval/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // InitWiringRolledBack reports a failed root edit whose scaffold was undone.
@@ -75,8 +78,8 @@ func InitRootConfigChanged(expected, actual string) error {
 func InitDatasetNameInvalid(path, name string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		fmt.Sprintf("Dataset file %q derives invalid catalog name %q", path, name),
-		"Rename the file to give it a non-empty stem other than . or .., "+
-			"at most 255 bytes long and without path separators or control characters.")
+		"Rename the file so its stem uses only letters, digits, dashes and underscores, "+
+			"up to 255 characters.")
 }
 
 // InitFlagRange names both the input and its supported bounds.
@@ -108,16 +111,112 @@ func ConversationModeChoices() []string {
 func SimulationModelRequired() error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		"--simulation-model is required for --conversation-mode simulation",
-		"Supply connection-name/model-deployment for the simulated user, independently of the judge and generation models.")
+		"Name a deployed model for the simulated user, independently of --judge-model and the generation model.")
 }
 
-// SimulationModelPrompt asks for the simulated user's deployment, without guessing.
-func SimulationModelPrompt() string { return "Simulation model (connection-name/model-deployment)" }
+// SimulationModelConnectionPrompt asks which eligible project connection to use.
+func SimulationModelConnectionPrompt() string { return "Simulation model connection" }
+
+// SimulationModelConnectionRequired refuses an invalid selection response.
+func SimulationModelConnectionRequired() error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		"A simulation model connection is required",
+		"Select an Azure OpenAI connection from the Foundry project.")
+}
+
+// SimulationModelDeploymentPrompt asks for the deployment on the selected connection.
+func SimulationModelDeploymentPrompt() string { return "Simulation model deployment" }
+
+// SimulationModelDeploymentHelp distinguishes simulation from grading.
+func SimulationModelDeploymentHelp() string {
+	return "Name the model deployment used by the simulated user. This is separate from --judge-model."
+}
+
+// SimulationModelDeploymentRequired refuses an empty deployment.
+func SimulationModelDeploymentRequired() error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		"A simulation model deployment is required",
+		"Enter the model deployment used by the simulated user.")
+}
+
+// NoEligibleSimulationModelConnections reports that discovery found no usable connection.
+func NoEligibleSimulationModelConnections() error {
+	return exterrors.Dependency(exterrors.CodeMissingModelConnection,
+		"The Foundry project has no eligible Azure OpenAI model connections",
+		"Create an Azure OpenAI connection in the Foundry project, then retry init.")
+}
+
+// SimulationModelConnectionNotFound rejects an explicit reference before authoring files.
+func SimulationModelConnectionNotFound(name string) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("Simulation model connection %q was not found in the Foundry project", name),
+		"Use an Azure OpenAI connection listed in the Foundry project.")
+}
+
+// SimulationModelConnectionWrongKind rejects a connection that cannot serve a deployment.
+func SimulationModelConnectionWrongKind(name, kind string) error {
+	if kind == "" {
+		kind = "unknown"
+	}
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("Simulation model connection %q has type %q; expected AzureOpenAI", name, kind),
+		"Use an Azure OpenAI connection listed in the Foundry project.")
+}
+
+// ListingSimulationModelConnections preserves classification and failed-listing context.
+func ListingSimulationModelConnections(err error) error {
+	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*serviceError](err); ok {
+		return err
+	}
+	if exterrors.IsCancellation(err) {
+		return exterrors.Cancelled("Listing Foundry project connections was cancelled")
+	}
+	return fmt.Errorf("%w: %w", exterrors.Internal(exterrors.CodeConnectionCatalogFailed,
+		"listing Foundry project connections for --simulation-model"), err)
+}
+
+// SimulationModelPrompt asks for a simulator reference without guessing a connection.
+func SimulationModelPrompt() string {
+	return "Simulation model (model or connection-name/model-deployment)"
+}
 
 // SimulationModelHelp explains why the generation or judge model is not a default.
 func SimulationModelHelp() string {
-	return "Use connection-name/model-deployment for the simulated user, such as model-connection/gpt-4.1-nano. " +
-		"This is separate from the generation model and --judge-model."
+	return "Enter a model name or connection-name/model-deployment for the simulated user, " +
+		"without whitespace or control characters, independently of the generation model and --judge-model. " +
+		"This value is unverified until service validation."
+}
+
+// AmbiguousSimulationModel names the local references that need an explicit choice.
+func AmbiguousSimulationModel(models []string) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--simulation-model is ambiguous: "+
+			"multiple locally authored simulator references are available: %q", models),
+		"Supply --simulation-model model or connection-name/model-deployment, or run interactively to choose one.")
+}
+
+// SelectSimulationModelPrompt asks which authored reference to reuse.
+func SelectSimulationModelPrompt() string {
+	return "Simulation model (locally authored, unverified)"
+}
+
+// EnterAnotherSimulationModel preserves free-text selection beside local references.
+func EnterAnotherSimulationModel() string { return "Enter another name" }
+
+// DetectedSimulationModel reports automatic selection without implying a live check.
+func DetectedSimulationModel(model string) string {
+	return fmt.Sprintf("  Simulation model: %q (locally authored, unverified until service validation)\n", model)
+}
+
+// UnverifiedSimulationModel labels a free-text choice before confirmation.
+func UnverifiedSimulationModel(model string) string {
+	return fmt.Sprintf("  Simulation model: %q (unverified until service validation)\n", model)
 }
 
 // JudgeModelPrompt asks for a deployment when local configuration has none.
@@ -129,7 +228,8 @@ func JudgeModelHelp() string { return "Name a deployed model for the evaluators 
 // HandoffEvaluatorIncompatible explains why a generated rubric is not in the next command.
 func HandoffEvaluatorIncompatible(name string) string {
 	return fmt.Sprintf("  warning: evaluator %q does not support the generated dataset's evaluation level. "+
-		"It remains in the catalogue; the init command uses builtin.task_completion instead.\n", name)
+		"It remains in the catalogue; the init command leaves --evaluator unset so init offers its "+
+		"builtin.task_completion default, which you can replace.\n", name)
 }
 
 // InitHandoffGuidance names missing resource and model inputs for the next command.
@@ -158,8 +258,7 @@ func InitCreateManualInputs(evalName, configPath string) string {
 	return fmt.Sprintf("  Next step: create the authored evaluation with azd ai eval create.\n"+
 		"  Evaluation name: %q\n  --path value: %q\n"+
 		"  These are escaped values, not shell arguments. Quote them for your shell; "+
-		"no copyable command is shown because shell or host argument handling cannot preserve every value.\n",
-		evalName, configPath)
+		"no copyable command is shown because portable quoting cannot preserve the path.\n", evalName, configPath)
 }
 
 // InitHandoffManualInputs preserves values that cannot be safely quoted for every shell.

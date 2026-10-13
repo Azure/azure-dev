@@ -98,7 +98,9 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 	return chooseJudgeModel(cmd, deployments)
 }
 
-func promptInitModel(cmd *cobra.Command, message, help string, required error) (string, error) {
+func promptInitModel(
+	cmd *cobra.Command, message, help string, required error, validators ...func(string) error,
+) (string, error) {
 	client, err := azdext.NewAzdClient()
 	if err != nil {
 		return "", messages.ConnectingToAzd(err)
@@ -115,6 +117,11 @@ func promptInitModel(cmd *cobra.Command, message, help string, required error) (
 	}
 	if resp == nil || strings.TrimSpace(resp.GetValue()) == "" {
 		return "", required
+	}
+	for _, validate := range validators {
+		if err := validate(resp.GetValue()); err != nil {
+			return "", err
+		}
 	}
 	return strings.TrimSpace(resp.GetValue()), nil
 }

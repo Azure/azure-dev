@@ -48,9 +48,9 @@ func TestRenderRunReportsEveryEvaluator(t *testing.T) {
 	}
 	assert.Contains(t, text, "90.0%", "relevance passed 9 of 10")
 	assert.Contains(t, text, "70.0%", "coherence passed 7 of 10")
-	assert.Contains(t, text, "(7 / (7 passed + 3 failed))",
+	assert.Contains(t, text, "(7 passed / 10 total test cases)",
 		"the counts behind the rate must be shown, and the denominator named: "+
-			"a bare 7/10 does not say whether the 3 failed or never ran")
+			"a bare 7/10 does not say what the denominator represents")
 }
 
 // The two tables count different things, so each says which.
@@ -107,10 +107,10 @@ func TestRenderRunSeparatesErrorsFromFailures(t *testing.T) {
 
 	assert.Contains(t, text, "Errored       2",
 		"a run that errored on two rows says so in its own line, not as a footnote")
-	assert.Contains(t, text, "87.5%",
-		"the pass rate is over what was scored, not over what was attempted")
-	assert.Contains(t, text, "(7 / (7 passed + 1 failed))",
-		"and names the two rows it divided, so the errored two are visibly outside it")
+	assert.Contains(t, text, "70.0%",
+		"the two errored rows did not pass and must count against the run-level rate")
+	assert.Contains(t, text, "(7 passed / 10 total test cases)",
+		"the display must name the same total denominator the gate uses")
 }
 
 // A rate over nothing is not zero. Printing 0.0% for a criterion that scored

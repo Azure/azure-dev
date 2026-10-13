@@ -35,7 +35,9 @@ type AccountServiceClient interface {
 	ListSubscriptions(ctx context.Context, in *ListSubscriptionsRequest, opts ...grpc.CallOption) (*ListSubscriptionsResponse, error)
 	// LookupTenant resolves the tenant ID required to access a specific subscription.
 	LookupTenant(ctx context.Context, in *LookupTenantRequest, opts ...grpc.CallOption) (*LookupTenantResponse, error)
+	// Deprecated: Do not use.
 	// GetCurrentPrincipal resolves the signed-in identity in the subscription's resource tenant.
+	// Deprecated: use azd.extensions.v1.AccountService.GetCurrentPrincipal in azd 1.36.0 or later.
 	GetCurrentPrincipal(ctx context.Context, in *GetCurrentPrincipalRequest, opts ...grpc.CallOption) (*GetCurrentPrincipalResponse, error)
 }
 
@@ -67,6 +69,7 @@ func (c *accountServiceClient) LookupTenant(ctx context.Context, in *LookupTenan
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *accountServiceClient) GetCurrentPrincipal(ctx context.Context, in *GetCurrentPrincipalRequest, opts ...grpc.CallOption) (*GetCurrentPrincipalResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCurrentPrincipalResponse)
@@ -85,7 +88,9 @@ type AccountServiceServer interface {
 	ListSubscriptions(context.Context, *ListSubscriptionsRequest) (*ListSubscriptionsResponse, error)
 	// LookupTenant resolves the tenant ID required to access a specific subscription.
 	LookupTenant(context.Context, *LookupTenantRequest) (*LookupTenantResponse, error)
+	// Deprecated: Do not use.
 	// GetCurrentPrincipal resolves the signed-in identity in the subscription's resource tenant.
+	// Deprecated: use azd.extensions.v1.AccountService.GetCurrentPrincipal in azd 1.36.0 or later.
 	GetCurrentPrincipal(context.Context, *GetCurrentPrincipalRequest) (*GetCurrentPrincipalResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }

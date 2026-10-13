@@ -27,7 +27,6 @@ import (
 
 // rolloutFlags holds the CLI-facing configuration for one rollout.
 type rolloutFlags struct {
-	version    string
 	mode       string
 	loom       bool
 	backend    string
@@ -43,9 +42,8 @@ type rolloutFlags struct {
 }
 
 type rolloutAction struct {
-	cmd             *cobra.Command
-	flags           *rolloutFlags
-	environmentName string
+	cmd   *cobra.Command
+	flags *rolloutFlags
 	// monitor opens the local dashboard after the rollout. It is cleared when
 	// the dashboard cannot open safely, so the rollout warns instead of failing.
 	monitor bool
@@ -90,24 +88,14 @@ The response also carries the full capture graph — token ids, logprobs and los
 which is too large to print and cannot be fetched again once the rollout returns. It is
 written to .output/<rollout-id>/ (see --output-dir) and the files are listed on completion.
 
-With no environment name, rollout uses rle.name and rle.version from the current folder's
-rle.toml. To run an environment without local source, provide both its name and
---version, then set FOUNDRY_PROJECT_ENDPOINT.`,
-		Args: cobra.MaximumNArgs(1),
+rollout must be run from a folder containing rle.toml. It uses rle.name
+and rle.version from that file.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			environmentName := ""
-			if len(args) == 1 {
-				environmentName = args[0]
-			}
-			return (&rolloutAction{
-				cmd:             cmd,
-				flags:           flags,
-				environmentName: environmentName,
-			}).Run()
+			return (&rolloutAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to run this rollout against.")
 	cmd.Flags().StringVar(
 		&flags.mode,
 		"mode",
@@ -126,7 +114,7 @@ rle.toml. To run an environment without local source, provide both its name and
 		"model",
 		"",
 		"Model to sample: a Loom base model name such as Qwen/Qwen3-32B, or, for a Foundry eval, "+
-			"the name of a model deployment in the project. Required unless rle.toml sets defaults.model.name.",
+			"the name of a model deployment in the project. Required unless rle.toml sets model.name.",
 	)
 	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
 	cmd.Flags().StringVar(&flags.task, "task", "", "Inline JSON task payload for the sandbox reset operation.")
@@ -192,7 +180,7 @@ func (a *rolloutAction) Run() error {
 			Category: azdext.LocalErrorCategoryUser,
 			Suggestion: "Pass --model with a Loom base model name (for example --model Qwen/Qwen3-32B) " +
 				"or, for a Foundry eval, a model deployment name, " +
-				"or set defaults.model.name in rle.toml.",
+				"or set model.name in rle.toml.",
 		}
 	}
 
@@ -421,34 +409,12 @@ func (a *rolloutAction) skipMonitor(errOut io.Writer) error {
 }
 
 func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
-	requestedVersion := strings.TrimSpace(a.flags.version)
-	if a.cmd.Flags().Changed("version") && requestedVersion == "" {
-		return rolloutTarget{}, nil, &azdext.LocalError{
-			Message:    "--version requires a non-empty environment version.",
-			Code:       "rle_environment_version_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Provide a semantic version, for example --version 2.1.0.",
-		}
+	localConfig, err := project.LoadRleConfig(".")
+	if err != nil {
+		return rolloutTarget{}, nil, err
 	}
-	environmentName := strings.TrimSpace(a.environmentName)
-	localConfig, localConfigErr := project.LoadRleConfig(".")
-	if environmentName == "" {
-		if localConfigErr != nil {
-			return rolloutTarget{}, nil, localConfigErr
-		}
-		environmentName = localConfig.Rle.Name
-		if requestedVersion == "" {
-			requestedVersion = localConfig.Rle.Version
-		}
-	} else if requestedVersion == "" {
-		return rolloutTarget{}, nil, &azdext.LocalError{
-			Message:    "A published RLE version is required when invoking by environment name.",
-			Code:       "rle_environment_version_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Pass --version <major.minor.patch>, or run from a folder with rle.toml.",
-		}
-	}
-	version, err := project.NormalizeRleVersion(requestedVersion)
+	environmentName := localConfig.Rle.Name
+	version, err := project.NormalizeRleVersion(localConfig.Rle.Version)
 	if err != nil {
 		return rolloutTarget{}, nil, err
 	}
@@ -464,9 +430,7 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 		environmentName: environmentName,
 		projectEndpoint: projectEndpoint,
 		version:         version,
-		isGymOpenEnv: localConfigErr == nil &&
-			localConfig.Rle.Name == environmentName &&
-			isGymOpenEnv(localConfig.Harness),
+		isGymOpenEnv:    isGymOpenEnv(localConfig.Harness),
 	}, client, nil
 }
 

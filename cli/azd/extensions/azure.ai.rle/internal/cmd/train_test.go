@@ -94,13 +94,11 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 
 func TestTrainCommandRequiresTrainingFile(t *testing.T) {
 	// --training-file is not marked required on the cobra command (cobra would
-	// reject the run before rle-name/rle-version fallback is ever attempted),
+	// reject the run before the manifest read is ever attempted),
 	// but resolveTrainSettings still requires it and the error has to name it.
-	t.Chdir(t.TempDir())
+	useRleManifestDir(t)
 	cmd := newTrainCommand()
 	cmd.SetArgs([]string{
-		"--rle-name", "code_rl",
-		"--rle-version", "1.0.0",
 		"--model", "Qwen/Qwen3-32B",
 	})
 	cmd.SilenceUsage = true
@@ -114,6 +112,24 @@ func TestTrainCommandRequiresTrainingFile(t *testing.T) {
 	}
 	if !strings.Contains(localErr.Message, "training file") {
 		t.Fatalf("the error should name the training file: %q", localErr.Message)
+	}
+}
+
+func TestTrainRequiresRleManifestEvenWithExplicitIdentity(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cmd := newTrainCommand()
+	cmd.SetArgs([]string{
+		"--model", "Qwen/Qwen3-32B",
+		"--training-file", "training.jsonl",
+	})
+	cmd.SilenceUsage = true
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_missing" {
+		t.Fatalf("expected a missing rle.toml error, got %v", err)
 	}
 }
 
@@ -339,6 +355,7 @@ func TestFinetuneSubmissionStopsWhenFoundryTokenUnavailable(t *testing.T) {
 }
 
 func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
+	useRleManifestDir(t)
 	stubAPIJobMonitor(t)
 	trainingFilePath := filepath.Join(t.TempDir(), "training.jsonl")
 	if err := os.WriteFile(trainingFilePath, []byte("{\"input\":\"example\"}\n"), 0o600); err != nil {
@@ -497,43 +514,13 @@ func TestTrainFallsBackToRleConfigNameAndVersion(t *testing.T) {
 	}
 }
 
-func TestTrainFlagsOverrideRleConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{rleName: "math_rl", rleVersion: "2.0.0", model: "m", trainingFile: "t"}}
-	if _, err := action.resolveTrainSettings(); err != nil {
-		t.Fatal(err)
-	}
-
-	if action.flags.rleName != "math_rl" || action.flags.rleVersion != "2.0.0" {
-		t.Fatalf("expected the flags to win, got %q %q", action.flags.rleName, action.flags.rleVersion)
-	}
-}
-
-func TestTrainFallsBackToRleConfigVersionOnly(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{rleName: "math_rl", model: "m", trainingFile: "t"}}
-	if _, err := action.resolveTrainSettings(); err != nil {
-		t.Fatal(err)
-	}
-
-	if action.flags.rleName != "math_rl" || action.flags.rleVersion != "1.2.3" {
-		t.Fatalf("expected the version from rle.toml, got %q %q", action.flags.rleName, action.flags.rleVersion)
-	}
-}
-
 func TestTrainWithoutRleConfigOrFlagsFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	action := &trainAction{flags: &rleTrainFlags{}}
 	_, err := action.resolveTrainSettings()
 	if err == nil {
-		t.Fatal("expected an error when neither --rle-name nor rle.toml supplies the environment")
+		t.Fatal("expected an error when rle.toml is missing")
 	}
 
 	var localErr *azdext.LocalError
@@ -564,6 +551,7 @@ func TestTrainCommandNoLongerRequiresRleFlags(t *testing.T) {
 // creation, and returns the action alongside the buffer it writes to.
 func stubbedTrain(t *testing.T, ctx context.Context, flags *rleTrainFlags) (*trainAction, *bytes.Buffer) {
 	t.Helper()
+	useRleManifestDir(t)
 	t.Setenv(rleTrainEndpointEnvVar, "https://facade.example.com")
 	trainingFilePath := filepath.Join(t.TempDir(), "training.jsonl")
 	if err := os.WriteFile(trainingFilePath, []byte("{\"input\":\"example\"}\n"), 0o600); err != nil {

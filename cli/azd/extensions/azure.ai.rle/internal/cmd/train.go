@@ -79,10 +79,6 @@ instead of blocking.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.rleName, "rle-name", "",
-		"Name of the published RLE environment to train against. Defaults to rle.name in ./rle.toml.")
-	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "",
-		"Version of the published RLE environment. Defaults to rle.version in ./rle.toml.")
 	cmd.Flags().StringVar(&flags.model, "model", "", "Base model id to fine-tune (required).")
 	cmd.Flags().StringVar(&flags.trainingFile, "training-file", "",
 		"Path to the local training dataset uploaded as the Loom job input (required).")
@@ -112,42 +108,30 @@ instead of blocking.`,
 	return cmd
 }
 
-// resolveTrainSettings fills in the RLE name and version from rle.toml in the
-// current folder when a flag does not set them, and flattens the manifest's
+// resolveTrainSettings reads the RLE name and version from rle.toml in the
+// current folder, and flattens the manifest's
 // [train.grpo] defaults into the hyperparameters map sent to finetunesapi.
 // model, training-file, validation-file and suffix come only from their
 // flags: [train] is a reusable default for the published environment, not a
 // local-only training invocation.
 //
-// The manifest is optional. It is only required when rle-name or rle-version was
-// not passed as a flag, so `train --rle-name ... --rle-version ... --model ... --training-file
-// ...` still works from a folder that has no rle.toml.
+// rle.toml must exist in the current folder; it is the only source of the name and version.
 func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
-	name := strings.TrimSpace(a.flags.rleName)
-	version := strings.TrimSpace(a.flags.rleVersion)
 	model := strings.TrimSpace(a.flags.model)
 	trainingFile := strings.TrimSpace(a.flags.trainingFile)
 	validationFile := strings.TrimSpace(a.flags.validationFile)
 	suffix := strings.TrimSpace(a.flags.suffix)
 
 	options := map[string]any{}
-	config, configErr := project.LoadRleConfig(".")
-	if configErr == nil {
-		if name == "" {
-			name = config.Rle.Name
-		}
-		if version == "" {
-			version = config.Rle.Version
-		}
-		options = trainDefaultsOptions(config.Train)
-		if len(options) > 0 {
-			a.flags.optionsSource = project.RleConfigFile
-		}
-	} else if name == "" || version == "" {
-		// Only the environment identity structurally needs the manifest. A missing
-		// model or dataset is reported by name below, which is more useful than
-		// naming a file the caller may not have intended to use.
-		return nil, configErr
+	config, err := project.LoadRleConfig(".")
+	if err != nil {
+		return nil, err
+	}
+	name := config.Rle.Name
+	version := config.Rle.Version
+	options = trainDefaultsOptions(config.Train)
+	if len(options) > 0 {
+		a.flags.optionsSource = project.RleConfigFile
 	}
 
 	// --task-count is shorthand for one training option, so it is applied the way

@@ -495,11 +495,10 @@ When run from a local Gym/OpenEnv recipe, simple reset payloads such as
 `{"seed": 32, "split": "train"}` also work in Windows PowerShell versions that
 remove embedded JSON quotes from native-command arguments.
 
-`--model` is only required when rle.toml has no `defaults.model.name` set, or
-when running source-free from another folder:
+`--model` is only required when rle.toml has no `model.name` set.
 
 ```powershell
-azd ai rle rollout code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
+azd ai rle rollout --model Qwen/Qwen3-32B --task-file task.json
 ```
 
 `rollout` provisions everything a rollout needs and tears it down again: it
@@ -664,7 +663,6 @@ $env:AZD_AI_RLE_ENABLE_ALL = "true"
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 
 azd ai rle train `
-  --rle-name code_rl --rle-version 1.0.0 `
   --model Qwen/Qwen3-32B `
   --training-file .\training.jsonl
 ```

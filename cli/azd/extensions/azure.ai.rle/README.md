@@ -719,7 +719,9 @@ Reopen the same monitor from any machine with project access:
 azd ai rle monitor --job-id ftjob-7898670d3ae8453e89e591f9
 ```
 
-Both commands read the same project-scoped RLE APIs, with no local run mirror.
+Both commands read the same project-scoped APIs, with no local run mirror.
+Job status comes directly from the fine-tuning API through the Foundry project URL;
+configuration, metrics, and rollouts come from the RLE APIs.
 The Summary shows registered config, available metric charts, and lightweight
 rollout summaries. Full rollout results/graphs are fetched **only on click**.
 An unregistered job shows a waiting state; unavailable/expired results leave
@@ -745,7 +747,7 @@ Polling is shared across browser tabs:
 | Running rollouts shown on the open Rollouts tab, point-read for status and results | 10 seconds |
 | Other running rollouts (newest first, at most 50 reads per cycle) | 1 minute |
 | Metric reread, for late rows | 60 seconds |
-| RLE job status | 1 minute until terminal |
+| Fine-tuning job status | 1 minute until terminal |
 | Full rollout result | On click only |
 
 Each rollout scan starts without a continuation token and follows tokens, including
@@ -765,16 +767,18 @@ metric-step-to-rollout navigation is not inferred from checkpoint strings.
 Execution status and the grader's task verdict are separate.
 
 The project must expose the RLE persistence APIs and grant RLE read access.
-Submission still uses the fine-tuning service. Status, registration/config,
-metrics and rollout reads use the Foundry project's RLE service. Status uses
-`GET /rl_environments/jobs/{jobId}?api-version=2025-11-15-preview`,
-using the same API version as the other RLE reads.
-Only the new job envelope is supported: its top-level `id` must match the requested
-job, and its non-empty top-level `status` drives polling. The dashboard reads registered configuration
+Submission still uses the fine-tuning service. Status polling uses
+`GET <Foundry project URL>/openai/v1/fine_tuning/jobs/{jobId}` with Foundry
+authentication, without an `api-version` query parameter or direct fine-tuning
+project headers. The response's top-level `id` must match the requested job,
+and its non-empty top-level `status` drives polling, even before RLE job registration.
+Registration/config, metrics, and rollout reads still use the Foundry project's
+RLE service with `api-version=2025-11-15-preview`.
+Only the new RLE job envelope is supported. The dashboard reads registered configuration
 directly from the `metadata` object, not from `metadata.configuration`.
 Invalid identities, missing/blank status, and missing/non-object metadata are
 reported as read errors. Legacy `job_id` responses and root-level configuration
-are not supported; `metadata.status` does not affect polling.
+are not supported. Neither the RLE job's status nor `metadata.status` drives status polling.
 Only `succeeded`, `failed`, and `cancelled` are treated as terminal job statuses,
 matching the fine-tuning API v1 contract.
 `monitor --job-id` no longer accepts `--endpoint`; `RLE_TRAIN_ENDPOINT` does not
@@ -923,7 +927,9 @@ azd ai rle jobs --output json
 ```
 
 The command requests only `rl_environment` jobs from the fine-tuning API and
-verifies that filter before it renders results. Use `--endpoint` to query a
+verifies that filter before it renders results. Both table and JSON output use
+the fine-tuning API's status directly, not the RLE job API's status.
+Use `--endpoint` to query a
 different fine-tuning resource for a single invocation.
 
 ## Build and install from source

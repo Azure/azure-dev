@@ -40,7 +40,8 @@ opening a browser. Incomplete or corrupt artifacts still return an error.
 
 With --job-id, always read config, metrics, logs and rollouts directly from the
 RLE service into memory: no local run files are required, and graphs are
-fetched only when opened. Job status is also read from the RLE service.
+fetched only when opened. Job status is read directly from the fine-tuning API
+through the Foundry project URL, independently of RLE job registration.
 Sign-in and a Foundry project are required. RLE_TRAIN_ENDPOINT does not
 affect monitoring.
 

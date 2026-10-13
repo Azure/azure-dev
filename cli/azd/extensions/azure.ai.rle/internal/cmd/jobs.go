@@ -32,7 +32,8 @@ func newJobsCommand(outputFormat *string) *cobra.Command {
 		Long: `List RLE-backed fine-tuning jobs (experimental).
 
 The command retrieves fine-tuning jobs from the Azure OpenAI resource derived from
-FOUNDRY_PROJECT_ENDPOINT and returns only jobs that use the rl_environment method.`,
+FOUNDRY_PROJECT_ENDPOINT and returns only jobs that use the rl_environment method.
+Job statuses come directly from the fine-tuning API, not the RLE job API.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			action.cmd = cmd

@@ -250,6 +250,17 @@ func createBrokerForEventHandler(
 	responseFn func(*azdext.EventMessage) *azdext.EventMessage,
 	progressFns ...func(*azdext.EventMessage) *azdext.EventMessage,
 ) (*grpcbroker.MessageBroker[azdext.EventMessage], func()) {
+	broker, _, cleanup := createBrokerForEventHandlerWithOptions(t, extensionID, responseFn, nil, progressFns...)
+	return broker, cleanup
+}
+
+func createBrokerForEventHandlerWithOptions(
+	t *testing.T,
+	extensionID string,
+	responseFn func(*azdext.EventMessage) *azdext.EventMessage,
+	brokerOptions []grpcbroker.MessageBrokerOption,
+	progressFns ...func(*azdext.EventMessage) *azdext.EventMessage,
+) (*grpcbroker.MessageBroker[azdext.EventMessage], *scriptedEventStream, func()) {
 	t.Helper()
 
 	streamCtx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
@@ -276,11 +287,12 @@ func createBrokerForEventHandler(
 	}
 
 	brokerCtx, cancel := context.WithCancel(streamCtx)
-	broker := grpcbroker.NewMessageBroker(
+	broker := grpcbroker.NewMessageBrokerWithOptions(
 		stream,
 		azdext.NewEventMessageEnvelopeWithExtensionId(extensionID),
 		extensionID,
 		nil,
+		brokerOptions...,
 	)
 
 	go func() {
@@ -294,7 +306,7 @@ func createBrokerForEventHandler(
 		cancel()
 	}
 
-	return broker, cleanup
+	return broker, stream, cleanup
 }
 
 func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
@@ -794,6 +806,143 @@ func TestEventService_createProjectEventHandler_SerializesSameKeyInvocations(t *
 	case <-time.After(time.Second):
 		t.Fatal("second extension handler did not complete")
 	}
+}
+
+func TestEventService_createProjectEventHandler_DoesNotReuseKeyAfterUnacknowledgedCancellation(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	firstInvoked := make(chan struct{})
+	secondInvoked := make(chan struct{})
+	differentKeyInvoked := make(chan struct{})
+	cancellationReceived := make(chan struct{})
+	var invocationCount atomic.Int32
+	broker, stream, cleanup := createBrokerForEventHandlerWithOptions(
+		t,
+		extension.Id,
+		func(msg *azdext.EventMessage) *azdext.EventMessage {
+			if invoke := msg.GetInvokeProjectHandler(); invoke != nil {
+				if invoke.EventName == "postpackage" {
+					close(differentKeyInvoked)
+					return &azdext.EventMessage{
+						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+								EventName: invoke.EventName,
+								Status:    "completed",
+							},
+						},
+					}
+				}
+
+				switch invocationCount.Add(1) {
+				case 1:
+					close(firstInvoked)
+				case 2:
+					close(secondInvoked)
+				default:
+					t.Errorf("unexpected invocation count")
+				}
+			}
+
+			statusMsg := msg.GetProjectHandlerStatus()
+			if statusMsg != nil && statusMsg.Status == "canceling" {
+				close(cancellationReceived)
+			}
+
+			return nil
+		},
+		[]grpcbroker.MessageBrokerOption{
+			grpcbroker.WithCancellationGracePeriod(20 * time.Millisecond),
+		},
+	)
+	defer cleanup()
+
+	lateStatusObserved := make(chan struct{})
+	require.NoError(t, broker.On(
+		func(_ context.Context, _ *azdext.ProjectHandlerStatus) (*azdext.EventMessage, error) {
+			close(lateStatusObserved)
+			return nil, nil
+		},
+	))
+
+	handler := service.createProjectEventHandler(extension, "prepackage", broker)
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- handler(firstCtx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+	}()
+
+	select {
+	case <-firstInvoked:
+	case <-time.After(time.Second):
+		t.Fatal("first extension handler was not invoked")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- handler(t.Context(), project.ProjectLifecycleEventArgs{Project: projectConfig})
+	}()
+
+	select {
+	case <-secondInvoked:
+		t.Fatal("same-key stable invocation was not serialized")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancelFirst()
+	select {
+	case <-cancellationReceived:
+	case <-time.After(time.Second):
+		t.Fatal("extension handler did not receive cancellation")
+	}
+	select {
+	case err := <-firstDone:
+		require.ErrorIs(t, err, context.Canceled)
+		require.True(t, grpcbroker.IsCancellationUnacknowledged(err))
+	case <-time.After(time.Second):
+		t.Fatal("first extension handler did not stop after its cancellation grace period")
+	}
+
+	select {
+	case <-secondInvoked:
+		t.Fatal("same-key stable invocation started after unacknowledged cancellation")
+	case err := <-secondDone:
+		require.ErrorContains(t, err, "previous cancellation was not acknowledged")
+	case <-time.After(time.Second):
+		t.Fatal("queued stable invocation did not fail after unacknowledged cancellation")
+	}
+
+	stream.recvCh <- &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+				EventName: "prepackage",
+				Status:    "completed",
+			},
+		},
+	}
+	select {
+	case <-lateStatusObserved:
+	case <-time.After(time.Second):
+		t.Fatal("late status was not isolated from the queued invocation")
+	}
+	require.EqualValues(t, 1, invocationCount.Load())
+
+	differentKeyHandler := service.createProjectEventHandler(extension, "postpackage", broker)
+	require.NoError(t, differentKeyHandler(t.Context(), project.ProjectLifecycleEventArgs{Project: projectConfig}))
+	select {
+	case <-differentKeyInvoked:
+	default:
+		t.Fatal("different-key stable invocation was blocked by the poisoned key")
+	}
+
+	broker.Close()
+	require.Eventually(t, func() bool {
+		service.stableInvocations.mu.Lock()
+		defer service.stableInvocations.mu.Unlock()
+		return len(service.stableInvocations.slots) == 0
+	}, time.Second, time.Millisecond)
 }
 
 func TestEventService_createProjectEventHandler_MapperErrorHasInvocationMetadata(t *testing.T) {

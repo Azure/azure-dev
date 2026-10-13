@@ -10,9 +10,9 @@ import (
 	"syscall"
 )
 
-// CmdTree represents an `exec.Cmd` run inside a process group. When
-// `Kill` is called, SIGKILL is sent to the process group, which will
-// kill any lingering child processes launched by the root process.
+// CmdTree represents an exec.Cmd. Non-interactive commands run inside their
+// own process group, while interactive commands inherit the parent's group so
+// they can use the same terminal.
 type CmdTree struct {
 	CmdTreeOptions
 	*exec.Cmd
@@ -34,6 +34,14 @@ func (o *CmdTree) Start() error {
 }
 
 func (o *CmdTree) Kill() {
+	if o.Cmd == nil || o.Cmd.Process == nil {
+		return
+	}
+	if o.Interactive {
+		_ = o.Cmd.Process.Kill()
+		return
+	}
+
 	_ = syscall.Kill(-o.Cmd.Process.Pid, syscall.SIGKILL)
 }
 

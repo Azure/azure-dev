@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -22,8 +23,9 @@ type stableEventInvocationKey struct {
 }
 
 type stableEventInvocationSlot struct {
-	token chan struct{}
-	refs  int
+	token    chan struct{}
+	refs     int
+	poisoned bool
 }
 
 func (g *stableEventInvocationGate) run(
@@ -38,12 +40,22 @@ func (g *stableEventInvocationGate) run(
 
 	key := stableEventInvocationKey{broker: broker, correlationID: correlationID}
 	slot := g.retain(key)
+	if g.isPoisoned(key, slot) {
+		g.release(key, slot)
+		return stableEventUnavailableError(correlationID)
+	}
+
 	select {
 	case slot.token <- struct{}{}:
 		if err := stableEventContextError(ctx); err != nil {
 			<-slot.token
 			g.release(key, slot)
 			return err
+		}
+		if g.isPoisoned(key, slot) {
+			<-slot.token
+			g.release(key, slot)
+			return stableEventUnavailableError(correlationID)
 		}
 	case <-ctx.Done():
 		g.release(key, slot)
@@ -54,7 +66,12 @@ func (g *stableEventInvocationGate) run(
 		<-slot.token
 		g.release(key, slot)
 	}()
-	return action()
+
+	err := action()
+	if grpcbroker.IsCancellationUnacknowledged(err) {
+		g.poison(key, slot)
+	}
+	return err
 }
 
 func (g *stableEventInvocationGate) retain(key stableEventInvocationKey) *stableEventInvocationSlot {
@@ -73,14 +90,58 @@ func (g *stableEventInvocationGate) retain(key stableEventInvocationKey) *stable
 	return slot
 }
 
+func (g *stableEventInvocationGate) isPoisoned(
+	key stableEventInvocationKey,
+	slot *stableEventInvocationSlot,
+) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return g.slots[key] == slot && slot.poisoned
+}
+
+func (g *stableEventInvocationGate) poison(
+	key stableEventInvocationKey,
+	slot *stableEventInvocationSlot,
+) {
+	g.mu.Lock()
+	if g.slots[key] != slot || slot.poisoned {
+		g.mu.Unlock()
+		return
+	}
+	slot.poisoned = true
+	g.mu.Unlock()
+
+	if key.broker == nil {
+		return
+	}
+
+	go func() {
+		<-key.broker.Done()
+
+		g.mu.Lock()
+		if g.slots[key] == slot {
+			delete(g.slots, key)
+		}
+		g.mu.Unlock()
+	}()
+}
+
 func (g *stableEventInvocationGate) release(key stableEventInvocationKey, slot *stableEventInvocationSlot) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	slot.refs--
-	if slot.refs == 0 && g.slots[key] == slot {
+	if slot.refs == 0 && !slot.poisoned && g.slots[key] == slot {
 		delete(g.slots, key)
 	}
+}
+
+func stableEventUnavailableError(correlationID string) error {
+	return fmt.Errorf(
+		"extension event invocation %q is unavailable because its previous cancellation was not acknowledged",
+		correlationID,
+	)
 }
 
 func stableEventContextError(ctx context.Context) error {

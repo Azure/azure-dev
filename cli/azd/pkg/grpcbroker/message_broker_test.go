@@ -940,6 +940,33 @@ func TestCancelPendingRequest_CancellationSendFailure(t *testing.T) {
 
 	require.ErrorIs(t, err, context.Canceled)
 	require.ErrorIs(t, err, sendErr)
+	require.True(t, IsCancellationUnacknowledged(err))
+}
+
+func TestCancelPendingRequest_GraceExpiredIsUnacknowledged(t *testing.T) {
+	broker := NewMessageBrokerWithOptions(
+		&errorBidiStream{},
+		&SimpleMessageEnvelope{},
+		"test",
+		nil,
+		WithCancellationGracePeriod(10*time.Millisecond),
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := broker.cancelPendingRequest(
+		ctx,
+		&TestMessage{RequestId: "request"},
+		"request",
+		reflect.TypeFor[*TestRequest](),
+		newResponseWaiter[TestMessage](1),
+		make(chan error),
+		true,
+	)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.True(t, IsCancellationUnacknowledged(err))
+	require.Equal(t, context.Canceled.Error(), err.Error())
 }
 
 func TestSendAndWait_DelayedCancellationReservesCorrelationId(t *testing.T) {
@@ -974,6 +1001,7 @@ func TestSendAndWait_DelayedCancellationReservesCorrelationId(t *testing.T) {
 	select {
 	case err := <-firstDone:
 		require.ErrorIs(t, err, context.Canceled)
+		require.True(t, IsCancellationUnacknowledged(err))
 	case <-time.After(time.Second):
 		t.Fatal("first request did not return after cancellation grace period")
 	}
@@ -1070,6 +1098,7 @@ func TestCancelPendingRequest_PendingCancellationReservesCorrelationId(t *testin
 	select {
 	case err := <-cancelDone:
 		require.ErrorIs(t, err, context.Canceled)
+		require.True(t, IsCancellationUnacknowledged(err))
 	case <-time.After(time.Second):
 		t.Fatal("cancellation did not return after its grace period")
 	}
@@ -1294,6 +1323,7 @@ func TestEndToEnd_CancellationCancelsMatchingHandler(t *testing.T) {
 	select {
 	case err := <-errCh:
 		require.ErrorIs(t, err, context.Canceled)
+		require.False(t, IsCancellationUnacknowledged(err))
 	case <-time.After(time.Second):
 		t.Fatal("canceled request did not return")
 	}

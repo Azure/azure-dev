@@ -99,6 +99,29 @@ const defaultCancellationGracePeriod = time.Second
 
 var errMessageBrokerClosed = errors.New("message broker closed")
 var errRequestAlreadyPending = errors.New("request with correlation id already pending")
+var errCancellationUnacknowledged = errors.New("cancellation was not acknowledged")
+
+type cancellationUnacknowledgedError struct {
+	err error
+}
+
+func (e *cancellationUnacknowledgedError) Error() string {
+	return e.err.Error()
+}
+
+func (e *cancellationUnacknowledgedError) Unwrap() []error {
+	return []error{e.err, errCancellationUnacknowledged}
+}
+
+// IsCancellationUnacknowledged reports whether the broker returned without
+// confirming that the canceled remote request had completed.
+func IsCancellationUnacknowledged(err error) bool {
+	return errors.Is(err, errCancellationUnacknowledged)
+}
+
+func markCancellationUnacknowledged(err error) error {
+	return &cancellationUnacknowledgedError{err: err}
+}
 
 type messageBrokerOptions struct {
 	cancellationGracePeriod time.Duration
@@ -262,6 +285,7 @@ type MessageBroker[TMessage any] struct {
 	active          map[string]map[*activeRequest]struct{}
 	closed          bool
 	closeOnce       sync.Once
+	closedCh        chan struct{}
 
 	cancellationGracePeriod time.Duration
 
@@ -314,6 +338,7 @@ func NewMessageBrokerWithOptions[TMessage any](
 		envelope:                ops,
 		name:                    name,
 		active:                  map[string]map[*activeRequest]struct{}{},
+		closedCh:                make(chan struct{}),
 		cancellationGracePeriod: brokerOptions.cancellationGracePeriod,
 		readyCh:                 make(chan struct{}),
 	}
@@ -734,7 +759,7 @@ func (mb *MessageBroker[TMessage]) cancelPendingRequest(
 
 	cancellationMessage := mb.createCancellationMessage(ctx, request, cause)
 	if cancellationMessage == nil {
-		return cause
+		return markCancellationUnacknowledged(cause)
 	}
 
 	if !requestSent {
@@ -749,7 +774,7 @@ func (mb *MessageBroker[TMessage]) cancelPendingRequest(
 					_ = mb.sendCancellationMessage(requestId, msgType, cancellationMessage)
 				}
 			})
-			return cause
+			return markCancellationUnacknowledged(cause)
 		}
 	}
 
@@ -796,12 +821,12 @@ func (mb *MessageBroker[TMessage]) cancelPendingRequest(
 			return cause
 		case sendErr := <-cancelSendErrCh:
 			if sendErr != nil {
-				return errors.Join(cause, sendErr)
+				return markCancellationUnacknowledged(errors.Join(cause, sendErr))
 			}
 			cancelSendErrCh = nil
 		case <-timer.C:
 			deferPendingCancellationCleanup()
-			return cause
+			return markCancellationUnacknowledged(cause)
 		}
 	}
 }
@@ -1262,6 +1287,11 @@ func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, reque
 	}
 }
 
+// Done returns a channel that is closed after the broker shuts down.
+func (mb *MessageBroker[TMessage]) Done() <-chan struct{} {
+	return mb.closedCh
+}
+
 // Close gracefully shuts down the broker (optional, for cleanup)
 func (mb *MessageBroker[TMessage]) Close() {
 	mb.closeOnce.Do(func() {
@@ -1290,5 +1320,6 @@ func (mb *MessageBroker[TMessage]) Close() {
 		for _, waiter := range responseWaiters {
 			waiter.close()
 		}
+		close(mb.closedCh)
 	})
 }

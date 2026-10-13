@@ -9,8 +9,6 @@ import (
 	"io"
 	"log"
 	"os"
-	osexec "os/exec"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
@@ -168,43 +166,12 @@ func TestExactEnvironmentIsNotLogged(t *testing.T) {
 
 func TestRunCommandEnvironmentModes(t *testing.T) {
 	t.Setenv("AZD_EXEC_TEST_TARGET", "inherited")
-	executable := "/bin/sh"
-	scriptName := "environment.sh"
-	script := `if [ "${AZD_EXEC_TEST_TARGET+x}" = x ]; then
-    printf 'present:%s\n' "$AZD_EXEC_TEST_TARGET"
-else
-    printf 'missing\n'
-fi
-`
-	var shellArgs []string
+
+	command := "/usr/bin/env"
 	if runtime.GOOS == "windows" {
-		// PowerShell's environment dictionary distinguishes a missing variable from an empty one.
-		var err error
-		executable, err = osexec.LookPath("powershell.exe")
-		require.NoError(t, err)
-		scriptName = "environment.ps1"
-		shellArgs = []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"}
-		script = `$environment = [System.Environment]::GetEnvironmentVariables()
-if ($environment.Contains('AZD_EXEC_TEST_TARGET')) {
-    [Console]::WriteLine('present:' + $environment['AZD_EXEC_TEST_TARGET'])
-} else {
-    [Console]::WriteLine('missing')
-}
-`
+		command = "set"
 	}
-	scriptPath := filepath.Join(t.TempDir(), scriptName)
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
-	shellArgs = append(shellArgs, scriptPath)
-	var commandParts []string
-	for _, arg := range append([]string{executable}, shellArgs...) {
-		quoted := "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
-		if runtime.GOOS == "windows" {
-			// RunList uses cmd.exe on Windows, which needs double quotes around paths.
-			quoted = `"` + arg + `"`
-		}
-		commandParts = append(commandParts, quoted)
-	}
-	command := strings.Join(commandParts, " ")
+
 	for _, tt := range []struct {
 		name  string
 		env   []string
@@ -220,7 +187,7 @@ if ($environment.Contains('AZD_EXEC_TEST_TARGET')) {
 		{name: "ExactExplicit", exact: true, env: []string{"AZD_EXEC_TEST_TARGET=explicit"}, want: "present:explicit"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			args := NewRunArgs(executable, shellArgs...).WithEnv(tt.env)
+			args := NewRunArgs(command).WithEnv(tt.env)
 			if tt.exact {
 				args = args.WithExactEnv(tt.env)
 			}
@@ -237,7 +204,15 @@ if ($environment.Contains('AZD_EXEC_TEST_TARGET')) {
 						result, err = runner.Run(t.Context(), args)
 					}
 					require.NoError(t, err, "%s", result.Stderr)
-					require.Equal(t, tt.want+"\n", strings.ReplaceAll(result.Stdout, "\r\n", "\n"))
+					lines := strings.Split(strings.ReplaceAll(result.Stdout, "\r\n", "\n"), "\n")
+					const prefix = "AZD_EXEC_TEST_TARGET="
+					if tt.want == "missing" {
+						require.Equal(t, -1, slices.IndexFunc(lines, func(line string) bool {
+							return strings.HasPrefix(line, prefix)
+						}))
+					} else {
+						require.Contains(t, lines, prefix+strings.TrimPrefix(tt.want, "present:"))
+					}
 					require.Equal(t, "inherited", os.Getenv("AZD_EXEC_TEST_TARGET"))
 				})
 			}

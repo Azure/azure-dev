@@ -382,6 +382,9 @@ harness:
 	harness, ok := got.Properties["harness"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "./harness.json", harness["$ref"])
+	resolvedHarness, ok := got.ResolvedProperties["harness"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "github_copilot_preview", resolvedHarness["type"])
 }
 
 func TestLoadAgentDefinitionFilePathValidation(t *testing.T) {

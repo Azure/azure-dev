@@ -39,6 +39,7 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -1884,7 +1885,7 @@ func addAgentToolboxDependency(
 	if config == nil || reference == nil {
 		return
 	}
-	toolboxName := strings.TrimSpace(reference.Name)
+	toolboxName := servicekey.SanitizeServiceName(reference.Name)
 	if toolboxName == "" {
 		return
 	}
@@ -2809,7 +2810,15 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 }
 
 func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
-	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
+	if target == nil {
+		return nil
+	}
+	return ValidateHostedVoiceWrapperName(wrapperName, target.AgentName)
+}
+
+// ValidateHostedVoiceWrapperName rejects identical resource names.
+func ValidateHostedVoiceWrapperName(wrapperName, targetName string) error {
+	if !strings.EqualFold(wrapperName, targetName) {
 		return nil
 	}
 	return exterrors.Validation(

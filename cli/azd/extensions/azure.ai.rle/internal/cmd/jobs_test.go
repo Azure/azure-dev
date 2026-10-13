@@ -76,7 +76,9 @@ func TestJobsListsRleFineTuningJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, expected := range []string{"JOB ID", "STATUS", "MODEL", "RLE", "VERSION", "ftjob-rle", "code_rl", "1.0.0"} {
+	for _, expected := range []string{
+		"JOB ID", "STATUS", "MODEL", "RLE", "VERSION", "ftjob-rle", "running", "code_rl", "1.0.0",
+	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("expected output to contain %q, got %s", expected, output.String())
 		}
@@ -121,7 +123,8 @@ func TestJobsSupportsJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &jobs); err != nil {
 		t.Fatalf("expected JSON output, got %s: %v", output.String(), err)
 	}
-	if len(jobs) != 1 || jobs[0].Id != "ftjob-rle" || jobs[0].Method.RleEnvironment.Version != "2.0.0" {
+	if len(jobs) != 1 || jobs[0].Id != "ftjob-rle" || jobs[0].Status != "queued" ||
+		jobs[0].Method.RleEnvironment.Version != "2.0.0" {
 		t.Fatalf("unexpected jobs JSON: %#v", jobs)
 	}
 }

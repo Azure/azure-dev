@@ -142,8 +142,18 @@ func (s *rleJobSource) Result(ctx context.Context, entry monitor.JobRollout) (ro
 }
 
 func (s *rleJobSource) Status(ctx context.Context) (string, error) {
-	job, err := s.readJob(ctx)
-	return job.Status, err
+	if !rleJobIDPattern.MatchString(s.jobID) {
+		return "", errors.New("invalid RLE job ID")
+	}
+	var job finetuneJobResource
+	// The project proxy supplies fine-tuning routing and uses Foundry authentication.
+	if err := s.read(ctx, finetuneJobsPath+"/"+url.PathEscape(s.jobID), &job, 1<<20); err != nil {
+		return "", err
+	}
+	if job.Id != s.jobID || strings.TrimSpace(job.Status) == "" {
+		return "", errors.New("invalid fine-tuning job status response")
+	}
+	return job.Status, nil
 }
 
 func readMonitorJSON(

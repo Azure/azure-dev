@@ -37,7 +37,7 @@ func stubAPIJobMonitor(t *testing.T) {
 // test for the single unified mode: train's own post-submission monitor and a
 // separate `azd ai rle monitor --job-id` both read Config/Metrics/Rollouts from
 // the real RLE service, whether or not RLE_TRAIN_ENDPOINT/--endpoint is set.
-// Job status is read from RLE even when training uses a facade endpoint.
+// Job status uses the Foundry project's fine-tuning API even when training uses a facade endpoint.
 func TestTrainAndMonitorUseTheSameAPIBackendRegardlessOfEndpoint(t *testing.T) {
 	for _, env := range []string{"", "https://facade.example.com"} {
 		t.Run("env="+env, func(t *testing.T) {
@@ -53,6 +53,20 @@ func TestTrainAndMonitorUseTheSameAPIBackendRegardlessOfEndpoint(t *testing.T) {
 				if !ok || id != realMonitorJobID || !noBrowser || s.jobID != id ||
 					s.rle.baseUrl != "https://account.services.ai.azure.com/api/projects/project" {
 					t.Fatalf("unexpected monitor source: %#v", source)
+				}
+				s.rle.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					want := "https://account.services.ai.azure.com/api/projects/project" +
+						finetuneJobsPath + "/" + realMonitorJobID
+					if req.Method != http.MethodGet || req.URL.String() != want {
+						t.Fatalf("unexpected status request %s %s", req.Method, req.URL)
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK, Header: http.Header{},
+						Body: io.NopCloser(strings.NewReader(`{"id":"` + id + `","status":"succeeded"}`)),
+					}, nil
+				})
+				if status, err := source.Status(ctx); err != nil || status != "succeeded" {
+					t.Fatalf("status=%q err=%v", status, err)
 				}
 				return nil
 			}
@@ -84,7 +98,71 @@ func TestTrainAndMonitorUseTheSameAPIBackendRegardlessOfEndpoint(t *testing.T) {
 	}
 }
 
-func TestRleJobStatusReadContract(t *testing.T) {
+func TestRleJobStatusUsesFoundryFineTuningAPI(t *testing.T) {
+	id := `"id":"` + realMonitorJobID + `"`
+	for _, tc := range []struct {
+		name, body, want string
+		code             int
+	}{
+		{"running without RLE metadata", `{` + id + `,"status":"running"}`, "running", 200},
+		{"succeeded", `{` + id + `,"status":"succeeded"}`, "succeeded", 200},
+		{"failed", `{` + id + `,"status":"failed"}`, "failed", 200},
+		{"cancelled", `{` + id + `,"status":"cancelled"}`, "cancelled", 200},
+		{"RLE metadata ignored", `{` + id + `,"status":"running","metadata":{"status":"succeeded"}}`, "running", 200},
+		{"missing status", `{` + id + `}`, "", 200},
+		{"blank status", `{` + id + `,"status":" "}`, "", 200},
+		{"numeric status", `{` + id + `,"status":42}`, "", 200},
+		{"wrong id", `{"id":"other","status":"running"}`, "", 200},
+		{"malformed response", `{`, "", 200},
+		{"unauthorized", `{"error":{"code":"Unauthorized"}}`, "", 401},
+		{"not found", `{"error":{"code":"NotFound"}}`, "", 404},
+		{"throttled", `{"error":{"code":"TooManyRequests"}}`, "", 429},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			credential := &testTokenCredential{}
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.Method != http.MethodGet ||
+					r.URL.Path != "/api/projects/project/openai/v1/fine_tuning/jobs/"+realMonitorJobID ||
+					r.URL.RawQuery != "" {
+					t.Errorf("unexpected status request %s %s", r.Method, r.URL)
+				}
+				if r.Header.Get("Authorization") == "" ||
+					r.Header.Get("azureai-project") != "" || r.Header.Get("azureai-project-is-default") != "" {
+					t.Error("status must use Foundry authentication without direct fine-tuning project headers")
+				}
+				w.Header().Set("Retry-After", "17")
+				w.Header().Set("x-request-id", "status-request")
+				w.WriteHeader(tc.code)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+			rle := newRleClientWithCredential(server.URL+"/api/projects/project", credential)
+			rle.httpClient = server.Client()
+			source := &rleJobSource{rle: rle, jobID: realMonitorJobID}
+			status, err := source.Status(t.Context())
+			if (err != nil) != (tc.want == "") || status != tc.want {
+				t.Fatalf("status=%q err=%v, want %q", status, err, tc.want)
+			}
+			if tc.code != http.StatusOK {
+				readErr, ok := errors.AsType[*monitor.ReadError](err)
+				if !ok || readErr.Status != tc.code || readErr.RetryAfter != 17*time.Second ||
+					readErr.Request != "status-request" {
+					t.Fatalf("missing service error details: %v", err)
+				}
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("status made %d requests, want one fine-tuning request and no RLE fallback", calls.Load())
+			}
+			if len(credential.scopes) != 1 || credential.scopes[0] != foundryTokenScope {
+				t.Fatalf("unexpected status token scopes %v", credential.scopes)
+			}
+		})
+	}
+}
+
+func TestRleJobConfigReadContract(t *testing.T) {
 	id := `"id":"` + realMonitorJobID + `"`
 	legacyID := `"job_id":"` + realMonitorJobID + `"`
 	config := `{"model_name":"sample","max_steps":100}`
@@ -174,17 +252,13 @@ func TestRleJobStatusReadContract(t *testing.T) {
 			rle := newRleClientWithCredential(server.URL+"/api/projects/project", credential)
 			rle.httpClient = server.Client()
 			source := &rleJobSource{rle: rle, jobID: realMonitorJobID}
-			status, err := source.Status(t.Context())
 			hasErr := tc.want == ""
-			if (err != nil) != hasErr || status != tc.want {
-				t.Fatalf("got status=%q err=%v, want status=%q error=%v", status, err, tc.want, hasErr)
-			}
 			raw, err := source.Config(t.Context())
 			if (err != nil) != hasErr || string(raw) != tc.config {
 				t.Fatalf("got config=%s err=%v, want config=%s error=%v", raw, err, tc.config, hasErr)
 			}
-			if got := calls.Load(); got != 2 {
-				t.Fatalf("status and config made %d requests, want one each", got)
+			if got := calls.Load(); got != 1 {
+				t.Fatalf("config made %d requests, want one", got)
 			}
 			if len(credential.scopes) != 1 || credential.scopes[0] != foundryTokenScope {
 				t.Fatalf("unexpected status token scopes %v", credential.scopes)
@@ -227,8 +301,15 @@ func TestRleMonitorClientRoutesAndScopes(t *testing.T) {
 	rle := newRleClientWithCredential("https://account.services.ai.azure.com/api/projects/project", credential)
 	s := &rleJobSource{rle: rle, jobID: realMonitorJobID}
 	rle.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Method != "GET" || req.URL.Query().Get("api-version") != foundryAPIVersion {
+		if req.Method != "GET" {
 			t.Fatalf("unexpected request %s", req.URL)
+		}
+		if strings.Contains(req.URL.Path, "/openai/v1/fine_tuning/jobs/") {
+			if req.URL.RawQuery != "" {
+				t.Fatalf("fine-tuning status must not have an API version query: %s", req.URL)
+			}
+		} else if req.URL.Query().Get("api-version") != foundryAPIVersion {
+			t.Fatalf("RLE request is missing its API version: %s", req.URL)
 		}
 		body := `{"id":"` + realMonitorJobID +
 			`","status":"running","metadata":{"model_name":"sample","max_steps":100}}`

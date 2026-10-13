@@ -23,9 +23,8 @@
     <h1 class="sr-only">Rollout summary</h1>
     <p id="load-status" class="notice" role="status">Loading saved snapshot…</p>
     <div id="remote-status" class="notice" role="status" hidden></div>
-    <p id="remote-controls" hidden><button id="remote-refresh" type="button">Refresh service data</button></p>
     <section id="remote-detail" class="panel" aria-labelledby="remote-detail-title" hidden>
-      <p class="section-block"><button id="remote-detail-back" type="button">&#8592; All rollouts</button></p>
+      <p class="section-block back-row"><button id="remote-detail-back" type="button">&#8592; All rollouts</button><button id="unavailable-refresh" class="refresh-btn" type="button" aria-label="Refresh service data" title="Refresh service data" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button></p>
       <h2 id="remote-detail-title">Rollout</h2>
       <p class="muted"><span class="muted">ROLLOUT</span> <code id="remote-detail-id"></code></p>
       <p id="remote-detail-message" class="notice"></p>
@@ -44,18 +43,23 @@
       <button id="tab-metrics" role="tab" type="button" aria-selected="true" aria-controls="run-overview" tabindex="0">Metrics</button>
       <button id="tab-rollouts" role="tab" type="button" aria-selected="false" aria-controls="rollout-list" tabindex="-1">Rollouts<span id="tab-rollouts-count" class="tab-count"></span></button>
       <button id="tab-logs" role="tab" type="button" aria-selected="false" aria-controls="run-log" tabindex="-1">Logs</button>
+      <span id="job-status" class="job-status" hidden>Job status: <span id="job-status-value" class="badge neutral"></span></span>
+      <button id="remote-refresh" class="refresh-btn" type="button" aria-label="Refresh service data" title="Refresh service data" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
     </div>
     <section id="run-overview" class="panel" aria-labelledby="run-overview-title" hidden>
       <div class="list-heading">
         <div>
-          <h2 id="run-overview-title">Training run</h2>
+          <h2 id="run-overview-title" class="sr-only">Training run</h2>
           <p class="muted"><span class="muted">JOB</span> <code id="run-job-id"></code> <span id="run-progress"></span></p>
         </div>
         <p id="run-pending" class="muted" hidden>Waiting for the run to report its first step…</p>
       </div>
       <div id="run-warnings" class="inline-notices" role="status" hidden></div>
+      <details id="run-config" class="run-config">
+        <summary>Job configuration &amp; hyperparameters</summary>
+        <div id="run-facts" class="run-facts"></div>
+      </details>
       <section id="run-headline" class="metrics" aria-label="Latest training metrics"></section>
-      <div id="run-facts" class="run-facts"></div>
       <div class="run-charts-controls">
         <span class="muted">Value axis</span>
         <button id="chart-focus-toggle" type="button" aria-pressed="true">Focused</button>
@@ -74,10 +78,16 @@
     <section id="rollout-list" class="panel" aria-labelledby="rollout-list-title" hidden>
       <div class="list-heading">
         <div>
-          <h2 id="rollout-list-title">Rollouts</h2>
-          <p class="muted"><span class="muted">JOB</span> <code id="list-job-id"></code> <span id="list-count"></span></p>
+          <h2 id="rollout-list-title" class="sr-only">Rollouts</h2>
+          <p class="muted"><span id="list-count"></span></p>
         </div>
         <div class="list-filters">
+          <span id="list-pager" class="list-pager" hidden>
+            <button id="list-prev" type="button" aria-label="Newer rollouts" title="Newer rollouts">&#8249;</button>
+            <span id="list-range" class="muted" aria-live="polite"></span>
+            <button id="list-next" type="button" aria-label="Older rollouts" title="Older rollouts">&#8250;</button>
+          </span>
+          <input id="list-search" type="search" class="list-search" placeholder="Search rollout ID" aria-label="Search by rollout ID" autocomplete="off" spellcheck="false">
           <label for="list-split" class="col-split">Split</label>
           <select id="list-split" class="col-split"><option value="">All</option></select>
           <label for="list-step" id="list-step-label">Step</label>
@@ -98,7 +108,7 @@
       </table></div>
     </section>
     <div id="snapshot" hidden>
-      <p id="back-to-list" class="section-block" hidden><button id="back-button" type="button">&#8592; All rollouts</button></p>
+      <p id="back-to-list" class="section-block back-row" hidden><button id="back-button" type="button">&#8592; All rollouts</button><button id="detail-refresh" class="refresh-btn" type="button" aria-label="Refresh service data" title="Refresh service data" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button></p>
       <section class="snapshot-meta" aria-label="Rollout summary">
         <div class="summary-main">
           <div class="compact-heading">

@@ -926,11 +926,16 @@ function stepLabel(entry) {
 function visibleEntries() {
   const split = byID("list-split").value;
   const step = byID("list-step").value;
-  return rolloutIndex.data.filter((entry) => {
-    if (split && (entry.split || "") !== split) return false;
-    if (step && stepLabel(entry) !== step) return false;
-    return true;
-  });
+  const query = byID("list-search").value.trim().toLowerCase();
+  // The index is kept oldest-first so polling can append; the list shows newest first.
+  return rolloutIndex.data
+    .filter((entry) => {
+      if (split && (entry.split || "") !== split) return false;
+      if (step && stepLabel(entry) !== step) return false;
+      if (query && !String(entry.rollout_id || "").toLowerCase().includes(query)) return false;
+      return true;
+    })
+    .reverse();
 }
 
 // The same page serves one captured rollout and a whole training job. Only a
@@ -940,31 +945,50 @@ function applyMonitorTitle(jobID) {
   const brand = document.querySelector(".brand");
   if (brand) {
     const name = brand.querySelector("span:last-child");
-    if (name) name.textContent = label;
+    if (name) name.textContent = jobID ? `${label} · Training` : label;
     brand.setAttribute("aria-label", `Foundry RLE ${label.toLowerCase()} home`);
   }
   document.title = jobID ? `Foundry RLE job monitor · ${jobID}` : "Foundry RLE rollout monitor";
 }
 
+const LIST_PAGE_SIZE = 200;
+let listPage = 0;
+
 function renderRolloutList() {
-  const entries = visibleEntries();
+  const matching = visibleEntries();
+  const pages = Math.max(1, Math.ceil(matching.length / LIST_PAGE_SIZE));
+  listPage = Math.min(listPage, pages - 1);
+  const first = listPage * LIST_PAGE_SIZE;
+  const entries = matching.slice(first, first + LIST_PAGE_SIZE);
   const attemptSessions = rolloutAttemptSessions(rolloutIndex.data);
   const attemptCount = new Set(attemptSessions.values()).size;
   applyMonitorTitle(rolloutIndex.job_id || "");
-  byID("list-job-id").textContent = rolloutIndex.job_id || "";
-  const recorded = entries.length === rolloutIndex.data.length
-    ? `· ${count(entries.length)} recorded`
-    : `· ${count(entries.length)} of ${count(rolloutIndex.data.length)} recorded`;
-  byID("list-count").textContent = attemptCount > 1 ? `${recorded} · ${attemptCount} attempts shown` : recorded;
+  const total = rolloutTotal();
+  // The tab already carries the total; only say more when the list shows less than that.
+  const recorded = matching.length === total ? ""
+    : matching.length === rolloutIndex.data.length
+      ? `Newest ${count(matching.length)} of ${count(total)} rollouts`
+      : `${count(matching.length)} of ${count(total)} rollouts`;
+  const attempts = attemptCount > 1 ? `${attemptCount} attempts shown` : "";
+  byID("list-pager").hidden = pages === 1;
+  byID("list-prev").disabled = listPage === 0;
+  byID("list-next").disabled = listPage >= pages - 1;
+  byID("list-range").textContent = entries.length
+    ? `${count(first + 1)}–${count(first + entries.length)} of ${count(matching.length)}`
+    : "";
+  byID("list-count").textContent = [recorded, attempts].filter(Boolean).join(" · ");
   const body = byID("list-body");
   body.replaceChildren();
+  // A position in a list that grows is not an identity, so the column only shows a reported sequence.
+  const hasSequence = entries.some((entry) => (entry.sequence_id ?? entry.sequence) != null);
+  byID("list-table").querySelector("thead th").hidden = !hasSequence;
   let previousAttempt = null;
-  entries.forEach((entry, index) => {
+  entries.forEach((entry) => {
     const attempt = attemptSessions.get(entry.rollout_id);
     if (attempt && attempt !== previousAttempt) {
       const divider = element("tr", undefined, "attempt-divider");
       const heading = element("th", `Training attempt · ${short(attempt, 28)}`);
-      heading.colSpan = 9;
+      heading.colSpan = hasSequence ? 9 : 8;
       heading.scope = "rowgroup";
       heading.title = attempt;
       divider.append(heading);
@@ -972,10 +996,7 @@ function renderRolloutList() {
       previousAttempt = attempt;
     }
     const row = element("tr");
-    // The real RLE service does not report a sampler sequence per rollout, so
-    // fall back to this row's position in the (oldest-first) list: a blank
-    // column on every row looks broken, while a position is still informative.
-    row.append(element("td", String(entry.sequence_id ?? entry.sequence ?? index + 1)));
+    if (hasSequence) row.append(element("td", String(entry.sequence_id ?? entry.sequence ?? "—")));
     const open = element("button", short(entry.rollout_id, 14), "link-button");
     open.type = "button";
     open.title = entry.rollout_id;
@@ -1050,9 +1071,15 @@ function showRolloutList() {
 // The count belongs on the tab because the list it describes is usually the
 // view that is not on screen, and a run's rollout count is how you tell it is
 // still producing.
+// rolloutTotal is the job's full rollout count; a real service keeps only the
+// newest rows, so the held list can be shorter than the job.
+function rolloutTotal() {
+  return Math.max(rolloutIndex.data.length, Number(rolloutIndex.total) || 0);
+}
+
 function renderRolloutTabCount() {
   if (!rolloutIndex) return;
-  byID("tab-rollouts-count").textContent = count(rolloutIndex.data.length);
+  byID("tab-rollouts-count").textContent = count(rolloutTotal());
 }
 
 // Reading a chart raises exactly one question -- what happened at that step --
@@ -1187,7 +1214,7 @@ function watchedRunning() {
   if (!rolloutIndex || byID("rollout-list").hidden) return [];
   return visibleEntries()
     .filter((entry) => remoteRolloutState(entry) === "running")
-    .slice(-WATCH_LIMIT)
+    .slice(0, WATCH_LIMIT)
     .map((entry) => entry.rollout_id);
 }
 
@@ -1227,6 +1254,7 @@ async function pollForNewRollouts() {
   }
   // `reset` means the monitor answered with the whole list rather than the part
   // that is new, so appending it would double every rollout already shown.
+  if (update.total !== undefined) rolloutIndex.total = update.total;
   if (update.reset) rolloutIndex.data = update.data;
   else rolloutIndex.data.push(...update.data);
   refreshFilters();
@@ -1532,10 +1560,7 @@ function renderRunProgress() {
   const steps = runMetrics.length;
   const maxSteps = runOverview?.config?.max_steps;
   if (realService()) {
-    const last = runMetrics.at(-1)?.step;
-    byID("run-progress").textContent = isNumber(last)
-      ? `· last reported step ${last}${isNumber(maxSteps) ? ` · configured max steps ${maxSteps}` : ""}`
-      : "· waiting for metrics";
+    byID("run-progress").textContent = runMetrics.length === 0 ? "· waiting for metrics" : "";
     return;
   }
   byID("run-progress").textContent = steps === 0
@@ -1550,7 +1575,16 @@ function renderRunView() {
   renderRunHeadline();
   renderRunFacts();
   renderRunCharts();
+  // Configuration is context, not the point, once there are metrics to read.
+  if (!runConfigSettled && runRows().length) {
+    byID("run-config").open = false;
+  } else if (!runConfigSettled) {
+    byID("run-config").open = true;
+  }
+  runConfigSettled = runRows().length > 0;
 }
+
+let runConfigSettled = false;
 
 // The log is appended to, so only what is new is fetched and appended. Reading
 // it should not jump the reader back to the top on every poll.
@@ -1642,7 +1676,7 @@ async function load() {
         byID("list-step-header").textContent = byID("list-step-label").textContent = "Checkpoint";
         byID("tab-logs").hidden = true;
         byID("tab-metrics").textContent = "Summary";
-        byID("remote-controls").hidden = false;
+        for (const refresh of document.querySelectorAll(".refresh-btn")) refresh.hidden = false;
         if (activeJobTab === "logs") activeJobTab = "metrics";
       }
       await refreshRolloutStates();
@@ -1669,10 +1703,32 @@ async function load() {
 
 byID("back-button").addEventListener("click", closeRollout);
 byID("remote-detail-back").addEventListener("click", closeRollout);
-byID("list-split").addEventListener("change", renderRolloutList);
-byID("list-step").addEventListener("change", renderRolloutList);
+function resetListPage() {
+  listPage = 0;
+  renderRolloutList();
+}
+byID("list-split").addEventListener("change", resetListPage);
+byID("list-step").addEventListener("change", resetListPage);
+byID("list-search").addEventListener("input", resetListPage);
+byID("list-prev").addEventListener("click", () => {
+  listPage -= 1;
+  renderRolloutList();
+});
+byID("list-next").addEventListener("click", () => {
+  listPage += 1;
+  renderRolloutList();
+});
+
+function renderJobStatus(status) {
+  const value = byID("job-status-value");
+  value.textContent = status || "";
+  value.className = "badge status-badge";
+  value.dataset.status = String(status || "").toLowerCase();
+  byID("job-status").hidden = !status;
+}
 
 function applyRemoteOverview(overview) {
+  renderJobStatus(overview?.run?.meta?.status);
   const notes = remoteRunNotices(overview);
   byID("remote-status").hidden = notes.length === 0;
   byID("remote-status").textContent = notes.join(" ");
@@ -1688,13 +1744,23 @@ function rolloutOpen() {
 }
 
 function updateRefreshLabel() {
-  byID("remote-refresh").textContent = rolloutOpen() ? "Refresh rollout" : "Refresh service data";
+  const label = rolloutOpen() ? "Refresh rollout" : "Refresh service data";
+  for (const refresh of document.querySelectorAll(".refresh-btn")) {
+    refresh.title = label;
+    refresh.setAttribute("aria-label", label);
+  }
 }
 
-byID("remote-refresh").addEventListener("click", async () => {
-  const button = byID("remote-refresh");
+function setRefreshBusy(busy) {
+  for (const refresh of document.querySelectorAll(".refresh-btn")) {
+    refresh.disabled = busy;
+    refresh.classList.toggle("is-spinning", busy);
+  }
+}
+
+async function onRefresh() {
   const status = byID("remote-status");
-  button.disabled = true;
+  setRefreshBusy(true);
   status.hidden = false;
   // With a rollout open, refresh means that rollout: the job keeps polling on its own.
   if (rolloutOpen()) {
@@ -1707,7 +1773,7 @@ byID("remote-refresh").addEventListener("click", async () => {
         status.textContent = "Rollout refresh failed; showing previously loaded data.";
       }
     } finally {
-      button.disabled = false;
+      setRefreshBusy(false);
     }
     return;
   }
@@ -1731,9 +1797,11 @@ byID("remote-refresh").addEventListener("click", async () => {
   } catch (error) {
     showRemoteError(error);
   } finally {
-    button.disabled = false;
+    setRefreshBusy(false);
   }
-});
+}
+
+for (const refresh of document.querySelectorAll(".refresh-btn")) refresh.addEventListener("click", onRefresh);
 
 byID("retry").addEventListener("click", load);
 byID("final-response-toggle").addEventListener("click", () => {

@@ -349,20 +349,20 @@ func TestLoadAgentDefinitionFileResolvesNestedReferencesBesideDefinition(t *test
 	t.Parallel()
 
 	root := t.TempDir()
-	definitions := filepath.Join(root, "definitions")
-	require.NoError(t, os.MkdirAll(definitions, 0o750))
+	definitionDir := filepath.Join(root, "definitions")
+	require.NoError(t, os.MkdirAll(definitionDir, 0o750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(definitions, "harness.json"),
+		filepath.Join(definitionDir, "harness.json"),
 		[]byte(`{"type":"github_copilot_preview"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "harness.json"),
-		[]byte(`{"type":"invalid-root-decoy"}`),
+		[]byte(`{"type":"invalid_decoy"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(definitions, "agent.yaml"),
+		filepath.Join(definitionDir, "agent.yaml"),
 		[]byte(`kind: prompt
 name: referenced-agent
 model: gpt-4.1-mini
@@ -379,9 +379,12 @@ harness:
 	require.Equal(t, "definitions/agent.yaml", got.Path)
 	require.Equal(t, agent_yaml.AgentKindPrompt, got.Kind)
 	require.Equal(t, "referenced-agent", got.Name)
-	harness, ok := got.ResolvedProperties["harness"].(map[string]any)
+	harness, ok := got.Properties["harness"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "github_copilot_preview", harness["type"])
+	require.Equal(t, "./harness.json", harness["$ref"])
+	resolvedHarness, ok := got.ResolvedProperties["harness"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "github_copilot_preview", resolvedHarness["type"])
 }
 
 func TestLoadAgentDefinitionFilePathValidation(t *testing.T) {

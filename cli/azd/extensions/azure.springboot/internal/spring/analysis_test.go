@@ -46,7 +46,7 @@ func allDrivers() string {
 func writeFixture(t *testing.T, directory, name, content string) {
 	t.Helper()
 	file := filepath.Join(directory, filepath.FromSlash(name))
-	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o750))
 	require.NoError(t, os.WriteFile(file, []byte(content), 0o600))
 }
 

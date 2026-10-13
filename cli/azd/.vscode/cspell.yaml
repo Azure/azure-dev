@@ -178,6 +178,17 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: extensions/azure.springboot/**
+    words:
+      - Hikari
+      - hsqldb
+      - jndi
+      - magiconair
+      - passwordless
+      - Petclinic
+      - springboot
+      - sslmode
+      - temurin
   - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:
       - generateprojectclient

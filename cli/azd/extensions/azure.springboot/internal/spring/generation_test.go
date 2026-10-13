@@ -5,6 +5,7 @@ package spring
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +75,7 @@ func TestGenerateInfrastructure(t *testing.T) {
 			directory := t.TempDir()
 			require.NoError(t, plan.Write(t.Context(), directory))
 			for name, content := range plan.Files {
-				data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(name)))
+				data, err := fs.ReadFile(os.DirFS(directory), name)
 				require.NoError(t, err)
 				require.Equal(t, content, data)
 			}
@@ -89,7 +90,7 @@ func TestDestinationOwnership(t *testing.T) {
 			directory := t.TempDir()
 			writeFixture(t, directory, name, "user-owned")
 			require.ErrorContains(t, CheckDestination(directory), "already exists")
-			data, err := os.ReadFile(filepath.Join(directory, name))
+			data, err := fs.ReadFile(os.DirFS(directory), name)
 			require.NoError(t, err)
 			require.Equal(t, "user-owned", string(data))
 		})

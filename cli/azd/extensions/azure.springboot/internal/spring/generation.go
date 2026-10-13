@@ -98,7 +98,7 @@ func Generate(ctx context.Context, application *Application) (_ *Plan, resultErr
 	if err := project.Save(ctx, config, file); err != nil {
 		return nil, fmt.Errorf("serializing azd project: %w", err)
 	}
-	data, err := os.ReadFile(file)
+	data, err := fs.ReadFile(os.DirFS(stage), "azure.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("reading staged azd project: %w", err)
 	}

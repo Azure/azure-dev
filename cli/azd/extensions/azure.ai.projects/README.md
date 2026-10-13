@@ -67,7 +67,7 @@ When `endpoint` is omitted, `azd provision` creates a Foundry account and projec
 
 ### Developer access
 
-The built-in provisioning template does not assign a role to the developer. Before deploying a prompt or hosted agent, the agent extension checks project access and attempts to grant Foundry User when needed. If that grant is denied, it warns and deployment continues; an administrator may need to assign the role.
+The built-in provisioning template does not assign a role to the developer. Before deploying a prompt, hosted, or voice agent, the agent extension checks project access and attempts to grant Foundry User when needed. If that grant is denied, it warns and deployment continues; an administrator may need to assign the role.
 
 User-authored on-disk Bicep templates can still declare their own role assignments. Supply any required `principalId` and `principalType` values in the template's parameter file; the provider does not generate them.
 

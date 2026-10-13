@@ -1023,6 +1023,14 @@ func printInvokeTiming(w io.Writer, total time.Duration) {
 	_, _ = color.New(color.FgGreen).Fprintf(w, "\nClient elapsed: %s\n", formatDuration(total))
 }
 
+func printOpenAPIProbeProgress(w io.Writer, raw, interactive bool) error {
+	if raw || !interactive {
+		return nil
+	}
+	_, err := fmt.Fprintln(w, "\nChecking optional OpenAPI metadata...")
+	return err
+}
+
 // formatDuration formats a duration for display in timing output.
 // Always uses seconds with 3 decimal places for consistency.
 func formatDuration(d time.Duration) string {
@@ -2033,17 +2041,13 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if err := resp.Body.Close(); err != nil {
 		log.Print("Invocation response cleanup failed")
 	}
-	if !raw {
-		printInvokeTiming(os.Stdout, totalDuration)
-		if err := latency.writeTo(os.Stdout); err != nil {
-			return err
-		}
-		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
-	}
 
 	// Fetch remote metadata only after the invocation establishes its session.
 	// The metadata endpoint may otherwise allocate an unrelated session.
 	if rc.azdClient != nil && a.endpoint == nil && effectiveSessionID != "" && ctx.Err() == nil {
+		if err := printOpenAPIProbeProgress(os.Stdout, raw, writerIsTerminal(os.Stdout)); err != nil {
+			log.Print("OpenAPI metadata progress output failed")
+		}
 		specRequest := &http.Request{Header: make(http.Header)}
 		applyCustomHeaders(specRequest, a.clientHeaders)
 		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
@@ -2062,6 +2066,13 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		if probeErr != nil {
 			log.Print(probeErr)
 		}
+	}
+	if !raw {
+		printInvokeTiming(os.Stdout, totalDuration)
+		if err := latency.writeTo(os.Stdout); err != nil {
+			return err
+		}
+		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	}
 	return nil
 }

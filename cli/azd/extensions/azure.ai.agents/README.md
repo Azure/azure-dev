@@ -891,12 +891,14 @@ do not use project metadata discovery.
 Metadata failures do not replace a completed invocation's result.
 Remote metadata redirects are not followed: 3xx responses are optional discovery
 failures, so redirects cannot forward caller headers or drop the session binding.
-Failure categories appear only with `--debug`; metadata does not enter normal or raw
-invocation output. Raw response handling remains unchanged, including its
+Failure categories appear only with `--debug`. Interactive, non-raw invocations
+show `Checking optional OpenAPI metadata...` during discovery; timing and `Next:`
+guidance follow discovery. Redirected and raw output contain no metadata progress.
+Raw response handling remains unchanged, including its
 existing treatment of agent-error bodies.
 
 Remote discovery has separate 10-second bounds for configuration RPCs and the
-HTTP request; those waits can total up to 20 seconds after invocation output.
+HTTP request; those waits can total up to 20 seconds after the agent's response.
 An earlier caller deadline or cancellation takes precedence. Synchronous
 filesystem operations are not covered by those network/RPC bounds. Invocation
 timing excludes discovery.

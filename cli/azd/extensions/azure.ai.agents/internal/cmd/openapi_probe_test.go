@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +23,76 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOpenAPIProbeProgress(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		raw         bool
+		interactive bool
+	}{
+		{name: "interactive", interactive: true},
+		{name: "redirected"},
+		{name: "raw interactive", raw: true, interactive: true},
+		{name: "raw redirected", raw: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var out bytes.Buffer
+			require.NoError(t, printOpenAPIProbeProgress(&out, test.raw, test.interactive))
+			if test.interactive && !test.raw {
+				assert.Contains(t, out.String(), "Checking optional OpenAPI metadata...")
+			} else {
+				assert.Empty(t, out.String())
+			}
+		})
+	}
+}
+
+func TestInvocationsRemoteMetadataBeforeCompletion(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, ".azure", "test"), 0o700))
+			client := newOpenAPIProbeClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{Path: root}})
+			out, err := os.CreateTemp(root, "output")
+			require.NoError(t, err)
+			previous := os.Stdout
+			os.Stdout = out
+			t.Cleanup(func() {
+				os.Stdout = previous
+				require.NoError(t, out.Close())
+			})
+			probed := false
+			setOpenAPIProbeTransport(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method == http.MethodPost {
+					resp := openAPITestResponse(req, 200, io.NopCloser(strings.NewReader(`{"result":"ok"}`)))
+					resp.Header.Set("x-agent-session-id", "sid")
+					return resp, nil
+				}
+				probed = true
+				data, readErr := os.ReadFile(out.Name())
+				require.NoError(t, readErr)
+				assert.Contains(t, string(data), `"result": "ok"`)
+				assert.NotContains(t, string(data), "Client elapsed:")
+				assert.NotContains(t, string(data), "Next:")
+				return openAPITestResponse(req, status, io.NopCloser(strings.NewReader("{}"))), nil
+			}))
+			action := &InvokeAction{
+				flags:      &invokeFlags{message: "{}", newSession: true},
+				credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					projectEndpoint: "https://example.com", name: "agent",
+					agentKey: "agent-key", azdClient: client,
+				},
+			}
+			require.NoError(t, action.invocationsRemote(t.Context()))
+			assert.True(t, probed)
+			data, err := os.ReadFile(out.Name())
+			require.NoError(t, err)
+			assert.Contains(t, string(data), "Client elapsed:")
+			assert.NotContains(t, string(data), "Checking optional OpenAPI metadata...")
+		})
+	}
+}
 
 type openAPIProjectServer struct {
 	helpersProjectServer

@@ -28,8 +28,7 @@ const monitorTestID = "3c27c30f5fba261c3a7a3e856b4e1388"
 func isolateRolloutArtifacts(t *testing.T) string {
 	t.Helper()
 	t.Setenv(rleEnableAllEnvVar, "true")
-	root := t.TempDir()
-	t.Chdir(root)
+	root := useRleManifestDir(t)
 	return filepath.Join(root, defaultRolloutOutputDir)
 }
 
@@ -218,7 +217,7 @@ func TestRolloutMonitorLifecycle(t *testing.T) {
 				return nil
 			}
 			command := newRolloutCommand()
-			args := []string{"code_rl", "--version", "1.0.0", "--model", "model", "--rollout-id", monitorTestID}
+			args := []string{"--model", "model", "--rollout-id", monitorTestID}
 			if tc.jsonOutput {
 				command.Flags().String("output", "", "")
 				args = append(args, "--output", "json")

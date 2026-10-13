@@ -131,8 +131,6 @@ type RleGrpoDefaults struct {
 
 	SamplingSeed *int `toml:"sampling_seed,omitempty" json:"sampling_seed,omitempty"`
 
-	RolloutFailureRateAbort *float64 `toml:"rollout_failure_rate_abort,omitempty" json:"rollout_failure_rate_abort,omitempty"`
-
 	MinTrainableGroupMembers *int `toml:"min_trainable_group_members,omitempty" json:"min_trainable_group_members,omitempty"`
 }
 
@@ -502,9 +500,7 @@ func normalizeRleGrpoDefaults(value *RleGrpoDefaults) (*RleGrpoDefaults, error) 
 	for _, parameter := range []struct {
 		value *float64
 		name  string
-	}{
-		{value.RolloutFailureRateAbort, "train.grpo.rollout_failure_rate_abort"},
-	} {
+	}{} {
 		if err := validateFiniteRate(parameter.value, parameter.name); err != nil {
 			return nil, err
 		}
@@ -520,7 +516,6 @@ func normalizeRleGrpoDefaults(value *RleGrpoDefaults) (*RleGrpoDefaults, error) 
 		SaveEvery:                  cloneInt(value.SaveEvery),
 		RemoveConstantRewardGroups: cloneBool(value.RemoveConstantRewardGroups),
 		SamplingSeed:               cloneInt(value.SamplingSeed),
-		RolloutFailureRateAbort:    cloneFloat64(value.RolloutFailureRateAbort),
 		MinTrainableGroupMembers:   cloneInt(value.MinTrainableGroupMembers),
 	}, nil
 }

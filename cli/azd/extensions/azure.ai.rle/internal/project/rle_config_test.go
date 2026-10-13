@@ -221,18 +221,6 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 			wantCode: "rle_manifest_default_invalid",
 		},
 		{
-			name: "rate out of bounds",
-			config: RleConfig{
-				SchemaVersion: &schemaVersion,
-				Rle:           base,
-				Harness:       baseHarness,
-				Train: &RleTrainDefaults{
-					Grpo: &RleGrpoDefaults{RolloutFailureRateAbort: new(1.5)},
-				},
-			},
-			wantCode: "rle_manifest_default_invalid",
-		},
-		{
 			name: "overlong model response field",
 			config: RleConfig{
 				SchemaVersion: &schemaVersion,

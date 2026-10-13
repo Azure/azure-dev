@@ -69,11 +69,10 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 
 func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 	flags := &rleTrainFlags{
-		rleName:         "code_rl",
-		rleVersion:      "1.0.0",
-		model:           "Qwen/Qwen3-32B",
-		suffix:          "custom-suffix",
-		maxEpisodeSteps: 32,
+		rleName:    "code_rl",
+		rleVersion: "1.0.0",
+		model:      "Qwen/Qwen3-32B",
+		suffix:     "custom-suffix",
 	}
 
 	request := buildFinetuneJobRequest(flags, "file-abc", "file-def", nil)
@@ -87,20 +86,15 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 	if request.Suffix == nil || *request.Suffix != "custom-suffix" {
 		t.Fatalf("expected suffix to be set, got %#v", request.Suffix)
 	}
-	if request.Method.RleEnvironment.MaxEpisodeSteps == nil || *request.Method.RleEnvironment.MaxEpisodeSteps != 32 {
-		t.Fatalf("expected max_episode_steps to be set, got %#v", request.Method.RleEnvironment.MaxEpisodeSteps)
-	}
 }
 
 func TestTrainCommandRequiresTrainingFile(t *testing.T) {
 	// --training-file is not marked required on the cobra command (cobra would
-	// reject the run before rle-name/rle-version fallback is ever attempted),
+	// reject the run before the manifest read is ever attempted),
 	// but resolveTrainSettings still requires it and the error has to name it.
-	t.Chdir(t.TempDir())
+	useRleManifestDir(t)
 	cmd := newTrainCommand()
 	cmd.SetArgs([]string{
-		"--rle-name", "code_rl",
-		"--rle-version", "1.0.0",
 		"--model", "Qwen/Qwen3-32B",
 	})
 	cmd.SilenceUsage = true
@@ -114,6 +108,24 @@ func TestTrainCommandRequiresTrainingFile(t *testing.T) {
 	}
 	if !strings.Contains(localErr.Message, "training file") {
 		t.Fatalf("the error should name the training file: %q", localErr.Message)
+	}
+}
+
+func TestTrainRequiresRleManifestEvenWithExplicitIdentity(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cmd := newTrainCommand()
+	cmd.SetArgs([]string{
+		"--model", "Qwen/Qwen3-32B",
+		"--training-file", "training.jsonl",
+	})
+	cmd.SilenceUsage = true
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_missing" {
+		t.Fatalf("expected a missing rle.toml error, got %v", err)
 	}
 }
 
@@ -159,19 +171,6 @@ func TestResolveLocalFilePath(t *testing.T) {
 	}
 }
 
-func TestResolveFinetuneEndpointPrefersFlag(t *testing.T) {
-	endpoint, err := resolveFinetuneEndpoint(
-		"https://from-flag.openai.azure.com",
-		"https://account.services.ai.azure.com/api/projects/project",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint != "https://from-flag.openai.azure.com" {
-		t.Fatalf("expected flag value to take precedence, got %q", endpoint)
-	}
-}
-
 func TestFinetuneEndpointDerivesAccountFromFoundryProject(t *testing.T) {
 	endpoint, err := finetuneEndpointFromFoundryProject(
 		"https://My-Account.services.ai.azure.com/api/projects/project",
@@ -198,7 +197,6 @@ func TestResolveFinetuneEndpointDefaultsToTheFoundryAccount(t *testing.T) {
 	t.Setenv(rleTrainEndpointEnvVar, "")
 
 	endpoint, err := resolveFinetuneEndpoint(
-		"",
 		"https://Account.services.ai.azure.com/api/projects/project",
 	)
 	if err != nil {
@@ -213,7 +211,6 @@ func TestResolveFinetuneEndpointPrefersTheEnvironmentOverTheDefault(t *testing.T
 	t.Setenv(rleTrainEndpointEnvVar, "https://from-env.example.com")
 
 	endpoint, err := resolveFinetuneEndpoint(
-		"",
 		"https://account.services.ai.azure.com/api/projects/project",
 	)
 	if err != nil {
@@ -221,21 +218,6 @@ func TestResolveFinetuneEndpointPrefersTheEnvironmentOverTheDefault(t *testing.T
 	}
 	if endpoint != "https://from-env.example.com" {
 		t.Fatalf("expected %s to take precedence, got %q", rleTrainEndpointEnvVar, endpoint)
-	}
-}
-
-func TestResolveFinetuneEndpointPrefersTheFlagOverTheEnvironment(t *testing.T) {
-	t.Setenv(rleTrainEndpointEnvVar, "https://from-env.example.com")
-
-	endpoint, err := resolveFinetuneEndpoint(
-		"https://from-flag.openai.azure.com",
-		"https://account.services.ai.azure.com/api/projects/project",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint != "https://from-flag.openai.azure.com" {
-		t.Fatalf("expected the flag to take precedence, got %q", endpoint)
 	}
 }
 
@@ -339,6 +321,7 @@ func TestFinetuneSubmissionStopsWhenFoundryTokenUnavailable(t *testing.T) {
 }
 
 func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
+	useRleManifestDir(t)
 	stubAPIJobMonitor(t)
 	trainingFilePath := filepath.Join(t.TempDir(), "training.jsonl")
 	if err := os.WriteFile(trainingFilePath, []byte("{\"input\":\"example\"}\n"), 0o600); err != nil {
@@ -416,7 +399,6 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 			rleVersion:   "1.0.0",
 			model:        "Qwen/Qwen3-32B",
 			trainingFile: trainingFilePath,
-			noBrowser:    true,
 		},
 	}
 
@@ -497,43 +479,13 @@ func TestTrainFallsBackToRleConfigNameAndVersion(t *testing.T) {
 	}
 }
 
-func TestTrainFlagsOverrideRleConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{rleName: "math_rl", rleVersion: "2.0.0", model: "m", trainingFile: "t"}}
-	if _, err := action.resolveTrainSettings(); err != nil {
-		t.Fatal(err)
-	}
-
-	if action.flags.rleName != "math_rl" || action.flags.rleVersion != "2.0.0" {
-		t.Fatalf("expected the flags to win, got %q %q", action.flags.rleName, action.flags.rleVersion)
-	}
-}
-
-func TestTrainFallsBackToRleConfigVersionOnly(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{rleName: "math_rl", model: "m", trainingFile: "t"}}
-	if _, err := action.resolveTrainSettings(); err != nil {
-		t.Fatal(err)
-	}
-
-	if action.flags.rleName != "math_rl" || action.flags.rleVersion != "1.2.3" {
-		t.Fatalf("expected the version from rle.toml, got %q %q", action.flags.rleName, action.flags.rleVersion)
-	}
-}
-
 func TestTrainWithoutRleConfigOrFlagsFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	action := &trainAction{flags: &rleTrainFlags{}}
 	_, err := action.resolveTrainSettings()
 	if err == nil {
-		t.Fatal("expected an error when neither --rle-name nor rle.toml supplies the environment")
+		t.Fatal("expected an error when rle.toml is missing")
 	}
 
 	var localErr *azdext.LocalError
@@ -564,6 +516,7 @@ func TestTrainCommandNoLongerRequiresRleFlags(t *testing.T) {
 // creation, and returns the action alongside the buffer it writes to.
 func stubbedTrain(t *testing.T, ctx context.Context, flags *rleTrainFlags) (*trainAction, *bytes.Buffer) {
 	t.Helper()
+	useRleManifestDir(t)
 	t.Setenv(rleTrainEndpointEnvVar, "https://facade.example.com")
 	trainingFilePath := filepath.Join(t.TempDir(), "training.jsonl")
 	if err := os.WriteFile(trainingFilePath, []byte("{\"input\":\"example\"}\n"), 0o600); err != nil {
@@ -637,7 +590,7 @@ func TestTrainServesTheRolloutDashboardUntilItIsStopped(t *testing.T) {
 
 	logsRoot := t.TempDir()
 	action, output := stubbedTrain(t, ctx,
-		&rleTrainFlags{noBrowser: true, logsRoot: logsRoot})
+		&rleTrainFlags{logsRoot: logsRoot})
 
 	returned := make(chan error, 1)
 	go func() { returned <- action.Run() }()
@@ -805,36 +758,6 @@ func writeTrainRleConfigWithDefaults(
 	}
 }
 
-func TestTaskCountSetsTheDatasetLimitOption(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t", taskCount: 12}}
-	options, err := action.resolveTrainSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if options[trainTaskCountOption] != 12 {
-		t.Fatalf("expected --task-count to set %s, got %#v", trainTaskCountOption, options)
-	}
-}
-
-func TestTaskCountIsOmittedWhenUnset(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
-
-	action := &trainAction{flags: &rleTrainFlags{model: "m", trainingFile: "t"}}
-	options, err := action.resolveTrainSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, present := options[trainTaskCountOption]; present {
-		t.Fatalf("an unset --task-count must not limit the dataset: %#v", options)
-	}
-}
-
 func TestTrainReportsWhatIsMissingWithoutFlagsOrManifestSettings(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -924,7 +847,6 @@ func TestTrainDefaultsOptionsFlattensGrpoAndExcludesRollout(t *testing.T) {
 			LearningRate:               new(2e-5),
 			GroupSize:                  new(4),
 			RemoveConstantRewardGroups: new(true),
-			RolloutFailureRateAbort:    new(0.5),
 		},
 	}
 
@@ -934,7 +856,6 @@ func TestTrainDefaultsOptionsFlattensGrpoAndExcludesRollout(t *testing.T) {
 		"learning_rate":                 2e-5,
 		"group_size":                    4,
 		"remove_constant_reward_groups": true,
-		"rollout_failure_rate_abort":    0.5,
 	}
 	if len(options) != len(want) {
 		t.Fatalf("expected %d options, got %#v", len(want), options)

@@ -495,27 +495,24 @@ When run from a local Gym/OpenEnv recipe, simple reset payloads such as
 `{"seed": 32, "split": "train"}` also work in Windows PowerShell versions that
 remove embedded JSON quotes from native-command arguments.
 
-`--model` is only required when rle.toml has no `defaults.model.name` set, or
-when running source-free from another folder:
+`--model` is only required when rle.toml has no `model.name` set.
 
 ```powershell
-azd ai rle rollout code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
+azd ai rle rollout --model Qwen/Qwen3-32B --task-file task.json
 ```
 
 `rollout` provisions everything a rollout needs and tears it down again: it
 creates a real Loom training session for the model (from `--model`, falling
-back to rle.toml's `defaults.model.name`), saves a sampler checkpoint, calls
+back to rle.toml's `model.name`), saves a sampler checkpoint, calls
 RLE's Execute Rollout API with your `--task`, prints the resulting reward and
 trajectory summary, then closes the Loom session — you never handle Loom
 session or checkpoint identifiers directly. Use `--task`/`--task-file` for the
 sandbox reset payload; it is the only input a rollout takes. For Harness
 targets, RLE derives the agent-visible input server-side from the reset
 observation — there is no caller-supplied agent input to set.
-`--lora-rank` (default `16`), `--rollout-id` (default: a generated GUID),
-`--sequence-id` (default `0`, only meaningful when correlating a rollout to a
-specific training step in a real training loop), and `--timeout` (default
-`600` seconds) all have sensible defaults and rarely need to be set for ad hoc
-testing.
+`--rollout-id` (default: a generated GUID) and `--sequence-id` (default `0`, only
+meaningful when correlating a rollout to a specific training step in a real
+training loop) rarely need to be set for ad hoc testing.
 
 `--mode train` (the default) always uses Loom, since only Loom returns the
 token ids and logprobs training needs, and rejects `--loom`. `--mode eval`
@@ -523,8 +520,7 @@ instead samples a model deployment in the Foundry project: `--model` names the
 deployment, for example `--model gpt-5-mini`, and no Loom session or checkpoint
 is created. Foundry rollouts are text-level: they carry no token ids and are
 never trainable. Add `--loom` to run the eval on a Loom session instead.
-`--lora-rank`, `--sequence-id`, `--renderer` and `--timeout` configure Loom, so
-they are rejected for a Foundry eval.
+`--sequence-id` and `--renderer` configure Loom, so they are rejected for a Foundry eval.
 
 The rollout itself travels over RLE's Execute Rollout WebSocket rather than the
 HTTP API. The Foundry data-plane gateway ends an Execute Rollout HTTP request
@@ -664,7 +660,6 @@ $env:AZD_AI_RLE_ENABLE_ALL = "true"
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 
 azd ai rle train `
-  --rle-name code_rl --rle-version 1.0.0 `
   --model Qwen/Qwen3-32B `
   --training-file .\training.jsonl
 ```
@@ -672,8 +667,7 @@ azd ai rle train `
 `FOUNDRY_PROJECT_ENDPOINT` identifies the project that owns the named RLE. The
 fine-tuning endpoint is normally derived from the same account as
 `https://<account>.openai.azure.com`. Set `RLE_TRAIN_ENDPOINT` to route `train`,
-`jobs`, and `cancel` to a facade or mock service instead. An explicit
-`--endpoint` still takes precedence.
+`jobs`, and `cancel` to a facade or mock service instead.
 Job creation automatically acquires a Foundry token
 (`https://ai.azure.com/.default`) and forwards it in `aml-user-token` for
 evaluation authentication. The request's `Authorization` header still uses
@@ -685,8 +679,6 @@ file. The extension uploads it to the selected fine-tuning resource with the
 `fine-tune` purpose, waits up to five minutes for the asynchronous file import
 to reach `processed`, then uses the returned file ID when it submits the job.
 The validation file is optional and follows the same local-file upload flow.
-Use `--endpoint` to target a different fine-tuning resource for a single
-invocation.
 
 ### Cancel a training job
 
@@ -703,7 +695,7 @@ No local manifest, dataset, log mirror, or running monitor is needed.
 Cancellation uses the [Foundry Azure OpenAI fine-tuning cancel API](https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/fine-tuning#cancel-fine-tuning-job):
 `POST /openai/v1/fine_tuning/jobs/<job-id>/cancel`. It does not cancel an
 individual RLE rollout or Loom session. Use the same endpoint that submitted
-the job: `--endpoint` overrides `RLE_TRAIN_ENDPOINT`, which overrides the
+the job: `RLE_TRAIN_ENDPOINT` overrides the
 Azure OpenAI account endpoint derived from the Foundry project.
 
 The command prints the returned job status and exits without polling or opening
@@ -715,11 +707,10 @@ Ctrl+C in `train` or `monitor` still stops local monitoring, not the remote job.
 
 ### Real-service monitoring (default endpoint)
 
-Without `--endpoint` or `RLE_TRAIN_ENDPOINT`, **train opens the job monitor
+Without `RLE_TRAIN_ENDPOINT`, **train opens the job monitor
 after submission by default**, even with redirected output or `--no-prompt`;
 pass `--no-follow` to skip it and exit immediately instead. Keep the process
-running to use the UI; Ctrl+C stops monitoring, not training. `--no-browser`
-prints the URL without opening a browser. Explicit `--output` is rejected on
+running to use the UI; Ctrl+C stops monitoring, not training. Explicit `--output` is rejected on
 this path rather than silently ignored.
 
 Reopen the same monitor from any machine with project access:
@@ -790,13 +781,13 @@ reported as read errors. Legacy `job_id` responses and root-level configuration
 are not supported. Neither the RLE job's status nor `metadata.status` drives status polling.
 Only `succeeded`, `failed`, and `cancelled` are treated as terminal job statuses,
 matching the fine-tuning API v1 contract.
-`monitor --job-id` no longer accepts `--endpoint`; `RLE_TRAIN_ENDPOINT` does not
+`RLE_TRAIN_ENDPOINT` does not
 affect status polling, including the monitor opened by `train`.
 
 ### Facade monitoring (endpoint override)
 
-An explicit `--endpoint` or non-empty `RLE_TRAIN_ENDPOINT` preserves the existing
-facade path, even if an explicit endpoint happens to name an OpenAI resource.
+A non-empty `RLE_TRAIN_ENDPOINT` preserves the existing
+facade path, even if the endpoint happens to name an OpenAI resource.
 On this path, `train` mirrors the run's artifacts to the local disk as they are
 written and waits for the job to finish, by default:
 
@@ -844,8 +835,7 @@ It opens empty, because the first rollout and the first step of a run both take
 minutes. The page polls as the run records them, so rollouts and steps appear
 without reloading, and any rollout can be opened while the run continues. The
 dashboard stays up after the run finishes -- that is when its rollouts are
-finally all there to read -- so stop it with Ctrl+C. `--no-browser` prints the
-address without opening a browser.
+finally all there to read -- so stop it with Ctrl+C.
 
 With `--no-follow`, the command exits as soon as the job is accepted, so there is
 nothing left to serve a dashboard from. It names the command that opens one
@@ -907,19 +897,6 @@ error lists every accepted name.
 supply both. They are still required settings, and a run that resolves neither
 reports which one is missing and where it can be set.
 
-### Smaller runs
-
-`--task-count` trains on only the first N tasks of the dataset, which is the
-quickest way to check an environment end to end without editing the dataset or
-the manifest:
-
-```powershell
-azd ai rle train --task-count 8
-```
-
-It sets the `max_train_examples` training option, and takes precedence over the
-same option in `[train.options]`.
-
 ## List RLE-backed fine-tuning jobs (experimental)
 
 `azd ai rle jobs` lists fine-tuning jobs that use the `rl_environment` method.
@@ -938,8 +915,8 @@ azd ai rle jobs --output json
 The command requests only `rl_environment` jobs from the fine-tuning API and
 verifies that filter before it renders results. Both table and JSON output use
 the fine-tuning API's status directly, not the RLE job API's status.
-Use `--endpoint` to query a
-different fine-tuning resource for a single invocation.
+Set `RLE_TRAIN_ENDPOINT` to query a
+different fine-tuning resource.
 
 ## Build and install from source
 

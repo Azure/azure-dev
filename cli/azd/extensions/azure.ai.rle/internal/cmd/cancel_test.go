@@ -75,7 +75,6 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 	tests := []struct {
 		name     string
 		env      string
-		flag     string
 		endpoint string
 		format   string
 		status   string
@@ -87,11 +86,6 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 		{
 			name: "environment override", env: "https://facade.example.com",
 			endpoint: "https://facade.example.com", format: "json", status: "cancelled",
-		},
-		{
-			name: "flag overrides environment", env: "https://facade.example.com",
-			flag: "https://explicit.openai.azure.com", endpoint: "https://explicit.openai.azure.com",
-			format: "default", status: "running",
 		},
 	}
 	for _, test := range tests {
@@ -126,9 +120,6 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 				return nil, nil
 			}))
 			args := []string{"cancel", "--job-id", " " + realMonitorJobID + " ", "--output", test.format, "--no-prompt"}
-			if test.flag != "" {
-				args = append(args, "--endpoint", test.flag)
-			}
 			command.SetArgs(args)
 			var output, errorOutput bytes.Buffer
 			command.SetOut(&output)
@@ -163,6 +154,7 @@ func TestCancelCommandRejectsInvalidInputsBeforeCreatingClient(t *testing.T) {
 		name    string
 		args    []string
 		project string
+		env     string
 		format  string
 		code    string
 	}{
@@ -176,20 +168,20 @@ func TestCancelCommandRejectsInvalidInputsBeforeCreatingClient(t *testing.T) {
 			project: "https://wrong.example.com", code: "rle_invalid_project_endpoint",
 		},
 		{
-			name: "HTTP endpoint", args: []string{"--job-id", realMonitorJobID, "--endpoint", "http://api.example.com"},
+			name: "HTTP endpoint", args: []string{"--job-id", realMonitorJobID}, env: "http://api.example.com",
 			project: "https://account.services.ai.azure.com/api/projects/project", code: "rle_invalid_train_endpoint",
 		},
-		{
-			name: "explicit empty endpoint", args: []string{"--job-id", realMonitorJobID, "--endpoint", " "},
-			code: "rle_invalid_train_endpoint",
-		},
+		{name: "endpoint flag removed", args: []string{"--job-id", realMonitorJobID, "--endpoint", "https://x.example.com"}},
 		{name: "positional argument", args: []string{realMonitorJobID}},
 		{name: "unsupported output", args: []string{"--job-id", realMonitorJobID}, format: "table"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(foundryProjectEndpointEnvVar, test.project)
-			t.Setenv(rleTrainEndpointEnvVar, "https://facade.example.com")
+			if test.env == "" {
+				test.env = "https://facade.example.com"
+			}
+			t.Setenv(rleTrainEndpointEnvVar, test.env)
 			oldCreate := createFinetuneClient
 			t.Cleanup(func() { createFinetuneClient = oldCreate })
 			createFinetuneClient = func(string) (*finetuneClient, error) {

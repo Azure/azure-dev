@@ -27,25 +27,21 @@ import (
 
 // rolloutFlags holds the CLI-facing configuration for one rollout.
 type rolloutFlags struct {
-	version    string
 	mode       string
 	loom       bool
 	backend    string
 	model      string
-	loraRank   int
 	task       string
 	taskFile   string
 	rolloutID  string
 	renderer   string
 	sequenceID int
-	timeout    int
 	outputDir  string
 }
 
 type rolloutAction struct {
-	cmd             *cobra.Command
-	flags           *rolloutFlags
-	environmentName string
+	cmd   *cobra.Command
+	flags *rolloutFlags
 	// monitor opens the local dashboard after the rollout. It is cleared when
 	// the dashboard cannot open safely, so the rollout warns instead of failing.
 	monitor bool
@@ -60,11 +56,14 @@ type rolloutTarget struct {
 	isGymOpenEnv    bool
 }
 
+const (
+	rolloutLoraRank    = 16
+	rolloutLoomTimeout = 600 * time.Second
+)
+
 func newRolloutCommand() *cobra.Command {
 	flags := &rolloutFlags{
 		mode:      rolloutModeTrain,
-		loraRank:  16,
-		timeout:   600,
 		outputDir: defaultRolloutOutputDir,
 	}
 
@@ -83,31 +82,21 @@ Loom session or checkpoint identifiers directly.
 logprobs training needs. --mode eval instead samples a model deployment in the Foundry project
 (--model names the deployment) and creates no Loom session. Foundry rollouts are text-level:
 they carry no token ids and are never trainable. Add --loom to run the eval on a Loom session
-instead. --lora-rank, --sequence-id, --renderer and --timeout configure Loom and are rejected
+instead. --sequence-id and --renderer configure Loom and are rejected
 for a Foundry eval.
 
 The response also carries the full capture graph — token ids, logprobs and loss masks —
 which is too large to print and cannot be fetched again once the rollout returns. It is
 written to .output/<rollout-id>/ (see --output-dir) and the files are listed on completion.
 
-With no environment name, rollout uses rle.name and rle.version from the current folder's
-rle.toml. To run an environment without local source, provide both its name and
---version, then set FOUNDRY_PROJECT_ENDPOINT.`,
-		Args: cobra.MaximumNArgs(1),
+rollout must be run from a folder containing rle.toml. It uses rle.name
+and rle.version from that file.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			environmentName := ""
-			if len(args) == 1 {
-				environmentName = args[0]
-			}
-			return (&rolloutAction{
-				cmd:             cmd,
-				flags:           flags,
-				environmentName: environmentName,
-			}).Run()
+			return (&rolloutAction{cmd: cmd, flags: flags}).Run()
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to run this rollout against.")
 	cmd.Flags().StringVar(
 		&flags.mode,
 		"mode",
@@ -126,9 +115,8 @@ rle.toml. To run an environment without local source, provide both its name and
 		"model",
 		"",
 		"Model to sample: a Loom base model name such as Qwen/Qwen3-32B, or, for a Foundry eval, "+
-			"the name of a model deployment in the project. Required unless rle.toml sets defaults.model.name.",
+			"the name of a model deployment in the project. Required unless rle.toml sets model.name.",
 	)
-	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
 	cmd.Flags().StringVar(&flags.task, "task", "", "Inline JSON task payload for the sandbox reset operation.")
 	cmd.Flags().StringVar(&flags.taskFile, "task-file", "", "Path to a JSON file with the task payload.")
 	cmd.Flags().StringVar(
@@ -141,10 +129,9 @@ rle.toml. To run an environment without local source, provide both its name and
 		&flags.renderer,
 		"renderer",
 		"",
-		"Capture Proxy renderer name. Defaults to a service-selected renderer when omitted.",
+		"Model renderer name (for example qwen3_disable_thinking). Defaults to a service-selected renderer when omitted.",
 	)
 	cmd.Flags().IntVar(&flags.sequenceID, "sequence-id", 0, "Loom training-step sequence id for this rollout.")
-	cmd.Flags().IntVar(&flags.timeout, "timeout", flags.timeout, "Loom session provisioning timeout in seconds.")
 	cmd.Flags().StringVar(
 		&flags.outputDir,
 		"output-dir",
@@ -192,7 +179,7 @@ func (a *rolloutAction) Run() error {
 			Category: azdext.LocalErrorCategoryUser,
 			Suggestion: "Pass --model with a Loom base model name (for example --model Qwen/Qwen3-32B) " +
 				"or, for a Foundry eval, a model deployment name, " +
-				"or set defaults.model.name in rle.toml.",
+				"or set model.name in rle.toml.",
 		}
 	}
 
@@ -325,12 +312,12 @@ func (a *rolloutAction) provisionLoomPolicy(
 ) (*rolloutPolicy, func(*error), error) {
 	out := a.cmd.OutOrStdout()
 	errOut := a.cmd.ErrOrStderr()
-	timeout := time.Duration(a.flags.timeout) * time.Second
+	timeout := rolloutLoomTimeout
 
 	if _, err := fmt.Fprintf(out, "Creating Loom training session for model %s ...\n", model); err != nil {
 		return nil, nil, err
 	}
-	sessionID, err := loom.createSession(ctx, model, a.flags.loraRank, timeout)
+	sessionID, err := loom.createSession(ctx, model, rolloutLoraRank, timeout)
 	if err != nil {
 		return nil, nil, loomServiceErrorFor("create Loom training session", err)
 	}
@@ -396,7 +383,7 @@ func (a *rolloutAction) validateBackend() error {
 		return nil
 	}
 	a.flags.backend = foundryPolicyType
-	for _, name := range []string{"lora-rank", "sequence-id", "renderer", "timeout"} {
+	for _, name := range []string{"sequence-id", "renderer"} {
 		if a.cmd.Flags().Changed(name) {
 			return &azdext.LocalError{
 				Message:    fmt.Sprintf("--%s configures a Loom session and is not supported for a Foundry eval.", name),
@@ -421,34 +408,12 @@ func (a *rolloutAction) skipMonitor(errOut io.Writer) error {
 }
 
 func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
-	requestedVersion := strings.TrimSpace(a.flags.version)
-	if a.cmd.Flags().Changed("version") && requestedVersion == "" {
-		return rolloutTarget{}, nil, &azdext.LocalError{
-			Message:    "--version requires a non-empty environment version.",
-			Code:       "rle_environment_version_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Provide a semantic version, for example --version 2.1.0.",
-		}
+	localConfig, err := project.LoadRleConfig(".")
+	if err != nil {
+		return rolloutTarget{}, nil, err
 	}
-	environmentName := strings.TrimSpace(a.environmentName)
-	localConfig, localConfigErr := project.LoadRleConfig(".")
-	if environmentName == "" {
-		if localConfigErr != nil {
-			return rolloutTarget{}, nil, localConfigErr
-		}
-		environmentName = localConfig.Rle.Name
-		if requestedVersion == "" {
-			requestedVersion = localConfig.Rle.Version
-		}
-	} else if requestedVersion == "" {
-		return rolloutTarget{}, nil, &azdext.LocalError{
-			Message:    "A published RLE version is required when invoking by environment name.",
-			Code:       "rle_environment_version_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Pass --version <major.minor.patch>, or run from a folder with rle.toml.",
-		}
-	}
-	version, err := project.NormalizeRleVersion(requestedVersion)
+	environmentName := localConfig.Rle.Name
+	version, err := project.NormalizeRleVersion(localConfig.Rle.Version)
 	if err != nil {
 		return rolloutTarget{}, nil, err
 	}
@@ -464,9 +429,7 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 		environmentName: environmentName,
 		projectEndpoint: projectEndpoint,
 		version:         version,
-		isGymOpenEnv: localConfigErr == nil &&
-			localConfig.Rle.Name == environmentName &&
-			isGymOpenEnv(localConfig.Harness),
+		isGymOpenEnv:    isGymOpenEnv(localConfig.Harness),
 	}, client, nil
 }
 

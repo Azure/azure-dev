@@ -19,18 +19,14 @@ import (
 )
 
 type rleTrainFlags struct {
-	rleName         string
-	rleVersion      string
-	model           string
-	trainingFile    string
-	validationFile  string
-	suffix          string
-	maxEpisodeSteps int
-	noFollow        bool
-	logsRoot        string
-	noBrowser       bool
-	taskCount       int
-	endpoint        string
+	rleName        string
+	rleVersion     string
+	model          string
+	trainingFile   string
+	validationFile string
+	suffix         string
+	noFollow       bool
+	logsRoot       string
 
 	// Where the merged settings came from, for the line printed before submitting.
 	optionsSource string
@@ -67,8 +63,7 @@ By default train also streams the run's logs and metrics to a local mirror
 (--logs-root), in the layout the Loom dashboard reads, and opens a local
 monitor that stays running until Ctrl+C (including in non-interactive runs).
 The monitor reads RLE APIs into memory; no training files are mirrored beyond
-that stream. Ctrl+C stops monitoring, not the remote job. Use --no-browser to
-open the link manually.
+that stream. Ctrl+C stops monitoring, not the remote job.
 
 Pass --no-follow to skip both: the command submits the job, prints the
 azd ai rle monitor command that reopens it later, and exits immediately
@@ -79,10 +74,6 @@ instead of blocking.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.rleName, "rle-name", "",
-		"Name of the published RLE environment to train against. Defaults to rle.name in ./rle.toml.")
-	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "",
-		"Version of the published RLE environment. Defaults to rle.version in ./rle.toml.")
 	cmd.Flags().StringVar(&flags.model, "model", "", "Base model id to fine-tune (required).")
 	cmd.Flags().StringVar(&flags.trainingFile, "training-file", "",
 		"Path to the local training dataset uploaded as the Loom job input (required).")
@@ -90,21 +81,12 @@ instead of blocking.`,
 		"Path to a local validation dataset to upload.")
 	cmd.Flags().StringVar(&flags.suffix, "suffix", "",
 		"Suffix appended to the resulting fine-tuned model name.")
-	cmd.Flags().IntVar(&flags.maxEpisodeSteps, "max-episode-steps", 0,
-		"Maximum steps the RLE executes per rollout (0 uses the service default).")
 	cmd.Flags().BoolVar(&flags.noFollow, "no-follow", false,
 		"Skip the local log/metric mirror and the job monitor. Submit the job, print how "+
 			"to reopen its monitor later, and exit immediately instead of blocking until Ctrl+C.")
 	cmd.Flags().StringVar(&flags.logsRoot, "logs-root", "",
 		"Where the local log/metric mirror is written. Defaults to $LOOM_LOGS_ROOT, else "+
 			"~/loom-runs. Ignored with --no-follow.")
-	cmd.Flags().BoolVar(&flags.noBrowser, "no-browser", false,
-		"Print the job monitor address without opening a browser.")
-	cmd.Flags().IntVar(&flags.taskCount, "task-count", 0,
-		"Train on only the first N tasks of the training dataset, for a smaller run. "+
-			"Sets the max_train_examples training option (0 uses the whole dataset).")
-	cmd.Flags().StringVar(&flags.endpoint, "endpoint", "",
-		fmt.Sprintf("Fine-tuning API endpoint. Defaults to $%s, else the Foundry account endpoint.", rleTrainEndpointEnvVar))
 
 	// model and training-file are not marked required: rle.toml can supply either,
 	// and cobra would reject the run before the manifest is ever read.
@@ -112,53 +94,30 @@ instead of blocking.`,
 	return cmd
 }
 
-// resolveTrainSettings fills in the RLE name and version from rle.toml in the
-// current folder when a flag does not set them, and flattens the manifest's
+// resolveTrainSettings reads the RLE name and version from rle.toml in the
+// current folder, and flattens the manifest's
 // [train.grpo] defaults into the hyperparameters map sent to finetunesapi.
 // model, training-file, validation-file and suffix come only from their
 // flags: [train] is a reusable default for the published environment, not a
 // local-only training invocation.
 //
-// The manifest is optional. It is only required when rle-name or rle-version was
-// not passed as a flag, so `train --rle-name ... --rle-version ... --model ... --training-file
-// ...` still works from a folder that has no rle.toml.
+// rle.toml must exist in the current folder; it is the only source of the name and version.
 func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
-	name := strings.TrimSpace(a.flags.rleName)
-	version := strings.TrimSpace(a.flags.rleVersion)
 	model := strings.TrimSpace(a.flags.model)
 	trainingFile := strings.TrimSpace(a.flags.trainingFile)
 	validationFile := strings.TrimSpace(a.flags.validationFile)
 	suffix := strings.TrimSpace(a.flags.suffix)
 
 	options := map[string]any{}
-	config, configErr := project.LoadRleConfig(".")
-	if configErr == nil {
-		if name == "" {
-			name = config.Rle.Name
-		}
-		if version == "" {
-			version = config.Rle.Version
-		}
-		options = trainDefaultsOptions(config.Train)
-		if len(options) > 0 {
-			a.flags.optionsSource = project.RleConfigFile
-		}
-	} else if name == "" || version == "" {
-		// Only the environment identity structurally needs the manifest. A missing
-		// model or dataset is reported by name below, which is more useful than
-		// naming a file the caller may not have intended to use.
-		return nil, configErr
+	config, err := project.LoadRleConfig(".")
+	if err != nil {
+		return nil, err
 	}
-
-	// --task-count is shorthand for one training option, so it is applied the way
-	// any other flag overrides the manifest rather than being sent separately.
-	if a.flags.taskCount > 0 {
-		options[trainTaskCountOption] = a.flags.taskCount
-		if a.flags.optionsSource == "" {
-			a.flags.optionsSource = "--task-count"
-		} else {
-			a.flags.optionsSource = project.RleConfigFile + " and --task-count"
-		}
+	name := config.Rle.Name
+	version := config.Rle.Version
+	options = trainDefaultsOptions(config.Train)
+	if len(options) > 0 {
+		a.flags.optionsSource = project.RleConfigFile
 	}
 
 	if model == "" {
@@ -223,19 +182,12 @@ func trainDefaultsOptions(train *project.RleTrainDefaults) map[string]any {
 	if grpo.SamplingSeed != nil {
 		options["sampling_seed"] = *grpo.SamplingSeed
 	}
-	if grpo.RolloutFailureRateAbort != nil {
-		options["rollout_failure_rate_abort"] = *grpo.RolloutFailureRateAbort
-	}
 	if grpo.MinTrainableGroupMembers != nil {
 		options["min_trainable_group_members"] = *grpo.MinTrainableGroupMembers
 	}
 
 	return options
 }
-
-// trainTaskCountOption is the training option --task-count sets. The service
-// applies it as the dataset limit for the run; the CLI only forwards it.
-const trainTaskCountOption = "max_train_examples"
 
 func missingTrainSettingError(what string, flag string) error {
 	return &azdext.LocalError{
@@ -278,7 +230,7 @@ func (a *trainAction) Run() error {
 			),
 		}
 	}
-	endpoint, err := resolveFinetuneEndpoint(a.flags.endpoint, projectEndpoint)
+	endpoint, err := resolveFinetuneEndpoint(projectEndpoint)
 	if err != nil {
 		return err
 	}
@@ -408,7 +360,7 @@ func (a *trainAction) followJob(
 	dashboard := make(chan struct{})
 	go func() {
 		defer close(dashboard)
-		if err := runRealJobMonitor(ctx, a.cmd, projectEndpoint, jobID, a.flags.noBrowser); err != nil {
+		if err := runRealJobMonitor(ctx, a.cmd, projectEndpoint, jobID, false); err != nil {
 			// The stream is the part that must keep working; a dashboard that
 			// cannot start is worth saying once and no more.
 			fmt.Fprintf(a.cmd.ErrOrStderr(), "The job monitor did not start: %v\n", err)
@@ -511,10 +463,6 @@ func buildFinetuneJobRequest(
 	rleEnvironment := finetuneRleEnvironmentConfig{
 		Name:    flags.rleName,
 		Version: flags.rleVersion,
-	}
-	if flags.maxEpisodeSteps > 0 {
-		steps := flags.maxEpisodeSteps
-		rleEnvironment.MaxEpisodeSteps = &steps
 	}
 	if len(options) > 0 {
 		rleEnvironment.Hyperparameters = options

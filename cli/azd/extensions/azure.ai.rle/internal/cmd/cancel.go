@@ -13,7 +13,6 @@ import (
 
 func newCancelCommand(outputFormat *string) *cobra.Command {
 	var jobID string
-	var endpoint string
 	cmd := &cobra.Command{
 		Use:   "cancel --job-id <id>",
 		Short: "Cancel an RLE-backed fine-tuning job (experimental)",
@@ -24,9 +23,8 @@ high-level training job, not an individual RLE rollout or Loom session.
 Use the job ID returned by train or jobs. Sign-in and FOUNDRY_PROJECT_ENDPOINT
 are required; no local source folder or running monitor is needed.
 
-The fine-tuning endpoint is resolved exactly as for train: --endpoint, then
-RLE_TRAIN_ENDPOINT, then the Azure OpenAI account endpoint derived from
-FOUNDRY_PROJECT_ENDPOINT. The command prints the returned job status and exits
+The fine-tuning endpoint is resolved exactly as for train: RLE_TRAIN_ENDPOINT,
+then the Azure OpenAI account endpoint derived from FOUNDRY_PROJECT_ENDPOINT. The command prints the returned job status and exits
 without polling. It does not delete saved artifacts or stop a local monitor.
 Use --output json to return the job as JSON.`,
 		Args: cobra.NoArgs,
@@ -41,9 +39,6 @@ Use --output json to return the job as JSON.`,
 			}
 			if err := validateRleJobID(jobID); err != nil {
 				return err
-			}
-			if cmd.Flags().Changed("endpoint") && strings.TrimSpace(endpoint) == "" {
-				return invalidFinetuneEndpointError("--endpoint requires a non-empty fine-tuning API endpoint.")
 			}
 			format, err := azdext.ParseOutputFormat(*outputFormat)
 			if err != nil {
@@ -63,7 +58,7 @@ Use --output json to return the job as JSON.`,
 					),
 				}
 			}
-			finetuneEndpoint, err := resolveFinetuneEndpoint(endpoint, projectEndpoint)
+			finetuneEndpoint, err := resolveFinetuneEndpoint(projectEndpoint)
 			if err != nil {
 				return err
 			}
@@ -91,8 +86,6 @@ Use --output json to return the job as JSON.`,
 		},
 	}
 	cmd.Flags().StringVar(&jobID, "job-id", "", "ID of the training job to cancel.")
-	cmd.Flags().StringVar(&endpoint, "endpoint", "",
-		fmt.Sprintf("Fine-tuning API endpoint. Defaults to $%s, else the Foundry account endpoint.", rleTrainEndpointEnvVar))
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"default", "json"},
 	})

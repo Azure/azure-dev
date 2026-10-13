@@ -20,7 +20,6 @@ const (
 
 type jobsAction struct {
 	cmd          *cobra.Command
-	endpoint     string
 	outputFormat *string
 }
 
@@ -40,12 +39,6 @@ Job statuses come directly from the fine-tuning API, not the RLE job API.`,
 			return action.Run()
 		},
 	}
-	cmd.Flags().StringVar(
-		&action.endpoint,
-		"endpoint",
-		"",
-		fmt.Sprintf("Fine-tuning API endpoint. Defaults to $%s, else the RLE training service.", rleTrainEndpointEnvVar),
-	)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"default", "json"},
@@ -58,7 +51,7 @@ func (a *jobsAction) Run() error {
 	if err != nil {
 		return err
 	}
-	endpoint, err := resolveFinetuneEndpoint(a.endpoint, projectEndpoint)
+	endpoint, err := resolveFinetuneEndpoint(projectEndpoint)
 	if err != nil {
 		return err
 	}

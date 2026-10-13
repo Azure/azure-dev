@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"azure.ai.rle/internal/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestReadJSONFlagOrFileReturnsNilWhenUnset(t *testing.T) {
@@ -146,12 +148,28 @@ func TestNewRolloutIDReturnsUniqueHexValues(t *testing.T) {
 	}
 }
 
+func TestRolloutRequiresRleManifestEvenWithExplicitIdentity(t *testing.T) {
+	stubRleClientEndpoint(t, "https://rle.test")
+	t.Chdir(t.TempDir())
+
+	command := newRolloutCommand()
+	command.SetArgs([]string{"--model", "Qwen/Qwen3-32B"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+
+	err := command.Execute()
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_missing" {
+		t.Fatalf("expected a missing rle.toml error, got %v", err)
+	}
+}
+
 func TestRolloutRequiresModel(t *testing.T) {
 	stubRleClientEndpoint(t, "https://rle.test")
 	t.Chdir(t.TempDir())
 
 	command := newRolloutCommand()
-	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
+	command.SetArgs([]string{})
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -335,7 +353,6 @@ func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	command := newRolloutCommand()
 	outputDir := t.TempDir()
 	command.SetArgs([]string{
-		"code_rl", "--version", "1.0.0",
 		"--model", "Qwen/Qwen3-32B",
 		"--task", `{"prompt":"hello"}`,
 		"--output-dir", outputDir,
@@ -425,7 +442,6 @@ func TestRolloutRunWithFoundryBackendSendsAFoundryPolicyAndCreatesNoLoomSession(
 
 	command := newRolloutCommand()
 	command.SetArgs([]string{
-		"code_rl", "--version", "1.0.0",
 		"--mode", "eval", "--model", "gpt-5-mini",
 		"--task", `{"prompt":"hello"}`,
 		"--output-dir", t.TempDir(),
@@ -449,16 +465,14 @@ func TestRolloutRejectsAnInvalidBackendOrLoomOnlyFlagsOnFoundry(t *testing.T) {
 	}{
 		"unknown backend": {[]string{"--mode", "serve"}, "is not supported"},
 		"loom with train": {[]string{"--mode", "train", "--loom"}, "--loom"},
-		"lora rank":       {[]string{"--mode", "eval", "--lora-rank", "8"}, "--lora-rank"},
 		"sequence id":     {[]string{"--mode", "eval", "--sequence-id", "1"}, "--sequence-id"},
 		"renderer":        {[]string{"--mode", "eval", "--renderer", "qwen3"}, "--renderer"},
-		"session timeout": {[]string{"--mode", "eval", "--timeout", "30"}, "--timeout"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			command := newRolloutCommand()
 			command.SetArgs(append([]string{
-				"code_rl", "--version", "1.0.0", "--model", "m", "--task", `{}`,
+				"--model", "m", "--task", `{}`,
 			}, tc.args...))
 			var output bytes.Buffer
 			command.SetOut(&output)

@@ -583,11 +583,10 @@ func Test_promptForCiFiles(t *testing.T) {
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 
 		err := generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderCustom,
-			RepoRoot:      tempDir,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderGitHubActions,
+			RepoRoot:   tempDir,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 			RequiredExtensions: []RequiredExtension{
 				{Id: "azure.ai.agents", Version: "1.0.0-beta.9"},
 				{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
@@ -616,12 +615,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 
 		err := generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderCustom,
-			UsesTerraform: true,
-			RepoRoot:      tempDir,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider:  ciProviderGitHubActions,
+			IsTerraform: true,
+			RepoRoot:    tempDir,
+			BranchName:  "main",
+			AuthType:    AuthTypeFederated,
 			providerParameters: []provisioning.Parameter{
 				{EnvVarMapping: []string{"AZURE_LOCATION"}},
 			},
@@ -641,11 +639,10 @@ func Test_promptForCiFiles(t *testing.T) {
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 
 		err := generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderCustom,
-			RepoRoot:      tempDir,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 			RequiredExtensions: []RequiredExtension{
 				{Id: "azure.ai.agents", Version: "1.0.0-beta.9"},
 				{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
@@ -659,12 +656,11 @@ func Test_promptForCiFiles(t *testing.T) {
 			expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 
 			err := generatePipelineDefinition(expectedPath, projectProperties{
-				CiProvider:    ciProviderAzureDevOps,
-				InfraProvider: infraProviderCustom,
-				UsesTerraform: true,
-				RepoRoot:      tempDir,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
+				CiProvider:  ciProviderAzureDevOps,
+				IsTerraform: true,
+				RepoRoot:    tempDir,
+				BranchName:  "main",
+				AuthType:    AuthTypeFederated,
 				providerParameters: []provisioning.Parameter{
 					{EnvVarMapping: []string{"AZURE_LOCATION"}},
 				},
@@ -704,12 +700,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderGitHubActions,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -726,12 +721,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    true,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderGitHubActions,
+			RepoRoot:   tempDir,
+			HasAppHost: true,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -748,14 +742,13 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    true,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
-			Variables:     []string{"VAR_1", "VAR_2"},
-			Secrets:       []string{"SECRET_1", "SECRET_2"},
+			CiProvider: ciProviderGitHubActions,
+			RepoRoot:   tempDir,
+			HasAppHost: true,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
+			Variables:  []string{"VAR_1", "VAR_2"},
+			Secrets:    []string{"SECRET_1", "SECRET_2"},
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -772,12 +765,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    true,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: true,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -794,12 +786,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeClientCredentials,
+			CiProvider: ciProviderGitHubActions,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeClientCredentials,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -816,12 +807,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "non-main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderGitHubActions,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "non-main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -838,12 +828,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -860,14 +849,13 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
-			Variables:     []string{"VAR_1", "VAR_2"},
-			Secrets:       []string{"SECRET_1", "SECRET_2"},
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
+			Variables:  []string{"VAR_1", "VAR_2"},
+			Secrets:    []string{"SECRET_1", "SECRET_2"},
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -884,12 +872,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeClientCredentials,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeClientCredentials,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -906,12 +893,11 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "non-main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "non-main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -931,12 +917,11 @@ func Test_promptForCiFiles_azureDevOpsDirectory(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, ".azuredevops/azure-dev.yml")
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -954,12 +939,11 @@ func Test_promptForCiFiles_azureDevOpsDirectory(t *testing.T) {
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, ".azuredevops/azure-dev.yml")
 		err = generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			RepoRoot:      tempDir,
-			HasAppHost:    false,
-			BranchName:    "main",
-			AuthType:      AuthTypeClientCredentials,
+			CiProvider: ciProviderAzureDevOps,
+			RepoRoot:   tempDir,
+			HasAppHost: false,
+			BranchName: "main",
+			AuthType:   AuthTypeClientCredentials,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline

@@ -350,23 +350,6 @@ func toCiProviderType(provider string) (ciProviderType, error) {
 	return "", fmt.Errorf("invalid ci provider type %s", provider)
 }
 
-type infraProviderType string
-
-const (
-	infraProviderBicep     infraProviderType = "bicep"
-	infraProviderTerraform infraProviderType = "terraform"
-	infraProviderCustom    infraProviderType = "custom"
-	infraProviderUndefined infraProviderType = ""
-)
-
-func toInfraProviderType(provider string) infraProviderType {
-	result := infraProviderType(provider)
-	if result == infraProviderBicep || result == infraProviderTerraform || result == infraProviderUndefined {
-		return result
-	}
-	return infraProviderCustom
-}
-
 func usesTerraform(options provisioning.Options) bool {
 	return slices.ContainsFunc(options.GetLayers(), func(layer provisioning.Options) bool {
 		return layer.Provider == provisioning.Terraform
@@ -375,8 +358,7 @@ func usesTerraform(options provisioning.Options) bool {
 
 type projectProperties struct {
 	CiProvider            ciProviderType
-	InfraProvider         infraProviderType
-	UsesTerraform         bool
+	IsTerraform           bool
 	RepoRoot              string
 	HasAppHost            bool
 	BranchName            string

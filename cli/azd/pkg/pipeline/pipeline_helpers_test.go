@@ -79,44 +79,6 @@ func Test_toCiProviderType(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------
-// toInfraProviderType
-// ------------------------------------------------------------------
-
-func Test_toInfraProviderType(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  infraProviderType
-	}{
-		{
-			name:  "bicep",
-			input: "bicep",
-			want:  infraProviderBicep,
-		},
-		{
-			name:  "terraform",
-			input: "terraform",
-			want:  infraProviderTerraform,
-		},
-		{
-			name:  "empty is valid (undefined)",
-			input: "",
-			want:  infraProviderUndefined,
-		},
-		{
-			name:  "custom provider",
-			input: "pulumi",
-			want:  infraProviderCustom,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, toInfraProviderType(tt.input))
-		})
-	}
-}
-
 func TestUsesTerraform(t *testing.T) {
 	assert.True(t, usesTerraform(provisioning.Options{
 		Layers: []provisioning.Options{
@@ -669,9 +631,6 @@ func Test_pipelineProviderFiles_knownProviders(t *testing.T) {
 func Test_constants(t *testing.T) {
 	assert.Equal(t, ciProviderType("github"), ciProviderGitHubActions)
 	assert.Equal(t, ciProviderType("azdo"), ciProviderAzureDevOps)
-	assert.Equal(t, infraProviderType("bicep"), infraProviderBicep)
-	assert.Equal(t, infraProviderType("terraform"), infraProviderTerraform)
-	assert.Equal(t, infraProviderType(""), infraProviderUndefined)
 	assert.Equal(t, PipelineAuthType("federated"), AuthTypeFederated)
 	assert.Equal(t,
 		PipelineAuthType("client-credentials"),
@@ -1024,17 +983,17 @@ func Test_PipelineManager_SetRequiredExtensions(t *testing.T) {
 
 func Test_projectProperties_fields(t *testing.T) {
 	props := projectProperties{
-		CiProvider:    ciProviderGitHubActions,
-		InfraProvider: infraProviderBicep,
-		RepoRoot:      "/tmp/repo",
-		HasAppHost:    true,
-		BranchName:    "main",
-		AuthType:      AuthTypeFederated,
-		Variables:     []string{"VAR1"},
-		Secrets:       []string{"SEC1"},
+		CiProvider:  ciProviderGitHubActions,
+		IsTerraform: true,
+		RepoRoot:    "/tmp/repo",
+		HasAppHost:  true,
+		BranchName:  "main",
+		AuthType:    AuthTypeFederated,
+		Variables:   []string{"VAR1"},
+		Secrets:     []string{"SEC1"},
 	}
 	assert.Equal(t, ciProviderGitHubActions, props.CiProvider)
-	assert.Equal(t, infraProviderBicep, props.InfraProvider)
+	assert.True(t, props.IsTerraform)
 	assert.True(t, props.HasAppHost)
 	assert.Equal(t, "main", props.BranchName)
 	assert.Equal(t, AuthTypeFederated, props.AuthType)

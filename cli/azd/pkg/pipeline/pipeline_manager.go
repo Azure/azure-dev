@@ -1304,7 +1304,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Secrets:                props.Secrets,
 		RequiredExtensions:     props.RequiredExtensions,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
-		IsTerraform:            props.UsesTerraform || props.InfraProvider == infraProviderTerraform,
+		IsTerraform:            props.IsTerraform,
 	}
 
 	appendUnique := func(values []string, value string) []string {
@@ -1474,8 +1474,6 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
 
-	infraProvider := toInfraProviderType(string(pm.infra.Options.Provider))
-
 	var requiredAlphaFeatures []string
 	if pm.infra.IsCompose {
 		requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
@@ -1504,8 +1502,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 		ctx, projectProperties{
 			CiProvider:            pm.ciProviderType,
 			RepoRoot:              repoRoot,
-			InfraProvider:         infraProvider,
-			UsesTerraform:         usesTerraform(pm.infra.Options),
+			IsTerraform:           usesTerraform(pm.infra.Options),
 			HasAppHost:            hasAppHost,
 			BranchName:            branchName,
 			AuthType:              authType,

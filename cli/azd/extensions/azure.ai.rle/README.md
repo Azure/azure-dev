@@ -517,6 +517,13 @@ specific training step in a real training loop), and `--timeout` (default
 `600` seconds) all have sensible defaults and rarely need to be set for ad hoc
 testing.
 
+Pass `--backend foundry` to sample a model deployment in the Foundry project
+instead of a Loom session (`--model` then names the deployment, for example
+`--model gpt-5-mini`). No Loom session or checkpoint is created. Foundry
+rollouts are text-level and eval-only: they carry no token ids and are never
+trainable. `--lora-rank`, `--sequence-id`, `--renderer` and `--timeout`
+configure Loom, so they are rejected when combined with `--backend foundry`.
+
 The rollout itself travels over RLE's Execute Rollout WebSocket rather than the
 HTTP API. The Foundry data-plane gateway ends an Execute Rollout HTTP request
 after roughly 120 seconds, which is shorter than a real Harness rollout, so a

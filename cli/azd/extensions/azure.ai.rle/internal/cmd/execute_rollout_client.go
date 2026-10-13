@@ -30,6 +30,10 @@ const executeRolloutHeader = "aml-user-token" //nolint:gosec // header name, not
 // without overloading these same fields, so a request that omits it is rejected.
 const loomPolicyType = "loom"
 
+// foundryPolicyType samples a model deployment in the Foundry project. It carries no session,
+// checkpoint or sequence id, and its capture is text-level and eval-only.
+const foundryPolicyType = "foundry"
+
 // rolloutPolicy names where a rollout's weights come from. `type` selects the backend and the
 // remaining fields are read according to it; for "loom" that is a real, currently active
 // training session and sampler checkpoint. SessionID/CheckpointID must never be fabricated;

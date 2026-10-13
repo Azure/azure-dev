@@ -371,6 +371,103 @@ func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	}
 }
 
+func TestRolloutRunWithFoundryBackendSendsAFoundryPolicyAndCreatesNoLoomSession(t *testing.T) {
+	isolateRolloutArtifacts(t)
+	stubRolloutMonitor(t)
+	rleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire map[string]any
+		if err := json.Unmarshal(rawBody, &wire); err != nil {
+			t.Fatal(err)
+		}
+		policy, ok := wire["policy"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected a policy object on the wire, got %v", wire)
+		}
+		if policy["type"] != "foundry" || policy["model_name"] != "gpt-5-mini" {
+			t.Fatalf("expected a foundry policy naming the deployment, got %v", policy)
+		}
+		if policy["project_endpoint"] == "" {
+			t.Fatal("expected the project endpoint to be forwarded")
+		}
+		for _, loomOnly := range []string{"session_id", "checkpoint_id", "sequence_id"} {
+			if _, present := policy[loomOnly]; present {
+				t.Fatalf("%s must not be sent for a foundry policy", loomOnly)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"rollout_id": "` + wire["rollout_id"].(string) + `",
+			"reward": 1,
+			"success": true,
+			"episode": {"kind": "gym", "termination_reason": "done", "steps": []}
+		}`))
+	}))
+	defer rleServer.Close()
+
+	loomServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("a foundry rollout must not call the Loom sessions API: %s %s", r.Method, r.URL.Path)
+	}))
+	defer loomServer.Close()
+
+	stubRleClientEndpoint(t, rleServer.URL)
+	oldCreateLoomSessionClient := createLoomSessionClient
+	createLoomSessionClient = func(endpoint string) (*loomSessionClient, error) {
+		return testLoomSessionClientForServer(t, loomServer.URL), nil
+	}
+	t.Cleanup(func() { createLoomSessionClient = oldCreateLoomSessionClient })
+
+	command := newRolloutCommand()
+	command.SetArgs([]string{
+		"code_rl", "--version", "1.0.0",
+		"--backend", "foundry", "--model", "gpt-5-mini",
+		"--task", `{"prompt":"hello"}`,
+		"--output-dir", t.TempDir(),
+	})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("expected rollout to succeed, got %v", err)
+	}
+	if strings.Contains(output.String(), "Loom") {
+		t.Fatalf("expected no Loom provisioning output, got %s", output.String())
+	}
+}
+
+func TestRolloutRejectsAnInvalidBackendOrLoomOnlyFlagsOnFoundry(t *testing.T) {
+	cases := map[string]struct {
+		args []string
+		want string
+	}{
+		"unknown backend": {[]string{"--backend", "vllm"}, "is not supported"},
+		"lora rank":       {[]string{"--backend", "foundry", "--lora-rank", "8"}, "--lora-rank"},
+		"sequence id":     {[]string{"--backend", "foundry", "--sequence-id", "1"}, "--sequence-id"},
+		"renderer":        {[]string{"--backend", "foundry", "--renderer", "qwen3"}, "--renderer"},
+		"session timeout": {[]string{"--backend", "foundry", "--timeout", "30"}, "--timeout"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			command := newRolloutCommand()
+			command.SetArgs(append([]string{
+				"code_rl", "--version", "1.0.0", "--model", "m", "--task", `{}`,
+			}, tc.args...))
+			var output bytes.Buffer
+			command.SetOut(&output)
+			command.SetErr(&output)
+
+			err := command.Execute()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected an error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func testLoomSessionClientForServer(t *testing.T, endpoint string) *loomSessionClient {
 	t.Helper()
 	target, err := url.Parse(endpoint)

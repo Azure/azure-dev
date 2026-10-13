@@ -70,6 +70,54 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 	require.Equal(t, "location", env.GetLocation())
 }
 
+func TestManagerInitializeRejectsAliasesForResolvedExtensionProvider(t *testing.T) {
+	tests := []struct {
+		name            string
+		provider        provisioning.ProviderKind
+		defaultProvider provisioning.DefaultProviderResolver
+	}{
+		{
+			name:            "explicit",
+			provider:        provisioning.ProviderKind("contoso.custom"),
+			defaultProvider: defaultProvider,
+		},
+		{
+			name: "inferred",
+			defaultProvider: func() (provisioning.ProviderKind, error) {
+				return provisioning.ProviderKind("contoso.custom"), nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			manager := provisioning.NewManager(
+				mockContext.Container,
+				tt.defaultProvider,
+				nil,
+				environment.NewWithValues("test-env", nil),
+				mockContext.Console,
+				mockContext.AlphaFeaturesManager,
+				nil,
+				cloud.AzurePublic(),
+			)
+
+			err := manager.Initialize(t.Context(), "", provisioning.Options{
+				Provider: tt.provider,
+				Aliases:  map[string]string{"LOCAL_OUTPUT": "PROJECT_OUTPUT"},
+			})
+
+			require.EqualError(
+				t,
+				err,
+				`initializing infrastructure provider: aliases are supported only for "bicep" and "terraform" providers, `+
+					`not "contoso.custom"`,
+			)
+		})
+	}
+}
+
 func TestManagerPreview(t *testing.T) {
 	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",

@@ -609,6 +609,12 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		providerKey = defaultProvider
 	}
 
+	if len(m.options.Aliases) > 0 {
+		if err := validateAliasesProvider(providerKey); err != nil {
+			return nil, err
+		}
+	}
+
 	container, isNestedContainer := m.serviceLocator.(*ioc.NestedContainer)
 	if !isNestedContainer {
 		if len(m.options.Aliases) == 0 {

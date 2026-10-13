@@ -116,6 +116,7 @@ Each entry under `infra.layers[]` or `layers[].infra[]` can translate between
 the **[provider view](../concepts/glossary.md#provider-view)** and the
 **[project view](../concepts/glossary.md#project-view)**:
 
+- Variable aliases are supported only for the built-in Bicep and Terraform providers.
 - The provider view uses the variable names an infrastructure provider reads or emits.
 - The project view uses the environment variable names the project stores and supplies to CI.
 - The `aliases` map is written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`.

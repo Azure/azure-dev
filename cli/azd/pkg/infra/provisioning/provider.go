@@ -43,6 +43,17 @@ func BuiltInProviderKinds() []ProviderKind {
 	return builtInProviderKinds
 }
 
+func validateAliasesProvider(provider ProviderKind) error {
+	if !slices.Contains(builtInProviderKinds, provider) {
+		return fmt.Errorf(
+			"aliases are supported only for %q and %q providers, not %q",
+			Bicep, Terraform, provider,
+		)
+	}
+
+	return nil
+}
+
 type Mode string
 
 const (
@@ -289,6 +300,12 @@ func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 var aliasNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validateLayerAliases(layer Options) error {
+	if len(layer.Aliases) > 0 && layer.Provider != NotSpecified {
+		if err := validateAliasesProvider(layer.Provider); err != nil {
+			return err
+		}
+	}
+
 	destinations := make(map[string]string, len(layer.Aliases))
 	for _, localName := range slices.Sorted(maps.Keys(layer.Aliases)) {
 		sharedName := layer.Aliases[localName]

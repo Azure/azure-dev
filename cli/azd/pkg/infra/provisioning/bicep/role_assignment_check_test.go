@@ -136,6 +136,11 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 				require.Contains(t, results[0].Message, "SUBSCRIPTION_ID")
 				require.Contains(t, results[0].Message, "Required permission:")
 				require.Contains(t, results[0].Message, "Microsoft.Authorization/roleAssignments/write")
+				require.Equal(t,
+					"Ensure you have the 'Role Based Access Control Administrator', "+
+						"'User Access Administrator', 'Owner', or a custom role "+
+						"with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
+					results[0].Suggestion)
 			}
 		})
 	}
@@ -154,7 +159,7 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 	}{
 		{
 			name: "critical automation", critical: true, noPrompt: true,
-			wantCancel: true, wantSummary: "1 warning found (1 critical).",
+			wantCancel: true, wantSummary: "1 critical warning found.",
 		},
 		{
 			name: "regular automation", regular: true, noPrompt: true,
@@ -166,11 +171,11 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 		},
 		{
 			name: "critical explicit yes", critical: true, answer: true,
-			wantSummary: "1 warning found (1 critical).",
+			wantSummary: "1 critical warning found.",
 		},
 		{
 			name: "critical explicit no", critical: true,
-			wantCancel: true, wantSummary: "1 warning found (1 critical).",
+			wantCancel: true, wantSummary: "1 critical warning found.",
 		},
 		{
 			name: "regular explicit no", regular: true, wantDefault: true,
@@ -222,7 +227,12 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 					return true
 				}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 					prompted = true
-					require.Equal(t, "Proceed with deployment anyway?", options.Message)
+					wantMessage := "Proceed with deployment anyway?"
+					if tt.critical {
+						wantMessage = "Deployment will likely fail. Proceed anyway?"
+					}
+					require.Equal(t, wantMessage, options.Message)
+					require.Equal(t, tt.critical, options.IsWarning)
 					require.Equal(t, tt.wantDefault, options.DefaultValue)
 					return tt.answer, nil
 				})

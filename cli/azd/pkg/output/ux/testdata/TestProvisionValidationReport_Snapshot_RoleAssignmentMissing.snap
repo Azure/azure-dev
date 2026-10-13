@@ -4,6 +4,6 @@
       Subscription: 3819cb9d-0f7c-4284-9e93-220e7fb2367a
       Required permission: Microsoft.Authorization/roleAssignments/write
 
-      Suggestion: Ask for Owner, User Access Administrator, or Role Based Access Control Administrator on this subscription.
+      Suggestion: Ensure you have the 'Role Based Access Control Administrator', 'User Access Administrator', 'Owner', or a custom role with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.
 
-  1 warning found (1 critical).
+  1 critical warning found.

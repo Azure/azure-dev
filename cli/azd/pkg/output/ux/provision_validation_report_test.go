@@ -221,7 +221,7 @@ func TestProvisionValidationReport_CriticalCountsAndSummary(t *testing.T) {
 				{Message: "critical", IsCritical: true},
 			},
 			wantCritical: 1,
-			wantSummary:  "1 warning found (1 critical).",
+			wantSummary:  "1 critical warning found.",
 		},
 		{
 			name: "critical and regular",
@@ -239,7 +239,7 @@ func TestProvisionValidationReport_CriticalCountsAndSummary(t *testing.T) {
 				{Message: "second", IsCritical: true},
 			},
 			wantCritical: 2,
-			wantSummary:  "2 warnings found (2 critical).",
+			wantSummary:  "2 critical warnings found.",
 		},
 		{
 			name: "error is not a critical warning",
@@ -447,8 +447,9 @@ func TestProvisionValidationReport_Snapshot_RoleAssignmentMissing(t *testing.T) 
 					output.WithGrayFormat("Principal ID:") + " 5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb\n" +
 					output.WithGrayFormat("Subscription:") + " 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
 					output.WithGrayFormat("Required permission:") + " Microsoft.Authorization/roleAssignments/write",
-				Suggestion: "Ask for Owner, User Access Administrator, or " +
-					"Role Based Access Control Administrator on this subscription.",
+				Suggestion: "Ensure you have the 'Role Based Access Control Administrator', " +
+					"'User Access Administrator', 'Owner', or a custom role " +
+					"with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
 			},
 		},
 	}
@@ -560,8 +561,9 @@ func TestProvisionValidationReport_Snapshot_AllWarningsCombined(t *testing.T) {
 					output.WithGrayFormat("Principal ID:") + " 5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb\n" +
 					output.WithGrayFormat("Subscription:") + " 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
 					output.WithGrayFormat("Required permission:") + " Microsoft.Authorization/roleAssignments/write",
-				Suggestion: "Ask for Owner, User Access Administrator, or " +
-					"Role Based Access Control Administrator on this subscription.",
+				Suggestion: "Ensure you have the 'Role Based Access Control Administrator', " +
+					"'User Access Administrator', 'Owner', or a custom role " +
+					"with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
 			},
 			{
 				IsError:      false,

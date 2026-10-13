@@ -185,7 +185,7 @@ Validating deployment
     Subscription: subscription-456
     Required permission: Microsoft.Authorization/roleAssignments/write
 
-    Suggestion: Ask for Owner, User Access Administrator, or Role Based Access Control Administrator on this subscription.
+    Suggestion: Ensure you have the 'Role Based Access Control Administrator', 'User Access Administrator', 'Owner', or a custom role with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.
 
 (!) Warning: Another validation finding
     Supporting details from that finding.
@@ -225,7 +225,7 @@ Validating deployment
     Subscription: subscription-456
     Required permission: Microsoft.Authorization/roleAssignments/write
 
-    Suggestion: Ask for Owner, User Access Administrator, or Role Based Access Control Administrator on this subscription.
+    Suggestion: Ensure you have the 'Role Based Access Control Administrator', 'User Access Administrator', 'Owner', or a custom role with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.
 
 (x) Failed: required parameter 'storageAccountName' is missing from
 the deployment.

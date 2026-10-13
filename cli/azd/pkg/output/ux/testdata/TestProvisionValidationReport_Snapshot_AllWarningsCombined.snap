@@ -4,7 +4,7 @@
       Subscription: 3819cb9d-0f7c-4284-9e93-220e7fb2367a
       Required permission: Microsoft.Authorization/roleAssignments/write
 
-      Suggestion: Ask for Owner, User Access Administrator, or Role Based Access Control Administrator on this subscription.
+      Suggestion: Ensure you have the 'Role Based Access Control Administrator', 'User Access Administrator', 'Owner', or a custom role with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.
 
   (!) Warning: Model "no-model" (SKU: GlobalStandard) not found in eastus2
       Model not found in AI model catalog. Provisioning will likely fail.

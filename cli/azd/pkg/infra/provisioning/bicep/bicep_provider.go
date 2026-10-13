@@ -2956,8 +2956,12 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 				output.WithGrayFormat("Subscription:"), subscriptionId,
 				output.WithGrayFormat("Required permission:"), requiredActions[0],
 			),
-			Suggestion: "Ask for Owner, User Access Administrator, or " +
-				"Role Based Access Control Administrator on this subscription.",
+			Suggestion: fmt.Sprintf(
+				"Ensure you have the 'Role Based Access Control Administrator', "+
+					"'User Access Administrator', 'Owner', or a custom role "+
+					"with '%s' assigned to your account.",
+				requiredActions[0],
+			),
 		}}, nil
 	}
 

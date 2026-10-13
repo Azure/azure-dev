@@ -111,6 +111,16 @@ func (c *AgentClient) CreateGATelephonyBinding(
 	if request == nil || (reflect.ValueOf(request).Kind() == reflect.Ptr && reflect.ValueOf(request).IsNil()) {
 		return nil, fmt.Errorf("binding request is required")
 	}
+	switch typed := request.(type) {
+	case *CreateTwilioTelephonyBindingRequest:
+		if typed.ConnectionName == "" || typed.PhoneNumber == "" {
+			return nil, fmt.Errorf("Twilio connection name and phone number are required")
+		}
+	case *CreateTeamsPhoneTelephonyBindingRequest:
+		if typed.ConnectionName == "" || typed.ResourceAccountObjectID == "" {
+			return nil, fmt.Errorf("Teams connection name and resource account object ID are required")
+		}
+	}
 	if repeatability.RequestID == "" {
 		repeatability.RequestID = uuid.NewString()
 	}
@@ -245,6 +255,14 @@ func telephonyBindingListQuery(options TelephonyBindingListOptions) (url.Values,
 	if options.Order != "" && options.Order != "asc" && options.Order != "desc" {
 		return nil, fmt.Errorf("order must be asc or desc")
 	}
+	if options.Provider != "" && options.Provider != TelephonyProviderTwilio &&
+		options.Provider != TelephonyProviderTeamsPhoneExtensibility {
+		return nil, fmt.Errorf("provider must be twilio or teams_phone_extensibility")
+	}
+	if options.Status != "" && options.Status != TelephonyBindingStatusActive &&
+		options.Status != TelephonyBindingStatusSuspended {
+		return nil, fmt.Errorf("status must be active or suspended")
+	}
 	if options.After != "" && options.Before != "" {
 		return nil, fmt.Errorf("after and before cannot both be set")
 	}
@@ -285,6 +303,9 @@ func (c *AgentClient) gaTelephonyRequest(
 ) (string, error) {
 	if agentName == "" {
 		return "", fmt.Errorf("agent name is required")
+	}
+	if isDotPathSegment(agentName) || isDotPathSegment(resourceID) {
+		return "", fmt.Errorf("agent name and resource ID cannot be dot path segments")
 	}
 	endpoint := strings.TrimRight(c.endpoint, "/") + "/agents/" + escapeTelephonyPathSegment(agentName) + "/telephony/" + collection
 	if resourceID != "" {
@@ -351,6 +372,10 @@ func (c *AgentClient) gaTelephonyRequest(
 		}
 	}
 	return resp.Header.Get("ETag"), nil
+}
+
+func isDotPathSegment(value string) bool {
+	return value == "." || value == ".."
 }
 
 func validateTelephonyBindingPage(page *TelephonyBindingPage) error {

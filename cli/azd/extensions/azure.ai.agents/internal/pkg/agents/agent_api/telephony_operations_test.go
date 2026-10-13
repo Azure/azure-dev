@@ -413,6 +413,10 @@ func TestGATelephonyOperations_RequiredInputs(t *testing.T) {
 	var typedNil *CreateTwilioTelephonyBindingRequest
 	_, err = client.CreateGATelephonyBinding(ctx, "agent", typedNil, TelephonyRepeatabilityOptions{})
 	require.EqualError(t, err, "binding request is required")
+	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTwilioTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
+	require.EqualError(t, err, "Twilio connection name and phone number are required")
+	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTeamsPhoneTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
+	require.EqualError(t, err, "Teams connection name and resource account object ID are required")
 	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "", UpdateTelephonyBindingRequest{}, `"etag"`)
 	require.EqualError(t, err, "binding ID is required")
 	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "binding", UpdateTelephonyBindingRequest{}, "")
@@ -429,6 +433,20 @@ func TestGATelephonyOperations_RequiredInputs(t *testing.T) {
 	require.Zero(t, transport.requests)
 }
 
+func TestGATelephonyOperations_RejectDotPathSegments(t *testing.T) {
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		t.Fatal("unexpected HTTP request")
+		return nil, nil
+	})
+	for _, value := range []string{".", ".."} {
+		_, err := client.ListTelephonyBindings(t.Context(), value, TelephonyBindingListOptions{})
+		require.ErrorContains(t, err, "cannot be dot path segments")
+		_, err = client.GetGATelephonyBinding(t.Context(), "agent", value)
+		require.ErrorContains(t, err, "cannot be dot path segments")
+	}
+	require.Zero(t, transport.requests)
+}
+
 func TestListTelephonyBindings_InvalidOptions(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -439,6 +457,8 @@ func TestListTelephonyBindings_InvalidOptions(t *testing.T) {
 		{name: "limit too large", options: TelephonyBindingListOptions{Limit: 101}, err: "limit must be between 1 and 100, or omitted"},
 		{name: "invalid order", options: TelephonyBindingListOptions{Order: "newest"}, err: "order must be asc or desc"},
 		{name: "both cursors", options: TelephonyBindingListOptions{After: "a", Before: "b"}, err: "after and before cannot both be set"},
+		{name: "invalid provider", options: TelephonyBindingListOptions{Provider: "sip"}, err: "provider must be twilio or teams_phone_extensibility"},
+		{name: "invalid status", options: TelephonyBindingListOptions{Status: "inactive"}, err: "status must be active or suspended"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -502,6 +522,15 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 		})
 		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
 		require.ErrorContains(t, err, "missing required ETag")
+	})
+
+	t.Run("unknown response status", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK,
+				`{"data":[{"id":"binding","provider":"twilio","connection_name":"conn","status":"inactive","incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"etag\""}],"has_more":false}`, nil), nil
+		})
+		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+		require.ErrorContains(t, err, "invalid status")
 	})
 
 	t.Run("transport error", func(t *testing.T) {

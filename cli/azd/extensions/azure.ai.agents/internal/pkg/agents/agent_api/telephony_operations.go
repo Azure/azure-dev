@@ -27,6 +27,23 @@ const (
 	TelephonyProviderTwilio                  = "twilio"
 )
 
+// TelephonyWriteOutcomeUnknownError indicates that a write request may have
+// committed even though the client could not confirm the final service result.
+type TelephonyWriteOutcomeUnknownError struct {
+	Err error
+}
+
+func (e *TelephonyWriteOutcomeUnknownError) Error() string {
+	if e == nil || e.Err == nil {
+		return "telephony write outcome could not be confirmed"
+	}
+	return e.Err.Error()
+}
+
+func (e *TelephonyWriteOutcomeUnknownError) Unwrap() error {
+	return e.Err
+}
+
 // ListTelephonyBindings retrieves one page from the canonical v1 binding collection.
 func (c *AgentClient) ListTelephonyBindings(
 	ctx context.Context,
@@ -95,7 +112,7 @@ func (c *AgentClient) GetGATelephonyBinding(
 		return nil, err
 	}
 	binding.ETag = etag
-	if err := validateTelephonyBinding(&binding, true); err != nil {
+	if err := validateTelephonyBinding(&binding, true, false); err != nil {
 		return nil, err
 	}
 	return &binding, nil
@@ -138,8 +155,8 @@ func (c *AgentClient) CreateGATelephonyBinding(
 		return nil, err
 	}
 	binding.ETag = etag
-	if err := validateTelephonyBinding(&binding, true); err != nil {
-		return nil, err
+	if err := validateTelephonyBinding(&binding, true, false); err != nil {
+		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	return &binding, nil
 }
@@ -170,8 +187,8 @@ func (c *AgentClient) UpdateGATelephonyBinding(
 		return nil, err
 	}
 	binding.ETag = etag
-	if err := validateTelephonyBinding(&binding, true); err != nil {
-		return nil, err
+	if err := validateTelephonyBinding(&binding, true, false); err != nil {
+		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	return &binding, nil
 }
@@ -240,10 +257,10 @@ func (c *AgentClient) ReplaceTelephonyTransferTargets(
 	}
 	targets.ETag = etag
 	if targets.ETag == "" {
-		return nil, fmt.Errorf("telephony response is missing required ETag")
+		return nil, telephonyWriteOutcomeUnknown(fmt.Errorf("telephony response is missing required ETag"))
 	}
 	if err := validateTelephonyTransferTargets(&targets); err != nil {
-		return nil, err
+		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	return &targets, nil
 }
@@ -346,7 +363,11 @@ func (c *AgentClient) gaTelephonyRequest(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("sending telephony request: %w", err)
+		err = fmt.Errorf("sending telephony request: %w", err)
+		if method != http.MethodGet {
+			return "", telephonyWriteOutcomeUnknown(err)
+		}
+		return "", err
 	}
 	defer resp.Body.Close()
 	expected := http.StatusOK
@@ -362,13 +383,25 @@ func (c *AgentClient) gaTelephonyRequest(
 		decoder := json.NewDecoder(resp.Body)
 		if err := decoder.Decode(result); err != nil {
 			if err == io.EOF {
-				return "", fmt.Errorf("telephony response body is required")
+				err = fmt.Errorf("telephony response body is required")
+				if method != http.MethodGet {
+					return "", telephonyWriteOutcomeUnknown(err)
+				}
+				return "", err
 			}
-			return "", fmt.Errorf("invalid telephony response JSON: %w", err)
+			err = fmt.Errorf("invalid telephony response JSON: %w", err)
+			if method != http.MethodGet {
+				return "", telephonyWriteOutcomeUnknown(err)
+			}
+			return "", err
 		}
 		var trailing any
 		if err := decoder.Decode(&trailing); err != io.EOF {
-			return "", fmt.Errorf("invalid telephony response JSON: multiple values")
+			err = fmt.Errorf("invalid telephony response JSON: multiple values")
+			if method != http.MethodGet {
+				return "", telephonyWriteOutcomeUnknown(err)
+			}
+			return "", err
 		}
 	}
 	return resp.Header.Get("ETag"), nil
@@ -383,7 +416,7 @@ func validateTelephonyBindingPage(page *TelephonyBindingPage) error {
 		return fmt.Errorf("telephony binding page is missing required data")
 	}
 	for i := range page.Data {
-		if err := validateTelephonyBinding(&page.Data[i], true); err != nil {
+		if err := validateTelephonyBinding(&page.Data[i], true, true); err != nil {
 			return fmt.Errorf("invalid telephony binding at index %d: %w", i, err)
 		}
 	}
@@ -393,7 +426,7 @@ func validateTelephonyBindingPage(page *TelephonyBindingPage) error {
 	return nil
 }
 
-func validateTelephonyBinding(binding *GATelephonyBinding, requireETag bool) error {
+func validateTelephonyBinding(binding *GATelephonyBinding, requireETag, allowMissingStatus bool) error {
 	if binding.ID == "" || binding.Provider == "" || binding.ConnectionName == "" || binding.IncomingCallURL == "" {
 		return fmt.Errorf("telephony response is missing required binding fields")
 	}
@@ -402,16 +435,29 @@ func validateTelephonyBinding(binding *GATelephonyBinding, requireETag bool) err
 	}
 	// The pinned GA contract requires status, but deployed Vienna versions can
 	// omit it. Accept omission during rollout while still rejecting unknown values.
+	if binding.Status == "" && !allowMissingStatus {
+		return fmt.Errorf("telephony response is missing required status")
+	}
 	if binding.Status != "" && binding.Status != TelephonyBindingStatusActive && binding.Status != TelephonyBindingStatusSuspended {
 		return fmt.Errorf("telephony response contains invalid status %q", binding.Status)
 	}
-	if binding.Provider == TelephonyProviderTwilio && binding.PhoneNumber == "" {
-		return fmt.Errorf("Twilio telephony response is missing phone_number")
-	}
-	if binding.Provider == TelephonyProviderTeamsPhoneExtensibility && binding.ResourceAccountObjectID == "" {
-		return fmt.Errorf("Teams telephony response is missing resource_account_object_id")
+	switch binding.Provider {
+	case TelephonyProviderTwilio:
+		if binding.PhoneNumber == "" {
+			return fmt.Errorf("Twilio telephony response is missing phone_number")
+		}
+	case TelephonyProviderTeamsPhoneExtensibility:
+		if binding.ResourceAccountObjectID == "" {
+			return fmt.Errorf("Teams telephony response is missing resource_account_object_id")
+		}
+	default:
+		return fmt.Errorf("telephony response contains unsupported provider %q", binding.Provider)
 	}
 	return nil
+}
+
+func telephonyWriteOutcomeUnknown(err error) error {
+	return &TelephonyWriteOutcomeUnknownError{Err: err}
 }
 
 func validateTelephonyTransferTargets(targets *TelephonyTransferTargets) error {

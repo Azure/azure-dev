@@ -4,7 +4,6 @@
 package agent_api
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -131,12 +130,16 @@ func TestListAllTelephonyBindings_UsesLastIDAsAfterCursor(t *testing.T) {
 		requests++
 		if requests == 1 {
 			require.Empty(t, req.URL.Query().Get("after"))
-			return telephonyResponse(req, http.StatusOK,
-				`{"data":[{"id":"one","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/one","phone_number":"+14255550123","etag":"\"one\""}],"last_id":"cursor-one","has_more":true}`, nil), nil
+			return telephonyResponse(req, http.StatusOK, `{
+				"data":[{"id":"one","provider":"twilio","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/one","phone_number":"+14255550123","etag":"\"one\""}],
+				"last_id":"cursor-one","has_more":true}`, nil), nil
 		}
 		require.Equal(t, "cursor-one", req.URL.Query().Get("after"))
-		return telephonyResponse(req, http.StatusOK,
-			`{"data":[{"id":"two","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/two","phone_number":"+14255550124","etag":"\"two\""}],"last_id":"cursor-two","has_more":false}`, nil), nil
+		return telephonyResponse(req, http.StatusOK, `{
+			"data":[{"id":"two","provider":"twilio","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/two","phone_number":"+14255550124","etag":"\"two\""}],
+			"last_id":"cursor-two","has_more":false}`, nil), nil
 	})
 
 	bindings, err := client.ListAllTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{Limit: 1})
@@ -352,9 +355,12 @@ func TestConditionalTelephonyWrites_AreNotRetried(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-				return telephonyResponse(req, http.StatusServiceUnavailable, `{"error":{"message":"retry"}}`, nil), nil
+				return nil, errors.New("connection reset after dispatch")
 			})
-			require.Error(t, tt.call(client))
+			err := tt.call(client)
+			require.Error(t, err)
+			var unknown *TelephonyWriteOutcomeUnknownError
+			require.ErrorAs(t, err, &unknown)
 			require.Equal(t, 1, transport.requests)
 		})
 	}
@@ -526,18 +532,40 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 
 	t.Run("unknown response status", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-			return telephonyResponse(req, http.StatusOK,
-				`{"data":[{"id":"binding","provider":"twilio","connection_name":"conn","status":"inactive","incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"etag\""}],"has_more":false}`, nil), nil
+			return telephonyResponse(req, http.StatusOK, `{
+				"data":[{"id":"binding","provider":"twilio","connection_name":"conn","status":"inactive",
+				"incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"etag\""}],
+				"has_more":false}`, nil), nil
 		})
 		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
 		require.ErrorContains(t, err, "invalid status")
+	})
+
+	t.Run("missing status rejected outside list", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK,
+				`{"id":"binding","provider":"twilio","connection_name":"conn","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
+				http.Header{"ETag": {`"etag"`}}), nil
+		})
+		_, err := client.GetGATelephonyBinding(t.Context(), "agent", "binding")
+		require.ErrorContains(t, err, "missing required status")
+	})
+
+	t.Run("unknown response provider", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK, `{
+				"data":[{"id":"binding","provider":"sip","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/call","etag":"\"etag\""}],"has_more":false}`, nil), nil
+		})
+		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+		require.ErrorContains(t, err, "unsupported provider")
 	})
 
 	t.Run("transport error", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
 			return nil, errors.New("network unavailable")
 		})
-		_, err := client.GetTelephonyTransferTargets(context.Background(), "agent")
+		_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
 		require.ErrorContains(t, err, "sending telephony request")
 		require.ErrorContains(t, err, "network unavailable")
 	})

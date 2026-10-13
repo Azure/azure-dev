@@ -71,6 +71,13 @@ credentials and the core scaffold's firewall rules allow all public IP addresses
 JDBC connections require TLS. This is not a restrictive production network policy.
 Embedded databases are not a durable Azure storage solution.
 
+SQL scaffolding also stores the database password in Key Vault, although the app
+receives it directly through an ACA secret. The vault defaults to 90-day purge
+protection; `azd down --purge` cannot override it. Disposable test configurations
+can set `enablePurgeProtection: false` and `softDeleteRetentionInDays: 7` in the
+generated vault module before provisioning. These settings cannot remove protection
+from an existing vault.
+
 Managed identity is desirable but deferred: detected passwordless intent is
 rejected, not replaced with password authentication. Restricted public networking,
 private networking/DNS, and database user/bootstrap policies are separate future work.
@@ -100,5 +107,13 @@ default H2, `SPRING_PROFILES_ACTIVE=mysql`, and `SPRING_PROFILES_ACTIVE=postgres
 The application is not vendored; generic regression fixtures live in the Go tests.
 
 At this milestone, all three cases passed initialization and Bicep compilation.
-Maven packaging and real Spring property-resolution checks also passed. Container
-builds and live Azure provisioning/connectivity remain unverified.
+Maven packaging and real Spring property-resolution checks also passed.
+
+Live H2 and PostgreSQL container build/deployment, health, and database write/read
+passed. Restarting the app reset H2 data and preserved PostgreSQL data as expected.
+PostgreSQL used PostgreSQL 15 / Standard_B1ms in `westus3`, after a database-only
+create/delete probe verified availability; the initial `eastus2` attempt encountered
+a subscription region restriction. Test resource groups were deleted, and the
+PostgreSQL test vault was purged using the disposable overrides above.
+MySQL provisioning remains blocked by the core scaffold's AVM 0.6.1
+`dummyVault/dummyKey` template reference.

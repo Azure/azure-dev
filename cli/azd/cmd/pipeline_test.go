@@ -108,7 +108,6 @@ func Test_PipelineConfigAction_ActivatesProvidersAndForwardsExtensions(t *testin
 
 	activator := &pipelineConfigTestActivator{}
 	manager := &pipelineConfigTestManager{}
-	version := "1.0.0"
 	projectConfig := &project.ProjectConfig{
 		Name: "test-project",
 		Layers: project.LayerConfigs{
@@ -123,7 +122,7 @@ func Test_PipelineConfigAction_ActivatesProvidersAndForwardsExtensions(t *testin
 			"custom-service": {Host: project.ServiceTargetKind("custom.service")},
 		},
 		RequiredVersions: &project.RequiredVersions{
-			Extensions: map[string]*string{"explicit.extension": &version},
+			Extensions: map[string]*string{"explicit.extension": new("1.0.0")},
 		},
 	}
 	action := &pipelineConfigAction{

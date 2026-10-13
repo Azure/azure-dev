@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
@@ -61,7 +62,7 @@ func TestRepinnedLocalDatasetValidatesSelectedRegisteredRows(t *testing.T) {
 			contentStatus    int
 		}{
 			{name: "missing required column", rows: `{"response":"answer"}`},
-			{name: "missing later column", rows: "{\"query\":\"first\"}\n{\"response\":\"second\"}"},
+			{name: "missing later column", rows: "{\"query\":\"first\",\"response\":\"answer\"}\n{\"response\":\"second\"}"},
 			{name: "malformed selected content", rows: "not JSON"},
 			{name: "metadata denied", metadataStatus: http.StatusForbidden},
 			{name: "credentials denied", credentialStatus: http.StatusForbidden},
@@ -95,106 +96,6 @@ func TestRepinnedLocalDatasetValidatesSelectedRegisteredRows(t *testing.T) {
 	}
 }
 
-func TestUnpinnedLocalDatasetRequiresSuccessfulFallbackRead(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
-		for _, status := range []int{http.StatusForbidden, http.StatusGatewayTimeout, http.StatusNotFound} {
-			t.Run(caller+"/"+http.StatusText(status), func(t *testing.T) {
-				ec, env, service, cfg, dir := validationFixture(t)
-				digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
-				require.NoError(t, err)
-				env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
-				env.state[versionKey("dataset", "turn-tests")] = "1.0"
-				before := maps.Clone(env.state)
-				service.dataset = true
-				service.emptyDatasetListing = true
-				service.datasetReadStatus = status
-
-				err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
-				require.Error(t, err)
-				if status == http.StatusNotFound {
-					assert.Contains(t, err.Error(), `no dataset "turn-tests" at version "1.0"`)
-				} else {
-					assert.Contains(t, err.Error(), fmt.Sprint(status))
-				}
-				assert.Equal(t, []string{
-					"GET /datasets/turn-tests/versions",
-					"GET /datasets/turn-tests/versions/1.0",
-				}, service.requests, "fallback failures must stop before uploads, tags, or evaluator publication")
-				assert.Zero(t, service.createCount)
-				assert.Empty(t, env.config)
-				assert.Empty(t, env.values)
-				assert.Equal(t, before, env.state)
-			})
-		}
-	}
-}
-
-type datasetFallbackTimeoutTransport struct {
-	requests []string
-}
-
-func (s *datasetFallbackTimeoutTransport) Do(request *http.Request) (*http.Response, error) {
-	s.requests = append(s.requests, request.Method+" "+request.URL.Path)
-	if strings.HasSuffix(request.URL.Path, "/versions") {
-		return &http.Response{
-			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
-			Body: io.NopCloser(strings.NewReader(`{"value":[]}`)), Request: request,
-		}, nil
-	}
-	return nil, context.DeadlineExceeded
-}
-
-func TestUnpinnedLocalDatasetFallbackTimeoutStopsBeforeMutation(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
-		t.Run(caller, func(t *testing.T) {
-			ec, env, service, cfg, dir := validationFixture(t)
-			digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
-			require.NoError(t, err)
-			env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
-			env.state[versionKey("dataset", "turn-tests")] = "1.0"
-			before := maps.Clone(env.state)
-			transport := &datasetFallbackTimeoutTransport{}
-			pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
-				Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
-			})
-			ec.datasetClient = dataset_api.NewDatasetClientFromPipeline("https://example.test", pipeline)
-
-			require.ErrorIs(t, reconcileArtifactConfig(t, caller, ec, cfg, dir), context.DeadlineExceeded)
-			assert.Equal(t, []string{
-				"GET /datasets/turn-tests/versions",
-				"GET /datasets/turn-tests/versions/1.0",
-			}, transport.requests)
-			assert.Empty(t, service.requests, "no evaluator or eval work follows a failed dataset fallback read")
-			assert.Empty(t, env.config)
-			assert.Empty(t, env.values)
-			assert.Equal(t, before, env.state)
-		})
-	}
-}
-
-func TestUnpinnedLocalDatasetToleratesListingDelayAfterSuccessfulRead(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
-		t.Run(caller, func(t *testing.T) {
-			ec, env, service, cfg, dir := validationFixture(t)
-			digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
-			require.NoError(t, err)
-			env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
-			env.state[versionKey("dataset", "turn-tests")] = "1.0"
-			service.dataset = true
-			service.emptyDatasetListing = true
-
-			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
-			assert.Contains(t, service.requests, "GET /datasets/turn-tests/versions/1.0")
-			for _, request := range service.requests {
-				assert.NotContains(t, request, "startPendingUpload", "the unchanged dataset must not be uploaded again")
-			}
-			assert.Equal(t, 1, service.createCount)
-			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
-			assert.Equal(t, digest, env.stored(t, project.FingerprintKey("dataset", "turn-tests")))
-		})
-	}
-}
-
 func TestRepinnedLocalDatasetPreservesPublicationBaseline(t *testing.T) {
 	for _, caller := range []string{"create", "up"} {
 		t.Run(caller, func(t *testing.T) {
@@ -206,7 +107,7 @@ func TestRepinnedLocalDatasetPreservesPublicationBaseline(t *testing.T) {
 			env.state[versionKey("dataset", "turn-tests")] = "1.0"
 			cfg.Datasets[0].Version = "2.0"
 			service.dataset = true
-			service.registeredRows = `{"query":"selected remote row"}`
+			service.registeredRows = `{"query":"selected remote row","response":"selected remote answer"}`
 			for range 2 {
 				ec.state = nil
 				require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
@@ -282,7 +183,10 @@ func TestOptionalDatasetToolColumnsAreRequiredOnlyWhenExplicit(t *testing.T) {
 					ec, env, service, cfg, dir := validationFixture(t)
 					service.definition = `{"definition":{"data_schema":{"properties":{"query":{},` +
 						fmt.Sprintf("%q", field) + `:{}}}}}`
-					rows := fmt.Sprintf("{\"query\":\"first\",%q:[]}\n{\"query\":\"second\"}\n", field)
+					rows := fmt.Sprintf(
+						"{\"query\":\"first\",\"response\":\"answer\",%q:[]}\n"+
+							"{\"query\":\"second\",\"response\":\"answer\"}\n",
+						field)
 					require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
 					if explicit {
 						cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{field: "{{item." + field + "}}"}
@@ -298,8 +202,12 @@ func TestOptionalDatasetToolColumnsAreRequiredOnlyWhenExplicit(t *testing.T) {
 					require.NoError(t, err)
 					require.Len(t, service.createdRequests, 1)
 					require.Len(t, service.createdRequests[0].TestingCriteria, 1)
-					assert.NotContains(t, service.createdRequests[0].TestingCriteria[0].DataMapping, field,
-						"this branch's optional inference must not invent a missing column")
+					assert.Equal(t, map[string]string{
+						"query": "{{item.query}}", "response": "{{item.response}}",
+						"tool_calls": "{{item.tool_calls}}", "tool_definitions": "{{item.tool_definitions}}",
+					},
+						service.createdRequests[0].TestingCriteria[0].DataMapping,
+						"optional defaults remain mapped without becoming required row inputs")
 				})
 			}
 		}
@@ -315,7 +223,7 @@ func TestValidatedRepinnedDatasetCannotBecomeAnUpload(t *testing.T) {
 	env.state[versionKey("dataset", "turn-tests")] = "1.0"
 	cfg.Datasets[0].Version = "2.0"
 	service.dataset = true
-	service.registeredRows = `{"query":"selected rows"}`
+	service.registeredRows = `{"query":"selected rows","response":"selected answer"}`
 	r := &evalReconciler{ec: ec}
 	require.NoError(t, r.Validate(t.Context(), cfg, dir))
 	service.dataset = false
@@ -385,4 +293,135 @@ func TestEvaluatorDriftPreflightPreservesReuseAndUnrecordedPublication(t *testin
 			assert.Empty(t, env.config)
 		})
 	}
+}
+
+func TestStoredSourceConflictRequiresRecognizedSourceType(t *testing.T) {
+	have := &eval_api.OpenAIEval{
+		DataSourceConfig: map[string]any{"type": "custom", "include_sample_schema": false},
+		TestingCriteria: []eval_api.TestingCriterion{{
+			Name: "coherence", EvaluatorName: "builtin.coherence",
+			DataMapping: map[string]string{"response": "{{item.response}}"},
+		}},
+	}
+	want := &eval_api.CreateOpenAIEvalRequest{
+		DataSourceConfig: &eval_api.DataSourceConfig{Type: "custom", IncludeSampleSchema: true},
+		TestingCriteria: []eval_api.TestingCriterion{{
+			Name: "coherence", EvaluatorName: "builtin.coherence",
+			DataMapping: map[string]string{"response": "{{sample.output_text}}"},
+		}},
+	}
+	for _, sourceType := range []string{
+		"", "future-source", project.SourceTypeTraces, project.SourceTypeResponses, project.SourceTypeLocal,
+	} {
+		t.Run(sourceType, func(t *testing.T) {
+			group := project.Eval{Source: &project.SourceDecl{Type: sourceType}}
+			known := sourceType == project.SourceTypeTraces ||
+				sourceType == project.SourceTypeResponses || sourceType == project.SourceTypeLocal
+			assert.Equal(t, known, conflictingSourceContract(group, have, want),
+				"unknown source types cannot establish a conflicting stored contract")
+			have.DataSourceConfig["scenario"] = "responses"
+			assert.Equal(t, known, conflictingSourceContract(group, have, want))
+			have.DataSourceConfig["scenario"] = "traces"
+			assert.Equal(t, known, conflictingSourceContract(group, have, want))
+			delete(have.DataSourceConfig, "scenario")
+		})
+	}
+	assert.True(t, conflictingSourceContract(project.Eval{}, have, want),
+		"ordinary target-based custom contracts retain their existing conflict evidence")
+}
+
+func TestUnpinnedLocalDatasetRequiresSuccessfulFallbackRead(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusGatewayTimeout} {
+			t.Run(caller+"/"+http.StatusText(status), func(t *testing.T) {
+				ec, env, service, cfg, dir := validationFixture(t)
+				digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
+				require.NoError(t, err)
+				env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
+				env.state[versionKey("dataset", "turn-tests")] = "1.0"
+				before := maps.Clone(env.state)
+				service.dataset = true
+				service.emptyDatasetListing = true
+				service.datasetReadStatus = status
+
+				err = reconcileArtifactConfig(t, caller, ec, cfg, dir)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), fmt.Sprint(status))
+				assert.Equal(t, []string{
+					"GET /datasets/turn-tests/versions",
+					"GET /datasets/turn-tests/versions/1.0",
+				}, service.requests, "fallback failures must stop before uploads, tags, or evaluator publication")
+				assert.Zero(t, service.createCount)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.values)
+				assert.Equal(t, before, env.state)
+			})
+		}
+	}
+}
+
+func TestUnpinnedLocalDatasetFallbackTimeoutStopsBeforeMutation(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
+			require.NoError(t, err)
+			env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
+			env.state[versionKey("dataset", "turn-tests")] = "1.0"
+			before := maps.Clone(env.state)
+			transport := &datasetFallbackTimeoutTransport{}
+			pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+				Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
+			})
+			ec.datasetClient = dataset_api.NewDatasetClientFromPipeline("https://example.test", pipeline)
+
+			require.ErrorIs(t, reconcileArtifactConfig(t, caller, ec, cfg, dir), context.DeadlineExceeded)
+			assert.Equal(t, []string{
+				"GET /datasets/turn-tests/versions",
+				"GET /datasets/turn-tests/versions/1.0",
+			}, transport.requests)
+			assert.Empty(t, service.requests, "no evaluator or eval work follows a failed dataset fallback read")
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.values)
+			assert.Equal(t, before, env.state)
+		})
+	}
+}
+
+func TestUnpinnedLocalDatasetToleratesListingDelayAfterSuccessfulRead(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			digest, err := project.Fingerprint(filepath.Join(dir, "rows.jsonl"))
+			require.NoError(t, err)
+			env.state[project.FingerprintKey("dataset", "turn-tests")] = digest
+			env.state[versionKey("dataset", "turn-tests")] = "1.0"
+			service.dataset = true
+			service.emptyDatasetListing = true
+
+			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+			assert.Contains(t, service.requests, "GET /datasets/turn-tests/versions/1.0")
+			for _, request := range service.requests {
+				assert.NotContains(t, request, "startPendingUpload", "the unchanged dataset must not be uploaded again")
+			}
+			assert.Equal(t, 1, service.createCount)
+			assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
+			assert.Equal(t, digest, env.stored(t, project.FingerprintKey("dataset", "turn-tests")))
+		})
+	}
+}
+
+type datasetFallbackTimeoutTransport struct {
+	requests []string
+}
+
+func (s *datasetFallbackTimeoutTransport) Do(request *http.Request) (*http.Response, error) {
+	s.requests = append(s.requests, request.Method+" "+request.URL.Path)
+	if strings.HasSuffix(request.URL.Path, "/versions") {
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{"value":[]}`)), Request: request,
+		}, nil
+	}
+	return nil, context.DeadlineExceeded
 }

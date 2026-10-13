@@ -386,6 +386,7 @@ func (e *openAPIProbeError) Unwrap() error {
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	transport http.RoundTripper,
 	baseURL string,
 	agentName string,
 	suffix string,
@@ -460,7 +461,7 @@ func fetchOpenAPISpec(
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
 
-	client := &http.Client{Timeout: openAPIProbeTimeout}
+	client := &http.Client{Transport: transport, Timeout: openAPIProbeTimeout}
 	if remote {
 		client.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse

@@ -62,7 +62,7 @@ func TestInvocationsRemoteMetadataBeforeCompletion(t *testing.T) {
 				require.NoError(t, out.Close())
 			})
 			probed := false
-			setOpenAPIProbeTransport(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				if req.Method == http.MethodPost {
 					resp := openAPITestResponse(req, 200, io.NopCloser(strings.NewReader(`{"result":"ok"}`)))
 					resp.Header.Set("x-agent-session-id", "sid")
@@ -75,10 +75,11 @@ func TestInvocationsRemoteMetadataBeforeCompletion(t *testing.T) {
 				assert.NotContains(t, string(data), "Client elapsed:")
 				assert.NotContains(t, string(data), "Next:")
 				return openAPITestResponse(req, status, io.NopCloser(strings.NewReader("{}"))), nil
-			}))
+			})
 			action := &InvokeAction{
-				flags:      &invokeFlags{message: "{}", newSession: true},
-				credential: responseTestCredential{},
+				flags:                &invokeFlags{message: "{}", newSession: true},
+				credential:           responseTestCredential{},
+				invocationsTransport: transport,
 				resolvedRemoteContext: &remoteContext{
 					projectEndpoint: "https://example.com", name: "agent",
 					agentKey: "agent-key", azdClient: client,
@@ -124,8 +125,10 @@ func newOpenAPIProbeClient(t *testing.T, project azdext.ProjectServiceServer) *a
 
 type openAPIResponseBody struct {
 	io.Reader
-	onRead func()
-	closed bool
+	onRead     func()
+	closed     bool
+	closeCalls int
+	closeErr   error
 }
 
 func (b *openAPIResponseBody) Read(p []byte) (int, error) {
@@ -137,14 +140,34 @@ func (b *openAPIResponseBody) Read(p []byte) (int, error) {
 
 func (b *openAPIResponseBody) Close() error {
 	b.closed = true
-	return nil
+	b.closeCalls++
+	return b.closeErr
 }
 
-func setOpenAPIProbeTransport(t *testing.T, transport http.RoundTripper) {
-	t.Helper()
-	previous := http.DefaultTransport
-	http.DefaultTransport = transport
-	t.Cleanup(func() { http.DefaultTransport = previous })
+func TestInvocationResponseBodyCloseOnce(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		closeErr error
+	}{
+		{name: "success"},
+		{name: "cleanup failure", closeErr: errors.New("response cleanup failed")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			original := &openAPIResponseBody{Reader: strings.NewReader("result"), closeErr: test.closeErr}
+			body := &invocationResponseBody{ReadCloser: original}
+			data, err := io.ReadAll(body)
+			require.NoError(t, err)
+			assert.Equal(t, "result", string(data))
+			assert.ErrorIs(t, body.Close(), test.closeErr)
+			assert.ErrorIs(t, body.Close(), test.closeErr)
+			assert.True(t, body.closed)
+			assert.Equal(t, 1, original.closeCalls)
+		})
+	}
 }
 
 func openAPITestResponse(request *http.Request, status int, body io.ReadCloser) *http.Response {
@@ -196,7 +219,7 @@ func TestOpenAPIProbeCacheAndFailures(t *testing.T) {
 				"Authorization": []string{"untrusted"},
 				"X-Client-Test": []string{"custom"},
 			}
-			setOpenAPIProbeTransport(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				calls++
 				assert.Equal(t, "session +&/?", request.URL.Query().Get("agent_session_id"))
 				assert.Equal(t, "v1", request.URL.Query().Get("api-version"))
@@ -210,9 +233,9 @@ func TestOpenAPIProbeCacheAndFailures(t *testing.T) {
 					reader = brokenInvocationReader{}
 				}
 				return openAPITestResponse(request, test.status, io.NopCloser(reader)), nil
-			}))
+			})
 			path, fresh, err := fetchOpenAPISpec(
-				t.Context(), client, "https://example.com", "agent", "remote",
+				t.Context(), client, transport, "https://example.com", "agent", "remote",
 				"managed", "v1", "session +&/?", headers, !test.cacheHit,
 			)
 			assert.Equal(t, "untrusted", headers.Get("Authorization"))
@@ -265,7 +288,7 @@ func TestOpenAPIProbeRedirectPolicy(t *testing.T) {
 					if suffix == "local" {
 						headers, sid, token = nil, "", ""
 					}
-					setOpenAPIProbeTransport(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 						requests++
 						if requests == 1 {
 							assert.Equal(t, sid, req.URL.Query().Get("agent_session_id"))
@@ -280,9 +303,9 @@ func TestOpenAPIProbeRedirectPolicy(t *testing.T) {
 						}
 						assert.Equal(t, "local", suffix, "remote probe followed a redirect")
 						return openAPITestResponse(req, 200, io.NopCloser(strings.NewReader("{}"))), nil
-					}))
+					})
 					path, fresh, err := fetchOpenAPISpec(
-						t.Context(), client, "https://example.com", "agent", suffix,
+						t.Context(), client, transport, "https://example.com", "agent", suffix,
 						token, "", sid, headers, true,
 					)
 					assert.True(t, redirectBody.closed)
@@ -349,7 +372,7 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 			}
 			client := newOpenAPIProbeClient(t, project)
 			httpCalled := false
-			setOpenAPIProbeTransport(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				httpCalled = true
 				deadline, ok := request.Context().Deadline()
 				assert.True(t, ok)
@@ -366,11 +389,13 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 					return nil, request.Context().Err()
 				}
 				return openAPITestResponse(request, http.StatusOK, io.NopCloser(strings.NewReader("{}"))), nil
-			}))
+			})
 			if stage == "already canceled" {
 				cancel()
 			}
-			_, _, err := fetchOpenAPISpec(ctx, client, "https://example.com", "agent", "remote", "", "", "sid", nil, false)
+			_, _, err := fetchOpenAPISpec(
+				ctx, client, transport, "https://example.com", "agent", "remote", "", "", "sid", nil, false,
+			)
 			if stage == "separate budgets" {
 				require.NoError(t, err)
 			} else {
@@ -385,7 +410,7 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 func TestOpenAPIProbeMissingSessionSkipsConfiguration(t *testing.T) {
 	project := &helpersProjectServer{err: errors.New("configuration must not be accessed")}
 	client := newOpenAPIProbeClient(t, project)
-	path, fresh, err := fetchOpenAPISpec(t.Context(), client, "", "agent", "remote", "", "", "", nil, false)
+	path, fresh, err := fetchOpenAPISpec(t.Context(), client, nil, "", "agent", "remote", "", "", "", nil, false)
 	require.NoError(t, err)
 	assert.Empty(t, path)
 	assert.False(t, fresh)
@@ -396,20 +421,27 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 	defaultLROPollInterval = time.Millisecond
 	t.Cleanup(func() { defaultLROPollInterval = previousInterval })
 	for _, test := range []struct {
-		name              string
-		status            int
-		body              string
-		sse               bool
-		readErr           bool
-		cancel            bool
-		probeCancel       bool
-		probeTransportErr bool
-		metadata          int
-		wantError         string
-		wantProbe         bool
-		lroFailure        bool
+		name               string
+		status             int
+		body               string
+		invocationIDHeader bool
+		sse                bool
+		readErr            bool
+		closeErr           error
+		cancel             bool
+		probeCancel        bool
+		probeTransportErr  bool
+		metadata           int
+		wantError          string
+		wantProbe          bool
+		lroFailure         bool
 	}{
 		{name: "sync", status: 200, body: `{"result":"ok"}`, wantProbe: true},
+		{name: "sync read error", status: 200, readErr: true, wantError: "unexpected EOF"},
+		{
+			name: "sync cleanup failure", status: 200, body: `{"result":"ok"}`,
+			closeErr: errors.New("response cleanup failed"), wantProbe: true,
+		},
 		{name: "agent error", status: 200, body: `{"error":{"message":"bad"}}`, wantError: "agent error"},
 		{name: "SSE", status: 200, sse: true, body: "data: first\n\ndata: [DONE]\n\n", wantProbe: true},
 		{
@@ -419,8 +451,24 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 		{name: "SSE read error", status: 200, sse: true, readErr: true, wantError: "reading"},
 		{name: "LRO", status: 202, body: `{"invocation_id":"inv-1","status":"running"}`, wantProbe: true},
 		{
+			name: "LRO header", status: 202, body: `{"status":"running"}`,
+			invocationIDHeader: true, wantProbe: true,
+		},
+		{
+			name: "LRO cleanup failure", status: 202, body: `{"invocation_id":"inv-1","status":"running"}`,
+			closeErr: errors.New("response cleanup failed"), wantProbe: true,
+		},
+		{
 			name: "LRO failure", status: 202, body: `{"invocation_id":"inv-1","status":"running"}`,
 			lroFailure: true, wantError: "invocation failed",
+		},
+		{
+			name: "LRO header failure", status: 202, body: `{"status":"running"}`,
+			invocationIDHeader: true, lroFailure: true, wantError: "invocation failed",
+		},
+		{
+			name: "missing invocation ID", status: 202, body: `{"status":"running"}`,
+			wantError: "no invocation ID",
 		},
 		{name: "unreadable 202", status: 202, readErr: true, wantError: "read accepted"},
 		{name: "canceled successful body", status: 200, body: `{"result":"ok"}`, cancel: true},
@@ -447,7 +495,7 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 				if test.readErr {
 					reader = brokenInvocationReader{}
 				}
-				postBody := &openAPIResponseBody{Reader: reader, onRead: func() {
+				postBody := &openAPIResponseBody{Reader: reader, closeErr: test.closeErr, onRead: func() {
 					sid, getErr := getAgentSpecificContextValue(t.Context(), observer, "sessions", "agent-key")
 					require.NoError(t, getErr)
 					assert.Equal(t, "assigned-session", sid)
@@ -458,18 +506,22 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 				var paths []string
 				polls := 0
 				terminalRead := false
-				setOpenAPIProbeTransport(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 					paths = append(paths, request.URL.Path)
 					switch {
 					case request.Method == http.MethodPost:
 						response := openAPITestResponse(request, test.status, postBody)
 						response.Header.Set("x-agent-session-id", "assigned-session")
+						if test.invocationIDHeader {
+							response.Header.Set("x-agent-invocation-id", "inv-1")
+						}
 						if test.sse {
 							response.Header.Set("Content-Type", "text/event-stream")
 						}
 						return response, nil
 					case strings.HasSuffix(request.URL.Path, "/docs/openapi.json"):
 						assert.True(t, postBody.closed)
+						assert.Equal(t, 1, postBody.closeCalls)
 						if test.status == http.StatusAccepted {
 							assert.Equal(t, 2, polls)
 							assert.True(t, terminalRead)
@@ -516,14 +568,15 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 						}
 						return openAPITestResponse(request, 200, terminalBody), nil
 					}
-				}))
+				})
 				action := &InvokeAction{
 					flags: &invokeFlags{
 						message: "{}", newSession: true, outputFmt: format,
 						userIdentityFlags: userIdentityFlags{userIdentity: "user-1"},
 					},
-					clientHeaders: http.Header{"X-Client-Test": []string{"custom"}},
-					credential:    responseTestCredential{},
+					clientHeaders:        http.Header{"X-Client-Test": []string{"custom"}},
+					credential:           responseTestCredential{},
+					invocationsTransport: transport,
 					resolvedRemoteContext: &remoteContext{
 						projectEndpoint: "https://example.com", name: "agent", apiVersion: "v1",
 						agentKey: "agent-key", azdClient: client,
@@ -543,6 +596,7 @@ func TestInvocationsRemoteProbeResponseModes(t *testing.T) {
 				} else {
 					require.NoError(t, err)
 				}
+				assert.Equal(t, 1, postBody.closeCalls)
 				probes := 0
 				for _, path := range paths {
 					if strings.HasSuffix(path, "/docs/openapi.json") {
@@ -569,7 +623,7 @@ func TestInvocationsLocalProbeCompatibility(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".azure", "test"), 0o700))
 	_ = newOpenAPIProbeClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{Path: root}})
 	var methods []string
-	setOpenAPIProbeTransport(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		methods = append(methods, request.Method)
 		if request.Method == http.MethodGet {
 			assert.Equal(t, "/invocations/docs/openapi.json", request.URL.Path)
@@ -582,14 +636,15 @@ func TestInvocationsLocalProbeCompatibility(t *testing.T) {
 		assert.Equal(t, "call", request.Header.Get("x-agent-foundry-call-id"))
 		assert.Equal(t, "custom", request.Header.Get("x-client-test"))
 		return openAPITestResponse(request, 200, io.NopCloser(strings.NewReader(`{"result":"ok"}`))), nil
-	}))
+	})
 	for range 2 {
 		action := &InvokeAction{
 			flags: &invokeFlags{
 				name: "agent", message: "{}", session: "local-session", callID: "call",
 				userIdentityFlags: userIdentityFlags{userIdentity: "local-user"},
 			},
-			clientHeaders: http.Header{"X-Client-Test": []string{"custom"}},
+			clientHeaders:        http.Header{"X-Client-Test": []string{"custom"}},
+			invocationsTransport: transport,
 		}
 		stdout, err := captureStdout(t, func() error { return action.invocationsLocal(t.Context()) })
 		require.NoError(t, err)
@@ -614,14 +669,15 @@ func TestInvocationsRemoteVersionProbeReusesSelectedSession(t *testing.T) {
 		return &agent_api.AgentSessionResource{AgentSessionID: "version-session"}, nil
 	}
 	var methods []string
-	setOpenAPIProbeTransport(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		methods = append(methods, request.Method)
 		assert.Equal(t, "version-session", request.URL.Query().Get("agent_session_id"))
 		return openAPITestResponse(request, 200, io.NopCloser(strings.NewReader("{}"))), nil
-	}))
+	})
 	for range 2 {
 		action := &InvokeAction{
 			flags: &invokeFlags{message: "{}", outputFmt: outputRaw}, credential: responseTestCredential{},
+			invocationsTransport: transport,
 			resolvedRemoteContext: &remoteContext{
 				projectEndpoint: "https://example.com", name: "agent", version: "3", apiVersion: "v1",
 				agentKey: "version-key", azdClient: client,

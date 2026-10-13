@@ -157,9 +157,10 @@ type azdProjectSources struct {
 var readAzdProjectSourcesFunc = readAzdProjectSources
 
 // readAzdProjectSources retrieves endpoint sources from the azd host.
-// It prefers FOUNDRY_PROJECT_ENDPOINT over the legacy key
-// AZURE_AI_PROJECT_ENDPOINT and reads the global project context.
-// Daemon errors are treated as no daemon so resolution can continue.
+// It returns the first non-empty active environment endpoint, trying
+// FOUNDRY_PROJECT_ENDPOINT before AZURE_AI_PROJECT_ENDPOINT.
+// It reads global context if both keys are empty or no active
+// environment is available. Endpoint lookup errors stop resolution.
 func readAzdProjectSources(ctx context.Context) (azdProjectSources, error) {
 	var out azdProjectSources
 
@@ -178,12 +179,20 @@ func readAzdProjectSources(ctx context.Context) (azdProjectSources, error) {
 			{foundryProjectEndpointEnvVar, &out.EnvValue},
 			{legacyProjectEndpointEnvVar, &out.LegacyEnvValue},
 		} {
-			if valResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			valResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 				EnvName: envResp.Environment.Name,
 				Key:     endpoint.key,
-			}); err == nil && valResp.Value != "" {
+			})
+			if err != nil {
+				return out, fmt.Errorf(
+					"reading %s from azd environment %q: %w",
+					endpoint.key, envResp.Environment.Name, err,
+				)
+			}
+			if valResp.Value != "" {
 				*endpoint.value = valResp.Value
 				out.EnvName = envResp.Environment.Name
+				return out, nil
 			}
 		}
 	}
@@ -217,7 +226,7 @@ func readAzdProjectSources(ctx context.Context) (azdProjectSources, error) {
 //
 //  1. -p / --project-endpoint flag
 //  2. Active azd env → FOUNDRY_PROJECT_ENDPOINT, then
-//     AZURE_AI_PROJECT_ENDPOINT as a legacy fallback
+//     AZURE_AI_PROJECT_ENDPOINT after a successful empty lookup
 //  3. Global config → extensions.ai-projects.context.endpoint (primary),
 //     falling back to extensions.ai-agents.project.context.endpoint
 //  4. FOUNDRY_PROJECT_ENDPOINT environment variable

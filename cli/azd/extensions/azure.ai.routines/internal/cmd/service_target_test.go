@@ -470,7 +470,7 @@ func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	)
 
 	require.ErrorContains(t, err, "resolving user access tenant")
-	require.GreaterOrEqual(t, len(server.environmentAuth), 4)
+	require.Len(t, server.environmentAuth, 4)
 	for range len(server.environmentAuth) {
 		assert.Equal(t, accessToken, <-server.environmentAuth)
 	}
@@ -478,7 +478,7 @@ func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	for range len(server.environmentKeys) {
 		keys = append(keys, <-server.environmentKeys)
 	}
-	assert.Contains(t, keys, foundryProjectEndpointEnvVar)
+	assert.Equal(t, []string{foundryProjectEndpointEnvVar, "AZURE_SUBSCRIPTION_ID"}, keys)
 	assert.Equal(t, accessToken, <-server.accountAuth)
 }
 

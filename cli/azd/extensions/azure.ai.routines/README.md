@@ -49,12 +49,15 @@ azd env set FOUNDRY_PROJECT_ENDPOINT https://<account>.services.ai.azure.com/api
 ```
 
 When an active environment is selected, azd also falls back to its shell
-value for an endpoint key that is not stored in `.env`. If neither environment
-key resolves, routine commands try the global project context configured by
+value for an endpoint key that is not stored in `.env`. The legacy key is tried
+only after a successful empty canonical lookup. If both keys are read
+successfully but are empty, or no active environment is available, routine
+commands try the global project context configured by
 `azd ai project set <endpoint>`, the legacy agent context, and then the
-`FOUNDRY_PROJECT_ENDPOINT` shell variable. Remote routine commands can override
-discovery with `--project-endpoint`; `azd deploy` uses the project and
-environment configuration.
+`FOUNDRY_PROJECT_ENDPOINT` shell variable. Once an active environment is found,
+a failed lookup of either endpoint key stops the operation rather than
+selecting another project. Remote routine commands can override discovery with
+`--project-endpoint`; `azd deploy` uses the project and environment configuration.
 
 ## Add a routine to azure.yaml
 

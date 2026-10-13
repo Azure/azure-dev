@@ -42,7 +42,13 @@ func TestAIHelp(t *testing.T) {
 			require.Contains(t, text, "AZURE_AI_PROJECT_ENDPOINT")
 			require.Contains(t, text, "absent from .env")
 			require.Contains(t, text, "explicitly empty persisted value")
-			require.Contains(t, text, "including when no environment is")
+			require.Contains(t, normalizedText, "or no environment is available")
+			require.Contains(t, text, "successful empty canonical lookup")
+			require.Contains(
+				t,
+				normalizedText,
+				"A failed endpoint lookup stops the operation instead of choosing another project",
+			)
 			require.Contains(
 				t,
 				normalizedText,

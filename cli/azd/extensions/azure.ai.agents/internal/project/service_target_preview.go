@@ -168,6 +168,12 @@ func previewProjectEndpoint(raw string) (string, error) {
 		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
 			"invalid Foundry project endpoint for deployment preview", "provide an HTTPS project endpoint")
 	}
+	hostname := strings.ToLower(endpoint.Hostname())
+	if hostname != "ai.azure.com" && !strings.HasSuffix(hostname, ".ai.azure.com") {
+		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+			"the Foundry project endpoint hostname must be ai.azure.com or a subdomain",
+			"provide an HTTPS project endpoint hosted under ai.azure.com")
+	}
 	endpoint.User = nil
 	endpoint.RawQuery = ""
 	endpoint.ForceQuery = false
@@ -217,6 +223,7 @@ func preparePreviewRequest(
 		inputs.ContainerImage = &previewContainerImage{Build: new(false), Push: new(false)}
 	case definition.Image != "" && !azdext.DetectInteractive().NoPrompt:
 		inputs.IgnoreImage = true
+		inputs.ImageChoice = definition.Image
 		inputs.ContainerImage = &previewContainerImage{}
 		inputs.Unknown = append(inputs.Unknown, "containerImage.build", "containerImage.push")
 	default:

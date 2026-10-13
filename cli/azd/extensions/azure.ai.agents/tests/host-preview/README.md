@@ -16,7 +16,9 @@ The test exercises stable registration, beta preview registration and forwarding
 fresh providers without `Initialize`, create/update/no-change/unknown results,
 six-group presence-aware comparison, omitted normalization-only defaults and
 absent/code-only/unchanged container groups, conditional build/push booleans,
-image-reference updates, visible logical tag lists on additions/updates/removals,
+image-reference updates, unresolved interactive image choices without other changes,
+unchanged image-choice/default-build omission, short-secret-safe identifiers/paths,
+visible logical tag lists on additions/updates/removals,
 scalar and empty tags, and unchanged omission through production request mapping,
 tag URL/known-environment-secret sanitization and typed JSON forwarding, ignored
 code/session/artifact differences, visible description/protocol/memory/inline-env
@@ -43,3 +45,11 @@ helper. The matching `AZD_PROJECT_PREVIEW_EXTENSION_TEST_BINARY` and
 These are test-only inputs, set by the runner/fixture, not product settings.
 The runner uses `GOWORK=off` and the repository-pinned Go 1.26.4 toolchain, restores
 the caller's environment, and removes its temporary binaries, result, and overlay.
+Cleanup retries transient Windows file locks after the synchronous commands and
+fixture children have exited. It deletes only known artifacts and an empty
+temporary directory. A cleanup failure is reported without replacing an earlier
+build/test failure; cleanup failure alone fails the runner.
+
+Verify cleanup's failure/recovery paths separately with
+`.\cli\azd\extensions\azure.ai.agents\tests\host-preview\cleanup-tests.ps1`.
+These checks use only disposable files and locks, not installed binaries or user state.

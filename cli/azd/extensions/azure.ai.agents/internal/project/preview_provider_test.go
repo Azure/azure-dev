@@ -80,11 +80,21 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 		image       string
 		visible     bool
 		protected   bool
+		endpoint    string
+		interactive bool
+		wantStatus  string
 	}{
 		{name: "create", remoteCode: http.StatusNotFound},
 		{name: "existing"},
 		{name: "visible description and inline config", visible: true},
 		{name: "resolved and previous credentials", protected: true},
+		{name: "invalid endpoint before auth", endpoint: "https://ai.azure.com.evil.example?sig=private-signature",
+			wantError: true},
+		{name: "suffix spoof before auth", endpoint: "https://evilai.azure.com/api/projects/project", wantError: true},
+		{name: "interactive changed image", interactive: true, image: "registry.example.com/agent:v2",
+			wantStatus: "unknown"},
+		{name: "interactive unchanged image", interactive: true, image: "registry.example.com/agent:v1",
+			wantStatus: "noChange"},
 		{name: "legacy before auth", legacy: true, wantError: true},
 		{name: "authentication failure", authError: true, wantError: true},
 		{name: "permission failure", remoteCode: http.StatusForbidden, wantError: true},
@@ -95,7 +105,7 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("AGENT_DEFINITION_PATH", "")
-			t.Setenv("AZD_NO_PROMPT", "true")
+			t.Setenv("AZD_NO_PROMPT", fmt.Sprint(!tc.interactive))
 			root := t.TempDir()
 			document := []byte("name: preview\nservices:\n  agent:\n    host: azure.ai.agent\n")
 			if tc.rawImage != "" {
@@ -111,6 +121,10 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			legacy := []byte("retained: unused\n")
 			require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), legacy, 0600))
 			service := previewService(t)
+			if tc.interactive {
+				service.Image = tc.image
+				service.Docker.ImagePassthrough = false
+			}
 			if tc.visible {
 				service.Environment = map[string]string{"MODE": "development"}
 				service.AdditionalProperties.Fields["description"] = structpb.NewStringValue("A helpful responses agent.")
@@ -165,12 +179,16 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			azdext.RegisterProjectServiceServer(server, &stubProjectServer{project: &azdext.ProjectConfig{
 				Name: "preview", Path: root, Services: map[string]*azdext.ServiceConfig{"agent": original},
 			}})
-			azdext.RegisterEnvironmentServiceServer(server, &previewEnvironmentServer{values: map[string]string{
+			environment := &previewEnvironmentServer{values: map[string]string{
 				"AZURE_SUBSCRIPTION_ID": "subscription",
 				"CREDENTIAL":            "private-current-secret",
 				"FOUNDRY_PROJECT_ENDPOINT": "https://private-user:private-password@account.services.ai.azure.com/" +
 					"api/projects/project?sig=private-signature#private-fragment",
-			}})
+			}}
+			if tc.endpoint != "" {
+				environment.values["FOUNDRY_PROJECT_ENDPOINT"] = tc.endpoint
+			}
+			azdext.RegisterEnvironmentServiceServer(server, environment)
 			tenant := &previewTenantServer{}
 			if tc.authError {
 				tenant.err = status.Error(codes.Unauthenticated, "private-auth-error")
@@ -225,6 +243,17 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 				encoded, err := json.Marshal(result.Data.AsMap())
 				require.NoError(t, err)
 				require.NotContains(t, string(encoded), "private-")
+				if tc.wantStatus != "" {
+					require.Equal(t, tc.wantStatus, result.Data.AsMap()["status"])
+					if tc.wantStatus == "unknown" {
+						require.Contains(t, result.Data.AsMap()["unknown"], previewImagePath)
+						require.Contains(t, result.Message, "unknown: containerImage.build")
+						require.Contains(t, result.Message, "unknown: containerImage.push")
+					} else {
+						require.NotContains(t, result.Data.AsMap(), "containerImage")
+						require.Empty(t, result.Data.AsMap()["unknown"])
+					}
+				}
 				if tc.visible {
 					for _, line := range []string{
 						`update: description: "A basic responses agent." -> "A helpful responses agent."`,
@@ -249,7 +278,7 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 					require.NotContains(t, result.Message, "preview.invalid")
 				}
 			}
-			if tc.legacy || tc.authError || tc.resolvedRef {
+			if tc.legacy || tc.authError || tc.resolvedRef || tc.endpoint != "" {
 				require.Zero(t, factoryCalls)
 				require.Zero(t, reader.calls)
 			} else {
@@ -264,6 +293,9 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			}
 			if tc.legacy || tc.resolvedRef {
 				require.Len(t, recorded, 1)
+			}
+			if tc.endpoint != "" {
+				require.NotContains(t, recorded, "/azd.extensions.v1.AccountService/LookupTenant")
 			}
 			require.True(t, proto.Equal(before, service))
 			require.True(t, proto.Equal(betaBefore, betaService))

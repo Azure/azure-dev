@@ -57,6 +57,8 @@ previous remote binding values are also removed if embedded in descriptions,
 metadata, tags, or other displayed strings. Current source cannot recover
 historical secret provenance when a binding is now literal; it does not guess
 sensitivity from names.
+Canonical field paths, map keys, and service/agent identifiers are not subjected
+to secret-substring replacement; a short credential cannot corrupt their names.
 URL usernames/passwords, query strings, and fragments are always stripped, and
 terminal control characters are neutralized. Keep credentials in environment
 substitutions rather than inline configuration. Sanitization affects display
@@ -125,8 +127,10 @@ including remote builds, without inventing a resulting tag/digest.
 Code-only services have no container intent or synthetic false/false section;
 code packaging and upload content remain excluded. Switching from a deployed
 container definition to code can still report removal of the old image reference.
-If a relevant normal interactive deployment would ask whether to build or use
-a configured image, intent is unknown. With `--no-prompt`, the normal default is
+If a normal interactive deployment would ask whether to build or use a configured
+image that differs from the deployed reference, the image choice and build/push
+intent remain unknown even when there are no other differences. An unchanged
+configured reference still omits container intent. With `--no-prompt`, the normal default is
 build. The legacy `AZD_AGENT_SKIP_ACR=true` marker selects a configured pre-built
 image.
 
@@ -154,7 +158,10 @@ ordinary deploy still creates a new agent version.
 
 The provider runs on a fresh instance without `Initialize`, uses only project,
 environment, and tenant reads plus the Foundry agent GET, and returns output to
-the host. It never calls deployment writes, prompts, builds, uploads, provisioning,
+the host. Before credential creation or remote calls, it requires an HTTPS project
+endpoint whose parsed hostname is exactly `ai.azure.com` or a subdomain ending in
+`.ai.azure.com`; suffix lookalikes and other domains are rejected without echoing
+the endpoint. It never calls deployment writes, prompts, builds, uploads, provisioning,
 or extension-owned state persistence. Normal deployment remains on the stable
 service-target lifecycle. Sensitive provider values are redacted and
 credential-bearing URLs are sanitized; provider errors do not echo raw API bodies

@@ -50,6 +50,7 @@ type previewInputs struct {
 	Unknown           []string
 	ContainerImage    *previewContainerImage
 	IgnoreImage       bool
+	ImageChoice       string
 	Declared          map[string]bool
 	Description       *string
 	ProtocolVersions  map[string]bool
@@ -109,27 +110,29 @@ func comparePreviewRequest(
 			}
 		}
 	}
+	imageChoiceChanged := inputs.ImageChoice != "" && !reflect.DeepEqual(before[previewImagePath], inputs.ImageChoice)
 	if inputs.IgnoreImage {
 		delete(before, previewImagePath)
 		delete(after, previewImagePath)
 	}
-	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
-	clean := func(value string) string {
-		for _, secret := range secrets {
-			if secret != "" {
-				value = strings.ReplaceAll(value, secret, "[redacted]")
-			}
+	for _, secret := range slices.Clone(secrets) {
+		if sanitized := redactPreviewURLs(secret); sanitized != secret {
+			secrets = append(secrets, sanitized)
 		}
-		value = redactPreviewURLs(value)
-		return strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
-				return '?'
-			}
-			return r
-		}, value)
+	}
+	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	var replacements []string
+	for _, secret := range secrets {
+		if secret != "" {
+			replacements = append(replacements, secret, previewRedactedValue)
+		}
+	}
+	redactor := strings.NewReplacer(replacements...)
+	clean := func(value string) string {
+		return previewStructuralText(redactor.Replace(redactPreviewURLs(value)))
 	}
 	result := agentPreviewResult{
-		Service: clean(service), Agent: clean(desired.Name),
+		Service: previewStructuralText(service), Agent: previewStructuralText(desired.Name),
 		Status: "noChange", Changes: []previewChange{}, Unknown: []string{},
 		Notes: []string{
 			"Read-only comparison of the latest agent version; infrastructure and dependencies are not previewed.",
@@ -157,7 +160,7 @@ func comparePreviewRequest(
 			operation = "remove"
 		}
 		change := previewChange{
-			Group: previewFieldGroup(path), Path: clean(path), Operation: operation,
+			Group: previewFieldGroup(path), Path: previewStructuralText(path), Operation: operation,
 		}
 		if oldExists {
 			change.Before = previewDisplayValue(path, oldValue, clean)
@@ -167,7 +170,7 @@ func comparePreviewRequest(
 		}
 		result.Changes = append(result.Changes, change)
 	}
-	containerChanged := existing == nil && inputs.ContainerImage != nil
+	containerChanged := (existing == nil && inputs.ContainerImage != nil) || imageChoiceChanged
 	for _, change := range result.Changes {
 		if change.Group == "containerImage" {
 			containerChanged = true
@@ -176,12 +179,15 @@ func comparePreviewRequest(
 	if containerChanged {
 		result.ContainerImage = inputs.ContainerImage
 	}
+	if imageChoiceChanged {
+		result.Unknown = append(result.Unknown, previewImagePath)
+	}
 	for _, path := range inputs.Unknown {
 		if !containerChanged && (path == "containerImage.build" || path == "containerImage.push") {
 			continue
 		}
 		if previewFieldGroup(path) != "" {
-			result.Unknown = append(result.Unknown, clean(path))
+			result.Unknown = append(result.Unknown, previewStructuralText(path))
 		}
 	}
 	slices.Sort(result.Unknown)
@@ -279,6 +285,17 @@ func previewRequestState(request *agent_api.CreateAgentRequest) (map[string]any,
 
 const previewRedactedValue = "[redacted]"
 
+// previewStructuralText preserves identifiers without treating matching secret
+// substrings as credentials, while still neutralizing URLs and terminal controls.
+func previewStructuralText(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '?'
+		}
+		return r
+	}, redactPreviewURLs(value))
+}
+
 // previewDisplayValue sanitizes values after comparison without classifying
 // ordinary in-scope properties as sensitive based on their field path.
 func previewDisplayValue(path string, value any, clean func(string) string) any {
@@ -304,6 +321,9 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 	}
 	switch typed := value.(type) {
 	case string:
+		if path == "name" {
+			return previewStructuralText(typed)
+		}
 		return clean(typed)
 	case []any:
 		result := make([]any, len(typed))
@@ -314,7 +334,7 @@ func previewDisplayValue(path string, value any, clean func(string) string) any 
 	case map[string]any:
 		result := make(map[string]any, len(typed))
 		for key, item := range typed {
-			result[clean(key)] = previewDisplayValue(path, item, clean)
+			result[previewStructuralText(key)] = previewDisplayValue(path, item, clean)
 		}
 		return result
 	default:

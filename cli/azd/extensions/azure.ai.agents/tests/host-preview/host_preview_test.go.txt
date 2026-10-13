@@ -47,6 +47,7 @@ func (s *foundryPreviewEnvironment) GetValues(
 	return &azdext.KeyValueListResponse{KeyValues: []*azdext.KeyValue{
 		{Key: "AZURE_SUBSCRIPTION_ID", Value: "subscription"},
 		{Key: "PREVIEW_TEST_CREDENTIAL", Value: "private-current-secret"},
+		{Key: "SHORT_PREVIEW_CREDENTIAL", Value: "a"},
 		{Key: "FOUNDRY_PROJECT_ENDPOINT", Value: "https://account.services.ai.azure.com/api/projects/project"},
 	}}, nil
 }
@@ -83,13 +84,16 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		"name: preview\nservices:\n  agent:\n    host: azure.ai.agent\n"+
 			"  unknown:\n    env:\n      VALUE: ${PREVIEW_UNSET_VALUE}\n"+
 			"  config-update:\n    env:\n      MODE: development\n"+
-			"  protected-update:\n    env:\n      API_KEY: ${PREVIEW_TEST_CREDENTIAL}\n",
+			"  protected-update:\n    env:\n      API_KEY: ${PREVIEW_TEST_CREDENTIAL}\n"+
+			"  data-agent:\n    env:\n      API_KEY: ${SHORT_PREVIEW_CREDENTIAL}\n"+
+			"      ABSENT: ${PREVIEW_UNSET_VALUE}\n",
 	), 0600))
 	services := map[string]*azdext.ServiceConfig{}
 	for _, name := range []string{
 		"agent", "create", "update", "unknown", "legacy", "code", "build", "image-update",
 		"tags-add", "tags-update", "tags-remove", "tags-unchanged", "tags-empty", "tags-scalar", "tags-safe",
 		"config-update", "protected-update",
+		"image-choice", "image-choice-unchanged", "image-default-build", "data-agent",
 	} {
 		props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "example-agent"})
 		require.NoError(t, err)
@@ -127,6 +131,13 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 	services["protected-update"].Environment = map[string]string{"API_KEY": "private-current-secret"}
 	services["protected-update"].AdditionalProperties.Fields["description"] =
 		structpb.NewStringValue("New private-current-secret instructions.")
+	services["data-agent"].Environment = map[string]string{"API_KEY": "a", "ABSENT": ""}
+	for _, name := range []string{"image-choice", "image-choice-unchanged", "image-default-build"} {
+		services[name].Docker.ImagePassthrough = false
+		if name != "image-choice-unchanged" {
+			services[name].Image = "registry.example.com/agent:v2"
+		}
+	}
 	for name, tags := range map[string][]any{
 		"tags-add": {"support", "responses"}, "tags-update": {"retained", "added"},
 		"tags-unchanged": {"retained", "removed"}, "tags-empty": {},
@@ -202,6 +213,8 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		{"tags-add", "update"}, {"tags-update", "update"}, {"tags-remove", "update"}, {"tags-unchanged", "noChange"},
 		{"tags-empty", "update"}, {"tags-scalar", "update"}, {"tags-safe", "update"},
 		{"config-update", "update"}, {"protected-update", "update"},
+		{"image-choice", "unknown"}, {"image-choice-unchanged", "noChange"},
+		{"image-default-build", "noChange"}, {"data-agent", "update"},
 	} {
 		result, err := preview(ctx, services[tc.name])
 		require.NoError(t, err)
@@ -210,6 +223,13 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		require.NotContains(t, result.Message, "private-create-secret")
 		if tc.name == "create" || tc.name == "image-update" {
 			require.Equal(t, map[string]any{"build": false, "push": false}, result.Data["containerImage"])
+		} else if tc.name == "image-choice" {
+			require.Equal(t, map[string]any{"build": nil, "push": nil}, result.Data["containerImage"])
+			require.ElementsMatch(t, []any{
+				"definition.container_configuration.image", "containerImage.build", "containerImage.push",
+			}, result.Data["unknown"])
+			require.Contains(t, result.Message, "unknown: containerImage.build")
+			require.Contains(t, result.Message, "unknown: containerImage.push")
 		} else {
 			require.NotContains(t, result.Data, "containerImage")
 			require.NotContains(t, result.Message, "  Container image:")
@@ -219,6 +239,18 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		encoded, err := json.Marshal(result.Data)
 		require.NoError(t, err)
 		require.NotContains(t, string(encoded), "private-")
+		if tc.name == "data-agent" {
+			require.Equal(t, "data-agent", result.Data["service"])
+			require.Equal(t, "example-agent", result.Data["agent"])
+			require.Equal(t, []any{"definition.environment_variables.ABSENT"}, result.Data["unknown"])
+			require.Equal(t, []any{map[string]any{
+				"group": "environmentVariables", "path": "definition.environment_variables.API_KEY",
+				"operation": "update", "before": "[redacted]", "after": "[redacted]",
+			}}, result.Data["changes"])
+			require.Contains(t, result.Message, "Service: data-agent (agent: example-agent)")
+			require.Contains(t, result.Message,
+				`update: definition.environment_variables.API_KEY: "[redacted]" -> "[redacted]"`)
+		}
 		if tc.name == "config-update" {
 			for _, line := range []string{
 				`update: description: "A basic responses agent." -> "A helpful responses agent."`,
@@ -297,7 +329,8 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 			require.NotContains(t, result.Message, excluded)
 			require.NotContains(t, string(encoded), excluded)
 		}
-		if tc.name == "code" || tc.name == "build" {
+		if tc.name == "code" || tc.name == "build" ||
+			tc.name == "image-choice-unchanged" || tc.name == "image-default-build" {
 			require.Empty(t, result.Data["changes"])
 			require.Empty(t, result.Data["unknown"])
 		}

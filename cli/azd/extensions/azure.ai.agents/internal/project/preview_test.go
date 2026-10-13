@@ -605,7 +605,7 @@ func TestPreviewContainerImageIntentAndIgnoredArtifacts(t *testing.T) {
 		{mode: "build", wantBuild: true, status: "noChange"},
 		{mode: "remote build", wantBuild: true, status: "noChange"},
 		{mode: "configured image default build", noPrompt: true, wantBuild: true, status: "noChange"},
-		{mode: "configured image selection", status: "noChange"},
+		{mode: "configured image selection", status: "unknown"},
 		{mode: "passthrough", status: "update"},
 		{mode: "legacy prebuilt", status: "update"},
 		{mode: "private registry", status: "update"},
@@ -656,6 +656,12 @@ func TestPreviewContainerImageIntentAndIgnoredArtifacts(t *testing.T) {
 				require.Equal(t, map[string]any{"build": tc.wantBuild, "push": tc.wantBuild}, data["containerImage"])
 				require.Contains(t, result.Message, fmt.Sprintf("build: %t", tc.wantBuild))
 				require.Contains(t, result.Message, fmt.Sprintf("push: %t", tc.wantBuild))
+			} else if tc.status == "unknown" {
+				require.Equal(t, map[string]any{"build": nil, "push": nil}, data["containerImage"])
+				require.ElementsMatch(t, []any{previewImagePath, "containerImage.build", "containerImage.push"},
+					data["unknown"])
+				require.Contains(t, result.Message, "unknown: containerImage.build")
+				require.Contains(t, result.Message, "unknown: containerImage.push")
 			} else {
 				require.NotContains(t, data, "containerImage")
 				require.NotContains(t, result.Message, "Container image:")
@@ -780,9 +786,9 @@ services:
 func TestPreviewURLRedactionAndWriter(t *testing.T) {
 	//nolint:gosec // Fake credential-bearing URL for non-disclosure coverage.
 	raw := "https://private-user:private-password@host/path?sig=private-signature#private-fragment"
-	endpoint, err := previewProjectEndpoint(raw)
+	endpoint, err := previewProjectEndpoint(strings.Replace(raw, "host/path", "account.services.ai.azure.com/path", 1))
 	require.NoError(t, err)
-	require.Equal(t, "https://host/path", endpoint)
+	require.Equal(t, "https://account.services.ai.azure.com/path", endpoint)
 	require.Equal(t, "at https://host/path", redactPreviewURLs("at "+raw))
 	for _, invalid := range []string{raw + "%invalid", "http://host?sig=private-signature"} {
 		_, err := previewProjectEndpoint(invalid)
@@ -820,6 +826,40 @@ func TestPreviewURLRedactionAndWriter(t *testing.T) {
 	require.NoError(t, writeAgentPreview(&buffer, agentPreviewResult{Status: "create"}))
 	require.Contains(t, buffer.String(), "Would create")
 	require.ErrorIs(t, writeAgentPreview(failingPreviewWriter{}, agentPreviewResult{}), errPreviewWrite)
+}
+
+func TestPreviewProjectEndpointHostBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		endpoint string
+		valid    bool
+	}{
+		{endpoint: "https://ai.azure.com/api/projects/project", valid: true},
+		{endpoint: "https://account.services.ai.azure.com/api/projects/project", valid: true},
+		{endpoint: "https://ACCOUNT.SERVICES.AI.AZURE.COM/api/projects/project", valid: true},
+		{endpoint: "https://evilai.azure.com/api/projects/project"},
+		{endpoint: "https://ai.azure.com.evil.example/api/projects/project"},
+		{endpoint: "https://evil.example/api/projects/ai.azure.com"},
+		{endpoint: "https://evil.example?endpoint=ai.azure.com&sig=private-signature"},
+		{endpoint: "https://ai.azure.com@evil.example/api/projects/project"},
+		{endpoint: "http://account.services.ai.azure.com/api/projects/project"},
+		{endpoint: "https://127.0.0.1/api/projects/project"},
+		{endpoint: "https://[::1]/api/projects/project"},
+		{endpoint: "https://ai.azure.com./api/projects/project"},
+		{endpoint: "https://ai.azure.com%invalid?sig=private-signature"},
+	} {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			endpoint, err := previewProjectEndpoint(tc.endpoint)
+			if tc.valid {
+				require.NoError(t, err)
+				require.Equal(t, tc.endpoint, endpoint)
+			} else {
+				require.Error(t, err)
+				require.Empty(t, endpoint)
+				require.NotContains(t, err.Error(), tc.endpoint)
+				require.NotContains(t, err.Error(), "private-")
+			}
+		})
+	}
 }
 
 var errPreviewWrite = errors.New("writer failed")

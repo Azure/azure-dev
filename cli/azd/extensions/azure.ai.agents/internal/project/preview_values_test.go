@@ -206,6 +206,80 @@ services:
 	require.Equal(t, body, persisted)
 }
 
+func TestPreviewShortSecretsPreserveStructure(t *testing.T) {
+	service := previewService(t)
+	service.Name = "data-agent"
+	service.AdditionalProperties.Fields["name"] = structpb.NewStringValue("data-agent")
+	service.Environment = map[string]string{"API_KEY": "a"}
+	service.AdditionalProperties.Fields["protocols"], _ = structpb.NewValue([]any{
+		map[string]any{"protocol": "responses", "version": "2.0.1"},
+	})
+	request, inputs := preparePresencePreview(t, service, t.TempDir())
+	inputs.PublicEnvironment["API_KEY"] = false
+	inputs.Unknown = []string{"definition.environment_variables.ABSENT"}
+	remote := remotePreviewAgent(request)
+	hosted := request.Definition.(agent_api.HostedAgentDefinition)
+	hosted.EnvironmentVariables = map[string]string{"API_KEY": "b"}
+	hosted.ProtocolVersions = []agent_api.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}
+	remote.Versions.Latest.Definition = hosted
+	result, err := comparePreviewRequest(service.Name, request, remote, inputs)
+	require.NoError(t, err)
+	data := result.Data.AsMap()
+	require.Equal(t, "data-agent", data["service"])
+	require.Equal(t, "data-agent", data["agent"])
+	require.Equal(t, "update", data["status"])
+	require.Equal(t, []any{"definition.environment_variables.ABSENT"}, data["unknown"])
+	require.Contains(t, result.Message, "Service: data-agent (agent: data-agent)")
+	require.Contains(t, result.Message,
+		`update: definition.environment_variables.API_KEY: "[redacted]" -> "[redacted]"`)
+	require.Contains(t, result.Message, `"protocol":"responses","version":"2.0.0"`)
+	require.Contains(t, result.Message, `"protocol":"responses","version":"2.0.1"`)
+	changes, ok := data["changes"].([]any)
+	require.True(t, ok)
+	require.Len(t, changes, 2)
+	for _, item := range changes {
+		change, ok := item.(map[string]any)
+		require.True(t, ok)
+		require.Contains(t, []string{"definition.environment_variables.API_KEY", "definition.protocol_versions"},
+			change["path"])
+		if change["group"] == "environmentVariables" {
+			require.Equal(t, previewRedactedValue, change["before"])
+			require.Equal(t, previewRedactedValue, change["after"])
+		}
+	}
+	result, err = comparePreviewRequest(service.Name, request, nil, inputs)
+	require.NoError(t, err)
+	require.Contains(t, result.Message, `add: name: "data-agent"`)
+	require.Contains(t, result.Data.AsMap()["changes"], map[string]any{
+		"group": "metadata", "path": "name", "operation": "add", "after": "data-agent",
+	})
+	require.Equal(t, "data?agent", previewStructuralText("data\x1bagent"))
+	actual := previewDisplayValue("definition.protocol_versions", []any{
+		map[string]any{"protocol": "responses", "version": "2"},
+	}, func(value string) string { return strings.ReplaceAll(value, "r", previewRedactedValue) })
+	require.Equal(t, []any{map[string]any{
+		"protocol": "[redacted]esponses", "version": "2",
+	}}, actual)
+	//nolint:gosec // Fake URL credentials verify structural URL hygiene.
+	require.Equal(t, "https://example.com", previewStructuralText(
+		"https://user:private-password@example.com?sig=private-signature#private-fragment"))
+}
+
+func TestPreviewShortSecretsDoNotDisableURLProtection(t *testing.T) {
+	request := previewRequest(t)
+	//nolint:gosec // Fake credentials exercise URL sanitation before short-secret replacement.
+	request.Description = new("Docs at https://user:private-password@example.com/help?sig=private-signature#private-fragment")
+	result, err := comparePreviewRequest("agent", request, nil, previewInputs{Secrets: []string{"h", "t"}})
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result.Data.AsMap())
+	require.NoError(t, err)
+	for _, output := range []string{result.Message, string(encoded)} {
+		for _, private := range []string{"user:", "private-password", "private-signature", "private-fragment"} {
+			require.NotContains(t, output, private)
+		}
+	}
+}
+
 func TestPreviewSanitizesTypedInlineValues(t *testing.T) {
 	for _, value := range []any{false, float64(0), "", []any{}, []any{"support", "responses"}} {
 		require.Equal(t, value, previewDisplayValue("metadata.public", value, redactPreviewURLs))

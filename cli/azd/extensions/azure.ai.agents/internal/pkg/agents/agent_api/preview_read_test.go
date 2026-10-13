@@ -4,12 +4,58 @@
 package agent_api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 
+	"azureaiagent/internal/pkg/recordproxy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/stretchr/testify/require"
 )
+
+type previewTokenCredential struct {
+	scopes []string
+}
+
+func (c *previewTokenCredential) GetToken(
+	ctx context.Context, options policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	c.scopes = options.Scopes
+	return fakeCredential{}.GetToken(ctx, options)
+}
+
+type previewRedirectTransport struct {
+	requests []*http.Request
+}
+
+func (t *previewRedirectTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	t.requests = append(t.requests, request)
+	response := &http.Response{StatusCode: http.StatusNotFound, Body: http.NoBody, Request: request}
+	if len(t.requests) == 1 {
+		response.StatusCode = http.StatusFound
+		response.Header = http.Header{"Location": {"https://untrusted.example/agents/agent"}}
+	}
+	return response, nil
+}
+
+func TestPreviewTokenAudienceAndRedirectDestination(t *testing.T) {
+	transport := &previewRedirectTransport{}
+	original := recordproxy.Transport
+	recordproxy.Transport = transport
+	t.Cleanup(func() { recordproxy.Transport = original })
+	credential := &previewTokenCredential{}
+	client := NewAgentClient("https://account.services.ai.azure.com/api/projects/project", credential)
+	_, err := client.GetAgent(t.Context(), "agent", AgentEndpointAPIVersion, false)
+	require.Error(t, err)
+	require.Equal(t, []string{"https://ai.azure.com/.default"}, credential.scopes)
+	require.Len(t, transport.requests, 2)
+	require.Equal(t, "account.services.ai.azure.com", transport.requests[0].URL.Hostname())
+	require.NotEmpty(t, transport.requests[0].Header.Get("Authorization"))
+	require.Equal(t, "untrusted.example", transport.requests[1].URL.Hostname())
+	require.Empty(t, transport.requests[1].Header.Get("Authorization"))
+}
 
 func TestPreviewReadsLatestAgentWithGetOnly(t *testing.T) {
 	for _, tc := range []struct {

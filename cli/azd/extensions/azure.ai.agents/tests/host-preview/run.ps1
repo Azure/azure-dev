@@ -2,11 +2,11 @@
 # Licensed under the MIT License.
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'cleanup.ps1')
 $extension = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $projects = (Resolve-Path (Join-Path $extension '..\azure.ai.projects')).Path
 $core = (Resolve-Path (Join-Path $extension '..\..')).Path
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("azd-foundry-preview-" + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $temp | Out-Null
 $binary = Join-Path $temp 'preview-tests.exe'
 $projectBinary = Join-Path $temp 'project-preview-tests.exe'
 $projectResult = Join-Path $temp 'project-preview-result.json'
@@ -16,7 +16,9 @@ $oldToolchain = $env:GOTOOLCHAIN
 $oldBinary = $env:AZD_PREVIEW_EXTENSION_TEST_BINARY
 $oldProjectBinary = $env:AZD_PROJECT_PREVIEW_EXTENSION_TEST_BINARY
 $oldProjectResult = $env:AZD_PROJECT_PREVIEW_TEST_RESULT
+$primaryError = $null
 try {
+    New-Item -ItemType Directory -Path $temp | Out-Null
     $env:GOWORK = 'off'
     $env:GOTOOLCHAIN = 'go1.26.4'
     Push-Location $extension
@@ -47,14 +49,14 @@ try {
         go test -overlay $overlay ./internal/cmd -run '^TestFoundryProjectPreviewCommandOutput$' -count=1
         if ($LASTEXITCODE -ne 0) { throw 'Project preview output against unchanged main command failed.' }
     } finally { Pop-Location }
+} catch {
+    $primaryError = $_
+    throw
 } finally {
     $env:GOWORK = $oldWork
     $env:GOTOOLCHAIN = $oldToolchain
     $env:AZD_PREVIEW_EXTENSION_TEST_BINARY = $oldBinary
     $env:AZD_PROJECT_PREVIEW_EXTENSION_TEST_BINARY = $oldProjectBinary
     $env:AZD_PROJECT_PREVIEW_TEST_RESULT = $oldProjectResult
-    foreach ($file in @($binary, $projectBinary, $projectResult, $overlay)) {
-        if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
-    }
-    Remove-Item -LiteralPath $temp
+    Complete-PreviewCleanup -Directory $temp -PrimaryError $primaryError
 }

@@ -129,7 +129,7 @@ and rle.version from that file.`,
 		&flags.renderer,
 		"renderer",
 		"",
-		"Capture Proxy renderer name. Defaults to a service-selected renderer when omitted.",
+		"Model renderer name (for example qwen3_disable_thinking). Defaults to a service-selected renderer when omitted.",
 	)
 	cmd.Flags().IntVar(&flags.sequenceID, "sequence-id", 0, "Loom training-step sequence id for this rollout.")
 	cmd.Flags().StringVar(

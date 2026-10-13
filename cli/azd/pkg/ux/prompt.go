@@ -30,7 +30,8 @@ type PromptOptions struct {
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
 	// The optional hint text displayed after the message.
-	// When empty (default), auto-generated as "[Type ? for hint]" only if HelpMessage is set.
+	// When empty, defaults to "[Type ? for hint]" if HelpMessage is set
+	// and hint keys are enabled. Secret mode disables hint keys.
 	Hint string
 	// The optional placeholder text to display when the value is empty (default: "")
 	PlaceHolder string

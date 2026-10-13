@@ -1,0 +1,31 @@
+# Tier 1: authenticated init prompt coverage; no provisioning or cost.
+name: "init-env-prompts"
+command: 'azd ai agent init -t "{fixtures_dir}/init-env-prompts/azure.yaml" --src . --agent-name {prefix}-env-hint-{instance} --environment {prefix}-env-hint-{instance}'
+cwd: "~/working/azd-agents-t1-env-prompts-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
+produces: "~/working/azd-agents-t1-env-prompts-{instance}"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_LANGUAGE_MCP_ENDPOINT: ""
+  AZD_TEST_INIT_SECRET: ""
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-t1-env-prompts-{instance}"
+    cwd: "~/working"
+    name: "reset environment-prompt working dir"
+
+goals:
+  - "Confirm init adopts the local azure.yaml into the current directory and does not show agent-name, environment-name, or deploy-mode prompts; the agent name and environment are supplied by flags, and the fixture declares the deploy mode."
+  - "At 'Select a Foundry project to host your agent and any models or tools it uses.', select 'Create a new Foundry project'. This configures a future project locally; do not provision it."
+  - "If 'Select a tenant' appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
+  - "If 'Select an Azure subscription to provision your agent and Foundry project resources.' appears, select the '{subscription}' subscription."
+  - "If asked to select an Azure location, select '{region}'."
+  - "At 'Enter a name for the new Foundry project', clear any pre-filled value and enter exactly '{foundry_project_name}'."
+  - "Before either environment-variable prompt, confirm the output includes 'azure.yaml references environment variables that need to be configured.' and 'Values are stored in the current azd environment.'."
+  - "At 'Enter a value for AZURE_LANGUAGE_MCP_ENDPOINT', confirm '[Type ? for hint]' is absent. Enter 'https://example.test/language/mcp?api-version=2025-11-15-preview' and confirm the '?' remains visible as literal input rather than opening a Hint line."
+  - "At 'Enter a value for AZD_TEST_INIT_SECRET', confirm '[Type ? for hint]' is absent. Enter the synthetic secret 'scenario?secret' and confirm it is masked while editing, never shown in clear text in terminal output, and cleared from the completed prompt."
+  - "Confirm init exits successfully and prints \"Adopted the sample's azure.yaml as the project manifest at azure.yaml.\" followed by 'Next:'."
+  - "Inspect the generated .azure/{prefix}-env-hint-{instance}/.env without printing its contents to the terminal. Confirm AZURE_LANGUAGE_MCP_ENDPOINT equals 'https://example.test/language/mcp?api-version=2025-11-15-preview' and AZD_TEST_INIT_SECRET equals 'scenario?secret', including the literal question marks."
+  - "Take a screenshot of the completed init output."
+  - "STOP without running provision, deploy, up, or invoke. Report a finding for an unexpected prompt, an unavailable hint being advertised, lost question marks, missing storage guidance, a disclosed secret, or incorrect persisted values."

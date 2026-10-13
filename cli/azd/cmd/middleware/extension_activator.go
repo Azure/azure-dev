@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/fatih/color"
 )
 
@@ -219,6 +220,9 @@ func (a *ExtensionActivator) ExtensionsForProject(
 	}
 
 	addMatches := func(providerNames []string, capability extensions.CapabilityType) {
+		providerNames = slices.DeleteFunc(slices.Clone(providerNames), func(providerName string) bool {
+			return ProviderIsBuiltIn(capability, providerName)
+		})
 		for _, extension := range extensionsForCapabilityProviders(installed, providerNames, capability) {
 			byId[strings.ToLower(extension.Id)] = ProjectExtension{
 				Id:      extension.Id,
@@ -234,6 +238,18 @@ func (a *ExtensionActivator) ExtensionsForProject(
 		return cmp.Compare(a.Id, b.Id)
 	})
 	return result, nil
+}
+
+// ProviderIsBuiltIn reports whether azd core implements the named provider.
+func ProviderIsBuiltIn(capability extensions.CapabilityType, provider string) bool {
+	switch capability {
+	case extensions.ServiceTargetProviderCapability:
+		return slices.Contains(project.BuiltInServiceTargetKinds(), project.ServiceTargetKind(provider))
+	case extensions.ProvisioningProviderCapability:
+		return slices.Contains(provisioning.BuiltInProviderKinds(), provisioning.ProviderKind(provider))
+	default:
+		return false
+	}
 }
 
 // SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.

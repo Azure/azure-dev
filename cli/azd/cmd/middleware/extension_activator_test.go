@@ -309,6 +309,32 @@ func Test_ExtensionsForProjectAllowsAnyInstalledSource(t *testing.T) {
 	}, got)
 }
 
+func Test_ExtensionsForProjectSkipsBuiltInProviders(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"colliding.extension": {
+			Id:      "colliding.extension",
+			Version: "1.0.0",
+			Providers: []extensions.Provider{
+				{Name: "bicep", Type: extensions.ProvisioningProviderType},
+				{Name: "containerapp", Type: extensions.ServiceTargetProviderType},
+			},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	got, err := activator.ExtensionsForProject(
+		[]string{"bicep"},
+		[]string{"containerapp"},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
 func Test_SuggestExtensionForProvider(t *testing.T) {
 	t.Parallel()
 

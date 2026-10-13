@@ -507,6 +507,11 @@ func TestShowJSONIncludesTraceContentMode(t *testing.T) {
 				"traces": {
 					"enabled": true,
 					"content_mode": "full"
+				},
+				"telemetry": {
+					"run_scope": "Environment",
+					"lime_run_id": "rle-v1|p=project|e=echo_env|v=1.2.0",
+					"run_id_format": "readable"
 				}
 			}]
 		}`))
@@ -534,6 +539,13 @@ func TestShowJSONIncludesTraceContentMode(t *testing.T) {
 	}
 	if traces["content_mode"] != "full" {
 		t.Fatalf("expected full trace content mode, got %#v", traces)
+	}
+	telemetry, ok := payload[0]["telemetry"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected telemetry object, got %#v", payload)
+	}
+	if telemetry["lime_run_id"] != "rle-v1|p=project|e=echo_env|v=1.2.0" {
+		t.Fatalf("expected stable trace run identity, got %#v", telemetry)
 	}
 }
 

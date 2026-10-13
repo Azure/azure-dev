@@ -325,12 +325,12 @@ func resolvePublishImage(state rleState) (string, error) {
 }
 
 type environmentOutput struct {
-	EnvironmentId          string               `json:"environmentId"`
-	EnvironmentVersion     string               `json:"environmentVersion"`
-	EnvironmentName        string               `json:"environmentName"`
-	FoundryProjectEndpoint string               `json:"foundryProjectEndpoint"`
-	AcrImage               string               `json:"acrImage"`
-	CreatedAt              string               `json:"createdAt"`
-	UpdatedAt              string               `json:"updatedAt"`
-	Traces                 *tracesConfiguration `json:"traces,omitempty"`
+	EnvironmentId          string             `json:"environmentId"`
+	EnvironmentVersion     string             `json:"environmentVersion"`
+	EnvironmentName        string             `json:"environmentName"`
+	FoundryProjectEndpoint string             `json:"foundryProjectEndpoint"`
+	AcrImage               string             `json:"acrImage"`
+	CreatedAt              string             `json:"createdAt"`
+	UpdatedAt              string             `json:"updatedAt"`
+	Traces                 *environmentTraces `json:"traces,omitempty"`
 }

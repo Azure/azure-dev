@@ -116,10 +116,10 @@ func Test_PipelineConfigAction_ActivatesProvidersAndForwardsExtensions(t *testin
 				Infra: []provisioning.Options{
 					{Provider: provisioning.ProviderKind("custom.provider")},
 				},
+				Services: map[string]*project.ServiceConfig{
+					"custom-service": {Host: project.ServiceTargetKind("custom.service")},
+				},
 			},
-		},
-		Services: map[string]*project.ServiceConfig{
-			"custom-service": {Host: project.ServiceTargetKind("custom.service")},
 		},
 		RequiredVersions: &project.RequiredVersions{
 			Extensions: map[string]*string{"explicit.extension": new("1.0.0")},

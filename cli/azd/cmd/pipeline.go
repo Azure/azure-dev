@@ -219,8 +219,9 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	}
 	defer cleanupProviders()
 
-	serviceTargetProviderNames := make([]string, 0, len(p.projectConfig.Services))
-	for _, service := range p.projectConfig.Services {
+	services := p.projectConfig.ServiceConfigs()
+	serviceTargetProviderNames := make([]string, 0, len(services))
+	for _, service := range services {
 		serviceTargetProviderNames = append(serviceTargetProviderNames, string(service.Host))
 	}
 

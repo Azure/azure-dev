@@ -182,6 +182,12 @@ Run `azd deploy --all` to reconcile these dependencies before their agents;
 declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
+Unlike the service-key references in `toolboxes`, singular `toolbox.name`
+retains the Foundry resource name. Local dependency wiring and deployment
+resolve its service key using the existing authoring convention: trim
+surrounding whitespace and remove ASCII spaces (`My Tools` becomes `MyTools`).
+The original resource name remains unchanged in the definition.
+
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 local `azure.ai.connection` service keys or effective resource names. An
 effective name comes from the service's `name` after resolving local `$ref`

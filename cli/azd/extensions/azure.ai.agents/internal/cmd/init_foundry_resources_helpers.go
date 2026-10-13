@@ -1566,7 +1566,16 @@ func ensureLocation(
 	if err != nil {
 		return err
 	}
+	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
 
+func ensureLocationWithAllowedLocations(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	allowedLocations []string,
+) error {
 	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
 		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
 			return err

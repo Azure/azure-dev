@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -16,6 +17,24 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
+
+// Temporary GitHub Copilot harness availability restriction; remove when all regions are supported.
+var promptHarnessRegions = []string{
+	"eastus2", "japaneast", "swedencentral", "uksouth",
+	"australiaeast", "westeurope", "germanywestcentral",
+	"canadacentral", "westus2",
+}
+
+func validatePromptHarnessLocation(location string, allowedLocations []string) error {
+	if locationAllowed(location, allowedLocations) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeLocationMismatch,
+		fmt.Sprintf("location %q is not supported for the GitHub Copilot harness", location),
+		"select a Foundry project or create one in a supported region: "+strings.Join(allowedLocations, ", "),
+	)
+}
 
 // resolvePromptHarnessTarget drives the guided Foundry resolution for a prompt
 // agent, mirroring the hosted agent experience: subscription -> Foundry project
@@ -43,7 +62,12 @@ func resolvePromptHarnessTarget(
 	flags *initFlags,
 	env *azdext.Environment,
 	settings *project.PromptAgentSettings,
+	harness string,
 ) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
+	var allowedLocations []string
+	if harness == "github_copilot_preview" {
+		allowedLocations = promptHarnessRegions
+	}
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
 		return nil, false, nil, nil, err
@@ -71,6 +95,12 @@ func resolvePromptHarnessTarget(
 		); err != nil {
 			return nil, false, nil, nil, err
 		}
+		if len(allowedLocations) > 0 {
+			fmt.Println(output.WithWarningFormat(
+				"The GitHub Copilot harness requires a Foundry project in one of these regions: %s.",
+				strings.Join(allowedLocations, ", "),
+			))
+		}
 		return nil, false, nil, nil, nil
 	}
 
@@ -84,7 +114,7 @@ func resolvePromptHarnessTarget(
 	}
 
 	proj, err := selectPromptFoundryProject(
-		ctx, azdClient, cred, azureContext, env.Name, flags.projectResourceId, flags.noPrompt,
+		ctx, azdClient, cred, azureContext, env.Name, flags.projectResourceId, flags.noPrompt, allowedLocations,
 	)
 	if err != nil {
 		return nil, false, nil, nil, err
@@ -104,8 +134,19 @@ func resolvePromptHarnessTarget(
 			"No existing Foundry project selected. `azd up` will provision one " +
 				"with the model deployment you choose next.",
 		))
-		if err := ensureLocation(ctx, azdClient, azureContext, env.Name); err != nil {
+		if len(allowedLocations) > 0 {
+			err = ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, env.Name, allowedLocations)
+		} else {
+			err = ensureLocation(ctx, azdClient, azureContext, env.Name)
+		}
+		if err != nil {
 			return nil, false, nil, nil, err
+		}
+		if len(allowedLocations) > 0 {
+			// Project provisioning reads AZURE_LOCATION, which may differ from the model location.
+			if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", azureContext.Scope.Location); err != nil {
+				return nil, false, nil, nil, err
+			}
 		}
 		if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 			return nil, false, nil, nil, err
@@ -116,6 +157,9 @@ func resolvePromptHarnessTarget(
 		// A new project is provisioned by `azd up`; its endpoint is resolved from
 		// the provisioned environment at deploy time.
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
+		if err == nil {
+			err = validatePromptHarnessLocation(azureContext.Scope.Location, allowedLocations)
+		}
 		return deployment, true, nil, cred, err
 	}
 
@@ -158,6 +202,9 @@ func resolvePromptHarnessTarget(
 	deployment, provision, err := resolvePromptModelForExistingProject(
 		ctx, azdClient, cred, azureContext, env, flags, proj,
 	)
+	if err == nil {
+		err = validatePromptHarnessLocation(azureContext.Scope.Location, allowedLocations)
+	}
 	return deployment, provision, proj, cred, err
 }
 
@@ -167,8 +214,8 @@ func resolvePromptHarnessTarget(
 // prompting. Returns nil when the user chose "Create a new Foundry project" or
 // no existing projects were found.
 //
-// Unlike the hosted selectFoundryProject this does NOT filter by region or
-// configure ACR/AppInsights connections, which are irrelevant to prompt agents.
+// Unlike the hosted selectFoundryProject this only filters regions when a harness
+// requires it and does not configure ACR/AppInsights connections.
 //
 // In non-interactive mode without --project-id there is no basis for picking
 // one of the subscription's existing projects, so it returns nil to take the
@@ -183,10 +230,18 @@ func selectPromptFoundryProject(
 	envName string,
 	projectResourceId string,
 	noPrompt bool,
+	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
 	subscriptionId := azureContext.Scope.SubscriptionId
 	if strings.TrimSpace(projectResourceId) != "" {
-		return getFoundryProject(ctx, credential, subscriptionId, projectResourceId)
+		proj, err := getFoundryProject(ctx, credential, subscriptionId, projectResourceId)
+		if err != nil {
+			return nil, err
+		}
+		if err := validatePromptHarnessLocation(proj.Location, allowedLocations); err != nil {
+			return nil, err
+		}
+		return proj, nil
 	}
 	if noPrompt {
 		return nil, nil
@@ -215,7 +270,16 @@ func selectPromptFoundryProject(
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
+	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+		return !locationAllowed(p.Location, allowedLocations)
+	})
 	if len(projects) == 0 {
+		if len(allowedLocations) > 0 {
+			fmt.Println(output.WithWarningFormat(
+				"No Foundry projects were found in regions supported for the GitHub Copilot harness. " +
+					"Continue by configuring a new project.",
+			))
+		}
 		return nil, nil
 	}
 

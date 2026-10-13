@@ -1394,6 +1394,7 @@ func newTestEnvRefreshAction(
 
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterNamedInstance(container, string(provisioning.Test), provider)
+	ioc.RegisterNamedInstance(container, string(provisioning.Bicep), provider)
 
 	env := environment.New("test-env")
 	env.SetSubscriptionId("00000000-0000-0000-0000-000000000000")
@@ -1531,12 +1532,15 @@ func Test_EnvRefreshAction_Run_AppliesAliases(t *testing.T) {
 	}}
 	action, _, envManager, pm := newTestEnvRefreshAction(t, provider, &envRefreshFlags{})
 	action.projectConfig.Infra = provisioning.Options{
-		Provider: provisioning.Test,
+		Provider: provisioning.Bicep,
 		Layers: []provisioning.Options{{
 			Name:     "infra",
-			Provider: provisioning.Test,
+			Provider: provisioning.Bicep,
 			Path:     "infra",
-			Aliases:  map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT"},
+			Aliases: map[string]string{
+				"LOCAL_OUTPUT":  "SHARED_OUTPUT",
+				"SHARED_OUTPUT": "OTHER_OUTPUT",
+			},
 		}},
 	}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
@@ -1547,6 +1551,7 @@ func Test_EnvRefreshAction_Run_AppliesAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "value", action.env.Dotenv()["SHARED_OUTPUT"])
 	require.NotContains(t, action.env.Dotenv(), "LOCAL_OUTPUT")
+	require.NotContains(t, action.env.Dotenv(), "OTHER_OUTPUT")
 }
 
 func Test_NewEnvSetSecretAction(t *testing.T) {

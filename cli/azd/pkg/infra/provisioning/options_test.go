@@ -311,8 +311,13 @@ func TestOptionsValidate(t *testing.T) {
 		require.NoError(t, opts.Validate())
 	})
 
-	t.Run("aliases allow supported or inferred providers", func(t *testing.T) {
-		for _, provider := range []ProviderKind{NotSpecified, Bicep, Terraform} {
+	t.Run("aliases allow built-in, inferred, or extension providers", func(t *testing.T) {
+		for _, provider := range []ProviderKind{
+			NotSpecified,
+			Bicep,
+			Terraform,
+			ProviderKind("contoso.custom"),
+		} {
 			t.Run(string(provider), func(t *testing.T) {
 				opts := &Options{Layers: []Options{{
 					Name:     "producer",
@@ -324,22 +329,5 @@ func TestOptionsValidate(t *testing.T) {
 				require.NoError(t, opts.Validate())
 			})
 		}
-	})
-
-	t.Run("aliases reject extension providers", func(t *testing.T) {
-		opts := &Options{Layers: []Options{{
-			Name:     "producer",
-			Provider: ProviderKind("contoso.custom"),
-			Aliases:  map[string]string{"LOCAL_OUTPUT": "PROJECT_OUTPUT"},
-		}}}
-
-		err := opts.ValidateProjectLayers()
-
-		require.EqualError(
-			t,
-			err,
-			`validating infra.layers: producer: aliases are supported only for "bicep" and "terraform" providers, `+
-				`not "contoso.custom"`,
-		)
 	})
 }

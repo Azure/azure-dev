@@ -4,10 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -171,7 +171,8 @@ func runProvisionServiceEnvUpdatedEvent(
 	if skipped {
 		provider.deployResult.SkippedReason = provisioning.DeploymentStateSkipped
 	}
-	ioc.RegisterNamedInstance[provisioning.Provider](mockContext.Container, string(provisioning.Test), provider)
+	const customProvider = provisioning.ProviderKind("contoso.custom")
+	ioc.RegisterNamedInstance[provisioning.Provider](mockContext.Container, string(customProvider), provider)
 
 	projectConfig := &project.ProjectConfig{
 		Name: "test-project", Path: t.TempDir(),
@@ -228,7 +229,7 @@ func runProvisionServiceEnvUpdatedEvent(
 		}))
 
 	deps.serviceLocator = mockContext.Container
-	deps.defaultProvider = func() (provisioning.ProviderKind, error) { return provisioning.Test, nil }
+	deps.defaultProvider = func() (provisioning.ProviderKind, error) { return customProvider, nil }
 	deps.alphaFeatureManager = mockContext.AlphaFeaturesManager
 	deps.cloud = cloud.AzurePublic()
 	deps.projectPath = projectConfig.Path
@@ -238,9 +239,10 @@ func runProvisionServiceEnvUpdatedEvent(
 	))
 	deps.hookMu = &sync.Mutex{}
 	layer := provisioning.Options{
-		Name: "producer", Provider: provisioning.Test, Path: "infra", Aliases: aliases,
+		Name: "producer", Provider: customProvider, Path: "infra", Aliases: aliases,
 	}
 
+	var jsonOutput bytes.Buffer
 	if single {
 		manager := provisioning.NewManager(
 			deps.serviceLocator, deps.defaultProvider, deps.envManager, deps.env,
@@ -253,7 +255,7 @@ func runProvisionServiceEnvUpdatedEvent(
 			provisionManager: manager, envManager: deps.envManager, env: deps.env,
 			projectConfig: projectConfig, importManager: deps.importManager,
 			console: mockContext.Console, alphaFeatureManager: deps.alphaFeatureManager,
-			formatter: &output.JsonFormatter{}, writer: io.Discard,
+			formatter: &output.JsonFormatter{}, writer: &jsonOutput,
 		}
 		_, err := action.provisionLayersGraph(t.Context(), []provisioning.Options{layer}, time.Now(), false)
 		require.NoError(t, err)
@@ -266,6 +268,16 @@ func runProvisionServiceEnvUpdatedEvent(
 	require.Equal(t, 1, eventCount)
 	require.Equal(t, 1, secretsWriteCount)
 	require.Equal(t, providerOutputs, provider.deployResult.Deployment.Outputs)
+	if single {
+		formatted := struct {
+			Outputs map[string]json.RawMessage `json:"outputs"`
+		}{}
+		require.NoError(t, json.Unmarshal(jsonOutput.Bytes(), &formatted))
+		require.Len(t, formatted.Outputs, len(eventOutputs))
+		for name := range eventOutputs {
+			require.Contains(t, formatted.Outputs, name)
+		}
+	}
 	return eventOutputs, providerOutputs, deps.env.Dotenv(), secrets
 }
 
@@ -300,7 +312,7 @@ func TestLayerProviderInitialization_PersistsRealEnvironment(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	ioc.RegisterInstance[environment.ScopedEnvironment](mockContext.Container, deps.env)
 	ioc.RegisterInstance(mockContext.Container, deps.envManager)
-	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test),
+	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Bicep),
 		func(env environment.ScopedEnvironment, manager environment.Manager) provisioning.Provider {
 			return &savingParametersProvider{
 				Provider:   provisioningtest.NewTestProvider(manager, env, mockContext.Console, nil),
@@ -318,7 +330,7 @@ func TestLayerProviderInitialization_PersistsRealEnvironment(t *testing.T) {
 		mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
 	)
 	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
-		Provider: provisioning.Test,
+		Provider: provisioning.Bicep,
 		Aliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
 	}))
 

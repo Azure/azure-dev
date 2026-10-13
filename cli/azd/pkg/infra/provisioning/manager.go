@@ -155,7 +155,21 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}
 
-	return result, nil
+	if result == nil || result.State == nil || len(m.options.Aliases) == 0 {
+		return result, nil
+	}
+
+	projectOutputs, err := ApplyOutputAliases(result.State.Outputs, m.options.Aliases)
+	if err != nil {
+		return nil, fmt.Errorf("applying state output aliases: %w", err)
+	}
+
+	projectState := *result.State
+	projectState.Outputs = projectOutputs
+	projectResult := *result
+	projectResult.State = &projectState
+
+	return &projectResult, nil
 }
 
 var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
@@ -607,12 +621,6 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		}
 
 		providerKey = defaultProvider
-	}
-
-	if len(m.options.Aliases) > 0 {
-		if err := validateAliasesProvider(providerKey); err != nil {
-			return nil, err
-		}
 	}
 
 	container, isNestedContainer := m.serviceLocator.(*ioc.NestedContainer)

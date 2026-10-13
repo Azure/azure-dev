@@ -70,54 +70,6 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 	require.Equal(t, "location", env.GetLocation())
 }
 
-func TestManagerInitializeRejectsAliasesForResolvedExtensionProvider(t *testing.T) {
-	tests := []struct {
-		name            string
-		provider        provisioning.ProviderKind
-		defaultProvider provisioning.DefaultProviderResolver
-	}{
-		{
-			name:            "explicit",
-			provider:        provisioning.ProviderKind("contoso.custom"),
-			defaultProvider: defaultProvider,
-		},
-		{
-			name: "inferred",
-			defaultProvider: func() (provisioning.ProviderKind, error) {
-				return provisioning.ProviderKind("contoso.custom"), nil
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(t.Context())
-			manager := provisioning.NewManager(
-				mockContext.Container,
-				tt.defaultProvider,
-				nil,
-				environment.NewWithValues("test-env", nil),
-				mockContext.Console,
-				mockContext.AlphaFeaturesManager,
-				nil,
-				cloud.AzurePublic(),
-			)
-
-			err := manager.Initialize(t.Context(), "", provisioning.Options{
-				Provider: tt.provider,
-				Aliases:  map[string]string{"LOCAL_OUTPUT": "PROJECT_OUTPUT"},
-			})
-
-			require.EqualError(
-				t,
-				err,
-				`initializing infrastructure provider: aliases are supported only for "bicep" and "terraform" providers, `+
-					`not "contoso.custom"`,
-			)
-		})
-	}
-}
-
 func TestManagerPreview(t *testing.T) {
 	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
@@ -297,6 +249,7 @@ type aliasTestProvider struct {
 	options    provisioning.Options
 	parameters []provisioning.Parameter
 	outputs    []provisioning.PlannedOutput
+	state      *provisioning.StateResult
 	deployment *provisioning.Deployment
 	err        error
 }
@@ -312,6 +265,12 @@ func (p *aliasTestProvider) Parameters(context.Context) ([]provisioning.Paramete
 
 func (p *aliasTestProvider) PlannedOutputs(context.Context) ([]provisioning.PlannedOutput, error) {
 	return p.outputs, p.err
+}
+
+func (p *aliasTestProvider) State(
+	context.Context, *provisioning.StateOptions,
+) (*provisioning.StateResult, error) {
+	return p.state, p.err
 }
 
 func (p *aliasTestProvider) Deploy(context.Context) (*provisioning.DeployResult, error) {
@@ -332,7 +291,7 @@ func TestManagerPipelineMetadataUsesProjectView(t *testing.T) {
 		outputs: []provisioning.PlannedOutput{{Name: "PROVIDER_VARIABLE"}, {Name: "PROJECT_VARIABLE"}, {Name: "UNCHANGED"}},
 	}
 	mockContext := mocks.NewMockContext(t.Context())
-	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Test), func() provisioning.Provider {
+	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Bicep), func() provisioning.Provider {
 		return provider
 	})
 	manager := provisioning.NewManager(
@@ -340,7 +299,7 @@ func TestManagerPipelineMetadataUsesProjectView(t *testing.T) {
 		mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
 	)
 	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
-		Provider: provisioning.Test,
+		Provider: provisioning.Bicep,
 		// PROJECT_VARIABLE is also a provider-view name here; each alias must be applied only once.
 		Aliases: map[string]string{
 			"PROVIDER_VARIABLE": "PROJECT_VARIABLE",
@@ -373,7 +332,7 @@ func TestManagerPipelineMetadataUsesProjectView(t *testing.T) {
 	require.ErrorIs(t, err, provider.err)
 
 	provider.err = nil
-	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{Provider: provisioning.Test}))
+	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{Provider: provisioning.Bicep}))
 	parameters, err = manager.Parameters(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, provider.parameters, parameters)
@@ -382,12 +341,53 @@ func TestManagerPipelineMetadataUsesProjectView(t *testing.T) {
 	require.Equal(t, provider.outputs, outputs)
 }
 
+func TestManagerStateUsesProjectView(t *testing.T) {
+	t.Parallel()
+
+	const customProvider = provisioning.ProviderKind("contoso.custom")
+	providerState := &provisioning.StateResult{State: &provisioning.State{
+		Outputs: map[string]provisioning.OutputParameter{
+			"FIRST":  {Type: provisioning.ParameterTypeString, Value: "one"},
+			"SECOND": {Type: provisioning.ParameterTypeString, Value: "two"},
+		},
+		Resources: []provisioning.Resource{{Id: "resource-id"}},
+	}}
+	provider := &aliasTestProvider{state: providerState}
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Container.MustRegisterNamedSingleton(string(customProvider), func() provisioning.Provider {
+		return provider
+	})
+	manager := provisioning.NewManager(
+		mockContext.Container, defaultProvider, nil, environment.New("test"),
+		mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
+	)
+
+	err := manager.Initialize(t.Context(), "", provisioning.Options{
+		Provider: customProvider,
+		Aliases:  map[string]string{"FIRST": "SECOND", "SECOND": "SHARED"},
+	})
+	require.NoError(t, err)
+
+	result, err := manager.State(t.Context(), nil)
+
+	require.NoError(t, err)
+	require.Equal(t, map[string]provisioning.OutputParameter{
+		"SECOND": {Type: provisioning.ParameterTypeString, Value: "one"},
+		"SHARED": {Type: provisioning.ParameterTypeString, Value: "two"},
+	}, result.State.Outputs)
+	require.Equal(t, providerState.State.Resources, result.State.Resources)
+	require.Equal(t, map[string]provisioning.OutputParameter{
+		"FIRST":  {Type: provisioning.ParameterTypeString, Value: "one"},
+		"SECOND": {Type: provisioning.ParameterTypeString, Value: "two"},
+	}, providerState.State.Outputs)
+}
+
 func TestManagerVirtualInputsUseProviderView(t *testing.T) {
 	t.Parallel()
 
 	provider := &aliasTestProvider{}
 	mockContext := mocks.NewMockContext(t.Context())
-	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Test), func() provisioning.Provider {
+	mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Bicep), func() provisioning.Provider {
 		return provider
 	})
 	manager := provisioning.NewManager(
@@ -396,7 +396,7 @@ func TestManagerVirtualInputsUseProviderView(t *testing.T) {
 	)
 	virtualEnv := map[string]string{"FIRST": "first", "SECOND": "second", "UNCHANGED": "other"}
 	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
-		Provider:   provisioning.Test,
+		Provider:   provisioning.Bicep,
 		VirtualEnv: virtualEnv,
 		Aliases: map[string]string{
 			"FIRST": "SECOND", "SECOND": "FIRST", "LOCAL": "FIRST", "UNCHANGED": "MISSING",
@@ -448,7 +448,7 @@ func TestManagerDeployValidatesOutputAliasDestinations(t *testing.T) {
 				},
 			}}
 			mockContext := mocks.NewMockContext(t.Context())
-			mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Test), func() provisioning.Provider {
+			mockContext.Container.MustRegisterNamedSingleton(string(provisioning.Bicep), func() provisioning.Provider {
 				return provider
 			})
 			envManager := &mockenv.MockEnvManager{}
@@ -460,7 +460,7 @@ func TestManagerDeployValidatesOutputAliasDestinations(t *testing.T) {
 				mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
 			)
 			require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
-				Provider: provisioning.Test, Aliases: tt.aliases,
+				Provider: provisioning.Bicep, Aliases: tt.aliases,
 			}))
 
 			result, err := manager.Deploy(t.Context())
@@ -534,13 +534,13 @@ func TestCompat_ProviderKeepsDirectEnvironmentAccess(t *testing.T) {
 			layerManager := &mockenv.MockEnvManager{}
 			layerManager.On("Save", mock.Anything, layerEnv).Return(nil).Once()
 			var provider *savingEnvironmentProvider
-			mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test),
+			mockContext.Container.MustRegisterNamedTransient(string(provisioning.Bicep),
 				func(env environment.ScopedEnvironment, envManager environment.Manager) provisioning.Provider {
 					provider = &savingEnvironmentProvider{env: env, envManager: envManager}
 					return provider
 				})
 
-			options := provisioning.Options{Provider: provisioning.Test}
+			options := provisioning.Options{Provider: provisioning.Bicep}
 			if aliases {
 				options.Aliases = map[string]string{
 					"LOCAL_INPUT": "SHARED_INPUT", "LOCAL_OUTPUT": "SHARED_OUTPUT",
@@ -621,7 +621,7 @@ func TestCompat_ProviderViewMapsToProjectView(t *testing.T) {
 		return backing
 	})
 	var provider *mappedEnvironmentProvider
-	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test),
+	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Bicep),
 		func(env environment.ScopedEnvironment) provisioning.Provider {
 			provider = &mappedEnvironmentProvider{env: env}
 			return provider
@@ -638,7 +638,7 @@ func TestCompat_ProviderViewMapsToProjectView(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 	options := provisioning.Options{
-		Provider: provisioning.Test,
+		Provider: provisioning.Bicep,
 		Aliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT", "LOCAL_OUTPUT": "SHARED_OUTPUT"},
 	}
 

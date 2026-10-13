@@ -1305,13 +1305,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 			continue
 		}
 
-		sharedOutputs, err := provisioning.ApplyOutputAliases(result.State.Outputs, layer.Aliases)
-		if err != nil {
-			return nil, fmt.Errorf("applying output aliases for layer %s: %w", layer.Name, err)
-		}
-		result.State.Outputs = sharedOutputs
-
-		if err := provisioning.UpdateEnvironment(ctx, sharedOutputs, ef.env, ef.envManager); err != nil {
+		if err := provisioning.UpdateEnvironment(ctx, result.State.Outputs, ef.env, ef.envManager); err != nil {
 			return nil, err
 		}
 

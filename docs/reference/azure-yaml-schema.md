@@ -116,7 +116,6 @@ Each entry under `infra.layers[]` or `layers[].infra[]` can translate between
 the **[provider view](../concepts/glossary.md#provider-view)** and the
 **[project view](../concepts/glossary.md#project-view)**:
 
-- Variable aliases are supported only for the built-in Bicep and Terraform providers.
 - The provider view uses the variable names an infrastructure provider reads or emits.
 - The project view uses the environment variable names the project stores and supplies to CI.
 - The `aliases` map is written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`.
@@ -149,13 +148,19 @@ in Bicep parameter-file compilation. An explicitly empty project variable remain
 present with an empty value. Writing through the provider name creates or updates
 the project variable.
 
+Output aliases apply to built-in and custom provisioning providers because azd maps
+provider outputs into the project view after provisioning. Input aliases apply only
+to the built-in Bicep and Terraform providers. Custom providers do not receive the
+scoped environment that translates project-view names into provider-view input names.
+
 Names on both sides of the alias map must match `^[A-Za-z_][A-Za-z0-9_]*$`.
 azd checks this when it loads the project configuration.
 
 In this example, the producer's `PROVIDER_ENDPOINT` output is stored as
-`PROJECT_ENDPOINT`. The consumer reads that value as `PROVIDER_INPUT`. These aliases
-work with both Bicep and Terraform providers. For Bicep layers, azd uses the
-aliases during static dependency analysis, so the consumer waits for the producer.
+`PROJECT_ENDPOINT`. The consumer reads that value as `PROVIDER_INPUT`. The producer
+can use any provisioning provider, but the consumer input alias requires Bicep or
+Terraform. For Bicep layers, azd uses the aliases during static dependency analysis,
+so the consumer waits for the producer.
 Terraform dependencies are not inferred from aliases. Declare
 `dependsOn: [producer]` on the consumer when it needs the producer's outputs.
 This also applies to Bicep consumers of Terraform outputs.

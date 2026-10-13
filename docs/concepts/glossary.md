@@ -44,10 +44,11 @@ The variable names an infrastructure provider reads or emits. A provider input v
 
 ### Project View
 
-The environment variable names the project stores and supplies to CI. For the built-in Bicep and Terraform providers,
-the `aliases` map is written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`: reads, writes, and deletes through a provider
-name use its project name, including prompted inputs and deployment outputs. These views describe naming, not separate
-persisted environments. See
+The environment variable names the project stores and supplies to CI. The `aliases` map is written as
+`PROVIDER_VARIABLE: PROJECT_VARIABLE`. For the built-in Bicep and Terraform providers, reads, writes, and deletes
+through a provider name use its project name, including prompted inputs and deployment outputs. Custom provisioning
+providers can use aliases for outputs, but they do not receive the scoped environment that translates provider inputs.
+These views describe naming, not separate persisted environments. See
 [Infrastructure Layer Variable Aliases](../reference/azure-yaml-schema.md#infrastructure-layer-variable-aliases).
 
 ### Provisioning

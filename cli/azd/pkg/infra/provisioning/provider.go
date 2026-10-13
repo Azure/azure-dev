@@ -43,17 +43,6 @@ func BuiltInProviderKinds() []ProviderKind {
 	return builtInProviderKinds
 }
 
-func validateAliasesProvider(provider ProviderKind) error {
-	if !slices.Contains(builtInProviderKinds, provider) {
-		return fmt.Errorf(
-			"aliases are supported only for %q and %q providers, not %q",
-			Bicep, Terraform, provider,
-		)
-	}
-
-	return nil
-}
-
 type Mode string
 
 const (
@@ -75,7 +64,8 @@ type Options struct {
 	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
-	// Aliases maps provider-view variable names to project-view names for reads, writes, and deletes.
+	// Aliases maps provider-view variable names to project-view names.
+	// Output aliases apply to all providers. Input aliases apply to built-in providers.
 	// Project-view names must be unique within each infrastructure entry.
 	Aliases map[string]string `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	// DependsOn lists the names of other infrastructure entries this entry must wait for
@@ -300,12 +290,6 @@ func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 var aliasNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validateLayerAliases(layer Options) error {
-	if len(layer.Aliases) > 0 && layer.Provider != NotSpecified {
-		if err := validateAliasesProvider(layer.Provider); err != nil {
-			return err
-		}
-	}
-
 	destinations := make(map[string]string, len(layer.Aliases))
 	for _, localName := range slices.Sorted(maps.Keys(layer.Aliases)) {
 		sharedName := layer.Aliases[localName]

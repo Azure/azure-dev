@@ -28,6 +28,9 @@ import (
 // rolloutFlags holds the CLI-facing configuration for one rollout.
 type rolloutFlags struct {
 	version    string
+	mode       string
+	loom       bool
+	backend    string
 	model      string
 	loraRank   int
 	task       string
@@ -59,6 +62,7 @@ type rolloutTarget struct {
 
 func newRolloutCommand() *cobra.Command {
 	flags := &rolloutFlags{
+		mode:      rolloutModeTrain,
 		loraRank:  16,
 		timeout:   600,
 		outputDir: defaultRolloutOutputDir,
@@ -74,6 +78,13 @@ creates a real Loom training session for --model, saves a sampler checkpoint, ca
 Execute Rollout API with your task, prints the live execution milestones followed by the
 resulting reward and trajectory summary, then closes the Loom session. You never handle
 Loom session or checkpoint identifiers directly.
+
+--mode train (the default) always uses Loom, because only Loom returns the token ids and
+logprobs training needs. --mode eval instead samples a model deployment in the Foundry project
+(--model names the deployment) and creates no Loom session. Foundry rollouts are text-level:
+they carry no token ids and are never trainable. Add --loom to run the eval on a Loom session
+instead. --lora-rank, --sequence-id, --renderer and --timeout configure Loom and are rejected
+for a Foundry eval.
 
 The response also carries the full capture graph — token ids, logprobs and loss masks —
 which is too large to print and cannot be fetched again once the rollout returns. It is
@@ -98,11 +109,24 @@ rle.toml. To run an environment without local source, provide both its name and
 
 	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to run this rollout against.")
 	cmd.Flags().StringVar(
+		&flags.mode,
+		"mode",
+		flags.mode,
+		"What the rollout is for: \"train\" (default, always a Loom session) or "+
+			"\"eval\" (sample a Foundry model deployment by default).",
+	)
+	cmd.Flags().BoolVar(
+		&flags.loom,
+		"loom",
+		false,
+		"With --mode eval, run on a Loom session instead of a Foundry deployment. Train always uses Loom.",
+	)
+	cmd.Flags().StringVar(
 		&flags.model,
 		"model",
 		"",
-		"Loom base model name to bind for this rollout, e.g. Qwen/Qwen3-32B. "+
-			"Required unless rle.toml sets defaults.model.name.",
+		"Model to sample: a Loom base model name such as Qwen/Qwen3-32B, or, for a Foundry eval, "+
+			"the name of a model deployment in the project. Required unless rle.toml sets defaults.model.name.",
 	)
 	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
 	cmd.Flags().StringVar(&flags.task, "task", "", "Inline JSON task payload for the sandbox reset operation.")
@@ -149,6 +173,9 @@ func (a *rolloutAction) Run() error {
 		return err
 	}
 	a.flags.outputDir = outputDir
+	if err := a.validateBackend(); err != nil {
+		return err
+	}
 	target, rle, err := a.resolveTarget()
 	if err != nil {
 		return err
@@ -160,10 +187,11 @@ func (a *rolloutAction) Run() error {
 	}
 	if model == "" {
 		return &azdext.LocalError{
-			Message:  "--model is required to bind a rollout to a Loom training session.",
+			Message:  "--model is required to choose the model a rollout samples.",
 			Code:     "rle_rollout_model_required",
 			Category: azdext.LocalErrorCategoryUser,
-			Suggestion: "Pass --model with a Loom base model name (for example --model Qwen/Qwen3-32B), " +
+			Suggestion: "Pass --model with a Loom base model name (for example --model Qwen/Qwen3-32B) " +
+				"or, for a Foundry eval, a model deployment name, " +
 				"or set defaults.model.name in rle.toml.",
 		}
 	}
@@ -213,37 +241,26 @@ func (a *rolloutAction) executeAndSave(
 	if err != nil {
 		return err
 	}
-	timeout := time.Duration(a.flags.timeout) * time.Second
-
 	out := a.cmd.OutOrStdout()
 	errOut := a.cmd.ErrOrStderr()
 
-	if _, err := fmt.Fprintf(out, "Creating Loom training session for model %s ...\n", model); err != nil {
-		return err
-	}
-	sessionID, err := loom.createSession(ctx, model, a.flags.loraRank, timeout)
-	if err != nil {
-		return loomServiceErrorFor("create Loom training session", err)
-	}
-	defer func() {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		if cerr := loom.closeSession(cctx, sessionID); cerr != nil {
-			_, writeErr := fmt.Fprintf(errOut, "Warning: failed to close Loom session; it may remain allocated: %v\n", cerr)
-			err = errors.Join(err, writeErr, a.skipMonitor(errOut))
-			return
+	var policy *rolloutPolicy
+	if a.flags.backend == foundryPolicyType {
+		// A hosted deployment has no weights to pin, so there is no session or checkpoint to create.
+		policy = &rolloutPolicy{
+			Type:            foundryPolicyType,
+			DeploymentName:  model,
+			ProjectEndpoint: target.projectEndpoint,
 		}
-		_, writeErr := fmt.Fprintln(errOut, "Loom session closed.")
-		err = errors.Join(err, writeErr)
-	}()
-
-	checkpointName := fmt.Sprintf("azd-rollout-%s", rolloutID[:8])
-	if _, err := fmt.Fprintln(out, "Saving Loom sampler checkpoint ..."); err != nil {
-		return err
-	}
-	checkpointID, err := loom.saveWeightsForSampler(ctx, sessionID, a.flags.sequenceID, checkpointName, timeout)
-	if err != nil {
-		return loomServiceErrorFor("save Loom sampler checkpoint", err)
+	} else {
+		var release func(*error)
+		policy, release, err = a.provisionLoomPolicy(ctx, loom, target, model, rolloutID)
+		if release != nil {
+			defer release(&err)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	loomToken, err := loom.bearerToken(ctx)
@@ -251,7 +268,6 @@ func (a *rolloutAction) executeAndSave(
 		return fmt.Errorf("authenticate to Loom for Execute Rollout: %w", err)
 	}
 
-	sequenceID := int64(a.flags.sequenceID)
 	var sampling *rolloutSamplingOptions
 	if a.flags.renderer != "" {
 		sampling = &rolloutSamplingOptions{RendererName: a.flags.renderer}
@@ -269,15 +285,8 @@ func (a *rolloutAction) executeAndSave(
 	response, err := rle.executeRollout(ctx, target.environmentName, target.version, loomToken, executeRolloutRequest{
 		RolloutID: rolloutID,
 		Task:      task,
-		Policy: &rolloutPolicy{
-			Type:            loomPolicyType,
-			ModelName:       model,
-			ProjectEndpoint: target.projectEndpoint,
-			SessionID:       sessionID,
-			CheckpointID:    checkpointID,
-			SequenceID:      &sequenceID,
-		},
-		Sampling: sampling,
+		Policy:    policy,
+		Sampling:  sampling,
 	}, progress.Render, errOut)
 	if err != nil {
 		if isRleNotFound(err) {
@@ -302,6 +311,102 @@ func (a *rolloutAction) executeAndSave(
 		return errors.Join(writeErr, a.skipMonitor(errOut))
 	}
 	return printRolloutArtifacts(out, artifacts)
+}
+
+// provisionLoomPolicy creates the Loom session and sampler checkpoint a Loom rollout is bound to.
+// The returned release closes the session and folds any failure into the rollout's error; it is
+// non-nil as soon as the session exists, even when saving the checkpoint then fails.
+func (a *rolloutAction) provisionLoomPolicy(
+	ctx context.Context,
+	loom *loomSessionClient,
+	target rolloutTarget,
+	model string,
+	rolloutID string,
+) (*rolloutPolicy, func(*error), error) {
+	out := a.cmd.OutOrStdout()
+	errOut := a.cmd.ErrOrStderr()
+	timeout := time.Duration(a.flags.timeout) * time.Second
+
+	if _, err := fmt.Fprintf(out, "Creating Loom training session for model %s ...\n", model); err != nil {
+		return nil, nil, err
+	}
+	sessionID, err := loom.createSession(ctx, model, a.flags.loraRank, timeout)
+	if err != nil {
+		return nil, nil, loomServiceErrorFor("create Loom training session", err)
+	}
+	release := func(errp *error) {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if cerr := loom.closeSession(cctx, sessionID); cerr != nil {
+			_, writeErr := fmt.Fprintf(errOut, "Warning: failed to close Loom session; it may remain allocated: %v\n", cerr)
+			*errp = errors.Join(*errp, writeErr, a.skipMonitor(errOut))
+			return
+		}
+		_, writeErr := fmt.Fprintln(errOut, "Loom session closed.")
+		*errp = errors.Join(*errp, writeErr)
+	}
+
+	checkpointName := fmt.Sprintf("azd-rollout-%s", rolloutID[:8])
+	if _, err := fmt.Fprintln(out, "Saving Loom sampler checkpoint ..."); err != nil {
+		return nil, release, err
+	}
+	checkpointID, err := loom.saveWeightsForSampler(ctx, sessionID, a.flags.sequenceID, checkpointName, timeout)
+	if err != nil {
+		return nil, release, loomServiceErrorFor("save Loom sampler checkpoint", err)
+	}
+
+	sequenceID := int64(a.flags.sequenceID)
+	return &rolloutPolicy{
+		Type:            loomPolicyType,
+		ModelName:       model,
+		ProjectEndpoint: target.projectEndpoint,
+		SessionID:       sessionID,
+		CheckpointID:    checkpointID,
+		SequenceID:      &sequenceID,
+	}, release, nil
+}
+
+// validateBackend resolves which backend the mode selects and rejects flags that cannot take
+// effect on it, rather than accepting and ignoring them.
+func (a *rolloutAction) validateBackend() error {
+	switch a.flags.mode {
+	case rolloutModeTrain:
+		if a.cmd.Flags().Changed("loom") {
+			return &azdext.LocalError{
+				Message:    "--loom has no effect with --mode train, which always uses Loom.",
+				Code:       "rle_rollout_mode_flag_unsupported",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Remove --loom, or use --mode eval --loom.",
+			}
+		}
+		a.flags.backend = loomPolicyType
+		return nil
+	case rolloutModeEval:
+	default:
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("--mode %q is not supported.", a.flags.mode),
+			Code:       "rle_rollout_mode_invalid",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Use --mode eval or --mode train.",
+		}
+	}
+
+	if a.flags.loom {
+		a.flags.backend = loomPolicyType
+		return nil
+	}
+	a.flags.backend = foundryPolicyType
+	for _, name := range []string{"lora-rank", "sequence-id", "renderer", "timeout"} {
+		if a.cmd.Flags().Changed(name) {
+			return &azdext.LocalError{
+				Message:    fmt.Sprintf("--%s configures a Loom session and is not supported for a Foundry eval.", name),
+				Code:       "rle_rollout_backend_flag_unsupported",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Remove the flag, or add --loom to run the eval on Loom.",
+			}
+		}
+	}
+	return nil
 }
 
 // skipMonitor turns off a monitor that can no longer open safely, and tells the user why no

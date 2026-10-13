@@ -12,7 +12,7 @@ import (
 )
 
 // Precedence decides behavior without announcing it, so a wrong answer here
-// is silent. options.max_samples was parsed and dropped once already, which is
+// is silent. options.maxSamples was parsed and dropped once already, which is
 // what these lock down.
 func TestResolveMaxSamples_Precedence(t *testing.T) {
 	withOptions := &project.Eval{MaxSamples: 25}
@@ -30,7 +30,7 @@ func TestResolveMaxSamples_Precedence(t *testing.T) {
 
 // The level is the eval's alone. A per-run override would put two incomparable
 // result sets under one eval's history, and would bypass the
-// supported_evaluation_levels check `azd up` does against the declared level.
+// supportedEvaluationLevels check `azd up` does against the declared level.
 func TestResolveLevel_ComesFromTheEval(t *testing.T) {
 	declared := &project.Eval{
 		EvaluationLevel: project.EvaluationLevelConversation,

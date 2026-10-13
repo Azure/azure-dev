@@ -118,6 +118,26 @@ func (p *routineServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	return p.deployWithClientFactory(
+		ctx,
+		serviceConfig,
+		serviceContext,
+		targetResource,
+		progress,
+		func(ctx context.Context) (routineUpsertClient, error) {
+			return p.newRoutineServiceClient(ctx)
+		},
+	)
+}
+
+func (p *routineServiceTarget) deployWithClientFactory(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+	targetResource *azdext.TargetResource,
+	progress azdext.ProgressReporter,
+	clientFactory routineUpsertClientFactory,
+) (*azdext.ServiceDeployResult, error) {
 	ctx = azdext.WithAccessToken(ctx)
 
 	projectRoot, err := routineProjectRoot(ctx, p.projectClient, serviceConfig)
@@ -147,9 +167,24 @@ func (p *routineServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting routine %q", serviceConfig.GetName()))
 	}
 
-	client, err := p.newRoutineServiceClient(ctx)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	existing, err := client.GetRoutine(ctx, body.Name)
+	if err != nil && !exterrors.IsNotFound(err) {
+		return nil, fmt.Errorf("checking routine %q before upsert: %w", body.Name, err)
+	}
+	if existing != nil {
+		body.Authorization, err = routineAuthorizationForUpsert(
+			body.Name,
+			existing,
+			body.Authorization,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err := client.PutRoutine(ctx, body.Name, body); err != nil {
@@ -185,6 +220,9 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*
 			)
 		}
 		return nil, fmt.Errorf("parsing routine service %q config: %w", svc.GetName(), err)
+	}
+	if err := validateRoutineAuthorization(body.Authorization); err != nil {
+		return nil, err
 	}
 	return body, nil
 }

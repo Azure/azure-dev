@@ -32,7 +32,7 @@ func TestValidateRunnable_RefusesWhatNoRunCouldCarryOut(t *testing.T) {
 			Eval{Dataset: "d", Source: &SourceDecl{Type: SourceTypeTraces, AgentName: "a"}},
 			"declare one",
 		},
-		{"a negative cap", dataset(Eval{MaxSamples: -1}), "max_samples cannot be negative"},
+		{"a negative cap", dataset(Eval{MaxSamples: -1}), "maxSamples cannot be negative"},
 		{
 			"a target naming nothing",
 			dataset(Eval{Target: &Target{Type: TargetTypeAgent}}),
@@ -56,12 +56,12 @@ func TestValidateRunnable_RefusesWhatNoRunCouldCarryOut(t *testing.T) {
 		{
 			"a trace source naming no agent",
 			Eval{Name: "e", Source: &SourceDecl{Type: SourceTypeTraces}},
-			"source.agent_name is required",
+			"source.agentName is required",
 		},
 		{
 			"a responses source listing nothing",
 			Eval{Name: "e", Source: &SourceDecl{Type: SourceTypeResponses}},
-			"source.response_ids is required",
+			"source.responseIds is required",
 		},
 		{
 			"a window the source cannot use",
@@ -76,7 +76,7 @@ func TestValidateRunnable_RefusesWhatNoRunCouldCarryOut(t *testing.T) {
 			// at a granularity the file did not ask for.
 			"a granularity nothing scores at",
 			dataset(Eval{EvaluationLevel: "sentence"}),
-			`evaluation_level "sentence" is invalid`,
+			`evaluationLevel "sentence" is invalid`,
 		},
 	}
 
@@ -122,7 +122,7 @@ func TestValidateRunnable_ReportsTheUnusableTargetBeforeTheRuleThatReadsIt(t *te
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is not supported")
-	assert.NotContains(t, err.Error(), "agent_name",
+	assert.NotContains(t, err.Error(), "agentName",
 		"naming an agent on a target nothing can invoke fixes nothing")
 }
 
@@ -189,12 +189,12 @@ func TestValidateRunnable_SimulationCombinationRules(t *testing.T) {
 		{
 			name:    "turn level cannot produce conversations",
 			mutate:  func(e *Eval) { e.EvaluationLevel = EvaluationLevelTurn },
-			wantErr: `evaluation_level is "turn"`,
+			wantErr: `evaluationLevel is "turn"`,
 		},
 		{
 			name:    "an unstated level is named as unset rather than blank",
 			mutate:  func(e *Eval) { e.EvaluationLevel = "" },
-			wantErr: `evaluation_level is "unset"`,
+			wantErr: `evaluationLevel is "unset"`,
 		},
 		{
 			// With a dataset as well, the older rule reaches it first and says
@@ -245,7 +245,7 @@ func TestValidateRunnable_SimulationCombinationRules(t *testing.T) {
 			// report a bounded run and create a conversation per seed anyway.
 			name:    "a cap cannot be applied to a referenced seed dataset",
 			mutate:  func(e *Eval) { e.MaxSamples = 5 },
-			wantErr: "max_samples is 5",
+			wantErr: "maxSamples is 5",
 		},
 	}
 
@@ -273,10 +273,10 @@ func TestValidateRunnable_SimulationNumericBounds(t *testing.T) {
 	}{
 		{name: "one conversation, one turn", conversations: 1, maxTurns: 1},
 		{name: "five conversations, twenty turns", conversations: 5, maxTurns: 20},
-		{name: "no conversations", conversations: -1, wantErr: "num_conversations is -1"},
-		{name: "six conversations", conversations: 6, wantErr: "num_conversations is 6"},
-		{name: "zero turns is one below the floor", maxTurns: -1, wantErr: "max_turns is -1"},
-		{name: "twenty-one turns", maxTurns: 21, wantErr: "max_turns is 21"},
+		{name: "no conversations", conversations: -1, wantErr: "numConversations is -1"},
+		{name: "six conversations", conversations: 6, wantErr: "numConversations is 6"},
+		{name: "zero turns is one below the floor", maxTurns: -1, wantErr: "maxTurns is -1"},
+		{name: "twenty-one turns", maxTurns: 21, wantErr: "maxTurns is 21"},
 	}
 
 	for _, tc := range cases {

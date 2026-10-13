@@ -4,9 +4,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -25,9 +27,20 @@ const (
 	routineHTTPTimeoutFlag   = "timeout"
 )
 
+type routineUpsertClient interface {
+	GetRoutine(ctx context.Context, name string) (*routines.Routine, error)
+	PutRoutine(ctx context.Context, name string, body *routines.Routine) (*routines.Routine, error)
+}
+
+type routineUpsertClientFactory func(context.Context) (routineUpsertClient, error)
+
 // newRoutineClient resolves an authenticated routine client.
 func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client, string, error) {
 	requestTimeout, err := routineHTTPTimeoutOverrideFromCommand(cmd)
+	if err != nil {
+		return nil, "", err
+	}
+	credentialOptions, err := routineCredentialOptions(cmd)
 	if err != nil {
 		return nil, "", err
 	}
@@ -39,9 +52,7 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 		return nil, "", err
 	}
 
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
-	)
+	cred, err := azidentity.NewAzureDeveloperCLICredential(credentialOptions)
 	if err != nil {
 		return nil, "", exterrors.Auth(
 			exterrors.CodeAuthFailed,
@@ -55,6 +66,38 @@ func newRoutineClient(ctx context.Context, cmd *cobra.Command) (*routines.Client
 		cred,
 		routineClientOptions(requestTimeout),
 	), resolved.Endpoint, nil
+}
+
+func routineCredentialOptions(
+	cmd *cobra.Command,
+) (*azidentity.AzureDeveloperCLICredentialOptions, error) {
+	tenantID := ""
+	if cmd != nil {
+		if flag := cmd.Flag("tenant-id"); flag != nil && flag.Changed {
+			tenantID = flag.Value.String()
+			if strings.TrimSpace(tenantID) == "" {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--tenant-id must not be empty",
+					"provide a tenant ID for Azure authentication",
+				)
+			}
+		}
+	}
+
+	return &azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID: tenantID,
+	}, nil
+}
+
+func routineUpsertClientFactoryFromCommand(cmd *cobra.Command) routineUpsertClientFactory {
+	return func(ctx context.Context) (routineUpsertClient, error) {
+		client, _, err := newRoutineClient(ctx, cmd)
+		if err != nil {
+			return nil, err
+		}
+		return client, nil
+	}
 }
 
 func routineClientOptions(timeoutOverride time.Duration) *routines.ClientOptions {
@@ -99,11 +142,17 @@ func parseRoutineHTTPTimeout(raw, source string) (time.Duration, error) {
 
 // printJSON marshals v to indented JSON and writes to stdout.
 func printJSON(v any) error {
+	return printJSONTo(os.Stdout, v)
+}
+
+func printJSONTo(writer io.Writer, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON output: %w", err)
 	}
-	fmt.Println(string(data))
+	if _, err := fmt.Fprintln(writer, string(data)); err != nil {
+		return fmt.Errorf("failed to write JSON output: %w", err)
+	}
 	return nil
 }
 
@@ -125,15 +174,20 @@ func boolStr(b *bool) string {
 	return "false"
 }
 
-// routineSummaryTable prints a short summary of a routine in table format.
-func routineSummaryTable(r *routines.Routine) {
-	tw := newTabWriter()
-	defer tw.Flush()
+// routineSummaryTable writes a short summary of a routine in table format.
+func routineSummaryTable(writer io.Writer, r *routines.Routine) error {
+	var output bytes.Buffer
+	tw := tabwriter.NewWriter(&output, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "Name:\t%s\n", r.Name)
 	if r.Description != "" {
 		fmt.Fprintf(tw, "Description:\t%s\n", r.Description)
 	}
 	fmt.Fprintf(tw, "Enabled:\t%s\n", boolStr(r.Enabled))
+	identity := routines.RoutineDispatchIdentityAgent
+	if r.Authorization != nil && r.Authorization.Identity != "" {
+		identity = r.Authorization.Identity
+	}
+	fmt.Fprintf(tw, "Dispatch identity:\t%s\n", identity)
 	// Routine.triggers is a map keyed by user-defined identifiers; iterate
 	// in deterministic key order so multiple triggers render consistently.
 	for _, key := range sortedKeys(r.Triggers) {
@@ -193,6 +247,13 @@ func routineSummaryTable(r *routines.Routine) {
 			}
 		}
 	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("failed to format routine summary: %w", err)
+	}
+	if _, err := io.Copy(writer, &output); err != nil {
+		return fmt.Errorf("failed to write routine summary: %w", err)
+	}
+	return nil
 }
 
 // sortedKeys returns the keys of a string-keyed map in lexicographic order.

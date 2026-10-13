@@ -499,6 +499,8 @@ func classifySentinel(err error) string {
 		return "internal.env_not_found"
 	case errors.Is(err, azdcontext.ErrNoProject):
 		return "internal.no_project"
+	case errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath):
+		return "internal.unsafe_environment_path"
 	case errors.Is(err, internal.ErrNoArgsProvided),
 		errors.Is(err, internal.ErrInvalidArgValue):
 		return "internal.invalid_args"

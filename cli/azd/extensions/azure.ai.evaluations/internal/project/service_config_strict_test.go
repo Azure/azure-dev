@@ -28,9 +28,9 @@ func serviceWith(t *testing.T, props map[string]any) *azdext.ServiceConfig {
 func TestEvalConfigFromServiceRejectsAMistypedKey(t *testing.T) {
 	svc := serviceWith(t, map[string]any{
 		"evals": []any{map[string]any{
-			"name":             "support-agent-eval",
-			"evaulators":       []any{}, // the typo `azd ai eval run` already catches
-			"evaluation_level": "turn",
+			"name":            "support-agent-eval",
+			"evaulators":      []any{}, // the typo `azd ai eval run` already catches
+			"evaluationLevel": "turn",
 		}},
 	})
 
@@ -47,9 +47,9 @@ func TestEvalConfigFromServiceAcceptsADeclaredConfig(t *testing.T) {
 	svc := serviceWith(t, map[string]any{
 		"datasets": []any{map[string]any{"name": "golden", "file": "./datasets/golden.jsonl"}},
 		"evals": []any{map[string]any{
-			"name":             "support-agent-eval",
-			"dataset":          "golden",
-			"evaluation_level": "turn",
+			"name":            "support-agent-eval",
+			"dataset":         "golden",
+			"evaluationLevel": "turn",
 		}},
 	})
 
@@ -74,8 +74,8 @@ func TestARefWithoutAProjectRootIsRefused(t *testing.T) {
 	svc := serviceWith(t, map[string]any{
 		"$ref": "./evals/azure.eval.yaml",
 		"evals": []any{map[string]any{
-			"name":             "support-agent-eval",
-			"evaluation_level": "turn",
+			"name":            "support-agent-eval",
+			"evaluationLevel": "turn",
 		}},
 	})
 

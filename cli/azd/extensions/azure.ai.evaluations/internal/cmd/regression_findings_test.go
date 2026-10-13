@@ -120,3 +120,15 @@ func TestLookupNamesStillRefuseWhatCannotAddressAnything(t *testing.T) {
 		assert.True(t, validLookupName(name), "%q is a name the service can hold", name)
 	}
 }
+
+func TestLookupNamesRejectEveryUnicodeControl(t *testing.T) {
+	for r := rune(0); r <= 0x9f; r++ {
+		if r >= 0x20 && r < 0x7f {
+			continue
+		}
+		assert.False(t, validLookupName("seed"+string(r)+"data"), "control U+%04X must be refused", r)
+	}
+	for _, name := range []string{"caf\u00e9", "\u6570\u636e", "seed \U0001f331", "a\u200db"} {
+		assert.True(t, validLookupName(name), "safe Unicode %q must remain accepted", name)
+	}
+}

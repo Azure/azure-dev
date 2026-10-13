@@ -943,8 +943,8 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 				return fmt.Errorf("stream receive failed: %w", err)
 			}
 
-			// Route the message synchronously so a request-specific handler context
-			// is registered before a following cancellation message is received.
+			// Route messages synchronously to preserve stream ordering and register
+			// request-specific handler contexts before following cancellation messages.
 			mb.processMessage(ctx, resp)
 		}
 	}

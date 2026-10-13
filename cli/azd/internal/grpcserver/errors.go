@@ -108,6 +108,24 @@ func mapHostError(err error) error {
 	return st.Err()
 }
 
+func mapHostErrorForMethod(fullMethod string, err error) error {
+	mapped := mapHostError(err)
+	if fullMethod != azdext.ProjectService_AddService_FullMethodName &&
+		fullMethod != v1beta.ProjectService_AddService_FullMethodName {
+		return mapped
+	}
+
+	st, ok := status.FromError(mapped)
+	if !ok {
+		return mapped
+	}
+	if st.Code() != codes.Canceled && st.Code() != codes.DeadlineExceeded {
+		return mapped
+	}
+
+	return status.Error(st.Code(), st.Message())
+}
+
 func relayedExtensionError(err error) *azdext.ExtensionError {
 	if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
 		return azdext.WrapError(err)

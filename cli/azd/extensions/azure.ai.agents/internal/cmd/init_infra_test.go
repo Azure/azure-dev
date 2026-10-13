@@ -125,6 +125,8 @@ func TestEjectInfra_MigratesExistingInfraToLayers(t *testing.T) {
 	assert.Equal(t, "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
 		paramsDoc.Parameters["resourceGroupName"].Value)
 	assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", paramsDoc.Parameters["resourceTokenSalt"].Value)
+	assert.NotContains(t, paramsDoc.Parameters, "principalId")
+	assert.NotContains(t, paramsDoc.Parameters, "principalType")
 }
 
 func TestEjectInfra_PreservesExistingInfraNameWhenMigratingToLayers(t *testing.T) {
@@ -1722,7 +1724,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	// stale the moment the user runs `azd env new`.
 	for _, k := range []string{
 		"location", "foundryProjectName", "resourceTokenSalt",
-		"principalId", "tags",
+		"tags",
 	} {
 		assert.NotContains(t, doc.Parameters, k,
 			"%s is supplied at provision time and must not be hard-coded in the ejected file", k)
@@ -3413,7 +3415,7 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	assert.Equal(t, "${AZURE_RESOURCE_GROUP}", doc["resource_group_name"])
 	assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", doc["foundry_project_name"])
 	assert.Equal(t, "${AZURE_SUBSCRIPTION_ID}", doc["subscription_id"])
-	assert.Equal(t, "${AZURE_PRINCIPAL_ID}", doc["principal_id"])
+	assert.NotContains(t, doc, "principal_id")
 	assert.NotContains(t, doc, "create_resource_group")
 
 	// include_acr is NOT written to tfvars; the ACR decision is the presence of

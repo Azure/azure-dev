@@ -171,6 +171,64 @@ func TestInitOperationProjectContentPropertyPrecedence(t *testing.T) {
 	require.Equal(t, []agentTelemetry.OperationClass{{Category: "unknown", Telephony: "unknown"}}, state.classes)
 }
 
+func TestInitOperationRepositoryTemplateClassification(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tt := range []struct {
+		name     string
+		services string
+		want     []string
+	}{
+		{
+			name:     "hosted",
+			services: "  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: private-agent\n",
+			want:     []string{"agent.operation.v1.init.hosted.none"},
+		},
+		{
+			name:     "prompt",
+			services: "  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: private-agent\n",
+			want:     []string{"agent.operation.v1.init.prompt.none"},
+		},
+		{
+			name: "mixed",
+			services: "  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: private-agent\n" +
+				"  prompt:\n    host: azure.ai.agent\n    kind: prompt\n    name: private-prompt\n",
+			want: []string{"agent.operation.v1.init.hosted.none", "agent.operation.v1.init.prompt.none"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			templateDir := t.TempDir()
+			content := []byte("services:\n" + tt.services)
+			require.NoError(t, os.WriteFile(filepath.Join(templateDir, "azure.yaml"), content, 0o600))
+			workflow := &testWorkflowServiceServer{runHook: func() {
+				require.NoError(t, os.Mkdir("project", 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join("project", "azure.yaml"), content, 0o600))
+			}}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			ctx := withInitOperationContext(t.Context(), "", true)
+			// Stop after manifest inspection, before Azure setup, and retain classification on failure.
+			err := runInitFromAzdTemplate(ctx, &initFlags{
+				src: "project", env: "dev", agentNameExplicit: true, agentName: "invalid_name",
+			}, client, nil, &AgentTemplate{Source: templateDir})
+			require.ErrorContains(t, err, "invalid agent name")
+			require.Equal(t, 1, workflow.runCalls)
+			state, ok := ctx.Value(initOperationContextKey{}).(*initOperationContext)
+			require.True(t, ok)
+			capture := &operationRecordingReporter{}
+			newOperationReporter().report(ctx, capture, "init", state.classes)
+			var names []string
+			for _, event := range capture.events {
+				names = append(names, event.Name)
+				require.Empty(t, event.Attributes)
+			}
+			require.Equal(t, tt.want, names)
+			manifest, err := os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, content, manifest)
+		})
+	}
+}
+
 func TestOperationMarkerDoesNotChangeOriginalContextContract(t *testing.T) {
 	t.Parallel()
 	props, err := structpb.NewStruct(map[string]any{

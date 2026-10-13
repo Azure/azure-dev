@@ -766,12 +766,19 @@ func TestValidateFoundryDependenciesSplitToolboxReference(t *testing.T) {
 func TestAddAgentToolboxDependency(t *testing.T) {
 	t.Parallel()
 
-	config := &ServiceTargetAgentConfig{}
-	reference := &agent_yaml.ToolboxReference{Name: " support-tools ", Version: "2"}
-	addAgentToolboxDependency(config, reference)
-	addAgentToolboxDependency(config, reference)
-
-	require.Equal(t, []Toolbox{{Name: "support-tools"}}, config.Toolboxes)
+	for _, test := range []struct{ name, key string }{
+		{" support-tools ", "support-tools"},
+		{" support tools ", "supporttools"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			config := &ServiceTargetAgentConfig{}
+			reference := &agent_yaml.ToolboxReference{Name: test.name, Version: "2"}
+			addAgentToolboxDependency(config, reference)
+			addAgentToolboxDependency(config, reference)
+			require.Equal(t, []Toolbox{{Name: test.key}}, config.Toolboxes)
+		})
+	}
 }
 
 func TestValidateFoundryDependenciesUnwiredSplitToolbox(t *testing.T) {

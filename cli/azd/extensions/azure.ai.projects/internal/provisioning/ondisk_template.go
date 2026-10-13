@@ -374,7 +374,7 @@ func extractParametersFromARMFile(raw []byte, sourcePath string) (map[string]any
 
 // mergeParameters layers host-derived parameters UNDER user-supplied ones:
 // the user's value wins on keys present in both. Lets host-derived values like
-// `location` and `principalId` flow through when the user's file omits them.
+// `location` flow through when the user's file omits them.
 func mergeParameters(userParams, hostParams map[string]any) map[string]any {
 	out := make(map[string]any, len(userParams)+len(hostParams))
 	maps.Copy(out, hostParams)

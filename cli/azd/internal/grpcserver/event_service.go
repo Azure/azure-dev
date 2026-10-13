@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -153,7 +154,8 @@ func (s *eventService) createProjectEventHandler(
 		correlationID := fmt.Sprintf("%s.%s", extension.Id, eventName)
 		err := s.stableInvocations.run(ctx, broker, correlationID, func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
-			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+			cleanupPreview := s.syncExtensionOutput(ctx, extension, previewTitle)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -268,7 +270,8 @@ func (s *eventService) createServiceEventHandler(
 		correlationID := fmt.Sprintf("%s.%s.%s", extension.Id, args.Service.Name, eventName)
 		err := s.stableInvocations.run(ctx, broker, correlationID, func() error {
 			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
-			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+			cleanupPreview := s.syncExtensionOutput(ctx, extension, previewTitle)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -345,8 +348,7 @@ func (s *eventService) createServiceEventHandler(
 	}
 }
 
-// syncExtensionOutput displays the extension output in the preview experience.
-// defer the returned function to stop the previewer when the function exits.
+// syncExtensionOutput displays extension output in the preview experience.
 func (s *eventService) syncExtensionOutput(
 	ctx context.Context,
 	extension *extensions.Extension,
@@ -366,7 +368,9 @@ func (s *eventService) syncExtensionOutput(
 
 	// Stop the previewer when the function exits.
 	return func() {
-		s.console.StopPreviewer(ctx, false)
+		if previewWriter != io.Discard {
+			s.console.StopPreviewer(ctx, false)
+		}
 		extOut.RemoveWriter(previewWriter)
 	}
 }

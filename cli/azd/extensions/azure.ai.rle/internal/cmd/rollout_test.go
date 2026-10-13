@@ -465,10 +465,8 @@ func TestRolloutRejectsAnInvalidBackendOrLoomOnlyFlagsOnFoundry(t *testing.T) {
 	}{
 		"unknown backend": {[]string{"--mode", "serve"}, "is not supported"},
 		"loom with train": {[]string{"--mode", "train", "--loom"}, "--loom"},
-		"lora rank":       {[]string{"--mode", "eval", "--lora-rank", "8"}, "--lora-rank"},
 		"sequence id":     {[]string{"--mode", "eval", "--sequence-id", "1"}, "--sequence-id"},
 		"renderer":        {[]string{"--mode", "eval", "--renderer", "qwen3"}, "--renderer"},
-		"session timeout": {[]string{"--mode", "eval", "--timeout", "30"}, "--timeout"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

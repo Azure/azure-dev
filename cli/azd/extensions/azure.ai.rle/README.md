@@ -503,18 +503,16 @@ azd ai rle rollout --model Qwen/Qwen3-32B --task-file task.json
 
 `rollout` provisions everything a rollout needs and tears it down again: it
 creates a real Loom training session for the model (from `--model`, falling
-back to rle.toml's `defaults.model.name`), saves a sampler checkpoint, calls
+back to rle.toml's `model.name`), saves a sampler checkpoint, calls
 RLE's Execute Rollout API with your `--task`, prints the resulting reward and
 trajectory summary, then closes the Loom session — you never handle Loom
 session or checkpoint identifiers directly. Use `--task`/`--task-file` for the
 sandbox reset payload; it is the only input a rollout takes. For Harness
 targets, RLE derives the agent-visible input server-side from the reset
 observation — there is no caller-supplied agent input to set.
-`--lora-rank` (default `16`), `--rollout-id` (default: a generated GUID),
-`--sequence-id` (default `0`, only meaningful when correlating a rollout to a
-specific training step in a real training loop), and `--timeout` (default
-`600` seconds) all have sensible defaults and rarely need to be set for ad hoc
-testing.
+`--rollout-id` (default: a generated GUID) and `--sequence-id` (default `0`, only
+meaningful when correlating a rollout to a specific training step in a real
+training loop) rarely need to be set for ad hoc testing.
 
 `--mode train` (the default) always uses Loom, since only Loom returns the
 token ids and logprobs training needs, and rejects `--loom`. `--mode eval`
@@ -522,8 +520,7 @@ instead samples a model deployment in the Foundry project: `--model` names the
 deployment, for example `--model gpt-5-mini`, and no Loom session or checkpoint
 is created. Foundry rollouts are text-level: they carry no token ids and are
 never trainable. Add `--loom` to run the eval on a Loom session instead.
-`--lora-rank`, `--sequence-id`, `--renderer` and `--timeout` configure Loom, so
-they are rejected for a Foundry eval.
+`--sequence-id` and `--renderer` configure Loom, so they are rejected for a Foundry eval.
 
 The rollout itself travels over RLE's Execute Rollout WebSocket rather than the
 HTTP API. The Foundry data-plane gateway ends an Execute Rollout HTTP request

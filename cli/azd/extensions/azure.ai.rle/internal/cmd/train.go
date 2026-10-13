@@ -19,18 +19,17 @@ import (
 )
 
 type rleTrainFlags struct {
-	rleName         string
-	rleVersion      string
-	model           string
-	trainingFile    string
-	validationFile  string
-	suffix          string
-	maxEpisodeSteps int
-	noFollow        bool
-	logsRoot        string
-	noBrowser       bool
-	taskCount       int
-	endpoint        string
+	rleName        string
+	rleVersion     string
+	model          string
+	trainingFile   string
+	validationFile string
+	suffix         string
+	noFollow       bool
+	logsRoot       string
+	noBrowser      bool
+	taskCount      int
+	endpoint       string
 
 	// Where the merged settings came from, for the line printed before submitting.
 	optionsSource string
@@ -86,8 +85,6 @@ instead of blocking.`,
 		"Path to a local validation dataset to upload.")
 	cmd.Flags().StringVar(&flags.suffix, "suffix", "",
 		"Suffix appended to the resulting fine-tuned model name.")
-	cmd.Flags().IntVar(&flags.maxEpisodeSteps, "max-episode-steps", 0,
-		"Maximum steps the RLE executes per rollout (0 uses the service default).")
 	cmd.Flags().BoolVar(&flags.noFollow, "no-follow", false,
 		"Skip the local log/metric mirror and the job monitor. Submit the job, print how "+
 			"to reopen its monitor later, and exit immediately instead of blocking until Ctrl+C.")
@@ -206,9 +203,6 @@ func trainDefaultsOptions(train *project.RleTrainDefaults) map[string]any {
 	}
 	if grpo.SamplingSeed != nil {
 		options["sampling_seed"] = *grpo.SamplingSeed
-	}
-	if grpo.RolloutFailureRateAbort != nil {
-		options["rollout_failure_rate_abort"] = *grpo.RolloutFailureRateAbort
 	}
 	if grpo.MinTrainableGroupMembers != nil {
 		options["min_trainable_group_members"] = *grpo.MinTrainableGroupMembers
@@ -495,10 +489,6 @@ func buildFinetuneJobRequest(
 	rleEnvironment := finetuneRleEnvironmentConfig{
 		Name:    flags.rleName,
 		Version: flags.rleVersion,
-	}
-	if flags.maxEpisodeSteps > 0 {
-		steps := flags.maxEpisodeSteps
-		rleEnvironment.MaxEpisodeSteps = &steps
 	}
 	if len(options) > 0 {
 		rleEnvironment.Hyperparameters = options

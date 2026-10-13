@@ -31,13 +31,11 @@ type rolloutFlags struct {
 	loom       bool
 	backend    string
 	model      string
-	loraRank   int
 	task       string
 	taskFile   string
 	rolloutID  string
 	renderer   string
 	sequenceID int
-	timeout    int
 	outputDir  string
 }
 
@@ -58,11 +56,14 @@ type rolloutTarget struct {
 	isGymOpenEnv    bool
 }
 
+const (
+	rolloutLoraRank    = 16
+	rolloutLoomTimeout = 600 * time.Second
+)
+
 func newRolloutCommand() *cobra.Command {
 	flags := &rolloutFlags{
 		mode:      rolloutModeTrain,
-		loraRank:  16,
-		timeout:   600,
 		outputDir: defaultRolloutOutputDir,
 	}
 
@@ -81,7 +82,7 @@ Loom session or checkpoint identifiers directly.
 logprobs training needs. --mode eval instead samples a model deployment in the Foundry project
 (--model names the deployment) and creates no Loom session. Foundry rollouts are text-level:
 they carry no token ids and are never trainable. Add --loom to run the eval on a Loom session
-instead. --lora-rank, --sequence-id, --renderer and --timeout configure Loom and are rejected
+instead. --sequence-id and --renderer configure Loom and are rejected
 for a Foundry eval.
 
 The response also carries the full capture graph — token ids, logprobs and loss masks —
@@ -116,7 +117,6 @@ and rle.version from that file.`,
 		"Model to sample: a Loom base model name such as Qwen/Qwen3-32B, or, for a Foundry eval, "+
 			"the name of a model deployment in the project. Required unless rle.toml sets model.name.",
 	)
-	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
 	cmd.Flags().StringVar(&flags.task, "task", "", "Inline JSON task payload for the sandbox reset operation.")
 	cmd.Flags().StringVar(&flags.taskFile, "task-file", "", "Path to a JSON file with the task payload.")
 	cmd.Flags().StringVar(
@@ -132,7 +132,6 @@ and rle.version from that file.`,
 		"Capture Proxy renderer name. Defaults to a service-selected renderer when omitted.",
 	)
 	cmd.Flags().IntVar(&flags.sequenceID, "sequence-id", 0, "Loom training-step sequence id for this rollout.")
-	cmd.Flags().IntVar(&flags.timeout, "timeout", flags.timeout, "Loom session provisioning timeout in seconds.")
 	cmd.Flags().StringVar(
 		&flags.outputDir,
 		"output-dir",
@@ -313,12 +312,12 @@ func (a *rolloutAction) provisionLoomPolicy(
 ) (*rolloutPolicy, func(*error), error) {
 	out := a.cmd.OutOrStdout()
 	errOut := a.cmd.ErrOrStderr()
-	timeout := time.Duration(a.flags.timeout) * time.Second
+	timeout := rolloutLoomTimeout
 
 	if _, err := fmt.Fprintf(out, "Creating Loom training session for model %s ...\n", model); err != nil {
 		return nil, nil, err
 	}
-	sessionID, err := loom.createSession(ctx, model, a.flags.loraRank, timeout)
+	sessionID, err := loom.createSession(ctx, model, rolloutLoraRank, timeout)
 	if err != nil {
 		return nil, nil, loomServiceErrorFor("create Loom training session", err)
 	}
@@ -384,7 +383,7 @@ func (a *rolloutAction) validateBackend() error {
 		return nil
 	}
 	a.flags.backend = foundryPolicyType
-	for _, name := range []string{"lora-rank", "sequence-id", "renderer", "timeout"} {
+	for _, name := range []string{"sequence-id", "renderer"} {
 		if a.cmd.Flags().Changed(name) {
 			return &azdext.LocalError{
 				Message:    fmt.Sprintf("--%s configures a Loom session and is not supported for a Foundry eval.", name),

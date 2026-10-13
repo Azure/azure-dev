@@ -69,11 +69,10 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 
 func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 	flags := &rleTrainFlags{
-		rleName:         "code_rl",
-		rleVersion:      "1.0.0",
-		model:           "Qwen/Qwen3-32B",
-		suffix:          "custom-suffix",
-		maxEpisodeSteps: 32,
+		rleName:    "code_rl",
+		rleVersion: "1.0.0",
+		model:      "Qwen/Qwen3-32B",
+		suffix:     "custom-suffix",
 	}
 
 	request := buildFinetuneJobRequest(flags, "file-abc", "file-def", nil)
@@ -86,9 +85,6 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 	}
 	if request.Suffix == nil || *request.Suffix != "custom-suffix" {
 		t.Fatalf("expected suffix to be set, got %#v", request.Suffix)
-	}
-	if request.Method.RleEnvironment.MaxEpisodeSteps == nil || *request.Method.RleEnvironment.MaxEpisodeSteps != 32 {
-		t.Fatalf("expected max_episode_steps to be set, got %#v", request.Method.RleEnvironment.MaxEpisodeSteps)
 	}
 }
 
@@ -912,7 +908,6 @@ func TestTrainDefaultsOptionsFlattensGrpoAndExcludesRollout(t *testing.T) {
 			LearningRate:               new(2e-5),
 			GroupSize:                  new(4),
 			RemoveConstantRewardGroups: new(true),
-			RolloutFailureRateAbort:    new(0.5),
 		},
 	}
 
@@ -922,7 +917,6 @@ func TestTrainDefaultsOptionsFlattensGrpoAndExcludesRollout(t *testing.T) {
 		"learning_rate":                 2e-5,
 		"group_size":                    4,
 		"remove_constant_reward_groups": true,
-		"rollout_failure_rate_abort":    0.5,
 	}
 	if len(options) != len(want) {
 		t.Fatalf("expected %d options, got %#v", len(want), options)

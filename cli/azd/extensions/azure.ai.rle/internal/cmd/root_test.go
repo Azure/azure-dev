@@ -176,8 +176,8 @@ func TestLifecycleFlagsAlignWithHostedAgentConventions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected rollout command to be registered: %v", err)
 	}
-	if flag := rolloutCommand.Flags().Lookup("timeout"); flag == nil {
-		t.Fatal("expected rollout to expose --timeout")
+	if flag := rolloutCommand.Flags().Lookup("timeout"); flag != nil {
+		t.Fatal("expected rollout not to expose --timeout")
 	}
 	if flag := rolloutCommand.Flags().Lookup("version"); flag != nil {
 		t.Fatal("expected rollout not to expose --version")

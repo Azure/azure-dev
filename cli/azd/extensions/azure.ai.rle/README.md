@@ -499,7 +499,7 @@ remove embedded JSON quotes from native-command arguments.
 when running source-free from another folder:
 
 ```powershell
-azd ai rle rollout code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
+azd ai rle rollout code_rl --version 1.0.0 --model Qwen/Qwen3-32B --loom --task-file task.json
 ```
 
 `rollout` provisions everything a rollout needs and tears it down again: it
@@ -517,12 +517,15 @@ specific training step in a real training loop), and `--timeout` (default
 `600` seconds) all have sensible defaults and rarely need to be set for ad hoc
 testing.
 
-Pass `--backend foundry` to sample a model deployment in the Foundry project
-instead of a Loom session (`--model` then names the deployment, for example
-`--model gpt-5-mini`). No Loom session or checkpoint is created. Foundry
-rollouts are text-level and eval-only: they carry no token ids and are never
-trainable. `--lora-rank`, `--sequence-id`, `--renderer` and `--timeout`
-configure Loom, so they are rejected when combined with `--backend foundry`.
+`--mode eval` (the default) samples a model deployment in the Foundry project
+instead of a Loom session: `--model` names the deployment, for example
+`--model gpt-5-mini`, and no Loom session or checkpoint is created. Foundry
+rollouts are text-level: they carry no token ids and are never trainable. Add
+`--loom` to run the eval on a Loom session instead (the Loom behavior described
+above). `--mode train` always uses Loom, since only Loom returns the token ids
+and logprobs training needs, and rejects `--loom`. `--lora-rank`,
+`--sequence-id`, `--renderer` and `--timeout` configure Loom, so they are
+rejected for a Foundry eval.
 
 The rollout itself travels over RLE's Execute Rollout WebSocket rather than the
 HTTP API. The Foundry data-plane gateway ends an Execute Rollout HTTP request

@@ -28,6 +28,8 @@ import (
 // rolloutFlags holds the CLI-facing configuration for one rollout.
 type rolloutFlags struct {
 	version    string
+	mode       string
+	loom       bool
 	backend    string
 	model      string
 	loraRank   int
@@ -60,7 +62,7 @@ type rolloutTarget struct {
 
 func newRolloutCommand() *cobra.Command {
 	flags := &rolloutFlags{
-		backend:   loomPolicyType,
+		mode:      rolloutModeEval,
 		loraRank:  16,
 		timeout:   600,
 		outputDir: defaultRolloutOutputDir,
@@ -77,10 +79,12 @@ Execute Rollout API with your task, prints the live execution milestones followe
 resulting reward and trajectory summary, then closes the Loom session. You never handle
 Loom session or checkpoint identifiers directly.
 
-With --backend foundry, the rollout instead samples a model deployment in the Foundry
-project (--model names the deployment) and creates no Loom session. Foundry rollouts are
-text-level and eval-only: they carry no token ids and are never trainable. --lora-rank,
---sequence-id, --renderer and --timeout configure Loom and are rejected with this backend.
+--mode eval (the default) samples a model deployment in the Foundry project (--model names
+the deployment) and creates no Loom session. Foundry rollouts are text-level: they carry no
+token ids and are never trainable. Add --loom to run the eval on a Loom session instead.
+--mode train always uses Loom, because only Loom returns the token ids and logprobs training
+needs. --lora-rank, --sequence-id, --renderer and --timeout configure Loom and are rejected
+for a Foundry eval.
 
 The response also carries the full capture graph — token ids, logprobs and loss masks —
 which is too large to print and cannot be fetched again once the rollout returns. It is
@@ -105,17 +109,23 @@ rle.toml. To run an environment without local source, provide both its name and
 
 	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to run this rollout against.")
 	cmd.Flags().StringVar(
-		&flags.backend,
-		"backend",
-		flags.backend,
-		"Where the rollout samples its model: \"loom\" (a Loom training session) or \"foundry\" "+
-			"(a model deployment in the Foundry project, eval only).",
+		&flags.mode,
+		"mode",
+		flags.mode,
+		"What the rollout is for: \"eval\" (sample a Foundry model deployment by default) or "+
+			"\"train\" (always a Loom session).",
+	)
+	cmd.Flags().BoolVar(
+		&flags.loom,
+		"loom",
+		false,
+		"Run an eval rollout on a Loom session instead of a Foundry deployment. Implied by --mode train.",
 	)
 	cmd.Flags().StringVar(
 		&flags.model,
 		"model",
 		"",
-		"Model to sample: a Loom base model name such as Qwen/Qwen3-32B, or with --backend foundry "+
+		"Model to sample: a Loom base model name such as Qwen/Qwen3-32B, or, for a Foundry eval, "+
 			"the name of a model deployment in the project. Required unless rle.toml sets defaults.model.name.",
 	)
 	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
@@ -181,7 +191,7 @@ func (a *rolloutAction) Run() error {
 			Code:     "rle_rollout_model_required",
 			Category: azdext.LocalErrorCategoryUser,
 			Suggestion: "Pass --model with a Loom base model name (for example --model Qwen/Qwen3-32B) " +
-				"or, with --backend foundry, a model deployment name, " +
+				"or, for a Foundry eval, a model deployment name, " +
 				"or set defaults.model.name in rle.toml.",
 		}
 	}
@@ -356,33 +366,47 @@ func (a *rolloutAction) provisionLoomPolicy(
 	}, release, nil
 }
 
-// validateBackend rejects the flags that only configure Loom when the backend is Foundry, rather
-// than accepting and ignoring them.
+// validateBackend resolves which backend the mode selects and rejects flags that cannot take
+// effect on it, rather than accepting and ignoring them.
 func (a *rolloutAction) validateBackend() error {
-	switch a.flags.backend {
-	case loomPolicyType:
-		return nil
-	case foundryPolicyType:
-		for _, name := range []string{"lora-rank", "sequence-id", "renderer", "timeout"} {
-			if a.cmd.Flags().Changed(name) {
-				return &azdext.LocalError{
-					Message: fmt.Sprintf(
-						"--%s configures a Loom session and is not supported with --backend foundry.", name),
-					Code:       "rle_rollout_backend_flag_unsupported",
-					Category:   azdext.LocalErrorCategoryUser,
-					Suggestion: "Remove the flag, or use --backend loom.",
-				}
+	switch a.flags.mode {
+	case rolloutModeTrain:
+		if a.cmd.Flags().Changed("loom") {
+			return &azdext.LocalError{
+				Message:    "--loom has no effect with --mode train, which always uses Loom.",
+				Code:       "rle_rollout_mode_flag_unsupported",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Remove --loom, or use --mode eval --loom.",
 			}
 		}
+		a.flags.backend = loomPolicyType
 		return nil
+	case rolloutModeEval:
 	default:
 		return &azdext.LocalError{
-			Message:    fmt.Sprintf("--backend %q is not supported.", a.flags.backend),
-			Code:       "rle_rollout_backend_invalid",
+			Message:    fmt.Sprintf("--mode %q is not supported.", a.flags.mode),
+			Code:       "rle_rollout_mode_invalid",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use --backend loom or --backend foundry.",
+			Suggestion: "Use --mode eval or --mode train.",
 		}
 	}
+
+	if a.flags.loom {
+		a.flags.backend = loomPolicyType
+		return nil
+	}
+	a.flags.backend = foundryPolicyType
+	for _, name := range []string{"lora-rank", "sequence-id", "renderer", "timeout"} {
+		if a.cmd.Flags().Changed(name) {
+			return &azdext.LocalError{
+				Message:    fmt.Sprintf("--%s configures a Loom session and is not supported for a Foundry eval.", name),
+				Code:       "rle_rollout_backend_flag_unsupported",
+				Category:   azdext.LocalErrorCategoryUser,
+				Suggestion: "Remove the flag, or add --loom to run the eval on Loom.",
+			}
+		}
+	}
+	return nil
 }
 
 // skipMonitor turns off a monitor that can no longer open safely, and tells the user why no

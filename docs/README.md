@@ -42,7 +42,6 @@ System overviews, design context, and decision records.
 - [System Overview](architecture/system-overview.md) — High-level architecture and code organization
 - [Command Execution Model](architecture/command-execution-model.md) — How commands are registered, resolved, and run
 - [Extension Framework](architecture/extension-framework.md) — gRPC-based extension system architecture
-- [Hosted Agent Resource Error Guidance](architecture/hosted-agent-resource-errors-spec.md) — Proposed UX specification for actionable hosted-agent CPU/memory rejection messages
 - [Provisioning Pipeline](architecture/provisioning-pipeline.md) — How infrastructure provisioning works
 - [Telemetry Architecture](architecture/telemetry.md) — How azd collects and exports telemetry
 - [ADR-001: Extension Telemetry Events](architecture/adr-001-extension-telemetry-events.md) — Why extensions report named events with dynamic attributes

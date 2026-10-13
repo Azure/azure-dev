@@ -112,7 +112,7 @@ including the indirect gRPC and OpenTelemetry requirements. See the
 shared direct dependency check.
 
 The extension uses the shared Go lint workflow on Linux and Windows. Configuration
-validation uses a schema from the pinned golangci-lint release, downloaded with
+validation uses a schema from the installed golangci-lint release, downloaded with
 retries and validated locally to avoid the verifier's two-second HTTP timeout.
 
 ### Prerequisites

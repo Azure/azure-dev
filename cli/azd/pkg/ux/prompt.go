@@ -100,8 +100,10 @@ func NewPrompt(options *PromptOptions) *Prompt {
 		mergedOptions.IgnoreHintKeys = true
 	}
 
-	// Auto-generate hint text only when a help message is reachable.
-	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" && !mergedOptions.Secret {
+	// Auto-generate hint text only when a help message is reachable. When hint
+	// keys are ignored (including secret mode), '?' is captured as input, so
+	// advertising "[Type ? for hint]" would promise a shortcut that can't work.
+	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" && !mergedOptions.IgnoreHintKeys {
 		mergedOptions.Hint = "[Type ? for hint]"
 	}
 

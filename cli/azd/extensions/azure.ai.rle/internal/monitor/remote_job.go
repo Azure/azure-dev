@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	remoteRolloutLimit = 1000
+	remoteRolloutLimit = 10000
 	remoteMetricBytes  = 32 << 20
 	pagesPerRefresh    = 10
 
@@ -135,6 +135,9 @@ type remoteJob struct {
 	// rolloutsReconciled is when the last completed scan started.
 	rolloutScan        *rolloutScan
 	rolloutsReconciled time.Time
+	// rolloutTotal is how many rollouts the last completed scan listed. The
+	// cache keeps only the newest remoteRolloutLimit, so this is the true count.
+	rolloutTotal int
 }
 
 // rolloutScan follows the job's rollout list from its first page, without a
@@ -143,6 +146,7 @@ type rolloutScan struct {
 	started time.Time
 	token   string
 	seen    map[string]bool
+	listed  int // Rollouts read so far; pages of one scan do not overlap.
 }
 
 func newRemoteJob(source JobSource, jobID string) *remoteJob {
@@ -405,10 +409,12 @@ func (j *remoteJob) readRollouts(ctx context.Context, now time.Time) error {
 			j.entries[entry.RolloutID] = entry
 			j.readAt[entry.RolloutID] = now
 		}
+		scan.listed += len(page.Data)
 		j.trimRollouts()
 		switch {
 		case page.Next == "":
 			j.rolloutScan, j.rolloutsReconciled = nil, scan.started
+			j.rolloutTotal = scan.listed
 			j.mu.Unlock()
 			return nil
 		case scan.seen[page.Next]:
@@ -507,6 +513,16 @@ func (j *remoteJob) trimRollouts() {
 	j.limited = true
 }
 
+// totalRollouts reports the job's rollout count, which can exceed the cache.
+// Callers hold j.mu.
+func (j *remoteJob) totalRollouts() int {
+	total := max(j.rolloutTotal, len(j.entries))
+	if j.rolloutScan != nil {
+		total = max(total, j.rolloutScan.listed)
+	}
+	return total
+}
+
 func (j *remoteJob) sortedEntries() []JobRollout {
 	entries := append([]JobRollout{}, slices.Collect(maps.Values(j.entries))...)
 	slices.SortFunc(entries, func(a, b JobRollout) int {
@@ -541,6 +557,7 @@ func registerRemoteRoutes(mux *http.ServeMux, j *remoteJob) {
 		}
 		writeRunJSON(w, map[string]any{
 			"job_id": j.jobID, "backend": "rle", "data": j.sortedEntries(), "reset": true,
+			"total": j.totalRollouts(),
 		})
 	})
 	mux.HandleFunc("POST /api/refresh", func(w http.ResponseWriter, r *http.Request) {

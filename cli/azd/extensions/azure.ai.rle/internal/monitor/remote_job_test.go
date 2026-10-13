@@ -525,6 +525,9 @@ func TestRemoteRolloutCacheKeepsNewestRows(t *testing.T) {
 	if _, kept := j.entries[fmt.Sprintf("%032x", 4)]; len(j.entries) != remoteRolloutLimit || !j.limited || kept {
 		t.Fatal("rollout cache not bounded to the newest rows")
 	}
+	if total := j.totalRollouts(); total != remoteRolloutLimit+5 {
+		t.Fatalf("total rollouts = %d, want %d", total, remoteRolloutLimit+5)
+	}
 }
 
 func TestRemoteCompletionPausesAndRefreshResumes(t *testing.T) {

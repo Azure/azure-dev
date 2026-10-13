@@ -742,7 +742,7 @@ multiple `session_id` values the UI separates them into distinct training attemp
 labels remain accurate when the monitor's bounded history no longer includes the initial attempt.
 
 The CLI caches data in memory: the latest 5,000 metric rows (up to 32 MiB) and the
-latest 1,000 rollout summaries. The UI identifies truncated history. Restarting reloads persisted
+latest 10,000 rollout summaries. The UI identifies truncated history. Restarting reloads persisted
 data. No training config, metric, graph, or log mirror files are created.
 Credentials remain in the CLI process.
 

@@ -1240,14 +1240,13 @@ export function unavailableRolloutFacts(entry) {
 export function remoteRunNotices(overview) {
   const notes = [];
   if (!overview?.run?.config) notes.push("Waiting for job registration; the job ID may not yet exist in this project.");
-  if (overview?.run?.meta?.status) notes.push(`Job status: ${overview.run.meta.status}.`);
   for (const [name, state] of Object.entries(overview?.states ?? {})) {
     if (state.error) {
       notes.push(`${name}: ${state.error}${state.updated_at ? ` Last successful read: ${state.updated_at}.` : ""}`);
     }
   }
   if (overview?.limited) {
-    notes.push("Showing a bounded history window (the latest 5,000 metric rows and 1,000 rollouts), not the full run.");
+    notes.push("Showing a bounded history window (the latest 5,000 metric rows and 10,000 rollouts), not the full run.");
   }
   if (overview?.paused === "completed") {
     notes.push("Automatic polling paused after completion. Refresh to check for later arrivals.");

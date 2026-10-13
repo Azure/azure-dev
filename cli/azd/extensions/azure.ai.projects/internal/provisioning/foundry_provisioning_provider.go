@@ -1972,6 +1972,12 @@ func (p *FoundryProvisioningProvider) Parameters(
 	if p.brownfieldEndpoint != "" {
 		return []*azdext.ProvisioningParameter{
 			{
+				Name:               "location",
+				Value:              p.location,
+				EnvVarMapping:      []string{envKeyLocation},
+				UsingEnvVarMapping: true,
+			},
+			{
 				Name:               "projectResourceId",
 				Value:              p.existingProjectID,
 				EnvVarMapping:      []string{"AZURE_AI_PROJECT_ID"},

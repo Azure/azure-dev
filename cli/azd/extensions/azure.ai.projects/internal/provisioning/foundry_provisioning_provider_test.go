@@ -748,6 +748,7 @@ func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
 
 func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
 	p := &FoundryProvisioningProvider{
+		location: "eastus2",
 		existingProjectID: "/subscriptions/sub/resourceGroups/rg/providers/" +
 			"Microsoft.CognitiveServices/accounts/a/projects/p",
 		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/p",
@@ -761,6 +762,7 @@ func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
 		value  string
 		envVar string
 	}{
+		"location":          {value: p.location, envVar: envKeyLocation},
 		"projectResourceId": {value: p.existingProjectID, envVar: "AZURE_AI_PROJECT_ID"},
 		"projectEndpoint":   {value: p.brownfieldEndpoint, envVar: "FOUNDRY_PROJECT_ENDPOINT"},
 		"acrMode":           {value: p.existingAcrMode, envVar: "AZD_FOUNDRY_ACR_MODE"},

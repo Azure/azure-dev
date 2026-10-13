@@ -363,6 +363,7 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
+| `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.

@@ -362,6 +362,7 @@ func (t *aksTarget) deployManifests(
 	// If we don't find any deployment within the namespace we will continue
 	task.SetProgress(NewServiceProgress("Verifying deployment"))
 	stopProgress := startPollingProgress(task, "Waiting for deployment to be ready", 15*time.Second)
+	defer stopProgress()
 	deployment, err := t.waitForDeployment(ctx, deploymentName)
 	stopProgress()
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
@@ -494,6 +495,7 @@ func (t *aksTarget) deployHelmCharts(
 		stopProgress := startPollingProgress(
 			task, fmt.Sprintf("Waiting for helm release: %s", release.Name), 15*time.Second,
 		)
+		defer stopProgress()
 		err := retry.Do(
 			ctx,
 			retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),

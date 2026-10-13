@@ -40,7 +40,7 @@ func TestWriteRubricKeepsOnlyTheAuthoredDefinition(t *testing.T) {
 	assert.Equal(t, 0.5, got["pass_threshold"],
 		"the threshold decides pass or fail, so losing it changes grading")
 	assert.Equal(t, true, got["something_the_service_added_later"],
-		"unknown fields may be part of a future authoring contract")
+		"unknown fields are preserved for future authoring contracts")
 	assert.Len(t, got, 4)
 	assert.Equal(t, "rubric", got["type"])
 	assert.Len(t, got["dimensions"], 1)

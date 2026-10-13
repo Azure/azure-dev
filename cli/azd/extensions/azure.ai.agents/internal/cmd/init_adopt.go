@@ -930,6 +930,7 @@ func runInitFromAzdTemplate(
 	if err != nil {
 		return err
 	}
+	recordInitProjectContent(ctx, content)
 
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
 	if err != nil {

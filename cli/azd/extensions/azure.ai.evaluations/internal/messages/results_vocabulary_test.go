@@ -20,7 +20,7 @@ func TestResultsSpeakInTestCases(t *testing.T) {
 	assert.Equal(t, "15 test cases: 9 passed, 6 failed, 0 errored, 0 skipped\n",
 		messages.ItemResultTotals(15, 9, 6, 0, 0))
 
-	assert.Contains(t, messages.ScoredPassRateLine(9, 15), "scored test cases")
+	assert.Contains(t, messages.RunPassRateLine(9, 15), "total test cases")
 
 	assert.Equal(t, "15 test cases x 2 evaluators = 30 evaluator results\n\n",
 		messages.CriterionResultReconciliation(15, 2, 30))

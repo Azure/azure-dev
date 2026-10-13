@@ -19,7 +19,7 @@ goals:
   - "Confirm init adopts the local azure.yaml into the current directory and does not show agent-name, environment-name, or deploy-mode prompts; the agent name and environment are supplied by flags, and the fixture declares the deploy mode."
   - "At 'Select a Foundry project to host your agent and any models or tools it uses.', select 'Create a new Foundry project'. This configures a future project locally; do not provision it."
   - "If 'Select a tenant' appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
-  - "If 'Select an Azure subscription to provision your agent and Foundry project resources.' appears, select the '{subscription}' subscription."
+  - "If 'Select subscription' appears, select the '{subscription}' subscription."
   - "If asked to select an Azure location, select '{region}'."
   - "At 'Enter a name for the new Foundry project', clear any pre-filled value and enter exactly '{foundry_project_name}'."
   - "Before either environment-variable prompt, confirm the output includes 'azure.yaml references environment variables that need to be configured.' and 'Values are stored in the current azd environment.'."

@@ -143,7 +143,7 @@ func TestScaffold_AppendsToAnExistingConfiguration(t *testing.T) {
 	require.NoError(t, loaded.Validate())
 }
 
-// A trace-backed eval invokes nothing, so agent_name filters instead of
+// A trace-backed eval invokes nothing, so agentName filters instead of
 // targeting, and a scaffolded cap keeps the first run bounded rather than
 // taking the service's default of 1000.
 func TestScaffold_TraceSourceHasNoTarget(t *testing.T) {
@@ -171,18 +171,19 @@ func TestScaffold_TraceCapIsOmittedWhenZero(t *testing.T) {
 
 	body, err := yaml.Marshal(plan.eval)
 	require.NoError(t, err)
-	require.NotContains(t, string(body), "max_traces")
+	require.NotContains(t, string(body), "maxTraces")
 }
 
-// The default set is one built-in. It used to add a rubric generated from the
-// agent's instructions, which declared an evaluator file nothing had produced.
+// Init keeps the task-completion default until a different set is selected.
 func TestScaffold_DefaultEvaluators(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName: "support-agent-smoke", target: "support-agent", judgeModel: "gpt-5.6-luna",
 		dataset: "prod-golden",
 	})
 
-	require.Equal(t, []string{"builtin.task_completion"}, plan.evaluatorNames())
+	require.Equal(t, []string{
+		"builtin.task_completion",
+	}, plan.evaluatorNames())
 
 	// Every evaluator carries the judge deployment, because the judging
 	// built-ins declare it and an eval that leaves it off is rejected.
@@ -192,17 +193,18 @@ func TestScaffold_DefaultEvaluators(t *testing.T) {
 	}
 }
 
-// Passing --evaluator replaces the defaults.
+// Passing --evaluator replaces the default without restricting the shortlist.
 func TestScaffold_ExplicitEvaluatorsReplaceTheDefault(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
 		target:     "support-agent",
 		dataset:    "prod-golden",
-		evaluators: []string{"builtin.task_adherence"},
+		evaluators: []string{"builtin.output_quality", "builtin.tool_use_quality", "builtin.coherence"},
 		judgeModel: "m",
 	})
 
-	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
+	require.Equal(t, []string{"builtin.output_quality", "builtin.tool_use_quality", "builtin.coherence"},
+		plan.evaluatorNames())
 }
 
 // `init` closes by naming the targeted create, and nothing else. It never names

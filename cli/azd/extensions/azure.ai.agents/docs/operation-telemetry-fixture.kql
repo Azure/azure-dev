@@ -1,0 +1,51 @@
+// Synthetic query validation: no customer telemetry or ingestion changes.
+// Expected: observed=4, successes=2, failures=2, missingClassification=1, cancellations=1.
+// The mixed operation has two marker rows but remains ONE completed command.
+// Synthetic versions below are test labels, not a claim that a release contains this PR.
+let hostVersion = "test-host";
+let agentExtensionVersion = "test-agent";
+let installedAgent = strcat("azure.ai.agents@", agentExtensionVersion);
+let CohortCases = datatable(host:string, name:string, extensionId:string,
+    extensionVersion:string, installed:string, expected:bool)
+[
+    "test-host", "ext.run", "azure.ai.agents", "test-agent", "[]", true,
+    "test-host", "ext.usage", "azure.ai.agents", "test-agent", "[]", true,
+    "test-host", "cmd.deploy", "", "", '["azure.ai.agents@test-agent"]', true,
+    "old-host", "cmd.deploy", "", "", '["azure.ai.agents@test-agent"]', false,
+    "test-host", "ext.run", "azure.ai.agents", "old-agent", "[]", false,
+    "test-host", "ext.usage", "azure.ai.agents", "old-agent", "[]", false,
+    "test-host", "cmd.deploy", "", "", '["azure.ai.agents@test-agent-extra"]', false,
+    "test-host", "cmd.deploy", "", "", "[]", false
+];
+let cohortMismatches = toscalar(CohortCases
+| extend included = host == hostVersion and
+    ((name in ("ext.run", "ext.usage") and extensionId == "azure.ai.agents"
+        and extensionVersion == agentExtensionVersion)
+     or (name !in ("ext.run", "ext.usage") and set_has_element(parse_json(installed), installedAgent)))
+| summarize countif(included != expected));
+let Completed = datatable(operation_Id:string, id:string, operation:string, success:bool, resultCode:string)
+[
+    "one", "1", "init", true, "Success",
+    "two", "2", "init", false, "ext.user.cancelled",
+    "three", "3", "deploy", true, "Success",
+    "four", "4", "provision", false, "internal.error"
+];
+let RawMarkers = datatable(operation_Id:string, eventName:string)
+[
+    "one", "agent.operation.v1.init.voice_managed.none",
+    "three", "agent.operation.v1.deploy.hosted_invocations_ws.none",
+    "three", "agent.operation.v1.deploy.voice_hosted_wrapper.none",
+    "three", "agent.operation.v1.deploy.voice_hosted_wrapper.none",
+    "four", "agent.operation.v1.provision.voice_byom.enabled"
+];
+let Markers = RawMarkers
+| parse eventName with "agent.operation.v1." operation "." category "." telephony
+| summarize categories=make_set(category) by operation_Id, operation;
+Completed
+| join kind=leftouter Markers on operation_Id, operation
+| summarize observed=count(), successes=countif(success), failures=countif(not(success)),
+            missingClassification=countif(isnull(categories)),
+            cancellations=countif(resultCode startswith "user.canceled"
+                or resultCode in ("ext.user.cancelled", "internal.operation_cancelled", "internal.operation_aborted"))
+| extend passed = observed == 4 and successes == 2 and failures == 2
+    and missingClassification == 1 and cancellations == 1 and cohortMismatches == 0

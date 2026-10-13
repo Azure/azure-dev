@@ -990,7 +990,7 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 		noPrompt             bool
 		showCodeDeploy       bool
 		flag                 string
-		userProvidedManifest bool
+		userProvidedTemplate bool
 		want                 string
 		wantErr              bool
 		wantErrContain       string
@@ -1039,27 +1039,27 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 			want:           "container",
 		},
 		{
-			name:                 "userProvidedManifest + showCodeDeploy auto-selects code",
+			name:                 "userProvidedTemplate + showCodeDeploy auto-selects code",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "",
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			want:                 "code",
 		},
 		{
-			name:                 "showCodeDeploy=false returns container regardless of userProvidedManifest",
+			name:                 "showCodeDeploy=false returns container regardless of userProvidedTemplate",
 			noPrompt:             false,
 			showCodeDeploy:       false,
 			flag:                 "",
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			want:                 "container",
 		},
 		{
-			name:                 "explicit flag overrides userProvidedManifest",
+			name:                 "explicit flag overrides userProvidedTemplate",
 			noPrompt:             false,
 			showCodeDeploy:       true,
 			flag:                 "container",
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			want:                 "container",
 		},
 	}
@@ -1067,7 +1067,7 @@ func TestPromptDeployMode_FlagOverride(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedManifest)
+			got, err := promptDeployMode(t.Context(), nil, tt.noPrompt, tt.showCodeDeploy, tt.flag, tt.userProvidedTemplate)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -1094,7 +1094,7 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 		name                 string
 		files                []string // files to create in temp dir
 		noPrompt             bool
-		userProvidedManifest bool
+		userProvidedTemplate bool
 		opts                 codeDeployOptions
 		wantRuntime          string
 		wantEntry            string
@@ -1145,30 +1145,30 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 			wantDepRes:  "remote_build",
 		},
 		{
-			name:                 "userProvidedManifest auto-detects python defaults",
+			name:                 "userProvidedTemplate auto-detects python defaults",
 			files:                []string{"requirements.txt", "app.py"},
 			noPrompt:             false,
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			opts:                 codeDeployOptions{},
 			wantRuntime:          "python_3_13",
 			wantEntry:            "app.py",
 			wantDepRes:           "remote_build",
 		},
 		{
-			name:                 "userProvidedManifest auto-detects dotnet defaults",
+			name:                 "userProvidedTemplate auto-detects dotnet defaults",
 			files:                []string{"MyAgent.csproj"},
 			noPrompt:             false,
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			opts:                 codeDeployOptions{},
 			wantRuntime:          "dotnet_10",
 			wantEntry:            "MyAgent.dll",
 			wantDepRes:           "remote_build",
 		},
 		{
-			name:                 "opts override userProvidedManifest defaults",
+			name:                 "opts override userProvidedTemplate defaults",
 			files:                []string{"requirements.txt", "app.py"},
 			noPrompt:             false,
-			userProvidedManifest: true,
+			userProvidedTemplate: true,
 			opts:                 codeDeployOptions{runtime: "python_3_14", entryPoint: "bot.py", depResolution: "bundled"},
 			wantRuntime:          "python_3_14",
 			wantEntry:            "bot.py",
@@ -1186,7 +1186,7 @@ func TestPromptCodeConfig_FlagOverrides(t *testing.T) {
 				}
 			}
 
-			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedManifest)
+			got, err := promptCodeConfig(t.Context(), nil, dir, tt.noPrompt, tt.opts, tt.userProvidedTemplate)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

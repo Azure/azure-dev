@@ -210,6 +210,19 @@ if err := host.Run(ctx); err != nil {
 }
 ```
 
+##### Command-level follow-up text
+
+Successful beta project `post*` handlers may provide command-level guidance
+by calling `CommandResult().SetFollowUp` with the invocation ID from
+`EventsBeta()` before sending a completed project handler status.
+
+azd appends committed text to the parent command's human-readable completion
+message; JSON output is unchanged. Published extensions using this preview
+API should set `requiredAzdVersion` to `>=1.35.0` for the current release
+line. See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
+for beta stream subscription and host compatibility requirements, clearing contributions,
+and how multiple handlers and workflow steps are resolved.
+
 #### Service Target Providers
 
 Extensions can implement custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. `ExtensionHost` handles registration and readiness by default.
@@ -2439,7 +2452,14 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../../grpc/proto/azd/extensions/v1/event.proto) for more details.
+The message types below describe the stable
+[v1 event contract](../../grpc/proto/azd/extensions/v1/event.proto). The
+[v1beta event contract](../../grpc/proto/azd/extensions/v1beta/event.proto)
+also adds `request_id` for correlating stream requests and responses,
+structured `error` details, and project and service subscription
+acknowledgements. Its `InvokeProjectHandler` includes an `invocation_id`
+used with the beta
+[CommandResultService](../../grpc/proto/azd/extensions/v1beta/command_result.proto).
 
 #### Message Types
 
@@ -2489,6 +2509,32 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+- **ServiceEventMessage**
+  Carries a non-blocking info or warning returned by a service deploy hook.
+
+  Contains:
+  - `kind`: Whether the message is informational or a warning.
+  - `message`: The text displayed by azd.
+  - `suggestion`: Optional next-step guidance.
+  - `links`: Optional references with titles and URLs.
+
+Structured messages are available only on the beta
+`ServiceHandlerStatus.messages` field and only for service `predeploy` and
+`postdeploy` handlers. Go extensions opt in with
+`ExtensionHost.WithBetaServiceEventHandler`; the stable event API and default
+language scaffolds remain unchanged.
+
+The beta event stream must begin with a subscription containing a
+`request_id`, and service statuses carrying messages must echo the invocation
+ID. Statuses without messages retain service/event correlation. Legacy beta
+streams whose first subscription has no request ID keep their existing
+behavior but cannot send structured messages. Returned messages are displayed
+after the deploy table and included in deploy/up JSON results, including when
+the handler also returns an error.
+
+See [contract versioning](contract-versioning.md#host-registration-and-adaptation)
+for the stream routing rules and the [SDK reference](extension-sdk-reference.md#structured-deploy-messages-beta)
+for registration details.
 
 #### ServiceContext and Service Event Arguments
 

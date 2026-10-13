@@ -1,5 +1,4 @@
-# Foundry (AIServices) account, its project, model deployments, and the
-# developer role assignment.
+# Foundry (AIServices) account, its project, and model deployments.
 
 locals {
   # Resource group name. Falls back to rg-{environment_name} when not provided.
@@ -43,8 +42,6 @@ locals {
     : (local.capped_env_name == "" ? "foundryproject" : "${local.capped_env_name}prj")
   )
 
-  # https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
-  cognitive_services_user_role_id = "a97b65f3-24c7-4388-baec-2e87135dc908"
 }
 
 resource "azurerm_resource_group" "this" {
@@ -125,16 +122,4 @@ resource "azapi_resource" "project" {
   response_export_values = ["identity.principalId"]
 
   depends_on = [azurerm_cognitive_deployment.model]
-}
-
-# Grants the developer Cognitive Services User on the project to call the
-# Foundry data-plane (chat/completions, agents API). Skipped when principal_id
-# is empty.
-resource "azurerm_role_assignment" "developer_cognitive_services_user" {
-  count = var.principal_id == "" ? 0 : 1
-
-  scope              = azapi_resource.project.id
-  role_definition_id = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/${local.cognitive_services_user_role_id}"
-  principal_id       = var.principal_id
-  principal_type     = var.principal_type
 }

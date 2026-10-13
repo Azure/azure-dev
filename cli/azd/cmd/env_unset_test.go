@@ -348,10 +348,14 @@ func TestEnvUnsetActionPersistsDeletion(t *testing.T) {
 		env.DotenvSet(key, value)
 	}
 	require.NoError(t, manager.Save(t.Context(), env))
-	configBefore, err := os.ReadFile(manager.ConfigPath(env))
+	envPath, err := manager.EnvPath(env)
+	require.NoError(t, err)
+	configPath, err := manager.ConfigPath(env)
+	require.NoError(t, err)
+	configBefore, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 
-	diskValues, err := godotenv.Read(manager.EnvPath(env))
+	diskValues, err := godotenv.Read(envPath)
 	require.NoError(t, err)
 	require.Contains(t, diskValues, "LD_TEST_UNSET")
 	require.NotContains(t, env.Dotenv(), "LD_TEST_UNSET")
@@ -360,7 +364,7 @@ func TestEnvUnsetActionPersistsDeletion(t *testing.T) {
 	// Simulate another writer adding values after this environment was loaded.
 	diskValues["LATE_REMOVE"] = "remove-me"
 	diskValues["LATE_KEEP"] = "keep-me"
-	require.NoError(t, godotenv.Write(diskValues, manager.EnvPath(env)))
+	require.NoError(t, godotenv.Write(diskValues, envPath))
 
 	action := newEnvUnsetAction(
 		lazy.From(env), manager, mockinput.NewMockConsole(), &envUnsetFlags{force: true},
@@ -370,7 +374,7 @@ func TestEnvUnsetActionPersistsDeletion(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, result)
 
-		persisted, err := godotenv.Read(manager.EnvPath(env))
+		persisted, err := godotenv.Read(envPath)
 		require.NoError(t, err)
 		require.Equal(t, map[string]string{
 			environment.EnvNameEnvVarName: "test-env",
@@ -378,7 +382,7 @@ func TestEnvUnsetActionPersistsDeletion(t *testing.T) {
 			"KEEP":                        "unchanged",
 			"LATE_KEEP":                   "keep-me",
 		}, persisted)
-		configAfter, err := os.ReadFile(manager.ConfigPath(env))
+		configAfter, err := os.ReadFile(configPath)
 		require.NoError(t, err)
 		require.JSONEq(t, string(configBefore), string(configAfter))
 		require.Equal(t, "process-value", os.Getenv("MY_KEY"))
@@ -395,6 +399,10 @@ func TestEnvUnsetActionPreservesConcurrentWrites(t *testing.T) {
 	env.DotenvSet("KEEP", "stale-value")
 	env.DotenvSet("OTHER_REMOVED", "stale-value")
 	require.NoError(t, backing.Save(t.Context(), env))
+	envPath, err := backing.EnvPath(env)
+	require.NoError(t, err)
+	configPath, err := backing.ConfigPath(env)
+	require.NoError(t, err)
 
 	manager := newTestEnvManager()
 	manager.On("Reload", t.Context(), env).Run(func(mock.Arguments) {
@@ -402,13 +410,13 @@ func TestEnvUnsetActionPreservesConcurrentWrites(t *testing.T) {
 	}).Return(nil).Once()
 	options := &environment.SaveOptions{DotenvKeys: []string{"KEY"}}
 	manager.On("SaveWithOptions", t.Context(), env, options).Run(func(mock.Arguments) {
-		values, err := godotenv.Read(backing.EnvPath(env))
+		values, err := godotenv.Read(envPath)
 		require.NoError(t, err)
 		values["KEEP"] = "concurrent-value"
 		values["ADDED"] = "concurrent-addition"
 		delete(values, "OTHER_REMOVED")
-		require.NoError(t, godotenv.Write(values, backing.EnvPath(env)))
-		require.NoError(t, os.WriteFile(backing.ConfigPath(env), []byte(`{"app":{"enabled":false}}`), 0600))
+		require.NoError(t, godotenv.Write(values, envPath))
+		require.NoError(t, os.WriteFile(configPath, []byte(`{"app":{"enabled":false}}`), 0600))
 		require.NoError(t, backing.SaveWithOptions(t.Context(), env, options))
 	}).Return(nil).Once()
 
@@ -416,14 +424,14 @@ func TestEnvUnsetActionPreservesConcurrentWrites(t *testing.T) {
 		lazy.From(env), manager, mockinput.NewMockConsole(), &envUnsetFlags{force: true}, []string{"KEY"}).Run(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, result)
-	values, err := godotenv.Read(backing.EnvPath(env))
+	values, err := godotenv.Read(envPath)
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{
 		environment.EnvNameEnvVarName: "test-env",
 		"KEEP":                        "concurrent-value",
 		"ADDED":                       "concurrent-addition",
 	}, values)
-	cfg, err := os.ReadFile(backing.ConfigPath(env))
+	cfg, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"app":{"enabled":false}}`, string(cfg))
 	manager.AssertExpectations(t)
@@ -665,18 +673,22 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			env.DotenvSet("KEEP", "unchanged")
 			env.DotenvSet("OTHER_REMOVED", "unchanged")
 			require.NoError(t, backing.Save(t.Context(), env))
-			before, err := godotenv.Read(backing.EnvPath(env))
+			envPath, err := backing.EnvPath(env)
 			require.NoError(t, err)
-			configBefore, err := os.ReadFile(backing.ConfigPath(env))
+			configPath, err := backing.ConfigPath(env)
+			require.NoError(t, err)
+			before, err := godotenv.Read(envPath)
+			require.NoError(t, err)
+			configBefore, err := os.ReadFile(configPath)
 			require.NoError(t, err)
 			updateUnrelated := func() {
-				updated, err := godotenv.Read(backing.EnvPath(env))
+				updated, err := godotenv.Read(envPath)
 				require.NoError(t, err)
 				updated["KEEP"] = "concurrent-value"
 				updated["ADDED"] = "concurrent-addition"
 				delete(updated, "OTHER_REMOVED")
-				require.NoError(t, godotenv.Write(updated, backing.EnvPath(env)))
-				require.NoError(t, os.WriteFile(backing.ConfigPath(env), []byte(`{"app":{"enabled":false}}`), 0600))
+				require.NoError(t, godotenv.Write(updated, envPath))
+				require.NoError(t, os.WriteFile(configPath, []byte(`{"app":{"enabled":false}}`), 0600))
 			}
 
 			runCtx, cancel := context.WithCancel(t.Context())
@@ -742,7 +754,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 						updated := maps.Clone(before)
 						updated["KEY"] = "fresh-private-value"
 						updated["KEEP"] = "concurrent-value"
-						require.NoError(t, godotenv.Write(updated, backing.EnvPath(env)))
+						require.NoError(t, godotenv.Write(updated, envPath))
 					}
 					return true, nil
 				})
@@ -790,10 +802,10 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 					want["KEY"] = "fresh-private-value"
 				}
 			}
-			persisted, err := godotenv.Read(backing.EnvPath(env))
+			persisted, err := godotenv.Read(envPath)
 			require.NoError(t, err)
 			require.Equal(t, want, persisted)
-			configAfter, err := os.ReadFile(backing.ConfigPath(env))
+			configAfter, err := os.ReadFile(configPath)
 			require.NoError(t, err)
 			if tt.concurrentUpdate || tt.updateBeforeRestoreSave {
 				require.JSONEq(t, `{"app":{"enabled":false}}`, string(configAfter))

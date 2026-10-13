@@ -440,7 +440,7 @@ func TestCanReuseExistingAgentConfiguration(t *testing.T) {
 		},
 		{
 			name:  "manifest pointer blocks reuse",
-			flags: &initFlags{manifestPointer: "agent.manifest.yaml"},
+			flags: &initFlags{templatePointer: "agent.manifest.yaml"},
 		},
 		{
 			name:  "force blocks reuse",

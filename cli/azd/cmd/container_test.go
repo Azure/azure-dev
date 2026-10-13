@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -194,9 +195,12 @@ func Test_LocalDataStore_ResolutionAfterInit(t *testing.T) {
 			lazyContext.SetValue(azdContext)
 
 			require.NoError(t, container.Resolve(&dataStore))
-			require.Equal(t, filepath.Join(azdContext.EnvironmentRoot("test"), environment.DotEnvFileName),
-				dataStore.EnvPath(environment.New("test")))
-			_, err := dataStore.Get(t.Context(), "test")
+			envRoot, err := azdContext.EnvironmentRoot("test")
+			require.NoError(t, err)
+			envPath, err := dataStore.EnvPath(environment.New("test"))
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(envRoot, environment.DotEnvFileName), envPath)
+			_, err = dataStore.Get(t.Context(), "test")
 			require.ErrorIs(t, err, environment.ErrNotFound)
 		})
 	}
@@ -261,8 +265,11 @@ func Test_EnvironmentRegistrations_InitLifecycle(t *testing.T) {
 				env.DotenvSet("LIFECYCLE_TEST", "unsaved")
 				require.NoError(t, manager.Reload(t.Context(), env))
 				require.Equal(t, "saved", env.Getenv("LIFECYCLE_TEST"))
-				require.Equal(t, filepath.Join(azdContext.EnvironmentRoot("dev"), environment.DotEnvFileName),
-					manager.EnvPath(env))
+				envRoot, err := azdContext.EnvironmentRoot("dev")
+				require.NoError(t, err)
+				envPath, err := manager.EnvPath(env)
+				require.NoError(t, err)
+				require.Equal(t, filepath.Join(envRoot, environment.DotEnvFileName), envPath)
 
 				var resolvedManager environment.Manager
 				require.NoError(t, container.Resolve(&resolvedManager))
@@ -588,6 +595,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Simulate the full workflow execution path: package → provision → deploy
 		// Verify each step's command runs with the child action context and fresh tree
 		var executedCommands []string
+		var commandOrders []uint64
 
 		newCommand := func() *cobra.Command {
 			rootCmd := &cobra.Command{Use: "root"}
@@ -601,6 +609,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 						require.True(t, middleware.IsChildAction(ctx),
 							"Step %q should have child action context", name)
 						executedCommands = append(executedCommands, name)
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(ctx),
+						)
 						return nil
 					},
 				}
@@ -613,7 +625,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter := &workflowCmdAdapter{newCommand: newCommand}
-		ctx := context.WithoutCancel(t.Context())
+		ctx := commandresult.WithFollowUpCollector(
+			context.WithoutCancel(t.Context()),
+			commandresult.NewFollowUpCollector(),
+		)
 
 		// Simulate the default "up" workflow steps
 		steps := [][]string{
@@ -629,6 +644,85 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		require.Equal(t, []string{"package", "provision", "deploy"}, executedCommands,
 			"All workflow steps should execute in order")
+		require.Equal(t, []uint64{1, 2, 3}, commandOrders,
+			"Workflow steps should receive increasing command orders")
+	})
+
+	t.Run("NestedCommandsInheritWorkflowStepOrder", func(t *testing.T) {
+		var adapter *workflowCmdAdapter
+		var commandOrders []uint64
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+			rootCmd.AddCommand(
+				&cobra.Command{
+					Use: "build",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						ctx := commandresult.EnsureFollowUpCommandOrder(cmd.Context())
+						order := commandresult.FollowUpCommandOrderFromContext(ctx)
+						commandOrders = append(
+							commandOrders,
+							order,
+						)
+						collector := commandresult.FollowUpCollectorFromContext(ctx)
+						collector.Add(commandresult.FollowUp{
+							ExtensionID:  "test.extension",
+							CommandOrder: order,
+							EventName:    "postrestore",
+							Text:         "restore",
+						})
+						collector.Add(commandresult.FollowUp{
+							ExtensionID:  "test.extension",
+							CommandOrder: order,
+							EventName:    "postbuild",
+							Text:         "build",
+						})
+						return adapter.ExecuteContext(ctx, []string{"restore"})
+					},
+				},
+				&cobra.Command{
+					Use: "restore",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
+						)
+						return nil
+					},
+				},
+				&cobra.Command{
+					Use: "deploy",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						order := commandresult.FollowUpCommandOrderFromContext(cmd.Context())
+						commandOrders = append(commandOrders, order)
+						commandresult.FollowUpCollectorFromContext(cmd.Context()).Add(
+							commandresult.FollowUp{
+								ExtensionID:  "test.extension",
+								CommandOrder: order,
+								EventName:    "postdeploy",
+								Text:         "deploy",
+							},
+						)
+						return nil
+					},
+				},
+			)
+			return rootCmd
+		}
+
+		adapter = &workflowCmdAdapter{newCommand: newCommand}
+		collector := commandresult.NewFollowUpCollector()
+		ctx := commandresult.WithFollowUpCollector(
+			context.WithoutCancel(t.Context()),
+			collector,
+		)
+
+		require.NoError(t, adapter.ExecuteContext(ctx, []string{"build"}))
+		require.Equal(t, "build", collector.Text())
+
+		require.NoError(t, adapter.ExecuteContext(ctx, []string{"deploy"}))
+		require.Equal(t, []uint64{1, 1, 2}, commandOrders)
+		require.Equal(t, "deploy", collector.Text())
 	})
 }
 

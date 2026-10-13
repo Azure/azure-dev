@@ -1,5 +1,7 @@
 # Extension Framework
 
+<!-- cspell:ignore azdext -->
+
 Architecture of the gRPC-based extension system in azd.
 
 ## Overview
@@ -45,6 +47,22 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+### Lifecycle follow-up contributions
+
+The beta event stream supplies an invocation ID to each subscribed project
+handler. The extension calls the beta `CommandResultService` with that ID over
+gRPC; both services use a host-owned invocation store. Only successful
+project `post*` invocations are committed to the command's follow-up
+collector. The UX middleware appends the resolved text to human-readable
+completion output without changing JSON output. Within a custom workflow,
+later command steps take precedence over earlier steps.
+
+The host's [command-result collector](../../cli/azd/internal/commandresult/follow_up.go)
+is separate from the [gRPC service and invocation store](../../cli/azd/internal/grpcserver/command_result_service.go).
+
+See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
+for the API, host compatibility, and contribution ordering rules.
+
 ## Capabilities
 
 Extensions declare their capabilities in `extension.yaml`:
@@ -71,9 +89,17 @@ Extensions can access these azd services via gRPC:
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events
+- **Follow-up (beta)** — Contribute command-level guidance from project lifecycle handlers; see the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 - **Container** — Container registry operations
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations
+
+Structured deploy messages use the beta event stream. Go extensions opt in
+with `ExtensionHost.WithBetaServiceEventHandler` for service `predeploy` and
+`postdeploy` events; the stable event contract and default language scaffolds
+remain unchanged. See
+[contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
+for beta stream routing and legacy-client behavior.
 
 ## Error Handling
 
@@ -85,6 +111,54 @@ Extensions use two structured error types:
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
+
+### Project service save acknowledgment
+
+The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.
+This read-only RPC advertises whether the active `AddService` implementation
+supports `AddServiceRequest.operation_id` and `AddServiceAcknowledgment` status
+details. An unrelated focused beta override does not disable the built-in
+implementation. A custom `AddService` override must explicitly advertise its
+own support; the built-in capability response otherwise reports false.
+
+When supported, the caller supplies a fresh operation ID of at most 64 bytes
+(not characters) and makes exactly one beta `AddService` call. Longer identifiers
+are rejected with `InvalidArgument` before project mutation or saving.
+A failed operation that acquired the project mutation
+lock attaches an `AddServiceAcknowledgment` detail echoing that ID. Completion,
+including synchronous save retries, cleanup, and cache restoration, happens
+under the mutation lock. The status detail is serialized after the shared
+mutation helper returns and releases that lock. Success, panics, and errors
+rejected before the lock, cancellation, and deadline expiration do not carry a
+failure acknowledgment. Existing host-error codes, messages, suggestions, and
+structured details are preserved alongside the acknowledgment. Detail-attachment
+failures are explicit internal errors, not confirmed completion.
+
+Require exactly one well-formed matching detail before compensating local
+edits. Missing, malformed, stale, wrong-type, or duplicate details are uncertain
+outcomes. Cancellation, deadlines, authentication/authorization and transport
+failures are not safe completion signals. Completion is not proof that the
+root file stayed unchanged: retain root-byte comparisons, local locks, and
+ownership checks before rollback.
+
+The authentication/authorization exclusions above are a consumer recovery
+policy, not additional host acknowledgment suppression.
+
+An explicit false capability response or `Unimplemented` from the read-only
+RPC selects the stable host path. Other capability errors stop before
+mutation; errors from the subsequent mutation never trigger a fallback replay.
+Stable calls can succeed normally, but failed saves retain the scaffold
+with manual inspection guidance.
+
+The evaluations extension uses a private dynamic descriptor registry
+generated from the canonical beta schema by `grpc/generateprojectclient`.
+This permits reproducible builds with its released SDK pin, without a local
+replace, pseudo-version, duplicate schema, or conflicting global protobuf
+registration. Its private client supplies the project fields absent from its
+released SDK pin. Regeneration is part of `make proto`.
+Completion acknowledgments exist only on the typed beta API.
+Stable callers receive ordinary errors and retain uncertain
+scaffolds for manual recovery, without trusting custom metadata or trailers.
 
 ## Deployment Preview
 

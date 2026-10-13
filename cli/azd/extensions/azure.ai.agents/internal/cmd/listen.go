@@ -21,9 +21,11 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
+	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -39,6 +41,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 
 func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
+	operationReporter := newOperationReporter()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
@@ -47,6 +50,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "provision")
+			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+			if classes := operationProjectClasses(args.Project); len(classes) > 0 {
+				operationReporter.report(ctx, usage, "provision", classes)
+			}
 			return preprovisionHandler(ctx, azdClient, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -54,6 +61,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
+			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
+				operationServiceClass(args.Service),
+			})
 			return predeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
@@ -69,7 +80,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -248,15 +259,6 @@ func updateLegacyProjectDeployments(
 	)
 }
 
-// developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
-// process lifetime. Service-level predeploy handlers fire per-service, but the
-// RBAC pre-flight check is project-scoped and idempotent — running it once is
-// sufficient and avoids duplicate ARM/Graph calls and noisy output.
-var (
-	developerRBACOnce sync.Once
-	developerRBACErr  error
-)
-
 // duplicateAgentNameWarnOnce ensures the duplicate agent-name warning is emitted
 // at most once per extension process lifetime. Service-level predeploy handlers
 // fire per-service, but the check is project-scoped — a single pass over every
@@ -267,7 +269,7 @@ var duplicateAgentNameWarnOnce sync.Once
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -307,20 +309,13 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// Capture the current session so it can be resumed on the newly deployed
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
-	if isHostedAgentService(svc, args.Project) {
+	hosted := isHostedAgentService(svc, args.Project)
+	if hosted {
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	// Run developer RBAC pre-flight checks only for hosted agent deployments.
-	// Guarded by sync.Once since this handler fires per-service but the check
-	// is project-scoped.
-	if isHostedAgentService(svc, args.Project) {
-		developerRBACOnce.Do(func() {
-			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
-		})
-		if developerRBACErr != nil {
-			return developerRBACErr
-		}
+	if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
+		return err
 	}
 
 	return nil
@@ -329,7 +324,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 // isHostedAgentService checks if a service is a hosted (container) agent by
 // resolving its direct/root-$ref definition from the service entry.
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
-	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+	_, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 	return err == nil && isHosted
 }
 
@@ -365,7 +360,7 @@ func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGro
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+		ca, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 		if err != nil || !isHosted {
 			continue
 		}
@@ -540,7 +535,7 @@ func resolveServiceActivityProfile(
 	if err != nil {
 		return project.ActivityProfile{}, err
 	}
-	agent, isHosted, _, err := project.LoadAgentDefinition(resolvedSvc, projectRoot)
+	agent, isHosted, _, err := project.LoadHostedAgentDefinition(resolvedSvc, projectRoot)
 	if err != nil || !isHosted {
 		return project.ActivityProfile{}, err
 	}
@@ -618,7 +613,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
+func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment bool) error {
 	serviceNames := make([]string, 0, len(proj.GetServices()))
 	for name := range proj.GetServices() {
 		serviceNames = append(serviceNames, name)
@@ -630,7 +625,14 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		if _, _, _, err := project.LoadAgentDefinition(svc, proj.GetPath()); err != nil {
+		var err error
+		if validateDeployment {
+			_, err = project.ValidateAgentServiceDefinition(svc, proj.GetPath())
+		} else {
+			// Down requires safe runtime sources, not deployable instructions or skills.
+			_, _, _, err = project.LoadHostedAgentDefinition(svc, proj.GetPath())
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -645,11 +647,11 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 //
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
 		return err
 	}
 
-	envValues, envErr := promptEnvValues(ctx, azdClient)
+	envValues, envErr := promptEnvValues(ctx, azdClient, "")
 	if envErr != nil {
 		log.Printf("predown: failed to read the azd environment: %v", envErr)
 	}
@@ -879,7 +881,7 @@ func kindEnvUpdate(
 	// A missing definition is tolerated here: the bicepless inline path lets
 	// users declare prompt agents that carry no hosted definition, and service
 	// targets that truly need the definition surface the error where they read it.
-	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)
+	_, isHosted, source, err := project.LoadHostedAgentDefinition(svc, azdProject.Path)
 	if err != nil {
 		// Tolerate only a missing definition: the bicepless inline path lets users
 		// declare prompt agents that carry no hosted definition. Validation and

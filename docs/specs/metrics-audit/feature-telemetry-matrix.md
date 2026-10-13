@@ -149,6 +149,12 @@ captures the operation type, making the attribute redundant:
 
 ## Cross-Cutting Subsystems
 
+Agent operation classification additionally uses the existing `ext.usage` channel
+with fixed `extension.event` values `agent.operation.v1.<operation>.<category>.<telephony>`.
+No attributes are added. Coverage is partial: extension init failure return or successful post-run, and agent
+preprovision/predeploy hooks; core init and early failures may remain unknown.
+This is not per-service outcome telemetry. See the [query and exact vocabulary](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
+
 These telemetry surfaces are not tied to a single command — they emit from middleware
 or shared infrastructure invoked by many commands. They are included here so the
 privacy review covers every emission point. Dormant surfaces are retained to document

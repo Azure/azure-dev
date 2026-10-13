@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestExplicitTraceScenarioCallers(t *testing.T) {
@@ -60,7 +61,7 @@ func TestResponseRunChecksSchemaBothDirections(t *testing.T) {
 					Evals: []project.Eval{group}, Datasets: []project.DatasetDecl{{Name: "golden", File: "rows.jsonl"}},
 				}
 				dir := t.TempDir()
-				raw, err := json.Marshal(cfg)
+				raw, err := yaml.Marshal(authoredValues(t, &cfg))
 				require.NoError(t, err)
 				require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), raw, 0o600))
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(oneRow), 0o600))
@@ -163,7 +164,7 @@ func TestResponsePreparedMappingsAndRun(t *testing.T) {
 					assert.Equal(t, "1", request.TestingCriteria[0].EvaluatorVersion)
 					assert.Equal(t, &eval_api.DataSourceConfig{Type: "azure_ai_source", Scenario: "responses"},
 						request.DataSourceConfig)
-					raw, err := json.Marshal(cfg)
+					raw, err := yaml.Marshal(authoredValues(t, cfg))
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), raw, 0o600))
 					cmd := jsonCmd(t, "json")
@@ -227,7 +228,7 @@ func TestResponseBindingsStayTypedAndSourceScoped(t *testing.T) {
 				if mode == "responses" || (target && mode == "static") {
 					want = "{{sample.output_items}}"
 				}
-				if mode == "responses" && criterion.EvaluatorName == "string" {
+				if (mode == "responses" || (target && mode == "static")) && criterion.EvaluatorName == "string" {
 					want = "{{sample.output_text}}"
 				}
 				assert.Equal(t, want, criterion.DataMapping["response"])
@@ -235,6 +236,13 @@ func TestResponseBindingsStayTypedAndSourceScoped(t *testing.T) {
 			assert.Equal(t, "{{sample.output_items}}", sampleBindings["response"], "typed bindings must not mutate defaults")
 			if mode == "traces" {
 				assert.False(t, request.DataSourceConfig.IncludeSampleSchema)
+			}
+			if mode == "responses" {
+				assert.Equal(t, "azure_ai_source", request.DataSourceConfig.Type)
+				assert.Equal(t, "responses", request.DataSourceConfig.Scenario)
+				assert.False(t, request.DataSourceConfig.IncludeSampleSchema,
+					"the service-managed responses schema replaces the intermediate custom schema")
+				assert.Nil(t, request.DataSourceConfig.ItemSchema)
 			}
 		}
 	}

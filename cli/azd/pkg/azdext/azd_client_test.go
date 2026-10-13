@@ -4,8 +4,10 @@
 package azdext
 
 import (
+	"sync"
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
@@ -139,6 +141,73 @@ func Test_AzdClient_Telemetry(t *testing.T) {
 
 	first := client.Telemetry()
 	second := client.Telemetry()
+
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.NotSame(t, first, second)
+}
+
+func Test_AzdClient_EventsBetaIsExplicit(t *testing.T) {
+	client := &AzdClient{}
+
+	var stableClient EventServiceClient = client.Events()
+	var betaClient v1beta.EventServiceClient = client.EventsBeta()
+
+	require.NotNil(t, stableClient)
+	require.NotNil(t, betaClient)
+	require.Nil(t, (&EventMessage{}).ProtoReflect().Descriptor().
+		Fields().ByName("handler_output"))
+	require.Nil(t, (&v1beta.EventMessage{}).ProtoReflect().Descriptor().
+		Fields().ByName("handler_output"))
+	require.Nil(t, (&ServiceHandlerStatus{}).ProtoReflect().Descriptor().
+		Fields().ByName("messages"))
+	require.NotNil(t, (&v1beta.ServiceHandlerStatus{}).ProtoReflect().Descriptor().
+		Fields().ByName("messages"))
+}
+
+func Test_AzdClient_CommandResult_ReturnsSameClient(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.CommandResult()
+	second := client.CommandResult()
+
+	require.NotNil(t, first)
+	require.Same(t, first, second)
+}
+
+func Test_AzdClient_EventsBeta_ReturnsSameClient(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.EventsBeta()
+	second := client.EventsBeta()
+
+	require.NotNil(t, first)
+	require.Same(t, first, second)
+}
+
+func Test_AzdClient_CommandResult_IsStableAcrossConcurrentCalls(t *testing.T) {
+	client := &AzdClient{}
+	clients := make([]v1beta.CommandResultServiceClient, 100)
+	var wg sync.WaitGroup
+
+	for i := range clients {
+		wg.Go(func() {
+			clients[i] = client.CommandResult()
+		})
+	}
+	wg.Wait()
+
+	for _, commandResultClient := range clients {
+		require.NotNil(t, commandResultClient)
+		require.Same(t, clients[0], commandResultClient)
+	}
+}
+
+func Test_AzdClient_ProjectBeta(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.ProjectBeta()
+	second := client.ProjectBeta()
 
 	require.NotNil(t, first)
 	require.NotNil(t, second)

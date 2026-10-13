@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -33,7 +34,15 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 		staleLegacy bool
 		wantPrompt  bool
 	}{
-		{"prompt", map[string]any{"kind": "prompt"}, false, false, true},
+		{
+			"prompt",
+			map[string]any{
+				"kind": "prompt", "model": "gpt-4.1-mini", "instructions": "Help.",
+			},
+			false,
+			false,
+			true,
+		},
 		{"hosted", map[string]any{"kind": "hosted", "name": "hosted-agent"}, false, false, false},
 		{
 			"voice",
@@ -58,7 +67,15 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 			false,
 			false,
 		},
-		{"referenced prompt", map[string]any{"kind": "prompt"}, true, false, true},
+		{
+			"referenced prompt",
+			map[string]any{
+				"kind": "prompt", "model": "gpt-4.1-mini", "instructions": "Help.",
+			},
+			true,
+			false,
+			true,
+		},
 		{"referenced hosted", map[string]any{"kind": "hosted", "name": "hosted-agent"}, true, false, false},
 		{
 			"hosted with stale legacy file",
@@ -75,13 +92,11 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 			require.NoError(t, err)
 			svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
 			if tt.referenced {
-				definition := "kind: " + tt.properties["kind"].(string) + "\n"
-				if name, ok := tt.properties["name"].(string); ok {
-					definition += "name: " + name + "\n"
-				}
+				definition, err := yaml.Marshal(tt.properties)
+				require.NoError(t, err)
 				require.NoError(t, os.WriteFile(
 					filepath.Join(root, "definition.yaml"),
-					[]byte(definition),
+					definition,
 					0o600,
 				))
 				svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{"$ref": "definition.yaml"})
@@ -252,7 +267,7 @@ func TestResolveOptimizeAgent_RejectsUnsupportedProjectDefinition(t *testing.T) 
 			}
 			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
 
-			_, _, _, authoritativeErr := projectpkg.LoadAgentDefinition(svc, root)
+			_, authoritativeErr := projectpkg.ValidateAgentServiceDefinition(svc, root)
 			require.Error(t, authoritativeErr)
 			resolved, err := resolveOptimizeAgent(t.Context(), "assistant", "dev", true)
 			require.Nil(t, resolved)

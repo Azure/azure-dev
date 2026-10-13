@@ -92,6 +92,42 @@ func TestToolboxNode_RejectsCrossProjectEndpoint(t *testing.T) {
 	}
 }
 
+func TestToolboxNode_UsesSanitizedServiceKey(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://example.test/api/projects/current"
+	const mcpEndpoint = projectEndpoint + "/toolboxes/my-tools/mcp"
+	for _, sameProject := range []bool{true, false} {
+		t.Run(map[bool]string{true: "same project", false: "different project"}[sameProject], func(t *testing.T) {
+			t.Parallel()
+			markerProject := projectEndpoint
+			if !sameProject {
+				markerProject = "https://example.test/api/projects/other"
+			}
+			g := &promptGraph{
+				managed:  &agent_yaml.PromptAgent{Model: "m", Instructions: "i"},
+				bindings: map[string]any{},
+				env: map[string]string{
+					"FOUNDRY_PROJECT_ENDPOINT":               projectEndpoint,
+					envkey.ToolboxMCPEndpoint("MyTools"):     mcpEndpoint,
+					envkey.ToolboxProjectEndpoint("MyTools"): markerProject,
+				},
+			}
+			builder := &fakeToolboxBuilder{}
+			node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "My Tools"},
+				func() (toolboxBuilder, error) { return builder, nil })
+			err := node.Resolve(t.Context())
+			if !sameProject {
+				require.ErrorContains(t, err, "different Foundry project")
+				require.Zero(t, builder.resolveCalls)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, mcpEndpoint, builder.lastRef.MCPEndpoint)
+			require.Equal(t, "My Tools", builder.lastRef.Name)
+		})
+	}
+}
+
 func writeSkillsDir(t *testing.T, skills map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()

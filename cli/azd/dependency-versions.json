@@ -113,6 +113,13 @@
       "issue": "https://github.com/Azure/azure-dev/issues/9297"
     },
     {
+      "module": "extensions/azure.logicappsstandard",
+      "dependency": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "reason": "Temporary exception pending dependency alignment after the extension is merged.",
+      "issue": "https://github.com/Azure/azure-dev/issues/10051"
+    },
+    {
       "module": "extensions/microsoft.azd.concurx",
       "dependency": "github.com/spf13/cobra",
       "version": "v1.10.2",

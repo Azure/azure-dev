@@ -1,7 +1,8 @@
 Update fields on an existing Foundry routine.
 
 Only the named flags change; all other fields are preserved verbatim.
-To change the trigger or action type, delete and recreate the routine.
+The trigger, action type, and dispatch identity are create-only. To change
+one, delete and recreate the routine.
 
 Usage
   azd ai routine update <name> [flags]
@@ -32,6 +33,7 @@ Global Flags
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (supported: json, table) (default "table")
   -p, --project-endpoint string : Foundry project endpoint URL for remote operations only (not add, context, or version)
+      --tenant-id string        : Tenant ID for Azure authentication on remote routine commands (overrides azd context)
       --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.
 
 Examples

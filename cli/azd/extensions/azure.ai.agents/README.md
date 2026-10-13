@@ -25,6 +25,7 @@ for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
 [Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
@@ -69,6 +70,15 @@ project routes (prompt, voice, workflow) are excluded.
 
 This records command-path adoption, not whether the service accepted or
 completed work. No prompt, agent name, endpoint, or service response is sent.
+
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
 
 ## Non-interactive automation
 
@@ -172,10 +182,20 @@ Run `azd deploy --all` to reconcile these dependencies before their agents;
 declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
+Unlike the service-key references in `toolboxes`, singular `toolbox.name`
+retains the Foundry resource name. Local dependency wiring and deployment
+resolve its service key using the existing authoring convention: trim
+surrounding whitespace and remove ASCII spaces (`My Tools` becomes `MyTools`).
+The original resource name remains unchanged in the definition.
+
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
-sibling `azure.ai.connection` service names. These are references, not resource
-definitions: the siblings must be in `uses` and deployed to the same project
-before the prompt agent. Connection objects remain unsupported on any agent.
+local `azure.ai.connection` service keys or effective resource names. An
+effective name comes from the service's `name` after resolving local `$ref`
+files; absent or blank names fall back to the service key. An exact service-key
+match takes precedence over a resource-name match. These are references, not
+resource definitions: the matching service key must be in `uses` and deployed
+to the same project before the prompt agent. Connection objects remain
+unsupported on any agent.
 
 ## Deploying Agents
 
@@ -198,6 +218,26 @@ core-owned fields such as `host`, `project`, `language`, and `uses` in
 sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
 and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
 targeted Agent deployment does not deploy its dependencies automatically.
+
+### Endpoint command support
+
+Endpoint behavior depends on the agent `kind` declared inline or through `$ref`:
+
+| Agent kind | `endpoint show` | `endpoint update` | Deployment endpoint reporting |
+| --- | --- | --- | --- |
+| `hosted` | Shows the live endpoint/card configuration | Updates endpoint/card configuration | Reports configured protocol URLs |
+| `prompt` | Shows the deployed Responses endpoint | Not supported | Reports the deployed Responses endpoint |
+| `voice`, `prompt-voice` | Shows the deployed voice WebSocket endpoint | Not supported | Reports the deployed voice WebSocket endpoint |
+| `workflow` | Not supported | Not supported | Not supported |
+
+For JSON output, `endpoint show` includes `name` and `kind`. Hosted agents retain
+the `agent_endpoint` and `agent_card` fields; prompt and voice agents return their
+callable URLs in `endpoints`.
+
+The command validates the agent definition before reading deployment state.
+Missing, unknown, or malformed kinds return a structured validation error rather
+than falling back to hosted-agent behavior. Hosted Activity and session
+capabilities do not change the agent kind and follow the hosted behavior above.
 
 ## Invoke latency diagnostics
 
@@ -368,11 +408,22 @@ services:
 ```
 
 Alternatively, keep a direct definition in a separate file and reference it
-explicitly from the service with a root `$ref`. The basename can be anything,
-including a legacy-looking name such as `agent.yaml`, but prompt-agent references
-must use a `.yaml` or `.yml` extension. The file content must be a supported
-direct agent definition. An `agent.manifest.yaml` template wrapper must first be
-converted or extracted.
+explicitly from the service with a root `$ref`, for example
+`$ref: ./definitions/agent.json`. Prompt, hosted (including code deploy), voice,
+and prompt-voice agents support YAML or JSON definitions. The basename can be
+anything, including a legacy-looking name such as `agent.yaml`; prompt-agent
+references accept `.yaml`, `.yml`, and `.json` extensions. The file content must
+be a supported direct agent definition. An `agent.manifest.yaml` template wrapper
+must first be converted or extracted.
+
+Prompt-agent root references must stay within the project directory and resolve
+relative to the directory holding `azure.yaml`, not the service's `project`
+directory. Prompt `skills/` and `vector-assets/` convention folders remain next
+to the referenced definition. Nested `$ref` includes and relative instructions
+paths inside a definition resolve relative to that file. Hosted code packaging
+still uses the service's `project` directory. Keep core service fields such as
+`project`, `language`, `image`, `docker`, and `env` in `azure.yaml`, not in the
+root reference target.
 
 ### Environment variables under `config:`
 
@@ -719,7 +770,7 @@ services:
             - $.output
           streamSelectors:
             - eventType: response.output_text.delta
-              textField: $.delta
+              textField: delta
 ```
 
 Fields:
@@ -729,9 +780,35 @@ Fields:
 | `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
 | `inputContentType` | no | `json` (default) or `text`. |
 | `outputContentType` | no | `json` (default) or `text`. |
-| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
-| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
-| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | Selector expressions locating the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. See [Selectors and field names](#selectors-and-field-names). |
+
+#### Selectors and field names
+
+`inputPaths` and `outputPaths` are **selector expressions**. They support `$` for
+the document root, dotted members, array indexes, and `[*]` wildcards — for
+example `$.messages[*].content`. They are not a full JSONPath implementation.
+
+`textField` is **not** a selector: when provided, it is the non-empty, exact
+**name of a field** on the matched event payload, with no surrounding whitespace.
+Write `delta`, not `$.delta`, `""`, or `" delta"`. It defaults to `delta` when
+omitted.
+
+`eventType` is matched exactly, with no surrounding whitespace, against the value
+of the `type` field *inside* the event's `data:` payload, not against the SSE
+`event:` line. So for a frame like
+
+```text
+data: {"type": "response.output_text.delta", "delta": "Hi"}
+```
+
+the selector is `eventType: response.output_text.delta` with `textField: delta`.
+
+> **Why this matters:** a `textField` that names no field on the payload yields no
+> text, so that event contributes nothing to moderation. A `$.`-prefixed or
+> whitespace-padded value therefore silently disables screening for every frame it
+> applies to. azd rejects those values for this reason.
 
 `invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
 includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
@@ -757,7 +834,7 @@ same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
 flow as other current Hosted Agent and `invocations_ws` samples:
 
 ```powershell
-azd ai agent init -m .\path\to\azure.yaml
+azd ai agent init -t .\path\to\azure.yaml
 ```
 
 The local path can be replaced with its public GitHub URL after the sample is
@@ -821,6 +898,41 @@ The target must be active, declare `invocations_ws/1.0.0`, and include
 instructions, tools, and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
+## Invocations metadata discovery
+
+For project-backed remote `azd ai agent invoke --protocol invocations` calls,
+azd optionally caches `/invocations/docs/openapi.json` **after** the invocation
+response has been handled successfully. For SSE and long-running invocations,
+discovery follows stream completion or terminal success, respectively. The GET
+uses the invocation's effective `agent_session_id`, including a server-assigned
+ID from a fresh invocation. If no session ID is available, azd skips discovery
+rather than sending a request without one. Explicit `--agent-endpoint` calls
+do not use project metadata discovery.
+
+Metadata failures do not replace a completed invocation's result.
+Remote metadata redirects are not followed: 3xx responses are optional discovery
+failures, so redirects cannot forward caller headers or drop the session binding.
+Failure categories appear only with `--debug`. Interactive, non-raw invocations
+show `Checking optional OpenAPI metadata...` during discovery; timing and `Next:`
+guidance follow discovery. Redirected and raw output contain no metadata progress.
+Raw response handling remains unchanged, including its
+existing treatment of agent-error bodies.
+
+Remote discovery has separate 10-second bounds for configuration RPCs and the
+HTTP request; those waits can total up to 20 seconds after the agent's response.
+An earlier caller deadline or cancellation takes precedence. Synchronous
+filesystem operations are not covered by those network/RPC bounds. Invocation
+timing excludes discovery.
+
+Successful metadata is cached as `.azure/<env>/openapi-<agent>-remote.json`.
+A cache hit avoids another metadata request. Missing or failed metadata is not
+cached, so a 404 can be probed again on a later invocation. This does not remove
+sessions created by earlier azd versions.
+
+Local discovery keeps its existing behavior: a GET without a session ID before the POST,
+refreshed on every call, with no new identity or custom headers on the GET.
+The local POST still carries its own session and configured headers.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period
@@ -846,7 +958,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 

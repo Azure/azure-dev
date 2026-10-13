@@ -5,10 +5,10 @@ package project
 
 import (
 	"fmt"
-	"regexp"
+	"slices"
+	"strings"
+	"unicode"
 )
-
-var simulationModelReference = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
 
 // Simulation declares that an eval creates its conversations rather than
 // scoring ones it was given.
@@ -20,16 +20,17 @@ var simulationModelReference = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
 type Simulation struct {
 	// Model is the deployment the simulated user speaks with. It is not the
 	// judge model an evaluator initializes, and not the model that generated
-	// the seeds. It uses the connection-name/model-deployment reference format.
+	// the seeds. It accepts a plain model name or connection-name/model-deployment,
+	// with no Unicode whitespace or control characters in either segment.
 	Model string `yaml:"model,omitempty"             json:"model,omitempty"`
 
 	// NumConversations is how many conversations to create per scenario.
-	NumConversations int `yaml:"num_conversations,omitempty" json:"num_conversations,omitempty"`
+	NumConversations int `yaml:"numConversations,omitempty" json:"num_conversations,omitempty"`
 
 	// MaxTurns bounds each conversation. Omitted leaves the service's own
 	// default rather than imposing one here, which would silently truncate
 	// conversations a caller never asked to bound.
-	MaxTurns int `yaml:"max_turns,omitempty"         json:"max_turns,omitempty"`
+	MaxTurns int `yaml:"maxTurns,omitempty"         json:"max_turns,omitempty"`
 }
 
 // Bounds for authored simulation defaults, retained from the CLI feature
@@ -50,7 +51,7 @@ const (
 // UnmarshalYAML refuses an explicitly written zero.
 //
 // Both counts use 0 as the "unstated" sentinel, which the rest of this config
-// model does too, so Validate cannot tell `num_conversations: 0` from a key
+// model does too, so Validate cannot tell `numConversations: 0` from a key
 // that was never there -- and the zero was quietly replaced with the default
 // while the schema declares a minimum of 1. The editor refused it and the CLI
 // accepted it, which is the disagreement worth closing.
@@ -76,8 +77,8 @@ func (s *Simulation) UnmarshalYAML(unmarshal func(any) error) error {
 		value int
 		min   int
 	}{
-		{"num_conversations", decoded.NumConversations, MinNumConversations},
-		{"max_turns", decoded.MaxTurns, MinSimulationTurns},
+		{"numConversations", decoded.NumConversations, MinNumConversations},
+		{"maxTurns", decoded.MaxTurns, MinSimulationTurns},
 	} {
 		if _, present := declared[stated.key]; present && stated.value == 0 {
 			return fmt.Errorf(
@@ -102,21 +103,25 @@ func (s *Simulation) Validate() error {
 	if s.Model == "" {
 		return fmt.Errorf("simulation.model is required: it names the deployment the simulated user speaks with")
 	}
-	if !simulationModelReference.MatchString(s.Model) {
-		return fmt.Errorf("simulation.model must use connection-name/model-deployment format")
+	segments := strings.Split(s.Model, "/")
+	if len(segments) > 2 || slices.Contains(segments, "") || strings.ContainsFunc(s.Model, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.IsSpace(r)
+	}) {
+		return fmt.Errorf("simulation.model must use model or connection-name/model-deployment format, " +
+			"without whitespace or control characters")
 	}
 
 	if s.NumConversations != 0 &&
 		(s.NumConversations < MinNumConversations || s.NumConversations > MaxNumConversations) {
 		return fmt.Errorf(
-			"simulation.num_conversations is %d; it accepts %d to %d",
+			"simulation.numConversations is %d; it accepts %d to %d",
 			s.NumConversations, MinNumConversations, MaxNumConversations)
 	}
 
 	if s.MaxTurns != 0 &&
 		(s.MaxTurns < MinSimulationTurns || s.MaxTurns > MaxSimulationTurns) {
 		return fmt.Errorf(
-			"simulation.max_turns is %d; it accepts %d to %d",
+			"simulation.maxTurns is %d; it accepts %d to %d",
 			s.MaxTurns, MinSimulationTurns, MaxSimulationTurns)
 	}
 

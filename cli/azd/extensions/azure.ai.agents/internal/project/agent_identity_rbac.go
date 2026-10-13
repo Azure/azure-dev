@@ -91,7 +91,15 @@ func assignRoleToIdentity(
 	if err != nil {
 		return false, fmt.Errorf("failed to create role assignments client for role %s: %w", roleName, err)
 	}
+	return assignRoleToIdentityWithClient(ctx, client, principalID, roleID, roleName, scope, principalType)
+}
 
+func assignRoleToIdentityWithClient(
+	ctx context.Context,
+	client *armauthorization.RoleAssignmentsClient,
+	principalID, roleID, roleName, scope string,
+	principalType armauthorization.PrincipalType,
+) (bool, error) {
 	roleDefinitionSuffix := fmt.Sprintf("/roleDefinitions/%s", roleID)
 
 	// Check for existing assignment
@@ -126,7 +134,7 @@ func assignRoleToIdentity(
 
 	// Create assignment
 	fullRoleDefinitionID := fmt.Sprintf(
-		"%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleID)
+		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", extractSubscriptionID(scope), roleID)
 	roleAssignmentName := uuid.New().String()
 	parameters := armauthorization.RoleAssignmentCreateParameters{
 		Properties: &armauthorization.RoleAssignmentProperties{
@@ -136,7 +144,7 @@ func assignRoleToIdentity(
 		},
 	}
 
-	_, err = client.Create(ctx, scope, roleAssignmentName, parameters, nil)
+	_, err := client.Create(ctx, scope, roleAssignmentName, parameters, nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "RoleAssignmentExists") ||
 			strings.Contains(err.Error(), "409") {

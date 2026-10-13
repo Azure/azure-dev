@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"unicode"
@@ -17,6 +16,7 @@ import (
 	"maps"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/joho/godotenv"
 )
 
@@ -145,21 +145,18 @@ type EnvironmentResolver func(ctx context.Context) (*Environment, error)
 
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
-var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
+var EnvironmentNameRegexp = azdcontext.EnvironmentNameRegexp
 
 // The maximum length of an environment name.
 var EnvironmentNameMaxLength = 64
 
 func IsValidEnvironmentName(name string) bool {
-	return EnvironmentNameRegexp.MatchString(name)
+	return azdcontext.IsValidEnvironmentName(name)
 }
 
 // InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
 func InvalidEnvironmentNameError(name string) error {
-	return fmt.Errorf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-		name,
-	)
+	return azdcontext.InvalidEnvironmentNameError(name)
 }
 
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced

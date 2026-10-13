@@ -11,11 +11,13 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
+  - [Structured deploy messages (beta)](#structured-deploy-messages-beta)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
   - [NewListenCommand](#newlistencommand)
+  - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
   - [NewVersionCommand](#newversioncommand)
 - [MCP Server Builder](#mcp-server-builder)
@@ -88,6 +90,56 @@ func main() {
     azdext.Run(rootCmd)
 }
 ```
+
+### Structured deploy messages (beta)
+
+Service-level `predeploy` and `postdeploy` handlers can return structured,
+non-blocking info and warning messages. These are beta-only fields on
+`ServiceHandlerStatus.messages`; each message can include text, a suggestion,
+and links. The stable event API and default language scaffolds are unchanged.
+
+Register a beta handler on the extension host:
+
+```go
+host.WithBetaServiceEventHandler(
+    "postdeploy",
+    func(_ context.Context, args *azdext.ServiceEventArgs) (
+        *azdext.BetaServiceEventResponse, error,
+    ) {
+        return &azdext.BetaServiceEventResponse{
+            Messages: []azdext.BetaServiceEventMessage{{
+                Kind:       azdext.BetaServiceEventMessageWarning,
+                Message:    "Review the service access policy.",
+                Suggestion: "Update the policy before the next deployment.",
+            }},
+        }, nil
+    },
+    nil,
+)
+```
+
+Extensions that adopt this API must set `requiredAzdVersion` in their
+extension manifest to require at least the first azd release that supports
+both subscription acknowledgements and `ServiceHandlerStatus.messages`.
+Set the minimum to that release once its version is known; do not publish
+an adopting extension with an older minimum. Older hosts can time out
+during registration or acknowledge the subscription but ignore returned
+messages. An acknowledgement alone does not establish message support.
+
+The beta event stream must begin with a subscription that includes a
+`request_id` and waits for its acknowledgement. A service status that contains
+messages must echo the invocation's request ID. Legacy beta streams without
+request IDs retain their previous behavior but cannot send structured
+messages.
+
+The host displays returned messages after the deployment table and includes
+them in the `messages` array of deploy/up JSON results. Messages returned
+alongside a handler error are retained, while the error still fails the
+deployment. Use the existing stable `WithServiceEventHandler` for other
+service lifecycle events; do not register both handler APIs for the same
+event.
+See the [extension framework guide](extension-framework.md#event-service)
+for the host behavior and the demo implementation.
 
 ### RunOption / WithPreExecute
 
@@ -206,6 +258,71 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
     host.WithProjectEventHandler("preprovision", myHandler)
 }))
 ```
+
+### Project lifecycle follow-up
+
+The preview API exposes generated clients rather than a project handler
+wrapper. Use `client.EventsBeta().EventStream(ctx)` to open the beta
+bidirectional stream, send a `SubscribeProjectEvent` message for a project
+`post*` event, and wait for a matching `SubscribeProjectEventResponse`
+before signaling `Extension().Ready`. A subscription error must prevent the
+extension from becoming ready. Process each `InvokeProjectHandler` with its
+`invocation_id`; while the handler is active, call:
+
+```go
+_, err := client.CommandResult().SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
+    InvocationId: invocation.GetInvocationId(),
+    Text:         "Next: azd show",
+})
+```
+
+Use an authenticated context for both RPCs. Handle the returned error before
+replying with `ProjectHandlerStatus` on the stream, using the invocation
+message's `request_id` for correlation. Handle stream errors and cancellation;
+send status `completed` only when processing succeeds.
+
+The first subscription selects the beta event stream mode. New clients must
+set a nonempty `request_id` on that subscription, retain request IDs on later
+subscriptions, and echo each project invocation's ID in its status message.
+Request-ID mode rejects later subscriptions or project statuses without an
+ID; service statuses continue to use service and event correlation. A first
+subscription without `request_id` uses legacy stable-event behavior for
+compatibility; that mode has no beta subscription acknowledgement or invocation
+ID and cannot use the beta follow-up API.
+
+The host stages the latest contribution for that invocation and commits it
+only after a successful handler status. Failed, cancelled, disconnected, or
+incomplete invocations are discarded. Call `SetFollowUp` with empty `Text`
+to clear a contribution. Calls outside a project `post*` invocation return
+an error. Stable `Events()` handlers and default language scaffolds do not
+expose this preview capability.
+
+This preview API requires an azd host that provides beta
+`CommandResultService` and invocation IDs. For a published extension that uses
+it, set `requiredAzdVersion` to the first released azd version containing
+`CommandResultService`. For the current release line, use:
+
+```yaml
+requiredAzdVersion: ">=1.35.0"
+```
+
+This filters extension versions during install and update. It does not prevent
+already-installed extensions or extensions from non-registry sources from
+running on an older host. The beta subscription response confirms that the
+host installed the handler; extensions using the raw beta client must wait
+for that response before signaling `Ready`. A missing acknowledgement can
+also indicate a slow host or connection; it does not by itself prove that
+the host lacks support. See [Extension Resolution and
+Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
+for the compatibility behavior.
+
+The host appends committed text to the parent command's human-readable
+completion message and combines contributions from multiple extensions in a
+deterministic order. The text is not included in JSON output. Within a custom
+workflow, a later command step replaces an earlier result from that extension.
+Within one command, lifecycle events use the stable order restore, build,
+package, provision, publish, deploy. Concurrent layers of the same event
+resolve by stable layer identity, not completion time.
 
 ### NewMetadataCommand
 
@@ -566,11 +683,14 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | Accessor | Returns |
 |----------|---------|
 | `Project()` | `ProjectServiceClient` |
+| `ProjectBeta()` | `v1beta.ProjectServiceClient` (preview) |
 | `Environment()` | `EnvironmentServiceClient` |
 | `UserConfig()` | `UserConfigServiceClient` |
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
+| `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
+| `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
@@ -585,7 +705,12 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`AccountBeta()`, `Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their request, response, and enum types. Beta-only methods and types are not exposed through the stable `azdext` contract facade. `Account()` still provides the existing stable account methods.
+`AccountBeta()`, `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`,
+`ProjectBeta()`, and `Telemetry()` are preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. Beta-only methods and types are not
+exposed through the stable `azdext` contract facade. `Account()` still
+provides the existing stable account methods.
 
 #### AccountService
 

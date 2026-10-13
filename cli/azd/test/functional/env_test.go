@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
@@ -223,8 +225,9 @@ func Test_CLI_Env_Unset(t *testing.T) {
 				env := environment.NewWithValues(name, valuesBefore[name])
 				require.NoError(t, env.Config.Set("KEY1", "config-value"))
 				require.NoError(t, store.Save(ctx, env, &environment.SaveOptions{IsNew: true}))
-				var err error
-				configBefore[name], err = os.ReadFile(store.ConfigPath(env))
+				configPath, err := store.ConfigPath(env)
+				require.NoError(t, err)
+				configBefore[name], err = os.ReadFile(configPath)
 				require.NoError(t, err)
 			}
 			require.NoError(t, azdCtx.SetProjectState(azdcontext.ProjectState{
@@ -269,7 +272,11 @@ func Test_CLI_Env_Unset(t *testing.T) {
 
 			for _, name := range []string{"env1", "env2", "ricardo"} {
 				env := environment.New(name)
-				persisted, err := godotenv.Read(store.EnvPath(env))
+				envPath, err := store.EnvPath(env)
+				require.NoError(t, err)
+				configPath, err := store.ConfigPath(env)
+				require.NoError(t, err)
+				persisted, err := godotenv.Read(envPath)
 				require.NoError(t, err)
 				want := maps.Clone(valuesBefore[name])
 				if name == tt.targetEnvironment {
@@ -278,16 +285,118 @@ func Test_CLI_Env_Unset(t *testing.T) {
 					}
 				}
 				require.Equal(t, want, persisted)
-				configAfter, err := os.ReadFile(store.ConfigPath(env))
+				configAfter, err := os.ReadFile(configPath)
 				require.NoError(t, err)
 				require.JSONEq(t, string(configBefore[name]), string(configAfter))
 			}
-			require.NoDirExists(t, azdCtx.EnvironmentRoot("missing"))
+			missingRoot, err := azdCtx.EnvironmentRoot("missing")
+			require.NoError(t, err)
+			require.NoDirExists(t, missingRoot)
 			defaultEnvironment, err := azdCtx.GetDefaultEnvironmentName()
 			require.NoError(t, err)
 			require.Equal(t, tt.defaultEnvironment, defaultEnvironment)
 		})
 	}
+}
+
+func Test_CLI_Env_RejectsPathTraversal(t *testing.T) {
+	credentialServer := azdcli.StartTestCredentialServer(t)
+	t.Cleanup(credentialServer.Close)
+
+	for _, source := range []string{"defaultEnvironment", "flag", "AZURE_ENV_NAME", "directory-link"} {
+		t.Run(source, func(t *testing.T) {
+			commands := [][]string{
+				{"env", "get-values"},
+				{"env", "set", "AZURE_SUBSCRIPTION_ID", "modified"},
+				{"env", "unset", "TRUSTED_MARKER", "--force"},
+			}
+			// Provision uses the environment flag or project default, not AZURE_ENV_NAME.
+			if source != "AZURE_ENV_NAME" {
+				commands = append(commands, []string{"provision"})
+			}
+			for _, command := range commands {
+				t.Run(strings.Join(command, "_"), func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+					defer cancel()
+					dir := t.TempDir()
+					trustedRoot := filepath.Join(dir, "trusted-project", ".azure", "prod")
+					lowProject := filepath.Join(dir, "low-project")
+					require.NoError(t, os.MkdirAll(trustedRoot, 0700))
+					require.NoError(t, os.MkdirAll(filepath.Join(lowProject, ".azure"), 0700))
+					require.NoError(t, os.WriteFile(filepath.Join(lowProject, "azure.yaml"),
+						[]byte("name: low-project\nservices: {}\n"), 0600))
+
+					envPath := filepath.Join(trustedRoot, ".env")
+					configPath := filepath.Join(trustedRoot, "config.json")
+					envBytes := []byte("AZURE_ENV_NAME=prod\nTRUSTED_MARKER=not-for-low-project\n" +
+						"AZURE_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000001\nAZURE_LOCATION=eastus\n")
+					configBytes := []byte(`{"trusted":"unchanged"}`)
+					require.NoError(t, os.WriteFile(envPath, envBytes, 0600))
+					require.NoError(t, os.WriteFile(configPath, configBytes, 0600))
+
+					cli := azdcli.NewCLI(t)
+					cli.WorkingDirectory = lowProject
+					cli.Env = append(os.Environ(), "AZD_CONFIG_DIR="+t.TempDir(),
+						"AZURE_ENV_NAME=", "AZD_FORCE_TTY=false", "NO_COLOR=1", "AZURE_DEV_COLLECT_TELEMETRY=no",
+						"CI=1", "AZD_AUTH_ENDPOINT="+credentialServer.URL, "AZD_AUTH_KEY=local-test-key")
+					const invalidName = "../../trusted-project/.azure/prod"
+					expectedError := "is invalid"
+					args := append([]string{"--no-prompt"}, command...)
+					switch source {
+					case "defaultEnvironment":
+						require.NoError(t, os.WriteFile(filepath.Join(lowProject, ".azure", "config.json"),
+							[]byte(`{"defaultEnvironment":"`+invalidName+`"}`), 0600))
+					case "flag":
+						args = append(args, "--environment", invalidName)
+					case "AZURE_ENV_NAME":
+						cli.Env = append(cli.Env, "AZURE_ENV_NAME="+invalidName)
+					case "directory-link":
+						ostest.DirectoryLink(t, trustedRoot, filepath.Join(lowProject, ".azure", "prod"))
+						require.NoError(t, os.WriteFile(filepath.Join(lowProject, ".azure", "config.json"),
+							[]byte(`{"defaultEnvironment":"prod"}`), 0600))
+						expectedError = "must not be a symbolic link or reparse point"
+					}
+
+					result, err := cli.RunCommand(ctx, args...)
+					require.Error(t, err)
+					require.NotNil(t, result)
+					require.Contains(t, result.Stdout+result.Stderr, expectedError)
+					require.NotContains(t, result.Stdout+result.Stderr, "not-for-low-project")
+					actualEnv, err := os.ReadFile(envPath)
+					require.NoError(t, err)
+					require.Equal(t, envBytes, actualEnv)
+					actualConfig, err := os.ReadFile(configPath)
+					require.NoError(t, err)
+					require.Equal(t, configBytes, actualConfig)
+					require.NoFileExists(t, filepath.Join(trustedRoot, ".env.lock"))
+				})
+			}
+		})
+	}
+}
+
+func Test_CLI_Env_ListSkipsInvalidEntries(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, ".azure")
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "dev"), 0700))
+	require.NoError(t, os.Mkdir(filepath.Join(base, "my env"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"),
+		[]byte("name: test-project\nservices: {}\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "config.json"),
+		[]byte(`{"defaultEnvironment":"dev"}`), 0600))
+	ostest.DirectoryLink(t, t.TempDir(), filepath.Join(base, "linked"))
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZD_CONFIG_DIR="+t.TempDir(),
+		"AZURE_ENV_NAME=", "AZD_FORCE_TTY=false", "NO_COLOR=1", "AZURE_DEV_COLLECT_TELEMETRY=no", "CI=1")
+	result, err := cli.RunCommand(t.Context(), "env", "list", "--output", "json")
+	require.NoError(t, err)
+	var envs []contracts.EnvListEnvironment
+	require.NoError(t, json.Unmarshal([]byte(result.Stdout), &envs))
+	require.Len(t, envs, 1)
+	require.Equal(t, "dev", envs[0].Name)
+	require.True(t, envs[0].IsDefault)
 }
 
 func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {

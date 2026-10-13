@@ -80,7 +80,7 @@ func TestProbeAgentDefinitionForInitIgnoresRuntimeDefinitionPath(t *testing.T) {
 			require.Equal(t, "hosted", string(kind))
 			require.True(t, proto.Equal(before, svc), "init kind probe mutated the original service")
 
-			_, _, _, err = projectpkg.LoadAgentDefinition(svc, root)
+			_, _, _, err = projectpkg.LoadHostedAgentDefinition(svc, root)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)

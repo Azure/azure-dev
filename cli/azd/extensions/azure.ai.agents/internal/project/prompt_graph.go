@@ -49,7 +49,8 @@ type promptNode struct {
 // registration (dependency) order. None of this machinery is exposed in YAML.
 type promptGraph struct {
 	// agentDir anchors the definition's conventional skills/ folder.
-	agentDir string
+	agentDir    string
+	projectRoot string
 
 	// managed is the parsed agent definition. Nodes may enrich managed.Tools
 	// with resolved bindings before publish.
@@ -124,8 +125,14 @@ func newPromptGraph(
 		bindings:   map[string]any{},
 	}
 
-	// The model deployment is resolved first: create-if-missing so the harness
-	// has a model to bind to before the agent version is published.
+	// Gate graph resolution on Connection readiness before
+	// later nodes can mutate resources such as a Memory Store.
+	if node := connectionsNode(g); node != nil {
+		g.nodes = append(g.nodes, *node)
+	}
+
+	// Resolve the model before the harness binds to it and publishes the
+	// agent.
 	if node := deploymentNode(g, func() (deploymentResolver, error) {
 		return provisionedDeploymentResolver{}, nil
 	}); node != nil {
@@ -169,12 +176,6 @@ func newPromptGraph(
 		if node := skillsShellNode(g, skills, managed.Toolbox); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
-	}
-
-	// Connections are deployed by sibling azure.ai.connection services. This
-	// node only verifies their deployment markers before publishing the agent.
-	if node := connectionsNode(g); node != nil {
-		g.nodes = append(g.nodes, *node)
 	}
 
 	// The agent node is terminal and validated last.
@@ -270,13 +271,8 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 		progress(fmt.Sprintf("Prompt graph nodes: %s", strings.Join(kinds, ", ")))
 	}
 
-	for _, n := range g.nodes {
-		if n.Validate == nil {
-			continue
-		}
-		if err := n.Validate(); err != nil {
-			return err
-		}
+	if err := g.validate(); err != nil {
+		return err
 	}
 
 	// Reported after validation and before any node injects its own tools, so
@@ -306,6 +302,25 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 	return nil
 }
 
+func (g *promptGraph) validate() error {
+	if err := g.managed.ValidateAuthoredSkills(); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			err.Error(),
+			"specify only one version for each skill under 'skills:'",
+		)
+	}
+	for _, n := range g.nodes {
+		if n.Validate == nil {
+			continue
+		}
+		if err := n.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resolvePromptAgentGraph builds and resolves the deploy graph for a prompt
 // agent. It is called by deployPromptAgent before the create request is built,
 // so any resolved bindings are reflected in the published agent definition.
@@ -328,6 +343,7 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 		return nil, err
 	}
 	g.projectServices = p.projectServices
+	g.projectRoot = p.projectPath
 	g.agentService = p.serviceConfig
 	g.dependencyEnabled = p.dependencyEnabled
 	if err := g.resolve(ctx, progress); err != nil {

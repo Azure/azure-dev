@@ -30,23 +30,31 @@ func TestRefuseUnknownBuiltins_RefusesANameTheCatalogueDoesNotOffer(t *testing.T
 		"the error lists what the project does offer")
 }
 
-// An unreadable catalogue is the offline case, and it must behave exactly as
-// init did before: no opinion, reference left as written. Refusing here would
-// turn every disconnected init into a failure, which is worse than the bug.
+// A nil catalogue is the offline case, and it must behave exactly as init did
+// before: no opinion, reference left as written. Refusing here would turn every
+// disconnected init into a failure, which is worse than the bug.
 func TestRefuseUnknownBuiltins_NoCatalogueMeansNoOpinion(t *testing.T) {
 	t.Parallel()
 
-	for _, known := range [][]string{nil, {}} {
-		assert.NoError(t, refuseUnknownBuiltins(
-			[]string{"builtin.does_not_exist", "builtin.anything_at_all"}, known),
-			"an unread catalogue cannot refuse anything")
-	}
+	assert.NoError(t, refuseUnknownBuiltins(
+		[]string{"builtin.does_not_exist", "builtin.anything_at_all"}, nil),
+		"an unread catalogue cannot refuse anything")
 }
 
-// A builtin the picker never offers is still valid -- the offered four are a
-// subset of the catalogue, which is the whole reason a local list cannot be the
-// check.
-func TestRefuseUnknownBuiltins_AcceptsBuiltinsOutsideTheOfferedFour(t *testing.T) {
+func TestRefuseUnknownBuiltins_EmptyReadCatalogueRefusesEverything(t *testing.T) {
+	t.Parallel()
+
+	err := refuseUnknownBuiltins(
+		[]string{"builtin.output_quality"}, []string{})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "builtin.output_quality")
+}
+
+// A builtin the picker never offers is still valid -- the picker
+// choices are a subset of the catalogue, which is the whole reason a local
+// list cannot be the check.
+func TestRefuseUnknownBuiltins_AcceptsBuiltinsOutsideTheRecommendations(t *testing.T) {
 	t.Parallel()
 
 	known := []string{

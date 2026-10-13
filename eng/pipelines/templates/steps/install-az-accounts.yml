@@ -3,34 +3,22 @@ steps:
       $ErrorActionPreference = 'Stop'
       $requiredVersion = '5.5.3'
 
-      # Ensure PSGallery is registered and trusted
-      $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
-      if (-not $repository) {
-        # Set PSGallery source directly to bypass Register-PSRepository issues on Ubuntu
-        Register-PSRepository -Name PSGallery -SourceLocation 'https://www.powershellgallery.com/api/v2' -ErrorAction Stop
-        $repository = Get-PSRepository -Name PSGallery -ErrorAction Stop
-        Write-Host "Registered PSGallery from https://www.powershellgallery.com/api/v2"
-      }
-
-      if ($repository.InstallationPolicy -ne 'Trusted') {
-        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-        Write-Host "Set PSGallery InstallationPolicy to Trusted"
-      }
-
-      # Install Az.Accounts with retries
+      # Try to install Az.Accounts with retries (will use available package sources)
       $maxRetries = 3
       $retryCount = 0
+      $installed = $false
+
       while ($retryCount -lt $maxRetries) {
         try {
           Write-Host "Attempt $($retryCount + 1)/$($maxRetries): Installing Az.Accounts $requiredVersion..."
           Install-Module `
             -Name Az.Accounts `
             -RequiredVersion $requiredVersion `
-            -Repository PSGallery `
             -Scope CurrentUser `
             -Force `
             -AllowClobber `
             -ErrorAction Stop
+          $installed = $true
           break
         } catch {
           $retryCount++
@@ -40,6 +28,10 @@ steps:
           Write-Host "Installation failed, retrying... Error: $_"
           Start-Sleep -Seconds 2
         }
+      }
+
+      if (-not $installed) {
+        throw "Az.Accounts $requiredVersion installation did not complete."
       }
 
       $module = Get-Module -Name Az.Accounts -ListAvailable |

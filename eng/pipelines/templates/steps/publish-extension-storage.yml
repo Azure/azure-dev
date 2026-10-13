@@ -14,7 +14,7 @@ steps:
       Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
     displayName: Remove _manifest folder
 
-  - template: /eng/pipelines/templates/steps/install-az-accounts.yml
+  - template: /eng/pipelines/templates/steps/install-azcopy.yml
 
   - task: AzurePowerShell@5
     displayName: Upload release to storage account
@@ -36,4 +36,4 @@ steps:
           }
         }
     env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+      AZCOPY_AUTO_LOGIN_TYPE: 'MSI'

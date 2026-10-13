@@ -995,7 +995,11 @@ function renderRolloutList() {
       body.append(divider);
       previousAttempt = attempt;
     }
-    const row = element("tr");
+    const row = element("tr", undefined, "rollout-row");
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button, a") || window.getSelection()?.toString()) return;
+      openRollout(entry.rollout_id);
+    });
     if (hasSequence) row.append(element("td", String(entry.sequence_id ?? entry.sequence ?? "—")));
     const open = element("button", short(entry.rollout_id, 14), "link-button");
     open.type = "button";

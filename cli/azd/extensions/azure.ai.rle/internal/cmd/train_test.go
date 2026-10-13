@@ -171,19 +171,6 @@ func TestResolveLocalFilePath(t *testing.T) {
 	}
 }
 
-func TestResolveFinetuneEndpointPrefersFlag(t *testing.T) {
-	endpoint, err := resolveFinetuneEndpoint(
-		"https://from-flag.openai.azure.com",
-		"https://account.services.ai.azure.com/api/projects/project",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint != "https://from-flag.openai.azure.com" {
-		t.Fatalf("expected flag value to take precedence, got %q", endpoint)
-	}
-}
-
 func TestFinetuneEndpointDerivesAccountFromFoundryProject(t *testing.T) {
 	endpoint, err := finetuneEndpointFromFoundryProject(
 		"https://My-Account.services.ai.azure.com/api/projects/project",
@@ -210,7 +197,6 @@ func TestResolveFinetuneEndpointDefaultsToTheFoundryAccount(t *testing.T) {
 	t.Setenv(rleTrainEndpointEnvVar, "")
 
 	endpoint, err := resolveFinetuneEndpoint(
-		"",
 		"https://Account.services.ai.azure.com/api/projects/project",
 	)
 	if err != nil {
@@ -225,7 +211,6 @@ func TestResolveFinetuneEndpointPrefersTheEnvironmentOverTheDefault(t *testing.T
 	t.Setenv(rleTrainEndpointEnvVar, "https://from-env.example.com")
 
 	endpoint, err := resolveFinetuneEndpoint(
-		"",
 		"https://account.services.ai.azure.com/api/projects/project",
 	)
 	if err != nil {
@@ -233,21 +218,6 @@ func TestResolveFinetuneEndpointPrefersTheEnvironmentOverTheDefault(t *testing.T
 	}
 	if endpoint != "https://from-env.example.com" {
 		t.Fatalf("expected %s to take precedence, got %q", rleTrainEndpointEnvVar, endpoint)
-	}
-}
-
-func TestResolveFinetuneEndpointPrefersTheFlagOverTheEnvironment(t *testing.T) {
-	t.Setenv(rleTrainEndpointEnvVar, "https://from-env.example.com")
-
-	endpoint, err := resolveFinetuneEndpoint(
-		"https://from-flag.openai.azure.com",
-		"https://account.services.ai.azure.com/api/projects/project",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint != "https://from-flag.openai.azure.com" {
-		t.Fatalf("expected the flag to take precedence, got %q", endpoint)
 	}
 }
 

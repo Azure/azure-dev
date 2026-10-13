@@ -695,7 +695,7 @@ No local manifest, dataset, log mirror, or running monitor is needed.
 Cancellation uses the [Foundry Azure OpenAI fine-tuning cancel API](https://learn.microsoft.com/rest/api/microsoft-foundry/azureopenai/fine-tuning#cancel-fine-tuning-job):
 `POST /openai/v1/fine_tuning/jobs/<job-id>/cancel`. It does not cancel an
 individual RLE rollout or Loom session. Use the same endpoint that submitted
-the job: `--endpoint` overrides `RLE_TRAIN_ENDPOINT`, which overrides the
+the job: `RLE_TRAIN_ENDPOINT` overrides the
 Azure OpenAI account endpoint derived from the Foundry project.
 
 The command prints the returned job status and exits without polling or opening
@@ -782,13 +782,13 @@ reported as read errors. Legacy `job_id` responses and root-level configuration
 are not supported. Neither the RLE job's status nor `metadata.status` drives status polling.
 Only `succeeded`, `failed`, and `cancelled` are treated as terminal job statuses,
 matching the fine-tuning API v1 contract.
-`monitor --job-id` no longer accepts `--endpoint`; `RLE_TRAIN_ENDPOINT` does not
+`RLE_TRAIN_ENDPOINT` does not
 affect status polling, including the monitor opened by `train`.
 
 ### Facade monitoring (endpoint override)
 
-An explicit `--endpoint` or non-empty `RLE_TRAIN_ENDPOINT` preserves the existing
-facade path, even if an explicit endpoint happens to name an OpenAI resource.
+A non-empty `RLE_TRAIN_ENDPOINT` preserves the existing
+facade path, even if the endpoint happens to name an OpenAI resource.
 On this path, `train` mirrors the run's artifacts to the local disk as they are
 written and waits for the job to finish, by default:
 
@@ -917,8 +917,8 @@ azd ai rle jobs --output json
 The command requests only `rl_environment` jobs from the fine-tuning API and
 verifies that filter before it renders results. Both table and JSON output use
 the fine-tuning API's status directly, not the RLE job API's status.
-Use `--endpoint` to query a
-different fine-tuning resource for a single invocation.
+Set `RLE_TRAIN_ENDPOINT` to query a
+different fine-tuning resource.
 
 ## Build and install from source
 

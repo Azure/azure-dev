@@ -234,7 +234,7 @@ func (a *trainAction) Run() error {
 			),
 		}
 	}
-	endpoint, err := resolveFinetuneEndpoint("", projectEndpoint)
+	endpoint, err := resolveFinetuneEndpoint(projectEndpoint)
 	if err != nil {
 		return err
 	}

@@ -249,7 +249,7 @@ func (a *rolloutAction) executeAndSave(
 		// A hosted deployment has no weights to pin, so there is no session or checkpoint to create.
 		policy = &rolloutPolicy{
 			Type:            foundryPolicyType,
-			ModelName:       model,
+			DeploymentName:  model,
 			ProjectEndpoint: target.projectEndpoint,
 		}
 	} else {

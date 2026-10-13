@@ -53,6 +53,7 @@ const foundryPolicyType = "foundry"
 type rolloutPolicy struct {
 	Type            string `json:"type"`
 	ModelName       string `json:"model_name,omitempty"`
+	DeploymentName  string `json:"deployment_name,omitempty"`
 	ProjectEndpoint string `json:"project_endpoint,omitempty"`
 	SessionID       string `json:"session_id,omitempty"`
 	CheckpointID    string `json:"checkpoint_id,omitempty"`

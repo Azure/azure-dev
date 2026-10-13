@@ -387,11 +387,14 @@ func TestRolloutRunWithFoundryBackendSendsAFoundryPolicyAndCreatesNoLoomSession(
 		if !ok {
 			t.Fatalf("expected a policy object on the wire, got %v", wire)
 		}
-		if policy["type"] != "foundry" || policy["model_name"] != "gpt-5-mini" {
+		if policy["type"] != "foundry" || policy["deployment_name"] != "gpt-5-mini" {
 			t.Fatalf("expected a foundry policy naming the deployment, got %v", policy)
 		}
 		if policy["project_endpoint"] == "" {
 			t.Fatal("expected the project endpoint to be forwarded")
+		}
+		if _, ok := policy["model_name"]; ok {
+			t.Fatalf("model_name must not be sent for a foundry policy, got %v", policy)
 		}
 		for _, loomOnly := range []string{"session_id", "checkpoint_id", "sequence_id"} {
 			if _, present := policy[loomOnly]; present {

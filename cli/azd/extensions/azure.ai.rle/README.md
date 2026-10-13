@@ -170,7 +170,14 @@ Traces are disabled by default. Enable them at publish time with:
 azd ai rle publish --enable-traces
 ```
 
-This serializes `{"traces":{"enabled":true}}`. When enabled, the service routes traces to the owning RLE Foundry project; the CLI does not accept a destination project. Omitting the flag omits `traces`, which the service treats as disabled. Use `--enable-traces=false` to send an explicit disabled value.
+This serializes `{"traces":{"enabled":true}}`. When enabled, the service routes traces to the owning RLE Foundry project and defaults trace content to metadata. Select the content explicitly with:
+
+```powershell
+azd ai rle publish --enable-traces --trace-content metadata
+azd ai rle publish --enable-traces --trace-content full
+```
+
+The explicit selections serialize as `traces.content_mode` with `metadata` or `full`. `--trace-content` requires `--enable-traces=true`. Omitting `--trace-content` leaves `content_mode` out of the request so the service applies its metadata default. The CLI does not accept a destination project. Omitting `--enable-traces` omits `traces`, which the service treats as disabled. Use `--enable-traces=false` to send an explicit disabled value.
 
 If needed, override the Dockerfile path the same way as local run:
 
@@ -194,7 +201,7 @@ azd ai rle list --output json
 
 ### 5. Show environment details
 
-Show the full details for a specific environment, including version history:
+Show the full details for a specific environment, including version history and trace content mode when the service returns it:
 
 ```powershell
 azd ai rle show code_rl

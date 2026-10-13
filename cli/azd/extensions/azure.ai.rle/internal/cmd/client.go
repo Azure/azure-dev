@@ -43,20 +43,22 @@ type v1EnvironmentRequest struct {
 }
 
 type tracesConfiguration struct {
-	Enabled bool `json:"enabled"`
+	Enabled     bool   `json:"enabled"`
+	ContentMode string `json:"content_mode,omitempty"`
 }
 
 type environmentResource struct {
-	Id                        string `json:"id"`
-	ProjectId                 string `json:"projectId,omitempty"`
-	Name                      string `json:"name,omitempty"`
-	AcrImagePath              string `json:"acrImagePath,omitempty"`
-	Version                   string `json:"version,omitempty"`
-	CreatedAt                 string `json:"createdAtUtc,omitempty"`
-	UpdatedAt                 string `json:"updatedAtUtc,omitempty"`
-	VersionLabel              string `json:"versionLabel,omitempty"`
-	DiskImageConversionStatus string `json:"diskImageConversionStatus,omitempty"`
-	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
+	Id                        string               `json:"id"`
+	ProjectId                 string               `json:"projectId,omitempty"`
+	Name                      string               `json:"name,omitempty"`
+	AcrImagePath              string               `json:"acrImagePath,omitempty"`
+	Version                   string               `json:"version,omitempty"`
+	CreatedAt                 string               `json:"createdAtUtc,omitempty"`
+	UpdatedAt                 string               `json:"updatedAtUtc,omitempty"`
+	VersionLabel              string               `json:"versionLabel,omitempty"`
+	DiskImageConversionStatus string               `json:"diskImageConversionStatus,omitempty"`
+	DiskImageConversionError  string               `json:"diskImageConversionError,omitempty"`
+	Traces                    *tracesConfiguration `json:"traces,omitempty"`
 }
 
 type pagedEnvironmentResponse struct {

@@ -24,8 +24,8 @@ func newShowCommand(outputFormat *string) *cobra.Command {
 		Long: `Show RLE environment details.
 
 The command resolves the environment from the Foundry project and includes its
-full version history. With no environment name, it uses the name saved in
-.azd-rle.json.`,
+full version history and trace content mode when returned. With no environment
+name, it uses the name saved in .azd-rle.json.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""
@@ -71,16 +71,24 @@ func (a *showAction) Run() error {
 		rows = append(rows, []string{
 			version.Version,
 			version.DiskImageConversionStatus,
+			traceContentMode(version.Traces),
 			version.Id,
 			version.UpdatedAt,
 		})
 	}
 	renderTableOrNoResults(output,
-		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
+		[]string{"VERSION", "DISK IMAGE", "TRACE CONTENT", "ENVIRONMENT ID", "UPDATED"},
 		rows,
 		noEnvironmentVersionsMessage,
 	)
 	return nil
+}
+
+func traceContentMode(traces *tracesConfiguration) string {
+	if traces == nil {
+		return ""
+	}
+	return traces.ContentMode
 }
 
 func (a *showAction) resolveTarget() ([]environmentResource, error) {

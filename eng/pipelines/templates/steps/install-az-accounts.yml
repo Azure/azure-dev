@@ -3,27 +3,44 @@ steps:
       $ErrorActionPreference = 'Stop'
       $requiredVersion = '5.5.3'
 
+      # Ensure PSGallery is registered and trusted
       $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
       if (-not $repository) {
-        Register-PSRepository -Default
-        $repository = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
-      }
-
-      if (-not $repository) {
-        throw "Failed to find or register PSGallery."
+        # Set PSGallery source directly to bypass Register-PSRepository issues on Ubuntu
+        Register-PSRepository -Name PSGallery -SourceLocation 'https://www.powershellgallery.com/api/v2' -ErrorAction Stop
+        $repository = Get-PSRepository -Name PSGallery -ErrorAction Stop
+        Write-Host "Registered PSGallery from https://www.powershellgallery.com/api/v2"
       }
 
       if ($repository.InstallationPolicy -ne 'Trusted') {
-        Set-PSRepository -Name $repository.Name -InstallationPolicy Trusted
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        Write-Host "Set PSGallery InstallationPolicy to Trusted"
       }
 
-      Install-Module `
-        -Name Az.Accounts `
-        -RequiredVersion $requiredVersion `
-        -Repository $repository.Name `
-        -Scope CurrentUser `
-        -Force `
-        -AllowClobber
+      # Install Az.Accounts with retries
+      $maxRetries = 3
+      $retryCount = 0
+      while ($retryCount -lt $maxRetries) {
+        try {
+          Write-Host "Attempt $($retryCount + 1)/$($maxRetries): Installing Az.Accounts $requiredVersion..."
+          Install-Module `
+            -Name Az.Accounts `
+            -RequiredVersion $requiredVersion `
+            -Repository PSGallery `
+            -Scope CurrentUser `
+            -Force `
+            -AllowClobber `
+            -ErrorAction Stop
+          break
+        } catch {
+          $retryCount++
+          if ($retryCount -ge $maxRetries) {
+            throw "Failed to install Az.Accounts after $($maxRetries) attempts: $_"
+          }
+          Write-Host "Installation failed, retrying... Error: $_"
+          Start-Sleep -Seconds 2
+        }
+      }
 
       $module = Get-Module -Name Az.Accounts -ListAvailable |
         Where-Object Version -eq $requiredVersion |

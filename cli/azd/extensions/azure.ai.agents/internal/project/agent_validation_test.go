@@ -94,6 +94,39 @@ func TestValidateAgentServiceDefinitionSupportedKinds(t *testing.T) {
 	}
 }
 
+func TestValidateAgentServiceDefinitionPromptConnectionsWithoutProjectContext(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name        string
+		connections []any
+		wantError   string
+	}{
+		{name: "sibling reference", connections: []any{"search"}},
+		{name: "empty reference", connections: []any{""}, wantError: "empty sibling reference"},
+		{name: "blank reference", connections: []any{"   "}, wantError: "empty sibling reference"},
+	} {
+		for _, source := range []string{"inline", "root-ref"} {
+			t.Run(tt.name+"/"+source, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				values := map[string]any{
+					"kind": "prompt", "name": "prompt-agent", "model": "gpt-4.1-mini",
+					"instructions": "Help the user.", "connections": tt.connections,
+				}
+				svc := validationTestService(t, root, source, values)
+
+				_, err := ValidateAgentServiceDefinition(svc, root)
+
+				if tt.wantError == "" {
+					require.NoError(t, err)
+					return
+				}
+				require.ErrorContains(t, err, tt.wantError)
+			})
+		}
+	}
+}
+
 func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 	tests := []struct {
 		name               string

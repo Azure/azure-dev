@@ -4,10 +4,82 @@
 package project
 
 import (
+	"context"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type developerRBACAccountClient struct {
+	v1beta.AccountServiceClient
+	response       *v1beta.GetCurrentPrincipalResponse
+	err            error
+	subscriptionID string
+}
+
+func (c *developerRBACAccountClient) GetCurrentPrincipal(
+	_ context.Context, req *v1beta.GetCurrentPrincipalRequest, _ ...grpc.CallOption,
+) (*v1beta.GetCurrentPrincipalResponse, error) {
+	c.subscriptionID = req.GetSubscriptionId()
+	return c.response, c.err
+}
+
+func TestDeveloperRBACPrincipal(t *testing.T) {
+	lookupErr := status.Error(codes.PermissionDenied, "subscription unavailable")
+	tests := []struct {
+		name     string
+		response *v1beta.GetCurrentPrincipalResponse
+		err      error
+		wantType armauthorization.PrincipalType
+		wantErr  string
+	}{
+		{
+			name: "resource tenant guest user",
+			response: &v1beta.GetCurrentPrincipalResponse{
+				ObjectId: "resource-tenant-object-id", PrincipalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER,
+			},
+			wantType: armauthorization.PrincipalTypeUser,
+		},
+		{
+			name: "service principal",
+			response: &v1beta.GetCurrentPrincipalResponse{
+				ObjectId: "service-principal-object-id", PrincipalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
+			},
+			wantType: armauthorization.PrincipalTypeServicePrincipal,
+		},
+		{name: "lookup failure", err: lookupErr, wantErr: "subscription unavailable"},
+		{name: "empty ID", response: &v1beta.GetCurrentPrincipalResponse{}, wantErr: "empty current principal object ID"},
+		{
+			name: "unsupported type", response: &v1beta.GetCurrentPrincipalResponse{ObjectId: "object-id"},
+			wantErr: "unsupported current principal type",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &developerRBACAccountClient{response: tt.response, err: tt.err}
+			id, principalType, err := developerRBACPrincipal(t.Context(), account, "selected-subscription")
+			assert.Equal(t, "selected-subscription", account.subscriptionID)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, id)
+				assert.Empty(t, principalType)
+				if tt.err != nil {
+					assert.ErrorIs(t, err, tt.err)
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.response.ObjectId, id)
+			assert.Equal(t, tt.wantType, principalType)
+		})
+	}
+}
 
 func TestNormalizeLoginServer(t *testing.T) {
 	tests := []struct {

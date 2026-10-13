@@ -310,7 +310,10 @@ func TestAgentServiceAddStructNumbers(t *testing.T) {
 
 func TestAgentServiceAddCommand_RejectsUnsafeNumbersWithoutWriting(t *testing.T) {
 	t.Parallel()
-	for _, number := range []string{"9007199254740993", "-9007199254740993"} {
+	for _, number := range []string{
+		"9007199254740993", "-9007199254740993",
+		"18446744073709551617", "-18446744073709551617",
+	} {
 		for _, field := range []string{"hooks", "config", "custom"} {
 			t.Run(number+"/"+field, func(t *testing.T) {
 				projectRoot := t.TempDir()
@@ -417,6 +420,57 @@ func TestAgentServiceAddCommand_RejectsLossyScalarTokens(t *testing.T) {
 			require.Empty(t, client.setRequests)
 			require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
 		})
+	}
+}
+
+func TestAgentServiceAddCommand_RejectsLossyProjectScalars(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		fields string
+		path   string
+		value  string
+	}{
+		{"date", "customDate: 2025-01-01", "customDate", "2025-01-01"},
+		{"decimal", "customDecimal: 0.123456789012345678901",
+			"customDecimal", "0.123456789012345678901"},
+		{"nested", "custom: {items: [{token: 9007199254740993.0}]}",
+			"custom.items[0].token", "9007199254740993.0"},
+		{"overflow", "customNumber: 18446744073709551617",
+			"customNumber", "18446744073709551617"},
+		{"alias", "custom: {original: &value 0.123456789012345678901, copied: *value}",
+			"custom.original", "0.123456789012345678901"},
+	} {
+		for _, mutation := range []string{"add", "update"} {
+			t.Run(test.name+"/"+mutation, func(t *testing.T) {
+				projectRoot := t.TempDir()
+				services := "  ai-project:\n    host: azure.ai.project\n"
+				if mutation == "update" {
+					services += "  support-agent:\n    host: azure.ai.agent\n    $ref: ./definitions/old.yaml\n"
+				}
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectRoot, "azure.yaml"),
+					[]byte("name: fixture\n"+test.fields+"\nservices:\n"+services),
+					0o600,
+				))
+				writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+				before := snapshotAgentServiceAddProjectTree(t, projectRoot)
+				client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+				stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+					t, client, "support-agent", "--file", "./definitions/support.yaml",
+				)
+				require.ErrorContains(t, err, `field "`+test.path+`"`)
+				require.ErrorContains(t, err, "cannot be preserved losslessly")
+				localError, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, "invalid_service_config", localError.Code)
+				require.NotContains(t, err.Error()+stdout+stderr, test.value)
+				require.Empty(t, client.addRequests)
+				require.Empty(t, client.setRequests)
+				require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
+			})
+		}
 	}
 }
 
@@ -965,6 +1019,9 @@ func TestAgentServiceAddCommand_PersistsThroughProjectServiceClient(t *testing.T
     safeLargeInteger: 9007199254740994
     safePowerOfTwo: 1152921504606846976
     $ref: ./definitions/old.yaml
+customDate: "2025-01-01"
+customDecimal: 0.1
+customTemplate: ${CUSTOM_VALUE}
 `)
 	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
 
@@ -1010,6 +1067,9 @@ func TestAgentServiceAddCommand_PersistsThroughProjectServiceClient(t *testing.T
 	require.NoError(t, err)
 	var document map[string]any
 	require.NoError(t, yaml.Unmarshal(data, &document))
+	require.Equal(t, "2025-01-01", document["customDate"])
+	require.Equal(t, 0.1, document["customDecimal"])
+	require.Equal(t, "${CUSTOM_VALUE}", document["customTemplate"])
 	services, ok := document["services"].(map[string]any)
 	require.True(t, ok)
 	agent, ok := services["support-agent"].(map[string]any)

@@ -710,8 +710,7 @@ Ctrl+C in `train` or `monitor` still stops local monitoring, not the remote job.
 Without `RLE_TRAIN_ENDPOINT`, **train opens the job monitor
 after submission by default**, even with redirected output or `--no-prompt`;
 pass `--no-follow` to skip it and exit immediately instead. Keep the process
-running to use the UI; Ctrl+C stops monitoring, not training. `--no-browser`
-prints the URL without opening a browser. Explicit `--output` is rejected on
+running to use the UI; Ctrl+C stops monitoring, not training. Explicit `--output` is rejected on
 this path rather than silently ignored.
 
 Reopen the same monitor from any machine with project access:
@@ -836,8 +835,7 @@ It opens empty, because the first rollout and the first step of a run both take
 minutes. The page polls as the run records them, so rollouts and steps appear
 without reloading, and any rollout can be opened while the run continues. The
 dashboard stays up after the run finishes -- that is when its rollouts are
-finally all there to read -- so stop it with Ctrl+C. `--no-browser` prints the
-address without opening a browser.
+finally all there to read -- so stop it with Ctrl+C.
 
 With `--no-follow`, the command exits as soon as the job is accepted, so there is
 nothing left to serve a dashboard from. It names the command that opens one

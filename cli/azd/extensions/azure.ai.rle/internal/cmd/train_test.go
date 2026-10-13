@@ -399,7 +399,6 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 			rleVersion:   "1.0.0",
 			model:        "Qwen/Qwen3-32B",
 			trainingFile: trainingFilePath,
-			noBrowser:    true,
 		},
 	}
 
@@ -591,7 +590,7 @@ func TestTrainServesTheRolloutDashboardUntilItIsStopped(t *testing.T) {
 
 	logsRoot := t.TempDir()
 	action, output := stubbedTrain(t, ctx,
-		&rleTrainFlags{noBrowser: true, logsRoot: logsRoot})
+		&rleTrainFlags{logsRoot: logsRoot})
 
 	returned := make(chan error, 1)
 	go func() { returned <- action.Run() }()

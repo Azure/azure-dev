@@ -41,7 +41,7 @@ func stubAPIJobMonitor(t *testing.T) {
 func TestTrainAndMonitorUseTheSameAPIBackendRegardlessOfEndpoint(t *testing.T) {
 	for _, env := range []string{"", "https://facade.example.com"} {
 		t.Run("env="+env, func(t *testing.T) {
-			action, _ := stubbedTrain(t, t.Context(), &rleTrainFlags{noBrowser: true})
+			action, _ := stubbedTrain(t, t.Context(), &rleTrainFlags{})
 			t.Setenv(rleTrainEndpointEnvVar, env)
 			stubAPIJobMonitor(t)
 			calls := 0
@@ -50,7 +50,7 @@ func TestTrainAndMonitorUseTheSameAPIBackendRegardlessOfEndpoint(t *testing.T) {
 			) error {
 				calls++
 				s, ok := source.(*rleJobSource)
-				if !ok || id != realMonitorJobID || !noBrowser || s.jobID != id ||
+				if !ok || id != realMonitorJobID || s.jobID != id ||
 					s.rle.baseUrl != "https://account.services.ai.azure.com/api/projects/project" {
 					t.Fatalf("unexpected monitor source: %#v", source)
 				}
@@ -446,7 +446,7 @@ func TestMonitorErrorKeepsCorrelationIDs(t *testing.T) {
 }
 
 func TestRealMonitorFailureDoesNotResubmit(t *testing.T) {
-	action, output := stubbedTrain(t, t.Context(), &rleTrainFlags{noBrowser: true})
+	action, output := stubbedTrain(t, t.Context(), &rleTrainFlags{})
 	stubAPIJobMonitor(t)
 	calls := 0
 	runAPIJobMonitor = func(context.Context, monitor.JobSource, string, bool, io.Writer, io.Writer) error {

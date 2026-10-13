@@ -27,7 +27,6 @@ type rleTrainFlags struct {
 	suffix         string
 	noFollow       bool
 	logsRoot       string
-	noBrowser      bool
 
 	// Where the merged settings came from, for the line printed before submitting.
 	optionsSource string
@@ -64,8 +63,7 @@ By default train also streams the run's logs and metrics to a local mirror
 (--logs-root), in the layout the Loom dashboard reads, and opens a local
 monitor that stays running until Ctrl+C (including in non-interactive runs).
 The monitor reads RLE APIs into memory; no training files are mirrored beyond
-that stream. Ctrl+C stops monitoring, not the remote job. Use --no-browser to
-open the link manually.
+that stream. Ctrl+C stops monitoring, not the remote job.
 
 Pass --no-follow to skip both: the command submits the job, prints the
 azd ai rle monitor command that reopens it later, and exits immediately
@@ -89,8 +87,6 @@ instead of blocking.`,
 	cmd.Flags().StringVar(&flags.logsRoot, "logs-root", "",
 		"Where the local log/metric mirror is written. Defaults to $LOOM_LOGS_ROOT, else "+
 			"~/loom-runs. Ignored with --no-follow.")
-	cmd.Flags().BoolVar(&flags.noBrowser, "no-browser", false,
-		"Print the job monitor address without opening a browser.")
 
 	// model and training-file are not marked required: rle.toml can supply either,
 	// and cobra would reject the run before the manifest is ever read.
@@ -364,7 +360,7 @@ func (a *trainAction) followJob(
 	dashboard := make(chan struct{})
 	go func() {
 		defer close(dashboard)
-		if err := runRealJobMonitor(ctx, a.cmd, projectEndpoint, jobID, a.flags.noBrowser); err != nil {
+		if err := runRealJobMonitor(ctx, a.cmd, projectEndpoint, jobID, false); err != nil {
 			// The stream is the part that must keep working; a dashboard that
 			// cannot start is worth saying once and no more.
 			fmt.Fprintf(a.cmd.ErrOrStderr(), "The job monitor did not start: %v\n", err)

@@ -369,14 +369,15 @@ func validateTelephonyBindingPage(page *TelephonyBindingPage) error {
 }
 
 func validateTelephonyBinding(binding *GATelephonyBinding, requireETag bool) error {
-	if binding.ID == "" || binding.Provider == "" || binding.ConnectionName == "" ||
-		binding.Status == "" || binding.IncomingCallURL == "" {
+	if binding.ID == "" || binding.Provider == "" || binding.ConnectionName == "" || binding.IncomingCallURL == "" {
 		return fmt.Errorf("telephony response is missing required binding fields")
 	}
 	if requireETag && binding.ETag == "" {
 		return fmt.Errorf("telephony response is missing required ETag")
 	}
-	if binding.Status != TelephonyBindingStatusActive && binding.Status != TelephonyBindingStatusSuspended {
+	// The pinned GA contract requires status, but deployed Vienna versions can
+	// omit it. Accept omission during rollout while still rejecting unknown values.
+	if binding.Status != "" && binding.Status != TelephonyBindingStatusActive && binding.Status != TelephonyBindingStatusSuspended {
 		return fmt.Errorf("telephony response contains invalid status %q", binding.Status)
 	}
 	if binding.Provider == TelephonyProviderTwilio && binding.PhoneNumber == "" {

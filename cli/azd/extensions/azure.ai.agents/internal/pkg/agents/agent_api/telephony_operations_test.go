@@ -94,6 +94,16 @@ func TestListTelephonyBindings_Contract(t *testing.T) {
 	require.Equal(t, 1, transport.requests)
 }
 
+func TestListTelephonyBindings_ToleratesMissingStatusDuringRollout(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK,
+			`{"data":[{"id":"binding","provider":"twilio","connection_name":"conn","incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"etag\""}],"has_more":false}`, nil), nil
+	})
+	page, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+	require.NoError(t, err)
+	require.Empty(t, page.Data[0].Status)
+}
+
 func TestListTelephonyBindings_BeforeCursorAndOmittedOptions(t *testing.T) {
 	t.Run("before cursor", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {

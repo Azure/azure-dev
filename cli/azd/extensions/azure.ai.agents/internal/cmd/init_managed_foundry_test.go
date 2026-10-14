@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,19 +19,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidatePromptHarnessLocation(t *testing.T) {
+func TestValidateInitLocation(t *testing.T) {
 	t.Parallel()
+	allowed := promptHarnessRegionsForInit("github_copilot_preview")
+	require.Nil(t, promptHarnessRegionsForInit(""), "plain prompt must remain unrestricted")
 	for _, location := range []string{
 		"japaneast", "swedencentral", "uksouth",
 		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
 		"canadacentral", "westus2",
 	} {
-		require.NoError(t, validatePromptHarnessLocation(location, promptHarnessRegions))
+		require.NoError(t, validateInitLocation(location, allowed))
 	}
 	for _, location := range []string{"eastus", "eastus2", "westus", ""} {
-		err := validatePromptHarnessLocation(location, promptHarnessRegions)
-		require.ErrorContains(t, err, "not supported for the GitHub Copilot harness")
-		require.NoError(t, validatePromptHarnessLocation(location, nil), "plain prompt must remain unrestricted")
+		err := validateInitLocation(location, allowed)
+		require.ErrorContains(t, err, "not supported for this agent setup")
+		require.NoError(t, validateInitLocation(location, nil), "plain prompt must remain unrestricted")
 	}
 }
 
@@ -78,7 +82,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
 			var allowed []string
 			if tt.restricted {
-				allowed = promptHarnessRegions
+				allowed = promptHarnessRegionsForInit("github_copilot_preview")
 			}
 			id := ""
 			if tt.explicitID {
@@ -87,7 +91,12 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 			proj, err := selectPromptFoundryProject(t.Context(), client, responseTestCredential{},
 				&azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: "sub"}}, "test", id, tt.explicitID, allowed)
 			if tt.wantError {
-				require.ErrorContains(t, err, "not supported for the GitHub Copilot harness")
+				require.ErrorContains(t, err, "not supported for this agent setup")
+				require.Nil(t, proj)
+				proj, err = selectFoundryProject(t.Context(), client, responseTestCredential{},
+					&azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: "sub"}},
+					"test", "sub", id, "", true, false, true, allowed)
+				require.ErrorContains(t, err, "not supported for this agent setup")
 				require.Nil(t, proj)
 				return
 			}
@@ -95,6 +104,12 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 			if tt.allUnsupported {
 				require.Nil(t, proj)
 				require.EqualValues(t, 1, prompts.selectCalls.Load(), "must not prompt with an empty project list")
+				proj, err = selectFoundryProject(t.Context(), client, responseTestCredential{},
+					&azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: "sub"}},
+					"test", "sub", "", "", true, false, true, allowed)
+				require.NoError(t, err)
+				require.Nil(t, proj)
+				require.EqualValues(t, 1, prompts.selectCalls.Load(), "shared selector must not add a Select call")
 				return
 			}
 			if tt.restricted && !tt.explicitID {
@@ -123,6 +138,7 @@ func (s *harnessLocationPromptServer) PromptLocation(
 }
 
 func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
+	allowed := promptHarnessRegionsForInit("github_copilot_preview")
 	for _, location := range []string{"", "eastus", "eastus2", "japaneast"} {
 		t.Run(location, func(t *testing.T) {
 			const envName = "test"
@@ -131,7 +147,7 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, prompts)
 			azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{Location: location}}
 			require.NoError(t, ensureLocationWithAllowedLocations(
-				t.Context(), client, azureContext, envName, promptHarnessRegions,
+				t.Context(), client, azureContext, envName, allowed,
 			))
 			require.Equal(t, "japaneast", envServer.values[envName]["AZURE_LOCATION"])
 			require.Equal(t, "japaneast", envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
@@ -139,8 +155,34 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 				require.Nil(t, prompts.request)
 			} else {
 				require.NotNil(t, prompts.request)
-				require.Equal(t, promptHarnessRegions, prompts.request.AllowedLocations)
+				require.Equal(t, allowed, prompts.request.AllowedLocations)
 			}
 		})
+	}
+}
+
+func TestInspectAzureYamlCopilotHarness(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"inline", "$ref"} {
+		for _, harness := range []string{"github_copilot_preview", ""} {
+			t.Run(source+"/"+harness, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				definition := "host: azure.ai.agent\nkind: prompt\n"
+				if harness != "" {
+					definition += "harness:\n  type: " + harness + "\n"
+				}
+				content := "services:\n  prompt:\n    " + strings.ReplaceAll(
+					strings.TrimSuffix(definition, "\n"), "\n", "\n    ") + "\n"
+				if source == "$ref" {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), []byte(definition), 0o600))
+					content = "services:\n  prompt:\n    $ref: ./agent.yaml\n"
+				}
+				info, err := inspectAzureYaml([]byte(content), root)
+				require.NoError(t, err)
+				require.True(t, info.promptOnly())
+				require.Equal(t, harness, info.promptHarness)
+			})
+		}
 	}
 }

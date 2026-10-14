@@ -92,6 +92,7 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForHeadlessNewProject(t *tes
 				false,
 				false,
 				false,
+				nil,
 			)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "requires an existing Foundry project")
@@ -114,6 +115,7 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForInteractiveNewProject(t *
 		false,
 		false,
 		false,
+		nil,
 	)
 
 	require.ErrorContains(t, err, "requires an existing Foundry project")
@@ -144,6 +146,7 @@ func TestConfigureFoundryProjectDefersAuthoringWhenAzureContextIsMissing(t *test
 		false,
 		false,
 		false,
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -182,6 +185,7 @@ func TestConfigureFoundryProjectPreservesExistingServiceWhenDeferred(t *testing.
 		false,
 		false,
 		true,
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -223,6 +227,7 @@ func TestConfigureFoundryProjectPreservesExistingServiceWithAzureContext(
 		false,
 		false,
 		true,
+		nil,
 	)
 
 	require.NoError(t, err)

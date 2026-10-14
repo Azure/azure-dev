@@ -68,7 +68,22 @@ func configureFoundryProject(
 	skipACR bool,
 	filterHostedRegions bool,
 	preserveDeferredProjectState bool,
+	allowedLocations []string,
 ) (*foundryProjectSetupResult, error) {
+	ensureProjectLocation := func() error {
+		if len(allowedLocations) == 0 {
+			return ensureLocation(ctx, azdClient, azureContext, envName)
+		}
+		if noPrompt {
+			if err := validateInitLocation(azureContext.Scope.Location, allowedLocations); err != nil {
+				return err
+			}
+		}
+		if err := ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations); err != nil {
+			return err
+		}
+		return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+	}
 	if err := validateAcrConnectionInput(
 		acrConnection,
 		skipACR,
@@ -112,6 +127,7 @@ func configureFoundryProject(
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
+			allowedLocations,
 		)
 		if err != nil {
 			return nil, err
@@ -145,8 +161,8 @@ func configureFoundryProject(
 		// Preserve an adopted endpoint with complete Azure context.
 		result.AuthoringMode = projectAuthoringCurrent
 	} else if noPrompt {
-		newCred, err := configureNewProjectForNoPrompt(
-			ctx, azdClient, envName, azureContext,
+		newCred, err := ensureSubscription(
+			ctx, azdClient, azureContext, envName,
 			"Select an Azure subscription to provision your agent and Foundry project resources.",
 		)
 		if err != nil {
@@ -154,6 +170,15 @@ func configureFoundryProject(
 		}
 		result.Credential = newCred
 		result.AuthoringMode = projectAuthoringNew
+		if err := ensureProjectLocation(); err != nil {
+			return nil, err
+		}
+		if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+			return nil, err
+		}
+		if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+			log.Printf("warning: failed to update project provision signal: %v", err)
+		}
 	} else {
 		// Interactive: prompt user to pick an existing Foundry project or create new resources
 		projectChoices := []*azdext.SelectChoice{
@@ -194,6 +219,7 @@ func configureFoundryProject(
 				skipACR,
 				filterHostedRegions,
 				true, // bicepless
+				allowedLocations,
 			)
 			if err != nil {
 				return nil, err
@@ -208,7 +234,7 @@ func configureFoundryProject(
 				if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
 					return nil, err
 				}
-				if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
+				if err := ensureProjectLocation(); err != nil {
 					return nil, err
 				}
 				if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
@@ -234,7 +260,7 @@ func configureFoundryProject(
 			if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
 				return nil, err
 			}
-			newCred, err := ensureSubscriptionAndLocation(
+			newCred, err := ensureSubscription(
 				ctx, azdClient, azureContext, envName,
 				"Select an Azure subscription to provision your agent and Foundry project resources.",
 			)
@@ -242,6 +268,9 @@ func configureFoundryProject(
 				return nil, err
 			}
 			result.Credential = newCred
+			if err := ensureProjectLocation(); err != nil {
+				return nil, err
+			}
 
 			if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
 				return nil, err

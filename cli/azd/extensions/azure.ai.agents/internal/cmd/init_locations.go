@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,29 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+// promptHarnessRegionsForInit is the temporary harness region policy shared by
+// generated and adopted agents. Return nil here when the service restriction lifts.
+func promptHarnessRegionsForInit(harness string) []string {
+	if harness != "github_copilot_preview" {
+		return nil
+	}
+	return []string{
+		"japaneast", "swedencentral", "uksouth", "australiaeast",
+		"westeurope", "germanywestcentral", "canadacentral", "westus2",
+	}
+}
+
+func validateInitLocation(location string, allowedLocations []string) error {
+	if locationAllowed(location, allowedLocations) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeLocationMismatch,
+		fmt.Sprintf("location %q is not supported for this agent setup", location),
+		"select a Foundry project or create one in a supported region: "+strings.Join(allowedLocations, ", "),
+	)
+}
 
 // hostedAgentRegionsURL points at the supported-regions manifest.
 // It is a var so tests can override it.

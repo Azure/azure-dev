@@ -52,8 +52,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
 		"Foundry project endpoint URL for connection operations only (not context or version)")
 
-	// Local authoring and remote Connection CRUD subcommands.
-	rootCmd.AddCommand(newConnectionAddCommand(extCtx))
+	// Connection CRUD subcommands (migrated from the azure.ai.agents extension).
 	rootCmd.AddCommand(newConnectionListCommand(extCtx))
 	rootCmd.AddCommand(newConnectionShowCommand(extCtx))
 	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
@@ -64,10 +63,7 @@ func NewRootCommand() *cobra.Command {
   azd ai connection list
 
   # Inspect a connection without displaying its credentials
-  azd ai connection show my-search
-
-  # Author a local Connection service
-  azd ai connection add search --file connections/search.yaml`
+  azd ai connection show my-search`
 	helpformat.Install(rootCmd, "azd ai", connectionHelpFooter)
 
 	return rootCmd
@@ -92,8 +88,8 @@ func validateRemoteFlags(cmd *cobra.Command) error {
 	return nil
 }
 
-// configureExtensionHostForEnvironment registers the target for
-// `azd up`/`azd deploy`, preserving the selected environment.
+// configureExtensionHostForEnvironment registers the azure.ai.connection target
+// for `azd up`/`azd deploy`, preserving the environment selected by the caller.
 func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmentName string) {
 	azdClient := host.Client()
 	host.WithServiceTarget(aiConnectionHost, func() azdext.ServiceTargetProvider {

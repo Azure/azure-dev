@@ -4,7 +4,6 @@ Usage
   azd ai connection [command]
 
 Available Commands
-  add     : Add a local Connection service to this azd project.
   context : Get the context of the azd project & environment.
   create  : Create a new Foundry project connection.
   delete  : Delete a connection.
@@ -28,9 +27,6 @@ Examples
 
   Inspect a connection without displaying its credentials
     azd ai connection show my-search
-
-  Author a local Connection service
-    azd ai connection add search --file connections/search.yaml
 
 Use azd ai connection [command] --help to view examples and more information about a specific command.
 

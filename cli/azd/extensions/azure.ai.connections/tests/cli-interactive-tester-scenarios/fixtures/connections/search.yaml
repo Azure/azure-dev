@@ -1,5 +1,0 @@
-category: CognitiveSearch
-target: ${SEARCH_ENDPOINT}
-authType: ApiKey
-credentials:
-  $ref: ./credentials.yaml

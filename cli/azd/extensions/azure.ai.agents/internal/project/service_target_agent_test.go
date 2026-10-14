@@ -584,6 +584,24 @@ func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
 	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
 }
 
+func TestDeployHostedCodeAgentReadsProcessLocation(t *testing.T) {
+	t.Setenv("AZURE_LOCATION", "eastus2")
+	provider := &AgentServiceTargetProvider{}
+
+	_, err := provider.deployHostedCodeAgent(
+		t.Context(),
+		&azdext.ServiceConfig{},
+		&azdext.ServiceContext{},
+		func(string) {},
+		agent_yaml.ContainerAgent{},
+		nil,
+	)
+
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "AZURE_LOCATION is not set")
+	require.Contains(t, err.Error(), "code ZIP artifact not found")
+}
+
 // stubContainerServer is a minimal ContainerServiceServer that returns
 // success responses for Build, Package, and Publish.
 type stubContainerServer struct {

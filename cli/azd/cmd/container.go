@@ -673,7 +673,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
-	container.MustRegisterSingleton(ai.NewAiModelService)
+	container.MustRegisterSingleton(ai.NewAiModelServiceWithClock)
 	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *errorhandler.ErrorHandlerPipeline {
 		resolver := func(name string) (errorhandler.ErrorHandler, error) {
 			var handler errorhandler.ErrorHandler

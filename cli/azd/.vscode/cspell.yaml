@@ -574,6 +574,9 @@ overrides:
   - filename: extensions/azure.ai.evaluations/internal/cmd/init.go
     words:
       - hostproject
+  - filename: extensions/azure.ai.connections/internal/cmd/connection_project.go
+    words:
+      - hostproject
   - filename: grpc/generatefacade/main.go
     words:
       - generatefacade

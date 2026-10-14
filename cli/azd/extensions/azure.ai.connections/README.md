@@ -36,6 +36,61 @@ used. Local `$ref` files and nested credential values are resolved by this
 extension. Removing the service from `azure.yaml` stops managing it but does
 not delete the remote Connection; use `azd ai connection delete` to delete it.
 
+### Author a local Connection service
+
+Use `azd ai connection add` to reference a definition file from an existing
+project without creating or deploying a remote resource:
+
+```console
+azd ai connection add search --file connections/search.yaml
+azd ai connection add search --file connections/search.yaml --project foundry
+```
+
+This local-only workflow requires azd 1.36.0-beta.1 or later, including the
+preview atomic service-authoring API; older hosts read the active environment
+before starting an extension command. Output supports `--output json` and
+`--output table` (the default human-readable format).
+
+The command keeps the file in place and writes a project-relative `$ref` to
+the nearest `azure.yaml` or `azure.yml`, matching azd's project selection.
+If both filenames exist in the same directory, `azure.yaml` takes precedence.
+The file and every nested `$ref` must stay inside that project.
+For a new service, azd selects the only `azure.ai.project` service
+automatically; with several Projects, `--project` selects one explicitly or
+azd prompts when prompting is enabled. Selection prompts use stderr, keeping
+JSON stdout machine-readable. An update preserves its single valid
+Project owner. If an existing service has no unique Project owner, pass
+`--project` to repair it. Dangling or malformed `uses` entries must be fixed
+in `azure.yaml` first; the command never guesses or removes unknown
+dependencies.
+
+For both additions and updates, if project services change while a Connection
+is being planned, `add` stops before writing; rerun it against the updated
+manifest. The host checks the original services snapshot and saves the selected
+service under the same mutation lock, preventing another host mutation from
+slipping between the check and write. Service keys containing dots are literal
+keys. Snapshot comparison normalizes equivalent YAML numeric representations,
+so encoding `1.0` as `1` does not create a false conflict. Raw YAML preserves
+large integers and literal environment templates on both the selected service
+and unrelated services.
+
+The supplied file is authoritative for Connection fields. Updating a service
+replaces its previous Connection definition while preserving unrelated service
+settings and existing environment entries. All referenced variables, including
+optional references, are added to the service `env` map as `${VAR}` bindings
+unless an optional variable already has a string binding. Only required
+variable names are reported. Conflicting required bindings fail without
+displaying their values, and stale entries are retained because their ownership
+cannot be determined safely.
+
+Local authoring does not read azd environment values or claim the definition
+is deployable. It validates statically known structure and authentication
+rules, reports required variable names, and leaves template expansion and
+value-dependent checks to deployment. Set the needed values in the selected
+environment, then run `azd deploy search` or `azd up`. Use the existing
+`azd ai connection create` and `update` commands for direct remote resource
+operations; `add` only authors the local service.
+
 Effective Connection names must be unique across Connection services, including
 names loaded through `$ref`; names that differ only by case also conflict.
 Deployment rejects duplicate names before writing to ARM.

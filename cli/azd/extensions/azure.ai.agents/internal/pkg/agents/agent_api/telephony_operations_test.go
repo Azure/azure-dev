@@ -287,7 +287,10 @@ func TestCreateGATelephonyBinding_ProviderBodiesAndRepeatability(t *testing.T) {
 				require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 				require.Equal(t, "00000000-0000-0000-0000-000000000001",
 					req.Header.Get("Repeatability-Request-ID"))
-				require.Equal(t, "Tue, 13 Oct 2026 08:11:12 GMT", req.Header.Get("Repeatability-First-Sent"))
+				require.Equal(t,
+					firstSent.UTC().Format(http.TimeFormat),
+					req.Header.Get("Repeatability-First-Sent"),
+				)
 				require.Empty(t, req.Header.Get("Foundry-Features"))
 				requireJSONBody(t, req, tt.expected)
 				response := fmt.Sprintf(`{

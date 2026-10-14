@@ -4001,11 +4001,14 @@ func hostedAgentCreateError(err error, serviceName string, request *agent_api.Cr
 	if !ok {
 		return converted
 	}
+	serviceResponse := fmt.Sprintf("Service response: HTTP %d", serviceErr.StatusCode)
+	if responseErr.ErrorCode != "" {
+		serviceResponse += fmt.Sprintf(" (%s)", serviceErr.ErrorCode)
+	}
 	serviceErr.Message = fmt.Sprintf(
 		"Foundry rejected the resource configuration for service %q (CPU=%q, memory=%q).\n%s\n"+
-			"Service response: HTTP %d (%s).",
-		serviceName, definition.CPU, definition.Memory, strings.Join(messages, "\n"),
-		serviceErr.StatusCode, serviceErr.ErrorCode,
+			"%s.",
+		serviceName, definition.CPU, definition.Memory, strings.Join(messages, "\n"), serviceResponse,
 	)
 	requestID := responseErr.RawResponse.Header.Get("x-request-id")
 	if requestID == "" {

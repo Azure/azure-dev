@@ -130,7 +130,8 @@ func TestHostedAgentCreateErrorLeavesOtherErrorsUnchanged(t *testing.T) {
 		status     int
 	}{
 		{"unrelated validation", resourceValidationBody(t, "Agent name is invalid.", "name"), http.StatusBadRequest},
-		{"mentions CPU in instructions", resourceValidationBody(t, "Instructions mention CPU must be decimal.", "instructions"),
+		{"mentions CPU in instructions",
+			resourceValidationBody(t, "Instructions mention CPU must be decimal.", "instructions"),
 			http.StatusBadRequest},
 		{"resource-looking instructions", resourceValidationBody(t, "CPU must be a decimal number.", "instructions"),
 			http.StatusBadRequest},
@@ -139,7 +140,8 @@ func TestHostedAgentCreateErrorLeavesOtherErrorsUnchanged(t *testing.T) {
 		{"unrecognized definition reason", resourceValidationBody(t, "The requested definition is invalid.", "definition"),
 			http.StatusBadRequest},
 		{"authentication", resourceValidationBody(t, resourceTierErrorMessage, "definition"), http.StatusUnauthorized},
-		{"service failure", resourceValidationBody(t, resourceTierErrorMessage, "definition"), http.StatusInternalServerError},
+		{"service failure", resourceValidationBody(t, resourceTierErrorMessage, "definition"),
+			http.StatusInternalServerError},
 		{"malformed response", "not-json", http.StatusBadRequest},
 		{"unexpected response shape", `{"error":"invalid parameters"}`, http.StatusBadRequest},
 		{"empty response", "", http.StatusBadRequest},
@@ -229,7 +231,9 @@ func TestHostedAgentCreateErrorRetryCommandSafety(t *testing.T) {
 
 func TestHostedAgentCreateErrorDoesNotDiscloseRequestURLCredentials(t *testing.T) {
 	t.Parallel()
-	original := resourceHTTPError(t, http.StatusBadRequest, resourceValidationBody(t, resourceTierErrorMessage, "definition"))
+	original := resourceHTTPError(
+		t, http.StatusBadRequest, resourceValidationBody(t, resourceTierErrorMessage, "definition"),
+	)
 	responseErr, ok := errors.AsType[*azcore.ResponseError](original)
 	require.True(t, ok)
 	requestURL, err := url.Parse(
@@ -247,7 +251,9 @@ func TestHostedAgentCreateErrorDoesNotDiscloseRequestURLCredentials(t *testing.T
 
 func TestHostedAgentCreateErrorPreservesNonHostedAndMissingRequests(t *testing.T) {
 	t.Parallel()
-	original := resourceHTTPError(t, http.StatusBadRequest, resourceValidationBody(t, resourceTierErrorMessage, "definition"))
+	original := resourceHTTPError(
+		t, http.StatusBadRequest, resourceValidationBody(t, resourceTierErrorMessage, "definition"),
+	)
 	expected := exterrors.ServiceFromAzure(original, exterrors.OpCreateAgent)
 	for _, request := range []*agent_api.CreateAgentRequest{
 		nil,
@@ -256,6 +262,37 @@ func TestHostedAgentCreateErrorPreservesNonHostedAndMissingRequests(t *testing.T
 		}},
 	} {
 		require.Equal(t, expected, hostedAgentCreateError(original, "my-service", request))
+	}
+}
+
+func TestHostedAgentCreateErrorServiceCodeAvailability(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, code, telemetryCode, serviceResponse string
+	}{
+		{"code supplied", "invalid_parameters", "create_agent.invalid_parameters",
+			"Service response: HTTP 400 (create_agent.invalid_parameters)."},
+		{"code omitted", "", "create_agent.400", "Service response: HTTP 400."},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			serviceError := map[string]any{"message": resourceTierErrorMessage, "param": "definition"}
+			if tt.code != "" {
+				serviceError["code"] = tt.code
+			}
+			body, err := json.Marshal(map[string]any{"error": serviceError})
+			require.NoError(t, err)
+			original := resourceHTTPError(t, http.StatusBadRequest, string(body))
+			result := hostedAgentCreateError(original, "my-service", hostedResourceRequest("4", "4Gi"))
+			relayed := azdext.UnwrapError(azdext.WrapError(result))
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](relayed)
+			require.True(t, ok)
+			require.Equal(t, tt.telemetryCode, serviceErr.ErrorCode)
+			require.Contains(t, serviceErr.Message, tt.serviceResponse)
+			require.NotContains(t, serviceErr.Message, "create_agent.400")
+			require.Contains(t, serviceErr.Message, resourceTierErrorMessage)
+			require.NotEmpty(t, serviceErr.Suggestion)
+		})
 	}
 }
 

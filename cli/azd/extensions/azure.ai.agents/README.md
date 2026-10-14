@@ -229,7 +229,7 @@ allowlist.
 When Foundry rejects a CPU or memory configuration, azd reports the service name,
 the CPU and memory values sent to Foundry, and the service's validation message,
 including supported combinations when returned. The error retains the HTTP
-status, service error code, and request ID when available. The suggestion points
+status and any service-provided error code or request ID. The suggestion points
 to the service's `container.resources` in `azure.yaml` or its `$ref` file.
 
 Update both values to a supported combination and retry `azd deploy <service>`.

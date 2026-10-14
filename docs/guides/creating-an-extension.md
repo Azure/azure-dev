@@ -153,15 +153,13 @@ resolution, but does not restrict explicit Environment RPC calls. Require
 azd 1.36.0-beta.1 or later when relying on this behavior. See
 [environment-independent commands](../../cli/azd/docs/extensions/extension-sdk-reference.md#environment-independent-commands).
 
-For local service authoring that must preserve literal templates and large
-integers, use the beta
-[`ProjectService.ApplyServiceConfig`](../architecture/extension-framework.md#conditional-raw-service-authoring)
-API rather than round-tripping services through protobuf `Struct`. Read the
-raw manifest without resolving environment values, pass the complete original
-services mapping as the YAML precondition, and send only the selected service
-as the candidate. On `Aborted`, re-plan against a fresh manifest; do not replay
-the mutation on a stable setter. Require a host containing the API
-(azd 1.36.0-beta.1 or later).
+Use `Project().AddService` for complete service creation or replacement.
+For updates, prefer service-specific setters for the fields your extension
+owns, leaving unknown fields host-side. The host preserves unrelated raw YAML,
+including empty mappings, literal templates, and large integers. Explicitly
+send an empty section when `env: {}` is required. A sequence of RPCs is not
+transactional. See
+[service configuration persistence](../architecture/extension-framework.md#service-configuration-persistence).
 
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
 For `Project.AddService`, use the optional

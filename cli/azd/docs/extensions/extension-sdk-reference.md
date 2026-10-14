@@ -720,30 +720,26 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-#### Conditional service authoring (preview)
+#### Service configuration persistence
 
-`ProjectBeta().ApplyServiceConfig(ctx, &v1beta.ApplyServiceConfigRequest{...})`
-conditionally creates or replaces a service without expanding environment
-templates or converting YAML numbers through protobuf `Struct`.
+Use existing `Project().AddService` to add or replace one complete service.
+Use `SetServiceConfigValue`, `SetServiceConfigSection`, and `UnsetServiceConfig`
+to update only managed fields of an existing service. Service names are literal
+keys, including dots; the path within a service uses dot notation.
 
-| Field | Meaning |
-|---|---|
-| `service_name` | Literal service key, including dots; never a dot path. |
-| `expected_services_yaml` | Complete original raw services mapping as exactly one YAML object. Use `{}` when absent. |
-| `service_yaml` | Complete candidate service mapping as exactly one YAML object. |
+The host validates the resulting configuration, normalizes known path fields,
+and atomically saves YAML without converting unrelated raw fields through
+typed structs.
+Untouched empty mappings, large integers, and literal environment templates
+remain intact. Values explicitly sent through protobuf `Struct` still have
+protobuf numeric precision limits; avoid reading and resending entire services
+when updating a few fields. An empty section can be sent explicitly to persist
+`env: {}`. Each mutation is locked separately; several RPCs are not one
+transaction, and there is no snapshot precondition.
 
-The host compares canonical YAML snapshots, treating equivalent numeric forms
-such as `1.0` and `1` equally without losing large integer precision, and saves
-while holding the project mutation lock. Both additions and updates return
-`Aborted` without saving if the snapshot is stale. Re-plan from a fresh manifest rather than retrying an
-uncertain mutation or falling back to a stable setter. Only the named service
-is replaced; other root sections are loaded fresh. Identical candidates do
-not rewrite the file. Layered manifests are unsupported.
-
-Require azd 1.36.0-beta.1 or later with this preview API. SDKs predating the
-method cannot import it. `grpc/generateprojectclient -authoring` generates a
-canonical descriptor snapshot for a private dynamic registry without global
-protobuf registration. Stable contracts are unchanged.
+AddService's environment values retain their existing expanded-literal
+semantics. Use a targeted service setter for raw `${VAR}` templates rather
+than passing them as AddService environment literals.
 
 `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
 are preview accessors. Import

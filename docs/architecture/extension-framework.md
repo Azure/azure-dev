@@ -118,30 +118,22 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
 
-### Conditional raw service authoring
+### Service configuration persistence
 
-The beta `ProjectService.ApplyServiceConfig` RPC creates or replaces one literal
-service key. Its `service_name`, `expected_services_yaml`, and `service_yaml`
-fields keep raw values out of protobuf `Struct`, preserving integer precision
-and literal templates. Both YAML payloads must contain exactly one mapping.
-The host holds the existing project mutation lock across loading raw disk
-configuration, comparing the complete services snapshot using canonical YAML,
-saving, and cache refresh. A stale snapshot returns `Aborted` before saving for both additions
-and updates. Unrelated root configuration is loaded fresh, and only the
-requested service key is replaced; dots are not path separators. Equivalent
-numeric representations such as `1.0` and `1` compare equally without converting
-large integers through floating point.
+The existing `ProjectService.AddService` RPC replaces one complete service;
+service-specific setters change only their selected field or section. The host
+holds the existing mutation lock during each operation and preserves dispatcher
+and cache behavior. Setters reload raw configuration, validate a typed view,
+normalize known path fields, and atomically save the raw mapping. AddService
+serializes only the replacement service into the freshly loaded raw project.
+Untouched fields, including explicit `env: {}` or `infra: {}`, large integers,
+and literal templates, do not round-trip through protobuf or typed YAML.
 
-The host validates a typed view but persists the raw mapping atomically.
-Explicit empty mappings such as `env: {}` retain their key presence, so editing
-one service does not change another service's environment-isolation policy.
-
-This serializes mutations through the same host, not writes from arbitrary
-external processes. Callers should read the local `azure.yaml` without
-environment expansion, then invoke this beta RPC once. Do not fall back to a
-stable setter or retry an uncertain mutation. For SDKs without the method,
-`grpc/generateprojectclient -authoring` generates canonical descriptor
-snapshots for private dynamic clients. Require azd 1.36.0-beta.1 or later.
+Service names are literal keys, including dots. Paths within services retain
+their existing dot-notation meaning. Multi-RPC edits are not transactions;
+there is no compare-and-swap precondition. Caller-provided protobuf numbers
+retain their existing precision limits. Prefer targeted setters over resending
+unknown configuration.
 
 ### Project service save acknowledgment
 

@@ -52,12 +52,10 @@ the Go contracts under `pkg/azdext/contracts/v1` and
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
-It also snapshots the canonical beta project descriptors under the evaluations
-and Connections extensions with `grpc/generateprojectclient`. The default
-snapshot supports evaluations' released-SDK-compatible private dynamic client;
-the `-authoring` snapshot additionally exposes raw service authoring for future
-consumers. Do not edit these generated snapshots or duplicate the protobuf
-schema in an extension.
+It also snapshots the canonical beta project descriptor set for the evaluations
+extension's released-SDK-compatible private dynamic client with
+`grpc/generateprojectclient`. Do not edit this generated snapshot or duplicate
+the protobuf schema in the extension.
 Before generating bindings, it compiles descriptor sets for the stable
 scaffold protos and canonical `v1` protos and verifies that every scaffold
 message, enum, service, and method remains a wire-compatible subset of the
@@ -74,11 +72,6 @@ Beta-only methods on a shared service use a focused beta override hook and an
 `Unimplemented` fallback. Services that exist only in beta are registered
 directly with their native `v1beta` implementation. Do not edit the generated
 adapter file directly.
-
-`ProjectService.ApplyServiceConfig` is beta-only. Its focused built-in override
-atomically checks a raw YAML services snapshot and authors one literal service
-key, preserving integer precision and environment templates. Stable contracts
-and stable service setters are unchanged.
 
 The vendored `google/protobuf/struct.proto` is shared by both channels from
 `grpc/include`.

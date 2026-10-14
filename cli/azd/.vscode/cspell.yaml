@@ -178,7 +178,7 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
-  - filename: "{docs/extensions/{contract-versioning,extension-sdk-reference}.md,grpc/README.md}"
+  - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:
       - generateprojectclient
   - filename: "**/internal/agent/types.go"
@@ -561,20 +561,17 @@ overrides:
       - descriptorpb
       - protodesc
       - hostproject
-  - filename: extensions/{azure.ai.evaluations,azure.ai.connections}/internal/hostproject/*.go
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/*.go
     words:
       - hostproject
       - descriptorpb
       - dynamicpb
       - protodesc
       - protoregistry
-  - filename: extensions/{azure.ai.evaluations,azure.ai.connections}/internal/hostproject/descriptors_generated.go
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/descriptors_generated.go
     words:
       - generateprojectclient
   - filename: extensions/azure.ai.evaluations/internal/cmd/init.go
-    words:
-      - hostproject
-  - filename: extensions/azure.ai.connections/internal/cmd/connection_project.go
     words:
       - hostproject
   - filename: grpc/generatefacade/main.go

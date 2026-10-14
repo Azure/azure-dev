@@ -315,11 +315,6 @@ type BetaProjectServiceGetAddServiceCapabilitiesOverride interface {
 	GetAddServiceCapabilities(context.Context, *v1beta.EmptyRequest) (*v1beta.GetAddServiceCapabilitiesResponse, error)
 }
 
-// BetaProjectServiceApplyServiceConfigOverride overrides the beta ProjectService.ApplyServiceConfig method before stable adaptation.
-type BetaProjectServiceApplyServiceConfigOverride interface {
-	ApplyServiceConfig(context.Context, *v1beta.ApplyServiceConfigRequest) (*v1beta.EmptyResponse, error)
-}
-
 // BetaProjectServiceGetResolvedServicesOverride overrides the beta ProjectService.GetResolvedServices method before stable adaptation.
 type BetaProjectServiceGetResolvedServicesOverride interface {
 	GetResolvedServices(context.Context, *v1beta.EmptyRequest) (*v1beta.GetResolvedServicesResponse, error)
@@ -389,7 +384,6 @@ func validateBetaProjectServiceOverride(override any) error {
 		reflect.TypeFor[BetaProjectServiceGetServiceTargetResourceOverride](),
 		reflect.TypeFor[BetaProjectServiceAddServiceOverride](),
 		reflect.TypeFor[BetaProjectServiceGetAddServiceCapabilitiesOverride](),
-		reflect.TypeFor[BetaProjectServiceApplyServiceConfigOverride](),
 		reflect.TypeFor[BetaProjectServiceGetResolvedServicesOverride](),
 		reflect.TypeFor[BetaProjectServiceParseGitHubUrlOverride](),
 		reflect.TypeFor[BetaProjectServiceGetConfigSectionOverride](),
@@ -1506,16 +1500,6 @@ func (a *betaProjectServiceAdapter) GetAddServiceCapabilities(
 		return override.GetAddServiceCapabilities(ctx, req)
 	}
 	return a.UnimplementedProjectServiceServer.GetAddServiceCapabilities(ctx, req)
-}
-
-func (a *betaProjectServiceAdapter) ApplyServiceConfig(
-	ctx context.Context,
-	req *v1beta.ApplyServiceConfigRequest,
-) (*v1beta.EmptyResponse, error) {
-	if override, ok := findBetaOverride[BetaProjectServiceApplyServiceConfigOverride](a.override); ok {
-		return override.ApplyServiceConfig(ctx, req)
-	}
-	return a.UnimplementedProjectServiceServer.ApplyServiceConfig(ctx, req)
 }
 
 func (a *betaProjectServiceAdapter) GetResolvedServices(

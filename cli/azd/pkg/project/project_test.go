@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -1195,6 +1196,65 @@ func Test_SaveConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "yaml-language-server")
 	assert.Contains(t, string(data), "save-test")
+}
+
+func TestSaveConfigPreservesRawFieldsAndNormalizesPaths(t *testing.T) {
+	for _, layered := range []bool{false, true} {
+		t.Run(map[bool]string{false: "services", true: "layers"}[layered], func(t *testing.T) {
+			body := "name: raw-test\ninfra:\n  path: infra\\main\ncustom:\n  empty: {}\n" +
+				"  number: 9007199254740993\n"
+			services := "services:\n  api.worker:\n    host: azure.ai.connection\n" +
+				"    project: src\\api\n    dist: dist\\api\n    infra:\n      path: infra\\api\n" +
+				"    env: {}\n    config:\n      key: ${KEY}\n      number: 9007199254740993\n"
+			if layered {
+				body = "name: raw-test\ninfra: {}\ncustom:\n  empty: {}\n  number: 9007199254740993\n" +
+					"layers:\n  - name: application\n    infra:\n      - name: main\n" +
+					"        provider: bicep\n        path: infra\\main\n" +
+					"    " + strings.ReplaceAll(strings.TrimSuffix(services, "\n"), "\n", "\n    ") + "\n"
+			} else {
+				body += services
+			}
+			path := filepath.Join(t.TempDir(), "azure.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			raw, err := LoadConfig(t.Context(), path)
+			require.NoError(t, err)
+			require.NoError(t, SaveConfig(t.Context(), raw, path))
+			saved, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Contains(t, string(saved), "infra/main")
+			assert.Contains(t, string(saved), "src/api")
+			assert.Contains(t, string(saved), "dist/api")
+			assert.Contains(t, string(saved), "infra/api")
+			assert.Contains(t, string(saved), "env: {}")
+			assert.Contains(t, string(saved), "${KEY}")
+			assert.Contains(t, string(saved), "9007199254740993")
+			if layered {
+				assert.Contains(t, string(saved), "/schemas/alpha/")
+				assert.Contains(t, string(saved), "infra: {}")
+			} else {
+				assert.Contains(t, string(saved), "/schemas/v1.0/")
+			}
+			expected := strings.ReplaceAll(body, "\\", "/")
+			var expectedRaw map[string]any
+			require.NoError(t, yaml.Unmarshal([]byte(expected), &expectedRaw))
+			reloaded, err := LoadConfig(t.Context(), path)
+			require.NoError(t, err)
+			assert.Equal(t, expectedRaw, reloaded.Raw())
+		})
+	}
+}
+
+func TestSaveConfigRejectsInvalidRawConfigurationWithoutWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "azure.yaml")
+	before := []byte("name: original\ninfra: {}\n")
+	require.NoError(t, os.WriteFile(path, before, 0o600))
+	raw := config.NewConfig(map[string]any{
+		"name": "invalid", "services": map[string]any{"api": map[string]any{"host": "containerapp"}},
+	})
+	require.Error(t, SaveConfig(t.Context(), raw, path))
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
 }
 
 func Test_Save(t *testing.T) {

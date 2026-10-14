@@ -1309,6 +1309,11 @@ than copied into the remaining diagnostic prose. This projection does not mutate
 or rewrite dataset/output content and unknown fields. Those other fields can
 still contain sensitive source data; keep exported files private.
 
+`job show`, `job list` (including `--all`), and `job cancel` also redact URL
+credentials, query strings, and fragments from `error.code` and `error.message`
+in JSON, including messages decoded from bare-string errors. They sanitize an
+output copy without changing the service record, artifact result, or reattachment inputs.
+
 `run output show <item>` uses the lookup ID from the listing in its human
 header. The service may return a result-version URI as the detail object's
 `id`; JSON keeps that returned identity rather than replacing it with the

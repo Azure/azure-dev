@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -29,6 +28,8 @@ import (
 const (
 	TelephonyProviderTeamsPhoneExtensibility = "teams_phone_extensibility"
 	TelephonyProviderTwilio                  = "twilio"
+	telephonyAPIVersion                      = "v1"
+	maxTelephonyResponseSize                 = 4 * 1024 * 1024
 )
 
 // TelephonyWriteOutcomeUnknownError indicates that a write request may have
@@ -38,10 +39,7 @@ type TelephonyWriteOutcomeUnknownError struct {
 }
 
 func (e *TelephonyWriteOutcomeUnknownError) Error() string {
-	if e == nil || e.Err == nil {
-		return "telephony write outcome could not be confirmed"
-	}
-	return e.Err.Error()
+	return "telephony write may have committed, but the outcome could not be confirmed"
 }
 
 func (e *TelephonyWriteOutcomeUnknownError) Unwrap() error {
@@ -124,8 +122,11 @@ func (c *AgentClient) GetGATelephonyBinding(
 		return nil, err
 	}
 	binding.ETag = etag
-	if err := validateTelephonyBinding(&binding, true, false); err != nil {
+	if err := validateTelephonyBinding(&binding, true); err != nil {
 		return nil, err
+	}
+	if binding.ID != bindingID {
+		return nil, fmt.Errorf("telephony response ID does not match the requested binding")
 	}
 	return &binding, nil
 }
@@ -191,7 +192,7 @@ func (c *AgentClient) CreateGATelephonyBinding(
 		return nil, err
 	}
 	binding.ETag = etag
-	if err := validateTelephonyBinding(&binding, true, false); err != nil {
+	if err := validateTelephonyBinding(&binding, true); err != nil {
 		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	if err := validateCreateResponseIdentity(&binding, request); err != nil {
@@ -245,8 +246,12 @@ func (c *AgentClient) UpdateGATelephonyBinding(
 		return nil, err
 	}
 	binding.ETag = etag
-	if err := validateTelephonyBinding(&binding, true, false); err != nil {
+	if err := validateTelephonyBinding(&binding, true); err != nil {
 		return nil, telephonyWriteOutcomeUnknown(err)
+	}
+	if binding.ID != bindingID {
+		return nil, telephonyWriteOutcomeUnknown(
+			fmt.Errorf("telephony response ID does not match the requested binding"))
 	}
 	return &binding, nil
 }
@@ -393,12 +398,11 @@ func (c *AgentClient) gaTelephonyRequest(
 	if query == nil {
 		query = url.Values{}
 	}
-	query.Set("api-version", AgentEndpointAPIVersion)
+	query.Set("api-version", telephonyAPIVersion)
 
-	// Conditional writes must not be replayed automatically after a lost response.
-	if method == http.MethodPatch || method == http.MethodDelete || method == http.MethodPut {
-		ctx = runtime.WithRetryOptions(ctx, policy.RetryOptions{MaxRetries: -1})
-	}
+	// Telephony calls use explicit caller retries. This avoids hidden write replay
+	// and prevents the SDK retry policy from draining untrusted response bodies.
+	ctx = runtime.WithRetryOptions(ctx, policy.RetryOptions{MaxRetries: -1})
 	req, err := runtime.NewRequest(ctx, method, endpoint+"?"+query.Encode())
 	if err != nil {
 		return "", fmt.Errorf("creating telephony request: %w", err)
@@ -425,11 +429,10 @@ func (c *AgentClient) gaTelephonyRequest(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		err = fmt.Errorf("sending telephony request: %w", err)
 		if method != http.MethodGet {
 			return "", telephonyWriteOutcomeUnknown(err)
 		}
-		return "", err
+		return "", fmt.Errorf("sending telephony request failed")
 	}
 	defer resp.Body.Close()
 	expected := http.StatusOK
@@ -439,6 +442,7 @@ func (c *AgentClient) gaTelephonyRequest(
 		expected = http.StatusNoContent
 	}
 	if resp.StatusCode != expected {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
 		err := &azcore.ResponseError{
 			StatusCode: resp.StatusCode,
 			RawResponse: &http.Response{
@@ -448,13 +452,34 @@ func (c *AgentClient) gaTelephonyRequest(
 				Body:       http.NoBody,
 			},
 		}
-		if method != http.MethodGet && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if method != http.MethodGet && isUnknownWriteStatus(resp.StatusCode) {
 			return "", telephonyWriteOutcomeUnknown(err)
 		}
 		return "", err
 	}
 	if result != nil {
-		decoder := json.NewDecoder(resp.Body)
+		payload, err := io.ReadAll(io.LimitReader(resp.Body, maxTelephonyResponseSize+1))
+		if err != nil {
+			if method != http.MethodGet {
+				return "", telephonyWriteOutcomeUnknown(err)
+			}
+			return "", fmt.Errorf("reading telephony response body failed")
+		}
+		if len(payload) > maxTelephonyResponseSize {
+			err = fmt.Errorf("telephony response body exceeds the size limit")
+			if method != http.MethodGet {
+				return "", telephonyWriteOutcomeUnknown(err)
+			}
+			return "", err
+		}
+		if !utf8.Valid(payload) {
+			err = fmt.Errorf("telephony response body is not valid UTF-8")
+			if method != http.MethodGet {
+				return "", telephonyWriteOutcomeUnknown(err)
+			}
+			return "", err
+		}
+		decoder := json.NewDecoder(bytes.NewReader(payload))
 		if err := decoder.Decode(result); err != nil {
 			if errors.Is(err, io.EOF) {
 				err = fmt.Errorf("telephony response body is required")
@@ -493,7 +518,7 @@ func validateTelephonyBindingPage(page *TelephonyBindingPage) error {
 		return fmt.Errorf("telephony binding page is missing required has_more")
 	}
 	for i := range page.Data {
-		if err := validateTelephonyBinding(&page.Data[i], true, false); err != nil {
+		if err := validateTelephonyBinding(&page.Data[i], true); err != nil {
 			return fmt.Errorf("invalid telephony binding at index %d: %w", i, err)
 		}
 	}
@@ -503,20 +528,20 @@ func validateTelephonyBindingPage(page *TelephonyBindingPage) error {
 	return nil
 }
 
-func validateTelephonyBinding(binding *GATelephonyBinding, requireETag, allowMissingStatus bool) error {
+func validateTelephonyBinding(binding *GATelephonyBinding, requireETag bool) error {
 	if binding.ID == "" || binding.Provider == "" || binding.ConnectionName == "" || binding.IncomingCallURL == "" {
 		return fmt.Errorf("telephony response is missing required binding fields")
 	}
 	if requireETag && binding.ETag == "" {
 		return fmt.Errorf("telephony response is missing required ETag")
 	}
-	if binding.Status == "" && !allowMissingStatus {
+	if binding.Status == "" {
 		return fmt.Errorf("telephony response is missing required status")
 	}
 	if binding.Status != "" &&
 		binding.Status != TelephonyBindingStatusActive &&
 		binding.Status != TelephonyBindingStatusSuspended {
-		return fmt.Errorf("telephony response contains invalid status %q", binding.Status)
+		return fmt.Errorf("telephony response contains an invalid status")
 	}
 	if !isHTTPURL(binding.IncomingCallURL) {
 		return fmt.Errorf("telephony response contains invalid incoming_call_url")
@@ -537,7 +562,7 @@ func validateTelephonyBinding(binding *GATelephonyBinding, requireETag, allowMis
 			return fmt.Errorf("Teams telephony response contains invalid resource_account_object_id")
 		}
 	default:
-		return fmt.Errorf("telephony response contains unsupported provider %q", binding.Provider)
+		return fmt.Errorf("telephony response contains an unsupported provider")
 	}
 	return nil
 }
@@ -562,7 +587,7 @@ func validateTelephonyTransferTargets(targets *TelephonyTransferTargets, source 
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid name", source, i)
 		}
 		if _, exists := names[target.Name]; exists {
-			return fmt.Errorf("invalid telephony %s transfer targets: duplicate name %q", source, target.Name)
+			return fmt.Errorf("invalid telephony %s transfer targets: duplicate name", source)
 		}
 		names[target.Name] = struct{}{}
 		if utf8.RuneCountInString(target.Description) > 1024 {
@@ -581,16 +606,11 @@ func validateTelephonyTransferTargets(targets *TelephonyTransferTargets, source 
 				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is too long", source, i)
 			}
 		case TelephonyTransferDestinationSIP:
-			if !isSIPUri(target.Destination.Value) {
-				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid SIP URI", source, i)
+			if !isURI(target.Destination.Value) {
+				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid URI", source, i)
 			}
 		default:
-			return fmt.Errorf(
-				"invalid telephony %s transfer target at index %d: unsupported destination kind %q",
-				source,
-				i,
-				target.Destination.Kind,
-			)
+			return fmt.Errorf("invalid telephony %s transfer target at index %d: unsupported destination kind", source, i)
 		}
 	}
 	return nil
@@ -613,19 +633,19 @@ func isHTTPURL(value string) bool {
 		parsed.Host != ""
 }
 
-func isSIPUri(value string) bool {
+func isURI(value string) bool {
 	if !utf8.ValidString(value) {
 		return false
 	}
-	parsed, err := url.Parse(value)
-	scheme := strings.ToLower(parsed.Scheme)
-	if err != nil || (scheme != "sip" && scheme != "sips") {
-		return false
-	}
-	if strings.Contains(value, "#") || parsed.Opaque == "" || strings.ContainsFunc(parsed.Opaque, unicode.IsSpace) {
-		return false
-	}
-	return true
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil && parsed.Scheme != ""
+}
+
+func isUnknownWriteStatus(status int) bool {
+	return (status >= 200 && status < 300) ||
+		status == http.StatusRequestTimeout ||
+		status == http.StatusTooManyRequests ||
+		status >= 500
 }
 
 func telephonyCreateRequestProvider(request TelephonyBindingCreateRequest) string {

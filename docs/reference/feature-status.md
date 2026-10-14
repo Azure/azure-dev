@@ -7,7 +7,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Feature | Stage |
 |---|---|
 | `add` | Beta |
-| `azd ai connection add` (Foundry Connections extension) | Beta |
 | `auth` | Stable |
 | `config` | Stable |
 | `deploy` | Stable |

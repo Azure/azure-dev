@@ -14,8 +14,8 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`CommandResultService`, `ComposeService`, `CopilotService`, and
-`TelemetryService` are beta-only and therefore do not have stable `v1`
+`CommandResultService`, `ComposeService`, and `CopilotService`
+are beta-only and therefore do not have stable `v1`
 generated types or facade aliases. The corresponding `AzdClient` convenience
 accessors return generated `v1beta` clients, and their request and response
 types come from `contracts/v1beta`. Preview project lifecycle events use
@@ -60,8 +60,8 @@ descriptors.
 
 A service that exists only in beta is implemented directly with the generated
 `v1beta` server interface and registered without a stable adapter.
-`CommandResultService`, `ComposeService`, `CopilotService`, and
-`TelemetryService` currently use this model. Focused beta overrides apply
+`CommandResultService`, `ComposeService`, and `CopilotService`
+currently use this model. Focused beta overrides apply
 only to beta additions on services that also exist in stable; registration
 rejects an override for a beta-only service because its native implementation
 already owns the full beta contract.
@@ -169,9 +169,48 @@ message or enum type to remain compatible. Shared methods must retain their
 request and response types and client/server streaming shape.
 
 The temporary legacy bridge separately aliases the frozen pre-versioning
-`azdext.ComposeService`, `azdext.CopilotService`, and
-`azdext.TelemetryService` addresses to their native beta implementations. That
+`azdext.ComposeService` and `azdext.CopilotService` addresses to their native beta implementations. That
 compatibility alias does not make those services part of stable `v1`.
+
+## October 2026 graduation (azd 1.36.0)
+
+The [graduation history issue](https://github.com/Azure/azure-dev/issues/10436)
+records this first batch, compatibility decisions, consumer follow-ups, and
+actual release completion.
+
+The first graduation adds `TelemetryService.ReportUsage` and
+`AccountService.GetCurrentPrincipal` (including their complete message and enum
+shapes) to `v1`. Their beta symbols are deprecated, but both beta routes remain
+registered and delegate to the same stable implementation. No removal date is
+set; removal requires a separately approved migration policy. This retention
+is distinct from the temporary frozen unversioned bridge.
+
+`AzdClient.Telemetry()` now returns a stable client. This is an intentional Go
+source-compatibility break: callers upgrading the SDK must replace beta
+telemetry request/response types with stable types. No `TelemetryBeta()`
+accessor is introduced. Code deliberately using the deprecated beta route can
+construct `v1beta.NewTelemetryServiceClient` directly.
+`AccountBeta()` remains source-compatible but deprecated; use `Account()`.
+The shared `pkg/foundry/telemetry.Client` interface also uses stable types.
+
+Already-released extension binaries using beta or frozen unversioned telemetry
+keep working on new hosts. Extensions pinned to older SDK versions do not need
+to change until adopting the new SDK. New stable consumers must use the
+published `cli/azd/v1.36.0` SDK or later and declare
+`requiredAzdVersion: ">=1.36.0"`. First-party migrations and releases are
+tracked separately from the host graduation, except for the demo extension:
+it shares the core Go module and migrates in the host PR to keep core builds
+working. Its next published version also requires azd 1.36.0.
+
+Consumer migration and release follow-ups:
+[extension usage telemetry](https://github.com/Azure/azure-dev/issues/10438)
+and [current Azure principal](https://github.com/Azure/azure-dev/issues/10437).
+
+For every graduation, record the capability, complete stable surface, target
+release, beta deprecation/retention policy, SDK migration decisions,
+implementation PR, validation, and per-capability consumer migration issues
+in a public GitHub issue. Update the record with the actual merged commit and
+release date once released; a target version is not proof of release.
 
 See [`grpc/README.md`](../../grpc/README.md) for generation, lint, and Buf
 compatibility commands.

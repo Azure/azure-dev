@@ -57,12 +57,6 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
-@description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
-param principalId string = ''
-
-@description('Principal type used in the developer role assignment.')
-param principalType string = 'User'
-
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
 
@@ -120,8 +114,6 @@ module resources 'modules/resources.bicep' = {
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
-    principalId: principalId
-    principalType: principalType
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

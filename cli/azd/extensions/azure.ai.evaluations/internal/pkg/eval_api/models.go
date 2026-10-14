@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+// Connection is a project connection returned by the Foundry data plane.
+type Connection struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// ConnectionList is a page of project connections.
+type ConnectionList struct {
+	Value    []Connection `json:"value"`
+	NextLink string       `json:"nextLink,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Data Generation Jobs
 // ---------------------------------------------------------------------------
@@ -601,7 +613,7 @@ type EvalRunDataContent struct {
 }
 
 // NewAgentTargetDataSource builds an EvalRunDataSource configured for agent target completions.
-// The rows must be supplied separately via SetFileContent.
+// Supply a registered version via SetFileID, or unregistered rows via SetFileContent.
 func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDataSource {
 	return &EvalRunDataSource{
 		Type: EvalRunDataSourceTypeAgentTarget,

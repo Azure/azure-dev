@@ -635,7 +635,8 @@ type NullableString struct {
 
 // NewNullableString returns a PATCH value that serializes as a JSON string.
 func NewNullableString(value string) *NullableString {
-	return &NullableString{Value: new(value)}
+	valueCopy := value
+	return &NullableString{Value: &valueCopy}
 }
 
 // MarshalJSON serializes an empty value as null so callers can clear mutable fields.

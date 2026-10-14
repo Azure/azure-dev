@@ -48,15 +48,16 @@ func generateCommand(cmd *cobra.Command) extensions.Command {
 	path := buildCommandPath(cmd)
 
 	command := extensions.Command{
-		Name:     path,
-		Short:    cmd.Short,
-		Long:     cmd.Long,
-		Usage:    cmd.UseLine(),
-		Examples: generateExamples(cmd),
-		Args:     generateArgs(cmd),
-		Flags:    generateFlags(cmd),
-		Hidden:   cmd.Hidden,
-		Aliases:  cmd.Aliases,
+		Name:                   path,
+		Short:                  cmd.Short,
+		Long:                   cmd.Long,
+		Usage:                  cmd.UseLine(),
+		Examples:               generateExamples(cmd),
+		Args:                   generateArgs(cmd),
+		Flags:                  generateFlags(cmd),
+		Hidden:                 cmd.Hidden,
+		Aliases:                cmd.Aliases,
+		EnvironmentIndependent: cmd.Annotations[environmentIndependentCommandAnnotation] == "true",
 	}
 
 	if cmd.Deprecated != "" {

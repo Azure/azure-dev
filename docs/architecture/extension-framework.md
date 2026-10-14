@@ -47,6 +47,11 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+Extension command metadata can mark a command as environment-independent.
+For those invocations, azd skips loading the selected environment and resolving
+its Key Vault references before starting the extension. The command can still
+use the Environment gRPC service if it later needs environment values.
+
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project

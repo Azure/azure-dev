@@ -197,6 +197,20 @@ func TestGenerateExtensionMetadata_DeprecatedCommands(t *testing.T) {
 	assert.Equal(t, "use 'new-command' instead", metadata.Commands[0].Deprecated)
 }
 
+func TestGenerateExtensionMetadata_EnvironmentIndependentCommand(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "test-ext"}
+	command := MarkEnvironmentIndependent(&cobra.Command{
+		Use:   "local",
+		Short: "Update local project configuration",
+	})
+	rootCmd.AddCommand(command)
+
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
+
+	require.Len(t, metadata.Commands, 1)
+	assert.True(t, metadata.Commands[0].EnvironmentIndependent)
+}
+
 func TestGenerateExtensionMetadata_Aliases(t *testing.T) {
 	rootCmd := &cobra.Command{
 		Use:   "test-ext",

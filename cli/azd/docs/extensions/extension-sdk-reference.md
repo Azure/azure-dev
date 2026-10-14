@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
+  - [Environment-independent commands](#environment-independent-commands)
   - [NewListenCommand](#newlistencommand)
   - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
@@ -205,6 +206,21 @@ rootCmd.AddCommand(newServeCommand(extCtx))
 
 azdext.Run(rootCmd)
 ```
+
+### Environment-independent commands
+
+```go
+func MarkEnvironmentIndependent(cmd *cobra.Command) *cobra.Command
+```
+
+Use this helper for commands that do not need the selected azd environment.
+The host honors this metadata starting with azd 1.36.0-beta.1; extensions
+that promise not to read environment values should set their minimum azd
+version accordingly.
+
+When the command is included in extension metadata, azd skips loading that
+environment and resolving its Key Vault references before starting the
+extension. The command may still use the Environment gRPC service explicitly.
 
 ### ExtensionCommandOptions
 

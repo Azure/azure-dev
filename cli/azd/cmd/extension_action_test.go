@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -142,4 +143,84 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 	require.Contains(t, captured.Env, "AZD_NO_PROMPT=true")
 	require.Contains(t, captured.Env, "AZD_CWD=work")
 	require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+}
+
+func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) {
+	originalArgs := os.Args
+	os.Args = []string{"azd", "--output=json"}
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
+	fullPath := filepath.Join(configDir, extensionPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
+
+	metadataDir := filepath.Join(configDir, "extensions", "test-ext")
+	require.NoError(t, os.MkdirAll(metadataDir, 0o755))
+	metadata, err := json.Marshal(&extensions.ExtensionCommandMetadata{
+		ID: "test-ext",
+		Commands: []extensions.Command{{
+			Name:                   []string{"local"},
+			EnvironmentIndependent: true,
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadata, 0o600))
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	var captured exec.RunArgs
+	mockCtx.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		captured = args
+		return true
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	extension := &extensions.Extension{
+		Id:           "test-ext",
+		Path:         extensionPath,
+		Version:      "1.0.0",
+		Capabilities: []extensions.CapabilityType{extensions.MetadataCapability},
+	}
+	environmentLoads := 0
+	action := &extensionAction{
+		console:         mockCtx.Console,
+		extensionRunner: extensions.NewRunner(mockCtx.CommandRunner),
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			environmentLoads++
+			return nil, nil
+		}),
+		extensionManager: newExtensionActionTestManager(t, mockCtx, extension),
+		azdServer:        newExtensionActionTestServer(),
+		globalOptions: &internal.GlobalCommandOptions{
+			EnvironmentName: "test",
+		},
+		cmd: &cobra.Command{
+			Annotations: map[string]string{"extension.id": extension.Id},
+		},
+		args: []string{"--no-prompt", "-o", "json", "local", "--file", "connection.yaml"},
+	}
+
+	for _, prefix := range [][]string{
+		{"--no-prompt", "-o", "json"},
+		{"--trace-log-file", "trace.json", "--no-prompt"},
+		{"--trace-log-url", "http://localhost:4318", "-ojson"},
+		{"--debug", "--cwd", "project", "--environment", "test"},
+		{"--help"},
+		{"--docs"},
+		{"--non-interactive"},
+	} {
+		t.Run(prefix[0], func(t *testing.T) {
+			action.args = append(append([]string{}, prefix...), "local", "--file", "connection.yaml")
+			action.azdServer = newExtensionActionTestServer()
+			result, err := action.Run(t.Context())
+
+			require.NoError(t, err)
+			require.Nil(t, result)
+			require.Equal(t, 0, environmentLoads)
+			require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+		})
+	}
 }

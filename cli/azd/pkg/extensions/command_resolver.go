@@ -25,6 +25,20 @@ func ResolveCommandPath(metadata *ExtensionCommandMetadata, args []string) []str
 	return match.path
 }
 
+// ResolveCommand returns the best matching command for given args.
+func ResolveCommand(metadata *ExtensionCommandMetadata, args []string) *Command {
+	if metadata == nil {
+		return nil
+	}
+
+	match := matchCommand(metadata.Commands, args)
+	if match == nil {
+		return nil
+	}
+
+	return match.command
+}
+
 // ResolveCommandFlags returns the matching flag names for the command invoked by args.
 func ResolveCommandFlags(metadata *ExtensionCommandMetadata, args []string) []string {
 	if metadata == nil {

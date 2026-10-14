@@ -11,7 +11,6 @@ goals:
   - "Confirm the Environments & Environment Variables section explains .azure/<environment>/.env, azd env new/select/set/get-values, FOUNDRY_PROJECT_ENDPOINT, AGENT_<SERVICE> deployment values, and the service-level env mapping for runtime settings."
   - "Compare root, init, and files list help: headings should be consistently bold and underlined, command examples and flags highlighted, and usage paths start with azd ai agent. With NO_COLOR=1, the same content must remain readable without escape sequences."
   - "Confirm the root description mentions hosted and voice agents, and the init, show, and delete command summaries mention voice agents."
-  - "Run 'azd ai agent init --help'; confirm --kind and --voice are visible, --kind prompt-voice is demonstrated, and voice settings are described in azure.yaml with azd provision and azd deploy as the deployment workflow."
   - "Confirm init help lists --harness as a flag entry, describing it as an optional execution harness for --kind prompt with the github_copilot_preview value."
   - "Run 'NO_COLOR=1 azd ai agent init --help'; confirm the generated flags table visibly lists --template/-t, --kind, and --voice, while the deprecated compatibility alias --manifest/-m is hidden from that flags table, and confirm the output contains no escape sequences."
   - "In that uncolored init help output, confirm the visible compatibility note states that --manifest/-m is deprecated, remains accepted for compatibility, and users should use --template/-t instead."

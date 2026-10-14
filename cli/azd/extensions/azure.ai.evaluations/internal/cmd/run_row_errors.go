@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"azureaieval/internal/failuretext"
 	"azureaieval/internal/messages"
@@ -88,6 +89,23 @@ func renderRowErrors(out io.Writer, groups []rowErrorGroup) {
 		fmt.Fprint(out, messages.RunRowError(
 			failureText(group.evaluator), failureText(group.code), failureText(group.message), group.rows))
 	}
+}
+
+// rowFailureReasonLine reuses the dominant row reasons without fetching output again.
+func rowFailureReasonLine(groups []rowErrorGroup) string {
+	if len(groups) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, min(len(groups), maxRowErrorGroups))
+	for _, group := range groups[:min(len(groups), maxRowErrorGroups)] {
+		lines = append(lines, failureText(messages.RunRowError(
+			failureText(group.evaluator), failureText(group.code), failureText(group.message), group.rows)))
+	}
+	line := strings.Join(lines, "; ")
+	if hidden := len(groups) - len(lines); hidden > 0 {
+		line += fmt.Sprintf("; and %d more", hidden)
+	}
+	return line
 }
 
 // writeJobFailure prints why a generation job failed, redacted like every other

@@ -956,6 +956,13 @@ For a partial `create -o json` failure, the single output document includes
 flags, the error, and a `recovery_command`. When the error supplies remediation,
 `error.suggestion` preserves it alongside `error.message`. The command still exits nonzero.
 URLs in both `error.message` and `error.suggestion` omit user information, query strings, and fragments.
+Recovery commands normalize native path separators and quote ordinary spaces.
+Arguments containing shell expansion syntax or embedded quotes (including
+PowerShell smart quotes) remain `VALUE_NEEDS_QUOTING` rather than being inlined
+unsafely. In that case, human
+output and the JSON `retry_guidance` field explain that the command is not
+copy-and-run: substitute the original arguments using literal quoting for your
+shell, or repeat the original create command after fixing the error.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -1274,7 +1281,10 @@ to five followed by a count of the rest. `job show` lists them the same way. The
 details appended in parentheses, redacted and limited to 300 characters each.
 When rows errored, the `run start --wait` summary also lists up to three
 distinct evaluator errors, most common first, with the number of rows each
-affected; `run show` makes no extra requests, so use the follow-up commands to
+affected. If a failed run has no run-level reason, its final human error line
+reuses up to three of those redacted, bounded row reasons, with a count of any
+remaining groups. Completed runs retain their existing exit behavior.
+`run show` makes no extra requests, so use the follow-up commands to
 list errored rows. `--output json` keeps its existing document
 shape and exit behavior without appending human guidance, except that an
 `error` sent in an unconventional shape (a bare string, an array, or a `message`

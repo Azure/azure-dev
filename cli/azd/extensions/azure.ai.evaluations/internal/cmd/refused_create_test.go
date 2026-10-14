@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/stretchr/testify/assert"
@@ -92,9 +93,7 @@ func TestARefusedCreateKeepsItsJSONErrorUnchanged(t *testing.T) {
 	assert.NotContains(t, out.String(), "missing-judge")
 }
 
-// The retry command a partial create prints has to run as printed: the real,
-// shell-quoted path and name, never the placeholder, and the same in the JSON
-// field a script reads.
+// Ordinary paths remain copy-and-run in both human and JSON recovery commands.
 func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 	for _, path := range []string{
 		filepath.FromSlash("C:/Users/Me/My Evals/azure.eval.yaml"),
@@ -118,10 +117,66 @@ func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 					var document map[string]any
 					require.NoError(t, json.Unmarshal(out.Bytes(), &document))
 					text, _ = document["recovery_command"].(string)
+					assert.NotContains(t, document, "retry_guidance")
 				}
+
 				assert.Contains(t, text, "azd ai eval create \"my eval\" --from-file ")
 				assert.NotContains(t, text, "VALUE_NEEDS_QUOTING")
 				assert.Contains(t, text, filepath.ToSlash(path))
+			})
+		}
+	}
+}
+
+func TestCreateRetryExplainsArgumentsThatNeedShellSpecificQuoting(t *testing.T) {
+	for _, tc := range []struct {
+		label, name, path, environment string
+	}{
+		{"dollar path", "quality", filepath.FromSlash("team$eval/azure.eval.yaml"), ""},
+		{"backtick path", "quality", filepath.FromSlash("team`eval/azure.eval.yaml"), ""},
+		{"quoted path", "quality", filepath.FromSlash("team\"eval/azure.eval.yaml"), ""},
+		{"percent path", "quality", filepath.FromSlash("%TEMP%/azure.eval.yaml"), ""},
+		{"delayed expansion path", "quality", filepath.FromSlash("!TEMP!/azure.eval.yaml"), ""},
+		{"control path", "quality", "team\n/azure.eval.yaml", ""},
+		{"smart quote path", "quality", "team\u201c/azure.eval.yaml", ""},
+		{"dollar name", "team$eval", "azure.eval.yaml", ""},
+		{"backtick name", "team`eval", "azure.eval.yaml", ""},
+		{"environment", "quality", "azure.eval.yaml", "dev$env"},
+	} {
+		for _, format := range []string{"table", "json"} {
+			t.Run(tc.label+"/"+format, func(t *testing.T) {
+				var out bytes.Buffer
+				command := jsonCmd(t, format)
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				err := reportCreatePartial(command, &evalContext{envName: tc.environment}, tc.name, tc.path,
+					nil, errors.New("boom"))
+				require.NoError(t, err)
+
+				retry, guidance := out.String(), out.String()
+				if format == "json" {
+					var document map[string]any
+					require.NoError(t, json.Unmarshal(out.Bytes(), &document))
+					require.IsType(t, "", document["recovery_command"])
+					require.IsType(t, "", document["retry_guidance"])
+					retry = document["recovery_command"].(string)
+					guidance = document["retry_guidance"].(string)
+				}
+				assert.Contains(t, retry, "VALUE_NEEDS_QUOTING")
+				assert.NotContains(t, retry, "$")
+				assert.NotContains(t, retry, "`")
+				if !messages.CanInlineShellArg(filepath.ToSlash(tc.path)) {
+					assert.NotContains(t, retry, tc.path, "the unsafe argument is not inlined")
+				}
+				if !messages.CanInlineShellArg(tc.name) {
+					assert.NotContains(t, retry, tc.name)
+				}
+				if !messages.CanInlineShellArg(tc.environment) {
+					assert.NotContains(t, retry, tc.environment)
+				}
+				assert.Contains(t, guidance, "Do not run the recovery command unchanged")
+				assert.Contains(t, guidance, "quoted literally for your shell")
+				assert.Contains(t, guidance, "repeat the original create command")
 			})
 		}
 	}

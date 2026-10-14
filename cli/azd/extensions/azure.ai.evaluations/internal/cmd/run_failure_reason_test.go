@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -45,7 +46,7 @@ func TestFailedRunSummaryNamesTheReasonWhereverItIsReported(t *testing.T) {
 				require.NoError(t, render(&out))
 				assert.Contains(t, out.String(), failureReasonText, caller)
 			}
-			err := runCompleted(&run)
+			err := runCompleted(&run, nil)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "finished with status failed")
 			assert.Contains(t, err.Error(), failureReasonText,
@@ -59,11 +60,11 @@ func TestRunWithoutAReasonStillSaysItFailed(t *testing.T) {
 		{ID: "run_x", Status: "failed"},
 		{ID: "run_x", Status: "failed", Error: &eval_api.JobError{}},
 	} {
-		err := runCompleted(run)
+		err := runCompleted(run, nil)
 		require.Error(t, err)
 		assert.Equal(t, "run run_x finished with status failed", err.Error())
 	}
-	assert.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "run_x", Status: "completed"}))
+	assert.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "run_x", Status: "completed"}, nil))
 }
 
 func TestRunFailureReasonInTheErrorLineIsRedactedAndBounded(t *testing.T) {
@@ -73,7 +74,7 @@ func TestRunFailureReasonInTheErrorLineIsRedactedAndBounded(t *testing.T) {
 			Message: runFailureWithCredentials + "\n\x1b[2J\x07\u009b31m" + strings.Repeat("x", 1000),
 		},
 	}
-	err := runCompleted(run)
+	err := runCompleted(run, nil)
 	require.Error(t, err)
 	text := err.Error()
 	for _, secret := range []string{"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig="} {
@@ -189,12 +190,111 @@ func TestRunSummaryReadsReasonsFromErroredRows(t *testing.T) {
 			text := out.String()
 			assert.Contains(t, text, "EVALUATOR ERRORS")
 			assert.Contains(t, text, "quality: DeploymentNotFound: "+failureReasonText+" (2 rows)")
+			err := runCompleted(&run, summary)
+			if status == "failed" {
+				require.ErrorContains(t, err, "quality: DeploymentNotFound: "+failureReasonText+" (2 rows)")
+			} else {
+				require.NoError(t, err, "errored rows do not change a completed run's exit behavior")
+			}
 
 			var without bytes.Buffer
 			require.NoError(t, renderRun(&without, &run, nil))
 			assert.NotContains(t, without.String(), failureReasonText,
 				"without the row listing there is nothing to read, and nothing is invented")
 		})
+	}
+}
+
+func TestRunCompletionRowFallbackIsRedactedBoundedAndCapped(t *testing.T) {
+	var items []eval_api.OutputItem
+	for _, reason := range []string{"rare one", "rare two", "rare three", "rare four"} {
+		items = append(items, rowErrorItem(reason, erroredResult("quality", "", reason)))
+	}
+	for range 5 {
+		items = append(items, rowErrorItem("dominant",
+			erroredResult("quality", "Download", runFailureWithCredentials+"\n"+strings.Repeat("x", 1000))))
+	}
+	summary := &runOutputSummary{rowErrors: summarizeRowErrors(items)}
+	run := &eval_api.OpenAIEvalRun{ID: "run_rows", Status: "failed"}
+	err := runCompleted(run, summary)
+	require.Error(t, err)
+	line := err.Error()
+	assert.Contains(t, line, "Synthetic initialization failure.")
+	assert.Contains(t, line, "rare one")
+	assert.Contains(t, line, "rare two")
+	assert.NotContains(t, line, "rare three")
+	assert.NotContains(t, line, "rare four")
+	assert.Contains(t, line, "and 2 more")
+	assert.Less(t, strings.Index(line, "Synthetic initialization failure."), strings.Index(line, "rare one"))
+	assert.NotContains(t, line, "\n")
+	assert.LessOrEqual(t, len([]rune(line)), 3*maxFailureTextRunes+100)
+	for _, secret := range sensitiveFixtureParts {
+		assert.NotContains(t, line, secret)
+	}
+
+	run.Error = &eval_api.JobError{Message: "run-level reason"}
+	err = runCompleted(run, summary)
+	require.EqualError(t, err, "run run_rows finished with status failed: run-level reason")
+	assert.NoError(t, runCompleted(nil, summary))
+	for _, status := range []string{"completed", "Completed", ""} {
+		run.Status = status
+		assert.NoError(t, runCompleted(run, summary))
+	}
+	assert.Empty(t, rowFailureReasonLine(nil))
+}
+
+func TestRunStartWaitReusesRowReasonsWithoutChangingJSONOrShowRequests(t *testing.T) {
+	const items = `{"data":[{"id":"1","run_id":"run_live","status":"errored","results":[` +
+		`{"name":"quality","status":"errored","sample":{"error":` +
+		`{"code":"DeploymentNotFound","message":"` + failureReasonText + `"}}}]}]}`
+	for _, status := range []string{"failed", "completed"} {
+		for _, format := range []string{"table", "json"} {
+			t.Run(status+"/"+format, func(t *testing.T) {
+				body := `{"id":"run_live","status":"` + status + `","error":null,` +
+					`"result_counts":{"total":1,"errored":1}}`
+				var outputReads atomic.Int32
+				srv := liveRunServerWithOutput(t, body, func(w http.ResponseWriter, _ *http.Request) {
+					outputReads.Add(1)
+					_, _ = w.Write([]byte(items))
+				})
+				var out bytes.Buffer
+				command := jsonCmd(t, format)
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				action := &runStartAction{cmd: command, flags: &runStartFlags{
+					groupName: "eval_live", evalPath: t.TempDir(), wait: true,
+				}}
+				err := action.start(t.Context(), evalContextFor(srv), gate{})
+				if status == "failed" {
+					require.ErrorContains(t, err, "run run_live finished with status failed")
+					if format == "table" {
+						assert.Contains(t, err.Error(), failureReasonText)
+					} else {
+						assert.NotContains(t, err.Error(), failureReasonText)
+					}
+				} else {
+					require.NoError(t, err)
+				}
+				if format == "json" {
+					assert.JSONEq(t, body, out.String())
+					assert.Equal(t, int32(0), outputReads.Load())
+				} else {
+					assert.Contains(t, out.String(), failureReasonText)
+					assert.Equal(t, int32(1), outputReads.Load(), "reuse the one fetched row listing")
+				}
+
+				readsBeforeShow := outputReads.Load()
+				out.Reset()
+				show := &runShowAction{cmd: command, runID: "run_live", flags: &runShowFlags{wait: true}}
+				err = show.show(t.Context(), evalContextFor(srv), "eval_live", gate{})
+				if status == "failed" {
+					require.EqualError(t, err, "run run_live finished with status failed")
+				} else {
+					require.NoError(t, err)
+				}
+				assert.Equal(t, readsBeforeShow, outputReads.Load(), "run show never fetches row errors")
+			})
+		}
 	}
 }
 

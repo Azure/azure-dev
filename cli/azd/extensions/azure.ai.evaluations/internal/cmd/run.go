@@ -44,7 +44,7 @@ var terminalRunStates = map[string]bool{
 // before the gate because the gate's exit code means "the evaluation
 // regressed", and a run that never produced results has not regressed — it did
 // not run. Distinguishing those two is what the separate code is for.
-func runCompleted(run *eval_api.OpenAIEvalRun) error {
+func runCompleted(run *eval_api.OpenAIEvalRun, rows *runOutputSummary) error {
 	if run == nil {
 		return nil
 	}
@@ -56,6 +56,11 @@ func runCompleted(run *eval_api.OpenAIEvalRun) error {
 	// reason when the run has one, and the details that name what was rejected.
 	if reason := failureText(runFailureMessage(run)); reason != "" {
 		return messages.RunFinishedWithReason(run.ID, run.Status, failureReasonLine(reason, run.Error))
+	}
+	if rows != nil {
+		if reason := rowFailureReasonLine(rows.rowErrors); reason != "" {
+			return messages.RunFinishedWithReason(run.ID, run.Status, reason)
+		}
 	}
 	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
@@ -354,6 +359,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	final = ec.withPortalLink(ctx, evalID, final)
 	display := runForDisplay(final, evalID, run.ID)
 
+	var summary *runOutputSummary
 	if isJSON(a.cmd) {
 		projected, err := runForJSON(final)
 		if err != nil {
@@ -363,7 +369,8 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 			return err
 		}
 	} else {
-		if err := renderRun(out, display, ec.runOutputSummary(ctx, evalID, display)); err != nil {
+		summary = ec.runOutputSummary(ctx, evalID, display)
+		if err := renderRun(out, display, summary); err != nil {
 			return err
 		}
 	}
@@ -371,7 +378,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	// Last, so that the results are reported whether or not the gate
 	// holds: a pipeline that only learns it failed is worse off than
 	// one that can see by how much.
-	if err := runCompleted(display); err != nil {
+	if err := runCompleted(display, summary); err != nil {
 		return err
 	}
 	return applyGate(a.cmd, threshold, display)

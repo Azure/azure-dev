@@ -287,7 +287,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 			return err
 		}
 		if gateOnStatus {
-			if err := runCompleted(display); err != nil {
+			if err := runCompleted(display, nil); err != nil {
 				return err
 			}
 		}
@@ -299,7 +299,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 		return err
 	}
 	if gateOnStatus {
-		if err := runCompleted(display); err != nil {
+		if err := runCompleted(display, nil); err != nil {
 			return err
 		}
 	}

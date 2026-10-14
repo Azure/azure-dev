@@ -50,7 +50,7 @@ func TestFailedRunViewsNameTheMissingModelFromTheDetails(t *testing.T) {
 	require.NoError(t, renderRunDetail(&detail, &run))
 	assertNamesTheMissingModel(t, detail.String())
 
-	err := runCompleted(&run)
+	err := runCompleted(&run, nil)
 	require.Error(t, err)
 	assert.Equal(t, "run run_live finished with status failed: "+liveTopMessage+
 		" (details: "+liveDetailMessage+" (target: "+liveDetailTarget+"))", err.Error(),
@@ -60,13 +60,20 @@ func TestFailedRunViewsNameTheMissingModelFromTheDetails(t *testing.T) {
 
 func liveRunServer(t *testing.T, body string) *httptest.Server {
 	t.Helper()
+	return liveRunServerWithOutput(t, body, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	})
+}
+
+func liveRunServerWithOutput(t *testing.T, body string, output http.HandlerFunc) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_live":
 			_, _ = io.WriteString(w, `{"id":"eval_live","data_source_config":{"type":"custom"}}`)
 		case strings.HasSuffix(r.URL.Path, "/output_items"):
-			_, _ = io.WriteString(w, `{"data":[]}`)
+			output(w, r)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
 			_, _ = io.WriteString(w, `{"id":"run_live","status":"queued"}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs/run_live"):
@@ -174,7 +181,7 @@ func TestDetailsAreNotRepeatedWhenTheyAreTheHeadline(t *testing.T) {
 	var out bytes.Buffer
 	renderRunFailure(&out, &run)
 	assert.Equal(t, "\nthe only reason\n", out.String())
-	assert.Equal(t, "run r finished with status failed: the only reason", runCompleted(&run).Error())
+	assert.Equal(t, "run r finished with status failed: the only reason", runCompleted(&run, nil).Error())
 }
 
 func TestFailureWithoutDetailsPrintsExactlyWhatItDidBefore(t *testing.T) {
@@ -184,7 +191,7 @@ func TestFailureWithoutDetailsPrintsExactlyWhatItDidBefore(t *testing.T) {
 	var out bytes.Buffer
 	renderRunFailure(&out, &run)
 	assert.Equal(t, "\nthe model was not found\n", out.String())
-	assert.Equal(t, "run r finished with status failed: the model was not found", runCompleted(&run).Error())
+	assert.Equal(t, "run r finished with status failed: the model was not found", runCompleted(&run, nil).Error())
 
 	var job bytes.Buffer
 	writeJobFailure(&job, &eval_api.GenerationJob{ID: "j", Status: "failed", Error: run.Error})
@@ -210,7 +217,7 @@ func TestFailureDetailsAreRedactedAndBounded(t *testing.T) {
 	renderRunFailure(&rendered, &run)
 	var job bytes.Buffer
 	writeJobFailure(&job, &eval_api.GenerationJob{ID: "j", Status: "failed", Error: failure})
-	line := runCompleted(&run).Error()
+	line := runCompleted(&run, nil).Error()
 
 	for name, text := range map[string]string{"view": rendered.String(), "job": job.String(), "line": line} {
 		for _, secret := range sensitiveFixtureParts {

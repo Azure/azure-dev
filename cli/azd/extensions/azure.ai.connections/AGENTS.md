@@ -140,8 +140,10 @@ abstraction from azd core.
   is set. Never use `log` for anything the user needs to see.
 - Do not use `log.Fatal` or `log.Panic` for expected failures — return a
   structured error via `exterrors` instead.
-- Keep local `add` results on Cobra's injected output writer. It uses raw
-  Project configuration APIs only; do not resolve environment or cloud values.
+- Keep local `add` results on Cobra's injected output writer. Read the raw
+  local manifest for planning, then write through existing Project APIs only.
+  Do not resolve environment or cloud values. Validate the complete candidate
+  before any write and report potentially partial updates with rerun guidance.
 
 ## Other extension conventions
 

@@ -46,8 +46,9 @@ azd ai connection add search --file connections/search.yaml
 azd ai connection add search --file connections/search.yaml --project foundry
 ```
 
-This local-only workflow requires azd 1.36.0-beta.1 or later, including the
-preview atomic service-authoring API; older hosts read the active environment
+This local-only workflow requires azd 1.36.0-beta.1 or later for
+environment-independent command dispatch and raw configuration preservation
+through the existing Project APIs. Older hosts read the active environment
 before starting an extension command. Output supports `--output json` and
 `--output table` (the default human-readable format).
 
@@ -64,15 +65,22 @@ Project owner. If an existing service has no unique Project owner, pass
 in `azure.yaml` first; the command never guesses or removes unknown
 dependencies.
 
-For both additions and updates, if project services change while a Connection
-is being planned, `add` stops before writing; rerun it against the updated
-manifest. The host checks the original services snapshot and saves the selected
-service under the same mutation lock, preventing another host mutation from
-slipping between the check and write. Service keys containing dots are literal
-keys. Snapshot comparison normalizes equivalent YAML numeric representations,
-so encoding `1.0` as `1` does not create a false conflict. Raw YAML preserves
-large integers and literal environment templates on both the selected service
-and unrelated services.
+The command validates the complete candidate project before its first write.
+A new service uses the existing Project `AddService` request for its
+declaration, followed by a service setter when environment bindings are needed.
+The setter stores literal `${VAR}` bindings without the escaping that
+`AddService.Environment` applies. Updates set or remove only changed managed
+top-level fields through the existing service
+configuration APIs; unrelated properties stay on the host. Service names and
+environment keys containing dots remain literal keys, and raw persistence
+preserves large integers and literal environment templates.
+
+Authoring can require several requests and is not a transaction. A failed
+request may leave part of the update applied; the error tells you to inspect
+the manifest and rerun the command to reconcile it. The command does not roll
+back changes or detect concurrent edits. Avoid editing the same service while
+it runs. An unchanged service makes no mutation requests and leaves the file
+byte-identical.
 
 The supplied file is authoritative for Connection fields. Updating a service
 replaces its previous Connection definition while preserving unrelated service

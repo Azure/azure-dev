@@ -75,7 +75,9 @@ func newConnectionAddCommandWithDependencies(
 			"it does not read or modify an azd environment, resolve values, or create or deploy remote resources.\n\n" +
 			"For a new service, the sole Foundry Project is selected automatically. With multiple Projects, " +
 			"use --project or select one interactively. Updates preserve a unique existing owner; use --project " +
-			"to repair a missing or ambiguous owner. Dangling or malformed uses entries must be repaired manually.",
+			"to repair a missing or ambiguous owner. Dangling or malformed uses entries must be repaired manually.\n\n" +
+			"The complete project mutation is validated before writing. Updates use separate Project API requests, " +
+			"not a transaction. If a request fails, inspect the manifest and rerun to reconcile a possible partial update.",
 		Example: `  # Add a Connection definition to an existing Project service
   azd ai connection add search --file connections/search.yaml
 

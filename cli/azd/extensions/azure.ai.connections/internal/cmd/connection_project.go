@@ -16,40 +16,31 @@ import (
 	"azure.ai.connections/internal/definition"
 	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/foundry"
-	"azure.ai.connections/internal/hostproject"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const aiProjectServiceHost = "azure.ai.project"
 
 type connectionAddProjectClient interface {
-	GetConfigSection(
+	AddService(
 		context.Context,
-		*azdext.GetProjectConfigSectionRequest,
-		...grpc.CallOption,
-	) (*azdext.GetProjectConfigSectionResponse, error)
-	GetConfigValue(
-		context.Context,
-		*azdext.GetProjectConfigValueRequest,
-		...grpc.CallOption,
-	) (*azdext.GetProjectConfigValueResponse, error)
-	GetServiceConfigSection(
-		context.Context,
-		*azdext.GetServiceConfigSectionRequest,
-		...grpc.CallOption,
-	) (*azdext.GetServiceConfigSectionResponse, error)
-	SetConfigSection(
-		context.Context,
-		*azdext.SetProjectConfigSectionRequest,
+		*azdext.AddServiceRequest,
 		...grpc.CallOption,
 	) (*azdext.EmptyResponse, error)
-	SetServiceConfigSection(
+	SetServiceConfigValue(
 		context.Context,
-		*azdext.SetServiceConfigSectionRequest,
+		*azdext.SetServiceConfigValueRequest,
+		...grpc.CallOption,
+	) (*azdext.EmptyResponse, error)
+	UnsetServiceConfig(
+		context.Context,
+		*azdext.UnsetServiceConfigRequest,
 		...grpc.CallOption,
 	) (*azdext.EmptyResponse, error)
 }
@@ -65,6 +56,7 @@ type connectionProjectSelector func(
 ) (string, error)
 
 type connectionProjectSnapshot struct {
+	manifest    map[string]any
 	services    map[string]any
 	resources   map[string]any
 	projectKeys []string
@@ -77,7 +69,13 @@ type connectionAddPlan struct {
 	projectKey           string
 	environmentVariables []string
 	serviceSection       map[string]any
-	originalServices     map[string]any
+	addRequest           *azdext.AddServiceRequest
+	changes              []connectionServiceChange
+}
+
+type connectionServiceChange struct {
+	path  string
+	value *structpb.Value
 }
 
 var connectionCoreServiceFields = map[string]struct{}{
@@ -256,6 +254,9 @@ func planConnectionAdd(
 	if _, _, err := validateConnectionDefinitionForAuthoring(candidateInput); err != nil {
 		return nil, err
 	}
+	if err := validateConnectionProjectCandidate(ctx, snapshot, serviceName, candidate); err != nil {
+		return nil, err
+	}
 
 	plan := &connectionAddPlan{
 		serviceName:          serviceName,
@@ -263,18 +264,17 @@ func planConnectionAdd(
 		projectKey:           projectKey,
 		environmentVariables: slices.Clone(environmentVariables),
 		serviceSection:       candidate,
-		originalServices:     snapshot.services,
 	}
 	if !existing {
 		plan.mutation = "added"
-		return plan, nil
-	}
-
-	if reflect.DeepEqual(rawExisting, candidate) {
+	} else if reflect.DeepEqual(rawExisting, candidate) {
 		plan.mutation = "unchanged"
-		return plan, nil
+	} else {
+		plan.mutation = "updated"
 	}
-	plan.mutation = "updated"
+	if err := plan.prepareWrites(rawExisting, reconciledUses, env); err != nil {
+		return nil, err
+	}
 	return plan, nil
 }
 
@@ -337,10 +337,35 @@ func loadConnectionProjectSnapshot(
 	slices.Sort(projectKeys)
 
 	return &connectionProjectSnapshot{
+		manifest:    manifest,
 		services:    services,
 		resources:   resources,
 		projectKeys: projectKeys,
 	}, nil
+}
+
+func validateConnectionProjectCandidate(
+	ctx context.Context,
+	snapshot *connectionProjectSnapshot,
+	serviceName string,
+	service map[string]any,
+) error {
+	manifest := maps.Clone(snapshot.manifest)
+	services := maps.Clone(snapshot.services)
+	services[serviceName] = service
+	manifest["services"] = services
+	content, err := yaml.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("encoding the candidate project manifest")
+	}
+	if _, err := project.Parse(ctx, string(content)); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"the candidate project manifest has invalid core configuration; no changes were written.",
+			"Correct the project structure and core service settings in azure.yaml or azure.yml, then retry.",
+		)
+	}
+	return nil
 }
 
 func connectionManifestMap(manifest map[string]any, path string) (map[string]any, error) {
@@ -627,6 +652,16 @@ func mergeConnectionEnvironment(
 		}
 	}
 
+	for _, key := range slices.Sorted(maps.Keys(env)) {
+		if _, ok := env[key].(string); !ok {
+			return nil, false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("service env binding for %q must be a string.", key),
+				"Repair the service env section in azure.yaml before retrying.",
+			)
+		}
+	}
+
 	added := false
 	requiredSet := make(map[string]struct{}, len(required))
 	for _, variable := range required {
@@ -802,37 +837,94 @@ func connectionServiceDefinition(service map[string]any) (map[string]any, error)
 	return source, nil
 }
 
-func (plan *connectionAddPlan) apply(
-	ctx context.Context,
-	client connectionAddProjectClient,
+func (plan *connectionAddPlan) prepareWrites(
+	existing map[string]any,
+	uses []string,
+	env map[string]any,
 ) error {
+	if plan.mutation == "added" {
+		plan.addRequest = &azdext.AddServiceRequest{
+			Service: &azdext.ServiceConfig{
+				Name: plan.serviceName,
+				Host: aiConnectionHost,
+				Uses: slices.Clone(uses),
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"$ref": structpb.NewStringValue(plan.ref),
+				}},
+			},
+		}
+		if len(env) > 0 {
+			value, err := structpb.NewValue(env)
+			if err != nil {
+				return fmt.Errorf("encoding Connection service environment bindings")
+			}
+			// AddService escapes templates in its Environment field.
+			plan.changes = append(plan.changes, connectionServiceChange{path: "env", value: value})
+		}
+		return nil
+	}
+	for _, field := range []string{"$ref", "uses", "env"} {
+		value, found := plan.serviceSection[field]
+		old, existed := existing[field]
+		if found == existed && reflect.DeepEqual(old, value) {
+			continue
+		}
+		var encoded *structpb.Value
+		if found {
+			var err error
+			encoded, err = structpb.NewValue(value)
+			if err != nil {
+				return fmt.Errorf("encoding Connection service field %q", field)
+			}
+		}
+		plan.changes = append(plan.changes, connectionServiceChange{path: field, value: encoded})
+	}
+	for _, field := range slices.Sorted(maps.Keys(existing)) {
+		if _, preserved := plan.serviceSection[field]; preserved {
+			continue
+		}
+		if _, owned := connectionDefinitionFields[field]; !owned && field != "config" {
+			continue
+		}
+		plan.changes = append(plan.changes, connectionServiceChange{path: field})
+	}
+	return nil
+}
+
+func (plan *connectionAddPlan) apply(ctx context.Context, client connectionAddProjectClient) error {
 	switch plan.mutation {
-	case "added", "updated":
+	case "added":
+		if _, err := client.AddService(ctx, plan.addRequest); err != nil {
+			return fmt.Errorf(
+				"adding Connection service %q failed; the service may have been added; "+
+					"inspect the manifest and rerun to reconcile: %w",
+				plan.serviceName, err,
+			)
+		}
+	case "updated":
 	case "unchanged":
 		return nil
 	default:
 		return fmt.Errorf("unsupported Connection service mutation %q", plan.mutation)
 	}
-	expected, err := yaml.Marshal(plan.originalServices)
-	if err != nil {
-		return fmt.Errorf("encoding services precondition")
-	}
-	candidate, err := yaml.Marshal(plan.serviceSection)
-	if err != nil {
-		return fmt.Errorf("encoding Connection service")
-	}
-	if writer, ok := client.(interface {
-		applyAuthoringService(context.Context, string, string, string) error
-	}); ok {
-		return writer.applyAuthoringService(ctx, plan.serviceName, string(expected), string(candidate))
-	}
-	writer, closeClient, err := hostproject.Connect()
-	if err != nil {
-		return fmt.Errorf("connecting to project authoring API: %w", err)
-	}
-	defer closeClient()
-	if err := writer.ApplyServiceConfig(ctx, plan.serviceName, string(expected), string(candidate)); err != nil {
-		return fmt.Errorf("persisting Connection service %q: %w", plan.serviceName, err)
+	for _, change := range plan.changes {
+		var err error
+		if change.value == nil {
+			_, err = client.UnsetServiceConfig(ctx, &azdext.UnsetServiceConfigRequest{
+				ServiceName: plan.serviceName, Path: change.path,
+			})
+		} else {
+			_, err = client.SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+				ServiceName: plan.serviceName, Path: change.path, Value: change.value,
+			})
+		}
+		if err != nil {
+			return fmt.Errorf(
+				"authoring Connection service %q at field %q failed; "+
+					"changes may be partially applied; inspect the manifest and rerun to reconcile: %w",
+				plan.serviceName, change.path, err,
+			)
+		}
 	}
 	return nil
 }

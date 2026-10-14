@@ -6,8 +6,10 @@ package cmd
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azure.ai.connections/internal/foundry"
@@ -17,22 +19,25 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type connectionAddProjectClientStub struct {
-	services           map[string]any
-	resources          map[string]any
-	layersFound        bool
-	projectSetRequests []*azdext.SetProjectConfigSectionRequest
-	serviceSetRequests []*azdext.SetServiceConfigSectionRequest
-	authoringRequests  []map[string]any
+	services             map[string]any
+	resources            map[string]any
+	layersFound          bool
+	manifestFields       map[string]any
+	addRequests          []*azdext.AddServiceRequest
+	serviceSetRequests   []*azdext.SetServiceConfigValueRequest
+	serviceUnsetRequests []*azdext.UnsetServiceConfigRequest
+	mutationCalls        []string
+	failAt               int
+	failAfterWrite       bool
+	writeError           error
 }
 
 func (s *connectionAddProjectClientStub) readAuthoringManifest(context.Context) (map[string]any, error) {
-	manifest := map[string]any{"services": s.services, "resources": s.resources}
+	manifest := map[string]any{"name": "test", "services": s.services, "resources": s.resources}
+	maps.Copy(manifest, s.manifestFields)
 	if s.layersFound {
 		manifest["layers"] = []any{}
 	}
@@ -45,106 +50,72 @@ func (s *connectionAddProjectClientStub) readAuthoringManifest(context.Context) 
 	return snapshot, err
 }
 
-func (s *connectionAddProjectClientStub) applyAuthoringService(
-	_ context.Context, name, expected, candidate string,
-) error {
-	current, err := yaml.Marshal(s.services)
-	if err != nil {
-		return err
-	}
-	if string(current) != expected {
-		return status.Error(codes.Aborted, "project services changed")
-	}
-	var service map[string]any
-	if err := yaml.Unmarshal([]byte(candidate), &service); err != nil {
-		return err
-	}
-	s.authoringRequests = append(s.authoringRequests, service)
-	_, exists := s.services[name]
-	s.services[name] = service
-	// Preserve legacy observations; production does not use
-	// protobuf Struct setters.
-	if exists {
-		s.serviceSetRequests = append(s.serviceSetRequests,
-			&azdext.SetServiceConfigSectionRequest{ServiceName: name})
-	} else {
-		s.projectSetRequests = append(s.projectSetRequests,
-			&azdext.SetProjectConfigSectionRequest{Path: "services"})
-	}
-	return nil
-}
-
-func (s *connectionAddProjectClientStub) GetConfigSection(
+func (s *connectionAddProjectClientStub) AddService(
 	_ context.Context,
-	request *azdext.GetProjectConfigSectionRequest,
-	_ ...grpc.CallOption,
-) (*azdext.GetProjectConfigSectionResponse, error) {
-	var value map[string]any
-	switch request.GetPath() {
-	case "services":
-		value = s.services
-	case "resources":
-		value = s.resources
-	default:
-		return &azdext.GetProjectConfigSectionResponse{}, nil
-	}
-	section, err := structpb.NewStruct(value)
-	if err != nil {
-		return nil, err
-	}
-	return &azdext.GetProjectConfigSectionResponse{Section: section, Found: true}, nil
-}
-
-func (s *connectionAddProjectClientStub) GetConfigValue(
-	_ context.Context,
-	request *azdext.GetProjectConfigValueRequest,
-	_ ...grpc.CallOption,
-) (*azdext.GetProjectConfigValueResponse, error) {
-	if request.GetPath() == "layers" && s.layersFound {
-		return &azdext.GetProjectConfigValueResponse{
-			Value: structpb.NewStringValue("layered"),
-			Found: true,
-		}, nil
-	}
-	return &azdext.GetProjectConfigValueResponse{}, nil
-}
-
-func (s *connectionAddProjectClientStub) GetServiceConfigSection(
-	_ context.Context,
-	request *azdext.GetServiceConfigSectionRequest,
-	_ ...grpc.CallOption,
-) (*azdext.GetServiceConfigSectionResponse, error) {
-	value, found := s.services[request.GetServiceName()]
-	if !found {
-		return &azdext.GetServiceConfigSectionResponse{}, nil
-	}
-	service, ok := value.(map[string]any)
-	if !ok {
-		return &azdext.GetServiceConfigSectionResponse{}, nil
-	}
-	section, err := structpb.NewStruct(service)
-	if err != nil {
-		return nil, err
-	}
-	return &azdext.GetServiceConfigSectionResponse{Section: section, Found: true}, nil
-}
-
-func (s *connectionAddProjectClientStub) SetConfigSection(
-	_ context.Context,
-	request *azdext.SetProjectConfigSectionRequest,
+	request *azdext.AddServiceRequest,
 	_ ...grpc.CallOption,
 ) (*azdext.EmptyResponse, error) {
-	s.projectSetRequests = append(s.projectSetRequests, request)
-	return &azdext.EmptyResponse{}, nil
+	s.addRequests = append(s.addRequests, request)
+	s.mutationCalls = append(s.mutationCalls, "add")
+	if err := s.mutationError(false); err != nil {
+		return nil, err
+	}
+	service := request.GetService()
+	section := service.GetAdditionalProperties().AsMap()
+	section["host"] = service.GetHost()
+	section["uses"] = stringsToAny(service.GetUses())
+	if len(service.GetEnvironment()) > 0 {
+		env := map[string]any{}
+		for key, value := range service.GetEnvironment() {
+			env[key] = strings.ReplaceAll(value, "$", "$$")
+		}
+		section["env"] = env
+	}
+	s.services[service.GetName()] = section
+	return &azdext.EmptyResponse{}, s.mutationError(true)
 }
 
-func (s *connectionAddProjectClientStub) SetServiceConfigSection(
+func (s *connectionAddProjectClientStub) SetServiceConfigValue(
 	_ context.Context,
-	request *azdext.SetServiceConfigSectionRequest,
+	request *azdext.SetServiceConfigValueRequest,
 	_ ...grpc.CallOption,
 ) (*azdext.EmptyResponse, error) {
 	s.serviceSetRequests = append(s.serviceSetRequests, request)
-	return &azdext.EmptyResponse{}, nil
+	s.mutationCalls = append(s.mutationCalls, "set:"+request.GetPath())
+	if err := s.mutationError(false); err != nil {
+		return nil, err
+	}
+	service, ok := s.services[request.GetServiceName()].(map[string]any)
+	if !ok {
+		return nil, errors.New("service not found")
+	}
+	service[request.GetPath()] = request.GetValue().AsInterface()
+	return &azdext.EmptyResponse{}, s.mutationError(true)
+}
+
+func (s *connectionAddProjectClientStub) UnsetServiceConfig(
+	_ context.Context,
+	request *azdext.UnsetServiceConfigRequest,
+	_ ...grpc.CallOption,
+) (*azdext.EmptyResponse, error) {
+	s.serviceUnsetRequests = append(s.serviceUnsetRequests, request)
+	s.mutationCalls = append(s.mutationCalls, "unset:"+request.GetPath())
+	if err := s.mutationError(false); err != nil {
+		return nil, err
+	}
+	service, ok := s.services[request.GetServiceName()].(map[string]any)
+	if !ok {
+		return nil, errors.New("service not found")
+	}
+	delete(service, request.GetPath())
+	return &azdext.EmptyResponse{}, s.mutationError(true)
+}
+
+func (s *connectionAddProjectClientStub) mutationError(afterWrite bool) error {
+	if s.failAt == len(s.mutationCalls) && s.failAfterWrite == afterWrite {
+		return s.writeError
+	}
+	return nil
 }
 
 func TestLoadConnectionProjectSnapshotSortsProjectKeys(t *testing.T) {
@@ -170,7 +141,7 @@ metadata:
 `)
 	client := newConnectionAddProjectClientStub()
 	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
-	client.services["worker.api"] = map[string]any{"host": "containerapp"}
+	client.services["worker.api"] = map[string]any{"host": "containerapp", "language": "js"}
 
 	plan, err := planConnectionAdd(
 		t.Context(),
@@ -189,15 +160,13 @@ metadata:
 	require.Equal(t, "./connections/search.yaml", plan.ref)
 	require.Equal(t, "foundry", plan.projectKey)
 	require.Equal(t, []string{"SEARCH_ENDPOINT", "SEARCH_KEY"}, plan.environmentVariables)
-	require.Empty(t, client.projectSetRequests)
-	require.Empty(t, client.serviceSetRequests)
+	require.Empty(t, client.mutationCalls)
 
 	require.NotNil(t, plan.serviceSection)
-	services := plan.originalServices
 	assert.Equal(
 		t,
-		map[string]any{"host": "containerapp"},
-		services["worker.api"],
+		map[string]any{"host": "containerapp", "language": "js"},
+		client.services["worker.api"],
 	)
 	service := plan.serviceSection
 	assert.Equal(t, aiConnectionHost, service["host"])
@@ -212,8 +181,17 @@ metadata:
 	assert.Equal(t, "./connections/search.yaml", service["$ref"])
 
 	require.NoError(t, plan.apply(t.Context(), client))
-	require.Len(t, client.authoringRequests, 1)
-	service = client.authoringRequests[0]
+	require.Len(t, client.addRequests, 1)
+	assert.Equal(t, []string{"add", "set:env"}, client.mutationCalls)
+	added := client.addRequests[0].GetService()
+	assert.Equal(t, "search.api", added.GetName())
+	assert.Equal(t, aiConnectionHost, added.GetHost())
+	assert.Equal(t, []string{"foundry"}, added.GetUses())
+	assert.Empty(t, added.GetEnvironment())
+	assert.Equal(t, map[string]any{"$ref": "./connections/search.yaml"}, added.GetAdditionalProperties().AsMap())
+	assert.Nil(t, added.GetConfig())
+	service, ok = client.services["search.api"].(map[string]any)
+	require.True(t, ok)
 	env, ok = service["env"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, map[string]any{
@@ -223,7 +201,7 @@ metadata:
 	}, env)
 }
 
-func TestConnectionAddRejectsProjectChangesBeforeWriting(t *testing.T) {
+func TestConnectionAddPreservesUnrelatedChangesAfterPlanning(t *testing.T) {
 	root := t.TempDir()
 	file := writeConnectionAddDefinition(t, root, "connection.yaml",
 		"category: Search\ntarget: https://search.example.test\n")
@@ -237,10 +215,8 @@ func TestConnectionAddRejectsProjectChangesBeforeWriting(t *testing.T) {
 	require.NoError(t, err)
 
 	client.services["new-worker"] = map[string]any{"host": "containerapp"}
-	err = plan.apply(t.Context(), client)
-	require.Equal(t, codes.Aborted, status.Code(err))
-	assert.Empty(t, client.authoringRequests)
-	assert.Empty(t, client.projectSetRequests)
+	require.NoError(t, plan.apply(t.Context(), client))
+	require.Len(t, client.addRequests, 1)
 	assert.Contains(t, client.services, "new-worker")
 }
 
@@ -256,7 +232,8 @@ func TestConnectionAuthoringLocalSnapshotPreservesLargeIntegers(t *testing.T) {
 			client := newConnectionAddProjectClientStub()
 			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
 			client.services["worker.api"] = map[string]any{
-				"host": "containerapp", "config": map[string]any{"number": uint64(9007199254740993)},
+				"host": "containerapp", "language": "js",
+				"config": map[string]any{"number": uint64(9007199254740993)},
 			}
 			if existing {
 				client.services["search.api"] = map[string]any{
@@ -275,20 +252,32 @@ func TestConnectionAuthoringLocalSnapshotPreservesLargeIntegers(t *testing.T) {
 			plan, err := planConnectionAdd(t.Context(), diskClient, root, "search.api", file,
 				false, "", true, nil, nil)
 			require.NoError(t, err)
-			encoded, err := yaml.Marshal(plan.originalServices)
+			encoded, err := yaml.Marshal(plan.serviceSection)
 			require.NoError(t, err)
-			assert.Contains(t, string(encoded), "9007199254740993")
+			if existing {
+				assert.Contains(t, string(encoded), "9007199254740993")
+			}
 			assert.NotContains(t, string(encoded), "9007199254740992")
 			require.NoError(t, plan.apply(t.Context(), client))
-			require.Len(t, client.authoringRequests, 1)
-			env, ok := client.authoringRequests[0]["env"].(map[string]any)
+			service, ok := client.services["search.api"].(map[string]any)
+			require.True(t, ok)
+			env, ok := service["env"].(map[string]any)
 			require.True(t, ok)
 			assert.Equal(t, "${SEARCH_ENDPOINT}", env["SEARCH_ENDPOINT"])
 			if existing {
-				config, ok := client.authoringRequests[0]["config"].(map[string]any)
+				config, ok := service["config"].(map[string]any)
 				require.True(t, ok)
-				assert.Equal(t, int(9007199254740993), config["number"])
+				assert.Equal(t, uint64(9007199254740993), config["number"])
+				for _, request := range client.serviceSetRequests {
+					assert.NotEqual(t, "config", request.GetPath())
+				}
+			} else {
+				assert.Equal(t, []string{"add", "set:env"}, client.mutationCalls)
 			}
+			assert.Equal(t, map[string]any{
+				"host": "containerapp", "language": "js",
+				"config": map[string]any{"number": uint64(9007199254740993)},
+			}, client.services["worker.api"])
 		})
 	}
 }
@@ -336,7 +325,7 @@ func TestConnectionAuthoringResolvesActualManifest(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, test.wantOwner, plan.projectKey)
 			assert.Equal(t, "./connections/search.yaml", plan.ref)
-			assert.NotContains(t, plan.originalServices, "parent-owner")
+			assert.Equal(t, []string{test.wantOwner}, plan.addRequest.GetService().GetUses())
 			if test.parentYAML {
 				// #nosec G304 -- Reads this test's temporary fixture.
 				actual, err := os.ReadFile(filepath.Join(parent, "azure.yaml"))
@@ -358,7 +347,7 @@ func TestConnectionAuthoringDoesNotReadParentManifestForExplicitRoot(t *testing.
 	require.ErrorContains(t, err, "does not contain a project manifest")
 }
 
-func TestConnectionAuthoringUpdatesRejectStaleSnapshot(t *testing.T) {
+func TestConnectionAuthoringUpdatesLeaveUnownedChangesOnHost(t *testing.T) {
 	root := t.TempDir()
 	file := writeConnectionAddDefinition(t, root, "connection.yaml",
 		"category: Search\ntarget: https://search.example.test\n")
@@ -372,11 +361,12 @@ func TestConnectionAuthoringUpdatesRejectStaleSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	search, ok := client.services["search"].(map[string]any)
 	require.True(t, ok)
-	search["target"] = "latest"
-	err = plan.apply(t.Context(), client)
-	require.Equal(t, codes.Aborted, status.Code(err))
-	assert.Empty(t, client.authoringRequests)
-	assert.Equal(t, "latest", search["target"])
+	search["config"] = map[string]any{"large": uint64(9007199254740993)}
+	require.NoError(t, plan.apply(t.Context(), client))
+	assert.Equal(t, map[string]any{"large": uint64(9007199254740993)}, search["config"])
+	assert.Equal(t, "./connection.yaml", search["$ref"])
+	assert.NotContains(t, search, "target")
+	assert.Empty(t, client.addRequests)
 }
 
 func TestPlanConnectionAddResolvesDefinitionRefsRelativeToFile(t *testing.T) {
@@ -424,7 +414,7 @@ metadata:
 	client := newConnectionAddProjectClientStub()
 	client.resources["cache"] = map[string]any{"type": "local"}
 	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
-	client.services["worker"] = map[string]any{"host": "containerapp"}
+	client.services["worker"] = map[string]any{"host": "containerapp", "language": "js"}
 	client.services["search"] = map[string]any{
 		"host":        aiConnectionHost,
 		"name":        "old-resource-name",
@@ -438,7 +428,7 @@ metadata:
 			"STALE": "old-template",
 			"KEEP":  "literal",
 		},
-		"hooks":    map[string]any{"predeploy": []any{"echo ready"}},
+		"hooks":    map[string]any{"predeploy": []any{map[string]any{"run": "echo ready"}}},
 		"language": "python",
 		"infra":    map[string]any{"path": "infra"},
 		"config":   map[string]any{"keep": "core-config"},
@@ -466,7 +456,7 @@ metadata:
 	assert.Equal(t, "./connections/search.yaml", candidate["$ref"])
 	assert.Equal(t, []any{"cache", "foundry", "worker"}, candidate["uses"])
 	assert.Equal(t, "python", candidate["language"])
-	assert.Equal(t, map[string]any{"predeploy": []any{"echo ready"}}, candidate["hooks"])
+	assert.Equal(t, map[string]any{"predeploy": []any{map[string]any{"run": "echo ready"}}}, candidate["hooks"])
 	assert.Equal(t, map[string]any{"path": "infra"}, candidate["infra"])
 	assert.Equal(t, map[string]any{"keep": "core-config"}, candidate["config"])
 	assert.Equal(t, map[string]any{
@@ -479,12 +469,16 @@ metadata:
 	} {
 		assert.NotContains(t, candidate, field)
 	}
-	require.Empty(t, client.projectSetRequests)
-	require.Empty(t, client.serviceSetRequests)
+	require.Empty(t, client.mutationCalls)
 
 	require.NoError(t, plan.apply(t.Context(), client))
-	require.Len(t, client.authoringRequests, 1)
-	assert.Equal(t, plan.serviceSection, client.authoringRequests[0])
+	assert.Empty(t, client.addRequests)
+	assert.Equal(t, []string{
+		"set:$ref", "set:env",
+		"unset:$schema", "unset:authType", "unset:category",
+		"unset:credentials", "unset:name", "unset:target",
+	}, client.mutationCalls)
+	assert.Equal(t, plan.serviceSection, client.services["search"])
 }
 
 func TestPlanConnectionAddReplacesLegacyConfigDefinition(t *testing.T) {
@@ -524,6 +518,9 @@ func TestPlanConnectionAddReplacesLegacyConfigDefinition(t *testing.T) {
 	assert.NotContains(t, candidate, "config")
 	assert.Equal(t, "./definitions/search.json", candidate["$ref"])
 	assert.Equal(t, []any{"foundry"}, candidate["uses"])
+	require.NoError(t, plan.apply(t.Context(), client))
+	assert.Equal(t, []string{"set:$ref", "unset:config"}, client.mutationCalls)
+	assert.Equal(t, candidate, client.services["search"])
 }
 
 func TestPlanConnectionAddLeavesUnchangedServiceUntouched(t *testing.T) {
@@ -548,7 +545,7 @@ metadata:
 			"OPTIONAL_REGION": "custom",
 			"STALE":           "preserve",
 		},
-		"hooks": map[string]any{"postdeploy": []any{"echo done"}},
+		"hooks": map[string]any{"postdeploy": []any{map[string]any{"run": "echo done"}}},
 	}
 
 	plan, err := planConnectionAdd(
@@ -567,8 +564,7 @@ metadata:
 	require.Equal(t, "unchanged", plan.mutation)
 	assert.Equal(t, []string{"SEARCH_KEY"}, plan.environmentVariables)
 	require.NoError(t, plan.apply(t.Context(), client))
-	assert.Empty(t, client.projectSetRequests)
-	assert.Empty(t, client.serviceSetRequests)
+	assert.Empty(t, client.mutationCalls)
 }
 
 func TestPlanConnectionAddRejectsInvalidProjectStateBeforeMutation(t *testing.T) {
@@ -641,6 +637,20 @@ credentials:
 			errNotContain: "private-binding",
 		},
 		{
+			name:        "unowned env value is not coerced through Struct",
+			fileContent: "category: Search\ntarget: https://search.example.test\n",
+			setup: func(client *connectionAddProjectClientStub) {
+				client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+				client.services["search"] = map[string]any{
+					"host": aiConnectionHost,
+					"uses": []any{"foundry"},
+					"env":  map[string]any{"KEEP": uint64(9007199254740993)},
+				}
+			},
+			wantErrText:   "must be a string",
+			errNotContain: "9007199254740993",
+		},
+		{
 			name:        "invalid explicit project",
 			fileContent: "category: Search\ntarget: https://search.example.test\n",
 			setup: func(client *connectionAddProjectClientStub) {
@@ -693,8 +703,7 @@ target: https://search.example.test
 			if test.errNotContain != "" {
 				assert.NotContains(t, err.Error(), test.errNotContain)
 			}
-			assert.Empty(t, client.projectSetRequests)
-			assert.Empty(t, client.serviceSetRequests)
+			assert.Empty(t, client.mutationCalls)
 		})
 	}
 }

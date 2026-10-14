@@ -102,8 +102,8 @@ credentials:
 	)
 	assert.Empty(t, stderr.String())
 	assert.Equal(t, 1, runtimeCreated)
-	require.Len(t, client.projectSetRequests, 1)
-	assert.Empty(t, client.serviceSetRequests)
+	require.Len(t, client.addRequests, 1)
+	assert.Equal(t, []string{"add", "set:env"}, client.mutationCalls)
 }
 
 func TestConnectionAddCommandRejectsIneffectiveFlagsBeforeClientCreation(t *testing.T) {
@@ -192,8 +192,8 @@ target: https://search.example.test
 	command.SetArgs([]string{"search", "--file", file})
 
 	require.ErrorContains(t, command.ExecuteContext(t.Context()), "output writer failed")
-	require.Len(t, client.projectSetRequests, 1)
-	assert.Empty(t, client.serviceSetRequests)
+	require.Len(t, client.addRequests, 1)
+	assert.Equal(t, []string{"add"}, client.mutationCalls)
 }
 
 func TestWriteConnectionAddJSONUsesEmptyEnvironmentArray(t *testing.T) {

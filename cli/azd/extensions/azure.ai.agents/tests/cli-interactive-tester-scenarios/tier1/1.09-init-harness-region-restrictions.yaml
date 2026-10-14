@@ -25,7 +25,7 @@ goals:
     Before answering product prompts, use read-only Azure queries to identify the seeded projects in
     '{subscription}' and verify their locations and the recovery model prerequisites. Record the disallowed
     project's full resource ID as shell variable $unsupported_project_id and its usable deployment name as
-    $existing_deployment for subsequent commands. Allowed region IDs are exactly eastus2, japaneast,
+    $existing_deployment for subsequent commands. Allowed region IDs are exactly japaneast,
     swedencentral, uksouth, australiaeast, westeurope, germanywestcentral, canadacentral, westus2.
     Do not create fixtures during this run.
   - >-
@@ -63,7 +63,7 @@ goals:
     `azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-recovery-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none --model {model}`.
     At 'Select a Foundry project to host your agent and model', choose 'Create a new Foundry project'.
-    The initial location picker must offer only the nine allowed region IDs (display labels may be friendly names)
+    The initial location picker must offer only the eight allowed region IDs (display labels may be friendly names)
     and must exclude the seeded disallowed region. Take a screenshot and select '{region}'.
   - >-
     At "Model '{model}' is selected.", choose "Use '{model}'". Expect the model-unavailable recovery flow.

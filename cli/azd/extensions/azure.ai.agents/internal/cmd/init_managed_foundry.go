@@ -20,7 +20,7 @@ import (
 
 // Temporary GitHub Copilot harness availability restriction; remove when all regions are supported.
 var promptHarnessRegions = []string{
-	"eastus2", "japaneast", "swedencentral", "uksouth",
+	"japaneast", "swedencentral", "uksouth",
 	"australiaeast", "westeurope", "germanywestcentral",
 	"canadacentral", "westus2",
 }

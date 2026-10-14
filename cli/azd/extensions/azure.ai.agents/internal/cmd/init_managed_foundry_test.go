@@ -20,13 +20,13 @@ import (
 func TestValidatePromptHarnessLocation(t *testing.T) {
 	t.Parallel()
 	for _, location := range []string{
-		"eastus2", "japaneast", "swedencentral", "uksouth",
-		"australiaeast", "westeurope", "germanywestcentral", " EastUS2 ",
+		"japaneast", "swedencentral", "uksouth",
+		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
 		"canadacentral", "westus2",
 	} {
 		require.NoError(t, validatePromptHarnessLocation(location, promptHarnessRegions))
 	}
-	for _, location := range []string{"eastus", "westus", ""} {
+	for _, location := range []string{"eastus", "eastus2", "westus", ""} {
 		err := validatePromptHarnessLocation(location, promptHarnessRegions)
 		require.ErrorContains(t, err, "not supported for the GitHub Copilot harness")
 		require.NoError(t, validatePromptHarnessLocation(location, nil), "plain prompt must remain unrestricted")
@@ -49,7 +49,8 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 		{name: "plain picker unchanged", location: "eastus"},
 		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "eastus", wantError: true},
 		{name: "explicit unknown rejected", explicitID: true, restricted: true, wantError: true},
-		{name: "explicit supported accepted", explicitID: true, restricted: true, location: "eastus2"},
+		{name: "explicit eastus2 rejected", explicitID: true, restricted: true, location: "eastus2", wantError: true},
+		{name: "explicit supported accepted", explicitID: true, restricted: true, location: "japaneast"},
 		{name: "plain explicit unchanged", explicitID: true, location: "eastus"},
 	}
 	for _, tt := range tests {
@@ -58,7 +59,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 			recordproxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				projectJSON := fmt.Sprintf(`{"id":%q,"name":"acct/first","location":%q}`, projectID+"first", tt.location)
 				if !tt.explicitID {
-					secondLocation := "eastus2"
+					secondLocation := "japaneast"
 					if tt.allUnsupported {
 						secondLocation = "westus"
 					}
@@ -118,11 +119,11 @@ func (s *harnessLocationPromptServer) PromptLocation(
 	_ context.Context, req *azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
 	s.request = req
-	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: "eastus2"}}, nil
+	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: "japaneast"}}, nil
 }
 
 func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
-	for _, location := range []string{"", "eastus", "eastus2"} {
+	for _, location := range []string{"", "eastus", "eastus2", "japaneast"} {
 		t.Run(location, func(t *testing.T) {
 			const envName = "test"
 			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: {}}}
@@ -132,9 +133,9 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 			require.NoError(t, ensureLocationWithAllowedLocations(
 				t.Context(), client, azureContext, envName, promptHarnessRegions,
 			))
-			require.Equal(t, "eastus2", envServer.values[envName]["AZURE_LOCATION"])
-			require.Equal(t, "eastus2", envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
-			if location == "eastus2" {
+			require.Equal(t, "japaneast", envServer.values[envName]["AZURE_LOCATION"])
+			require.Equal(t, "japaneast", envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
+			if location == "japaneast" {
 				require.Nil(t, prompts.request)
 			} else {
 				require.NotNil(t, prompts.request)

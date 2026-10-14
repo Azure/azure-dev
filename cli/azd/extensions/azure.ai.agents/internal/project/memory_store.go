@@ -144,8 +144,7 @@ func formatBoolPtr(value *bool) string {
 
 // describeMemoryStoreDrift renders drift entries as human-readable phrases,
 // mapping each wire field path through labels so the message names the key the
-// author actually wrote. A field absent from labels is printed as-is, which is
-// what the referenced YAML definition surface wants since it uses wire names verbatim.
+// author actually wrote. A field absent from labels is printed as-is.
 func describeMemoryStoreDrift(drift []memoryStoreDrift, labels map[string]string) []string {
 	described := make([]string, 0, len(drift))
 	for _, d := range drift {

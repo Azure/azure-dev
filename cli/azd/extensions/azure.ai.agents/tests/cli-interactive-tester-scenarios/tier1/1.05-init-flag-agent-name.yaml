@@ -7,11 +7,11 @@
 # fast if gh is not authenticated.
 # Verifies that the agent-name override is honored in the generated files.
 #
-# NOTE: With `-m` pointing to a Python azure.yaml, code deploy is auto-selected
+# NOTE: With `-t` pointing to a Python azure.yaml, code deploy is auto-selected
 # (no deploy-mode prompt). The --agent-name flag should still override the
 # default agent identity in the generated project.
 name: "init-flag-agent-name"
-command: "azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml --agent-name {prefix}-qa-named-agent-{instance}"
+command: "azd ai agent init -t https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml --agent-name {prefix}-qa-named-agent-{instance}"
 cwd: "~/working/azd-agents-t1-flags-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe"]
 produces: "~/working/azd-agents-t1-flags-{instance}/{prefix}-qa-named-agent-{instance}"

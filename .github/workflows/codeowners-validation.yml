@@ -1,0 +1,37 @@
+name: codeowners-validation
+
+# Run on every PR so this check can be required without leaving unrelated PRs pending.
+# Use trusted workflow code so a PR cannot replace its own validation with a no-op.
+# Keep permissions read-only and never check out or execute code from the PR.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: CODEOWNERS validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted validation script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /.github/scripts/src/codeowners-validation.js
+
+      - name: Validate CODEOWNERS changes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const validate = require('./.github/scripts/src/codeowners-validation.js');
+            await validate({ github, context, core });

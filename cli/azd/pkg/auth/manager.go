@@ -145,13 +145,32 @@ func NewManager(
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
-	authorityUrl, err := url.JoinPath(cloud.Configuration.ActiveDirectoryAuthorityHost, "organizations")
-	if err != nil {
-		return nil, fmt.Errorf("joining authority url: %w", err)
+	m := &Manager{
+		cloud:             cloud,
+		configManager:     configManager,
+		userConfigManager: userConfigManager,
+		httpClient:        httpClient,
+		console:           console,
+		externalAuthCfg:   externalAuthCfg,
+		azCli:             azCli,
+		userAgent:         string(userAgent),
+		azCliCredentials:  map[string]azcore.TokenCredential{},
+	}
+	if err := m.initializeAuthCache(authRoot); err != nil {
+		return nil, err
 	}
 
-	msalClient := newUserAgentClient(httpClient, string(userAgent))
-	msalCache := newMsalCacheStore(cacheRoot)
+	return m, nil
+}
+
+func (m *Manager) initializeAuthCache(authRoot string) error {
+	authorityUrl, err := url.JoinPath(m.cloud.Configuration.ActiveDirectoryAuthorityHost, "organizations")
+	if err != nil {
+		return fmt.Errorf("joining authority url: %w", err)
+	}
+
+	msalClient := newUserAgentClient(m.httpClient, m.userAgent)
+	msalCache := newMsalCacheStore(filepath.Join(authRoot, "msal"))
 
 	options := []public.Option{
 		public.WithCache(&msalCacheAdapter{cache: msalCache}),
@@ -161,24 +180,14 @@ func NewManager(
 
 	publicClientApp, err := public.New(azdClientID, options...)
 	if err != nil {
-		return nil, fmt.Errorf("creating msal client: %w", err)
+		return fmt.Errorf("creating msal client: %w", err)
 	}
 
-	return &Manager{
-		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
-		publicClientOptions: options,
-		msalCacheTracer:     newMsalCacheTracer(msalCache),
-		cloud:               cloud,
-		configManager:       configManager,
-		userConfigManager:   userConfigManager,
-		credentialCache:     newCredentialCache(authRoot),
-		httpClient:          httpClient,
-		console:             console,
-		externalAuthCfg:     externalAuthCfg,
-		azCli:               azCli,
-		userAgent:           string(userAgent),
-		azCliCredentials:    map[string]azcore.TokenCredential{},
-	}, nil
+	m.publicClient = &msalPublicClientAdapter{client: &publicClientApp}
+	m.publicClientOptions = options
+	m.msalCacheTracer = newMsalCacheTracer(msalCache)
+	m.credentialCache = newCredentialCache(authRoot)
+	return nil
 }
 
 // authClientOptions returns azcore.ClientOptions configured with the custom user-agent policy
@@ -1128,9 +1137,9 @@ func (m *Manager) Logout(ctx context.Context) error {
 	return nil
 }
 
-// CleanAllAuthCache removes all cached authentication data, including MSAL token cache files,
-// credential cache files, auth config, and claims. This provides a clean slate for re-authentication,
-// which resolves stale token issues (e.g. AADSTS700082 expired refresh tokens).
+// CleanAllAuthCache removes cached authentication files, auth config, and claims,
+// and resets the manager's in-memory MSAL client and credential caches before re-authentication.
+// Callers must not use the manager or its previously issued credentials concurrently with cleanup.
 func (m *Manager) CleanAllAuthCache() error {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -1161,7 +1170,9 @@ func (m *Manager) CleanAllAuthCache() error {
 		return fmt.Errorf("recreating msal cache directory: %w", err)
 	}
 
-	return nil
+	// MSAL may have loaded the old contract before cleanup. Recreate its client and
+	// backing caches so the next login cannot export that state back to disk.
+	return m.initializeAuthCache(authRoot)
 }
 
 func (m *Manager) UseExternalAuth() bool {

@@ -300,13 +300,13 @@ const (
 	// MinSessionIdleTimeoutSeconds is the smallest accepted idle timeout.
 	MinSessionIdleTimeoutSeconds = 120
 	// MaxSessionIdleTimeoutSeconds is the largest accepted idle timeout.
-	MaxSessionIdleTimeoutSeconds = 3600
+	MaxSessionIdleTimeoutSeconds = 14400
 )
 
 // SessionConfiguration configures the runtime session behavior of a hosted agent.
 type SessionConfiguration struct {
 	// IdleTimeoutSeconds is the idle duration, in seconds, before a session's
-	// sandbox is suspended. Valid range is 120–3600 (inclusive). When nil,
+	// sandbox is suspended. Valid range is 120–14400 (inclusive). When nil,
 	// session_configuration is omitted from the request and the service default
 	// (900 seconds) applies.
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
@@ -346,10 +346,13 @@ const InvocationsProtocol = "invocations"
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is the SSE event name this selector applies to. Required.
+	// EventType is matched exactly against the value of the "type" field inside the frame's
+	// `data:` payload, not against the SSE `event:` line. Required.
 	EventType string `json:"eventType" yaml:"event_type"`
-	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
-	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
+	// TextField is the name of a field on the frame payload that holds the text, for example
+	// "delta". When provided, it must be non-empty, have no surrounding whitespace, and not be
+	// a selector expression. Defaults to "delta" when omitted.
+	TextField *string `json:"textField,omitempty" yaml:"text_field,omitempty"`
 }
 
 // InvocationsModeration configures how the content-safety proxy extracts the text it submits
@@ -366,10 +369,10 @@ type InvocationsModeration struct {
 	OutputContentType string `json:"outputContentType,omitempty" yaml:"output_content_type,omitempty"`
 	// ResponseMode is "non_streaming", "streaming" or "both". Required.
 	ResponseMode string `json:"responseMode,omitempty" yaml:"response_mode,omitempty"`
-	// InputPaths are JSONPath expressions selecting request text. Required when the input
-	// content type resolves to "json".
+	// InputPaths are selector expressions locating the request text: "$" root, dotted members,
+	// array indexes, and "[*]" wildcards. Required when the input content type resolves to "json".
 	InputPaths []string `json:"inputPaths,omitempty" yaml:"input_paths,omitempty"`
-	// OutputPaths are JSONPath expressions selecting buffered response text. Required when
+	// OutputPaths are selector expressions locating the buffered response text. Required when
 	// ResponseMode includes non-streaming and the output content type resolves to "json".
 	OutputPaths []string `json:"outputPaths,omitempty" yaml:"output_paths,omitempty"`
 	// StreamSelectors locate text within SSE frames. Required when ResponseMode includes
@@ -662,8 +665,8 @@ type PromptMemory struct {
 	// ChatModel and EmbeddingModel are the model deployment names the store
 	// uses to summarize conversations and to embed memories. Both are required
 	// to create a store; they are ignored when the store already exists.
-	ChatModel      string `json:"chat_model,omitempty" yaml:"chat_model,omitempty"`
-	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+	ChatModel      string `json:"chatModel,omitempty" yaml:"chatModel,omitempty"`
+	EmbeddingModel string `json:"embeddingModel,omitempty" yaml:"embeddingModel,omitempty"`
 
 	// Scope namespaces memories so they are isolated per user (or per tenant,
 	// session, etc.). Defaults to DefaultMemoryScope, which resolves the caller's
@@ -673,11 +676,11 @@ type PromptMemory struct {
 	// UpdateDelay is how many seconds of conversation inactivity to wait before
 	// extracting memories. Nil leaves the service default (300s) in place. Set
 	// it low only for demos — a short delay extracts on nearly every turn.
-	UpdateDelay *int `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
+	UpdateDelay *int `json:"updateDelay,omitempty" yaml:"updateDelay,omitempty"`
 
 	// MaxMemories caps how many memories a single search returns. Nil leaves
 	// the service default in place.
-	MaxMemories *int `json:"max_memories,omitempty" yaml:"max_memories,omitempty"`
+	MaxMemories *int `json:"maxMemories,omitempty" yaml:"maxMemories,omitempty"`
 
 	// Options toggles which memory kinds the store extracts.
 	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
@@ -710,11 +713,11 @@ func (m *PromptMemory) UnmarshalYAML(value *yaml.Node) error {
 // fields are pointers so an unset toggle leaves the service default rather than
 // forcing false.
 type PromptMemoryOptions struct {
-	ChatSummaryEnabled      *bool  `json:"chat_summary_enabled,omitempty" yaml:"chat_summary_enabled,omitempty"`
-	UserProfileEnabled      *bool  `json:"user_profile_enabled,omitempty" yaml:"user_profile_enabled,omitempty"`
-	ProceduralMemoryEnabled *bool  `json:"procedural_memory_enabled,omitempty" yaml:"procedural_memory_enabled,omitempty"`
-	DefaultTTLSeconds       *int   `json:"default_ttl_seconds,omitempty" yaml:"default_ttl_seconds,omitempty"`
-	UserProfileDetails      string `json:"user_profile_details,omitempty" yaml:"user_profile_details,omitempty"`
+	ChatSummaryEnabled      *bool  `json:"chatSummaryEnabled,omitempty" yaml:"chatSummaryEnabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"userProfileEnabled,omitempty" yaml:"userProfileEnabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"proceduralMemoryEnabled,omitempty" yaml:"proceduralMemoryEnabled,omitempty"`
+	DefaultTTLSeconds       *int   `json:"defaultTtlSeconds,omitempty" yaml:"defaultTtlSeconds,omitempty"`
+	UserProfileDetails      string `json:"userProfileDetails,omitempty" yaml:"userProfileDetails,omitempty"`
 }
 
 // DefaultMemoryScope isolates memories per calling user. Foundry substitutes

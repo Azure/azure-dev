@@ -13,12 +13,20 @@ option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1b
 //
 // Values are not reviewed at runtime, so the host only records events from
 // extensions installed from the official azd registry.
+//
+// Deprecated: use azd.extensions.v1.TelemetryService in azd 1.36.0 or later.
 service TelemetryService {
+  option deprecated = true;
   // ReportUsage records one usage event for the calling extension.
-  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
+  // Deprecated: use azd.extensions.v1.TelemetryService.ReportUsage in azd 1.36.0 or later.
+  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
+    option deprecated = true;
+  }
 }
 
+// Deprecated: use azd.extensions.v1.ReportUsageRequest in azd 1.36.0 or later.
 message ReportUsageRequest {
+  option deprecated = true;
   // Event name owned by the extension. Recorded as extension.event so
   // queries can filter an extension's events without parsing attributes.
   // Must be 1-128 UTF-8 bytes.
@@ -31,7 +39,9 @@ message ReportUsageRequest {
   map<string, string> attributes = 2;
 }
 
+// Deprecated: use azd.extensions.v1.ReportUsageResponse in azd 1.36.0 or later.
 message ReportUsageResponse {
+  option deprecated = true;
   // Accepted reports whether the host recorded the event. A false value is
   // not an error: the extension was not installed from the official azd
   // registry, or the per-invocation event budget is already spent. Callers

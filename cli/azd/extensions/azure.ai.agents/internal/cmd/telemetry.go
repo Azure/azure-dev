@@ -187,7 +187,7 @@ func telemetryContainerMode(svc *azdext.ServiceConfig, projectRoot string) strin
 	if os.Getenv("AGENT_DEFINITION_PATH") != "" {
 		return containerModeUnknown
 	}
-	agentDef, isHosted, _, err := projectpkg.LoadAgentDefinition(svc, projectRoot)
+	agentDef, isHosted, _, err := projectpkg.LoadHostedAgentDefinition(svc, projectRoot)
 	if err != nil || !isHosted {
 		return containerModeUnknown
 	}

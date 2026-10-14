@@ -1,0 +1,18 @@
+# Init-only fixture. Never provision or fetch this image or endpoint.
+name: init-env-prompts
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: init-env-prompts
+    image: registry.example.invalid/env-prompts:offline
+    docker:
+      imagePassthrough: true
+    protocols:
+      - protocol: responses
+        version: 1.0.0
+  connection:
+    host: azure.ai.connection
+    target: '${AZURE_LANGUAGE_MCP_ENDPOINT}'
+    credentials:
+      key: '${AZD_TEST_INIT_SECRET}'

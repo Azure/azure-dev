@@ -105,6 +105,9 @@ func bindExtension(
 			cmd := &cobra.Command{
 				Use:   part,
 				Short: description,
+				Annotations: map[string]string{
+					"extension.namespace": namespacePath,
+				},
 			}
 
 			current = current.Add(part, &actions.ActionDescriptorOptions{
@@ -314,7 +317,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Environment: a.globalOptions.EnvironmentName,
 	}
 
-	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)
+	runResult, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)
 
 	// Update warning is shown via defer above (runs after invoke completes)
 
@@ -326,7 +329,11 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			// Wrap both errors so the chain contains both:
 			// - reportedErr (LocalError/ServiceError) for telemetry classification
 			// - invokeErr (ExtensionRunError) for UX middleware handling
-			return nil, fmt.Errorf("%w: %w", reportedErr, invokeErr)
+			invokeErr = fmt.Errorf("%w: %w", reportedErr, invokeErr)
+		}
+
+		if runResult != nil && runResult.ExitCode > 0 {
+			return nil, &internal.ExitCodeError{ExitCode: runResult.ExitCode, Err: invokeErr}
 		}
 
 		return nil, invokeErr

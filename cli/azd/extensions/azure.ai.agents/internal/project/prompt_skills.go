@@ -512,7 +512,8 @@ func toolboxNode(
 			// Prefer the endpoint the sibling azure.ai.toolbox service published
 			// over one synthesized from the name, so the two extensions cannot
 			// disagree about where the toolbox lives.
-			mcpEndpoint, err := siblingToolboxEndpoint(ref.Name, g.projectEndpoint(), g.env)
+			serviceName := servicekey.SanitizeServiceName(ref.Name)
+			mcpEndpoint, err := siblingToolboxEndpoint(serviceName, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}

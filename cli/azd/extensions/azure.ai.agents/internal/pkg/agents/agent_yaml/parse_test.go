@@ -241,7 +241,15 @@ policies:
       input_paths: ["$.input"]
       stream_selectors:
         - event_type: response.output_text.delta
-          text_field: $.delta
+          text_field: delta
+`),
+		},
+		{
+			name: "valid streaming json with default text field",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
 `),
 		},
 		{
@@ -251,7 +259,7 @@ policies:
       output_paths: ["$.output"]
       stream_selectors:
         - event_type: response.output_text.delta
-          text_field: $.delta
+          text_field: delta
 `),
 		},
 		{
@@ -321,9 +329,83 @@ policies:
 			yaml: invocationsAgent(`      response_mode: streaming
       input_paths: ["$.input"]
       stream_selectors:
-        - text_field: $.delta
+        - text_field: delta
 `),
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType is required",
+		},
+		{
+			name: "stream selector event_type rejects leading whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: " response.output_text.delta"
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector event_type rejects trailing whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: "response.output_text.delta "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector text_field rejects a selector expression",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: $.delta
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
+		},
+		{
+			name: "stream selector text_field rejects explicit empty value",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: ""
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be non-empty " +
+				"when specified",
+		},
+		{
+			name: "stream selector text_field rejects leading whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: " delta"
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector text_field rejects trailing whitespace",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: "delta "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
+		},
+		{
+			name: "stream selector text_field rejects whitespace-only value",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: "   "
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must not have " +
+				"leading or trailing whitespace",
 		},
 		{
 			name: "rejected on an agent that does not expose the invocations protocol",

@@ -34,13 +34,31 @@ func TestPromptAgentInlineRoundTripPreservesMemory(t *testing.T) {
 		Model:        "gpt-4.1-mini",
 		Instructions: "You are a helpful AI assistant.",
 		Memory: &agent_yaml.PromptMemory{
-			Store: "conversation-store",
+			Store:          "conversation-store",
+			ChatModel:      "gpt-4.1-mini",
+			EmbeddingModel: "text-embedding-3-small",
+			UpdateDelay:    new(300),
+			MaxMemories:    new(5),
+			Options: &agent_yaml.PromptMemoryOptions{
+				UserProfileEnabled: new(true),
+			},
 		},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
 	require.Contains(t, props.AsMap(), "memory", "memory block must survive into azure.yaml")
+	memory, ok := props.AsMap()["memory"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "gpt-4.1-mini", memory["chatModel"])
+	require.Equal(t, "text-embedding-3-small", memory["embeddingModel"])
+	require.Equal(t, float64(300), memory["updateDelay"])
+	require.Equal(t, float64(5), memory["maxMemories"])
+	require.NotContains(t, memory, "chat_model")
+	options, ok := memory["options"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, options["userProfileEnabled"])
+	require.NotContains(t, options, "user_profile_enabled")
 
 	svc := &azdext.ServiceConfig{Name: "memory-agent", AdditionalProperties: props}
 	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
@@ -125,9 +143,20 @@ harness:
   type: github_copilot_preview
 memory:
   store: conversation-store
+  chatModel: gpt-4.1-mini
+  embeddingModel: text-embedding-3-small
+  updateDelay: 300
+  maxMemories: 5
+  options:
+    chatSummaryEnabled: true
+    userProfileEnabled: true
 tools:
-  - type: some_future_tool_preview
-    futureSetting: true
+  - type: github_copilot_toolset_preview
+    defaultConfig:
+      enabled: false
+    configs:
+      - name: web
+        enabled: true
 policies:
   - type: rai_policy
     raiPolicyName: ${RAI_POLICY_ID}
@@ -147,9 +176,23 @@ policies:
 		"model":        "gpt-4.1-mini",
 		"instructions": "Be concise.",
 		"harness":      map[string]any{"type": "github_copilot_preview"},
-		"memory":       map[string]any{"store": "conversation-store"},
+		"memory": map[string]any{
+			"store":          "conversation-store",
+			"chatModel":      "gpt-4.1-mini",
+			"embeddingModel": "text-embedding-3-small",
+			"updateDelay":    300,
+			"maxMemories":    5,
+			"options": map[string]any{
+				"chatSummaryEnabled": true,
+				"userProfileEnabled": true,
+			},
+		},
 		"tools": []any{
-			map[string]any{"type": "some_future_tool_preview", "futureSetting": true},
+			map[string]any{
+				"type":          "github_copilot_toolset_preview",
+				"defaultConfig": map[string]any{"enabled": false},
+				"configs":       []any{map[string]any{"name": "web", "enabled": true}},
+			},
 		},
 		"policies": []any{
 			map[string]any{
@@ -186,7 +229,13 @@ policies:
 	)
 	request, err := agent_yaml.CreatePromptAgentAPIRequest(refAgent, nil)
 	require.NoError(t, err)
-	apiDefinition := request.Definition.(agent_api.ManagedAgentDefinition)
+	apiDefinition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+	require.True(t, ok)
+	require.Len(t, apiDefinition.Tools, 1)
+	apiTool, ok := apiDefinition.Tools[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, apiTool, "defaultConfig")
+	require.Equal(t, map[string]any{"enabled": false}, apiTool["default_config"])
 	require.Equal(
 		t,
 		"response.output_text.delta",
@@ -326,6 +375,27 @@ func TestPromptAgentEffectiveStrictValidation(t *testing.T) {
 				"memory": map[string]any{"stores": "s"},
 			},
 			wantErr: "stores",
+		},
+		{
+			name: "snake case memory property is rejected",
+			props: map[string]any{
+				"kind":   "prompt",
+				"name":   "a",
+				"memory": map[string]any{"store": "s", "chat_model": "gpt-4.1-mini"},
+			},
+			wantErr: "chat_model",
+		},
+		{
+			name: "snake case memory option is rejected",
+			props: map[string]any{
+				"kind": "prompt",
+				"name": "a",
+				"memory": map[string]any{
+					"store":   "s",
+					"options": map[string]any{"default_ttl_seconds": 3600},
+				},
+			},
+			wantErr: "default_ttl_seconds",
 		},
 	}
 

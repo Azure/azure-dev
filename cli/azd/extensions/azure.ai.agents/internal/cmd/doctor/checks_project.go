@@ -202,7 +202,7 @@ func newCheckAgentDefinitionValid(deps Dependencies) Check {
 			var links []string
 			failureCodes := map[string]string{}
 			for _, svc := range agents {
-				_, _, _, err := project.LoadAgentDefinition(
+				_, err := project.ValidateAgentServiceDefinition(
 					svc,
 					resp.Project.Path,
 				)

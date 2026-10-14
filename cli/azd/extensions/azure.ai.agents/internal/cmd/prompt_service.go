@@ -101,7 +101,7 @@ func resolvePromptAgentService(
 	// resource group, workspace, and project endpoint come from the azd
 	// environment. Lifecycle commands require that environment because it is the
 	// only source of the provisioned Foundry target.
-	envValues, envErr := promptEnvValues(ctx, azdClient)
+	envValues, envErr := promptEnvValues(ctx, azdClient, "")
 	if envErr != nil {
 		return nil, false, fmt.Errorf("reading the azd environment: %w", envErr)
 	}
@@ -183,22 +183,32 @@ func (p *promptServiceContext) newClient(ctx context.Context) (*agent_api.AgentC
 	return project.NewPromptAgentClient(p.Settings, credential)
 }
 
-// promptEnvValues returns the current azd environment as a key/value map. It is
-// used to apply the same Foundry project -> managed workspace resolution that
-// deploy performs, so lifecycle commands target the route the agent lives on.
-func promptEnvValues(ctx context.Context, azdClient *azdext.AzdClient) (map[string]string, error) {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return nil, err
+// promptEnvValues returns the selected azd environment as a key/value map.
+// Environment.GetCurrent returns the project default, so an explicit SDK
+// environment override must be used directly.
+func promptEnvValues(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) (map[string]string, error) {
+	if environmentName == "" {
+		envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, err
+		}
+		environmentName = envResp.Environment.Name
 	}
 	values, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: envResp.Environment.Name,
+		Name: environmentName,
 	})
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]string, len(values.KeyValues))
 	for _, kv := range values.KeyValues {
+		if kv == nil {
+			continue
+		}
 		out[kv.Key] = kv.Value
 	}
 	return out, nil

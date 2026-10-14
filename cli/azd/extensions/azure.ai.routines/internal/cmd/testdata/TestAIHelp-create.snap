@@ -2,6 +2,8 @@ Create a new Foundry routine.
 
 A routine pairs a trigger (--trigger) with an action (--action).
 Use --file to create from a YAML/JSON manifest file instead of individual flags.
+Use --dispatch-identity creator or set authorization.identity in the manifest
+to dispatch with the creator identity; agent is the default.
 
 Usage
   azd ai routine create <name> [flags]
@@ -15,6 +17,7 @@ Flags
       --conversation-id string   : Existing conversation to continue (for agent-response action, preview)
       --cron string              : 5-field cron expression for recurring trigger (minimum interval 5 minutes)
       --description string       : Description for the routine
+      --dispatch-identity string : Dispatch identity: agent (default) or creator (default "agent")
       --enabled                  : Whether the routine is enabled on creation (default true)
       --event-name string        : Provider-specific event name (for custom trigger)
       --file string              : Path to a YAML or JSON routine manifest file
@@ -36,11 +39,15 @@ Global Flags
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (supported: json, table) (default "table")
   -p, --project-endpoint string : Foundry project endpoint URL for remote operations only (not add, context, or version)
+      --tenant-id string        : Tenant ID for Azure authentication on remote routine commands (overrides azd context)
       --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.
 
 Examples
   Create a routine from a YAML manifest
     azd ai routine create nightly-summary --file ./routine.yaml
+
+  Dispatch with the creator identity
+    azd ai routine create nightly-summary --trigger recurring --cron "0 8 * * *" --agent-name summarizer --dispatch-identity creator
 
   Schedule an agent response every day at midnight UTC
     azd ai routine create nightly-summary --trigger recurring --cron "0 0 * * *" --agent-name summarizer

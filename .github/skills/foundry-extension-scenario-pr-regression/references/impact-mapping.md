@@ -85,9 +85,16 @@ rows locally to the tiers the user approved. Do **not** combine command and tier
 call: `list_scenarios` uses OR semantics, so `["cmd:invoke", "tier:2"]` would select every
 invoke scenario **and** every Tier 2 scenario.
 
+Apply the **Manual-seed selection and readiness** gate in the scenarios'
+`driving-mechanics.md` before constructing the plan: exclude `manual-seed` by
+default even when it matches `cmd:invoke`. Explicit scenario/tag opt-in requires
+verified seed and cleanup ownership. Report exclusions as coverage gaps.
+
 Example: for an `invoke.go` change approved through Tier 2, call
 `list_scenarios(tags=["cmd:invoke"])`, keep only matching rows in the approved Tier 0/1/2
-scope, then add `2.00-setup` and `2.99-teardown` around the retained Tier 2 invoke scenarios.
+scope and apply the manual-seed gate, then add `2.00-setup` and `2.99-teardown`
+only for retained shared-agent Tier 2 scenarios. Independently seeded `2.19`
+does not require that shared lifecycle.
 When a broad cross-cutting rule explicitly calls for a whole tier rather than command-specific
 coverage, query that tier tag separately.
 

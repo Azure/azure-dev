@@ -1,0 +1,22 @@
+# Tier 2: positive Invocations routing; requires a separate cloud seed.
+# The shared Responses agent is not a valid seed. See README.
+name: "invoke-session-bound-metadata"
+command: "bash"
+cwd: "~/working/azd-agents-invocations-{run_id}"
+tags: ["tier:2", "cmd:invoke", "serial-only", "manual-seed"]
+
+pre:
+  - run: "test -f azure.yaml && test -d .azure && test -f invocation-seed.json"
+    name: "require run-owned Invocations project and seed evidence"
+
+goals:
+  - "Verify invocation-seed.json identifies this run's disposable deployed Invocations agent, project, resource ownership evidence, and trace collection method. The agent must return a successful echo for POST /invocations and 404 for GET /invocations/docs/openapi.json. The seed must record a successful readiness check. Missing prerequisites are a failure, not a passing skip; never substitute the shared Responses agent."
+  - "Confirm there is no openapi-*-remote.json cache in this project's active .azure environment. If present, fail the prerequisite rather than deleting unrelated files."
+  - "Collect a complete before-session ID set for the seeded agent with the Foundry SDK, following every pagination token. Confirm no other client is invoking this isolated agent during the scenario."
+  - "Run 'azd ai agent invoke \"metadata-probe-first\" --protocol invocations --new-session'. Confirm exit zero, the echoed input, and a nonempty server-assigned session ID. No product prompt is expected."
+  - "Collect all session pages again, using bounded polling for visibility. Confirm the set difference contains exactly the first POST-assigned session. Collect request traces showing that the POST precedes the metadata GET, that GET reaches /invocations/docs/openapi.json and returns 404, and both route to that same session. Session counts alone are not sufficient."
+  - "Run 'azd ai agent invoke \"metadata-probe-second\" --protocol invocations --new-session'. Confirm exit zero, the echoed input, and a different nonempty server-assigned session ID. No product prompt is expected."
+  - "Collect all session pages and corresponding request traces again. Confirm exactly two sessions were added relative to the initial set, one for each POST. Confirm the second metadata GET returns 404 in the second POST's session, never the first session or a new metadata-only session. Confirm no OpenAPI cache was written."
+  - "Run 'azd ai agent invoke \"metadata-probe-reuse\" --protocol invocations'. Confirm exit zero and reuse of the second session. Collect complete session inventory and traces; confirm no additional session and that its 404 metadata GET uses the second session."
+  - "Take a screenshot of the final invocation output. Retain redacted complete inventories and routing traces."
+  - "Report a finding if an invocation fails, a GET lacks a session ID or precedes its POST, metadata creates an extra session, a 404 is cached, or required routing evidence is unavailable. Do not infer routing success from exit zero."

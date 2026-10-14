@@ -30,7 +30,7 @@ func TestReplacingAFolderDoesNotTouchANeighbour(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(staging, "rows.jsonl"), []byte("{}\n"), 0o600))
 
-	require.NoError(t, replaceDir(staging, dest))
+	require.NoError(t, replaceDir(staging, dest, true))
 
 	// #nosec G304 -- both paths are inside this test's own TempDir.
 	body, err := os.ReadFile(neighbour)
@@ -52,7 +52,7 @@ func TestReplacingAFolderLeavesNoHoldingDirectory(t *testing.T) {
 	staging, err := os.MkdirTemp(dir, ".azd-dataset-*")
 	require.NoError(t, err)
 
-	require.NoError(t, replaceDir(staging, dest))
+	require.NoError(t, replaceDir(staging, dest, true))
 
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)

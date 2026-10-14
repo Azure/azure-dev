@@ -317,7 +317,8 @@ func newJobShowCommand() *cobra.Command {
 			"still running is reported and nothing is written; a job that has " +
 			"succeeded is completed here, and running it again is harmless -- an " +
 			"artifact already collected is left as it is, edits and all, unless " +
-			"--force says to replace it.",
+			"--force says to replace it. When keeping an existing evaluator artifact, " +
+			"authored catalog metadata is preserved and missing metadata is recovered from the job.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&jobShowAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
@@ -331,7 +332,7 @@ func newJobShowCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
 		"Directory the collected artifact is written to.")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Replace an artifact a previous collection already wrote.")
+		"Replace a collected artifact and, for evaluators, refresh its catalog metadata.")
 	return cmd
 }
 

@@ -482,10 +482,18 @@ Feature-specific docs are in `docs/` — refer to them as needed. Some key docs 
 When creating or modifying GitHub Actions workflows:
 
 - **Always declare `permissions:`** explicitly with least-privilege (e.g., `contents: read`). All workflows in the repo should have this block for consistency
+- **Keep workflows readable**: Prefer separate scripts for substantial logic so it can be edited and tested directly. For `pull_request_target`, execute only trusted repository code, never code from the PR.
 - **Don't overwrite `PATH`** using `${{ env.PATH }}` — it's not defined in GitHub Actions expressions and will wipe the real PATH. Use `echo "$DIR" >> $GITHUB_PATH` instead
 - **Cross-workflow artifacts**: `actions/download-artifact@v4` without `run-id` only downloads artifacts from the *current* workflow run. Cross-workflow artifact sharing requires `run-id` and `repository` parameters
 - **Prefer Azure DevOps pipelines** for jobs that need secrets or Azure credentials — the team uses internal ADO pipelines for authenticated workloads in this public repo
 - **No placeholder steps**: Don't add workflow steps that echo "TODO" or list directories without producing output. If downstream steps depend on generated files, implement the generation or remove the dependency
+
+### GitHub authentication in Azure DevOps
+
+When adding or changing GitHub API access in a pipeline:
+
+- Always use the shared [GitHub App login template](../../eng/common/pipelines/templates/steps/login-to-github.yml) instead of personal access tokens. Generate the token in the job that needs it and map `GH_TOKEN` explicitly to the consuming task. See [publish-cli-winget.yml](../../eng/pipelines/templates/steps/publish-cli-winget.yml) for an example.
+- Check the documentation or source for the exact tool version in use. Some tools recommend passing tokens through an environment variable or credential store instead of a command-line argument because arguments may be recorded in logs or diagnostic files.
 
 ## Copilot Code Review
 

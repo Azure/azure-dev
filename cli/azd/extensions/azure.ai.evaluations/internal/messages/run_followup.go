@@ -8,9 +8,8 @@ import "fmt"
 // RunFollowUp is the commands that turn a finished run into something a reader
 // can act on.
 //
-// Printed whenever a run has anything to investigate, not only when rows
-// failed. A run whose rows all errored has plenty to look at and used to close
-// with nothing but the word "failed" and a count.
+// Every terminal run offers the unfiltered listing and export. A failed-only
+// listing is additional guidance, never the only way to read the results.
 //
 // The commands carry --eval and --run. Printing a bare command means the reader
 // has to find two ids and retype them, which is the point at which most people
@@ -20,21 +19,48 @@ import "fmt"
 // back rows nothing scored, so it would open an empty list for the run that
 // most needs reading.
 func RunFollowUp(eval, runID string, failed, errored bool) string {
-	if !failed && !errored {
-		return ""
-	}
+	return runFollowUp(eval, runID, failed, errored, exportCommand(eval, runID))
+}
 
-	out := "\nInvestigate:\n"
+// AvailableRunFollowUp gives legacy runs useful guidance without claiming completion.
+func AvailableRunFollowUp(eval, runID string, failed, errored bool) string {
+	return runFollowUp(eval, runID, failed, errored, ExportAvailableResults(eval, runID))
+}
+
+func runFollowUp(eval, runID string, failed, errored bool, exportHint string) string {
+	out := "\nView available results:\n"
+	if failed || errored {
+		out = "\nInvestigate:\n"
+	}
+	out += allRowsCommand(eval, runID)
 	if failed {
 		out += failingRowsCommand(eval, runID)
 	}
 	if errored {
-		out += allRowsCommand(eval, runID)
+		out += erroredRowsCommand(eval, runID)
 	}
 	if failed && errored {
 		out += "\nRows that errored were never scored, so the failing-row listing does not hold them.\n"
 	}
-	return out + exportCommand(eval, runID)
+	return out + exportHint
+}
+
+// FailedRunFollowUp offers diagnostics even when execution produced no rows.
+func FailedRunFollowUp(eval, runID string, failedRows, erroredRows bool) string {
+	out := "\nInspect available output (the run may have failed before producing rows):\n" +
+		allRowsCommand(eval, runID)
+	if failedRows {
+		out += "\nView failed verdicts:\n" + failingRowsCommand(eval, runID)
+	}
+	if erroredRows {
+		out += "\nView errored results:\n" + erroredRowsCommand(eval, runID)
+	}
+	return out + "\nExport run diagnostics and any available results:\n" + exportRunCommand(eval, runID)
+}
+
+// RunFollowUpMissingIDs avoids suggesting a command that could select a different run.
+func RunFollowUpMissingIDs() string {
+	return "\nFollow-up commands require both an eval ID and run ID; one was not available.\n"
 }
 
 // The commands below are written out per shape rather than assembled from
@@ -51,6 +77,14 @@ func failingRowsCommand(eval, runID string) string {
 		shellArg(eval), shellArg(runID))
 }
 
+func erroredRowsCommand(eval, runID string) string {
+	if eval == "" {
+		return fmt.Sprintf("  azd ai eval run output list --run %s --status errored\n", shellArg(runID))
+	}
+	return fmt.Sprintf("  azd ai eval run output list --eval %s --run %s --status errored\n",
+		shellArg(eval), shellArg(runID))
+}
+
 func allRowsCommand(eval, runID string) string {
 	if eval == "" {
 		return fmt.Sprintf("  azd ai eval run output list --run %s\n", shellArg(runID))
@@ -60,12 +94,14 @@ func allRowsCommand(eval, runID string) string {
 }
 
 func exportCommand(eval, runID string) string {
+	return "\nExport complete results:\n" + exportRunCommand(eval, runID)
+}
+
+func exportRunCommand(eval, runID string) string {
 	if eval == "" {
-		return fmt.Sprintf("\nExport complete results:\n"+
-			"  azd ai eval run output export --run %s --output-file ./%s.json\n",
+		return fmt.Sprintf("  azd ai eval run output export --run %s --output-file ./%s.json\n",
 			shellArg(runID), shellArg(runID))
 	}
-	return fmt.Sprintf("\nExport complete results:\n"+
-		"  azd ai eval run output export --eval %s --run %s --output-file ./%s.json\n",
+	return fmt.Sprintf("  azd ai eval run output export --eval %s --run %s --output-file ./%s.json\n",
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }

@@ -24,6 +24,7 @@ func NewRootCommand() *cobra.Command {
 			color.YellowString("(Beta)"),
 		),
 	})
+	rootCmd.Annotations[cobra.CommandDisplayNameAnnotation] = "azd ai " + rootCmd.Name()
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true

@@ -23,6 +23,7 @@ func TestRemoteFlagScope(t *testing.T) {
 	for _, args := range [][]string{{"context"}, {"version"}, {"metadata"}, {"listen"}, {"add", "test"}} {
 		for _, flag := range []string{
 			"--project-endpoint=", "--project-endpoint=https://example.test", "-p=",
+			"--tenant-id=", "--tenant-id=tenant-id",
 			"--timeout=", "--timeout=0", "--timeout=90s",
 		} {
 			t.Run(strings.Join(args, " ")+flag, func(t *testing.T) {
@@ -74,7 +75,12 @@ func TestRemoteFlagScopePreservesCommands(t *testing.T) {
 			switch path[0] {
 			case "context", "version", "metadata", "add":
 			default:
-				args = append(args, "--project-endpoint=", "--timeout=90s")
+				args = append(
+					args,
+					"--project-endpoint=",
+					"--tenant-id=tenant-id",
+					"--timeout=90s",
+				)
 			}
 			var output bytes.Buffer
 			root.SetOut(&output)
@@ -82,6 +88,11 @@ func TestRemoteFlagScopePreservesCommands(t *testing.T) {
 			root.SetArgs(args)
 			require.NoError(t, root.ExecuteContext(t.Context()))
 			require.True(t, called)
+			switch path[0] {
+			case "context", "version", "metadata", "add":
+			default:
+				require.True(t, command.Flags().Changed("tenant-id"))
+			}
 		})
 	}
 }

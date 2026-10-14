@@ -447,6 +447,33 @@ func TestNewPrompt_non_secret_keeps_help_message(t *testing.T) {
 	assert.Equal(t, "[Type ? for hint]", p.options.Hint)
 }
 
+func TestNewPrompt_ignore_hint_keys_suppresses_auto_hint(t *testing.T) {
+	// With IgnoreHintKeys, '?' is captured as input, so the help shortcut is
+	// unreachable and "[Type ? for hint]" must not be advertised.
+	p := NewPrompt(&PromptOptions{
+		Message:        "Endpoint",
+		HelpMessage:    "Help that can't be opened with '?'.",
+		IgnoreHintKeys: true,
+	})
+	assert.Empty(t, p.options.Hint)
+
+	var buf bytes.Buffer
+	require.NoError(t, p.Render(NewPrinter(&buf)))
+	assert.NotContains(t, buf.String(), "[Type ? for hint]")
+}
+
+func TestNewPrompt_ignore_hint_keys_preserves_custom_hint(t *testing.T) {
+	// A caller-supplied Hint is informational and is kept even when hint keys
+	// are ignored.
+	p := NewPrompt(&PromptOptions{
+		Message:        "Endpoint",
+		HelpMessage:    "Some help.",
+		Hint:           "(https://...)",
+		IgnoreHintKeys: true,
+	})
+	assert.Equal(t, "(https://...)", p.options.Hint)
+}
+
 func TestPrompt_Render_secret_masks_value_in_progress(t *testing.T) {
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)

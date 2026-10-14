@@ -159,6 +159,9 @@ func TestSuggestedCommandsExist(t *testing.T) {
 					"%s suggests `azd ai %s`, which is neither this extension's "+
 						"namespace nor a sibling it knows about", path, m[1])
 				words = words[1:]
+				if len(words) == 0 {
+					continue // The root itself is a valid help entry point.
+				}
 
 				// Trim trailing prose: "job show" is a command, "job show and
 				// then" is a sentence that begins with one.
@@ -284,4 +287,5 @@ func TestNoStaleEvalDatasetSuggestions(t *testing.T) {
 // siblingNamespaces are the other Foundry extensions this one points users at.
 var siblingNamespaces = map[string]bool{
 	"project": true, // `azd ai project set` owns the shared endpoint context
+	"eval":    true, // Root help explains shared datasets and points to generation.
 }

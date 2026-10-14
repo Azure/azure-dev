@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -95,6 +97,11 @@ func TestAgentConnectionReferencesConfigAndSchema(t *testing.T) {
 							require.Equal(t, tt.want, managed.Connections)
 							graph, err := newPromptGraph(root, &managed, nil, nil, nil)
 							require.NoError(t, err)
+							graph.projectRoot = root
+							graph.projectServices = map[string]*azdext.ServiceConfig{
+								"search": promptConnectionService(t, "search", ""),
+								"api":    promptConnectionService(t, "api", ""),
+							}
 							var connectionNodes int
 							for _, node := range graph.nodes {
 								if node.Kind == nodeConnection {
@@ -174,6 +181,10 @@ func TestPromptConnectionReferencesPreserveGraphValidation(t *testing.T) {
 			require.True(t, found)
 			graph, err := newPromptGraph(root, &managed, nil, nil, nil)
 			require.NoError(t, err)
+			graph.projectRoot = root
+			graph.projectServices = map[string]*azdext.ServiceConfig{
+				"search": promptConnectionService(t, "search", ""),
+			}
 			resolved := false
 			for i := range graph.nodes {
 				graph.nodes[i].Resolve = func(context.Context) error { resolved = true; return nil }
@@ -181,6 +192,75 @@ func TestPromptConnectionReferencesPreserveGraphValidation(t *testing.T) {
 			require.ErrorContains(t, graph.resolve(t.Context(), nil), tt.field)
 			require.False(t, resolved, "the entire prompt graph must validate before any resolution")
 			require.Error(t, schema.validate(values))
+		})
+	}
+}
+
+func TestPromptConnectionReadinessPrecedesMemoryResolution(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name              string
+		uses              []string
+		dependencyEnabled bool
+		wantError         string
+	}{
+		{
+			name:              "missing uses entry",
+			dependencyEnabled: true,
+			wantError:         `connection service "search" is not declared in agent service "assistant" uses`,
+		},
+		{
+			name:              "disabled connection service",
+			uses:              []string{"search"},
+			dependencyEnabled: false,
+			wantError:         `connection service "search" is disabled by its deployment condition`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			managed := &agent_yaml.PromptAgent{
+				Model:        "gpt-5-mini",
+				Instructions: "Be helpful.",
+				Connections:  []string{"search"},
+				Memory: &agent_yaml.PromptMemory{
+					Store:          "assistant-memory",
+					ChatModel:      "gpt-5-mini",
+					EmbeddingModel: "text-embedding-3-small",
+				},
+			}
+			managed.Name = "assistant"
+			graph, err := newPromptGraph(root, managed, nil, nil, nil)
+			require.NoError(t, err)
+			graph.projectRoot = root
+			graph.projectServices = map[string]*azdext.ServiceConfig{
+				"search": promptConnectionService(t, "search", ""),
+			}
+			graph.agentService = &azdext.ServiceConfig{Name: "assistant", Uses: tt.uses}
+			graph.dependencyEnabled = func(context.Context, string) (bool, error) {
+				return tt.dependencyEnabled, nil
+			}
+
+			connectionIndex, memoryIndex := -1, -1
+			memoryResolved := false
+			for i := range graph.nodes {
+				switch graph.nodes[i].Kind {
+				case nodeConnection:
+					connectionIndex = i
+				case nodeMemoryStore:
+					memoryIndex = i
+					graph.nodes[i].Resolve = func(context.Context) error {
+						memoryResolved = true
+						return nil
+					}
+				}
+			}
+			require.NotEqual(t, -1, connectionIndex)
+			require.NotEqual(t, -1, memoryIndex)
+			require.Less(t, connectionIndex, memoryIndex)
+
+			require.ErrorContains(t, graph.resolve(t.Context(), nil), tt.wantError)
+			require.False(t, memoryResolved, "memory resolution must wait for Connection readiness")
 		})
 	}
 }

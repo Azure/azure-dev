@@ -32,6 +32,26 @@ it and the next version after the latest registered one is published; a version
 the service already holds is refused rather than stepped past, because a version
 you named is one you meant.
 
+## Downloading a dataset
+
+Use `azd ai dataset download <name> --version <version> --output-file <path>`
+to choose an exact destination for a single-file dataset, including one accessed
+through a container SAS. A container-backed download must contain exactly one
+file and have `isSingleFile: true` in its dataset metadata to use this option.
+A folder dataset, even one holding only one file, requires `--output-dir` instead.
+Multi-file datasets always retain every file and its relative path.
+
+Without `--output-file`, downloads land under `--output-dir` (the current
+directory by default) as `<name>-<version><extension>` for a single file or
+`<name>-<version>/` for a folder. Omit `--version` to download the latest version.
+Existing destinations are refused unless `--force` is supplied, including with
+`--no-prompt`. `-o json` reports the resolved version, destination path, file count,
+and whether the download is a single file.
+
+Overwrite protection also applies to destinations created while a download is
+in progress. A cancelled transfer leaves existing content unchanged and removes
+its temporary download files, even with `--force`.
+
 ## Generating a dataset
 
 Generation is `azd ai eval generate`, in `azure.ai.evaluations`, and stays

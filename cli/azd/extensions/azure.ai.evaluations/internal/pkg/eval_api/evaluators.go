@@ -160,6 +160,26 @@ func (c *EvalClient) ListEvaluators(
 		func(into, page *EvaluatorListResponse) { into.Value = append(into.Value, page.Value...) })
 }
 
+// evaluatorVersionList validates each page before it can establish absence.
+type evaluatorVersionList EvaluatorListResponse
+
+func (l *evaluatorVersionList) UnmarshalJSON(raw []byte) error {
+	var decoded EvaluatorListResponse
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	if decoded.Value == nil {
+		return fmt.Errorf("evaluator version listing must contain a value array")
+	}
+	for _, evaluator := range decoded.Value {
+		if strings.TrimSpace(evaluator.Version) == "" {
+			return fmt.Errorf("evaluator version listing contains an entry without a version")
+		}
+	}
+	*l = evaluatorVersionList(decoded)
+	return nil
+}
+
 // ListEvaluatorVersions returns every version of one evaluator.
 func (c *EvalClient) ListEvaluatorVersions(
 	ctx context.Context,
@@ -167,15 +187,19 @@ func (c *EvalClient) ListEvaluatorVersions(
 	apiVersion string,
 ) (*EvaluatorListResponse, error) {
 	path := pathEvaluators + "/" + url.PathEscape(name) + "/versions"
-	first, err := doRequestTyped[EvaluatorListResponse](
+	first, err := doRequestTyped[evaluatorVersionList](
 		c, ctx, http.MethodGet, path, nil, nil, apiVersion,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return walkNextLinks(ctx, c, first,
-		func(l *EvaluatorListResponse) string { return l.NextLink },
-		func(into, page *EvaluatorListResponse) { into.Value = append(into.Value, page.Value...) })
+	if first == nil || first.Value == nil {
+		return nil, fmt.Errorf("evaluator version listing must contain a value array")
+	}
+	list, err := walkNextLinks(ctx, c, first,
+		func(l *evaluatorVersionList) string { return l.NextLink },
+		func(into, page *evaluatorVersionList) { into.Value = append(into.Value, page.Value...) })
+	return (*EvaluatorListResponse)(list), err
 }
 
 // LatestEvaluatorVersionNumber reports the newest registered version as an
@@ -184,7 +208,8 @@ func (c *EvalClient) ListEvaluatorVersions(
 // A listing that failed is returned rather than answered as zero. This is half
 // of publishEvaluatorVersion's collision guard, and a timeout, a 403 or a
 // truncated page reading as "no versions" lets a version the service already
-// holds be accepted as a first publish. Only a confirmed not-found is absence.
+// holds be accepted as a first publish. Only a valid empty listing or a
+// confirmed not-found is absence.
 func (c *EvalClient) LatestEvaluatorVersionNumber(
 	ctx context.Context,
 	name string,

@@ -220,10 +220,8 @@ func TestEnsureDatasetReusesAPinnedVersionThatStillExists(t *testing.T) {
 	assert.False(t, changed, "an unchanged file at a pinned version publishes nothing")
 }
 
-// A read that failed is not a read that came back empty. Failing the deploy on
-// a 403 or a timeout would turn a transient service problem into a broken
-// pipeline for a pin that is very probably fine.
-func TestEnsureDatasetKeepsAPinnedVersionWhenTheReadFails(t *testing.T) {
+// A read failure cannot establish that the pinned version is usable.
+func TestEnsureDatasetRefusesAPinnedVersionWhenTheReadFails(t *testing.T) {
 	r, localPath := pinnedDatasetReconciler(t, "golden", "1.0", http.StatusForbidden)
 
 	version, changed, err := r.EnsureDataset(
@@ -232,7 +230,7 @@ func TestEnsureDatasetKeepsAPinnedVersionWhenTheReadFails(t *testing.T) {
 		localPath,
 	)
 
-	require.NoError(t, err)
-	assert.Equal(t, "1.0", version)
+	require.Error(t, err)
+	assert.Empty(t, version)
 	assert.False(t, changed)
 }

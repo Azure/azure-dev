@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/paths"
@@ -134,7 +135,8 @@ func (a *OptimizeApplyAction) apply(
 	out io.Writer,
 	bold *color.Color,
 ) error {
-	if _, _, _, err := projectpkg.LoadAgentDefinition(svc, project.Path); err != nil {
+	validation, err := projectpkg.ValidateAgentServiceDefinition(svc, project.Path)
+	if err != nil {
 		return err
 	}
 
@@ -145,10 +147,7 @@ func (a *OptimizeApplyAction) apply(
 	if err != nil {
 		return err
 	}
-	_, isPromptAgent, err := projectpkg.PromptAgentFromResolvedService(svc, project.Path)
-	if err != nil {
-		return err
-	}
+	isPromptAgent := validation.Kind == agent_yaml.AgentKindPrompt
 	if usesFileRef {
 		guidance := "Add OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID to the referenced agent " +
 			"file, or inline the definition in azure.yaml"

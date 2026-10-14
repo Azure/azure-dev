@@ -40,7 +40,7 @@ func TestPromptAgentResponsesEndpoint(t *testing.T) {
 	settings := PromptAgentSettings{ProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/project"}
 	require.Equal(t,
 		"https://acct.services.ai.azure.com/api/projects/project/openai/v1/responses",
-		promptAgentResponsesEndpoint(&settings))
+		PromptAgentResponsesEndpoint(&settings, "", false))
 }
 
 func TestResolvePromptTargetFromEnv(t *testing.T) {

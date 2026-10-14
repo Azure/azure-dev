@@ -219,27 +219,6 @@ sibling `toolbox.yaml` is not automatically deployed: declare a Toolbox service
 and add it to `uses`. Deploy dependencies first or use `azd deploy --all`; a
 targeted Agent deployment does not deploy its dependencies automatically.
 
-### Hosted-agent resource errors
-
-Set hosted-agent CPU and memory as strings under
-`services.<service>.container.resources.cpu` and `memory`. Foundry Service decides
-which resource combinations are supported; azd does not maintain a separate SKU
-allowlist.
-
-When Foundry rejects a CPU or memory configuration, azd reports the service name,
-the CPU and memory values sent to Foundry, and the service's validation message,
-including supported combinations when returned. The error retains the HTTP
-status and any service-provided error code or request ID. The suggestion points
-to the service's `container.resources` in `azure.yaml` or its `$ref` file.
-
-Update both values to a supported combination and retry `azd deploy <service>`.
-For service names containing shell metacharacters, the suggestion asks you to
-pass the name as a shell-escaped argument rather than rendering a copyable
-command containing it.
-Omitted values still use the existing defaults: CPU `"0.5"` and memory `"1Gi"`.
-This guidance applies to container deployments and code/ZIP creates and updates;
-unrelated service errors keep their existing messages.
-
 ### Endpoint command support
 
 Endpoint behavior depends on the agent `kind` declared inline or through `$ref`:

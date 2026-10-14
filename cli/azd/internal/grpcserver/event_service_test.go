@@ -136,12 +136,12 @@ func (m *noOpEnvironmentManager) Delete(ctx context.Context, name string) error 
 	return nil
 }
 
-func (m *noOpEnvironmentManager) EnvPath(env *environment.Environment) string {
-	return ""
+func (m *noOpEnvironmentManager) EnvPath(env *environment.Environment) (string, error) {
+	return "", nil
 }
 
-func (m *noOpEnvironmentManager) ConfigPath(env *environment.Environment) string {
-	return ""
+func (m *noOpEnvironmentManager) ConfigPath(env *environment.Environment) (string, error) {
+	return "", nil
 }
 
 func (m *noOpEnvironmentManager) InvalidateEnvCache(ctx context.Context, envName string) error {

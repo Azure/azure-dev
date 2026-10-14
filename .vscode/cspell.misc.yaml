@@ -16,6 +16,9 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: docs/architecture/extension-framework.md
+      words:
+          - generateprojectclient
     - filename: ./SECURITY.md
       words:
           - MSRC
@@ -144,6 +147,10 @@ overrides:
           - stdlib
           - unhashed
           - vsrpc
+    - filename: docs/guides/creating-an-extension.md
+      words:
+          - GOARCH
+          - GOEXPERIMENT
     - filename: docs/reference/**/*.md
       words:
           - apphost

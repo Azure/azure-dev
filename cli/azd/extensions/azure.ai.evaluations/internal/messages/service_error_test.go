@@ -63,15 +63,19 @@ func TestTheInnermostMessageIsTheOneReported(t *testing.T) {
 	assert.NotContains(t, got.Error(), "The request is invalid.")
 }
 
-// A download refusal carries its SAS in the query, so the URL cannot be
-// printed as given.
+// A refusal URL can carry credentials in userinfo, the query, and the fragment.
+// None of those may reach terminal output.
 func TestARefusalNeverEchoesTheCredential(t *testing.T) {
 	got := ServiceRefused(403, refusalFrom(t, 403,
-		"https://acct.blob.core.windows.net/c/rows.jsonl?sig=SECRETSIGNATURE&se=2026-01-01",
+		"https://fixture-user:fixture-password@acct.blob.core.windows.net/c/rows.jsonl"+
+			"?sig=fixture-signature&se=2026-01-01#fixture-fragment",
 		`{"error":{"message":"Server failed to authenticate the request."}}`))
 
 	text := got.Error()
-	assert.NotContains(t, text, "SECRETSIGNATURE")
+	assert.NotContains(t, text, "fixture-user")
+	assert.NotContains(t, text, "fixture-password")
+	assert.NotContains(t, text, "fixture-signature")
+	assert.NotContains(t, text, "fixture-fragment")
 	assert.NotContains(t, text, "sig=")
 	assert.Contains(t, text, "acct.blob.core.windows.net/c/rows.jsonl",
 		"the path stays, because it names what was refused")
@@ -118,6 +122,57 @@ func TestARefusedAuthCallNamesItsDetailsWithoutTheCredential(t *testing.T) {
 		assert.Contains(t, text, "role 'Contributor' is required", "status %d", status)
 		assert.NotContains(t, text, "SECRETSIGNATURE", "status %d", status)
 	}
+}
+
+func TestAResourceEnvelopeInsideTheMessageIsUnwrapped(t *testing.T) {
+	body := `{"error":{"code":"ResourceNotFound","message":` +
+		`"Resource {\"error\":{\"code\":\"RunNotFound\",` +
+		`\"message\":\"run 'run_missing' was not found\"}}"}}`
+	original := refusalFrom(t, 404, "https://p.example/runs/run_missing", body)
+	original.ErrorCode = ""
+
+	got := ServiceRefused(404, original)
+
+	assert.Contains(t, got.Error(), "run 'run_missing' was not found")
+	assert.NotContains(t, got.Error(), "Resource {")
+	assert.NotContains(t, got.Error(), `"error"`)
+	service, ok := errors.AsType[*serviceError](got)
+	require.True(t, ok)
+	assert.Equal(t, "RunNotFound", service.Code())
+}
+
+func TestAMalformedResourceEnvelopeIsNotPrinted(t *testing.T) {
+	body := `{"error":{"code":"ResourceNotFound",` +
+		`"message":"Resource { error: { message: backend object } }"}}`
+	got := ServiceRefused(404, refusalFrom(t, 404, "https://p.example/runs/missing", body))
+
+	assert.Contains(t, got.Error(), "requested resource was not found")
+	assert.Contains(t, got.Error(), "InvalidRequest")
+	assert.NotContains(t, got.Error(), "Resource {")
+	assert.NotContains(t, got.Error(), "backend object")
+}
+
+func TestAnUnwrappedRefusalKeepsRedactedDetailsAndAStableCode(t *testing.T) {
+	body := `{"error":{"code":"ResourceNotFound","message":` +
+		`"Resource {\"error\":{\"code\":\"RunNotFound\",` +
+		`\"message\":\"run 'run_missing' was not found\"}}",` +
+		`"details":[{"message":"Cannot read https://storage.example/rows.jsonl?sig=SECRETSIGNATURE\nsecond line",` +
+		`"target":"data_source"}]}}`
+	original := refusalFrom(t, 404, "https://p.example/runs/run_missing", body)
+	original.ErrorCode = "https://storage.example/rows.jsonl?sig=SECRETSIGNATURE"
+
+	got := ServiceRefused(404, original)
+
+	service, ok := errors.AsType[*serviceError](got)
+	require.True(t, ok)
+	assert.Equal(t, "RunNotFound", service.Code())
+	assert.Contains(t, got.Error(), "run 'run_missing' was not found")
+	assert.Contains(t, got.Error(), "(details: Cannot read https://storage.example/rows.jsonl second line")
+	assert.Contains(t, got.Error(), "(target: data_source)")
+	assert.NotContains(t, got.Error(), "Resource {")
+	assert.NotContains(t, got.Error(), "SECRETSIGNATURE")
+	assert.NotContains(t, got.Error(), "\n")
+	assert.Equal(t, "run 'run_missing' was not found (HTTP 404 RunNotFound)", service.SafeMessage())
 }
 
 // The status checks read the chain, not the text. Replacing the azcore error

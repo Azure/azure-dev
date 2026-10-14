@@ -24,7 +24,7 @@ func reportCreatePartial(
 	cmd *cobra.Command, ec *evalContext, name, path string, artifacts []reconciledArtifact, cause error,
 ) error {
 	retry, err := commandInProject(
-		"azd ai eval create "+messages.ShellArg(name)+" --from-file "+messages.ShellArg(path),
+		"azd ai eval create "+messages.ShellArg(name)+" --from-file "+quoteForShell(path),
 		ec.endpoint, ec.envName)
 	if err != nil {
 		return err

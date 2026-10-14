@@ -165,15 +165,23 @@ func TestEnvironmentDirectory(t *testing.T) {
 }
 
 func TestEnvironmentRoot(t *testing.T) {
-	ctx := NewAzdContextWithDirectory("/test/path")
-	expected := filepath.Join("/test/path", ".azure", "env1")
-	require.Equal(t, expected, ctx.EnvironmentRoot("env1"))
+	projectDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	ctx := NewAzdContextWithDirectory(projectDir)
+	expected := filepath.Join(projectDir, ".azure", "env1")
+	actual, err := ctx.EnvironmentRoot("env1")
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }
 
 func TestGetEnvironmentWorkDirectory(t *testing.T) {
-	ctx := NewAzdContextWithDirectory("/test/path")
-	expected := filepath.Join("/test/path", ".azure", "env1", "wd")
-	require.Equal(t, expected, ctx.GetEnvironmentWorkDirectory("env1"))
+	projectDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	ctx := NewAzdContextWithDirectory(projectDir)
+	expected := filepath.Join(projectDir, ".azure", "env1", "wd")
+	actual, err := ctx.GetEnvironmentWorkDirectory("env1")
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }
 
 func TestProjectFileNames_Order(t *testing.T) {

@@ -68,7 +68,7 @@ func TestDatasetInteractionValidationUsesFinalMappings(t *testing.T) {
 			request := &eval_api.CreateOpenAIEvalRequest{TestingCriteria: []eval_api.TestingCriterion{{
 				EvaluatorName: "custom", DataMapping: tc.mapping,
 			}}}
-			err := validateDatasetInteractions(&tc.group, request, tc.columns)
+			err := validateDatasetInteractions(&tc.group, request, tc.columns, nil)
 			if tc.missing == "" {
 				require.NoError(t, err)
 			} else {
@@ -88,7 +88,7 @@ func TestDatasetInteractionValidationChecksEveryCriterion(t *testing.T) {
 			"query": "{{item.missing}}", "response": "{{item.missing}}",
 		}},
 	}}
-	err := validateDatasetInteractions(&project.Eval{}, request, map[string]bool{"messages": true})
+	err := validateDatasetInteractions(&project.Eval{}, request, map[string]bool{"messages": true}, nil)
 	require.ErrorContains(t, err, `"second"`)
 	assert.Equal(t, 1, strings.Count(err.Error(), `"missing"`), "one missing column needs one diagnostic")
 }
@@ -102,7 +102,7 @@ func TestDatasetInteractionValidationRequiresInputsOnEveryRow(t *testing.T) {
 			"query": "{{item.query}}", "response": "{{item.response}}",
 		},
 	}}}
-	require.ErrorContains(t, validateDatasetInteractions(&project.Eval{}, request, columns), `"response"`)
+	require.ErrorContains(t, validateDatasetInteractions(&project.Eval{}, request, columns, nil), `"response"`)
 }
 
 func TestMappedDatasetInteractionsFailBeforePublication(t *testing.T) {
@@ -125,6 +125,18 @@ func TestMappedDatasetInteractionsFailBeforePublication(t *testing.T) {
 				"missing transcript", `{"query":"question","response":"answer"}`,
 				map[string]string{"messages": "{{item.transcript}}"}, `"transcript"`,
 			},
+			{
+				"empty query", `{"query":"","response":"answer"}`,
+				map[string]string{"query": "{{item.query}}", "response": "{{item.response}}"}, `"query"`,
+			},
+			{
+				"numeric query", `{"query":42,"response":"answer"}`,
+				map[string]string{"query": "{{item.query}}", "response": "{{item.response}}"}, `"query"`,
+			},
+			{
+				"null query", `{"query":null,"response":"answer"}`,
+				map[string]string{"query": "{{item.query}}", "response": "{{item.response}}"}, `"query"`,
+			},
 		} {
 			t.Run(caller+"/"+tc.name, func(t *testing.T) {
 				ec, env, service, cfg, dir := validationFixture(t)
@@ -141,5 +153,97 @@ func TestMappedDatasetInteractionsFailBeforePublication(t *testing.T) {
 				assert.Empty(t, env.values)
 			})
 		}
+	}
+}
+
+func TestDatasetInteractionValidationRejectsMalformedValues(t *testing.T) {
+	for _, field := range []string{"query", "response", "messages"} {
+		t.Run(field, func(t *testing.T) {
+			mapping := map[string]string{"query": "{{item.query}}", "response": "{{item.response}}"}
+			columns := map[string]bool{"query": true, "response": true}
+			if field == "messages" {
+				mapping = map[string]string{"messages": "{{item.messages}}"}
+				columns = map[string]bool{"messages": true}
+			}
+			request := &eval_api.CreateOpenAIEvalRequest{TestingCriteria: []eval_api.TestingCriterion{{
+				EvaluatorName: "custom", DataMapping: mapping,
+			}}}
+			err := validateDatasetInteractions(&project.Eval{}, request, columns, map[string]bool{field: true})
+			require.ErrorContains(t, err, `"`+field+`"`)
+			assert.Contains(t, err.Error(), "non-empty")
+			assert.Contains(t, err.Error(), "dataMapping")
+		})
+	}
+}
+
+func TestDatasetInteractionValidationPrefersMissingOverMalformed(t *testing.T) {
+	request := &eval_api.CreateOpenAIEvalRequest{TestingCriteria: []eval_api.TestingCriterion{{
+		EvaluatorName: "custom", DataMapping: map[string]string{
+			"query": "{{item.query}}", "response": "{{item.response}}",
+		},
+	}}}
+	err := validateDatasetInteractions(
+		&project.Eval{}, request, map[string]bool{"response": true}, map[string]bool{"response": true})
+	require.ErrorContains(t, err, `"query"`)
+	assert.NotContains(t, err.Error(), "non-empty")
+}
+
+func TestMalformedTextValue(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		value     any
+		malformed bool
+	}{
+		{"non-empty string", "hello", false},
+		{"non-empty array", []any{map[string]any{"role": "user", "content": "hi"}}, false},
+		{"string array", []any{"not-a-message"}, true},
+		{"number array", []any{float64(1)}, true},
+		{"mixed array", []any{map[string]any{"role": "user"}, "not-a-message"}, true},
+		{"whitespace string", " \t\n", true},
+		{"empty string", "", true},
+		{"empty array", []any{}, false},
+		{"number", float64(42), true},
+		{"bool", true, true},
+		{"null", nil, true},
+		{"object", map[string]any{"a": "b"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.malformed, malformedTextValue(tc.value))
+		})
+	}
+}
+
+func TestDatasetInteractionValidationAcceptsMessageArrayQuery(t *testing.T) {
+	ec, _, service, cfg, dir := validationFixture(t)
+	rows := `{"query":[{"role":"user","content":"hi"}],"response":[{"role":"assistant","content":"hello"}]}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
+	require.NoError(t, reconcileArtifactConfig(t, "create", ec, cfg, dir))
+	assert.Equal(t, 1, service.createCount)
+}
+
+func TestDatasetInteractionValidationRejectsMixedStaticRows(t *testing.T) {
+	ec, env, service, cfg, dir := validationFixture(t)
+	rows := `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}` + "\n" +
+		`{"query":"where is my order?","response":"on the way"}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
+	cfg.Evals[0].EvaluationLevel = "conversation"
+	service.definition = `{"name":"builtin.valid","version":"1","definition":{"data_schema":` +
+		`{"properties":{"messages":{"type":"array"}},"required":["messages"]},` +
+		`"supported_evaluation_levels":["conversation"]}}`
+	require.ErrorContains(t, reconcileArtifactConfig(t, "create", ec, cfg, dir), `"messages"`)
+	assert.Zero(t, service.createCount)
+	assert.Empty(t, env.config)
+}
+
+func TestMalformedDatasetInteractionPersistsAcrossRows(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, _, service, cfg, dir := validationFixture(t)
+			rows := "{\"query\":\" \",\"response\":\"answer\"}\n{\"query\":\"valid\",\"response\":\"answer\"}\n"
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
+			require.ErrorContains(t, reconcileArtifactConfig(t, caller, ec, cfg, dir), `"query"`)
+			assert.Zero(t, service.createCount)
+			assert.False(t, service.dataset)
+		})
 	}
 }

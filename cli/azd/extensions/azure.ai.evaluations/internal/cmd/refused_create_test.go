@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestARefusedCreateKeepsItsJSONErrorUnchanged(t *testing.T) {
 // field a script reads.
 func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 	for _, path := range []string{
-		`C:\Users\Me\My Evals\azure.eval.yaml`,
+		filepath.FromSlash("C:/Users/Me/My Evals/azure.eval.yaml"),
 		`/home/me/my evals/azure.eval.yaml`,
 		`/tmp/team evals/run (a)/azure.eval.yaml`,
 	} {
@@ -120,7 +121,7 @@ func TestTheCreateRetryHintCarriesTheRealPath(t *testing.T) {
 				}
 				assert.Contains(t, text, "azd ai eval create \"my eval\" --from-file ")
 				assert.NotContains(t, text, "VALUE_NEEDS_QUOTING")
-				assert.Contains(t, text, path)
+				assert.Contains(t, text, filepath.ToSlash(path))
 			})
 		}
 	}

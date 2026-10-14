@@ -54,6 +54,46 @@ broken, the run **stops** — the agent does not fix it.
 
 ## Per-scenario loop
 
+### Manual-seed selection and readiness
+
+Both PR regression and suite selection exclude `manual-seed` scenarios by default,
+including whole-suite, command, and tier sweeps. Include one only when the user
+explicitly names that scenario or requests the `manual-seed` tag. Tier 2 cost
+consent alone is not this opt-in. List excluded scenarios as coverage gaps with
+the reason; do not count them as passing tests. If a selected scenario requires
+an excluded manual-seed prerequisite, stop plan construction and request that
+explicit opt-in rather than adding it implicitly.
+
+Before cost confirmation, identify each opted-in scenario's documented seed
+lifecycle and cleanup owner. Before dispatch, verify that seed is ready. A
+missing or invalid seed stops that scenario's preparation; report the missing
+prerequisite, never a passing skip.
+Do not provision a substitute or use the shared Responses agent for Invocations.
+Keep the scenario's pre-hook as a final fail-loud check.
+For shared-agent `2.14`, arrange its external State Store seed after successful
+`2.00` setup and verify readiness before `2.14`, then remove the disposable store
+with the seed tooling before shared teardown. It is still opt-in; missing seed
+is a preparation failure, not a passing skip.
+
+For `2.19-invoke-session-bound-metadata`, verify the run-scoped project directory,
+`azure.yaml`, active `.azure` environment, and `invocation-seed.json`. The seed
+must identify the deployed Invocations agent, successful readiness, current-run
+resource ownership, and methods for complete session inventories and routing
+traces. Confirm its external cleanup owner and record that lifecycle in run
+artifacts. Shared `2.99` teardown cannot clean this project.
+
+Partition Tier 2 into shared-agent scenarios and independent `2.19`. Add `2.00`
+and `2.99` only when shared-agent scenarios are selected; a run selecting only
+`2.19` needs neither. Run opted-in, seed-ready `2.19` serially after the shared
+lane and its cleanup, or directly after recipe validation if there is no shared
+lane. Shared setup failure does not skip independently seeded `2.19`. Never run
+it concurrently with another Tier 2 worker. Attempt and verify its external
+owned cleanup after success, failure, or interruption; report cleanup failures
+and preserve recovery evidence. Product barriers include this independent work
+and cleanup, not just the shared lane.
+
+### Worker loop
+
 For each selected scenario:
 
 The orchestrator reads and retains the scenario YAML's optional top-level `produces` value
@@ -195,10 +235,13 @@ Concurrency primitive: **parallel background sub-agents, one scenario phase per 
   rolling pool after recipe validation. Run `2.00-setup-deploy-shared-agent` **first**, then
   `2.01-`…`2.18-` **serially** (they share one deployed agent and mutate shared session/file/
   endpoint state), `2.18-delete` before teardown, then `2.99-teardown-down` **last**. Never run
-  more than one Tier 2 worker. Setup must PASS before functional scenarios run; otherwise skip
-  them and proceed to cleanup/recovery. Each functional completion makes only its successor
+  more than one Tier 2 worker. Shared setup must PASS before shared functional
+  scenarios run; otherwise skip them and proceed to cleanup/recovery.
+  Each functional completion makes only its successor
   ready, and teardown follows the final attempted functional scenario regardless of verdict.
   Tier 2 uses **no `instance_id`**.
+  Independently seeded `2.19` follows the manual-seed readiness and lifecycle
+  rules above; it is not part of the shared `2.01` through `2.18` sequence.
 - **Same scenario N times in parallel:** append a distinct ordinal to the scenario's normal
   run-scoped instance ID and use it for that copy's `session_vars.instance`, hooks, and every
   `start_session` call. Only Tier 0 work-dir scenarios and Tier 1 `init` scenarios support this.

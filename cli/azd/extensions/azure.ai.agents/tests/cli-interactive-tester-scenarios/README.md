@@ -427,6 +427,11 @@ so they operate on the same deployed agent. `2.00-setup` runs `init` there, whic
 scaffolds the project into the `{shared_agent_name}` subdirectory; the
 reuse and teardown scenarios run with `~/working/azd-agents-shared/{shared_agent_name}`
 as their `cwd`.
+`2.17a-deploy-preview` instead copies that project and selected environment into
+`~/working/azd-agents-preview-{instance}`. It changes description, tags, and public/
+substituted environment bindings only in the copy, so preview has deterministic
+visible differences and fake credential/URL sanitization assertions. Its post-hook
+checks the original shared files' checksums; it never deploys the fixture.
 
 | File | Targets |
 |------|---------|
@@ -448,6 +453,7 @@ as their `cwd`.
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
+| `tier2/2.17a-deploy-preview.yaml` | `azd deploy --preview` (isolated authored diffs, readable/JSON values and credential protection; no deployment writes) |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
@@ -727,6 +733,16 @@ scaffold's deployment name, applies the configured model and SKU, conditionally
 passes the optional model version, and verifies the command's JSON result without
 performing a second mutation. It exits successfully without calling `azd` when
 either the model or SKU is empty.
+
+### Isolated deployment preview helper
+
+[`fixtures/scripts/prepare_preview.py`](fixtures/scripts/prepare_preview.py)
+edits the generated shared scaffold's single inline hosted-service block in the
+scenario's isolated copy. It preserves service/agent identity, model bindings,
+code configuration, and sibling services, requires no Python YAML packages, and
+rejects an unexpected scaffold shape before writing. Run the offline helper
+checks with `python3 fixtures/scripts/test_prepare_preview.py`; this does not
+execute a scenario or contact Azure.
 
 ### Offline dependency composition fixture
 

@@ -196,6 +196,7 @@ type AgentServiceTargetProvider struct {
 	dependencyEnabled          dependencyEnabled
 	dependencyEnv              map[string]string
 	promptAgentVersionResolver PromptAgentVersionResolver
+	previewReader              func(endpoint, tenantID string) (agentPreviewReader, error)
 }
 
 const (
@@ -1454,14 +1455,14 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 			if _, ok := errors.AsType[*botservice.MultipleBotsForMsaAppIDError](err); ok {
 				return "", "", classifyActivityBotLookupError(err)
 			}
-			fmt.Fprintf(
+			_, _ = fmt.Fprintf(
 				os.Stderr,
 				"Unable to search for an Azure Bot already bound to the deployed agent identity: %v\n",
 				err,
 			)
 		}
 		if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
-			fmt.Fprintf(
+			_, _ = fmt.Fprintf(
 				os.Stderr,
 				"Using Azure Bot already bound to the deployed agent identity: %q (resource group: %q)\n",
 				boundBot.Name,
@@ -1479,7 +1480,7 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 			resourceGroup = strings.TrimSpace(defaultResourceGroup)
 		}
 		name = botservice.BotName(agentName, botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], resourceGroup))
-		fmt.Fprintf(
+		_, _ = fmt.Fprintf(
 			os.Stderr,
 			"Azure Bot name was not set in %s; using scope-qualified default %q. Set %s explicitly to use a custom bot name.\n",
 			key,
@@ -1487,7 +1488,7 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 			key,
 		)
 	} else {
-		fmt.Fprintf(
+		_, _ = fmt.Fprintf(
 			os.Stderr,
 			"Using Azure Bot name from environment key %s: %q\n",
 			key,
@@ -1725,7 +1726,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 		result.agentVersion = polledVersion
 	} else {
-		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
+		_, _ = fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
 	}
 
 	// Read the deployed version so post-deploy behavior uses the service-side
@@ -1829,7 +1830,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 						botResourceGroup = strings.TrimSpace(boundBot.ResourceGroup)
 						activityBotResourceGroup = botResourceGroup
 					}
-					fmt.Fprintf(
+					_, _ = fmt.Fprintf(
 						os.Stderr,
 						"Azure Bot name %q conflicts for MsaAppID; reusing already-bound bot %q (resource group: %q).\n",
 						ensureCfg.BotName,
@@ -2060,7 +2061,7 @@ func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []st
 
 // writeMemoryStoreDriftWarning warns that azure.yaml changes were not applied to an existing store.
 func writeMemoryStoreDriftWarning(name string, drift []string) {
-	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+	_, _ = fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
 		"Memory store %q already exists; azd does not update existing memory stores, so the "+
 			"following azure.yaml change(s) were NOT applied: %s. To apply them, delete the store "+
 			"in the Foundry portal (or give it a new name) and redeploy.\n",
@@ -2206,7 +2207,7 @@ type deployPrepResult struct {
 }
 
 func writeExistingAgentVersionWarning(agentName string) {
-	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+	_, _ = fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
 }
 
 func writeExistingAgentVersionWarningIfPresent(
@@ -2246,10 +2247,10 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	if p.agentDefinitionPath != "" {
-		fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+		_, _ = fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	}
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
+	_, _ = fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
+	_, _ = fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Seed core-expanded values before resolving legacy variables.
 	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
@@ -2270,6 +2271,18 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		}
 	}
 
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
+	return prepareDeployRequest(serviceConfig, agentDef, resolvedEnvVars, extraOptions)
+}
+
+// prepareDeployRequest normalizes the request without output, I/O, or state changes.
+func prepareDeployRequest(
+	serviceConfig *azdext.ServiceConfig,
+	agentDef agent_yaml.ContainerAgent,
+	resolvedEnvVars map[string]string,
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
 	// Parse service config for container resource overrides
 	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -2279,9 +2292,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
-	WarnOrphanedConfigEnv(serviceConfig)
-
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
@@ -2398,7 +2408,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateAgent)
 	}
 
-	fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
+	_, _ = fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
 	return nil
 }
 
@@ -2640,7 +2650,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
+	_, _ = fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
@@ -2783,7 +2793,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 					"delete the remote binding, then run azd deploy again",
 				)
 			}
-			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			_, _ = fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
 			continue
 		}
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
@@ -2804,7 +2814,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 		if id == "" {
 			id = bindingID
 		}
-		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+		_, _ = fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
 	}
 	return nil
 }
@@ -3239,7 +3249,7 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 	defer os.RemoveAll(publishDir)
 
 	// Run dotnet publish targeting linux (hosted agents run on linux)
-	fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
+	_, _ = fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
 	cmd := exec.Command("dotnet", "publish", csprojPath, //nolint:gosec // csprojPath is derived from user's project directory
 		"-c", "Release",
 		"-r", "linux-x64",
@@ -3469,14 +3479,14 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	}
 
 	if agentDef.CodeConfiguration != nil {
-		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
+		_, _ = fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
 		cmdPrefix := agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime)
-		fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
+		_, _ = fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
 		depRes := "remote_build"
 		if agentDef.CodeConfiguration.DependencyResolution != nil {
 			depRes = *agentDef.CodeConfiguration.DependencyResolution
 		}
-		fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
+		_, _ = fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
 	}
 
 	// Display agent information
@@ -3517,7 +3527,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 		// Agent doesn't exist — create
 		progress("Creating new agent from code package")
-		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
+		_, _ = fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
@@ -3572,7 +3582,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	if !activityProfile.IsActivity && projectResourceID != "" {
 		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
+			_, _ = fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
 		} else if playgroundUrl != "" {
 			artifacts = append(artifacts, &azdext.Artifact{
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
@@ -3882,7 +3892,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion, false)
 		if err != nil {
 			lastPollErr = err
-			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
 			consecutiveActive = 0
 			consecutiveFailed = 0
@@ -3896,21 +3906,21 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			consecutiveActive++
 			consecutiveFailed = 0
 			if consecutiveActive >= confirmCount {
-				fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
+				_, _ = fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
 				return versionResp, nil
 			}
-			fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
+			_, _ = fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
 		case "failed":
 			consecutiveFailed++
 			consecutiveActive = 0
 			if consecutiveFailed >= confirmCount {
 				return nil, agentDeploymentFailedError(versionResp, serviceName)
 			}
-			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
+			_, _ = fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
 		default:
 			consecutiveActive = 0
 			consecutiveFailed = 0
-			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+			_, _ = fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
 		}
 	}
 
@@ -3990,7 +4000,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
 
-	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
+	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 
 	return agentVersionResponse, nil
 }
@@ -4048,16 +4058,16 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 			description = desc
 		}
 	}
-	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
+	_, _ = fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
 	if hostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
 		if hostedDef.ContainerConfiguration != nil && hostedDef.ContainerConfiguration.Image != "" {
-			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.ContainerConfiguration.Image)
+			_, _ = fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.ContainerConfiguration.Image)
 		}
-		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
-		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
-		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ProtocolVersions)
+		_, _ = fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
+		_, _ = fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
+		_, _ = fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ProtocolVersions)
 	}
 	fmt.Fprintln(os.Stderr)
 }

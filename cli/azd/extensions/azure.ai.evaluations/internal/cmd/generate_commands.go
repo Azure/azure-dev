@@ -7,7 +7,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
+	"azureaieval/internal/exterrors"
+	"azureaieval/internal/foundry/projectctx"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -47,9 +50,10 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 			"init scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&f.target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&f.instruction, "agent-instruction", "",
-		"What the agent does and what to test.")
+		"What the agent does and what to test. Skips instruction detection and selection.")
 	cmd.Flags().StringVar(&f.instructionFile, "agent-instruction-file", "",
-		"Read the agent instruction from this file. Mutually exclusive with --agent-instruction.")
+		"Read instructions from a local text file. Mutually exclusive with --agent-instruction; "+
+			"skips instruction detection and selection.")
 	cmd.MarkFlagsMutuallyExclusive("agent-instruction", "agent-instruction-file")
 	cmd.Flags().StringVar(&f.model, "generation-model", "",
 		"Model deployment that generates the artifact.")
@@ -71,6 +75,20 @@ func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
 	cmd.Flags().BoolVar(&f.force, "force", false,
 		"Overwrite an artifact file that already exists.")
 	cmd.Flags().StringVar(&f.endpoint, "project-endpoint", "", "Foundry project endpoint.")
+}
+
+func validateInstructionFlags(cmd *cobra.Command, f *generateFlags) error {
+	for _, input := range []struct{ flag, value string }{
+		{"agent-instruction", f.instruction},
+		{"agent-instruction-file", f.instructionFile},
+	} {
+		if cmd.Flags().Changed(input.flag) && strings.TrimSpace(input.value) == "" {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--%s must not be empty", input.flag),
+				"Supply instruction text or a local file path, or omit the flag to use instruction detection.")
+		}
+	}
+	return nil
 }
 
 // resolvePlan settles every input that does not need the network.
@@ -119,9 +137,10 @@ func prepareGeneration(
 	cmd *cobra.Command,
 	f *generateFlags,
 	plan generationPlan,
+	newContext func(context.Context, string) (*evalContext, error),
 ) (*evalContext, generationPlan, error) {
 	ctx := cmd.Context()
-	ec, err := newEvalContext(ctx, f.endpoint)
+	ec, err := newContext(ctx, f.endpoint)
 	if err != nil {
 		return nil, plan, err
 	}
@@ -185,6 +204,17 @@ func (ec *evalContext) detectAgentTarget(cmd *cobra.Command) (string, error) {
 		return "", messages.AmbiguousAgentTarget(agents)
 	}
 	return promptAgentTarget(cmd, agents)
+}
+
+func (ec *evalContext) generationNameTarget(ctx context.Context, target string) (string, error) {
+	proj, err := ec.azdProject(ctx)
+	if err != nil {
+		if projectctx.ProjectAbsent(err) {
+			return target, nil
+		}
+		return "", messages.GenerationNameTargetUnresolved(err)
+	}
+	return project.RemoteAgentName(proj, target)
 }
 
 // agentDeployment reads the deployment the target agent answers with.

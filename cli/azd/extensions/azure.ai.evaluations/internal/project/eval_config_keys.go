@@ -89,7 +89,7 @@ func keysOfType(goType string) []string {
 	switch goType {
 	case "project.EvalConfig":
 		v = EvalConfig{}
-	case "project.Eval":
+	case "project.Eval", "project.evalYAML":
 		v = Eval{}
 	case "project.DatasetDecl":
 		v = DatasetDecl{}
@@ -97,7 +97,7 @@ func keysOfType(goType string) []string {
 		v = EvaluatorDecl{}
 	case "project.Target":
 		v = Target{}
-	case "project.SourceDecl":
+	case "project.SourceDecl", "project.sourceYAML":
 		v = SourceDecl{}
 	case "project.Simulation", "project.simulationYAML":
 		v = Simulation{}

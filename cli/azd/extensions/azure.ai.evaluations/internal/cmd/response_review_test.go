@@ -228,7 +228,7 @@ func TestResponseBindingsStayTypedAndSourceScoped(t *testing.T) {
 				if mode == "responses" || (target && mode == "static") {
 					want = "{{sample.output_items}}"
 				}
-				if mode == "responses" && criterion.EvaluatorName == "string" {
+				if (mode == "responses" || (target && mode == "static")) && criterion.EvaluatorName == "string" {
 					want = "{{sample.output_text}}"
 				}
 				assert.Equal(t, want, criterion.DataMapping["response"])
@@ -236,6 +236,13 @@ func TestResponseBindingsStayTypedAndSourceScoped(t *testing.T) {
 			assert.Equal(t, "{{sample.output_items}}", sampleBindings["response"], "typed bindings must not mutate defaults")
 			if mode == "traces" {
 				assert.False(t, request.DataSourceConfig.IncludeSampleSchema)
+			}
+			if mode == "responses" {
+				assert.Equal(t, "azure_ai_source", request.DataSourceConfig.Type)
+				assert.Equal(t, "responses", request.DataSourceConfig.Scenario)
+				assert.False(t, request.DataSourceConfig.IncludeSampleSchema,
+					"the service-managed responses schema replaces the intermediate custom schema")
+				assert.Nil(t, request.DataSourceConfig.ItemSchema)
 			}
 		}
 	}

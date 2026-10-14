@@ -338,11 +338,8 @@ func printSessionStatus(label, sid string) {
 	}
 }
 
-// captureResponseSession reads the x-agent-session-id header from a response
-// and saves it when the caller had no pre-existing session (sid == "").
-// label is the formatted prefix for printing (e.g. "Session:  "). When label
-// is empty the session is persisted silently (used by --output raw mode so
-// stdout stays pristine).
+// captureResponseSession persists a server-assigned session and returns the
+// effective session ID. An empty label suppresses session output.
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -350,44 +347,76 @@ func captureResponseSession(
 	sid string,
 	resp *http.Response,
 	label string,
-) {
-	if sid != "" || azdClient == nil {
-		return
+) string {
+	if sid != "" {
+		return sid
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
-		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
-		if label != "" {
+		if azdClient != nil {
+			saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
+		}
+		if label != "" && azdClient != nil {
 			fmt.Printf("%s%s (assigned by server)\n", label, newSid)
 		}
+		return newSid
 	}
+	return ""
 }
 
-// fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
-// baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
-// suffix is "local" or "remote", used in the cached filename.
-// apiVersion, when non-empty, is appended as the "?api-version=<v>" query parameter.
-// Local agents do not require this; remote Foundry endpoints reject requests without it.
-// If forceRefresh is false and the file already exists, the fetch is skipped.
-//
-// Returns the on-disk path to the cached spec on success (whether freshly
-// written or already cached), plus a fresh flag that is true only when this
-// call actually wrote the file. Callers that want to surface the "OpenAPI
-// spec saved to ..." line gate on the fresh flag; callers that just need the
-// path (or want silence) ignore it. Returns ("", false) on any failure;
-// errors are silently swallowed because the spec is best-effort.
+const openAPIProbeTimeout = 10 * time.Second
+
+// openAPIProbeError omits URLs and bodies from diagnostics.
+type openAPIProbeError struct {
+	stage string
+	cause error
+}
+
+func (e *openAPIProbeError) Error() string {
+	return "OpenAPI metadata discovery: " + e.stage
+}
+
+func (e *openAPIProbeError) Unwrap() error {
+	return e.cause
+}
+
+// fetchOpenAPISpec caches metadata using the existing remote session.
+// Remote discovery requires sessionID and bounds configuration RPCs
+// separately from HTTP. Local discovery does not use a session ID.
+// The fresh result indicates that this call wrote the cache.
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	transport http.RoundTripper,
 	baseURL string,
 	agentName string,
 	suffix string,
 	bearerToken string,
 	apiVersion string,
+	sessionID string,
+	requestHeaders http.Header,
 	forceRefresh bool,
-) (string, bool) {
-	configPath, err := resolveConfigPath(ctx, azdClient)
+) (string, bool, error) {
+	remote := suffix == "remote"
+	if remote && sessionID == "" {
+		return "", false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, &openAPIProbeError{stage: "canceled", cause: err}
+	}
+
+	configCtx := ctx
+	cancel := func() {}
+	if remote {
+		configCtx, cancel = context.WithTimeout(ctx, openAPIProbeTimeout)
+		defer cancel()
+	}
+	configPath, err := resolveConfigPath(configCtx, azdClient)
+	cancel()
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "configuration lookup failed", cause: err}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, &openAPIProbeError{stage: "canceled", cause: err}
 	}
 	configDir := filepath.Dir(configPath)
 
@@ -400,43 +429,64 @@ func fetchOpenAPISpec(
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {
-			return specFile, false // already cached; surface the path without re-fetching
+			return specFile, false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", false, &openAPIProbeError{stage: "cache lookup failed", cause: err}
 		}
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
+	query := url.Values{}
 	if apiVersion != "" {
-		specURL += "?api-version=" + url.QueryEscape(apiVersion)
+		query.Set("api-version", apiVersion)
 	}
+	if sessionID != "" {
+		query.Set("agent_session_id", sessionID)
+	}
+	if len(query) > 0 {
+		specURL += "?" + query.Encode()
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "request construction failed", cause: err}
+	}
+	if requestHeaders != nil {
+		req.Header = requestHeaders.Clone()
+	}
+	if req.Header == nil {
+		req.Header = make(http.Header)
 	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Transport: transport, Timeout: openAPIProbeTimeout}
+	if remote {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "HTTP request failed", cause: err}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return "", false, &openAPIProbeError{stage: fmt.Sprintf("HTTP status %d", resp.StatusCode)}
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "response read failed", cause: err}
 	}
 
 	if err := os.WriteFile(specFile, body, 0600); err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "cache write failed", cause: err}
 	}
 
-	return specFile, true
+	return specFile, true, nil
 }
 
 // resolveConversationID resolves a Foundry conversation ID.
@@ -624,7 +674,6 @@ func fileExists(path string) bool {
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
 	IsHosted                    bool                               // populated only when hosted classification is requested
-	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
 	EnvironmentName             string                             // environment used for deployed metadata, when available
 	AgentName                   string                             // deployed name; may use brownfield fallback
@@ -1115,7 +1164,6 @@ type agentServiceResolutionOptions struct {
 	rejectVoiceInvocation          bool
 	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
-	includeVoiceKind               bool
 	includeHostedKind              bool
 }
 
@@ -1138,12 +1186,6 @@ func withAgentEnvironment(name string) agentServiceResolutionOption {
 func withHostedAgentKind() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
 		options.requireHostedKind = true
-	}
-}
-
-func withVoiceKind() agentServiceResolutionOption {
-	return func(options *agentServiceResolutionOptions) {
-		options.includeVoiceKind = true
 	}
 }
 
@@ -1271,19 +1313,6 @@ func resolveAgentServiceFromProject(
 			info.IsHosted = hosted
 		}
 	}
-	if resolutionOptions.includeVoiceKind {
-		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path)
-		if err != nil {
-			return nil, exterrors.ValidationFromError(
-				err,
-				exterrors.CodeInvalidServiceConfig,
-				"determining agent kind",
-				"fix the agent service configuration in azure.yaml",
-			)
-		}
-		info.IsVoice = isVoice
-	}
-
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.
 		// Deployed name reflects the created resource.

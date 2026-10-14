@@ -34,6 +34,7 @@ import (
 )
 
 type validationService struct {
+	emptyDatasetListing bool
 	mu                  sync.Mutex
 	requests            []string
 	status              int
@@ -42,16 +43,21 @@ type validationService struct {
 	failCreate          bool
 	createStatus        int
 	definition          string
-	createCount         int
 	evaluatorVersion    string
+	createCount         int
 	createdRequests     []eval_api.CreateOpenAIEvalRequest
 	registeredRows      string
 	credentialStatus    int
 	contentStatus       int
 	datasetReadStatus   int
-	emptyDatasetListing bool
 	listedVersion       string
 	afterContentRead    func()
+	// storedRequest overrides the echoed read for an eval this test marks
+	// already deployed without exercising a create in this run. Unset, the
+	// read falls back to the last actual create, matching the documented
+	// contract that testing_criteria and data_source_config are fixed at
+	// creation and always returned on a read -- never a bare id/name.
+	storedRequest *eval_api.CreateOpenAIEvalRequest
 }
 
 func (s *validationService) serve(t *testing.T, base func() string) http.HandlerFunc {
@@ -149,7 +155,26 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 			s.eval = true
 			_, _ = w.Write([]byte(`{"id":"eval_valid","name":"confirm-unknown-evaluator"}`))
 		case strings.Contains(r.URL.Path, "/evals/") && s.eval:
-			_, _ = w.Write([]byte(`{"id":"eval_valid","name":"confirm-unknown-evaluator"}`))
+			// A read's testing_criteria and data_source_config are fixed at
+			// creation and always returned by the real service (see
+			// eval_api.OpenAIEval). Echoing a bare id/name here answered a
+			// shape production never produces, and conflictingSourceContract
+			// read "nothing stored" as a mismatch whenever the declaration
+			// carried an explicit data_mapping.
+			stored := s.storedRequest
+			if stored == nil && len(s.createdRequests) > 0 {
+				stored = &s.createdRequests[len(s.createdRequests)-1]
+			}
+			response := eval_api.OpenAIEval{ID: "eval_valid", Name: "confirm-unknown-evaluator"}
+			if stored != nil {
+				response.TestingCriteria = stored.TestingCriteria
+				if stored.DataSourceConfig != nil {
+					raw, err := json.Marshal(stored.DataSourceConfig)
+					assert.NoError(t, err)
+					assert.NoError(t, json.Unmarshal(raw, &response.DataSourceConfig))
+				}
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(response))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -159,7 +184,8 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 func validationFixture(t *testing.T) (*evalContext, *testEnvServer, *validationService, *project.EvalConfig, string) {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte("{\"query\":\"hi\"}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"),
+		[]byte("{\"query\":\"hi\",\"response\":\"hello\"}\n"), 0o600))
 	service := &validationService{
 		status: http.StatusOK,
 		definition: `{"name":"builtin.valid","version":"1","definition":{"data_schema":` +
@@ -331,30 +357,6 @@ func TestUpValidatesAllEvalsBeforePublishing(t *testing.T) {
 	assert.Empty(t, env.config)
 }
 
-func TestLocalRubricRetainsPublishedLevelRestrictionsBeforeMutation(t *testing.T) {
-	for _, caller := range []string{"create", "up"} {
-		t.Run(caller, func(t *testing.T) {
-			ec, env, service, cfg, dir := validationFixture(t)
-			definition := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "quality.json"), []byte(definition), 0o600))
-			service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["turn"],` +
-				`"definition":` + definition + `}`
-			cfg.Evaluators = []project.EvaluatorDecl{{Name: "quality", Source: "quality.json"}}
-			cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "quality"}}
-			cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
-
-			err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
-			require.ErrorContains(t, err, "conversation")
-			for _, request := range service.requests {
-				assert.True(t, strings.HasPrefix(request, "GET "), "unexpected mutation: %s", request)
-			}
-			assert.Empty(t, env.config)
-			assert.Empty(t, env.values)
-			assert.Equal(t, "preserve", env.stored(t, "unrelated"))
-		})
-	}
-}
-
 func TestUpPreservesPublishedDependenciesAfterServiceFailure(t *testing.T) {
 	ec, env, service, cfg, dir := validationFixture(t)
 	service.failCreate = true
@@ -401,6 +403,7 @@ func TestCreateReportsRetainedDependenciesOnServiceFailure(t *testing.T) {
 	require.Len(t, result.Artifacts, 1)
 	assert.Equal(t, reconciledArtifact{"dataset", "turn-tests", "1.0", true}, result.Artifacts[0])
 	assert.NotEmpty(t, result.Error.Message)
+	assert.Equal(t, "http_503", result.Error.Code)
 	assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
 	assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
 	assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
@@ -719,6 +722,7 @@ func TestLocalRubricOverrideCannotHideReusedContract(t *testing.T) {
 
 func TestLocalRubricPreflightAllowsDigestDetectedEdit(t *testing.T) {
 	ec, env, service, cfg, dir := validationFixture(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(`{"messages":[]}`), 0o600))
 	before := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}],"pass_threshold":0.6}`
 	after := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
 	decl := project.EvaluatorDecl{
@@ -735,4 +739,28 @@ func TestLocalRubricPreflightAllowsDigestDetectedEdit(t *testing.T) {
 	require.NoError(t, (&evalReconciler{ec: ec}).Validate(t.Context(), cfg, dir),
 		"the recorded digest proves a deletion edit that will publish the authored levels")
 	assert.Empty(t, env.config)
+}
+
+func TestLocalRubricRetainsPublishedLevelRestrictionsBeforeMutation(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			definition := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "quality.json"), []byte(definition), 0o600))
+			service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["turn"],` +
+				`"definition":` + definition + `}`
+			cfg.Evaluators = []project.EvaluatorDecl{{Name: "quality", Source: "quality.json"}}
+			cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "quality"}}
+			cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+
+			err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
+			require.ErrorContains(t, err, "conversation")
+			for _, request := range service.requests {
+				assert.True(t, strings.HasPrefix(request, "GET "), "unexpected mutation: %s", request)
+			}
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.values)
+			assert.Equal(t, "preserve", env.stored(t, "unrelated"))
+		})
+	}
 }

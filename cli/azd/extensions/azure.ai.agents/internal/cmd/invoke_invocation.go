@@ -22,6 +22,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+type invocationResponseBody struct {
+	io.ReadCloser
+	closed   bool
+	closeErr error
+}
+
+func (b *invocationResponseBody) Close() error {
+	if !b.closed {
+		b.closed = true
+		b.closeErr = b.ReadCloser.Close()
+	}
+	return b.closeErr
+}
+
 // invocationIDFromResponse extracts an ID without consuming the accepted response body.
 func invocationIDFromResponse(resp *http.Response) (string, error) {
 	if invocationID := resp.Header.Get("x-agent-invocation-id"); invocationID != "" {

@@ -4,6 +4,7 @@
 package foundry
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -94,6 +95,144 @@ func TestExpandEnv(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAnalyzeEnvReferences(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		want        []string
+		hasTemplate bool
+		wantErr     bool
+	}{
+		{name: "plain text"},
+		{
+			name:        "single required variable",
+			input:       "${TOKEN}",
+			want:        []string{"TOKEN"},
+			hasTemplate: true,
+		},
+		{
+			name:        "deduplicated and sorted",
+			input:       "${ZED}-${ALPHA}-${ZED}",
+			want:        []string{"ALPHA", "ZED"},
+			hasTemplate: true,
+		},
+		{
+			name:        "defaulted variable is optional",
+			input:       "${OPTIONAL:-fallback}",
+			hasTemplate: true,
+		},
+		{
+			name:        "empty default is optional",
+			input:       "${OPTIONAL:-}",
+			hasTemplate: true,
+		},
+		{
+			name:        "nested required reference in default",
+			input:       "${OUTER:-${INNER}}",
+			want:        []string{"INNER"},
+			hasTemplate: true,
+		},
+		{
+			name:        "nested defaulted references are optional",
+			input:       "${OUTER:-${INNER:-fallback}}",
+			hasTemplate: true,
+		},
+		{
+			name:        "supported default operators",
+			input:       "${A=default}${B:=default}${C:+default}${D:?message}",
+			want:        []string{"D"},
+			hasTemplate: true,
+		},
+		{
+			name:        "value transformations are required",
+			input:       "${NAME^^}-${#COUNT}",
+			want:        []string{"COUNT", "NAME"},
+			hasTemplate: true,
+		},
+		{
+			name:  "escaped and server expressions are ignored",
+			input: "$${ESCAPED} ${{connections.${SERVER}}}",
+		},
+		{
+			name:        "mixed escaped server and client expressions",
+			input:       "$${ESCAPED}-${{event.body}}-${LIVE}",
+			want:        []string{"LIVE"},
+			hasTemplate: true,
+		},
+		{
+			name:    "malformed variable expression",
+			input:   "private-value ${BROKEN",
+			wantErr: true,
+		},
+		{
+			name:    "unterminated Foundry expression",
+			input:   "private-value ${{BROKEN",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := AnalyzeEnvReferences(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "private-value")
+				assert.NotContains(t, err.Error(), "BROKEN")
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.RequiredVariables)
+			assert.Equal(t, tt.hasTemplate, got.HasClientTemplate)
+		})
+	}
+}
+
+func TestAnalyzeEnvReferencesMatchesExpandEnvParser(t *testing.T) {
+	tests := []string{
+		"plain value",
+		"${A}",
+		"$${A}",
+		"${A:-fallback}",
+		"${OUTER:-prefix-${INNER}}",
+		"${VALUE^^}",
+		"${VALUE/old/new}",
+		"${{connections.name.credentials.key}}",
+		"${VALUE:-${{event.body}}}",
+		"${BROKEN",
+		"${VALUE:-}",
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			_, analysisErr := AnalyzeEnvReferences(input)
+			_, expandErr := ExpandEnv(input, func(string) string { return "" })
+			assert.Equal(t, expandErr == nil, analysisErr == nil)
+		})
+	}
+}
+
+func TestAnalyzeEnvReferencesUsesSharedFoundryMasking(t *testing.T) {
+	value := "${{outer ${INNER}}} ${LIVE}"
+	analysis, err := AnalyzeEnvReferences(value)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LIVE"}, analysis.RequiredVariables)
+	assert.True(t, analysis.HasClientTemplate)
+
+	expanded, err := ExpandEnv(value, func(name string) string {
+		return "resolved-" + name
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "${{outer ${INNER}}} resolved-LIVE", expanded)
+}
+
+func TestAnalyzeEnvReferencesEmptyResultIsSortedSlice(t *testing.T) {
+	analysis, err := AnalyzeEnvReferences("$${LITERAL} ${{server}}")
+	require.NoError(t, err)
+	assert.True(t, slices.Equal([]string{}, analysis.RequiredVariables))
+	assert.False(t, analysis.HasClientTemplate)
 }
 
 // TestExpandEnvNeverCorruptsFoundryExpressions guards the core invariant: a ${{...}} span is

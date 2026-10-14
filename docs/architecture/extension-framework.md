@@ -63,6 +63,16 @@ is separate from the [gRPC service and invocation store](../../cli/azd/internal/
 See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 for the API, host compatibility, and contribution ordering rules.
 
+### Local Foundry configuration
+
+Go extensions that read project-owned Foundry files can use the shared
+`foundry.ResolveFileRefs` resolver with opt-in project containment. Use
+`foundry.AnalyzeEnvReferences` to discover required `${VAR}` names without
+resolving environment values. Both helpers are versioned with the azd SDK;
+extensions must pin a published SDK that contains the APIs they use. See the
+[extension guide](../guides/creating-an-extension.md#3-implement-the-extension)
+for resolver and template-discovery behavior.
+
 ## Capabilities
 
 Extensions declare their capabilities in `extension.yaml`:

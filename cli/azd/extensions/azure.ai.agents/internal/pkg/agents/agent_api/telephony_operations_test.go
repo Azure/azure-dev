@@ -4,6 +4,7 @@
 package agent_api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -487,7 +488,8 @@ func TestConditionalTelephonyWrites_AreNotRetried(t *testing.T) {
 		call func(*AgentClient) error
 	}{
 		{name: "patch", call: func(client *AgentClient) error {
-			_, err := client.UpdateGATelephonyBinding(t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{}, `"etag"`)
+			_, err := client.UpdateGATelephonyBinding(
+				t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{}, `"etag"`)
 			return err
 		}},
 		{name: "delete", call: func(client *AgentClient) error {
@@ -497,7 +499,9 @@ func TestConditionalTelephonyWrites_AreNotRetried(t *testing.T) {
 			_, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
 				TransferTargets: []TelephonyTransferTarget{{
 					Name: "teams", Description: "Teams desk",
-					Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationTeams, Value: "resource-account"},
+					Destination: TelephonyTransferDestination{
+						Kind: TelephonyTransferDestinationTeams, Value: "resource-account",
+					},
 				}},
 			}, `"etag"`)
 			return err
@@ -557,7 +561,9 @@ func TestTelephonyTransferTargets_GetAndReplaceContracts(t *testing.T) {
 			ETag: `"must-not-be-serialized"`,
 			TransferTargets: []TelephonyTransferTarget{{
 				Name: "sales", Description: "Sales desk",
-				Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationSIP, Value: "sip:sales@example.test"},
+				Destination: TelephonyTransferDestination{
+					Kind: TelephonyTransferDestinationSIP, Value: "sip:sales@example.test",
+				},
 			}},
 		}, `"targets-1"`)
 		require.NoError(t, err)
@@ -572,6 +578,16 @@ func TestTelephonyTransportErrorDoesNotExposeRequestURL(t *testing.T) {
 	_, err := client.GetGATelephonyBinding(t.Context(), "sensitive-agent", "sensitive-binding")
 	require.EqualError(t, err, "sending telephony request failed")
 	require.NotContains(t, err.Error(), "sensitive")
+}
+
+func TestTelephonyTransportErrorPreservesContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return nil, req.Context().Err()
+	})
+	_, err := client.GetTelephonyTransferTargets(ctx, "agent")
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestReplaceTelephonyTransferTargets_AcceptsHostOnlySIPAndUnicodeTeams(t *testing.T) {

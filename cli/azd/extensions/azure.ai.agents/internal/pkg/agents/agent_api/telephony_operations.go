@@ -429,6 +429,9 @@ func (c *AgentClient) gaTelephonyRequest(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
 		if method != http.MethodGet {
 			return "", telephonyWriteOutcomeUnknown(err)
 		}
@@ -460,6 +463,9 @@ func (c *AgentClient) gaTelephonyRequest(
 	if result != nil {
 		payload, err := io.ReadAll(io.LimitReader(resp.Body, maxTelephonyResponseSize+1))
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
 			if method != http.MethodGet {
 				return "", telephonyWriteOutcomeUnknown(err)
 			}
@@ -600,7 +606,11 @@ func validateTelephonyTransferTargets(targets *TelephonyTransferTargets, source 
 			}
 		case TelephonyTransferDestinationTeams:
 			if !utf8.ValidString(target.Destination.Value) {
-				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is not valid UTF-8", source, i)
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: Teams value is not valid UTF-8",
+					source,
+					i,
+				)
 			}
 			if utf8.RuneCountInString(target.Destination.Value) > 256 {
 				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is too long", source, i)

@@ -22,14 +22,15 @@ import (
 
 func main() {
 	output := flag.String("output", "", "generated descriptor Go file")
+	authoring := flag.Bool("authoring", false, "generate raw service authoring client descriptors")
 	flag.Parse()
-	if err := generate(*output); err != nil {
+	if err := generate(*output, *authoring); err != nil {
 		fmt.Fprintf(os.Stderr, "generate project client: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func generate(output string) error {
+func generate(output string, authoring bool) error {
 	if output == "" {
 		return fmt.Errorf("-output is required")
 	}
@@ -68,6 +69,10 @@ const capabilitiesMethod = %q
 `, base64.StdEncoding.EncodeToString(wire),
 		v1beta.ProjectService_AddService_FullMethodName,
 		v1beta.ProjectService_GetAddServiceCapabilities_FullMethodName)
+	if authoring {
+		source += fmt.Sprintf("\nconst applyServiceConfigMethod = %q\n",
+			v1beta.ProjectService_ApplyServiceConfig_FullMethodName)
+	}
 	formatted, err := format.Source([]byte(source))
 	if err != nil {
 		return err

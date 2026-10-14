@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
+  - [Environment-independent commands](#environment-independent-commands)
   - [NewListenCommand](#newlistencommand)
   - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
@@ -205,6 +206,20 @@ rootCmd.AddCommand(newServeCommand(extCtx))
 
 azdext.Run(rootCmd)
 ```
+
+### Environment-independent commands
+
+An extension's command metadata can set `"environmentIndependent": true`
+for a command that does not need the selected azd environment. This is a
+host-consumed JSON property, not an SDK helper. Extensions using a released
+SDK without support for generating the property can add it in their metadata
+command's JSON output. The property applies to the marked command, not its
+descendants. The host honors it starting with azd 1.36.0-beta.1; extensions
+that rely on skipping environment loading should require that host version.
+
+When the command is included in extension metadata, azd skips loading that
+environment and resolving its Key Vault references before starting the
+extension. The command may still use the Environment gRPC service explicitly.
 
 ### ExtensionCommandOptions
 
@@ -704,6 +719,31 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Telemetry()` | `TelemetryServiceClient` (stable since azd 1.36.0) |
 
 Always call `defer client.Close()` after creation.
+
+#### Conditional service authoring (preview)
+
+`ProjectBeta().ApplyServiceConfig(ctx, &v1beta.ApplyServiceConfigRequest{...})`
+conditionally creates or replaces a service without expanding environment
+templates or converting YAML numbers through protobuf `Struct`.
+
+| Field | Meaning |
+|---|---|
+| `service_name` | Literal service key, including dots; never a dot path. |
+| `expected_services_yaml` | Complete original raw services mapping as exactly one YAML object. Use `{}` when absent. |
+| `service_yaml` | Complete candidate service mapping as exactly one YAML object. |
+
+The host compares canonical YAML snapshots, treating equivalent numeric forms
+such as `1.0` and `1` equally without losing large integer precision, and saves
+while holding the project mutation lock. Both additions and updates return
+`Aborted` without saving if the snapshot is stale. Re-plan from a fresh manifest rather than retrying an
+uncertain mutation or falling back to a stable setter. Only the named service
+is replaced; other root sections are loaded fresh. Identical candidates do
+not rewrite the file. Layered manifests are unsupported.
+
+Require azd 1.36.0-beta.1 or later with this preview API. SDKs predating the
+method cannot import it. `grpc/generateprojectclient -authoring` generates a
+canonical descriptor snapshot for a private dynamic registry without global
+protobuf registration. Stable contracts are unchanged.
 
 `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
 are preview accessors. Import

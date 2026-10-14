@@ -47,6 +47,11 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+Extension command metadata can set `"environmentIndependent": true` on a command.
+For those invocations, azd skips loading the selected environment and resolving
+its Key Vault references before starting the extension. The command can still
+use the Environment gRPC service if it later needs environment values.
+
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project
@@ -112,6 +117,31 @@ Extensions use two structured error types:
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
+
+### Conditional raw service authoring
+
+The beta `ProjectService.ApplyServiceConfig` RPC creates or replaces one literal
+service key. Its `service_name`, `expected_services_yaml`, and `service_yaml`
+fields keep raw values out of protobuf `Struct`, preserving integer precision
+and literal templates. Both YAML payloads must contain exactly one mapping.
+The host holds the existing project mutation lock across loading raw disk
+configuration, comparing the complete services snapshot using canonical YAML,
+saving, and cache refresh. A stale snapshot returns `Aborted` before saving for both additions
+and updates. Unrelated root configuration is loaded fresh, and only the
+requested service key is replaced; dots are not path separators. Equivalent
+numeric representations such as `1.0` and `1` compare equally without converting
+large integers through floating point.
+
+The host validates a typed view but persists the raw mapping atomically.
+Explicit empty mappings such as `env: {}` retain their key presence, so editing
+one service does not change another service's environment-isolation policy.
+
+This serializes mutations through the same host, not writes from arbitrary
+external processes. Callers should read the local `azure.yaml` without
+environment expansion, then invoke this beta RPC once. Do not fall back to a
+stable setter or retry an uncertain mutation. For SDKs without the method,
+`grpc/generateprojectclient -authoring` generates canonical descriptor
+snapshots for private dynamic clients. Require azd 1.36.0-beta.1 or later.
 
 ### Project service save acknowledgment
 

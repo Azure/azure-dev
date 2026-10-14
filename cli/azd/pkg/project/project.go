@@ -287,6 +287,20 @@ func SaveConfig(ctx context.Context, config config.Config, projectFilePath strin
 	return Save(ctx, projectConfig, projectFilePath)
 }
 
+// SaveRawConfig validates and atomically saves raw configuration.
+// Explicit empty mappings and other raw field values are preserved.
+func SaveRawConfig(ctx context.Context, config config.Config, projectFilePath string) error {
+	projectBytes, err := yaml.Marshal(config.Raw())
+	if err != nil {
+		return fmt.Errorf("marshalling project yaml: %w", err)
+	}
+	projectConfig, err := Parse(ctx, string(projectBytes))
+	if err != nil {
+		return fmt.Errorf("parsing project yaml: %w", err)
+	}
+	return saveProjectConfigBytes(projectConfig, projectBytes, projectFilePath)
+}
+
 // Saves the current instance back to the azure.yaml file
 func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath string) error {
 	if err := projectConfig.Validate(); err != nil {
@@ -336,6 +350,10 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
+	return saveProjectConfigBytes(projectConfig, projectBytes, projectFilePath)
+}
+
+func saveProjectConfigBytes(projectConfig *ProjectConfig, projectBytes []byte, projectFilePath string) error {
 	version := "v1.0"
 	if projectConfig.Format() == ProjectFormatLayersV2 {
 		version = "alpha"
@@ -347,7 +365,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
 		version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
-	_, err = projectFileContents.Write(projectBytes)
+	_, err := projectFileContents.Write(projectBytes)
 	if err != nil {
 		return fmt.Errorf("preparing new project file contents: %w", err)
 	}

@@ -1006,7 +1006,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewServer)
 	container.MustRegisterScoped(grpcserver.NewProjectService)
 	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
-	container.MustRegisterScoped(grpcserver.NewPromptService)
+	container.MustRegisterScoped(func(
+		prompter prompt.PromptService,
+		resourceService *azapi.ResourceService,
+		aiModelService *ai.AiModelService,
+		globalOptions *internal.GlobalCommandOptions,
+		console input.Console,
+	) azdext.PromptServiceServer {
+		return grpcserver.NewPromptService(
+			prompter, resourceService, aiModelService, globalOptions, console.Handles().Stderr,
+		)
+	})
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewFollowUpManager)
 	container.MustRegisterScoped(grpcserver.NewEventService)

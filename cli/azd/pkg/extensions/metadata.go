@@ -43,6 +43,9 @@ type Command struct {
 	Aliases []string `json:"aliases,omitempty"`
 	// Deprecated contains a deprecation notice if the command is deprecated
 	Deprecated string `json:"deprecated,omitempty"`
+	// EnvironmentIndependent indicates a command does not need azd
+	// environment values.
+	EnvironmentIndependent bool `json:"environmentIndependent,omitempty"`
 }
 
 // CommandExample represents an example usage of a command

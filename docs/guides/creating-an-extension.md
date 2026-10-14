@@ -146,6 +146,23 @@ multiple handlers and workflow steps are resolved.
 
 ## Detailed Reference
 
+Commands that do not need the selected azd environment can emit
+`"environmentIndependent": true` on their command metadata. The property is
+per-command, not inherited; it skips host environment loading and Key Vault
+resolution, but does not restrict explicit Environment RPC calls. Require
+azd 1.36.0-beta.1 or later when relying on this behavior. See
+[environment-independent commands](../../cli/azd/docs/extensions/extension-sdk-reference.md#environment-independent-commands).
+
+For local service authoring that must preserve literal templates and large
+integers, use the beta
+[`ProjectService.ApplyServiceConfig`](../architecture/extension-framework.md#conditional-raw-service-authoring)
+API rather than round-tripping services through protobuf `Struct`. Read the
+raw manifest without resolving environment values, pass the complete original
+services mapping as the YAML precondition, and send only the selected service
+as the candidate. On `Aborted`, re-plan against a fresh manifest; do not replay
+the mutation on a stable setter. Require a host containing the API
+(azd 1.36.0-beta.1 or later).
+
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
 For `Project.AddService`, use the optional
 [save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),

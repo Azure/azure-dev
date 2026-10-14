@@ -30,6 +30,14 @@ alongside the stable `Project()` accessor. Clients whose SDK exposes it use
 `ProjectBeta().GetAddServiceCapabilities` before opting into
 typed `AddService` completion acknowledgments.
 
+`ProjectBeta().ApplyServiceConfig` is a beta-only raw service-authoring method.
+It conditionally creates or replaces one literal service key using YAML
+payloads and a services snapshot, without protobuf `Struct` numeric conversion
+or environment expansion. It requires a host containing the API
+(azd 1.36.0-beta.1 or later). For released SDKs without the method,
+`grpc/generateprojectclient -authoring` snapshots canonical descriptors for
+private dynamic clients; there is no stable setter fallback.
+
 ## Channel policy
 
 `v1` is the compatibility-protected stable contract. Changes must be additive:
@@ -147,10 +155,11 @@ A caller override for `Get`, for example, does not suppress the built-in
 implementations must explicitly supply their own capability response to advertise
 acknowledgment support.
 
-For preview fields absent from released SDKs, the evaluations extension snapshots
+For preview fields or methods absent from released SDKs, extensions can snapshot
 canonical descriptors with `grpc/generateprojectclient` during `make proto` and
-uses a private dynamic registry. This avoids duplicate global registration and
-does not introduce a second schema. The private client selects the stable
+use private dynamic registries. Generated snapshots are checked in for evaluations
+and service authoring. This avoids duplicate global registration and
+does not introduce a second schema. The evaluations client selects the stable
 host path when the read-only beta capability RPC explicitly reports unsupported
 or returns `Unimplemented`.
 

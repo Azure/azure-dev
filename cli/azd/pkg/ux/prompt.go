@@ -30,7 +30,8 @@ type PromptOptions struct {
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
 	// The optional hint text displayed after the message.
-	// When empty (default), auto-generated as "[Type ? for hint]" only if HelpMessage is set.
+	// When empty, defaults to "[Type ? for hint]" if HelpMessage is set
+	// and hint keys are enabled. Secret mode disables hint keys.
 	Hint string
 	// The optional placeholder text to display when the value is empty (default: "")
 	PlaceHolder string
@@ -100,8 +101,10 @@ func NewPrompt(options *PromptOptions) *Prompt {
 		mergedOptions.IgnoreHintKeys = true
 	}
 
-	// Auto-generate hint text only when a help message is reachable.
-	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" && !mergedOptions.Secret {
+	// Auto-generate hint text only when a help message is reachable. When hint
+	// keys are ignored (including secret mode), '?' is captured as input, so
+	// advertising "[Type ? for hint]" would promise a shortcut that can't work.
+	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" && !mergedOptions.IgnoreHintKeys {
 		mergedOptions.Hint = "[Type ? for hint]"
 	}
 

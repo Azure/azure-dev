@@ -49,7 +49,7 @@ capabilities:
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
 
-If your Go extension creates role assignments, use the preview [`AccountBeta().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `contracts/v1beta`. The host resolves the resource-tenant object ID and principal type without returning an access token. Consume an SDK and host release containing this method before replacing an existing lookup.
+If your Go extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
 
 Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
@@ -91,6 +91,30 @@ For extensions that are still in development or preview, consider publishing to 
 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
+
+## First-party CI builds
+
+Go extensions in this repository keep a thin `ci-build.ps1` wrapper in each extension directory. The wrapper calls [`cli/azd/extensions/scripts/ci-build.ps1`](../../cli/azd/extensions/scripts/ci-build.ps1), which owns the common build flags, target policy, coverage, record builds, and error handling. The first-party generation template creates the wrapper. Keep the shared script in the checkout when building an extension.
+
+Run the script from the extension directory with an explicit output filename:
+
+```powershell
+./ci-build.ps1 -OutputFileName bin/my-extension-linux-amd64 -Version 0.1.0 -SourceVersion abc123
+```
+
+The default version comes from the extension's own `version.txt`. Wrappers pass the actual linker packages through `-VersionPackages`, use `-VersionOnly` when commit and build-date fields do not exist, and retain any required version-output format or native argument mode. Document non-obvious exceptions beside the affected code and test them.
+
+The scripts resolve the effective target through `go env GOOS GOARCH`. Linux amd64 builds disable cgo to avoid inheriting the build agent's GLIBC requirement, as addressed by [Azure/azure-dev#10393](https://github.com/Azure/azure-dev/pull/10393). ARM64 and non-Linux builds preserve the caller's cgo settings, including the macOS ARM64 pipeline's `CGO_ENABLED=1`. The scripts restore cgo environment state after building and leave `GOEXPERIMENT` unchanged.
+
+`-CodeCoverageEnabled` adds Go coverage instrumentation. `-BuildRecordMode` builds both the production binary and a second binary with the `record` tag. Record filenames add `-record` on Linux/macOS or insert `-record` before `.exe` on Windows. Coverage applies to both binaries when both switches are supplied. Release jobs build a separate binary without either switch.
+
+From the repository root, run the build-contract tests:
+
+```powershell
+Invoke-Pester -Path ./eng/scripts/Test-ExtensionBuildScripts.Tests.ps1 -CI
+```
+
+The tests check each wrapper's native argument boundaries, metadata, switch forwarding, and failure propagation. The full build-policy matrix runs once against the shared script. Changes to the shared script trigger all extension release pipelines; include its path in both `trigger` and `pr` filters when adding a pipeline. Real native and cross-build jobs still need to validate dependency compatibility and artifact startup. These repository CI scripts are not required for extensions developed outside `azure-dev`.
 
 ## Command-level lifecycle follow-up
 

@@ -857,6 +857,9 @@ func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(provider), `required_version = ">= 1.3.0`,
 		"provider.tf must require Terraform 1.3 for optional object attributes")
+	assert.NotContains(t, string(vars), `variable "principal_id"`)
+	assert.NotContains(t, string(vars), `variable "principal_type"`)
+	assert.NotContains(t, string(main), `developer_cognitive_services_user`)
 }
 
 func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
@@ -883,6 +886,8 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	params, ok := arm["parameters"].(map[string]any)
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
+	assert.NotContains(t, params, "principalId")
+	assert.NotContains(t, params, "principalType")
 
 	assert.NotContains(t, params, "connections")
 	assert.NotContains(t, params, "connectionCredentials")
@@ -907,6 +912,9 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	// enableNetworkIsolation (not on egress mode), so a network-bound account is
 	// never left public. This is the regression guard for the data-plane fix.
 	text := string(data)
+	assert.NotContains(t, text, "developerCognitiveServicesUser")
+	assert.NotContains(t, text, "a97b65f3-24c7-4388-baec-2e87135dc908")
+	assert.Contains(t, text, "acrPullRoleId", "ACR pull assignment must remain")
 	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
 	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
 	assert.Contains(t, text, wantDisable,

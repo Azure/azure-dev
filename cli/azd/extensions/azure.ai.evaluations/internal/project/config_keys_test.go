@@ -84,7 +84,7 @@ func TestEvaluatorRefKeys(t *testing.T) {
 func TestSourceDeclKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{
-			"type", "lookbackHours", "maxTraces", "agentName", "responseIds", "maxTurns",
+			"type", "file", "lookbackHours", "maxTraces", "agentName", "responseIds", "maxTurns",
 			"agentVersion", "startTime", "endTime",
 		},
 		yamlKeys(t, SourceDecl{}))
@@ -154,7 +154,7 @@ func TestJSONKeysStayAsFingerprinted(t *testing.T) {
 		"evaluation_level", "max_samples", "evaluators", "target", "simulation",
 	}, jsonKeys(Eval{}))
 	assert.ElementsMatch(t, []string{
-		"type", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
+		"type", "file", "lookback_hours", "max_traces", "agent_name", "response_ids", "max_turns",
 		"agent_version", "start_time", "end_time",
 	}, jsonKeys(SourceDecl{}))
 	assert.ElementsMatch(t, []string{"model", "num_conversations", "max_turns"}, jsonKeys(Simulation{}))

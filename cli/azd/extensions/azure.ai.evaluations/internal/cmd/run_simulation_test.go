@@ -60,10 +60,10 @@ func TestSimulationRefusalNamesTheEval(t *testing.T) {
 	assert.Contains(t, err.Error(), "describe different runs")
 }
 
-func TestSimulationRejectsUnqualifiedModelBeforeNetwork(t *testing.T) {
+func TestSimulationRejectsMalformedModelBeforeNetwork(t *testing.T) {
 	ec, requests := identityRunContext(t, identityService{})
 	group := runnableSimulation()
-	group.Simulation.Model = "bare-deployment"
+	group.Simulation.Model = "bad/model/extra"
 	source, version, err := ec.buildRunDataSource(t.Context(), group, "", 0)
 	require.ErrorContains(t, err, "connection-name/model-deployment")
 	assert.Nil(t, source)

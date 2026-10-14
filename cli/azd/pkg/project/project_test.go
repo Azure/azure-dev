@@ -1257,6 +1257,89 @@ func TestSaveConfigRejectsInvalidRawConfigurationWithoutWriting(t *testing.T) {
 	assert.Equal(t, before, after)
 }
 
+func TestSaveServiceValidatesCurrentFile(t *testing.T) {
+	for _, tt := range []struct {
+		name, manifest, message string
+	}{
+		{
+			"layered project",
+			"name: test\nlayers:\n  - name: application\n    services:\n      existing.api:\n" +
+				"        host: azure.ai.connection\n",
+			"'layers' cannot be combined",
+		},
+		{
+			"invalid service definition",
+			"name: test\nservices:\n  existing.api:\n",
+			"service 'existing.api' has an empty definition",
+		},
+		{
+			"invalid service configuration",
+			"name: test\nservices:\n  existing.api:\n    host: containerapp\n",
+			"must specify language or image",
+		},
+		{
+			"invalid services mapping",
+			"name: test\nservices: invalid\n",
+			"unable to parse azure.yaml file",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cached, err := Parse(t.Context(), "name: test\n")
+			require.NoError(t, err)
+			cached.Services = map[string]*ServiceConfig{"new.api": {Host: "azure.ai.connection"}}
+			path := filepath.Join(t.TempDir(), "azure.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tt.manifest), 0o600))
+
+			err = SaveService(t.Context(), cached, "new.api", path)
+			assert.ErrorContains(t, err, tt.message)
+			saved, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, tt.manifest, string(saved))
+		})
+	}
+}
+
+func TestSaveServicePreservesCurrentPaths(t *testing.T) {
+	cached, err := Parse(t.Context(), "name: old\ninfra:\n  path: old/infra\nservices:\n"+
+		"  existing.api:\n    host: azure.ai.connection\n    project: old/src\n"+
+		"    dist: old/dist\n    infra:\n      path: old/service\n")
+	require.NoError(t, err)
+	cached.MetaSchemaVersion = "alpha"
+	cached.Services["new.api"] = &ServiceConfig{Host: "azure.ai.connection"}
+	manifest := "name: current\ninfra:\n  path: current\\infra\nservices:\n" +
+		"  existing.api:\n    host: azure.ai.connection\n    project: current\\src\n" +
+		"    dist: current\\dist\n    infra:\n      path: current\\service\n" +
+		"    env: {}\n    config:\n      token: ${TOKEN}\n      number: 9007199254740993\n"
+	path := filepath.Join(t.TempDir(), "azure.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(manifest), 0o600))
+	expected := map[string]any{}
+	require.NoError(t, yaml.Unmarshal([]byte(strings.ReplaceAll(manifest, "\\", "/")), &expected))
+	services, ok := expected["services"].(map[string]any)
+	require.True(t, ok)
+	services["new.api"] = map[string]any{"host": "azure.ai.connection"}
+
+	require.NoError(t, SaveService(t.Context(), cached, "new.api", path))
+	actual, err := LoadConfig(t.Context(), path)
+	require.NoError(t, err)
+	assert.Equal(t, expected, actual.Raw())
+	assert.Equal(t, filepath.Dir(path), cached.Path)
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(saved), "/schemas/v1.0/")
+}
+
+func TestSaveServiceRetainsTypedSaveServiceValidation(t *testing.T) {
+	cached := &ProjectConfig{
+		Name:     "test",
+		Services: map[string]*ServiceConfig{"new.api": {Host: ContainerAppTarget}},
+	}
+	dir := t.TempDir()
+	require.NoError(t, Save(t.Context(), cached, filepath.Join(dir, "typed.yaml")))
+	path := filepath.Join(dir, "azure.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("name: test\n"), 0o600))
+	require.NoError(t, SaveService(t.Context(), cached, "new.api", path))
+}
+
 func Test_Save(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "azure.yaml")

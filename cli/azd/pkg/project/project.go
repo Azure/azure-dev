@@ -274,17 +274,25 @@ func LoadConfig(ctx context.Context, projectFilePath string) (config.Config, err
 }
 
 func SaveConfig(ctx context.Context, config config.Config, projectFilePath string) error {
-	projectBytes, err := yaml.Marshal(config.Raw())
+	projectConfig, err := parseRawConfig(ctx, config.Raw())
 	if err != nil {
-		return fmt.Errorf("marshalling project yaml: %w", err)
+		return err
+	}
+	return saveRawConfig(projectConfig, config.Raw(), projectFilePath)
+}
+
+func parseRawConfig(ctx context.Context, raw map[string]any) (*ProjectConfig, error) {
+	projectBytes, err := yaml.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
 	projectConfig, err := Parse(ctx, string(projectBytes))
 	if err != nil {
-		return fmt.Errorf("parsing project yaml: %w", err)
+		return nil, fmt.Errorf("parsing project yaml: %w", err)
 	}
 
-	return saveRawConfig(projectConfig, config.Raw(), projectFilePath)
+	return projectConfig, nil
 }
 
 func saveRawConfig(projectConfig *ProjectConfig, raw map[string]any, path string) error {
@@ -336,7 +344,7 @@ func normalizeConfigPaths(raw map[string]any, parsed *ProjectConfig) {
 }
 
 // SaveService saves one service, preserving other raw fields.
-// It uses the same validation as Save.
+// It parses the current file and uses Save's service validation.
 func SaveService(ctx context.Context, projectConfig *ProjectConfig, name, path string) error {
 	if err := projectConfig.Validate(); err != nil {
 		return fmt.Errorf("file failed validation, before saving: %w", err)
@@ -348,6 +356,17 @@ func SaveService(ctx context.Context, projectConfig *ProjectConfig, name, path s
 	raw, err := LoadConfig(ctx, path)
 	if err != nil {
 		return err
+	}
+	current, err := parseRawConfig(ctx, raw.Raw())
+	if err != nil {
+		return err
+	}
+	if current.Services == nil {
+		current.Services = map[string]*ServiceConfig{}
+	}
+	current.Services[name] = service
+	if err := current.Validate(); err != nil {
+		return fmt.Errorf("file failed validation, before saving: %w", err)
 	}
 	wire, err := yaml.Marshal(service)
 	if err != nil {
@@ -363,7 +382,11 @@ func SaveService(ctx context.Context, projectConfig *ProjectConfig, name, path s
 		raw.Raw()["services"] = services
 	}
 	services[name] = replacement
-	return saveRawConfig(projectConfig, raw.Raw(), path)
+	if err := saveRawConfig(current, raw.Raw(), path); err != nil {
+		return err
+	}
+	projectConfig.Path = current.Path
+	return nil
 }
 
 // Saves the current instance back to the azure.yaml file

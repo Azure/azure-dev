@@ -134,6 +134,29 @@ func TestProjectAddServiceInvalidCandidateRestoresRawAndCache(t *testing.T) {
 	service.configMutationMu.Unlock()
 }
 
+func TestProjectAddServiceRejectsInterveningInvalidFile(t *testing.T) {
+	_, service, path := newBetaProjectServiceOverrideFixture(t)
+	manifest := "name: test\nlayers:\n  - name: application\n    services:\n" +
+		"      existing.api:\n        host: azure.ai.connection\n"
+	mapService := service.mapService
+	service.mapService = func(input *azdext.ServiceConfig) (*project.ServiceConfig, error) {
+		require.NoError(t, os.WriteFile(path, []byte(manifest), 0o600))
+		return mapService(input)
+	}
+	_, err := service.AddService(t.Context(), &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{Name: "new.api", Host: "azure.ai.connection"},
+	})
+	assert.ErrorContains(t, err, "'layers' cannot be combined")
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, manifest, string(saved))
+	cached, err := service.lazyProjectConfig.GetValue()
+	require.NoError(t, err)
+	assert.NotContains(t, cached.Services, "new.api")
+	require.True(t, service.configMutationMu.TryLock())
+	service.configMutationMu.Unlock()
+}
+
 func TestServerE2E_ExistingServiceRPCsPreserveRawConfiguration(t *testing.T) {
 	server, service := newProjectE2EServer(t)
 	client, ctx := dialProjectSDK(t, server)

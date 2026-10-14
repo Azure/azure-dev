@@ -126,6 +126,9 @@ holds the existing mutation lock during each operation and preserves dispatcher
 and cache behavior. Setters reload raw configuration, validate a typed view,
 normalize known path fields, and atomically save the raw mapping. AddService
 serializes only the replacement service into the freshly loaded raw project.
+It parses that file snapshot and validates the merged structure using the
+existing typed-save rules. Path normalization and schema selection use the same
+snapshot rather than cached project data.
 Untouched fields, including explicit `env: {}` or `infra: {}`, large integers,
 and literal templates, do not round-trip through protobuf or typed YAML.
 

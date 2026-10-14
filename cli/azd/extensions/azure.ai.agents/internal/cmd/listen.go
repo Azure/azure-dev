@@ -804,7 +804,7 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 		log.Printf("cleanupAgentState: failed to clean conversations for %s: %v", agentKey, err)
 		failed = true
 	}
-	if err := newUserConfigResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
+	if err := newResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean current Response for %s: %v", agentKey, err)
 		failed = true
 	}

@@ -105,24 +105,24 @@ The latest identified foreground or long-running Responses create saves its Resp
 
 There is one current ID per agent context and protocol, using existing context keys. Concurrent creates may overwrite current selection; use explicit IDs when managing concurrent work.
 
-UserConfig remains protocol-specific internally, despite the shared command group:
+Current IDs are stored in extension-owned state under
+`$AZD_CONFIG_DIR/state/extensions/azure.ai.agents` (or `~/.azd/state/extensions/azure.ai.agents` when
+`AZD_CONFIG_DIR` is unset). Each agent context has one JSON record with protocol-specific fields:
 
 ```json
 {
-  "extensions": {
-    "ai-agents": {
-      "responses": {
-        "<agent-key>": {"responseId": "resp_123"}
-      },
-      "invocations": {
-        "<agent-key>": {"invocationId": "inv_123"}
-      }
-    }
-  }
+  "version": 1,
+  "agentKey": "<agent-key>",
+  "response": {"responseId": "resp_123"},
+  "invocation": {"invocationId": "inv_123"}
 }
 ```
 
-The Invocation map is introduced by the second PR. There is no compatibility migration. No lifecycle status, event cursor, session, or conversation is stored in these records. Existing session/conversation maps are independent create-time context.
+This is a breaking change: runtime state previously saved in azd UserConfig or `.foundry-agent.json` is not
+read, migrated, or deleted. Previously saved session, conversation, Response, and Invocation IDs are not
+resumed automatically; supply explicit IDs to access existing remote work. No lifecycle status or event
+cursor is stored. Session and conversation IDs may share the same per-agent record but remain independent
+create-time context. Deployment metadata remains in environment configuration.
 
 Explicit `--id` with `--agent-endpoint` works without project-backed state. Lifecycle commands must not create sessions or conversations. The current caller must provide the correct authentication and `--user-identity` when required.
 

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"azureaiagent/internal/cmd/doctor"
 	"azureaiagent/internal/cmd/nextstep"
@@ -232,12 +231,10 @@ func doctorCachedPayload(ctx context.Context, azdClient *azdext.AzdClient) func(
 		if azdClient == nil || serviceName == "" {
 			return ""
 		}
-		configPath, err := resolveConfigPath(ctx, azdClient)
+		configDir, err := resolveProjectCacheDir(ctx, azdClient)
 		if err != nil {
 			return ""
 		}
-		configDir := filepath.Dir(configPath)
-
 		if envName != "" {
 			nameKey := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(serviceName))
 			if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{

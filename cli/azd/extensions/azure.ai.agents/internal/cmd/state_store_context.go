@@ -108,7 +108,7 @@ func (a *stateStoreAction) resolveStore(ctx context.Context, explicit string) (s
 		}
 		return "", exterrors.Configuration(exterrors.CodeStateStoreSelection,
 			"could not read the active State Store selection",
-			"repair the stateStores user configuration or supply --store explicitly")
+			"check access to AZD_CONFIG_DIR or supply --store explicitly")
 	}
 	if name == "" {
 		return "", exterrors.Validation(exterrors.CodeStateStoreSelection,
@@ -142,7 +142,7 @@ func (a *stateStoreAction) selectStore(ctx context.Context, name string) (any, e
 			return nil, exterrors.Cancelled("saving State Store selection cancelled")
 		}
 		return nil, exterrors.Configuration(exterrors.CodeStateStoreSelection,
-			"could not save the active State Store selection", "check access to the azd user configuration and retry")
+			"could not save the active State Store selection", "check access to AZD_CONFIG_DIR and retry")
 	}
 	return store, nil
 }

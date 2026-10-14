@@ -254,7 +254,7 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 			Name: "builtin.relevance", Definition: &eval_api.EvaluatorContract{DataSchema: &eval_api.JSONSchema{
 				Type: "object", Required: []string{"query"},
 				Properties: map[string]any{
-					"query": map[string]any{"type": "string"}, "extra": map[string]any{"type": "string"},
+					"query": map[string]any{"type": "string"}, "response": map[string]any{"type": "string"},
 				},
 			}},
 		}}
@@ -270,11 +270,16 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 	assert.False(t, changed)
 	assert.Equal(t, first, second)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
-		[]byte("{\"query\":\"second\",\"extra\":\"now available\"}\n"), 0o600))
+		[]byte("{\"query\":\"second\",\"extra\":\"unmapped column\"}\n"), 0o600))
+	unmapped, changed := run(1)
+	assert.False(t, changed, "unmapped extra columns do not change the immutable request")
+	assert.Equal(t, first, unmapped)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
+		[]byte("{\"query\":\"second\",\"response\":\"now available\"}\n"), 0o600))
 	third, changed := run(1)
 	assert.True(t, changed)
 	assert.NotEqual(t, first, third)
-	assert.Contains(t, created[third].TestingCriteria[0].DataMapping, "extra")
+	assert.Contains(t, created[third].TestingCriteria[0].DataMapping, "response")
 	fourth, changed := run(5)
 	assert.False(t, changed)
 	assert.Equal(t, third, fourth)
@@ -289,7 +294,7 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 // next deploy, forking that eval's run history.
 func TestLocalRequestBaselineIsScopedAcrossConfigurations(t *testing.T) {
 	dirA := localSourceConfig(t, "{\"query\":\"first\"}\n", 1)
-	dirB := localSourceConfig(t, "{\"query\":\"second\",\"extra\":\"now available\"}\n", 1)
+	dirB := localSourceConfig(t, "{\"query\":\"second\",\"response\":\"now available\"}\n", 1)
 	cfgA, err := project.OpenEvalConfig(dirA)
 	require.NoError(t, err)
 	cfgA.Evals[0].Evaluators[0].DataMapping = nil
@@ -347,7 +352,7 @@ func TestLocalRequestBaselineIsScopedAcrossConfigurations(t *testing.T) {
 			Name: "builtin.relevance", Definition: &eval_api.EvaluatorContract{DataSchema: &eval_api.JSONSchema{
 				Type: "object", Required: []string{"query"},
 				Properties: map[string]any{
-					"query": map[string]any{"type": "string"}, "extra": map[string]any{"type": "string"},
+					"query": map[string]any{"type": "string"}, "response": map[string]any{"type": "string"},
 				},
 			}},
 		}}
@@ -384,7 +389,7 @@ func localIdentityFixture(t *testing.T) (*evalContext, *testEnvServer, *catalogP
 	for _, version := range []string{"1", "2", "3"} {
 		service.versions[version] = json.RawMessage(fmt.Sprintf(`{"name":"custom","version":%q,
 			"definition":{"data_schema":{"type":"object","required":["query"],
-			"properties":{"query":{"type":"string"},"extra":{"type":"string"}}}}}`, version))
+			"properties":{"query":{"type":"string"},"response":{"type":"string"}}}}}`, version))
 	}
 	return ec, env, service, cfg, dir
 }
@@ -485,7 +490,7 @@ func TestLocalRenameWithRecycledNamePreservesHistory(t *testing.T) {
 			recycled := cfg.Evals[0]
 			recycled.Source = &project.SourceDecl{Type: project.SourceTypeLocal, File: "different.jsonl"}
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "different.jsonl"),
-				[]byte("{\"query\":\"second\",\"extra\":\"new binding\"}\n"), 0o600))
+				[]byte("{\"query\":\"second\",\"response\":\"new binding\"}\n"), 0o600))
 			cfg.Evals = []project.Eval{renamed, recycled}
 			if recycledFirst {
 				slices.Reverse(cfg.Evals)
@@ -496,8 +501,8 @@ func TestLocalRenameWithRecycledNamePreservesHistory(t *testing.T) {
 			assert.NotEqual(t, first, replacement)
 			assert.Same(t, stored, service.evals[first])
 			assert.Equal(t, "renamed", stored.Name)
-			assert.NotContains(t, stored.TestingCriteria[0].DataMapping, "extra")
-			assert.Contains(t, service.evals[replacement].TestingCriteria[0].DataMapping, "extra")
+			assert.NotContains(t, stored.TestingCriteria[0].DataMapping, "response")
+			assert.Contains(t, service.evals[replacement].TestingCriteria[0].DataMapping, "response")
 			after, err := json.Marshal(service.created[0])
 			require.NoError(t, err)
 			assert.JSONEq(t, string(originalRequest), string(after), "rename only changes mutable service fields")
@@ -533,7 +538,7 @@ func TestLocalReservationRequiresKnownAbandonedContract(t *testing.T) {
 			ec, env, _, cfg, dir := localIdentityFixture(t)
 			first := reconcileLocalIdentity(t, "create", ec, env, cfg, dir)
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"),
-				[]byte("{\"query\":\"changed\",\"extra\":\"new column\"}\n"), 0o600))
+				[]byte("{\"query\":\"changed\",\"response\":\"new column\"}\n"), 0o600))
 			if evidence == "unknown" {
 				var state map[string]string
 				require.NoError(t, json.Unmarshal(env.config[privateStatePath], &state))

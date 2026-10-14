@@ -112,7 +112,9 @@ func TestExplicitLocalPublishedTypesReachCreateAndRun(t *testing.T) {
 				if tc.name != "valid" {
 					require.ErrorContains(t, err, "local row 2")
 					for _, request := range recorded {
-						assert.Equal(t, http.MethodGet, request.method, "wrong types beyond the cap must prevent submission")
+						assert.Equal(t, http.MethodGet, request.method)
+						assert.True(t, strings.HasPrefix(request.path, "/evaluators/"),
+							"wrong types beyond the cap must fail before submission or stored-schema GET")
 					}
 					return
 				}
@@ -121,6 +123,8 @@ func TestExplicitLocalPublishedTypesReachCreateAndRun(t *testing.T) {
 				assert.Equal(t, http.MethodPost, posted.method)
 				if operation == "create" {
 					require.Len(t, recorded, 3)
+					assert.Equal(t, "/evaluators/builtin.typed/versions", recorded[0].path)
+					assert.Equal(t, "/evaluators/builtin.typed/versions/1", recorded[1].path)
 					var request eval_api.CreateOpenAIEvalRequest
 					require.NoError(t, json.Unmarshal(posted.body, &request))
 					expected, err := json.Marshal(typedLocalItemSchema())
@@ -130,7 +134,7 @@ func TestExplicitLocalPublishedTypesReachCreateAndRun(t *testing.T) {
 					assert.JSONEq(t, string(expected), string(actual))
 					assert.Equal(t, mapping, request.TestingCriteria[0].DataMapping)
 				} else {
-					require.Len(t, recorded, 2)
+					require.Len(t, recorded, 2, "localRunValidator already reads the stored schema")
 					assert.Contains(t, string(posted.body), `"count":9007199254740993`)
 					var request eval_api.CreateOpenAIEvalRunRequest
 					require.NoError(t, json.Unmarshal(posted.body, &request))
@@ -158,13 +162,19 @@ func localPublicationConfig(t *testing.T, badTail, mixed bool) (string, map[stri
 	config["evaluators"] = []any{map[string]any{"name": "quality-custom", "definition": definition}}
 	local := map[string]any{
 		"name": "local-quality", "source": map[string]any{"type": "local", "file": "./local rows.jsonl"},
-		"maxSamples": 1, "evaluators": []any{map[string]any{"evaluator": "quality-custom"}},
+		"maxSamples": 1, "evaluators": []any{map[string]any{
+			"evaluator": "quality-custom", "dataMapping": map[string]any{"context": "{{item.context}}"},
+			"initializationParameters": map[string]any{"fresh_contract": "confirmed"},
+		}},
 	}
 	evals := []any{local}
 	if mixed {
 		evals = append(evals, map[string]any{
 			"name": "remote-quality", "source": map[string]any{"type": "responses", "responseIds": []any{"response"}},
-			"evaluators": []any{map[string]any{"evaluator": "quality-custom"}},
+			"evaluators": []any{map[string]any{
+				"evaluator": "quality-custom", "dataMapping": map[string]any{"context": "{{item.context}}"},
+				"initializationParameters": map[string]any{"fresh_contract": "confirmed"},
+			}},
 		})
 	}
 	config["evals"] = evals
@@ -195,10 +205,17 @@ func localPublicationContext(
 			if published {
 				field = "context"
 			}
-			return eval_api.EvaluatorSummary{Name: "quality-custom", Definition: &eval_api.EvaluatorContract{
+			definition := &eval_api.EvaluatorContract{
 				DataSchema: &eval_api.JSONSchema{Type: "object",
 					Properties: map[string]any{field: map[string]any{"type": "string"}}},
-			}}
+			}
+			if published {
+				definition.DataSchema.Properties[field] = map[string]any{"type": "string", "minLength": 2}
+				definition.InitParameters = &eval_api.JSONSchema{
+					Properties: map[string]any{"fresh_contract": map[string]any{"type": "string"}},
+				}
+			}
+			return eval_api.EvaluatorSummary{Name: "quality-custom", Definition: definition}
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/evaluators":
@@ -224,11 +241,12 @@ func localPublicationContext(
 					map[string]any{"name": "quality-custom", "version": version},
 				}}))
 			} else {
+				definition := contract().Definition
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 					"name": "quality-custom", "version": version,
 					"definition": map[string]any{
 						"type": "rubric", "dimensions": []any{map[string]any{"id": "old"}},
-						"data_schema": contract().Definition.DataSchema,
+						"data_schema": definition.DataSchema, "init_parameters": definition.InitParameters,
 					},
 				}))
 			}
@@ -261,7 +279,10 @@ func TestExplicitLocalCreateActionPreflightPrecedesEvaluatorPublish(t *testing.T
 			recorded := recordedIdentityRequests(requests)
 			if badTail {
 				require.ErrorContains(t, err, "empty object")
-				assert.Empty(t, recorded)
+				for _, request := range recorded {
+					assert.Equal(t, http.MethodGet, request.method)
+					assert.True(t, strings.HasPrefix(request.path, "/evaluators/"))
+				}
 				assert.Zero(t, env.writes)
 				assert.Equal(t, []byte("{}"), env.config[privateStatePath])
 				return
@@ -276,7 +297,12 @@ func TestExplicitLocalCreateActionPreflightPrecedesEvaluatorPublish(t *testing.T
 					var created eval_api.CreateOpenAIEvalRequest
 					require.NoError(t, json.Unmarshal(request.body, &created))
 					require.Len(t, created.TestingCriteria, 1)
-					assert.Equal(t, map[string]string{"context": "{{item.context}}"}, created.TestingCriteria[0].DataMapping)
+					assert.Equal(t, map[string]string{"query": "{{item.query}}", "context": "{{item.context}}"},
+						created.TestingCriteria[0].DataMapping)
+					assert.Equal(t, "confirmed", created.TestingCriteria[0].InitializationParameters["fresh_contract"])
+					properties, ok := created.DataSourceConfig.ItemSchema["properties"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, map[string]any{"type": "string", "minLength": float64(2)}, properties["context"])
 				}
 			}
 
@@ -315,6 +341,7 @@ func TestExplicitLocalSharedColumnKeepsEveryConstraint(t *testing.T) {
 				require.ErrorContains(t, err, "local row 1")
 				for _, request := range recorded {
 					assert.Equal(t, http.MethodGet, request.method)
+					assert.True(t, strings.HasPrefix(request.path, "/evaluators/"))
 				}
 				return
 			}
@@ -356,8 +383,20 @@ func TestExplicitLocalDeployRefreshesPublishedEvaluatorContracts(t *testing.T) {
 			require.Len(t, created, 2)
 			for _, name := range []string{"local-quality", "remote-quality"} {
 				require.Len(t, created[name].TestingCriteria, 1)
-				assert.Equal(t, map[string]string{"context": "{{item.context}}"},
-					created[name].TestingCriteria[0].DataMapping)
+				criterion := created[name].TestingCriteria[0]
+				assert.Equal(t, "{{item.context}}", criterion.DataMapping["context"])
+				assert.Equal(t, "{{item.query}}", criterion.DataMapping["query"])
+				assert.Equal(t, "confirmed", criterion.InitializationParameters["fresh_contract"])
+				if name == "local-quality" {
+					assert.NotContains(t, criterion.DataMapping, "response")
+					properties, ok := created[name].DataSourceConfig.ItemSchema["properties"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, map[string]any{"type": "string", "minLength": float64(2)}, properties["context"])
+				} else {
+					assert.Equal(t, "{{sample.output_items}}", criterion.DataMapping["response"])
+					assert.Equal(t, "{{sample.tool_calls}}", criterion.DataMapping["tool_calls"])
+					assert.Equal(t, "{{sample.tool_definitions}}", criterion.DataMapping["tool_definitions"])
+				}
 			}
 		})
 	}

@@ -147,7 +147,7 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						switch {
-						case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_resolved":
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_resolved"):
 							_, _ = io.WriteString(w, `{"id":"eval_resolved","data_source_config":{"type":"custom"}}`)
 						case strings.HasSuffix(r.URL.Path, "/output_items"):
 							outputRequests++
@@ -284,7 +284,7 @@ func TestCompletedConversationWithErroredRowOffersExplicitFilterAtCallSites(t *t
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					switch {
-					case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_resolved":
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_resolved"):
 						_, _ = io.WriteString(w, `{"id":"eval_resolved","data_source_config":{"type":"custom"}}`)
 					case strings.HasSuffix(r.URL.Path, "/output_items"):
 						_, _ = io.WriteString(w, `{"data":[{"id":"1","run_id":"run_completed","status":"completed",
@@ -377,26 +377,6 @@ func TestRunFailureHumanOutputRedactsURLsWithoutMutatingJSON(t *testing.T) {
 				})
 			}
 		}
-
-	}
-}
-
-func TestRunFailureRedactsAdjacentURLs(t *testing.T) {
-	//nolint:gosec // Synthetic URL credentials verify non-disclosure; this fixture contains no real secret.
-	const message = `{"primary":"https://safe.example/a","secondary":"https://fixture-user:fixture-password@host/b"}`
-	run := &eval_api.OpenAIEvalRun{
-		ID: "run_failed", EvalID: "eval_failed", Status: "failed", Error: &eval_api.JobError{Message: message},
-	}
-	for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{
-		renderRunDetail,
-		func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) },
-	} {
-		var out bytes.Buffer
-		require.NoError(t, render(&out, run))
-		assert.Contains(t, out.String(), "<redacted-url>")
-		assert.NotContains(t, out.String(), "fixture-user")
-		assert.NotContains(t, out.String(), "fixture-password")
-		assert.Equal(t, message, run.Error.Message, "human redaction must not rewrite the service response")
 	}
 }
 
@@ -523,5 +503,24 @@ func TestRunFailureRedactsMalformedURLs(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, string(before), string(after), "human redaction must not mutate raw service JSON")
 		}
+	}
+}
+
+func TestRunFailureRedactsAdjacentURLs(t *testing.T) {
+	//nolint:gosec // Synthetic URL credentials verify non-disclosure; this fixture contains no real secret.
+	const message = `{"primary":"https://safe.example/a","secondary":"https://fixture-user:fixture-password@host/b"}`
+	run := &eval_api.OpenAIEvalRun{
+		ID: "run_failed", EvalID: "eval_failed", Status: "failed", Error: &eval_api.JobError{Message: message},
+	}
+	for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{
+		renderRunDetail,
+		func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) },
+	} {
+		var out bytes.Buffer
+		require.NoError(t, render(&out, run))
+		assert.Contains(t, out.String(), "<redacted-url>")
+		assert.NotContains(t, out.String(), "fixture-user")
+		assert.NotContains(t, out.String(), "fixture-password")
+		assert.Equal(t, message, run.Error.Message, "human redaction must not rewrite the service response")
 	}
 }

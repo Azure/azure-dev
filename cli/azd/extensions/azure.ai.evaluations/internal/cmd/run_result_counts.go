@@ -35,7 +35,12 @@ func resultCountText(counts map[string]int, name string) string {
 	return "not reported"
 }
 
-func renderReportedRunCounts(out io.Writer, heading string, counts map[string]int) {
+func renderReportedRunCounts(
+	out io.Writer,
+	heading string,
+	counts map[string]int,
+	typedCounts *eval_api.EvalRunResultCounts,
+) {
 	fmt.Fprintf(out, "\n%s\n", heading)
 	if len(counts) == 0 {
 		fmt.Fprint(out, "Not reported by the service.\n")
@@ -48,10 +53,11 @@ func renderReportedRunCounts(out io.Writer, heading string, counts map[string]in
 		fmt.Fprintf(out, "%-10s %4s\n", row.Key, resultCountText(counts, row.Value))
 	}
 	passed, passedKnown := counts["passed"]
-	failed, failedKnown := counts["failed"]
-	if passedKnown && failedKnown {
-		fmt.Fprintf(out, "%-10s %s (%d passed / (%d passed + %d failed))\n",
-			"Pass rate", formatRate(passed, passed+failed), passed, passed, failed)
+	total, totalKnown := counts["total"]
+	if passedKnown && totalKnown && total > 0 &&
+		validRunPassRateCounts(typedCounts) {
+		fmt.Fprintf(out, "%-10s %s (%d passed / %d total test cases)\n",
+			"Pass rate", formatRate(passed, total), passed, total)
 	} else {
 		fmt.Fprint(out, "Pass rate  not reported\n")
 	}
@@ -73,8 +79,8 @@ func reportedRunPassRate(run *eval_api.OpenAIEvalRun) string {
 	}
 	counts := run.ReportedResultCounts()
 	_, passedKnown := counts["passed"]
-	_, failedKnown := counts["failed"]
-	if !passedKnown || !failedKnown {
+	_, totalKnown := counts["total"]
+	if !passedKnown || !totalKnown || !validRunPassRateCounts(run.ResultCounts) {
 		return "not reported"
 	}
 	return runPassRate(run.ResultCounts)

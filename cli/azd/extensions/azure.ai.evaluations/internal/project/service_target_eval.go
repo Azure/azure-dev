@@ -33,6 +33,8 @@ type Reconciler interface {
 	// Validate checks local artifacts and service references without publishing
 	// dependencies or changing reconciliation state.
 	Validate(ctx context.Context, cfg *EvalConfig, baseDir string) error
+	// PreflightLocalEval validates explicit local rows and mappings before any publication.
+	PreflightLocalEval(ctx context.Context, group Eval, path string) error
 	// EnsureDataset registers a new dataset version when the local content
 	// changed, returning the resolved version and whether anything was written.
 	EnsureDataset(ctx context.Context, decl DatasetDecl, localPath string) (version string, changed bool, err error)
@@ -176,6 +178,8 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// dataset read as missing.
 	baseDir := projectRoot
 
+	// Use prospective authored contracts before dependency writes, not stale
+	// published schemas for evaluators this operation will replace.
 	if err := reconciler.Validate(ctx, cfg, baseDir); err != nil {
 		return nil, messages.EvalConfigInvalid(err)
 	}

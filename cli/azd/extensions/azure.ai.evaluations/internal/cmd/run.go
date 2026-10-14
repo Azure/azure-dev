@@ -180,7 +180,6 @@ func (a *runStartAction) Run() error {
 	if a.flags.maxSamples < 0 {
 		return messages.NegativeMaxSamplesFlag(a.flags.maxSamples)
 	}
-
 	newContext := a.newContext
 	if newContext == nil {
 		newContext = newEvalContext
@@ -412,7 +411,8 @@ func withRunDatasetOverride(ref evalRef, override string) (*project.Eval, error)
 // were never deployed.
 //
 // Runs reference the published version, so unregistered edits would otherwise
-// be ignored. An explicit pin deliberately selects published content instead.
+// be ignored. An explicit version pin deliberately selects published content
+// rather than the current local file.
 func (ec *evalContext) checkDatasetRegistered(
 	ctx context.Context,
 	cfg *project.EvalConfig,
@@ -666,8 +666,8 @@ func runnableEval(group *project.Eval) error {
 	return nil
 }
 
-// buildRunDataSource binds the eval's rows to the run and returns the exact
-// registered version for metadata. Unregistered rows carry no version.
+// buildRunDataSource binds the eval's rows to the run and returns the resolved
+// dataset version for metadata. Unregistered rows carry no version.
 //
 // Three shapes, in the order the configuration decides them. A `source:` block
 // hands the gathering to the service and sends nothing local. Otherwise the
@@ -753,7 +753,8 @@ func (ec *evalContext) buildRunDataSource(
 	if localPath != "" && !filepath.IsAbs(localPath) {
 		localPath = filepath.Join(filepath.Dir(configPath), localPath)
 	}
-	version, err := ec.resolveRunDatasetVersion(ctx, group.Dataset, decl.Version, localPath != "")
+	version, err := ec.resolveRunDatasetVersion(
+		ctx, group.Dataset, decl.Version, localPath != "")
 	if err != nil {
 		return nil, "", err
 	}
@@ -935,6 +936,20 @@ func responsesDataSource(group *project.Eval) (*eval_api.EvalRunDataSource, erro
 	return eval_api.NewResponsesDataSource(group.Source.ResponseIDs, group.Source.MaxTurns), nil
 }
 
+// readRegisteredDataset fetches published rows for validation, not submission.
+func (ec *evalContext) readRegisteredDataset(
+	ctx context.Context,
+	name string,
+	pinned string,
+) ([]map[string]any, string, error) {
+	version, err := ec.resolveRunDatasetVersion(ctx, name, pinned, false)
+	if err != nil {
+		return nil, "", err
+	}
+	items, err := ec.readDatasetVersion(ctx, name, version)
+	return items, version, err
+}
+
 // resolveRunDatasetVersion prefers the declaration, then the recorded publication,
 // then the service. Only a typed not-found listing followed by typed not-found
 // version probes permits local rows.
@@ -1059,8 +1074,8 @@ func datasetColumnsFromPath(localPath string) map[string]bool {
 	return columns
 }
 
-// localDatasetPath resolves a declared file. Publication retains this declaration,
-// so its presence does not imply the dataset is unregistered.
+// localDatasetPath resolves a declared file. Its presence does not imply the
+// dataset is unregistered: publication deliberately retains the file declaration.
 func localDatasetPath(configPath string, group *project.Eval) string {
 	cfg, err := project.LoadEvalConfig(configPath)
 	if err != nil || group == nil {
@@ -1447,13 +1462,13 @@ func renderRun(
 	// number disagreeing with itself.
 	if isSimulationRun(run) {
 		renderConversationResults(out, run)
-	} else if c := run.ResultCounts; c != nil && len(run.ReportedResultCounts()) < 5 {
-		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts())
+	} else if c := run.ResultCounts; c != nil && (len(run.ReportedResultCounts()) < 5 || !validRunPassRateCounts(c)) {
+		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts(), c)
 	} else if c := run.ResultCounts; c != nil {
-		rate, _, scored := scoredPassRate(c)
+		rate, _, available := runPassRateValue(c)
 		fmt.Fprint(out, messages.TestCaseResults(
 			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
-			passRateText(rate, scored)))
+			passRateText(rate, available)))
 	}
 
 	var means map[string]float64
@@ -1537,10 +1552,10 @@ func followUpEvalRef(run *eval_api.OpenAIEvalRun) string {
 	return run.Metadata[metaEvalName]
 }
 
-// passRateText is the rate, or a dash where nothing was scored. A rate over no
-// rows is not zero, it is absent.
-func passRateText(rate float64, scored bool) string {
-	if !scored {
+// passRateText is the rate, or a dash where no test cases were reported. A rate
+// over no rows is not zero, it is absent.
+func passRateText(rate float64, available bool) string {
+	if !available {
 		return "-"
 	}
 	return fmt.Sprintf("%.1f%%", rate*100)

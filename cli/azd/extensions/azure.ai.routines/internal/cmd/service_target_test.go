@@ -439,14 +439,16 @@ func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
 // TestRoutineServiceTargetDeployPropagatesAccessToken covers gRPC auth.
 func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	const accessToken = "test-extension-token"
+	const endpoint = "https://test.services.ai.azure.com/api/projects/test"
 
 	t.Setenv("AZD_ACCESS_TOKEN", accessToken)
-	stubAzdProjectSources(t, azdProjectSources{
-		EnvValue: "https://test.services.ai.azure.com/api/projects/test",
-	}, nil)
+	t.Setenv(foundryProjectEndpointEnvVar, "")
+	t.Setenv(legacyProjectEndpointEnvVar, "")
 
 	server := &routineAuthMetadataServer{
-		environmentAuth: make(chan string, 2),
+		projectEndpoint: endpoint,
+		environmentAuth: make(chan string, 5),
+		environmentKeys: make(chan string, 3),
 		accountAuth:     make(chan string, 1),
 	}
 	azdClient := newRoutineAuthAzdClient(t, server)
@@ -468,8 +470,15 @@ func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	)
 
 	require.ErrorContains(t, err, "resolving user access tenant")
-	assert.Equal(t, accessToken, <-server.environmentAuth)
-	assert.Equal(t, accessToken, <-server.environmentAuth)
+	require.Len(t, server.environmentAuth, 4)
+	for range len(server.environmentAuth) {
+		assert.Equal(t, accessToken, <-server.environmentAuth)
+	}
+	keys := make([]string, 0, len(server.environmentKeys))
+	for range len(server.environmentKeys) {
+		keys = append(keys, <-server.environmentKeys)
+	}
+	assert.Equal(t, []string{foundryProjectEndpointEnvVar, "AZURE_SUBSCRIPTION_ID"}, keys)
 	assert.Equal(t, accessToken, <-server.accountAuth)
 }
 
@@ -590,7 +599,9 @@ func (s *stubRoutineAccount) LookupTenant(
 type routineAuthMetadataServer struct {
 	azdext.UnimplementedAccountServiceServer
 	azdext.UnimplementedEnvironmentServiceServer
+	projectEndpoint string
 	environmentAuth chan string
+	environmentKeys chan string
 	accountAuth     chan string
 }
 
@@ -606,10 +617,18 @@ func (s *routineAuthMetadataServer) GetCurrent(
 
 func (s *routineAuthMetadataServer) GetValue(
 	ctx context.Context,
-	_ *azdext.GetEnvRequest,
+	request *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
 	s.environmentAuth <- incomingAuthorization(ctx)
-	return &azdext.KeyValueResponse{Value: "subscription-id"}, nil
+	s.environmentKeys <- request.GetKey()
+	value := "subscription-id"
+	switch request.GetKey() {
+	case foundryProjectEndpointEnvVar:
+		value = s.projectEndpoint
+	case legacyProjectEndpointEnvVar:
+		value = ""
+	}
+	return &azdext.KeyValueResponse{Key: request.GetKey(), Value: value}, nil
 }
 
 func (s *routineAuthMetadataServer) LookupTenant(
@@ -644,6 +663,7 @@ func newRoutineAuthAzdClient(
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+	t.Setenv("AZD_SERVER", listener.Addr().String())
 
 	go func() { _ = grpcServer.Serve(listener) }()
 

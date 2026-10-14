@@ -363,8 +363,12 @@ func TestConversationHandoffOnlyIncludesCompatibleGeneratedEvaluators(t *testing
 		{"both", []string{"turn", "conversation"}, true},
 		{"mixed-case both", []string{"TURN", "Conversation"}, true},
 		{"unknown", nil, true},
-		{"future metadata", []string{"future"}, true},
-		{"known and future metadata", []string{"Turn", "Future-Level"}, true},
+		{"empty metadata", []string{}, true},
+		{"future metadata", []string{"future"}, false},
+		{"known and future metadata", []string{"Turn", "Future-Level"}, false},
+		{"future and wrong known metadata", []string{"Future-Level", "Turn"}, false},
+		{"matching and future metadata", []string{"Conversation", "Future-Level"}, true},
+		{"future and matching metadata", []string{"Future-Level", "CONVERSATION"}, true},
 		{"turn only", []string{"turn"}, false},
 		{"mixed-case turn only", []string{"Turn"}, false},
 	} {
@@ -381,8 +385,12 @@ func TestConversationHandoffOnlyIncludesCompatibleGeneratedEvaluators(t *testing
 				assert.NotContains(t, out.String(), "does not support")
 			} else {
 				assert.NotContains(t, command, "--evaluator hero-agent-evaluator")
+				assert.NotContains(t, command, "--evaluator")
 				assert.Contains(t, out.String(), "does not support")
 				assert.Contains(t, out.String(), "remains in the catalogue")
+				assert.Contains(t, out.String(), "builtin.task_completion default")
+				assert.NotContains(t, out.String(), "default composite selection")
+				assert.NotContains(t, out.String(), "uses builtin.task_completion instead")
 			}
 		})
 	}

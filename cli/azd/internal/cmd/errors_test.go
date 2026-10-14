@@ -505,6 +505,28 @@ func Test_MapError(t *testing.T) {
 		// ErrorWithSuggestion produce error.suggestion ResultCode with
 		// the sentinel code in error.type via classifySentinel.
 		{
+			name:          "WithErrUnsafeEnvironmentPath",
+			err:           azdcontext.ErrUnsafeEnvironmentPath,
+			wantErrReason: "internal.unsafe_environment_path",
+		},
+		{
+			name: "WithWrappedErrUnsafeEnvironmentPath",
+			err: fmt.Errorf("loading environment: %w: %q must not be a symbolic link",
+				azdcontext.ErrUnsafeEnvironmentPath, filepath.Join("private-project", ".azure", "prod")),
+			wantErrReason: "internal.unsafe_environment_path",
+		},
+		{
+			name: "WithSuggestedErrUnsafeEnvironmentPath",
+			err: &internal.ErrorWithSuggestion{
+				Err:        azdcontext.ErrUnsafeEnvironmentPath,
+				Suggestion: "Remove the link before accessing environment state.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.unsafe_environment_path"),
+			},
+		},
+		{
 			name: "WithErrNoProject",
 			err: &internal.ErrorWithSuggestion{
 				Err:        azdcontext.ErrNoProject,

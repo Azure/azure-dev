@@ -56,7 +56,7 @@ For a **subset** (e.g. "just the `init` scenarios" or "everything in Tier 0") na
 instead — the `foundry-extension-scenario-suite-run` skill filters by `tags:` via
 `list_scenarios`. The concrete plan automatically adds every selected scenario's `requires:`
 prerequisites; for example, a `verify-deploy` filter also adds the Tier 1 scenarios that create
-the scaffolds. If any Tier 2 scenario matches, the plan also adds `2.00-setup` and
+the scaffolds. If any shared-agent Tier 2 scenario matches, the plan also adds `2.00-setup` and
 `2.99-teardown` so filtered runs retain their full resource lifecycle. See [Tags](#tags) for
 the taxonomy.
 
@@ -333,7 +333,7 @@ in any order, any time.
 | `tier0/0.18-connection-add.yaml` | `connection add` (noun-first, local `uses` edit, JSON, idempotency) |
 | `tier0/0.18-invoke-long-running-validation.yaml` | `invoke --long-running` / `--no-wait` help and invalid combinations |
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
-| `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
+| `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy`, legacy `agent add <type>` argument-order rejection, agent command discovery, and core `azd deploy --help` only |
 | `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
 | `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
 | `tier0/0.22-state-stores-help-validation.yaml` | State Store command discovery, forward-pagination help, input-size guidance, and offline validation |
@@ -363,6 +363,14 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
+| `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
+| `tier1/1.10-init-harness-region-restrictions.yaml` | GitHub Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+
+`1.10` requires externally prepared, readable Foundry projects in both supported and
+unsupported harness regions, with a usable model deployment in the unsupported project.
+Set `{region}` to a supported region and `{model}` to a catalog model unavailable there
+but available with quota in an unsupported recovery region. The scenario does not create
+these fixtures; missing prerequisites fail setup rather than skipping recovery coverage.
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.
@@ -419,6 +427,11 @@ so they operate on the same deployed agent. `2.00-setup` runs `init` there, whic
 scaffolds the project into the `{shared_agent_name}` subdirectory; the
 reuse and teardown scenarios run with `~/working/azd-agents-shared/{shared_agent_name}`
 as their `cwd`.
+`2.17a-deploy-preview` instead copies that project and selected environment into
+`~/working/azd-agents-preview-{instance}`. It changes description, tags, and public/
+substituted environment bindings only in the copy, so preview has deterministic
+visible differences and fake credential/URL sanitization assertions. Its post-hook
+checks the original shared files' checksums; it never deploys the fixture.
 
 | File | Targets |
 |------|---------|
@@ -440,12 +453,38 @@ as their `cwd`.
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
+| `tier2/2.17a-deploy-preview.yaml` | `azd deploy --preview` (isolated authored diffs, readable/JSON values and credential protection; no deployment writes) |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
+| `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
 
-The shared Tier 2 agent supports the Responses protocol only. The suite does not yet cover
-successful Invocations calls or their session-bound memory semantics; that requires a separate
-Invocations-capable setup and lifecycle.
+The shared Tier 2 agent supports the Responses protocol only. Scenario `2.19` tests successful
+Invocations and metadata-session routing against a separate externally prepared agent, not that
+shared agent. It does not test conversation memory or successful OpenAPI caching.
+
+**Opt-in Invocations prerequisite:** Before running `2.19`, deploy a minimal echo agent to a
+disposable, run-owned Foundry project at `~/working/azd-agents-invocations-{run_id}`.
+It must support successful POST `/invocations` calls and return 404 for
+`/invocations/docs/openapi.json`. Use names prefixed with `{prefix}-` and suffixed with
+`{run_id}`; bounded Foundry project names use `{foundry_project_name}`. Keep the local project
+and active `.azure` environment in that directory. No model inference is required.
+
+Write `invocation-seed.json` there with the deployed agent/project identifiers, a successful
+readiness observation, this run's resource ownership evidence, and a working method for
+collecting POST/GET routing traces and complete paginated session inventories through the
+Foundry SDK. Traces must identify the metadata route's actual session, not only its HTTP
+status. Do not seed an OpenAPI cache. Missing seed, permissions, or traces cannot count as
+a passing live test.
+
+This is a `manual-seed` scenario: ordinary command/tier filters and whole-suite
+sweeps exclude it by default. Explicitly name `2.19` or request the `manual-seed`
+tag to opt in; neither that selection nor cost consent deploys the fixture.
+Selection and readiness follow `driving-mechanics.md`'s manual-seed gate.
+The external seed lifecycle owns cleanup, including sessions created if the test fails;
+always clean up and verify deletion of only its proven run-owned resources afterward.
+The shared `2.99` teardown does not clean up this separate project. An opted-in sweep must arrange
+this seed and cleanup explicitly. There is no `requires` dependency on `2.00`, whose
+Responses agent cannot satisfy the Invocations prerequisite.
 
 **Opt-in State Store prerequisite:** After `2.00` deploys the shared agent, create a disposable,
 non-user-isolated store named `azd-state-stores-{run_id}` **for that agent** with the Foundry SDK
@@ -454,7 +493,7 @@ only after this step and before `2.18` deletes the agent. Its pre-hook verifies 
 and fails if absent; a missing store is never counted as a passed live test. The scenario uses
 only a run-unique item (`azd-probe-{run_id}`), which its post-hook removes even if a goal fails.
 Remove the disposable store using the seeding tool after the scenario, then run `2.99` teardown.
-A full Tier 2 sweep must arrange this seed between `2.00` and `2.14`; otherwise `2.14` fails
+An explicitly opted-in Tier 2 sweep must arrange this seed between `2.00` and `2.14`; otherwise `2.14` fails
 its prerequisite rather than silently skipping the live check. Do not seed a user-isolated
 store: the CLI does not supply an end-user call ID for item operations.
 
@@ -471,8 +510,13 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:state-stores`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:state-stores`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection`, `cmd:add` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:add` tags the Agent add command; `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy`, `manual-seed` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. `manual-seed` flags an opt-in scenario that needs an externally prepared fixture before it runs; filtering by this tag does not create the fixture. |
+
+The tool returns matching `manual-seed` rows, but runner plans exclude them
+unless explicitly named or selected via the `manual-seed` tag. See
+`driving-mechanics.md` for the seed readiness and independent cleanup gates.
+This applies equally to whole-suite, command, and tier filters.
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
 
@@ -690,6 +734,16 @@ passes the optional model version, and verifies the command's JSON result withou
 performing a second mutation. It exits successfully without calling `azd` when
 either the model or SKU is empty.
 
+### Isolated deployment preview helper
+
+[`fixtures/scripts/prepare_preview.py`](fixtures/scripts/prepare_preview.py)
+edits the generated shared scaffold's single inline hosted-service block in the
+scenario's isolated copy. It preserves service/agent identity, model bindings,
+code configuration, and sibling services, requires no Python YAML packages, and
+rejects an unexpected scaffold shape before writing. Run the offline helper
+checks with `python3 fixtures/scripts/test_prepare_preview.py`; this does not
+execute a scenario or contact Azure.
+
 ### Offline dependency composition fixture
 
 [`fixtures/agent-dependencies/azure.yaml`](fixtures/agent-dependencies/azure.yaml) is a local-only
@@ -701,8 +755,8 @@ deployable scaffold; never fetch them or pass this fixture to init, provision, o
 `0.17-toolbox-add` and `0.18-connection-add` each seed their own instance-isolated copy. They
 verify the four JSON fields (`agent`, `type`, `dependency`, `added`), the exact `uses` append,
 unchanged sibling definitions, and a no-op second add (`added: false`). Compare YAML semantics
-after the first add: core saving may reformat the document or add a schema comment. The existing
-local `.azure/agent-add.lock` mechanism is allowed; environment or deployment state is not.
+after the first add: core saving may reformat the document or add a schema comment. The shared
+Agent authoring lock stays in the user cache. No additional project artifacts are allowed.
 
 No `.azure/config.json` or dotenv seed is needed: core `Project.Get` resolves the environment
 non-interactively and falls back to empty substitution values when none is selected. The fixture

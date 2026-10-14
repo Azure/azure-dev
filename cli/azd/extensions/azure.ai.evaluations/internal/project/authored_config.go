@@ -32,6 +32,8 @@ type AuthoredEntry struct {
 	// SupportedEvaluationLevels is local evaluator metadata, not a resolved
 	// service schema. Absence or an unfamiliar shape leaves compatibility unknown.
 	SupportedEvaluationLevels []string
+	// SimulationModel is an inline simulator reference, without resolving includes.
+	SimulationModel string
 }
 
 // AuthoredConfig answers what a configuration already declares, as written.
@@ -147,10 +149,36 @@ func authoredFromDocument(doc *yaml.Node) *AuthoredConfig {
 				HasDefinition:             nodeUnder(item, "definition") != nil,
 				Version:                   scalarUnder(item, "version"),
 				SupportedEvaluationLevels: authoredEvaluationLevels(item),
+				SimulationModel:           authoredSimulationModel(section, item),
 			})
 		}
 	}
 	return out
+}
+
+func authoredSimulationModel(section string, item *yaml.Node) string {
+	if section != SectionEvals {
+		return ""
+	}
+	model := nodeUnder(nodeUnder(item, "simulation"), "model")
+	if model == nil || model.Kind != yaml.ScalarNode || model.Tag != "!!str" {
+		return ""
+	}
+	return model.Value
+}
+
+// SimulationModels lists locally authored simulator references without opening includes.
+func (a *AuthoredConfig) SimulationModels() []string {
+	if a == nil {
+		return nil
+	}
+	var models []string
+	for _, entry := range a.sections[SectionEvals] {
+		if entry.SimulationModel != "" {
+			models = append(models, entry.SimulationModel)
+		}
+	}
+	return models
 }
 
 func authoredEvaluationLevels(item *yaml.Node) []string {

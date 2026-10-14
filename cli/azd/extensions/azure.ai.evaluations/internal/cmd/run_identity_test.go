@@ -38,7 +38,9 @@ func unregisteredRunContext(t *testing.T) *evalContext {
 	t.Helper()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
-	return evalContextFor(srv)
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	return &evalContext{datasetClient: dataset_api.NewDatasetClientFromPipeline(srv.URL, pipeline)}
 }
 
 type identityRequest struct {
@@ -59,10 +61,10 @@ type identityService struct {
 	rows         string
 	blobStatus   int
 	previous     []*eval_api.OpenAIEvalRun
-	runMetadata  json.RawMessage
 	responseEval bool
 	evalConfig   map[string]any
 	evalStatus   int
+	runMetadata  json.RawMessage
 }
 
 func identityRunContext(t *testing.T, service identityService) (*evalContext, <-chan identityRequest) {
@@ -147,7 +149,12 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return evalContextFor(srv), requests
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	return &evalContext{
+		datasetClient: dataset_api.NewDatasetClientFromPipeline(srv.URL, pipeline),
+		evalClient:    eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
+	}, requests
 }
 
 func recordedIdentityRequests(requests <-chan identityRequest) []identityRequest {
@@ -809,15 +816,13 @@ func TestRunStartWaitBudgetHandoffKeepsSubmittedDatasetAttribution(t *testing.T)
 					response := httptest.NewRecorder()
 					response.Header().Set("Content-Type", "application/json")
 					switch {
+					case req.Method == http.MethodGet && req.URL.Path == "/openai/v1/evals/eval_1":
+						_, err := io.WriteString(response, `{"id":"eval_1","data_source_config":{"type":"custom"}}`)
+						require.NoError(t, err)
 					case req.Method == http.MethodGet && req.URL.Path == runsPath:
 						require.NoError(t, json.NewEncoder(response).Encode(map[string]any{
 							"data": []eval_api.OpenAIEvalRun{{ID: "previous", DataSource: source, Metadata: metadata}},
 						}))
-					case req.Method == http.MethodGet && req.URL.Path == strings.TrimSuffix(runsPath, "/runs"):
-						// A bare-ID rerun reconciles the remote eval's own schema
-						// before submitting; this eval carries no responses/traces
-						// contract, so the GET is compatible with every mode here.
-						require.NoError(t, json.NewEncoder(response).Encode(eval_api.OpenAIEval{ID: "eval_1"}))
 					case req.Method == http.MethodPost && req.URL.Path == runsPath:
 						body := `{"id":"evalrun_new","status":"queued"}`
 						if strings.HasSuffix(mode, "orphan echo") {
@@ -1120,6 +1125,82 @@ func TestSimulationRegisteredIdentityRemainsStrict(t *testing.T) {
 			assert.NotContains(t, posted, "input_messages")
 			assert.Contains(t, posted, "model_configuration")
 		})
+	}
+}
+
+func TestRunTraceRerunWithSampleSchemaRejectsExplicitDatasetCaps(t *testing.T) {
+	for _, sourceType := range []string{"azure_ai_traces", "azure_ai_trace_data_source_preview"} {
+		for _, cap := range []string{"", "0", "1"} {
+			t.Run(sourceType+"/"+cap, func(t *testing.T) {
+				reads, schemaReads, posts := 0, 0, 0
+				source := map[string]any{"type": sourceType, "agent_name": "agent", "lookback_hours": 24}
+				if sourceType == "azure_ai_trace_data_source_preview" {
+					source = map[string]any{
+						"type": sourceType,
+						"trace_source": map[string]any{
+							"type": "agent_filter", "agent_name": "agent", "start_time": 1, "end_time": 2,
+						},
+					}
+				}
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_trace"):
+						schemaReads++
+						_, err := io.WriteString(w,
+							`{"id":"eval_trace","data_source_config":{"type":"custom","include_sample_schema":false}}`)
+						assert.NoError(t, err)
+					case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
+						reads++
+						assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": []any{
+							map[string]any{"id": "previous", "data_source": source},
+						}}))
+					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/eval_trace/runs"):
+						posts++
+						_, err := io.WriteString(w, `{"id":"run_trace","status":"queued"}`)
+						assert.NoError(t, err)
+					default:
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+						w.WriteHeader(http.StatusBadRequest)
+					}
+				}))
+				t.Cleanup(srv.Close)
+				var out bytes.Buffer
+				command := buildRunCommand("start", "")
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				command.Flags().String("output", "json", "")
+				if cap != "" {
+					require.NoError(t, command.Flags().Set("max-samples", cap))
+				}
+				flag, err := command.Flags().GetInt("max-samples")
+				require.NoError(t, err)
+				action := &runStartAction{
+					cmd: command, flags: &runStartFlags{
+						groupName: "eval_trace", evalPath: t.TempDir(), maxSamples: flag,
+					},
+					newContext: func(context.Context, string) (*evalContext, error) {
+						return evalContextFor(srv), nil
+					},
+				}
+				err = action.Run()
+				if cap == "" {
+					require.NoError(t, err)
+					assert.Equal(t, 1, reads)
+					assert.Equal(t, 1, schemaReads)
+					assert.Equal(t, 1, posts)
+				} else {
+					require.ErrorContains(t, err, "max-samples")
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					assert.Zero(t, reads)
+					assert.Zero(t, schemaReads)
+					assert.Zero(t, posts)
+					assert.Empty(t, out.String())
+				}
+			})
+		}
 	}
 }
 

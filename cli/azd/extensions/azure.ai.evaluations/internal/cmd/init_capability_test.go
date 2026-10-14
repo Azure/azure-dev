@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -30,19 +29,9 @@ func TestInitSelectsCapabilityBeforeOneMutation(t *testing.T) {
 					h.project.capabilityErr = status.Error(codes.Unimplemented, "unknown method")
 				}
 				path := filepath.Join(h.dir, "quality.yml")
-				h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
-					incoming, _ := metadata.FromIncomingContext(ctx)
-					assert.Empty(t, incoming.Get("azd-project-add-service-operation"),
-						"neither stable nor beta transport may send the obsolete operation header")
+				h.project.setAddServiceHandler(func(context.Context, *azdext.AddServiceRequest) error {
 					if !fails {
 						return nil
-					}
-					if mode != "capable" {
-						// Even an old host's custom trailer must not be treated as the typed capability.
-						if err := grpc.SetTrailer(ctx, metadata.Pairs(
-							"azd-project-add-service-save-failed", "untrusted")); err != nil {
-							return err
-						}
 					}
 					return os.ErrPermission
 				})

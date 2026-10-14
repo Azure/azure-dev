@@ -44,6 +44,38 @@ func localSourceConfig(t *testing.T, rows string, cap int) string {
 	return dir
 }
 
+func TestExplicitLocalRowsRejectNonRegularFiles(t *testing.T) {
+	dir := localSourceConfig(t, oneRow, 0)
+	cfg, err := project.OpenEvalConfig(dir)
+	require.NoError(t, err)
+	for _, path := range []string{dir, os.DevNull} {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			require.False(t, info.Mode().IsRegular())
+			input, err := openLocalInput(t.Context(), &cfg.Evals[0], path)
+			require.ErrorContains(t, err, "source.file must be a regular JSONL file")
+			assert.Nil(t, input)
+		})
+	}
+}
+
+func TestExplicitLocalSparseOptionalColumnsRemainMapped(t *testing.T) {
+	dir := localSourceConfig(t,
+		"{\"query\":\"first\",\"tool_calls\":[{\"name\":\"lookup\"}]}\n{\"query\":\"second\"}\n", 0)
+	cfg, err := project.OpenEvalConfig(dir)
+	require.NoError(t, err)
+	group := &cfg.Evals[0]
+	input, err := openLocalInput(t.Context(), group, group.LocalSourcePath(dir))
+	require.NoError(t, err)
+	defer input.file.Close()
+
+	req, err := buildLocalEvalRequest(group, input.columns, input.availableColumns, nil)
+	require.NoError(t, err)
+	require.Len(t, req.TestingCriteria, 1)
+	assert.Equal(t, "{{item.tool_calls}}", req.TestingCriteria[0].DataMapping["tool_calls"])
+}
+
 func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (*evalContext, <-chan identityRequest) {
 	t.Helper()
 	requests := make(chan identityRequest, 20)
@@ -59,15 +91,22 @@ func localSourceContext(t *testing.T, alterDefinition ...func(map[string]any)) (
 			w.WriteHeader(http.StatusForbidden)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/evaluators/"):
 			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/evaluators/"), "/")
+			require.GreaterOrEqual(t, len(parts), 2)
 			contract := ec.schemas[parts[0]]
+			if len(parts) == 3 {
+				if selected := ec.schemas[evaluatorSchemaKey(parts[0], parts[2])]; selected != nil {
+					contract = selected
+				}
+			}
 			if contract == nil {
+				t.Errorf("unexpected evaluator read: %s", r.URL.Path)
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			if strings.HasSuffix(r.URL.Path, "/versions") {
-				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-					"value": []any{map[string]string{"name": parts[0], "version": "1"}},
-				}))
+			if len(parts) == 2 && parts[1] == "versions" {
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": []any{
+					map[string]string{"name": parts[0], "version": "1"},
+				}}))
 			} else {
 				assert.NoError(t, json.NewEncoder(w).Encode(contract))
 			}
@@ -165,6 +204,7 @@ func TestExplicitLocalRunUsesInlineRowsWithoutRegistryIdentity(t *testing.T) {
 	recorded := recordedIdentityRequests(requests)
 	require.Len(t, recorded, 2)
 	assert.Equal(t, http.MethodGet, recorded[0].method)
+	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[0].path)
 	assert.Equal(t, http.MethodPost, recorded[1].method)
 	var submitted eval_api.CreateOpenAIEvalRunRequest
 	require.NoError(t, json.Unmarshal(recorded[1].body, &submitted))
@@ -206,6 +246,9 @@ func TestExplicitLocalCapsAndTargets(t *testing.T) {
 				require.NoError(t, err)
 				recorded := recordedIdentityRequests(requests)
 				require.Len(t, recorded, 2)
+				assert.Equal(t, http.MethodGet, recorded[0].method)
+				assert.Equal(t, "/openai/v1/evals/eval_local", recorded[0].path)
+				assert.Equal(t, http.MethodPost, recorded[1].method)
 				var submitted eval_api.CreateOpenAIEvalRunRequest
 				require.NoError(t, json.Unmarshal(recorded[1].body, &submitted))
 				require.NotNil(t, submitted.DataSource)
@@ -357,7 +400,7 @@ func TestExplicitLocalIDRerunUsesSnapshotNotFile(t *testing.T) {
 	out, err := startLocalSource(t, ec, dir, "eval_local", nil)
 	require.NoError(t, err)
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 3, "a bare-ID rerun also reconciles the remote eval's schema before submitting")
+	require.Len(t, recorded, 3)
 	assert.Equal(t, "/openai/v1/evals/eval_local/runs", recorded[0].path)
 	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[1].path)
 	var before, after eval_api.CreateOpenAIEvalRunRequest
@@ -384,7 +427,7 @@ func TestExplicitLocalNumbersRetainPrecision(t *testing.T) {
 	_, err = startLocalSource(t, ec, dir, "eval_local", nil)
 	require.NoError(t, err)
 	recorded = recordedIdentityRequests(requests)
-	require.Len(t, recorded, 3, "a bare-ID rerun also reconciles the remote eval's schema before submitting")
+	require.Len(t, recorded, 3)
 	assert.Contains(t, string(recorded[2].body), `"id":9007199254740993`)
 }
 
@@ -449,11 +492,19 @@ func TestExplicitLocalDeployPreflightPrecedesPublication(t *testing.T) {
 			recorded := recordedIdentityRequests(requests)
 			if !valid {
 				require.ErrorContains(t, err, "empty object")
-				assert.Empty(t, recorded, "bad local rows must stop even unrelated publication")
+				for _, request := range recorded {
+					assert.Equal(t, http.MethodGet, request.method, "bad local rows must stop even unrelated publication")
+					assert.True(t, strings.HasPrefix(request.path, "/evaluators/"))
+				}
 				assert.Empty(t, ec.state)
 			} else {
 				require.NoError(t, err)
 				require.Len(t, recorded, 3)
+				assert.Equal(t, http.MethodGet, recorded[0].method)
+				assert.Equal(t, "/evaluators/builtin.relevance/versions", recorded[0].path)
+				assert.Equal(t, http.MethodGet, recorded[1].method)
+				assert.Equal(t, "/evaluators/builtin.relevance/versions/1", recorded[1].path)
+				assert.Equal(t, http.MethodPost, recorded[2].method)
 				assert.Equal(t, "/openai/v1/evals", recorded[2].path)
 				assert.NotContains(t, string(recorded[2].body), "local rows.jsonl")
 			}

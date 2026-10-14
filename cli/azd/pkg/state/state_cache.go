@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 )
 
 // StateCache represents cached Azure resource information for an environment
@@ -44,15 +46,15 @@ const (
 
 // StateCacheManager manages the state cache for environments
 type StateCacheManager struct {
-	rootPath string
-	ttl      time.Duration
+	azdContext *azdcontext.AzdContext
+	ttl        time.Duration
 }
 
 // NewStateCacheManager creates a new state cache manager
-func NewStateCacheManager(rootPath string) *StateCacheManager {
+func NewStateCacheManager(azdContext *azdcontext.AzdContext) *StateCacheManager {
 	return &StateCacheManager{
-		rootPath: rootPath,
-		ttl:      DefaultCacheTTLDuration,
+		azdContext: azdContext,
+		ttl:        DefaultCacheTTLDuration,
 	}
 }
 
@@ -62,13 +64,19 @@ func (m *StateCacheManager) SetTTL(ttl time.Duration) {
 }
 
 // GetCachePath returns the path to the cache file for an environment
-func (m *StateCacheManager) GetCachePath(envName string) string {
-	return filepath.Join(m.rootPath, envName, StateCacheFileName)
+func (m *StateCacheManager) GetCachePath(envName string) (string, error) {
+	if m.azdContext == nil {
+		return "", azdcontext.ErrNoProject
+	}
+	return m.azdContext.EnvironmentFilePath(envName, StateCacheFileName)
 }
 
 // GetStateChangePath returns the path to the state change notification file
-func (m *StateCacheManager) GetStateChangePath() string {
-	return filepath.Join(m.rootPath, StateChangeFileName)
+func (m *StateCacheManager) GetStateChangePath() (string, error) {
+	if m.azdContext == nil {
+		return "", azdcontext.ErrNoProject
+	}
+	return m.azdContext.ProjectStateFilePath(StateChangeFileName)
 }
 
 // Load loads the state cache for an environment
@@ -78,7 +86,10 @@ func (m *StateCacheManager) Load(ctx context.Context, envName string) (*StateCac
 		return nil, err
 	}
 
-	cachePath := m.GetCachePath(envName)
+	cachePath, err := m.GetCachePath(envName)
+	if err != nil {
+		return nil, err
+	}
 
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
@@ -108,10 +119,16 @@ func (m *StateCacheManager) Save(ctx context.Context, envName string, cache *Sta
 		return err
 	}
 
+	cachePath, err := m.GetCachePath(envName)
+	if err != nil {
+		return err
+	}
+	if _, err := m.GetStateChangePath(); err != nil {
+		return err
+	}
+
 	cache.Version = StateCacheVersion
 	cache.UpdatedAt = time.Now()
-
-	cachePath := m.GetCachePath(envName)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
@@ -147,9 +164,15 @@ func (m *StateCacheManager) Invalidate(ctx context.Context, envName string) erro
 		return err
 	}
 
-	cachePath := m.GetCachePath(envName)
+	cachePath, err := m.GetCachePath(envName)
+	if err != nil {
+		return err
+	}
+	if _, err := m.GetStateChangePath(); err != nil {
+		return err
+	}
 
-	err := os.Remove(cachePath)
+	err = os.Remove(cachePath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing cache file: %w", err)
 	}
@@ -170,7 +193,10 @@ func (m *StateCacheManager) Invalidate(ctx context.Context, envName string) erro
 // TouchStateChange updates the state change notification file
 // This file is watched by IDEs/tools to know when to refresh their state
 func (m *StateCacheManager) TouchStateChange() error {
-	stateChangePath := m.GetStateChangePath()
+	stateChangePath, err := m.GetStateChangePath()
+	if err != nil {
+		return err
+	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(stateChangePath), 0755); err != nil {
@@ -188,7 +214,10 @@ func (m *StateCacheManager) TouchStateChange() error {
 
 // GetStateChangeTime returns the last time the state changed
 func (m *StateCacheManager) GetStateChangeTime() (time.Time, error) {
-	stateChangePath := m.GetStateChangePath()
+	stateChangePath, err := m.GetStateChangePath()
+	if err != nil {
+		return time.Time{}, err
+	}
 
 	data, err := os.ReadFile(stateChangePath)
 	if err != nil {

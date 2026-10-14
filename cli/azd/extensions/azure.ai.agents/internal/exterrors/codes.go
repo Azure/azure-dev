@@ -30,6 +30,7 @@ const (
 	CodeInvalidParameter               = "invalid_parameter"
 	CodeUnsupportedHost                = "unsupported_host"
 	CodeUnsupportedAgentKind           = "unsupported_agent_kind"
+	CodeDeploymentPreviewUnsupported   = "deployment_preview_unsupported"
 	CodeUnsupportedAgentDefinitionPath = "unsupported_agent_definition_path"
 	CodeDeprecatedAgentServiceConfig   = "deprecated_agent_service_config"
 	CodeAgentDefinitionNotFound        = "agent_definition_not_found"

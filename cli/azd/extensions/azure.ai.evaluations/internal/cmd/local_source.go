@@ -44,9 +44,9 @@ func (ec *evalContext) localEvalInput(
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	req, err := buildLocalEvalRequest(group, input.columns, input.availableColumns, schemas)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, messages.InEval(group.Name, err)
 	}
 	validate, err := localRowValidator(group, req.TestingCriteria, req.DataSourceConfig.ItemSchema)
 	if err != nil {
@@ -69,10 +69,11 @@ func (ec *evalContext) localEvalInput(
 }
 
 type localInput struct {
-	file    *os.File
-	path    string
-	columns map[string]bool
-	digest  []byte
+	file             *os.File
+	path             string
+	columns          map[string]bool
+	availableColumns map[string]bool
+	digest           []byte
 }
 
 func validateLocalFile(
@@ -83,7 +84,7 @@ func validateLocalFile(
 		return nil, nil, err
 	}
 	defer input.file.Close()
-	req, err := buildLocalEvalRequest(group, input.columns, schemas)
+	req, err := buildLocalEvalRequest(group, input.columns, input.availableColumns, schemas)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,6 +102,7 @@ func openLocalInput(
 	if err := runnableEval(group); err != nil {
 		return nil, err
 	}
+	// Reject known special files before Open can block; verify the opened handle too.
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, messages.InEval(group.Name, messages.ReadingPath(path, err))
@@ -127,7 +129,13 @@ func openLocalInput(
 		return nil, messages.InEval(group.Name, errors.New("source.file must be a regular JSONL file"))
 	}
 	digest := sha256.New()
-	columns, err := inspectJSONLReader(ctx, path, io.TeeReader(file, digest), nil)
+	availableColumns := map[string]bool{}
+	columns, err := inspectJSONLReader(ctx, path, io.TeeReader(file, digest), func(row map[string]any, _ int) error {
+		for field := range row {
+			availableColumns[field] = true
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, messages.InEval(group.Name, err)
 	}
@@ -135,7 +143,9 @@ func openLocalInput(
 		return nil, fmt.Errorf("eval %q: every local row must provide query for the target", group.Name)
 	}
 	keep = true
-	return &localInput{file: file, path: path, columns: columns, digest: digest.Sum(nil)}, nil
+	return &localInput{
+		file: file, path: path, columns: columns, availableColumns: availableColumns, digest: digest.Sum(nil),
+	}, nil
 }
 
 // collect validates every row while retaining only the requested prefix. A negative
@@ -169,14 +179,13 @@ func (input *localInput) collect(
 }
 
 func buildLocalEvalRequest(
-	group *project.Eval, columns map[string]bool,
+	group *project.Eval, columns, availableColumns map[string]bool,
 	schemas map[string]*eval_api.EvaluatorSummary,
 ) (*eval_api.CreateOpenAIEvalRequest, error) {
-	req, err := buildEvalRequest(group, schemas, columns)
+	req, err := buildEvalRequestWithAvailableColumns(group, schemas, columns, availableColumns)
 	if err != nil {
 		return nil, messages.InEval(group.Name, err)
 	}
-	req.DataSourceConfig.ItemSchema = localItemSchema(group, req.TestingCriteria, schemas)
 	return req, nil
 }
 
@@ -184,6 +193,7 @@ func localItemSchema(
 	group *project.Eval, criteria []eval_api.TestingCriterion, schemas map[string]*eval_api.EvaluatorSummary,
 ) map[string]any {
 	properties := map[string]any{}
+	required := map[string]bool{}
 	add := func(column string, constraint any) {
 		if previous, exists := properties[column]; exists {
 			// One column can feed several evaluators; every published constraint applies.
@@ -192,8 +202,12 @@ func localItemSchema(
 			properties[column] = constraint
 		}
 	}
-	for _, criterion := range criteria {
-		published := schemas[evaluatorSchemaKey(criterion.EvaluatorName, criterion.EvaluatorVersion)].DataSchema()
+	for i, criterion := range criteria {
+		selected := schemas[evaluatorSchemaKey(criterion.EvaluatorName, criterion.EvaluatorVersion)]
+		if selected == nil {
+			selected = schemas[criterion.EvaluatorName]
+		}
+		published := selected.DataSchema()
 		for _, field := range slices.Sorted(maps.Keys(criterion.DataMapping)) {
 			binding := criterion.DataMapping[field]
 			column, mapped := itemColumn(binding)
@@ -208,14 +222,23 @@ func localItemSchema(
 				}
 			}
 			add(column, constraint)
+			if published != nil && slices.Contains(published.Required, field) {
+				required[column] = true
+			}
+			if i < len(group.Evaluators) {
+				if _, explicit := group.Evaluators[i].DataMapping[field]; explicit {
+					required[column] = true
+				}
+			}
 		}
 	}
 	if group.Target != nil {
 		add("query", map[string]any{"type": "string"})
+		required["query"] = true
 	}
 	schema := map[string]any{"type": "object", "properties": properties}
-	if len(properties) > 0 {
-		schema["required"] = slices.Sorted(maps.Keys(properties))
+	if len(required) > 0 {
+		schema["required"] = slices.Sorted(maps.Keys(required))
 	}
 	return schema
 }
@@ -268,6 +291,7 @@ func localRowValidator(
 		// Compiler errors can quote credential-bearing external references.
 		return nil, fmt.Errorf("eval %q: item_schema is invalid or contains unsupported external references", group.Name)
 	}
+	request := &eval_api.CreateOpenAIEvalRequest{TestingCriteria: criteria}
 	return func(row map[string]any, i int) error {
 		if err := schema.Validate(row); err != nil {
 			return fmt.Errorf("eval %q: local row %d does not match item_schema; check its columns and value types",
@@ -292,6 +316,14 @@ func localRowValidator(
 					}
 				}
 			}
+		}
+		columns, malformed := map[string]bool{}, map[string]bool{}
+		for column, value := range row {
+			columns[column] = true
+			malformed[column] = malformedTextValue(value)
+		}
+		if err := validateDatasetInteractions(group, request, columns, malformed); err != nil {
+			return fmt.Errorf("eval %q: local row %d: %w", group.Name, i+1, err)
 		}
 		return nil
 	}, nil

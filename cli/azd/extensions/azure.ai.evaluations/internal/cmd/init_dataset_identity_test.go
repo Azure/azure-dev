@@ -156,15 +156,23 @@ func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
 	assert.Equal(t, []int{0}, prompts.selectCounts, "correct the name before confirmation")
 }
 
-func TestInitDatasetDerivedNameUsesLookupRules(t *testing.T) {
+func TestInitDatasetDerivedNameUsesLookupAndAssetRules(t *testing.T) {
 	for _, name := range []string{"", ".", "..", "control\n", "control\u0085", "control\u009b",
 		strings.Repeat("a", assetNameMaxLength+1)} {
-		t.Run("invalid/"+name, func(t *testing.T) {
+		t.Run("invalid lookup/"+name, func(t *testing.T) {
 			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
 			require.ErrorContains(t, err, "invalid catalog name")
 		})
 	}
-	for _, name := range []string{"seeds", ".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+		t.Run("invalid asset/"+name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name+".jsonl")
+			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+			_, err := planScaffold(localDatasetScaffold(t, path))
+			require.ErrorContains(t, err, "invalid catalog name")
+		})
+	}
+	for _, name := range []string{"seeds", "seed_data", "seeds-v2", "A1"} {
 		t.Run("valid/"+name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name+".jsonl")
 			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))

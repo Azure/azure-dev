@@ -23,7 +23,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func localSelectedContractContext(t *testing.T, pinStatus int) (*evalContext, <-chan identityRequest) {
+func localSelectedContractContext(
+	t *testing.T, pinStatus int, returnedVersions ...string,
+) (*evalContext, <-chan identityRequest) {
 	t.Helper()
 	requests := make(chan identityRequest, 30)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +44,11 @@ func localSelectedContractContext(t *testing.T, pinStatus int) (*evalContext, <-
 				w.WriteHeader(pinStatus)
 				return
 			}
-			_, _ = io.WriteString(w, `{"name":"custom.valid","version":"7","definition":{"data_schema":`+
+			version := "7"
+			if len(returnedVersions) > 0 {
+				version = returnedVersions[0]
+			}
+			_, _ = io.WriteString(w, `{"name":"custom.valid","version":"`+version+`","definition":{"data_schema":`+
 				`{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]}}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/openai/v1/evals/eval_local":
 			_, _ = io.WriteString(w, `{"id":"eval_local","data_source_config":{"item_schema":`+
@@ -173,16 +179,55 @@ func TestExplicitLocalPinnedEvaluatorFailureNeverFallsBack(t *testing.T) {
 	}
 }
 
+func TestExplicitLocalSelectedEvaluatorVersionMismatch(t *testing.T) {
+	for _, operation := range []string{"create", "up", "run", "validate"} {
+		t.Run(operation, func(t *testing.T) {
+			dir := localSourceConfig(t, "{\"count\":7}\n", 0)
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			ref := &cfg.Evals[0].Evaluators[0]
+			ref.Evaluator = "custom.valid"
+			ref.Version = "7"
+			ref.DataMapping = map[string]string{"n": "{{item.count}}"}
+			cfg.Evaluators = []project.EvaluatorDecl{{Name: "custom.valid"}}
+			writeLocalContractConfig(t, dir, cfg)
+			ec, requests := localSelectedContractContext(t, 0, "9")
+			switch operation {
+			case "create":
+				err = runLocalCreate(t, ec, dir, "local-quality")
+			case "up":
+				err = deployLocalContractConfig(t, ec, dir, cfg)
+			case "run":
+				_, err = startLocalSource(t, ec, dir, "local-quality", nil)
+			case "validate":
+				err = (&evalReconciler{ec: ec}).Validate(t.Context(), cfg, dir)
+			}
+			require.ErrorContains(t, err, `returned version "9" instead of selected version "7"`)
+			recorded := recordedIdentityRequests(requests)
+			require.Len(t, recorded, 1)
+			assert.Equal(t, http.MethodGet, recorded[0].method)
+			assert.Equal(t, "/evaluators/custom.valid/versions/7", recorded[0].path)
+		})
+	}
+}
+
 func TestExplicitLocalNewServiceConstraintCheckedAfterPublication(t *testing.T) {
 	dir, _ := localPublicationConfig(t, false, false)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
-		[]byte("{\"query\":\"old\",\"context\":\"valid\"}\n{\"query\":\"missing future field\"}\n"), 0o600))
+		[]byte("{\"query\":\"old\",\"context\":\"valid\"}\n{\"query\":\"later row\",\"context\":\"x\"}\n"), 0o600))
+	editLocalSourceConfig(t, dir, func(eval map[string]any) {
+		references, ok := eval["evaluators"].([]any)
+		require.True(t, ok)
+		reference, ok := references[0].(map[string]any)
+		require.True(t, ok)
+		delete(reference, "initializationParameters")
+	})
 	ec, requests, env := localPublicationContext(t, false, &eval_api.JSONSchema{
 		Type: "object", Required: []string{"context"},
-		Properties: map[string]any{"context": map[string]any{"type": "string"}},
+		Properties: map[string]any{"context": map[string]any{"type": "string", "minLength": 2}},
 	})
 	err := runLocalCreate(t, ec, dir, "local-quality")
-	require.ErrorContains(t, err, "context")
+	require.ErrorContains(t, err, "local row 2 does not match item_schema")
 	posts := 0
 	for _, request := range recordedIdentityRequests(requests) {
 		if request.method == http.MethodPost {
@@ -227,6 +272,43 @@ func TestExplicitLocalSameEvaluatorVersionsRemainDistinct(t *testing.T) {
 	assert.Equal(t, map[string]any{"type": "string"}, properties["label"])
 }
 
+func TestExplicitLocalAuthoredContractReplacesOlderType(t *testing.T) {
+	for _, operation := range []string{"create", "up"} {
+		t.Run(operation, func(t *testing.T) {
+			dir, _ := localPublicationConfig(t, false, false)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
+				[]byte("{\"count\":7}\n"), 0o600))
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			cfg.Evals[0].Evaluators[0].DataMapping = map[string]string{"count": "{{item.count}}"}
+			cfg.Evals[0].Evaluators[0].InitializationParameters = nil
+			cfg.Evaluators[0].Definition["data_schema"] = map[string]any{
+				"type": "object", "required": []string{"count"},
+				"properties": map[string]any{"count": map[string]any{"type": "integer"}},
+			}
+			writeLocalContractConfig(t, dir, cfg)
+			ec, requests, env := localPublicationContext(t, true, &eval_api.JSONSchema{
+				Type: "object", Required: []string{"count"},
+				Properties: map[string]any{"count": map[string]any{"type": "integer"}},
+			})
+			if operation == "create" {
+				err = runLocalCreate(t, ec, dir, "local-quality")
+			} else {
+				err = deployLocalContractConfig(t, ec, dir, cfg)
+			}
+			require.NoError(t, err, "the authored integer contract supersedes the older string contract")
+			var posts []string
+			for _, req := range recordedIdentityRequests(requests) {
+				if req.method == http.MethodPost {
+					posts = append(posts, req.path)
+				}
+			}
+			assert.Equal(t, []string{"/evaluators/quality-custom/versions", "/openai/v1/evals"}, posts)
+			assert.Positive(t, env.writes)
+		})
+	}
+}
+
 func TestExplicitLocalAuthoredContractPrecedesPublication(t *testing.T) {
 	for _, operation := range []string{"create", "up"} {
 		for _, existing := range []bool{false, true} {
@@ -234,13 +316,16 @@ func TestExplicitLocalAuthoredContractPrecedesPublication(t *testing.T) {
 				t.Run(operation+"/"+fmt.Sprint(existing)+"/"+fmt.Sprint(file), func(t *testing.T) {
 					dir, _ := localPublicationConfig(t, false, false)
 					require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
-						[]byte("{\"query\":\"old\",\"context\":\"valid\"}\n{\"query\":\"missing new input\"}\n"), 0o600))
+						[]byte("{\"query\":\"old\",\"context\":7}\n"+
+							"{\"query\":\"later row\",\"context\":\"wrong type\"}\n"), 0o600))
 					cfg, err := project.OpenEvalConfig(dir)
 					require.NoError(t, err)
+					cfg.Evals[0].Evaluators[0].InitializationParameters = nil
 					cfg.Evaluators[0].Definition["data_schema"] = map[string]any{
 						"type": "object", "required": []string{"context"},
-						"properties": map[string]any{"context": map[string]any{"type": "string"}},
+						"properties": map[string]any{"context": map[string]any{"type": "integer"}},
 					}
+
 					if file {
 						body, err := json.Marshal(cfg.Evaluators[0].Definition)
 						require.NoError(t, err)
@@ -255,9 +340,8 @@ func TestExplicitLocalAuthoredContractPrecedesPublication(t *testing.T) {
 					} else {
 						err = deployLocalContractConfig(t, ec, dir, cfg)
 					}
-					require.Error(t, err)
-					assert.Contains(t, err.Error(), "context",
-						"reject the prospective authored contract, not an unrelated lookup")
+					require.ErrorContains(t, err, "local row 2 does not match item_schema",
+						"reject the prospective authored type, not an explicit missing-column check")
 					assert.Zero(t, env.writes, "contract failure must precede any state write")
 					assert.Equal(t, []byte("{}"), env.config[privateStatePath])
 					for _, req := range recordedIdentityRequests(requests) {

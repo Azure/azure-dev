@@ -55,19 +55,20 @@ func (ec *evalContext) simulationDataSource(
 
 	// Read whole: the run is bound to the registered version, so a cap here
 	// would validate a prefix of what the service is about to simulate from.
-	version, err := ec.resolveRunDatasetVersion(ctx, group.Dataset, pinnedVersion, false)
-	if err != nil {
-		return nil, "", err
-	}
-	id, err := ec.datasetResourceID(ctx, group.Dataset, version)
-	if err != nil {
-		return nil, "", err
-	}
-	items, err := ec.readDatasetVersion(ctx, group.Dataset, version)
+	items, version, err := ec.readRegisteredDataset(
+		ctx, group.Dataset, pinnedVersion)
 	if err != nil {
 		return nil, "", err
 	}
 	if err := refuseUnusableSeedRows(group, items); err != nil {
+		return nil, "", err
+	}
+
+	// A seed dataset is referenced, never copied. The spec is explicit that
+	// inline rows are not equivalent for a registered dataset, and a version the
+	// service will not describe is not one a run can be pinned to.
+	id, err := ec.datasetResourceID(ctx, group.Dataset, version)
+	if err != nil {
 		return nil, "", err
 	}
 

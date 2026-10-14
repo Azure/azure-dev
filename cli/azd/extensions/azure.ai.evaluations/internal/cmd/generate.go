@@ -342,11 +342,9 @@ func (ec *evalContext) collectRubric(
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
 	ref := &project.ArtifactRef{
-		Name:    name,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Recovered declarations need the same metadata even when the rubric
-		// was already collected and must be preserved for local edits.
+		Name:                      name,
+		Source:                    relativeSource(baseDir, path),
+		Version:                   version,
 		DisplayName:               completed.ResultString("display_name"),
 		Categories:                completed.ResultStringList("categories"),
 		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),

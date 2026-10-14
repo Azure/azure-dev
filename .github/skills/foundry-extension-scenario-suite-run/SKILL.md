@@ -116,16 +116,22 @@ list_scenarios(root="<scenarios-dir>", tags=[<filter>, ...])   # omit tags for t
 
 Build the concrete set before grouping or confirmation:
 
+Apply **Manual-seed selection and readiness** in the scenarios' `driving-mechanics.md`
+first. Whole-suite, command, and tier sweeps exclude `manual-seed` by default;
+explicit scenario/tag opt-in requires verified seed and cleanup ownership.
+Report exclusions as coverage gaps. Dependency closure must not bypass this gate.
+
 1. Inspect every selected scenario's `requires:` field. Recursively add each referenced
    prerequisite scenario, deduplicating paths, until the dependency graph is closed. A
    `verify-deploy` filter therefore adds the matching Tier 1 producers that create its
    scaffolds. If a referenced scenario does not exist, stop with a plan-construction error
    rather than scheduling a dependent that can only be skipped.
-2. If the expanded set contains **any Tier 2 scenario**, add
+2. If the expanded set contains **shared-agent Tier 2 scenarios**, add
    `tier2/2.00-setup-deploy-shared-agent.yaml` and
    `tier2/2.99-teardown-down.yaml` to the concrete set, deduplicating them if already present.
    This lifecycle closure is mandatory even when a tag filter such as `cmd:invoke` did not
    match the setup/teardown files directly.
+   Independent `2.19` uses its external seed lifecycle, not shared setup/teardown.
 3. Read and retain each selected scenario's optional top-level `produces` value so it can be
    passed directly to that scenario's worker. The tester's `load_scenario` summary does not
    expose orchestrator-only fields.
@@ -173,9 +179,12 @@ scheduler:
    rolling pool is active. Never run more than one Tier 2 scenario:
    `2.00-setup-deploy-shared-agent` **first**, then `2.01-`…`2.18-` **serially**,
    `2.18-delete` before teardown, and `2.99-teardown-down` **last**. Setup must PASS before
-   functional scenarios run; otherwise skip them and proceed to cleanup/recovery. Each
+   shared functional scenarios run; otherwise skip them and proceed to cleanup/recovery. Each
    functional completion unlocks only the next selected Tier 2 scenario, and teardown follows
    the final attempted functional scenario regardless of verdict.
+   Run opted-in, seed-ready independent `2.19` afterward, without another Tier 2
+   worker active, even if shared setup failed. An independent-only selection omits
+   shared setup/teardown and verifies external cleanup per the manual-seed rules.
 5. **Two-phase Tier 1b cleanup.** Tier 1b product workers finish their tester sessions but defer
    post hooks. Register cleanup before launching each Tier 1b worker and persist its status in
    `.reports/<run-id>/CLEANUP-STATUS.md`. After all product workers and the complete Tier 2 lane

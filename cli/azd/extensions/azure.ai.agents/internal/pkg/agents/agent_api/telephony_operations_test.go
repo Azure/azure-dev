@@ -27,6 +27,17 @@ type telephonyContractTransport struct {
 	requests int
 }
 
+type cancelingResponseBody struct {
+	cancel context.CancelFunc
+}
+
+func (b *cancelingResponseBody) Read([]byte) (int, error) {
+	b.cancel()
+	return 0, context.Canceled
+}
+
+func (*cancelingResponseBody) Close() error { return nil }
+
 func (t *telephonyContractTransport) Do(req *http.Request) (*http.Response, error) {
 	t.requests++
 	return t.do(req)
@@ -587,6 +598,36 @@ func TestTelephonyTransportErrorPreservesContextCancellation(t *testing.T) {
 		return nil, req.Context().Err()
 	})
 	_, err := client.GetTelephonyTransferTargets(ctx, "agent")
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTelephonyWriteCancellationHasUnknownOutcome(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return nil, req.Context().Err()
+	})
+	_, err := client.UpdateGATelephonyBinding(
+		ctx, "agent", "binding", UpdateTelephonyBindingRequest{}, `"etag"`)
+	var unknown *TelephonyWriteOutcomeUnknownError
+	require.ErrorAs(t, err, &unknown)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTelephonyWriteResponseReadCancellationHasUnknownOutcome(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"ETag": {`"etag"`}},
+			Body:       &cancelingResponseBody{cancel: cancel},
+			Request:    req,
+		}, nil
+	})
+	_, err := client.UpdateGATelephonyBinding(
+		ctx, "agent", "binding", UpdateTelephonyBindingRequest{}, `"etag"`)
+	var unknown *TelephonyWriteOutcomeUnknownError
+	require.ErrorAs(t, err, &unknown)
 	require.ErrorIs(t, err, context.Canceled)
 }
 

@@ -429,11 +429,14 @@ func (c *AgentClient) gaTelephonyRequest(
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
+		if method != http.MethodGet {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", telephonyWriteOutcomeUnknown(ctxErr)
+			}
+			return "", telephonyWriteOutcomeUnknown(err)
+		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", ctxErr
-		}
-		if method != http.MethodGet {
-			return "", telephonyWriteOutcomeUnknown(err)
 		}
 		return "", fmt.Errorf("sending telephony request failed")
 	}
@@ -463,11 +466,14 @@ func (c *AgentClient) gaTelephonyRequest(
 	if result != nil {
 		payload, err := io.ReadAll(io.LimitReader(resp.Body, maxTelephonyResponseSize+1))
 		if err != nil {
+			if method != http.MethodGet {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return "", telephonyWriteOutcomeUnknown(ctxErr)
+				}
+				return "", telephonyWriteOutcomeUnknown(err)
+			}
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return "", ctxErr
-			}
-			if method != http.MethodGet {
-				return "", telephonyWriteOutcomeUnknown(err)
 			}
 			return "", fmt.Errorf("reading telephony response body failed")
 		}

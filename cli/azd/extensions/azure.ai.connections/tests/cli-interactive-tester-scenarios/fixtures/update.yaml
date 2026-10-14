@@ -1,0 +1,16 @@
+name: connection-authoring-offline
+services:
+  foundry:
+    host: azure.ai.project
+    endpoint: https://example.test/api/projects/offline
+  search:
+    host: azure.ai.connection
+    uses:
+      - foundry
+    category: OldCategory
+    target: https://old.example.test
+    hooks:
+      predeploy:
+        - run: echo ready
+    env:
+      KEEP: literal

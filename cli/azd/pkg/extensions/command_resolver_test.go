@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -193,24 +194,63 @@ func TestResolveCommandEnvironmentIndependent(t *testing.T) {
 	metadata := &ExtensionCommandMetadata{
 		Commands: []Command{
 			{
-				Name: []string{"connection"},
+				Name:    []string{"connection"},
+				Aliases: []string{"conn"},
 				Subcommands: []Command{
 					{
 						Name:                   []string{"connection", "add"},
+						Aliases:                []string{"create"},
 						EnvironmentIndependent: true,
+						Flags:                  []Flag{{Name: "file", Type: "string"}},
 					},
+					{
+						Name:    []string{"connection", "manage"},
+						Aliases: []string{"mg"},
+						Subcommands: []Command{{
+							Name:                   []string{"connection", "manage", "add"},
+							Aliases:                []string{"create"},
+							EnvironmentIndependent: true,
+							Flags:                  []Flag{{Name: "file", Type: "string"}},
+						}},
+					},
+					{Name: []string{"connection", "list"}},
 				},
 			},
 		},
 	}
 
-	command := ResolveCommand(
-		metadata,
-		[]string{"connection", "add", "--file", "connection.yaml"},
-	)
-	require.NotNil(t, command)
-	require.Equal(t, []string{"connection", "add"}, command.Name)
-	require.True(t, command.EnvironmentIndependent)
+	for _, tt := range []struct {
+		name        string
+		args, path  []string
+		independent bool
+	}{
+		{"canonical", []string{"connection", "add"}, []string{"connection", "add"}, true},
+		{"parent alias", []string{"conn", "add"}, []string{"connection", "add"}, true},
+		{"child alias", []string{"connection", "create"}, []string{"connection", "add"}, true},
+		{"both aliases", []string{"conn", "create"}, []string{"connection", "add"}, true},
+		{"nested canonical", []string{"connection", "manage", "add"}, []string{"connection", "manage", "add"}, true},
+		{"nested parent alias", []string{"conn", "manage", "add"}, []string{"connection", "manage", "add"}, true},
+		{"multiple parent aliases", []string{"conn", "mg", "add"}, []string{"connection", "manage", "add"}, true},
+		{"all aliases", []string{"conn", "mg", "create"}, []string{"connection", "manage", "add"}, true},
+		{"unmarked descendant", []string{"conn", "list"}, []string{"connection", "list"}, false},
+		{"unknown descendant", []string{"conn", "unknown"}, []string{"connection"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			args := append(slices.Clone(tt.args), "--file", "connection.yaml")
+			command := ResolveCommand(metadata, args)
+			require.NotNil(t, command)
+			require.Equal(t, tt.path, command.Name)
+			require.Equal(t, tt.independent, command.EnvironmentIndependent)
+			require.Equal(t, tt.path, ResolveCommandPath(metadata, args))
+			var flags []string
+			if tt.independent {
+				flags = []string{"file"}
+			}
+			require.Equal(t, flags, ResolveCommandFlags(metadata, args))
+		})
+	}
 }
 
 func TestResolveCommandFlagsAllTypes(t *testing.T) {

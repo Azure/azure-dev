@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -163,10 +165,21 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 	require.NoError(t, os.MkdirAll(metadataDir, 0o755))
 	metadata, err := json.Marshal(&extensions.ExtensionCommandMetadata{
 		ID: "test-ext",
-		Commands: []extensions.Command{{
-			Name:                   []string{"local"},
-			EnvironmentIndependent: true,
-		}},
+		Commands: []extensions.Command{
+			{
+				Name:                   []string{"local"},
+				EnvironmentIndependent: true,
+			},
+			{
+				Name:    []string{"connection"},
+				Aliases: []string{"conn"},
+				Subcommands: []extensions.Command{{
+					Name:                   []string{"connection", "add"},
+					Aliases:                []string{"create"},
+					EnvironmentIndependent: true,
+				}},
+			},
+		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadata, 0o600))
@@ -203,24 +216,35 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 		args: []string{"--no-prompt", "-o", "json", "local", "--file", "connection.yaml"},
 	}
 
-	for _, prefix := range [][]string{
-		{"--no-prompt", "-o", "json"},
-		{"--trace-log-file", "trace.json", "--no-prompt"},
-		{"--trace-log-url", "http://localhost:4318", "-ojson"},
-		{"--debug", "--cwd", "project", "--environment", "test"},
-		{"--help"},
-		{"--docs"},
-		{"--non-interactive"},
+	for _, commandArgs := range [][]string{
+		{"local"},
+		{"connection", "add"},
+		{"conn", "add"},
+		{"connection", "create"},
+		{"conn", "create"},
 	} {
-		t.Run(prefix[0], func(t *testing.T) {
-			action.args = append(append([]string{}, prefix...), "local", "--file", "connection.yaml")
-			action.azdServer = newExtensionActionTestServer()
-			result, err := action.Run(t.Context())
+		t.Run(strings.Join(commandArgs, " "), func(t *testing.T) {
+			for _, prefix := range [][]string{
+				{"--no-prompt", "-o", "json"},
+				{"--trace-log-file", "trace.json", "--no-prompt"},
+				{"--trace-log-url", "http://localhost:4318", "-ojson"},
+				{"--debug", "--cwd", "project", "--environment", "test"},
+				{"--help"},
+				{"--docs"},
+				{"--non-interactive"},
+			} {
+				t.Run(prefix[0], func(t *testing.T) {
+					action.args = append(slices.Clone(prefix), commandArgs...)
+					action.args = append(action.args, "--file", "connection.yaml")
+					action.azdServer = newExtensionActionTestServer()
+					result, err := action.Run(t.Context())
 
-			require.NoError(t, err)
-			require.Nil(t, result)
-			require.Equal(t, 0, environmentLoads)
-			require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+					require.NoError(t, err)
+					require.Nil(t, result)
+					require.Equal(t, 0, environmentLoads)
+					require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+				})
+			}
 		})
 	}
 }

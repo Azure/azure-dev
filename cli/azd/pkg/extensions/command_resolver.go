@@ -58,9 +58,9 @@ type commandEntry struct {
 	command *Command
 }
 
-// matchCommand returns the longest matching command entry for the provided args.
-// It searches the command tree recursively, matching both primary command names and aliases.
-// When an alias matches, the primary command name is returned (not the alias).
+// matchCommand returns the longest command matching args.
+// It matches names and aliases throughout the command tree.
+// A matching entry always returns its canonical command path.
 func matchCommand(commands []Command, args []string) *commandEntry {
 	cmdArgs := extractCommandArgs(args)
 	if len(cmdArgs) == 0 {
@@ -69,41 +69,36 @@ func matchCommand(commands []Command, args []string) *commandEntry {
 
 	var bestMatch *commandEntry
 
-	var search func([]Command)
-	search = func(cmds []Command) {
+	var search func([]Command, []string)
+	search = func(cmds []Command, ancestorPath []string) {
 		for i := range cmds {
 			cmd := &cmds[i]
 			if len(cmd.Name) == 0 || len(cmd.Name) > len(cmdArgs) {
-				search(cmd.Subcommands)
+				search(cmd.Subcommands, ancestorPath)
 				continue
 			}
 
-			// Check primary command name
-			if slices.Equal(cmdArgs[:len(cmd.Name)], cmd.Name) {
+			index := len(cmd.Name) - 1
+			prefixStart := 0
+			if len(ancestorPath) <= index && slices.Equal(cmd.Name[:len(ancestorPath)], ancestorPath) {
+				// The ancestor already matched its aliased prefix.
+				prefixStart = len(ancestorPath)
+			}
+			matchesPrefix := slices.Equal(cmdArgs[prefixStart:index], cmd.Name[prefixStart:index])
+			name := cmdArgs[index]
+			matchesName := name == cmd.Name[index] || (name != "" && slices.Contains(cmd.Aliases, name))
+			nextAncestor := ancestorPath
+			if matchesPrefix && matchesName {
 				if bestMatch == nil || len(cmd.Name) > len(bestMatch.path) {
 					bestMatch = &commandEntry{path: cmd.Name, command: cmd}
 				}
+				nextAncestor = cmd.Name
 			}
 
-			// Check aliases - but return primary command name for consistent telemetry
-			for _, alias := range cmd.Aliases {
-				if alias == "" {
-					continue
-				}
-				aliasPath := slices.Clone(cmd.Name)
-				aliasPath[len(aliasPath)-1] = alias
-				if len(aliasPath) <= len(cmdArgs) && slices.Equal(cmdArgs[:len(aliasPath)], aliasPath) {
-					if bestMatch == nil || len(aliasPath) > len(bestMatch.path) {
-						// Use primary command name, not alias
-						bestMatch = &commandEntry{path: cmd.Name, command: cmd}
-					}
-				}
-			}
-
-			search(cmd.Subcommands)
+			search(cmd.Subcommands, nextAncestor)
 		}
 	}
-	search(commands)
+	search(commands, nil)
 
 	return bestMatch
 }

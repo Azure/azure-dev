@@ -216,6 +216,8 @@ SDK without support for generating the property can add it in their metadata
 command's JSON output. The property applies to the marked command, not its
 descendants. The host honors it starting with azd 1.36.0-beta.1; extensions
 that rely on skipping environment loading should require that host version.
+Aliases on parent or child commands select the same metadata as their
+canonical names.
 
 When the command is included in extension metadata, azd skips loading that
 environment and resolving its Key Vault references before starting the

@@ -12,12 +12,16 @@ import (
 )
 
 func TestProjectDescriptorSnapshotIsCurrent(t *testing.T) {
-	output := filepath.Join(t.TempDir(), "descriptors_generated.go")
-	require.NoError(t, generate(output))
-	actual, err := os.ReadFile(output)
-	require.NoError(t, err)
-	expected, err := os.ReadFile(filepath.Join("..", "..", "extensions", "azure.ai.evaluations",
-		"internal", "hostproject", "descriptors_generated.go"))
-	require.NoError(t, err)
-	require.Equal(t, string(expected), string(actual), "run make proto to refresh the canonical descriptor snapshot")
+	for _, extension := range []string{"azure.ai.evaluations", "azure.ai.connections"} {
+		t.Run(extension, func(t *testing.T) {
+			output := filepath.Join(t.TempDir(), "descriptors_generated.go")
+			require.NoError(t, generate(output, extension == "azure.ai.connections"))
+			actual, err := os.ReadFile(output)
+			require.NoError(t, err)
+			expected, err := os.ReadFile(filepath.Join("..", "..", "extensions", extension,
+				"internal", "hostproject", "descriptors_generated.go"))
+			require.NoError(t, err)
+			require.Equal(t, string(expected), string(actual), "run make proto to refresh the canonical descriptor snapshot")
+		})
+	}
 }

@@ -721,6 +721,31 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
+#### Conditional service authoring (preview)
+
+`ProjectBeta().ApplyServiceConfig(ctx, &v1beta.ApplyServiceConfigRequest{...})`
+conditionally creates or replaces a service without expanding environment
+templates or converting YAML numbers through protobuf `Struct`.
+
+| Field | Meaning |
+|---|---|
+| `service_name` | Literal service key, including dots; never a dot path. |
+| `expected_services_yaml` | Complete original raw services mapping as exactly one YAML object. Use `{}` when absent. |
+| `service_yaml` | Complete candidate service mapping as exactly one YAML object. |
+
+The host compares canonical YAML snapshots, treating equivalent numeric forms
+such as `1.0` and `1` equally without losing large integer precision, and saves
+while holding the project mutation lock. Both additions and updates return
+`Aborted` without saving if the snapshot is stale. Re-plan from a fresh manifest rather than retrying an
+uncertain mutation or falling back to a stable setter. Only the named service
+is replaced; other root sections are loaded fresh. Identical candidates do
+not rewrite the file. Layered manifests are unsupported.
+
+Require azd 1.36.0-beta.1 or later with this preview API. SDKs predating the
+method cannot import it; the Connections extension temporarily uses a private
+dynamic registry generated from canonical descriptors by
+`grpc/generateprojectclient`. Stable contracts are unchanged.
+
 `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
 are preview accessors. Import
 `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their

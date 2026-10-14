@@ -128,6 +128,31 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
 
+### Conditional raw service authoring
+
+The beta `ProjectService.ApplyServiceConfig` RPC creates or replaces one literal
+service key. Its `service_name`, `expected_services_yaml`, and `service_yaml`
+fields keep raw values out of protobuf `Struct`, preserving integer precision
+and literal templates. Both YAML payloads must contain exactly one mapping.
+The host holds the existing project mutation lock across loading raw disk
+configuration, comparing the complete services snapshot using canonical YAML,
+saving, and cache refresh. A stale snapshot returns `Aborted` before saving for both additions
+and updates. Unrelated root configuration is loaded fresh, and only the
+requested service key is replaced; dots are not path separators. Equivalent
+numeric representations such as `1.0` and `1` compare equally without converting
+large integers through floating point.
+
+The host validates a typed view but persists the raw mapping atomically.
+Explicit empty mappings such as `env: {}` retain their key presence, so editing
+one service does not change another Connection's environment-isolation policy.
+
+This serializes mutations through the same host, not writes from arbitrary
+external processes. The Connections extension reads the contained local
+`azure.yaml` without environment or cloud access, then invokes this beta RPC
+once. It never falls back to a stable setter or retries an uncertain mutation.
+Its private client uses descriptors generated from the canonical beta schema
+until a released SDK exposes the method. Require azd 1.36.0-beta.1 or later.
+
 ### Project service save acknowledgment
 
 The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.

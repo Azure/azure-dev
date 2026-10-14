@@ -168,21 +168,48 @@ func TestInspectAzureYamlCopilotHarness(t *testing.T) {
 			t.Run(source+"/"+harness, func(t *testing.T) {
 				t.Parallel()
 				root := t.TempDir()
-				definition := "host: azure.ai.agent\nkind: prompt\n"
+				definition := "kind: prompt\n"
 				if harness != "" {
 					definition += "harness:\n  type: " + harness + "\n"
 				}
-				content := "services:\n  prompt:\n    " + strings.ReplaceAll(
+				content := "services:\n  prompt:\n    host: azure.ai.agent\n    " + strings.ReplaceAll(
 					strings.TrimSuffix(definition, "\n"), "\n", "\n    ") + "\n"
 				if source == "$ref" {
 					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), []byte(definition), 0o600))
-					content = "services:\n  prompt:\n    $ref: ./agent.yaml\n"
+					content = "services:\n  prompt:\n    host: azure.ai.agent\n    $ref: ./agent.yaml\n"
 				}
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(content), 0o600))
+				require.NoError(t, validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml")))
 				info, err := inspectAzureYaml([]byte(content), root)
 				require.NoError(t, err)
 				require.True(t, info.promptOnly())
 				require.Equal(t, harness, info.promptHarness)
 			})
 		}
+	}
+}
+
+func TestInspectAzureYamlRetainsRestrictedHarnessAcrossServices(t *testing.T) {
+	t.Parallel()
+	content := []byte(`services:
+  copilot:
+    host: azure.ai.agent
+    kind: prompt
+    harness:
+      type: github_copilot_preview
+  other:
+    host: azure.ai.agent
+    kind: prompt
+    harness:
+      type: other
+  plain:
+    host: azure.ai.agent
+    kind: prompt
+`)
+	for range 100 {
+		info, err := inspectAzureYaml(content, "")
+		require.NoError(t, err)
+		require.True(t, info.promptOnly())
+		require.Equal(t, "github_copilot_preview", info.promptHarness)
 	}
 }

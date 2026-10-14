@@ -183,6 +183,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			continue
 		}
 
+		host, _ := svcMap["host"].(string)
 		if hasAzureYamlFileRef(svcMap) {
 			if projectRoot == "" {
 				info.hasUnresolvedRefs = true
@@ -199,14 +200,13 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			}
 		}
 
-		host, _ := svcMap["host"].(string)
 		if host == AiAgentHost {
 			info.hasAgentService = true
 			kind, _ := svcMap["kind"].(string)
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
 				harness, _ := svcMap["harness"].(map[string]any)
-				if harnessType, _ := harness["type"].(string); harnessType != "" {
+				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
 					info.promptHarness = harnessType
 				}
 			} else {

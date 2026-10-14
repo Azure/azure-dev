@@ -38,6 +38,26 @@ Graduation is an additive change to the existing stable major. Do not create
 7. Update contract lifecycle docs, SDK references, examples, and minimum host
    versions.
 
+## Record the graduation and consumer migration
+
+Create a public `Azure/azure-dev` graduation audit issue for each graduation
+batch. Record the target and actual release dates/version, complete capabilities,
+implementation PR/commit, deprecation and retention decisions, validation, and
+any explicitly approved SDK source breaks. Distinguish already-built binary
+compatibility from recompilation against a new SDK.
+
+Create a follow-up issue per graduated capability listing verified first-party
+consumers, source/test changes, published SDK pin, minimum `requiredAzdVersion`,
+and extension release checklist. Include a prompt invoking `/azd-grpc-contracts`
+to migrate consumers to the already-graduated stable API without changing
+contracts or removing retained beta routes. Do not publish SDK pins before the
+target SDK version exists.
+
+The October 2026 batch targets azd 1.36.0. `Telemetry()` intentionally changes
+to stable without adding `TelemetryBeta()`; deprecated beta wire routes remain
+available. `AccountBeta()` is deprecated in favor of `Account()`. Future
+source-breaking accessor changes still require an explicit decision.
+
 ## Verify both client populations
 
 Add tests proving:

@@ -39,6 +39,7 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -476,12 +477,9 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		return err
 	}
 
-	// Explicit reference: a root `$ref:` on the service entry names the file that
-	// supplies the agent definition. The shared include machinery has already
-	// merged that file's contents onto the service entry, so a hosted agent needs
-	// nothing more. A prompt agent does: it reads the raw YAML and anchors the
-	// skills/ and vector-assets/ convention folders next to the file, so record
-	// where the file actually lives.
+	// A root $ref supplies the definition through the shared resolver.
+	// Prompt agents also anchor skills/ and vector-assets/ next to the
+	// referenced YAML or JSON file, so record where it lives.
 	if declaredRef != "" && ServiceIsPromptAgent(p.serviceConfig) {
 		resolved, err := resolveDeclaredRefPath(projectPath, declaredRef, p.serviceConfig.Name)
 		if err != nil {
@@ -591,11 +589,11 @@ func resolveDeclaredRefPath(projectPath, declared, serviceName string) (string, 
 		)
 	}
 
-	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" {
+	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" && ext != ".json" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("$ref %q on service %q must be a YAML file (.yaml or .yml)", declared, serviceName),
-			"point $ref: at a .yaml or .yml file",
+			fmt.Sprintf("$ref %q on service %q must be a YAML or JSON file (.yaml, .yml, or .json)", declared, serviceName),
+			"point $ref: at a .yaml, .yml, or .json file",
 		)
 	}
 
@@ -1889,7 +1887,7 @@ func addAgentToolboxDependency(
 	if config == nil || reference == nil {
 		return
 	}
-	toolboxName := strings.TrimSpace(reference.Name)
+	toolboxName := servicekey.SanitizeServiceName(reference.Name)
 	if toolboxName == "" {
 		return
 	}
@@ -2814,7 +2812,15 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 }
 
 func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
-	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
+	if target == nil {
+		return nil
+	}
+	return ValidateHostedVoiceWrapperName(wrapperName, target.AgentName)
+}
+
+// ValidateHostedVoiceWrapperName rejects identical resource names.
+func ValidateHostedVoiceWrapperName(wrapperName, targetName string) error {
+	if !strings.EqualFold(wrapperName, targetName) {
 		return nil
 	}
 	return exterrors.Validation(

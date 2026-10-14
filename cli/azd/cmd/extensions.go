@@ -105,6 +105,9 @@ func bindExtension(
 			cmd := &cobra.Command{
 				Use:   part,
 				Short: description,
+				Annotations: map[string]string{
+					"extension.namespace": namespacePath,
+				},
 			}
 
 			current = current.Add(part, &actions.ActionDescriptorOptions{

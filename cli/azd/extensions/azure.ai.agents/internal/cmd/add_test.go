@@ -6,9 +6,14 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 
@@ -196,6 +201,77 @@ func TestAcquireAgentAddProjectLockPreservesCancellation(t *testing.T) {
 	cancel()
 	_, err = acquireAgentAddProjectLock(ctx, projectPath)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestAcquireAgentAddProjectLockUsesExternalCanonicalPath(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("LOCALAPPDATA", cache)
+	t.Setenv("XDG_CACHE_HOME", cache)
+	t.Setenv("HOME", cache)
+
+	projectPath := t.TempDir()
+	before := snapshotAgentServiceAddProjectTree(t, projectPath)
+	first, err := acquireAgentAddProjectLock(t.Context(), projectPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, first.Unlock()) })
+
+	aliases := []string{projectPath + string(os.PathSeparator) + "child" + string(os.PathSeparator) + ".."}
+	require.NoError(t, os.Mkdir(filepath.Join(projectPath, "child"), 0o700))
+	if runtime.GOOS == "windows" {
+		aliases = append(aliases, strings.ToUpper(projectPath))
+	}
+	for _, alias := range aliases {
+		ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+		second, err := acquireAgentAddProjectLock(ctx, alias)
+		cancel()
+		if second != nil {
+			require.NoError(t, second.Unlock())
+		}
+		require.ErrorIs(t, err, context.DeadlineExceeded, alias)
+	}
+	require.NoError(t, os.Remove(filepath.Join(projectPath, "child")))
+	require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectPath))
+
+	otherProject := t.TempDir()
+	other, err := acquireAgentAddProjectLock(t.Context(), otherProject)
+	require.NoError(t, err)
+	require.NoError(t, other.Unlock())
+
+	cacheDirectory, err := os.UserCacheDir()
+	require.NoError(t, err)
+	files, err := os.ReadDir(filepath.Join(cacheDirectory, "azd", "agent-add-locks"))
+	require.NoError(t, err)
+	require.Len(t, files, 2)
+	require.NoError(t, first.Unlock())
+	second, err := acquireAgentAddProjectLock(t.Context(), projectPath)
+	require.NoError(t, err)
+	require.NoError(t, second.Unlock())
+	after, err := os.ReadDir(filepath.Join(cacheDirectory, "azd", "agent-add-locks"))
+	require.NoError(t, err)
+	require.Equal(t, files, after)
+}
+
+func TestAcquireAgentAddProjectLockResolvesSymlinkAliases(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("LOCALAPPDATA", cache)
+	t.Setenv("XDG_CACHE_HOME", cache)
+	t.Setenv("HOME", cache)
+
+	projectPath := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "project-link")
+	if err := os.Symlink(projectPath, alias); err != nil {
+		t.Skipf("creating a directory symlink is not supported: %v", err)
+	}
+	first, err := acquireAgentAddProjectLock(t.Context(), projectPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, first.Unlock()) })
+	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+	defer cancel()
+	second, err := acquireAgentAddProjectLock(ctx, alias)
+	if second != nil {
+		require.NoError(t, second.Unlock())
+	}
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestAddAgentServiceDependencyRejectsCycle(t *testing.T) {

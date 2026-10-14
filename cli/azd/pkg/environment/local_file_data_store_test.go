@@ -17,6 +17,83 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_LocalFileDataStore_RejectsInvalidNames(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../../trusted-project/.azure/prod",
+		`..\..\trusted-project\.azure\prod`, "dev/../prod", `dev\prod`} {
+		t.Run(name, func(t *testing.T) {
+			for _, operation := range []string{"Get", "Reload", "Save", "Delete", "EnvPath", "ConfigPath"} {
+				t.Run(operation, func(t *testing.T) {
+					dir := t.TempDir()
+					azdContext := azdcontext.NewAzdContextWithDirectory(filepath.Join(dir, "low-project"))
+					store := NewLocalFileDataStore(azdContext, config.NewFileConfigManager(config.NewManager()))
+					target := filepath.Join(azdContext.EnvironmentDirectory(), name)
+					require.NoError(t, os.MkdirAll(target, 0700))
+					envBytes := []byte("TRUSTED_MARKER=unchanged\n")
+					configBytes := []byte(`{"trusted":"unchanged"}`)
+					envPath := filepath.Join(target, DotEnvFileName)
+					configPath := filepath.Join(target, ConfigFileName)
+					require.NoError(t, os.WriteFile(envPath, envBytes, 0600))
+					require.NoError(t, os.WriteFile(configPath, configBytes, 0600))
+
+					env := New(name)
+					env.DotenvSet("TRUSTED_MARKER", "modified")
+					var err error
+					switch operation {
+					case "Get":
+						var loaded *Environment
+						loaded, err = store.Get(t.Context(), name)
+						require.Nil(t, loaded)
+					case "Reload":
+						err = store.Reload(t.Context(), env)
+						require.Equal(t, "modified", env.Getenv("TRUSTED_MARKER"))
+					case "Save":
+						err = store.Save(t.Context(), env, nil)
+					case "Delete":
+						err = store.Delete(t.Context(), name)
+					case "EnvPath":
+						var path string
+						path, err = store.EnvPath(env)
+						require.Empty(t, path)
+					case "ConfigPath":
+						var path string
+						path, err = store.ConfigPath(env)
+						require.Empty(t, path)
+					}
+					require.ErrorContains(t, err, "is invalid")
+					actualEnv, err := os.ReadFile(envPath)
+					require.NoError(t, err)
+					require.Equal(t, envBytes, actualEnv)
+					actualConfig, err := os.ReadFile(configPath)
+					require.NoError(t, err)
+					require.Equal(t, configBytes, actualConfig)
+					require.NoFileExists(t, filepath.Join(target, DotEnvFileName+".lock"))
+				})
+			}
+		})
+	}
+}
+
+func Test_LocalFileDataStore_InvalidNameDoesNotCreateDirectory(t *testing.T) {
+	for _, operation := range []string{"Reload", "Save"} {
+		t.Run(operation, func(t *testing.T) {
+			dir := t.TempDir()
+			azdContext := azdcontext.NewAzdContextWithDirectory(filepath.Join(dir, "low-project"))
+			store := NewLocalFileDataStore(azdContext, config.NewFileConfigManager(config.NewManager()))
+			env := New("../../new-project/prod")
+			var err error
+			if operation == "Reload" {
+				err = store.Reload(t.Context(), env)
+			} else {
+				err = store.Save(t.Context(), env, nil)
+			}
+			require.ErrorContains(t, err, "is invalid")
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
 func Test_LocalFileDataStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
@@ -72,8 +149,11 @@ func Test_LocalFileDataStore_Path(t *testing.T) {
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdContext.EnvironmentRoot("env1"), DotEnvFileName)
-	actual := dataStore.EnvPath(env)
+	root, err := azdContext.EnvironmentRoot("env1")
+	require.NoError(t, err)
+	expected := filepath.Join(root, DotEnvFileName)
+	actual, err := dataStore.EnvPath(env)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, actual)
 }
@@ -84,8 +164,11 @@ func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdContext.EnvironmentRoot("env1"), ConfigFileName)
-	actual := dataStore.ConfigPath(env)
+	root, err := azdContext.EnvironmentRoot("env1")
+	require.NoError(t, err)
+	expected := filepath.Join(root, ConfigFileName)
+	actual, err := dataStore.ConfigPath(env)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, actual)
 }
@@ -94,9 +177,15 @@ func TestLocalReloadInvalidConfigPreservesDotenv(t *testing.T) {
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	store := NewLocalFileDataStore(azdContext, config.NewFileConfigManager(config.NewManager()))
 	env := New("test")
-	require.NoError(t, os.MkdirAll(azdContext.EnvironmentRoot("test"), 0700))
-	require.NoError(t, os.WriteFile(store.EnvPath(env), []byte("VALUE=on-disk\n"), 0600))
-	require.NoError(t, os.WriteFile(store.ConfigPath(env), []byte("{invalid"), 0600))
+	root, err := azdContext.EnvironmentRoot("test")
+	require.NoError(t, err)
+	envPath, err := store.EnvPath(env)
+	require.NoError(t, err)
+	configPath, err := store.ConfigPath(env)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(root, 0700))
+	require.NoError(t, os.WriteFile(envPath, []byte("VALUE=on-disk\n"), 0600))
+	require.NoError(t, os.WriteFile(configPath, []byte("{invalid"), 0600))
 	env.DotenvSet("VALUE", "in-memory")
 	env.DotenvDelete("PENDING")
 

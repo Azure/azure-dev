@@ -5,6 +5,7 @@ package agent_api
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +14,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+var testRepeatability = TelephonyRepeatabilityOptions{
+	RequestID: "00000000-0000-0000-0000-000000000001",
+	FirstSent: time.Date(2026, time.October, 13, 8, 11, 12, 0, time.UTC),
+}
 
 type telephonyContractTransport struct {
 	do       func(*http.Request) (*http.Response, error)
@@ -71,7 +77,11 @@ func TestListTelephonyBindings_Contract(t *testing.T) {
 		require.Empty(t, req.Header.Get("Foundry-Features"))
 		require.Nil(t, req.Body)
 		return telephonyResponse(req, http.StatusOK, `{
-			"data":[{"id":"binding-1","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"list-etag\""}],
+			"data":[{
+				"id":"binding-1","provider":"twilio","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/call","phone_number":"+14255550123",
+				"etag":"\"list-etag\""
+			}],
 			"first_id":"binding-1","last_id":"binding-9","has_more":true
 		}`, nil), nil
 	})
@@ -87,20 +97,24 @@ func TestListTelephonyBindings_Contract(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "binding-1", page.FirstID)
 	require.Equal(t, "binding-9", page.LastID)
-	require.True(t, page.HasMore)
+	require.NotNil(t, page.HasMore)
+	require.True(t, *page.HasMore)
 	require.Len(t, page.Data, 1)
 	require.Equal(t, "+14255550123", page.Data[0].PhoneNumber)
 	require.Equal(t, 1, transport.requests)
 }
 
-func TestListTelephonyBindings_ToleratesMissingStatusDuringRollout(t *testing.T) {
+func TestListTelephonyBindings_RejectsMissingStatus(t *testing.T) {
 	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-		return telephonyResponse(req, http.StatusOK,
-			`{"data":[{"id":"binding","provider":"twilio","connection_name":"conn","incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"etag\""}],"has_more":false}`, nil), nil
+		return telephonyResponse(req, http.StatusOK, `{
+			"data":[{
+				"id":"binding","provider":"twilio","connection_name":"conn",
+				"incoming_call_url":"https://example.test/call","phone_number":"+14255550123",
+				"etag":"\"etag\""
+			}],"has_more":false}`, nil), nil
 	})
-	page, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
-	require.NoError(t, err)
-	require.Empty(t, page.Data[0].Status)
+	_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+	require.ErrorContains(t, err, "missing required status")
 }
 
 func TestListTelephonyBindings_BeforeCursorAndOmittedOptions(t *testing.T) {
@@ -173,10 +187,13 @@ func TestListAllTelephonyBindings_RejectsUnsafePaging(t *testing.T) {
 func TestGetGATelephonyBinding_EscapesOpaqueIDAndReturnsETag(t *testing.T) {
 	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
 		require.Equal(t, http.MethodGet, req.Method)
-		require.Equal(t, "/api/projects/proj/agents/agent/telephony/bindings/id%2Fwith%2Bplus%3Fand%25percent", req.URL.EscapedPath())
+		require.Equal(t,
+			"/api/projects/proj/agents/agent/telephony/bindings/id%2Fwith%2Bplus%3Fand%25percent",
+			req.URL.EscapedPath())
 		require.Empty(t, req.Header.Get("Foundry-Features"))
-		return telephonyResponse(req, http.StatusOK,
-			`{"id":"id/with+plus?and%percent","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
+		return telephonyResponse(req, http.StatusOK, `{
+			"id":"id/with+plus?and%percent","provider":"twilio","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
 			http.Header{"ETag": {`"binding-etag"`}}), nil
 	})
 
@@ -190,9 +207,12 @@ func TestGetGATelephonyBinding_EscapesOpaqueIDAndReturnsETag(t *testing.T) {
 func TestCreateGATelephonyBinding_ProviderBodiesAndRepeatability(t *testing.T) {
 	firstSent := time.Date(2026, time.October, 13, 10, 11, 12, 0, time.FixedZone("offset", 2*60*60))
 	tests := []struct {
-		name     string
-		request  TelephonyBindingCreateRequest
-		expected string
+		name               string
+		request            TelephonyBindingCreateRequest
+		expected           string
+		responseProvider   string
+		responseConnection string
+		responseFields     string
 	}{
 		{
 			name: "Twilio",
@@ -200,7 +220,12 @@ func TestCreateGATelephonyBinding_ProviderBodiesAndRepeatability(t *testing.T) {
 				ConnectionName: "twilio-conn",
 				PhoneNumber:    "+14255550123", Label: "Support",
 			},
-			expected: `{"provider":"twilio","connection_name":"twilio-conn","phone_number":"+14255550123","label":"Support"}`,
+			expected: `{
+				"provider":"twilio","connection_name":"twilio-conn",
+				"phone_number":"+14255550123","label":"Support"}`,
+			responseProvider:   "twilio",
+			responseConnection: "twilio-conn",
+			responseFields:     `"phone_number":"+14255550123"`,
 		},
 		{
 			name: "Teams",
@@ -209,7 +234,13 @@ func TestCreateGATelephonyBinding_ProviderBodiesAndRepeatability(t *testing.T) {
 				ResourceAccountObjectID: "00000000-0000-0000-0000-000000000001",
 				PhoneNumber:             "+14255550124", Label: "Sales",
 			},
-			expected: `{"provider":"teams_phone_extensibility","connection_name":"teams-conn","resource_account_object_id":"00000000-0000-0000-0000-000000000001","phone_number":"+14255550124","label":"Sales"}`,
+			expected: `{
+				"provider":"teams_phone_extensibility","connection_name":"teams-conn",
+				"resource_account_object_id":"00000000-0000-0000-0000-000000000001",
+				"phone_number":"+14255550124","label":"Sales"}`,
+			responseProvider:   "teams_phone_extensibility",
+			responseConnection: "teams-conn",
+			responseFields:     `"resource_account_object_id":"00000000-0000-0000-0000-000000000001"`,
 		},
 	}
 	for _, tt := range tests {
@@ -218,17 +249,21 @@ func TestCreateGATelephonyBinding_ProviderBodiesAndRepeatability(t *testing.T) {
 				require.Equal(t, http.MethodPost, req.Method)
 				require.Equal(t, "/api/projects/proj/agents/agent/telephony/bindings", req.URL.Path)
 				require.Equal(t, "application/json", req.Header.Get("Content-Type"))
-				require.Equal(t, "request-id", req.Header.Get("Repeatability-Request-ID"))
+				require.Equal(t, "00000000-0000-0000-0000-000000000001",
+					req.Header.Get("Repeatability-Request-ID"))
 				require.Equal(t, "Tue, 13 Oct 2026 08:11:12 GMT", req.Header.Get("Repeatability-First-Sent"))
 				require.Empty(t, req.Header.Get("Foundry-Features"))
 				requireJSONBody(t, req, tt.expected)
-				return telephonyResponse(req, http.StatusCreated,
-					`{"id":"created","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
+				response := fmt.Sprintf(`{
+					"id":"created","provider":%q,"connection_name":%q,"status":"active",
+					"incoming_call_url":"https://example.test/call",%s}`,
+					tt.responseProvider, tt.responseConnection, tt.responseFields)
+				return telephonyResponse(req, http.StatusCreated, response,
 					http.Header{"ETag": {`"created-etag"`}}), nil
 			})
 
 			binding, err := client.CreateGATelephonyBinding(t.Context(), "agent", tt.request, TelephonyRepeatabilityOptions{
-				RequestID: "request-id", FirstSent: firstSent,
+				RequestID: "00000000-0000-0000-0000-000000000001", FirstSent: firstSent,
 			})
 			require.NoError(t, err)
 			require.Equal(t, `"created-etag"`, binding.ETag)
@@ -243,8 +278,65 @@ func TestCreateGATelephonyBinding_RequiresExact201(t *testing.T) {
 
 	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{
 		ConnectionName: "conn", PhoneNumber: "+14255550123",
-	}, TelephonyRepeatabilityOptions{})
+	}, testRepeatability)
 	require.Error(t, err)
+}
+
+func TestCreateGATelephonyBinding_RejectsMismatchedResponseProvider(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusCreated, `{
+			"id":"created","provider":"teams_phone_extensibility","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call",
+			"resource_account_object_id":"00000000-0000-0000-0000-000000000001"}`,
+			http.Header{"ETag": {`"etag"`}}), nil
+	})
+
+	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "+14255550123",
+	}, testRepeatability)
+	var unknown *TelephonyWriteOutcomeUnknownError
+	require.ErrorAs(t, err, &unknown)
+}
+
+func TestCreateGATelephonyBinding_RejectsMismatchedResponseIdentity(t *testing.T) {
+	tests := []struct {
+		name     string
+		request  TelephonyBindingCreateRequest
+		response string
+	}{
+		{
+			name: "Twilio phone",
+			request: &CreateTwilioTelephonyBindingRequest{
+				ConnectionName: "conn", PhoneNumber: "+14255550123",
+			},
+			response: `{
+				"id":"created","provider":"twilio","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/call","phone_number":"+14255550124"}`,
+		},
+		{
+			name: "Teams resource account",
+			request: &CreateTeamsPhoneTelephonyBindingRequest{
+				ConnectionName:          "conn",
+				ResourceAccountObjectID: "00000000-0000-0000-0000-000000000001",
+			},
+			response: `{
+				"id":"created","provider":"teams_phone_extensibility","connection_name":"conn",
+				"status":"active","incoming_call_url":"https://example.test/call",
+				"resource_account_object_id":"00000000-0000-0000-0000-000000000002"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				return telephonyResponse(req, http.StatusCreated, tt.response,
+					http.Header{"ETag": {`"etag"`}}), nil
+			})
+			_, err := client.CreateGATelephonyBinding(
+				t.Context(), "agent", tt.request, testRepeatability)
+			var unknown *TelephonyWriteOutcomeUnknownError
+			require.ErrorAs(t, err, &unknown)
+		})
+	}
 }
 
 func TestCreateGATelephonyBinding_RetryReusesRepeatabilityHeaders(t *testing.T) {
@@ -263,14 +355,15 @@ func TestCreateGATelephonyBinding_RetryReusesRepeatabilityHeaders(t *testing.T) 
 		require.Equal(t, requestID, req.Header.Get("Repeatability-Request-ID"))
 		require.Equal(t, firstSent, req.Header.Get("Repeatability-First-Sent"))
 		require.JSONEq(t, body, string(payload))
-		return telephonyResponse(req, http.StatusCreated,
-			`{"id":"created","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
+		return telephonyResponse(req, http.StatusCreated, `{
+			"id":"created","provider":"twilio","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
 			http.Header{"ETag": {`"etag"`}}), nil
 	})
 
 	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{
 		ConnectionName: "conn", PhoneNumber: "+14255550123",
-	}, TelephonyRepeatabilityOptions{})
+	}, testRepeatability)
 	require.NoError(t, err)
 	require.Equal(t, 2, requests)
 	require.NotEmpty(t, requestID)
@@ -285,8 +378,10 @@ func TestUpdateGATelephonyBinding_MergePatchIfMatchAndETag(t *testing.T) {
 		require.Equal(t, "application/merge-patch+json", req.Header.Get("Content-Type"))
 		require.Equal(t, `"old-etag"`, req.Header.Get("If-Match"))
 		requireJSONBody(t, req, `{"status":"suspended","label":"new label"}`)
-		return telephonyResponse(req, http.StatusOK,
-			`{"id":"binding/1","provider":"twilio","connection_name":"conn","status":"suspended","incoming_call_url":"https://example.test/call","phone_number":"+14255550123","label":"new label"}`,
+		return telephonyResponse(req, http.StatusOK, `{
+			"id":"binding/1","provider":"twilio","connection_name":"conn","status":"suspended",
+			"incoming_call_url":"https://example.test/call","phone_number":"+14255550123",
+			"label":"new label"}`,
 			http.Header{"ETag": {`"new-etag"`}}), nil
 	})
 
@@ -334,6 +429,16 @@ func TestDeleteGATelephonyBinding_Requires204AndSendsIfMatch(t *testing.T) {
 	})
 }
 
+func TestTelephonyWrite_Unexpected2xxHasUnknownOutcome(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusCreated, `{}`, nil), nil
+	})
+	_, err := client.UpdateGATelephonyBinding(
+		t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{}, `"etag"`)
+	var unknown *TelephonyWriteOutcomeUnknownError
+	require.ErrorAs(t, err, &unknown)
+}
+
 func TestConditionalTelephonyWrites_AreNotRetried(t *testing.T) {
 	tests := []struct {
 		name string
@@ -375,8 +480,11 @@ func TestTelephonyTransferTargets_GetAndReplaceContracts(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
 			require.Equal(t, http.MethodGet, req.Method)
 			require.Equal(t, "/api/projects/proj/agents/agent/telephony/transfer_targets", req.URL.Path)
-			return telephonyResponse(req, http.StatusOK,
-				`{"transfer_targets":[{"name":"support","description":"Support desk","destination":{"kind":"pstn","value":"+14255550123"}}]}`,
+			return telephonyResponse(req, http.StatusOK, `{
+				"transfer_targets":[{
+					"name":"support","description":"Support desk",
+					"destination":{"kind":"pstn","value":"+14255550123"}
+				}]}`,
 				http.Header{"ETag": {`"targets-1"`}}), nil
 		})
 		targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
@@ -390,9 +498,16 @@ func TestTelephonyTransferTargets_GetAndReplaceContracts(t *testing.T) {
 			require.Equal(t, http.MethodPut, req.Method)
 			require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 			require.Equal(t, `"targets-1"`, req.Header.Get("If-Match"))
-			requireJSONBody(t, req, `{"transfer_targets":[{"name":"sales","description":"Sales desk","destination":{"kind":"sip","value":"sip:sales@example.test"}}]}`)
-			return telephonyResponse(req, http.StatusOK,
-				`{"transfer_targets":[{"name":"sales","description":"Sales desk","destination":{"kind":"sip","value":"sip:sales@example.test"}}]}`,
+			requireJSONBody(t, req, `{
+				"transfer_targets":[{
+					"name":"sales","description":"Sales desk",
+					"destination":{"kind":"sip","value":"sip:sales@example.test"}
+				}]}`)
+			return telephonyResponse(req, http.StatusOK, `{
+				"transfer_targets":[{
+					"name":"sales","description":"Sales desk",
+					"destination":{"kind":"sip","value":"sip:sales@example.test"}
+				}]}`,
 				http.Header{"ETag": {`"targets-2"`}}), nil
 		})
 		targets, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
@@ -405,6 +520,100 @@ func TestTelephonyTransferTargets_GetAndReplaceContracts(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, `"targets-2"`, targets.ETag)
 	})
+}
+
+func TestReplaceTelephonyTransferTargets_AcceptsHostOnlySIPAndUnicodeTeams(t *testing.T) {
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[
+				{"name":"sip","description":"SIP","destination":{"kind":"sip","value":"sip:example.com"}},
+				{"name":"teams","description":"Teams","destination":{"kind":"teams","value":"团队"}}
+			]}`, http.Header{"ETag": {`"new"`}}), nil
+	})
+
+	result, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+		TransferTargets: []TelephonyTransferTarget{
+			{
+				Name: "sip", Description: "SIP",
+				Destination: TelephonyTransferDestination{
+					Kind: TelephonyTransferDestinationSIP, Value: "sip:example.com",
+				},
+			},
+			{
+				Name: "teams", Description: "Teams",
+				Destination: TelephonyTransferDestination{
+					Kind: TelephonyTransferDestinationTeams, Value: "团队",
+				},
+			},
+		},
+	}, `"old"`)
+	require.NoError(t, err)
+	require.Equal(t, `"new"`, result.ETag)
+	require.Equal(t, 1, transport.requests)
+}
+
+func TestReplaceTelephonyTransferTargets_AcceptsStandardURIFormatSIPValues(t *testing.T) {
+	values := []string{
+		"SIP:user@example.test",
+		"sip:example.test",
+		"sip:user@[2001:db8::1];maddr=[2001:db8::2]",
+		"sip:user@example.test:+5060",
+	}
+	for _, value := range values {
+		t.Run(value, func(t *testing.T) {
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				body := fmt.Sprintf(`{
+					"transfer_targets":[{
+						"name":"sip","description":"SIP",
+						"destination":{"kind":"sip","value":%q}
+					}]}`, value)
+				return telephonyResponse(req, http.StatusOK, body,
+					http.Header{"ETag": {`"new"`}}), nil
+			})
+			_, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+				TransferTargets: []TelephonyTransferTarget{{
+					Name: "sip", Description: "SIP",
+					Destination: TelephonyTransferDestination{
+						Kind: TelephonyTransferDestinationSIP, Value: value,
+					},
+				}},
+			}, `"old"`)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestTelephonyStringLimitsCountUnicodeCodePoints(t *testing.T) {
+	connection := strings.Repeat("界", 256)
+	phone := strings.Repeat("界", 64)
+	description := strings.Repeat("界", 1024)
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodPatch {
+			return telephonyResponse(req, http.StatusOK, `{
+				"id":"binding","provider":"teams_phone_extensibility","connection_name":"conn",
+				"status":"active","incoming_call_url":"https://example.test/call",
+				"resource_account_object_id":"00000000-0000-0000-0000-000000000001"}`,
+				http.Header{"ETag": {`"new"`}}), nil
+		}
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[{
+				"name":"teams","description":"ok","destination":{"kind":"teams","value":"团队"}
+			}]}`, http.Header{"ETag": {`"new"`}}), nil
+	})
+
+	_, err := client.UpdateGATelephonyBinding(t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{
+		ConnectionName: &connection, PhoneNumber: NewNullableString(phone),
+	}, `"etag"`)
+	require.NoError(t, err)
+
+	_, err = client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+		TransferTargets: []TelephonyTransferTarget{{
+			Name: "teams", Description: description,
+			Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationTeams, Value: "团队"},
+		}},
+	}, `"etag"`)
+	require.NoError(t, err)
+	require.Equal(t, 2, transport.requests)
 }
 
 func TestGATelephonyOperations_RequiredInputs(t *testing.T) {
@@ -423,16 +632,19 @@ func TestGATelephonyOperations_RequiredInputs(t *testing.T) {
 	var typedNil *CreateTwilioTelephonyBindingRequest
 	_, err = client.CreateGATelephonyBinding(ctx, "agent", typedNil, TelephonyRepeatabilityOptions{})
 	require.EqualError(t, err, "binding request is required")
-	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTwilioTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
+	_, err = client.CreateGATelephonyBinding(
+		ctx, "agent", &CreateTwilioTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
 	require.EqualError(t, err, "Twilio connection name and phone number are required")
-	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTeamsPhoneTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
+	_, err = client.CreateGATelephonyBinding(
+		ctx, "agent", &CreateTeamsPhoneTelephonyBindingRequest{}, TelephonyRepeatabilityOptions{})
 	require.EqualError(t, err, "Teams connection name and resource account object ID are required")
 	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "", UpdateTelephonyBindingRequest{}, `"etag"`)
 	require.EqualError(t, err, "binding ID is required")
 	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "binding", UpdateTelephonyBindingRequest{}, "")
 	require.EqualError(t, err, "If-Match is required")
 	invalidStatus := "inactive"
-	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "binding", UpdateTelephonyBindingRequest{Status: &invalidStatus}, `"etag"`)
+	_, err = client.UpdateGATelephonyBinding(
+		ctx, "agent", "binding", UpdateTelephonyBindingRequest{Status: &invalidStatus}, `"etag"`)
 	require.EqualError(t, err, "status must be active or suspended")
 	require.EqualError(t, client.DeleteGATelephonyBinding(ctx, "agent", "", `"etag"`), "binding ID is required")
 	require.EqualError(t, client.DeleteGATelephonyBinding(ctx, "agent", "binding", ""), "If-Match is required")
@@ -457,18 +669,122 @@ func TestGATelephonyOperations_RejectDotPathSegments(t *testing.T) {
 	require.Zero(t, transport.requests)
 }
 
+func TestGATelephonyOperations_RejectInvalidSemanticInputs(t *testing.T) {
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		t.Fatal("unexpected HTTP request")
+		return nil, nil
+	})
+	ctx := t.Context()
+
+	_, err := client.CreateGATelephonyBinding(ctx, "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "not-e164",
+	}, testRepeatability)
+	require.ErrorContains(t, err, "valid E.164")
+	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTeamsPhoneTelephonyBindingRequest{
+		ConnectionName: "conn", ResourceAccountObjectID: "not-a-uuid",
+	}, testRepeatability)
+	require.ErrorContains(t, err, "must be a UUID")
+	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "+14255550123",
+	}, TelephonyRepeatabilityOptions{RequestID: "not-a-uuid", FirstSent: testRepeatability.FirstSent})
+	require.ErrorContains(t, err, "repeatability request ID must be a UUID")
+	_, err = client.CreateGATelephonyBinding(ctx, "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "+14255550123",
+	}, TelephonyRepeatabilityOptions{})
+	require.ErrorContains(t, err, "repeatability request ID is required")
+
+	empty := ""
+	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "binding", UpdateTelephonyBindingRequest{
+		ConnectionName: &empty,
+	}, `"etag"`)
+	require.ErrorContains(t, err, "connection name")
+	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "binding", UpdateTelephonyBindingRequest{
+		PhoneNumber: NewNullableString(""),
+	}, `"etag"`)
+	require.ErrorContains(t, err, "phone number")
+
+	base := TelephonyTransferTarget{
+		Name: "support", Description: "Support desk",
+		Destination: TelephonyTransferDestination{
+			Kind: TelephonyTransferDestinationPSTN, Value: "+14255550123",
+		},
+	}
+	for name, targets := range map[string][]TelephonyTransferTarget{
+		"duplicate names": {base, base},
+		"invalid PSTN": {{
+			Name: "pstn", Description: "PSTN",
+			Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationPSTN, Value: "123"},
+		}},
+		"invalid SIP": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationSIP, Value: "https://example.test"},
+		}},
+		"empty SIP": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationSIP, Value: "sip:"},
+		}},
+		"fragmented SIP": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user@example.test#fragment",
+			},
+		}},
+		"empty SIP fragment": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user@example.test#",
+			},
+		}},
+		"Unicode whitespace SIP": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user@example.test\u00a0",
+			},
+		}},
+		"invalid UTF-8 Teams": {{
+			Name: "teams", Description: "Teams",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationTeams, Value: string([]byte{0xff}),
+			},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := client.ReplaceTelephonyTransferTargets(ctx, "agent", TelephonyTransferTargets{
+				TransferTargets: targets,
+			}, `"etag"`)
+			require.Error(t, err)
+		})
+	}
+	require.Zero(t, transport.requests)
+}
+
 func TestListTelephonyBindings_InvalidOptions(t *testing.T) {
 	tests := []struct {
 		name    string
 		options TelephonyBindingListOptions
 		err     string
 	}{
-		{name: "negative limit", options: TelephonyBindingListOptions{Limit: -1}, err: "limit must be between 1 and 100, or omitted"},
-		{name: "limit too large", options: TelephonyBindingListOptions{Limit: 101}, err: "limit must be between 1 and 100, or omitted"},
+		{
+			name: "negative limit", options: TelephonyBindingListOptions{Limit: -1},
+			err: "limit must be between 1 and 100, or omitted",
+		},
+		{
+			name: "limit too large", options: TelephonyBindingListOptions{Limit: 101},
+			err: "limit must be between 1 and 100, or omitted",
+		},
 		{name: "invalid order", options: TelephonyBindingListOptions{Order: "newest"}, err: "order must be asc or desc"},
-		{name: "both cursors", options: TelephonyBindingListOptions{After: "a", Before: "b"}, err: "after and before cannot both be set"},
-		{name: "invalid provider", options: TelephonyBindingListOptions{Provider: "sip"}, err: "provider must be twilio or teams_phone_extensibility"},
-		{name: "invalid status", options: TelephonyBindingListOptions{Status: "inactive"}, err: "status must be active or suspended"},
+		{
+			name: "both cursors", options: TelephonyBindingListOptions{After: "a", Before: "b"},
+			err: "after and before cannot both be set",
+		},
+		{
+			name: "invalid provider", options: TelephonyBindingListOptions{Provider: "sip"},
+			err: "provider must be twilio or teams_phone_extensibility",
+		},
+		{
+			name: "invalid status", options: TelephonyBindingListOptions{Status: "inactive"},
+			err: "status must be active or suspended",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -502,10 +818,12 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 
 	t.Run("error status", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-			return telephonyResponse(req, http.StatusBadRequest, `{"error":{"message":"bad request"}}`, nil), nil
+			return telephonyResponse(req, http.StatusBadRequest,
+				`{"error":{"message":"sensitive +14255550123"}}`, nil), nil
 		})
 		_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
 		require.Error(t, err)
+		require.NotContains(t, err.Error(), "+14255550123")
 	})
 
 	t.Run("trailing JSON", func(t *testing.T) {
@@ -518,8 +836,9 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 
 	t.Run("missing binding ETag", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-			return telephonyResponse(req, http.StatusOK,
-				`{"id":"binding","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`, nil), nil
+			return telephonyResponse(req, http.StatusOK, `{
+				"id":"binding","provider":"twilio","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`, nil), nil
 		})
 		_, err := client.GetGATelephonyBinding(t.Context(), "agent", "binding")
 		require.ErrorContains(t, err, "missing required ETag")
@@ -527,11 +846,22 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 
 	t.Run("missing list item ETag", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-			return telephonyResponse(req, http.StatusOK,
-				`{"data":[{"id":"binding","provider":"twilio","connection_name":"conn","status":"active","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}],"has_more":false}`, nil), nil
+			return telephonyResponse(req, http.StatusOK, `{
+				"data":[{
+					"id":"binding","provider":"twilio","connection_name":"conn","status":"active",
+					"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"
+				}],"has_more":false}`, nil), nil
 		})
 		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
 		require.ErrorContains(t, err, "missing required ETag")
+	})
+
+	t.Run("missing has_more", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK, `{"data":[]}`, nil), nil
+		})
+		_, err := client.ListAllTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+		require.ErrorContains(t, err, "missing required has_more")
 	})
 
 	t.Run("unknown response status", func(t *testing.T) {
@@ -547,8 +877,9 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 
 	t.Run("missing status rejected outside list", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
-			return telephonyResponse(req, http.StatusOK,
-				`{"id":"binding","provider":"twilio","connection_name":"conn","incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
+			return telephonyResponse(req, http.StatusOK, `{
+				"id":"binding","provider":"twilio","connection_name":"conn",
+				"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
 				http.Header{"ETag": {`"etag"`}}), nil
 		})
 		_, err := client.GetGATelephonyBinding(t.Context(), "agent", "binding")
@@ -565,6 +896,33 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 		require.ErrorContains(t, err, "unsupported provider")
 	})
 
+	for name, body := range map[string]string{
+		"invalid Twilio phone": `{
+			"data":[{
+				"id":"binding","provider":"twilio","connection_name":"conn","status":"active",
+				"incoming_call_url":"https://example.test/call","phone_number":"123","etag":"\"etag\""
+			}],"has_more":false}`,
+		"invalid Teams resource ID": `{
+			"data":[{
+				"id":"binding","provider":"teams_phone_extensibility","connection_name":"conn",
+				"status":"active","incoming_call_url":"https://example.test/call",
+				"resource_account_object_id":"not-a-uuid","etag":"\"etag\""
+			}],"has_more":false}`,
+		"invalid incoming URL": `{
+			"data":[{
+				"id":"binding","provider":"twilio","connection_name":"conn","status":"active",
+				"incoming_call_url":"not-a-url","phone_number":"+14255550123","etag":"\"etag\""
+			}],"has_more":false}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				return telephonyResponse(req, http.StatusOK, body, nil), nil
+			})
+			_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+			require.Error(t, err)
+		})
+	}
+
 	t.Run("transport error", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
 			return nil, errors.New("network unavailable")
@@ -573,6 +931,35 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 		require.ErrorContains(t, err, "sending telephony request")
 		require.ErrorContains(t, err, "network unavailable")
 	})
+}
+
+func TestTelephonyWrites_UnknownOutcomeAfterSuccessfulStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		etag string
+	}{
+		{name: "missing body", body: "", etag: `"etag"`},
+		{name: "malformed JSON", body: "{", etag: `"etag"`},
+		{name: "trailing JSON", body: `{} {}`, etag: `"etag"`},
+		{name: "missing ETag", body: `{
+			"id":"binding","provider":"twilio","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`},
+		{name: "invalid response", body: `{
+			"id":"binding","provider":"sip","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call"}`, etag: `"etag"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				return telephonyResponse(req, http.StatusOK, tt.body, http.Header{"ETag": {tt.etag}}), nil
+			})
+			_, err := client.UpdateGATelephonyBinding(
+				t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{}, `"old"`)
+			var unknown *TelephonyWriteOutcomeUnknownError
+			require.ErrorAs(t, err, &unknown)
+		})
+	}
 }
 
 func TestLegacyCreateTelephonyBinding_StillAccepts200AndUsesPreviewContract(t *testing.T) {

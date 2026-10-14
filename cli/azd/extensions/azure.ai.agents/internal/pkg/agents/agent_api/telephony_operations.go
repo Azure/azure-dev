@@ -13,10 +13,13 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
@@ -42,8 +45,16 @@ func (e *TelephonyWriteOutcomeUnknownError) Error() string {
 }
 
 func (e *TelephonyWriteOutcomeUnknownError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.Err
 }
+
+var (
+	telephonyPhoneNumberPattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+	telephonyTargetNamePattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+)
 
 // ListTelephonyBindings retrieves one page from the canonical v1 binding collection.
 func (c *AgentClient) ListTelephonyBindings(
@@ -85,7 +96,7 @@ func (c *AgentClient) ListAllTelephonyBindings(
 			return nil, err
 		}
 		bindings = append(bindings, page.Data...)
-		if !page.HasMore {
+		if !*page.HasMore {
 			return bindings, nil
 		}
 		if _, exists := seenCursors[page.LastID]; exists || page.LastID == options.After {
@@ -134,16 +145,40 @@ func (c *AgentClient) CreateGATelephonyBinding(
 		if typed.ConnectionName == "" || typed.PhoneNumber == "" {
 			return nil, fmt.Errorf("Twilio connection name and phone number are required")
 		}
+		if err := validateConnectionName(typed.ConnectionName); err != nil {
+			return nil, err
+		}
+		if !telephonyPhoneNumberPattern.MatchString(typed.PhoneNumber) {
+			return nil, fmt.Errorf("Twilio phone number must be a valid E.164 number")
+		}
+		if !utf8.ValidString(typed.Label) {
+			return nil, fmt.Errorf("label must be valid UTF-8")
+		}
 	case *CreateTeamsPhoneTelephonyBindingRequest:
 		if typed.ConnectionName == "" || typed.ResourceAccountObjectID == "" {
 			return nil, fmt.Errorf("Teams connection name and resource account object ID are required")
 		}
+		if err := validateConnectionName(typed.ConnectionName); err != nil {
+			return nil, err
+		}
+		if _, err := uuid.Parse(typed.ResourceAccountObjectID); err != nil {
+			return nil, fmt.Errorf("Teams resource account object ID must be a UUID")
+		}
+		if utf8.RuneCountInString(typed.PhoneNumber) > 64 {
+			return nil, fmt.Errorf("Teams display phone number cannot exceed 64 characters")
+		}
+		if !utf8.ValidString(typed.PhoneNumber) || !utf8.ValidString(typed.Label) {
+			return nil, fmt.Errorf("Teams phone number and label must be valid UTF-8")
+		}
 	}
 	if repeatability.RequestID == "" {
-		repeatability.RequestID = uuid.NewString()
+		return nil, fmt.Errorf("repeatability request ID is required")
+	}
+	if _, err := uuid.Parse(repeatability.RequestID); err != nil {
+		return nil, fmt.Errorf("repeatability request ID must be a UUID")
 	}
 	if repeatability.FirstSent.IsZero() {
-		repeatability.FirstSent = time.Now().UTC()
+		return nil, fmt.Errorf("repeatability first sent time is required")
 	}
 	headers := http.Header{}
 	headers.Set("Repeatability-Request-ID", repeatability.RequestID)
@@ -157,6 +192,9 @@ func (c *AgentClient) CreateGATelephonyBinding(
 	}
 	binding.ETag = etag
 	if err := validateTelephonyBinding(&binding, true, false); err != nil {
+		return nil, telephonyWriteOutcomeUnknown(err)
+	}
+	if err := validateCreateResponseIdentity(&binding, request); err != nil {
 		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	return &binding, nil
@@ -176,8 +214,27 @@ func (c *AgentClient) UpdateGATelephonyBinding(
 	if ifMatch == "" {
 		return nil, fmt.Errorf("If-Match is required")
 	}
-	if request.Status != nil && *request.Status != TelephonyBindingStatusActive && *request.Status != TelephonyBindingStatusSuspended {
+	if request.Status != nil &&
+		*request.Status != TelephonyBindingStatusActive &&
+		*request.Status != TelephonyBindingStatusSuspended {
 		return nil, fmt.Errorf("status must be active or suspended")
+	}
+	if request.ConnectionName != nil {
+		if err := validateConnectionName(*request.ConnectionName); err != nil {
+			return nil, err
+		}
+	}
+	if request.Label != nil && request.Label.Value != nil && !utf8.ValidString(*request.Label.Value) {
+		return nil, fmt.Errorf("label must be valid UTF-8")
+	}
+	if request.PhoneNumber != nil && request.PhoneNumber.Value != nil {
+		value := *request.PhoneNumber.Value
+		if !utf8.ValidString(value) {
+			return nil, fmt.Errorf("phone number must be valid UTF-8")
+		}
+		if value == "" || utf8.RuneCountInString(value) > 64 {
+			return nil, fmt.Errorf("phone number must be between 1 and 64 characters")
+		}
 	}
 	var binding GATelephonyBinding
 	etag, err := c.gaTelephonyRequest(
@@ -229,7 +286,7 @@ func (c *AgentClient) GetTelephonyTransferTargets(
 	if targets.ETag == "" {
 		return nil, fmt.Errorf("telephony response is missing required ETag")
 	}
-	if err := validateTelephonyTransferTargets(&targets); err != nil {
+	if err := validateTelephonyTransferTargets(&targets, "response"); err != nil {
 		return nil, err
 	}
 	return &targets, nil
@@ -245,7 +302,7 @@ func (c *AgentClient) ReplaceTelephonyTransferTargets(
 	if ifMatch == "" {
 		return nil, fmt.Errorf("If-Match is required")
 	}
-	if err := validateTelephonyTransferTargets(&request); err != nil {
+	if err := validateTelephonyTransferTargets(&request, "request"); err != nil {
 		return nil, err
 	}
 	request.ETag = ""
@@ -260,7 +317,7 @@ func (c *AgentClient) ReplaceTelephonyTransferTargets(
 	if targets.ETag == "" {
 		return nil, telephonyWriteOutcomeUnknown(fmt.Errorf("telephony response is missing required ETag"))
 	}
-	if err := validateTelephonyTransferTargets(&targets); err != nil {
+	if err := validateTelephonyTransferTargets(&targets, "response"); err != nil {
 		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	return &targets, nil
@@ -273,11 +330,13 @@ func telephonyBindingListQuery(options TelephonyBindingListOptions) (url.Values,
 	if options.Order != "" && options.Order != "asc" && options.Order != "desc" {
 		return nil, fmt.Errorf("order must be asc or desc")
 	}
-	if options.Provider != "" && options.Provider != TelephonyProviderTwilio &&
+	if options.Provider != "" &&
+		options.Provider != TelephonyProviderTwilio &&
 		options.Provider != TelephonyProviderTeamsPhoneExtensibility {
 		return nil, fmt.Errorf("provider must be twilio or teams_phone_extensibility")
 	}
-	if options.Status != "" && options.Status != TelephonyBindingStatusActive &&
+	if options.Status != "" &&
+		options.Status != TelephonyBindingStatusActive &&
 		options.Status != TelephonyBindingStatusSuspended {
 		return nil, fmt.Errorf("status must be active or suspended")
 	}
@@ -325,7 +384,9 @@ func (c *AgentClient) gaTelephonyRequest(
 	if isDotPathSegment(agentName) || isDotPathSegment(resourceID) {
 		return "", fmt.Errorf("agent name and resource ID cannot be dot path segments")
 	}
-	endpoint := strings.TrimRight(c.endpoint, "/") + "/agents/" + escapeTelephonyPathSegment(agentName) + "/telephony/" + collection
+	endpoint := strings.TrimRight(c.endpoint, "/") +
+		"/agents/" + escapeTelephonyPathSegment(agentName) +
+		"/telephony/" + collection
 	if resourceID != "" {
 		endpoint += "/" + escapeTelephonyPathSegment(resourceID)
 	}
@@ -378,7 +439,19 @@ func (c *AgentClient) gaTelephonyRequest(
 		expected = http.StatusNoContent
 	}
 	if resp.StatusCode != expected {
-		return "", runtime.NewResponseError(resp)
+		err := &azcore.ResponseError{
+			StatusCode: resp.StatusCode,
+			RawResponse: &http.Response{
+				StatusCode: resp.StatusCode,
+				Status:     http.StatusText(resp.StatusCode),
+				Header:     http.Header{"X-Ms-Request-Id": resp.Header.Values("X-Ms-Request-Id")},
+				Body:       http.NoBody,
+			},
+		}
+		if method != http.MethodGet && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return "", telephonyWriteOutcomeUnknown(err)
+		}
+		return "", err
 	}
 	if result != nil {
 		decoder := json.NewDecoder(resp.Body)
@@ -416,12 +489,15 @@ func validateTelephonyBindingPage(page *TelephonyBindingPage) error {
 	if page.Data == nil {
 		return fmt.Errorf("telephony binding page is missing required data")
 	}
+	if page.HasMore == nil {
+		return fmt.Errorf("telephony binding page is missing required has_more")
+	}
 	for i := range page.Data {
-		if err := validateTelephonyBinding(&page.Data[i], true, true); err != nil {
+		if err := validateTelephonyBinding(&page.Data[i], true, false); err != nil {
 			return fmt.Errorf("invalid telephony binding at index %d: %w", i, err)
 		}
 	}
-	if page.HasMore && page.LastID == "" {
+	if *page.HasMore && page.LastID == "" {
 		return fmt.Errorf("telephony binding page with has_more=true is missing last_id")
 	}
 	return nil
@@ -434,22 +510,31 @@ func validateTelephonyBinding(binding *GATelephonyBinding, requireETag, allowMis
 	if requireETag && binding.ETag == "" {
 		return fmt.Errorf("telephony response is missing required ETag")
 	}
-	// The pinned GA contract requires status, but deployed Vienna versions can
-	// omit it. Accept omission during rollout while still rejecting unknown values.
 	if binding.Status == "" && !allowMissingStatus {
 		return fmt.Errorf("telephony response is missing required status")
 	}
-	if binding.Status != "" && binding.Status != TelephonyBindingStatusActive && binding.Status != TelephonyBindingStatusSuspended {
+	if binding.Status != "" &&
+		binding.Status != TelephonyBindingStatusActive &&
+		binding.Status != TelephonyBindingStatusSuspended {
 		return fmt.Errorf("telephony response contains invalid status %q", binding.Status)
+	}
+	if !isHTTPURL(binding.IncomingCallURL) {
+		return fmt.Errorf("telephony response contains invalid incoming_call_url")
 	}
 	switch binding.Provider {
 	case TelephonyProviderTwilio:
 		if binding.PhoneNumber == "" {
 			return fmt.Errorf("Twilio telephony response is missing phone_number")
 		}
+		if !telephonyPhoneNumberPattern.MatchString(binding.PhoneNumber) {
+			return fmt.Errorf("Twilio telephony response contains invalid phone_number")
+		}
 	case TelephonyProviderTeamsPhoneExtensibility:
 		if binding.ResourceAccountObjectID == "" {
 			return fmt.Errorf("Teams telephony response is missing resource_account_object_id")
+		}
+		if _, err := uuid.Parse(binding.ResourceAccountObjectID); err != nil {
+			return fmt.Errorf("Teams telephony response contains invalid resource_account_object_id")
 		}
 	default:
 		return fmt.Errorf("telephony response contains unsupported provider %q", binding.Provider)
@@ -461,18 +546,117 @@ func telephonyWriteOutcomeUnknown(err error) error {
 	return &TelephonyWriteOutcomeUnknownError{Err: err}
 }
 
-func validateTelephonyTransferTargets(targets *TelephonyTransferTargets) error {
+func validateTelephonyTransferTargets(targets *TelephonyTransferTargets, source string) error {
 	if targets.TransferTargets == nil {
-		return fmt.Errorf("telephony response is missing required transfer_targets")
+		return fmt.Errorf("telephony %s is missing required transfer_targets", source)
 	}
+	names := map[string]struct{}{}
 	for i, target := range targets.TransferTargets {
+		if !utf8.ValidString(target.Name) || !utf8.ValidString(target.Description) {
+			return fmt.Errorf("invalid telephony %s transfer target at index %d: strings must be valid UTF-8", source, i)
+		}
 		if target.Name == "" || target.Description == "" || target.Destination.Value == "" {
-			return fmt.Errorf("invalid telephony transfer target at index %d: required fields are missing", i)
+			return fmt.Errorf("invalid telephony %s transfer target at index %d: required fields are missing", source, i)
+		}
+		if !telephonyTargetNamePattern.MatchString(target.Name) {
+			return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid name", source, i)
+		}
+		if _, exists := names[target.Name]; exists {
+			return fmt.Errorf("invalid telephony %s transfer targets: duplicate name %q", source, target.Name)
+		}
+		names[target.Name] = struct{}{}
+		if utf8.RuneCountInString(target.Description) > 1024 {
+			return fmt.Errorf("invalid telephony %s transfer target at index %d: description is too long", source, i)
 		}
 		switch target.Destination.Kind {
-		case TelephonyTransferDestinationPSTN, TelephonyTransferDestinationTeams, TelephonyTransferDestinationSIP:
+		case TelephonyTransferDestinationPSTN:
+			if !telephonyPhoneNumberPattern.MatchString(target.Destination.Value) {
+				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid PSTN number", source, i)
+			}
+		case TelephonyTransferDestinationTeams:
+			if !utf8.ValidString(target.Destination.Value) {
+				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is not valid UTF-8", source, i)
+			}
+			if utf8.RuneCountInString(target.Destination.Value) > 256 {
+				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is too long", source, i)
+			}
+		case TelephonyTransferDestinationSIP:
+			if !isSIPUri(target.Destination.Value) {
+				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid SIP URI", source, i)
+			}
 		default:
-			return fmt.Errorf("invalid telephony transfer target at index %d: unsupported destination kind %q", i, target.Destination.Kind)
+			return fmt.Errorf(
+				"invalid telephony %s transfer target at index %d: unsupported destination kind %q",
+				source,
+				i,
+				target.Destination.Kind,
+			)
+		}
+	}
+	return nil
+}
+
+func validateConnectionName(value string) error {
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("connection name must be valid UTF-8")
+	}
+	if count := utf8.RuneCountInString(value); count < 1 || count > 256 {
+		return fmt.Errorf("connection name must be between 1 and 256 characters")
+	}
+	return nil
+}
+
+func isHTTPURL(value string) bool {
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil &&
+		(parsed.Scheme == "http" || parsed.Scheme == "https") &&
+		parsed.Host != ""
+}
+
+func isSIPUri(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	scheme := strings.ToLower(parsed.Scheme)
+	if err != nil || (scheme != "sip" && scheme != "sips") {
+		return false
+	}
+	if strings.Contains(value, "#") || parsed.Opaque == "" || strings.ContainsFunc(parsed.Opaque, unicode.IsSpace) {
+		return false
+	}
+	return true
+}
+
+func telephonyCreateRequestProvider(request TelephonyBindingCreateRequest) string {
+	switch request.(type) {
+	case *CreateTwilioTelephonyBindingRequest:
+		return TelephonyProviderTwilio
+	case *CreateTeamsPhoneTelephonyBindingRequest:
+		return TelephonyProviderTeamsPhoneExtensibility
+	default:
+		return ""
+	}
+}
+
+func validateCreateResponseIdentity(
+	binding *GATelephonyBinding,
+	request TelephonyBindingCreateRequest,
+) error {
+	if binding.Provider != telephonyCreateRequestProvider(request) {
+		return fmt.Errorf("telephony create response provider does not match the request")
+	}
+	switch typed := request.(type) {
+	case *CreateTwilioTelephonyBindingRequest:
+		if binding.ConnectionName != typed.ConnectionName || binding.PhoneNumber != typed.PhoneNumber {
+			return fmt.Errorf("Twilio create response identity does not match the request")
+		}
+	case *CreateTeamsPhoneTelephonyBindingRequest:
+		requestID, requestErr := uuid.Parse(typed.ResourceAccountObjectID)
+		responseID, responseErr := uuid.Parse(binding.ResourceAccountObjectID)
+		if binding.ConnectionName != typed.ConnectionName || requestErr != nil || responseErr != nil ||
+			requestID != responseID {
+			return fmt.Errorf("Teams create response identity does not match the request")
 		}
 	}
 	return nil

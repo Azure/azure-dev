@@ -676,7 +676,7 @@ type TelephonyBindingPage struct {
 	Data    []GATelephonyBinding `json:"data"`
 	FirstID string               `json:"first_id,omitempty"`
 	LastID  string               `json:"last_id,omitempty"`
-	HasMore bool                 `json:"has_more"`
+	HasMore *bool                `json:"has_more"`
 }
 
 // TelephonyRepeatabilityOptions identifies one repeatable create operation.

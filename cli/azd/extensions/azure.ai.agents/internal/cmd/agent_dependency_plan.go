@@ -24,10 +24,11 @@ type agentDependencyPlan struct {
 }
 
 type agentDependencyReferences struct {
-	connections []string
-	toolboxes   []string
-	skills      []string
-	voiceAgent  string
+	connections         []string
+	toolboxes           []string
+	toolboxResourceName string
+	skills              []string
+	voiceAgent          string
 }
 
 func planAgentServiceUses(
@@ -72,6 +73,7 @@ func planAgentServiceUses(
 	}
 	newReferences, err = resolveNewAgentDependencies(
 		agentServiceName,
+		definition.Name,
 		newReferences,
 		services,
 		projectRoot,
@@ -224,7 +226,7 @@ func agentDependencyReferencesFromFile(
 				fmt.Errorf("toolbox reference requires a non-empty name"),
 			)
 		}
-		references.toolboxes = append(references.toolboxes, name)
+		references.toolboxResourceName = name
 	}
 
 	return references, nil
@@ -241,6 +243,7 @@ func invalidAgentDependencyDefinition(err error) error {
 
 func resolveNewAgentDependencies(
 	agentServiceName string,
+	agentResourceName string,
 	references agentDependencyReferences,
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
@@ -278,6 +281,16 @@ func resolveNewAgentDependencies(
 		}
 		resolved.toolboxes = append(resolved.toolboxes, toolbox)
 	}
+	if references.toolboxResourceName != "" {
+		key := servicekey.SanitizeServiceName(references.toolboxResourceName)
+		if err := requireAgentDependencyService(
+			agentServiceName, key, references.toolboxResourceName,
+			"toolbox", AiToolboxHost, services,
+		); err != nil {
+			return agentDependencyReferences{}, err
+		}
+		resolved.toolboxes = append(resolved.toolboxes, key)
+	}
 
 	for _, skill := range references.skills {
 		if err := requireAgentDependencyService(
@@ -304,7 +317,7 @@ func resolveNewAgentDependencies(
 		); err != nil {
 			return agentDependencyReferences{}, err
 		}
-		_, isHosted, _, err := projectpkg.LoadHostedAgentDefinition(
+		target, isHosted, _, err := projectpkg.LoadHostedAgentDefinition(
 			services[references.voiceAgent],
 			projectRoot,
 		)
@@ -320,6 +333,9 @@ func resolveNewAgentDependencies(
 				),
 				"set conversationEngine.name to an azure.ai.agent service with kind: hosted",
 			)
+		}
+		if err := projectpkg.ValidateHostedVoiceWrapperName(agentResourceName, target.Name); err != nil {
+			return agentDependencyReferences{}, err
 		}
 		resolved.voiceAgent = references.voiceAgent
 	}
@@ -448,6 +464,9 @@ func previousAgentOwnedUses(
 	}
 	for _, toolbox := range references.toolboxes {
 		owned[toolbox] = struct{}{}
+	}
+	if references.toolboxResourceName != "" {
+		owned[servicekey.SanitizeServiceName(references.toolboxResourceName)] = struct{}{}
 	}
 	for _, skill := range references.skills {
 		owned[skill] = struct{}{}

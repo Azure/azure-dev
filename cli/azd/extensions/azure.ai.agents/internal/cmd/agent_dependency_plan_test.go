@@ -235,7 +235,6 @@ codeConfiguration:
 			}
 
 			plan, err := planAgentServiceUses("agent", definition, nil, services, root)
-
 			require.NoError(t, err)
 			require.Equal(t, test.wantUses, plan.Uses)
 			require.Empty(t, plan.Warnings)
@@ -243,6 +242,99 @@ codeConfiguration:
 				require.True(t, proto.Equal(beforeAgent, services["agent"]))
 			}
 		})
+	}
+}
+
+func TestPlanAgentServiceUsesToolboxResourceNames(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"prompt", "hosted"} {
+		for _, remove := range []bool{false, true} {
+			t.Run(kind+map[bool]string{false: "/replace", true: "/remove"}[remove], func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				content := "kind: " + kind + "\nname: agent\n"
+				properties := map[string]any{"kind": kind, "name": "agent"}
+				if kind == "prompt" {
+					content += "model: gpt-4.1-mini\ninstructions: Help.\nharness:\n  type: github_copilot_preview\n"
+					properties["model"] = "gpt-4.1-mini"
+					properties["instructions"] = "Help."
+					properties["harness"] = map[string]any{"type": "github_copilot_preview"}
+				} else {
+					content += "codeConfiguration:\n  runtime: python_3_13\n  entryPoint: app.py\n"
+					properties["codeConfiguration"] = map[string]any{
+						"runtime": "python_3_13", "entryPoint": "app.py",
+					}
+				}
+				if !remove {
+					content += "toolboxes:\n  - NewTools\ntoolbox:\n  name: New Tools\n"
+				}
+				definition := loadAgentDependencyDefinition(t, root, "agent", content)
+				properties["toolbox"] = map[string]any{"name": "Old Tools"}
+				old := agentDependencyService(t, "agent", AiAgentHost, properties,
+					"manual-b", "OldTools", "manual-a", "project")
+				before := proto.Clone(old).(*azdext.ServiceConfig)
+				services := map[string]*azdext.ServiceConfig{
+					"agent":    old,
+					"project":  agentDependencyService(t, "project", AiProjectHost, nil),
+					"OldTools": agentDependencyService(t, "OldTools", AiToolboxHost, nil),
+					"NewTools": agentDependencyService(t, "NewTools", AiToolboxHost, nil),
+				}
+				plan, err := planAgentServiceUses("agent", definition, nil, services, root)
+				require.NoError(t, err)
+				want := []string{"project", "manual-b", "manual-a"}
+				if !remove {
+					want = []string{"project", "NewTools", "manual-b", "manual-a"}
+				}
+				require.Equal(t, want, plan.Uses)
+				require.Empty(t, plan.Warnings)
+				require.True(t, proto.Equal(before, old))
+			})
+		}
+	}
+}
+
+func TestPlanAgentServiceUsesRejectsHostedVoiceNameCollision(t *testing.T) {
+	t.Parallel()
+
+	for _, targetName := range []string{"shared-agent", "SHARED-AGENT", "distinct-agent"} {
+		for _, useRef := range []bool{false, true} {
+			t.Run(targetName+map[bool]string{false: "/inline", true: "/ref"}[useRef], func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				definition := loadAgentDependencyDefinition(t, root, "wrapper",
+					"kind: voice\nname: shared-agent\nconversationEngine:\n"+
+						"  type: hosted_agent\n  name: target\n")
+				target := hostedAgentDependencyService(t, "target")
+				target.AdditionalProperties.Fields["name"] = structpb.NewStringValue(targetName)
+				if useRef {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "target.yaml"),
+						[]byte("kind: hosted\nname: "+targetName+
+							"\ncodeConfiguration:\n  runtime: python_3_13\n  entryPoint: app.py\n"), 0o600))
+					target = agentDependencyService(t, "target", AiAgentHost,
+						map[string]any{"$ref": "./target.yaml"})
+				}
+				before := proto.Clone(target).(*azdext.ServiceConfig)
+				services := map[string]*azdext.ServiceConfig{
+					"target":  target,
+					"project": agentDependencyService(t, "project", AiProjectHost, nil),
+				}
+				currentUses := []string{"manual-use", "project"}
+				plan, err := planAgentServiceUses("wrapper", definition, currentUses, services, root)
+				if targetName == "distinct-agent" {
+					require.NoError(t, err)
+					require.Equal(t, []string{"project", "target", "manual-use"}, plan.Uses)
+				} else {
+					require.ErrorContains(t, err, "cannot use the same Foundry name as its target")
+					require.Empty(t, plan.Uses)
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+				}
+				require.True(t, proto.Equal(before, target))
+				require.Equal(t, []string{"manual-use", "project"}, currentUses)
+			})
+		}
 	}
 }
 
@@ -369,6 +461,20 @@ codeConfiguration:
 			definition: promptDefinition("toolboxes:\n  - missing\n"),
 			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
 			wantError:  "does not match a local service with host \"azure.ai.toolbox\"",
+		},
+		{
+			name:       "plural Toolbox remains a service key",
+			definition: promptDefinition("toolboxes:\n  - My Tools\n"),
+			setup: func(t *testing.T, services map[string]*azdext.ServiceConfig) {
+				services["MyTools"] = agentDependencyService(t, "MyTools", AiToolboxHost, nil)
+			},
+			wantError: `toolbox reference "My Tools" does not match`,
+		},
+		{
+			name:       "singular Toolbox preserves resource name in diagnostics",
+			definition: promptDefinition("harness:\n  type: github_copilot_preview\ntoolbox:\n  name: Missing Tools\n"),
+			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
+			wantError:  `toolbox reference "Missing Tools" does not match`,
 		},
 		{
 			name:       "wrong Toolbox host",

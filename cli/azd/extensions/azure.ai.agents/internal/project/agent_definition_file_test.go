@@ -349,20 +349,20 @@ func TestLoadAgentDefinitionFileResolvesNestedReferencesBesideDefinition(t *test
 	t.Parallel()
 
 	root := t.TempDir()
-	definitions := filepath.Join(root, "definitions")
-	require.NoError(t, os.MkdirAll(definitions, 0o750))
+	definitionDir := filepath.Join(root, "definitions")
+	require.NoError(t, os.MkdirAll(definitionDir, 0o750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(definitions, "harness.json"),
+		filepath.Join(definitionDir, "harness.json"),
 		[]byte(`{"type":"github_copilot_preview"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "harness.json"),
-		[]byte(`{"type":"invalid-root-decoy"}`),
+		[]byte(`{"type":"invalid_decoy"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(definitions, "agent.yaml"),
+		filepath.Join(definitionDir, "agent.yaml"),
 		[]byte(`kind: prompt
 name: referenced-agent
 model: gpt-4.1-mini

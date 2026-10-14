@@ -66,7 +66,7 @@ type AgentDefinitionFile struct {
 }
 
 // LoadAgentDefinitionFile validates a direct definition.
-// Relative input paths are rooted at projectRoot; absolute inputs are accepted
+// Relative input paths use projectRoot; absolute inputs are accepted
 // only when contained within projectRoot.
 // Nested $ref files resolve from the definition file and remain
 // rebased to projectRoot.
@@ -120,13 +120,13 @@ func LoadAgentDefinitionFile(
 	}
 
 	// Root-ref resolution preserves file-relative and rebased paths.
-	rootReference, err := structpb.NewStruct(map[string]any{
-		"$ref": filepath.ToSlash(relativePath),
+	definitionReference, err := structpb.NewStruct(map[string]any{
+		"$ref": relativePath,
 	})
 	if err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
-	resolved, err := resolveServiceProps(rootReference, serviceName, projectRoot)
+	resolved, err := resolveServiceProps(definitionReference, serviceName, projectRoot)
 	if err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}

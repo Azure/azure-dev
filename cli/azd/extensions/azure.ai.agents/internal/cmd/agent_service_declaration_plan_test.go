@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -494,8 +495,8 @@ func TestPlanAgentServiceDeclarationRejectsInvalidStateWithoutMutation(t *testin
 			}
 			beforeUses := slices.Clone(dependencies.Uses)
 			beforeWarnings := slices.Clone(dependencies.Warnings)
-			beforeProperties := definition.Properties
-			beforeResolvedProperties := definition.ResolvedProperties
+			beforeProperties := maps.Clone(definition.Properties)
+			beforeResolvedProperties := maps.Clone(definition.ResolvedProperties)
 
 			plan, err := planAgentServiceDeclaration(agentServiceDeclarationInput{
 				ServiceName:     test.serviceName,

@@ -135,8 +135,10 @@ If <name> already identifies an Agent service, the command updates its
 Agent-owned declaration and preserves other service fields. Numeric scalar
 tokens that cannot be preserved losslessly through azd's project API are
 rejected before writing. Quote YAML dates and timestamps to keep them as
-strings. These checks also apply to dependency service properties. Project
-locks stay in the user cache, outside the project tree. Deploy it with
+strings. Scalar token checks cover the entire project document, including
+top-level fields and dependency service properties, because the project API
+saves the whole file. Project locks stay in the user cache, outside the
+project tree. Deploy it with
 'azd deploy <name>' or 'azd up'.`,
 		Example: `  # Add an Agent service from a direct definition
   azd ai agent add support-agent --file ./agents/support.yaml
@@ -418,13 +420,7 @@ func readAgentServiceAddProject(
 			fmt.Errorf("project document must be a mapping"),
 		)
 	}
-	var serviceNodes struct {
-		Services yaml.Node `yaml:"services"`
-	}
-	if err := documentNode.Decode(&serviceNodes); err != nil {
-		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
-	}
-	if err := validateAgentServiceAddScalarTokens(&serviceNodes.Services, "services"); err != nil {
+	if err := validateAgentServiceAddScalarTokens(&documentNode, ""); err != nil {
 		return agentServiceAddProject{}, invalidAgentServiceAddProjectFile(projectFile, err)
 	}
 
@@ -475,11 +471,20 @@ func validateAgentServiceAddScalarTokens(node *yaml.Node, path string) error {
 		return nil
 	}
 	switch node.Kind {
+	case yaml.DocumentNode:
+		for _, child := range node.Content {
+			if err := validateAgentServiceAddScalarTokens(child, path); err != nil {
+				return err
+			}
+		}
 	case yaml.AliasNode:
 		return validateAgentServiceAddScalarTokens(node.Alias, path)
 	case yaml.MappingNode:
 		for index := 0; index+1 < len(node.Content); index += 2 {
-			field := path + "." + node.Content[index].Value
+			field := node.Content[index].Value
+			if path != "" {
+				field = path + "." + field
+			}
 			if err := validateAgentServiceAddScalarTokens(node.Content[index+1], field); err != nil {
 				return err
 			}

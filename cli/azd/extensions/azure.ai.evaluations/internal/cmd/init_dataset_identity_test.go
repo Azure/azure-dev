@@ -374,6 +374,79 @@ func TestInitDatasetNameReusesRefOnlyDeclaration(t *testing.T) {
 	}
 }
 
+func TestInitDatasetReusesPinnedAuthoredLookupName(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		declaration string
+		version     string
+	}{
+		{"inline", initIdentityDeclarations["local"], "7"},
+		{"numeric inline", strings.ReplaceAll(initIdentityDeclarations["local"], "'7'", "1.0"), "1.0"},
+		{"named ref", initIdentityDeclarations["nested ref"], "7"},
+		{"ref only", initIdentityDeclarations["ref only"], "7"},
+		{"overlay", strings.ReplaceAll(initIdentityDeclarations["nested ref"], "'7'", "'8'"), "8"},
+	} {
+		for _, mode := range []string{"simulation", "static", "turn"} {
+			for _, output := range []string{"human", "json"} {
+				t.Run(tc.name+"/"+mode+"/"+output, func(t *testing.T) {
+					h := initIdentityFixture(t, strings.ReplaceAll(tc.declaration, "seeds", "seed data"),
+						&seedCorrectionPromptServer{})
+					path := filepath.Join("original", "seed data.jsonl")
+					require.NoError(t, os.Rename(filepath.Join("original", "seeds.jsonl"), path))
+					require.NoError(t, os.WriteFile(path, []byte(`{"test_case_description":"help",`+
+						`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
+					if mode == "static" {
+						require.NoError(t, os.WriteFile(path, []byte(sameFileConversationRows), 0o600))
+					}
+					included := filepath.Join("evals", "parts", "inner", "dataset.yaml")
+					body, err := os.ReadFile(included)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(included,
+						[]byte(strings.ReplaceAll(string(body), "seeds", "seed data")), 0o600))
+					before := initFileSnapshot(t, h.dir)
+					args := simulationInitArgs("./original/seed data.jsonl")
+					if mode != "simulation" {
+						args = []string{"--name", "quality", "--dataset", "./original/seed data.jsonl",
+							"--judge-model", "judge"}
+						if mode == "static" {
+							args = append(args, "--conversation-mode", "static")
+						} else {
+							args = append(args, "--target", "agent")
+						}
+					}
+					if output == "human" {
+						args = append(args, "--no-prompt")
+					} else {
+						args = append(args, "--output", "json")
+					}
+					text, err := executeConversationInit(t, args...)
+					require.NoError(t, err)
+					if output == "json" {
+						assert.True(t, json.Valid([]byte(text)))
+					}
+					after := initFileSnapshot(t, h.dir)
+					config := filepath.Join("evals", project.EvalConfigBase)
+					assert.Contains(t, after[config], before[config], "retain pins, references and unknown metadata")
+					for path, body := range before {
+						if path != config && path != "azure.yaml" {
+							assert.Equal(t, body, after[path], path)
+						}
+					}
+					var cfg project.EvalConfig
+					require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+					require.Len(t, cfg.Evals, 1)
+					assert.Equal(t, "seed data", cfg.Evals[0].Dataset)
+					assert.Len(t, cfg.Datasets, 2, "do not duplicate a ref-only declaration")
+					selected, err := project.ReadAuthoredDataset(config, "seed data")
+					require.NoError(t, err)
+					require.NotNil(t, selected)
+					assert.Equal(t, tc.version, selected.Version)
+				})
+			}
+		}
+	}
+}
+
 func TestInitDatasetReusesEquivalentFiles(t *testing.T) {
 	for _, declaration := range []string{"local", "nested ref", "ref only"} {
 		for _, spelling := range []string{"relative", "canonical", "absolute", "hard link"} {

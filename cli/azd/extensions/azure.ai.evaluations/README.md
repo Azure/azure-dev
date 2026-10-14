@@ -274,7 +274,9 @@ init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique
 filename to add the new file, or the existing dataset's name or file path to
 reuse it. Equivalent paths to the same file are accepted, preserving references,
-version pins, and other authored metadata.
+version pins, and other authored metadata. Version-pinned local reuse also
+recognizes pins inherited through `$ref` entries and their authored overrides,
+without resolving unrelated declarations.
 When `--path` names a configuration file, dataset lookup uses that exact file,
 while artifact paths remain relative to its directory.
 The configuration destination must not be the selected local dataset itself,

@@ -181,8 +181,6 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 			existing = &project.DatasetDecl{
 				Name: decl.Name, File: project.ResolveSource(project.EvalDirOf(location), decl.File), Version: decl.Version,
 			}
-		} else {
-			existing.Version = decl.Version
 		}
 	}
 	if existing == nil {

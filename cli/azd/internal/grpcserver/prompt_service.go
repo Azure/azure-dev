@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,13 +32,17 @@ type promptService struct {
 	aiModelService  *ai.AiModelService
 	globalOptions   *internal.GlobalCommandOptions
 	lock            *promptLock
+	selectWriter    io.Writer
+	askSelect       func(context.Context, *ux.SelectOptions) (*int, error)
 }
 
+// NewPromptService routes selection UI to the supplied writer.
 func NewPromptService(
 	prompter prompt.PromptService,
 	resourceService *azapi.ResourceService,
 	aiModelService *ai.AiModelService,
 	globalOptions *internal.GlobalCommandOptions,
+	selectWriter io.Writer,
 ) azdext.PromptServiceServer {
 	return &promptService{
 		prompter:        prompter,
@@ -45,6 +50,10 @@ func NewPromptService(
 		aiModelService:  aiModelService,
 		globalOptions:   globalOptions,
 		lock:            newPromptLock(),
+		selectWriter:    selectWriter,
+		askSelect: func(ctx context.Context, options *ux.SelectOptions) (*int, error) {
+			return ux.NewSelect(options).Ask(ctx)
+		},
 	}
 }
 
@@ -119,6 +128,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 	}
 
 	options := &ux.SelectOptions{
+		Writer:          s.selectWriter,
 		SelectedIndex:   convertToInt(req.Options.SelectedIndex),
 		Message:         req.Options.Message,
 		Choices:         choices,
@@ -128,8 +138,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 		EnableFiltering: req.Options.EnableFiltering,
 	}
 
-	selectPrompt := ux.NewSelect(options)
-	value, err := selectPrompt.Ask(ctx)
+	value, err := s.askSelect(ctx, options)
 
 	return &azdext.SelectResponse{
 		Value: convertToInt32(value),

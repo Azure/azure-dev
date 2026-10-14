@@ -39,7 +39,11 @@ type ResolveOption func(*resolveOptions)
 type resolveOptions struct {
 	// pathKeys are keys whose relative string values name files, beyond the two
 	// core owns.
-	pathKeys map[string]bool
+	pathKeys           map[string]bool
+	projectContainment bool
+	projectRoot        string
+	realProjectRoot    string
+	rootFS             *os.Root
 }
 
 // WithPathKeys declares keys whose relative string values are filesystem paths.
@@ -59,6 +63,16 @@ func WithPathKeys(keys ...string) ResolveOption {
 		for _, key := range keys {
 			o.pathKeys[key] = true
 		}
+	}
+}
+
+// WithProjectContainment restricts referenced files to projectRoot.
+//
+// Both lexical paths and symlink targets stay inside the project.
+// Existing callers keep their path policy unless they opt in.
+func WithProjectContainment() ResolveOption {
+	return func(o *resolveOptions) {
+		o.projectContainment = true
 	}
 }
 
@@ -89,10 +103,10 @@ func WithPathKeys(keys ...string) ResolveOption {
 // every path anchored to projectRoot in clean, forward-slash form. Inline path values authored
 // directly in azure.yaml are left exactly as written.
 //
-// $ref values that are URLs are rejected (remote includes are not supported yet); only local
-// relative or absolute file paths are accepted. Cyclic and excessively deep include chains
-// return an error rather than looping. $ref targets are treated as trusted input, the same
-// trust level as azure.yaml itself.
+// URL refs are rejected; only local paths are supported.
+// Relative and absolute paths work; cycles and deep chains fail.
+// By default, $ref targets are trusted like azure.yaml.
+// Use WithProjectContainment to keep files inside the project.
 //
 // Path keys beyond the two core owns are rebased only when named with WithPathKeys.
 // Each referenced file must contain exactly one YAML or JSON object.
@@ -107,6 +121,14 @@ func ResolveFileRefs(cfg map[string]any, projectRoot string, opts ...ResolveOpti
 	}
 
 	root := filepath.Clean(projectRoot)
+	if resolved.projectContainment {
+		var err error
+		root, err = openProjectRoot(root, resolved)
+		if err != nil {
+			return nil, err
+		}
+		defer resolved.rootFS.Close()
+	}
 	out, err := resolveValue(cfg, root, root, nil, resolved)
 	if err != nil {
 		return nil, err
@@ -186,25 +208,34 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 		return nil, err
 	}
 
-	if slices.Contains(chain, target) {
+	identity := target
+	if opts.projectContainment {
+		target, identity, err = opts.containedRefTarget(target)
+		if err != nil {
+			return nil, err
+		}
+	}
+	displayPath := refDisplayPath(target, opts)
+
+	if slices.Contains(chain, identity) {
 		return nil, fileRefValidation(
-			fmt.Sprintf("cyclic %s include detected at %q", refKey, target),
+			fmt.Sprintf("cyclic %s include detected at %q", refKey, displayPath),
 			"Remove the circular reference between the included files.",
 		)
 	}
 	if len(chain) >= maxRefDepth {
 		return nil, fileRefValidation(
-			fmt.Sprintf("%s include nesting exceeds %d levels at %q", refKey, maxRefDepth, target),
+			fmt.Sprintf("%s include nesting exceeds %d levels at %q", refKey, maxRefDepth, displayPath),
 			"Reduce the depth of nested $ref includes.",
 		)
 	}
 
-	loaded, err := loadRefFile(target)
+	loaded, err := loadRefFile(target, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	nextChain := append(slices.Clone(chain), target)
+	nextChain := append(slices.Clone(chain), identity)
 	resolvedLoaded, err := resolveValue(loaded, filepath.Dir(target), projectRoot, nextChain, opts)
 	if err != nil {
 		return nil, err
@@ -214,7 +245,7 @@ func resolveRef(directive map[string]any, baseDir, projectRoot string, chain []s
 	if !ok {
 		// loadRefFile guarantees a mapping, so resolveValue returns a map; unreachable in practice.
 		return nil, fileRefValidation(
-			fmt.Sprintf("%s file %q must contain a YAML or JSON object", refKey, target),
+			fmt.Sprintf("%s file %q must contain a YAML or JSON object", refKey, displayPath),
 			"The referenced file must define an object, not a list or scalar.",
 		)
 	}
@@ -247,7 +278,7 @@ func refTargetPath(ref, baseDir string) (string, error) {
 	}
 	if remoteRefPattern.MatchString(ref) {
 		return "", fileRefValidation(
-			fmt.Sprintf("%s %q is a URL; remote includes are not supported yet", refKey, ref),
+			fmt.Sprintf("%s remote includes are not supported", refKey),
 			"Use a local file path. Download the file and reference it by a relative or absolute path.",
 		)
 	}
@@ -259,13 +290,12 @@ func refTargetPath(ref, baseDir string) (string, error) {
 
 // loadRefFile reads and parses a referenced YAML or JSON file into a mapping. JSON parses as a
 // subset of YAML, so a single decoder handles both.
-func loadRefFile(path string) (map[string]any, error) {
-	// #nosec G304 -- $ref targets are trusted config input, the same trust level as azure.yaml
-	// itself (design spec §2.4 treats includes as trusted input).
-	data, err := os.ReadFile(path)
+func loadRefFile(path string, opts *resolveOptions) (map[string]any, error) {
+	displayPath := refDisplayPath(path, opts)
+	data, err := readRefFile(path, opts)
 	if err != nil {
 		return nil, fileRefValidation(
-			fmt.Sprintf("cannot read %s file %q: %v", refKey, path, err),
+			fmt.Sprintf("cannot read %s file %q", refKey, displayPath),
 			"Check that the path is correct and the file exists and is readable.",
 		)
 	}
@@ -273,23 +303,26 @@ func loadRefFile(path string) (map[string]any, error) {
 	var out map[string]any
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&out); err != nil && !errors.Is(err, io.EOF) {
+		message := fmt.Sprintf("%s file %q is not a valid YAML or JSON object", refKey, displayPath)
+		if line := refYAMLLinePattern.FindStringSubmatch(err.Error()); len(line) == 2 {
+			message += " at line " + line[1]
+		}
 		return nil, fileRefValidation(
-			fmt.Sprintf("%s file %q is not a valid YAML or JSON object: %v", refKey, path, err),
+			message,
 			"Fix the file so it parses as a YAML or JSON object.",
 		)
 	}
 	if out == nil {
 		return nil, fileRefValidation(
-			fmt.Sprintf("%s file %q is empty or not a mapping", refKey, path),
+			fmt.Sprintf("%s file %q is empty or not a mapping", refKey, displayPath),
 			"The referenced file must contain a YAML or JSON object.",
 		)
 	}
 	var trailing yaml.Node
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		message := fmt.Sprintf("%s file %q must contain exactly one YAML or JSON object", refKey, path)
+		message := fmt.Sprintf("%s file %q must contain exactly one YAML or JSON object", refKey, displayPath)
 		if err != nil {
 			message += "; trailing YAML or JSON is invalid"
-			// Parser errors can quote input values. Retain only the numeric source location.
 			if line := refYAMLLinePattern.FindStringSubmatch(err.Error()); len(line) == 2 {
 				message += " at line " + line[1]
 			}
@@ -300,6 +333,141 @@ func loadRefFile(path string) (map[string]any, error) {
 		)
 	}
 	return out, nil
+}
+
+func openProjectRoot(projectRoot string, opts *resolveOptions) (string, error) {
+	absoluteRoot, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return "", fileRefValidation(
+			"cannot resolve the project directory for contained references",
+			"Run the command from an existing project directory.",
+		)
+	}
+	realRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return "", fileRefValidation(
+			"cannot resolve the project directory for contained references",
+			"Run the command from an existing project directory.",
+		)
+	}
+	realRoot, err = filepath.Abs(realRoot)
+	if err != nil {
+		return "", fileRefValidation(
+			"cannot resolve the project directory for contained references",
+			"Run the command from an existing project directory.",
+		)
+	}
+
+	rootFS, err := os.OpenRoot(realRoot)
+	if err != nil {
+		return "", fileRefValidation(
+			"cannot open the project directory for contained references",
+			"Run the command from an accessible project directory.",
+		)
+	}
+	info, err := rootFS.Stat(".")
+	if err != nil || !info.IsDir() {
+		_ = rootFS.Close()
+		return "", fileRefValidation(
+			"the project path for contained references is not a directory",
+			"Set the project directory to an existing folder.",
+		)
+	}
+
+	opts.projectRoot = filepath.Clean(absoluteRoot)
+	opts.realProjectRoot = filepath.Clean(realRoot)
+	opts.rootFS = rootFS
+	return opts.projectRoot, nil
+}
+
+func (opts *resolveOptions) containedRefTarget(target string) (string, string, error) {
+	absoluteTarget, err := filepath.Abs(target)
+	if err != nil {
+		return "", "", fileRefValidation(
+			"$ref target must resolve to a file inside the project",
+			"Use a local path inside the project directory.",
+		)
+	}
+	absoluteTarget = filepath.Clean(absoluteTarget)
+	relativeTarget, err := filepath.Rel(opts.projectRoot, absoluteTarget)
+	if err != nil || !isRelativePathWithinRoot(relativeTarget) {
+		return "", "", fileRefValidation(
+			"$ref target must resolve to a file inside the project",
+			"Use a local path inside the project directory.",
+		)
+	}
+
+	identity := absoluteTarget
+	realTarget, err := filepath.EvalSymlinks(absoluteTarget)
+	if err == nil {
+		realTarget, err = filepath.Abs(realTarget)
+		if err != nil {
+			return "", "", fileRefValidation(
+				"cannot resolve the $ref target safely inside the project",
+				"Use a readable file inside the project directory.",
+			)
+		}
+		relativeRealTarget, err := filepath.Rel(opts.realProjectRoot, realTarget)
+		if err != nil || !isRelativePathWithinRoot(relativeRealTarget) {
+			return "", "", fileRefValidation(
+				"$ref target resolves outside the project",
+				"Use a file whose symlink target remains inside the project directory.",
+			)
+		}
+		identity = filepath.Clean(realTarget)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", fileRefValidation(
+			"cannot resolve the $ref target safely inside the project",
+			"Use a readable file inside the project directory.",
+		)
+	}
+
+	return absoluteTarget, identity, nil
+}
+
+func isRelativePathWithinRoot(relativePath string) bool {
+	if filepath.IsAbs(relativePath) {
+		return false
+	}
+	first := strings.SplitN(filepath.Clean(relativePath), string(filepath.Separator), 2)[0]
+	return first != ".."
+}
+
+func readRefFile(path string, opts *resolveOptions) ([]byte, error) {
+	if opts.projectContainment {
+		realPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return nil, err
+		}
+		realPath, err = filepath.Abs(realPath)
+		if err != nil {
+			return nil, err
+		}
+		relativePath, err := filepath.Rel(opts.realProjectRoot, realPath)
+		if err != nil || !isRelativePathWithinRoot(relativePath) {
+			return nil, os.ErrPermission
+		}
+		file, err := opts.rootFS.Open(relativePath)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		return io.ReadAll(file)
+	}
+
+	// #nosec G304 -- containment is an explicit caller option.
+	return os.ReadFile(path)
+}
+
+func refDisplayPath(path string, opts *resolveOptions) string {
+	if opts.projectContainment {
+		if relative, err := filepath.Rel(opts.projectRoot, path); err == nil &&
+			isRelativePathWithinRoot(relative) {
+			return filepath.ToSlash(relative)
+		}
+		return "outside-project file"
+	}
+	return filepath.Base(filepath.Clean(path))
 }
 
 // isPathKey reports whether a string value for key is a filesystem path that should be rebased.

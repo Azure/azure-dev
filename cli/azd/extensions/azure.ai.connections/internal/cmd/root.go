@@ -53,6 +53,7 @@ func NewRootCommand() *cobra.Command {
 		"Foundry project endpoint URL for connection operations only (not context or version)")
 
 	// Connection CRUD subcommands (migrated from the azure.ai.agents extension).
+	rootCmd.AddCommand(newConnectionAddCommand(extCtx))
 	rootCmd.AddCommand(newConnectionListCommand(extCtx))
 	rootCmd.AddCommand(newConnectionShowCommand(extCtx))
 	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
@@ -63,7 +64,10 @@ func NewRootCommand() *cobra.Command {
   azd ai connection list
 
   # Inspect a connection without displaying its credentials
-  azd ai connection show my-search`
+  azd ai connection show my-search
+
+  # Author a local Connection service
+  azd ai connection add search --file connections/search.yaml`
 	helpformat.Install(rootCmd, "azd ai", connectionHelpFooter)
 
 	return rootCmd

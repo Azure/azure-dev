@@ -51,7 +51,9 @@ Implement the required interfaces for your declared capabilities. See the extens
 
 If your Go extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
 
-Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
+Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. For project-owned files, opt in to `foundry.WithProjectContainment()` so references and symlink targets cannot escape the project; existing callers retain their current path policy by default. Errors avoid echoing parsed values and remote URL credentials. Extensions must consume an SDK release containing these helpers before their binaries rely on them.
+
+Use `foundry.AnalyzeEnvReferences` when authoring environment declarations for values later expanded by `foundry.ExpandEnv`. It returns sorted required variable names and reports whether a client-side template is present, without reading environment values. Its parsing and Foundry-expression masking match the shared expander; it does not replace validation of the resolved value at deployment.
 
 The default scaffolds and SDK `EventManager` use the stable `v1` contract.
 Go extensions can opt into beta structured messages for service
@@ -145,6 +147,16 @@ multiple handlers and workflow steps are resolved.
   build, deploy, or persist deployment state.
 
 ## Detailed Reference
+
+For local service authoring that must preserve literal templates and large
+integers, use the beta
+[`ProjectService.ApplyServiceConfig`](../architecture/extension-framework.md#conditional-raw-service-authoring)
+API rather than round-tripping services through protobuf `Struct`. Read the
+raw manifest without resolving environment values, pass the complete original
+services mapping as the YAML precondition, and send only the selected service
+as the candidate. On `Aborted`, re-plan against a fresh manifest; do not replay
+the mutation on a stable setter. Require a host containing the API
+(azd 1.36.0-beta.1 or later).
 
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
 For `Project.AddService`, use the optional

@@ -187,6 +187,32 @@ func TestResolveCommandPathEdgeCases(t *testing.T) {
 	}
 }
 
+func TestResolveCommandEnvironmentIndependent(t *testing.T) {
+	t.Parallel()
+
+	metadata := &ExtensionCommandMetadata{
+		Commands: []Command{
+			{
+				Name: []string{"connection"},
+				Subcommands: []Command{
+					{
+						Name:                   []string{"connection", "add"},
+						EnvironmentIndependent: true,
+					},
+				},
+			},
+		},
+	}
+
+	command := ResolveCommand(
+		metadata,
+		[]string{"connection", "add", "--file", "connection.yaml"},
+	)
+	require.NotNil(t, command)
+	require.Equal(t, []string{"connection", "add"}, command.Name)
+	require.True(t, command.EnvironmentIndependent)
+}
+
 func TestResolveCommandFlagsAllTypes(t *testing.T) {
 	t.Parallel()
 

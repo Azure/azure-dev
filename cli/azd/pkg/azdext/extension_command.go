@@ -32,6 +32,9 @@ const (
 	// flagHideDefaultAnnotationPrefix prefixes cobra annotation keys that mark
 	// inherited flag defaults as hidden for a command. See [RegisterFlagOptions].
 	flagHideDefaultAnnotationPrefix = "azdext.hide-default/"
+	// environmentIndependentCommandAnnotation marks commands that do not need
+	// azd environment values before they run.
+	environmentIndependentCommandAnnotation = "azdext.environment-independent"
 
 	defaultOutputFlagUsage = "The output format"
 )
@@ -318,6 +321,20 @@ func RegisterFlagOptions(cmd *cobra.Command, opts FlagOptions) *cobra.Command {
 	} else {
 		delete(cmd.Annotations, flagHideDefaultAnnotationPrefix+opts.Name)
 	}
+	return cmd
+}
+
+// MarkEnvironmentIndependent marks a command that does not need azd
+// environment values. The host skips loading the environment and resolving
+// its Key Vault references before invoking it.
+func MarkEnvironmentIndependent(cmd *cobra.Command) *cobra.Command {
+	if cmd == nil {
+		return nil
+	}
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[environmentIndependentCommandAnnotation] = "true"
 	return cmd
 }
 

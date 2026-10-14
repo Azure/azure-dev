@@ -370,7 +370,7 @@ agents:
 
 func TestResolveFileRefs_MalformedFile(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "agents/bad.yaml", "name: support\n  bad: : indentation: [")
+	writeFile(t, root, "agents/bad.yaml", "password: PRIVATE_MARKER\n  bad: : indentation: [")
 	cfg := parseYAML(t, `
 agents:
   - $ref: ./agents/bad.yaml
@@ -378,6 +378,7 @@ agents:
 
 	_, err := ResolveFileRefs(cfg, root)
 	requireFileRefError(t, err, "not a valid YAML or JSON object")
+	assert.NotContains(t, err.Error(), "PRIVATE_MARKER")
 }
 
 func TestResolveFileRefs_TopLevelSequenceFile(t *testing.T) {
@@ -416,13 +417,17 @@ agents:
 
 func TestResolveFileRefs_URLRejected(t *testing.T) {
 	root := t.TempDir()
-	cfg := parseYAML(t, `
-agents:
-  - $ref: https://example.com/agents/a.yaml
-`)
+	// #nosec G101 -- synthetic URL verifies credential redaction.
+	const credentialURL = "https://user:password@example.com/agents/a.yaml?sig=PRIVATE_QUERY#PRIVATE_FRAGMENT"
+	cfg := map[string]any{refKey: credentialURL}
 
 	_, err := ResolveFileRefs(cfg, root)
 	requireFileRefError(t, err, "remote includes are not supported")
+	assert.NotContains(t, err.Error(), "user")
+	assert.NotContains(t, err.Error(), "password")
+	assert.NotContains(t, err.Error(), "PRIVATE_QUERY")
+	assert.NotContains(t, err.Error(), "PRIVATE_FRAGMENT")
+	assert.NotContains(t, err.Error(), "example.com")
 }
 
 func TestResolveFileRefs_NonStringRef(t *testing.T) {

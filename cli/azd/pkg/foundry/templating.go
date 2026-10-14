@@ -7,10 +7,13 @@ package foundry
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/drone/envsubst"
+	"github.com/drone/envsubst/parse"
 )
 
 // foundryTemplatePattern matches Foundry server-side ${{...}} expressions. These are resolved
@@ -38,7 +41,7 @@ const foundrySentinelBase = "azdFoundryTemplateSpan_"
 // ${MISSING:-${{event.body}}}). A ${VAR} inside a ${{...}} span is left as-is, since the span
 // is reserved for Foundry.
 func ExpandEnv(value string, mapping func(string) string) (string, error) {
-	spans := foundryTemplatePattern.FindAllString(value, -1)
+	masked, sentinel, spans := maskFoundryExpressions(value)
 	if len(spans) == 0 {
 		expanded, err := envsubst.Eval(value, mapping)
 		if err != nil {
@@ -47,26 +50,89 @@ func ExpandEnv(value string, mapping func(string) string) (string, error) {
 		return expanded, nil
 	}
 
-	// Choose a sentinel that does not already occur in the input so restoration is exact.
+	expanded, err := envsubst.Eval(masked, mapping)
+	if err != nil {
+		return value, err
+	}
+
+	return restoreFoundryExpressions(expanded, sentinel, spans), nil
+}
+
+// EnvReferenceAnalysis describes client-side templates in a value.
+type EnvReferenceAnalysis struct {
+	RequiredVariables []string
+	HasClientTemplate bool
+}
+
+// AnalyzeEnvReferences finds required names without resolving values.
+//
+// It also reports client-side templates separately.
+// Defaults make their own variable optional.
+// Nested default references are analyzed independently.
+// Parsing and Foundry masking match ExpandEnv, including escapes and
+// server-side expressions.
+func AnalyzeEnvReferences(value string) (EnvReferenceAnalysis, error) {
+	masked, _, _ := maskFoundryExpressions(value)
+	tree, err := parse.Parse(masked)
+	if err != nil {
+		return EnvReferenceAnalysis{}, fmt.Errorf("invalid environment template: %w", err)
+	}
+
+	required := map[string]struct{}{}
+	analysis := EnvReferenceAnalysis{}
+	collectEnvReferences(tree.Root, required, &analysis.HasClientTemplate)
+	analysis.RequiredVariables = slices.Sorted(maps.Keys(required))
+	return analysis, nil
+}
+
+func collectEnvReferences(node parse.Node, required map[string]struct{}, hasTemplate *bool) {
+	switch typed := node.(type) {
+	case *parse.FuncNode:
+		*hasTemplate = true
+		if !hasOptionalEnvFallback(typed) {
+			required[typed.Param] = struct{}{}
+		}
+		for _, arg := range typed.Args {
+			collectEnvReferences(arg, required, hasTemplate)
+		}
+	case *parse.ListNode:
+		for _, child := range typed.Nodes {
+			collectEnvReferences(child, required, hasTemplate)
+		}
+	}
+}
+
+func hasOptionalEnvFallback(node *parse.FuncNode) bool {
+	switch node.Name {
+	case "=", ":=", ":-", ":+":
+		return true
+	default:
+		return false
+	}
+}
+
+func maskFoundryExpressions(value string) (string, string, []string) {
+	spans := foundryTemplatePattern.FindAllString(value, -1)
+	if len(spans) == 0 {
+		return value, "", nil
+	}
+
 	sentinel := foundrySentinelBase
 	for strings.Contains(value, sentinel) {
 		sentinel += "_"
 	}
-
 	index := 0
 	masked := foundryTemplatePattern.ReplaceAllStringFunc(value, func(string) string {
 		placeholder := fmt.Sprintf("%s%d_", sentinel, index)
 		index++
 		return placeholder
 	})
+	return masked, sentinel, spans
+}
 
-	expanded, err := envsubst.Eval(masked, mapping)
-	if err != nil {
-		return value, err
-	}
-
+func restoreFoundryExpressions(value, sentinel string, spans []string) string {
 	for i, span := range spans {
-		expanded = strings.Replace(expanded, fmt.Sprintf("%s%d_", sentinel, i), span, 1)
+		value = strings.Replace(value, fmt.Sprintf("%s%d_", sentinel, i), span, 1)
 	}
-	return expanded, nil
+	return value
 }

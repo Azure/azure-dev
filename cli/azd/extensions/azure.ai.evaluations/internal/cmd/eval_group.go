@@ -151,7 +151,11 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	// so a direct create and the eventual `azd up` agree on whose id/baseline
 	// this is. Without it, two configurations sharing an eval name would write
 	// the same unqualified keys and overwrite each other's identity.
-	reconciler := &evalReconciler{ec: ec, scope: ec.evalScopeOf(ctx, path)}
+	scope, err := ec.evalScopeOf(ctx, path)
+	if err != nil {
+		return err
+	}
+	reconciler := &evalReconciler{ec: ec, scope: scope}
 	if err := reconciler.Validate(ctx, selected, baseDir); err != nil {
 		return err
 	}

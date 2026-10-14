@@ -5,10 +5,13 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"maps"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -17,9 +20,68 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type recoveringProjectServer struct {
+	servingProjectServer
+	calls atomic.Int32
+}
+
+func (s *recoveringProjectServer) Get(
+	ctx context.Context, req *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	if s.calls.Add(1) == 1 {
+		return nil, status.Error(codes.Internal, "project lookup failed")
+	}
+	return s.servingProjectServer.Get(ctx, req)
+}
+
+func TestEvalScopeLookupFailureStopsBeforeUsingAnotherConfigurationsState(t *testing.T) {
+	for _, operation := range []string{"create", "resolve"} {
+		t.Run(operation, func(t *testing.T) {
+			ec, env, service, cfgA, cfgB, pathA, pathB := twoConfigFixture(t)
+			createLocal(t, ec, env, cfgA, pathA)
+			require.NoError(t, project.SaveEvalConfigTo(pathB, cfgB))
+			beforeConfig := maps.Clone(env.config)
+			beforeValues := maps.Clone(env.values)
+			beforeState := maps.Clone(env.state)
+			beforeCreated := len(service.created)
+
+			host := &recoveringProjectServer{
+				servingProjectServer: servingProjectServer{project: &azdext.ProjectConfig{Path: ec.root}},
+			}
+			fresh := *ec
+			fresh.azdClient = newTestAzdClient(t, env, host)
+			fresh.rootKnown = false
+			fresh.root = ""
+			fresh.state, fresh.schemas = nil, nil
+			var err error
+			if operation == "create" {
+				cmd := jsonCmd(t, "json")
+				cmd.SetContext(t.Context())
+				err = (&evalCreateAction{cmd: cmd}).create(&fresh, cfgB, &cfgB.Evals[0], pathB)
+			} else {
+				_, err = fresh.resolveEvalRef(t.Context(), filepath.Dir(pathB), cfgB.Evals[0].Name)
+			}
+			require.Error(t, err)
+			assert.Equal(t, codes.Internal, status.Code(err))
+			assert.Equal(t, int32(1), host.calls.Load(), "do not retry with an empty ownership scope")
+			assert.Equal(t, beforeCreated, len(service.created), "no eval may be created or replaced")
+			assert.Equal(t, beforeConfig, env.config, "the other configuration's IDs and baselines remain intact")
+			assert.Equal(t, beforeValues, env.values)
+			assert.Equal(t, beforeState, env.state)
+
+			root, retryErr := fresh.projectRoot(t.Context())
+			require.NoError(t, retryErr, "a later lookup would have succeeded")
+			assert.Equal(t, ec.root, root)
+		})
+	}
+}
 
 // twoConfigFixture lays out two configurations, in different directories but
 // one shared environment, that both declare a local-source eval named

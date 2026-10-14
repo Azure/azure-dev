@@ -955,6 +955,9 @@ that the evaluator is absent. Missing or malformed list data and failed
 continuation pages remain errors. Unrelated invalid evals do not block this targeted
 command; `azd up` validates the entire evaluation service before publishing any
 of its dependencies. Validation does not write private reconciliation state.
+Creating or resolving a declared eval also stops if the project-root lookup fails,
+rather than using unqualified identity keys that may belong to another configuration.
+Standalone invocations with no project remain supported.
 The target-input check for a local dataset invoking an agent or model requires
 `query` in at least one row, using the union of row fields. This is separate from
 required evaluator inputs and explicit item bindings, whose columns must occur

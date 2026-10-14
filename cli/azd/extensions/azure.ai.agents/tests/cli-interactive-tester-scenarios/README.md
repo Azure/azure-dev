@@ -364,6 +364,13 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
+| `tier1/1.10-init-harness-region-restrictions.yaml` | GitHub Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+
+`1.10` requires externally prepared, readable Foundry projects in both supported and
+unsupported harness regions, with a usable model deployment in the unsupported project.
+Set `{region}` to a supported region and `{model}` to a catalog model unavailable there
+but available with quota in an unsupported recovery region. The scenario does not create
+these fixtures; missing prerequisites fail setup rather than skipping recovery coverage.
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.

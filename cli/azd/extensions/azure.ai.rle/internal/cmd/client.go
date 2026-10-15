@@ -36,9 +36,14 @@ type rleClient struct {
 var createRleClient = newRleClient
 
 type v1EnvironmentRequest struct {
-	Name         string `json:"name,omitempty"`
-	AcrImagePath string `json:"acrImagePath"`
-	VersionBump  string `json:"versionBump,omitempty"`
+	Name         string               `json:"name,omitempty"`
+	AcrImagePath string               `json:"acrImagePath"`
+	VersionBump  string               `json:"versionBump,omitempty"`
+	Traces       *tracesConfiguration `json:"traces,omitempty"`
+}
+
+type tracesConfiguration struct {
+	Enabled bool `json:"enabled"`
 }
 
 type environmentResource struct {

@@ -17,14 +17,19 @@ import (
 )
 
 type rlePublishFlags struct {
-	dockerfile  string
-	versionBump string
+	dockerfile      string
+	versionBump     string
+	enableTraces    bool
+	enableTracesSet bool
 }
 
 type publishAction struct {
 	cmd   *cobra.Command
 	flags *rlePublishFlags
 }
+
+var buildPublishImage = project.BuildRuntimeImage
+var pushPublishImage = project.PushImage
 
 func newPublishCommand() *cobra.Command {
 	flags := &rlePublishFlags{}
@@ -33,7 +38,10 @@ func newPublishCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish",
 		Short: "Build, push, and create or update the RLE environment",
-		Args:  cobra.NoArgs,
+		Long: "Build and push an RLE image, then create or update its environment. " +
+			"Traces are disabled unless --enable-traces is specified. When enabled, traces are sent to the owning " +
+			"RLE Foundry project.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&publishAction{cmd: cmd, flags: flags}).Run()
 		},
@@ -47,10 +55,17 @@ func newPublishCommand() *cobra.Command {
 		flags.versionBump,
 		"Version bump to apply when creating or updating the environment: major, minor, or patch.",
 	)
+	cmd.Flags().BoolVar(
+		&flags.enableTraces,
+		"enable-traces",
+		false,
+		"Enable traces in the owning RLE Foundry project. Use --enable-traces=false to explicitly disable them.",
+	)
 	return cmd
 }
 
 func (a *publishAction) Run() error {
+	a.flags.enableTracesSet = a.cmd.Flags().Changed("enable-traces")
 	versionBump, err := normalizeVersionBumpFlag(a.flags.versionBump)
 	if err != nil {
 		return err
@@ -91,7 +106,7 @@ func (a *publishAction) Run() error {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
-	if err := project.BuildRuntimeImage(
+	if err := buildPublishImage(
 		a.cmd.Context(),
 		a.cmd.OutOrStdout(),
 		a.cmd.ErrOrStderr(),
@@ -103,7 +118,7 @@ func (a *publishAction) Run() error {
 	); err != nil {
 		return err
 	}
-	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
+	if err := pushPublishImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
 	client, err := createRleClient(state.ProjectEndpoint)
@@ -111,6 +126,7 @@ func (a *publishAction) Run() error {
 		return err
 	}
 	request := buildEnvironmentCreateRequest(state.EnvironmentName, image, versionBump)
+	request.Traces = publishTracesConfiguration(a.flags)
 
 	var environment *environmentResource
 	created := state.EnvironmentId == ""
@@ -167,7 +183,19 @@ func (a *publishAction) Run() error {
 	if _, err := fmt.Fprintln(a.cmd.OutOrStdout(), string(body)); err != nil {
 		return err
 	}
+	if a.flags.enableTracesSet {
+		if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Traces enabled: %t\n", a.flags.enableTraces); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func publishTracesConfiguration(flags *rlePublishFlags) *tracesConfiguration {
+	if !flags.enableTracesSet {
+		return nil
+	}
+	return &tracesConfiguration{Enabled: flags.enableTraces}
 }
 
 func normalizeVersionBumpFlag(value string) (string, error) {

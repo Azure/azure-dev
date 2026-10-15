@@ -91,6 +91,25 @@ func TestPublishExposesStandaloneFlags(t *testing.T) {
 	} else if got := flag.DefValue; got != "major" {
 		t.Fatalf("expected --version-bump default to be major, got %q", got)
 	}
+	if flag := command.Flags().Lookup("enable-traces"); flag == nil {
+		t.Fatal("expected publish to expose --enable-traces")
+	}
+	if flag := command.Flags().Lookup("trace-content"); flag == nil {
+		t.Fatal("expected publish to expose --trace-content")
+	}
+	for _, flagName := range []string{
+		"auth",
+		"endpoint",
+		"payload-limit",
+		"project",
+		"queue",
+		"sampling",
+		"timeout",
+	} {
+		if flag := command.Flags().Lookup(flagName); flag != nil {
+			t.Fatalf("expected publish not to expose --%s", flagName)
+		}
+	}
 	if flag := command.Flags().Lookup("name"); flag != nil {
 		t.Fatal("expected publish not to expose --name")
 	}

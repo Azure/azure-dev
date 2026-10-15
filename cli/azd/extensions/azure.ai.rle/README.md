@@ -164,6 +164,21 @@ Use `--version-bump major` (default), `--version-bump minor`, or `--version-bump
 
 The publish command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
 
+Traces are disabled by default. Enable them at publish time with:
+
+```powershell
+azd ai rle publish --enable-traces
+```
+
+This serializes `{"traces":{"enabled":true}}`. When enabled, the service routes traces to the owning RLE Foundry project and defaults trace content to metadata. Select the content explicitly with:
+
+```powershell
+azd ai rle publish --enable-traces --trace-content metadata
+azd ai rle publish --enable-traces --trace-content full
+```
+
+The explicit selections serialize as `traces.content_mode` with `metadata` or `full`. `--trace-content` requires `--enable-traces=true`. Omitting `--trace-content` leaves `content_mode` out of the request so the service applies its metadata default. The CLI does not accept a destination project. Omitting `--enable-traces` omits `traces`, which the service treats as disabled. Use `--enable-traces=false` to send an explicit disabled value.
+
 If needed, override the Dockerfile path the same way as local run:
 
 ```powershell
@@ -186,10 +201,21 @@ azd ai rle list --output json
 
 ### 5. Show environment details
 
-Show the full details for a specific environment, including version history:
+Show the full details for a specific environment, including version history and trace content mode when the service returns it:
 
 ```powershell
 azd ai rle show code_rl
+```
+
+The version-history table shows whether traces are enabled and the authoritative
+service-provided trace identity when available. A rollout-scoped version displays
+`Per rollout` rather than inventing an ID; older services without an identity
+display `Unavailable`. `--output json` preserves the optional `traces` and
+`telemetry` descriptors. To inspect one exact version with a single request
+(including its trace run ID format):
+
+```powershell
+azd ai rle show code_rl --version 1.2.0
 ```
 
 When run from a published environment folder, the environment name and Foundry

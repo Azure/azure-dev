@@ -965,7 +965,8 @@ func (plan *connectionAddPlan) prepareWrites(
 // Project service and every service in uses. It returns a conflict error,
 // asking the user to rerun, when any of that changed after planning.
 // Changes to unrelated services or to fields this plan never reads or writes
-// are left alone, so they do not cause a conflict.
+// are left alone, so they do not cause a conflict. Explicit empty service env
+// maps are refused because the host would drop them when saving the manifest.
 //
 // This narrows the race window between planning and applying but does not
 // eliminate it: the AddService, SetServiceConfigValue, and UnsetServiceConfig
@@ -978,6 +979,28 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 	current, err := loadConnectionProjectSnapshot(ctx, plan.planClient, plan.projectRoot)
 	if err != nil {
 		return fmt.Errorf("re-reading the project manifest before writing: %w", err)
+	}
+
+	// azd hosts up to at least v1.34.0 (and current main) re-serialize the whole typed manifest on
+	// AddService/SetServiceConfigValue/UnsetServiceConfig. ServiceConfig.Environment is yaml:"env,omitempty",
+	// dropping env: {}. For Connection services, missing env inherits all azd/process values instead of none.
+	// Remove this guard once requiredAzdVersion includes Azure/azure-dev#10479.
+	for _, key := range slices.Sorted(maps.Keys(current.services)) {
+		service, ok := current.services[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		if env, ok := service["env"].(map[string]any); ok && len(env) == 0 {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf(
+					"service %q has an explicitly empty env; the current azd host would drop its empty "+
+						"env when saving azure.yaml; no changes were written.",
+					key,
+				),
+				"Edit azure.yaml by hand, or upgrade azd.",
+			)
+		}
 	}
 
 	changed := !reflect.DeepEqual(

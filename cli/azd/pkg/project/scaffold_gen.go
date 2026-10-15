@@ -379,6 +379,14 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		infraSpec.StorageAccount = &scaffold.StorageAccount{Implicit: true}
 	}
 
+	for _, svc := range infraSpec.Services {
+		if svc.Host == scaffold.FunctionAppKind {
+			if err := validateFunctionAppBindingSettings(svc, &infraSpec); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &infraSpec, nil
 }
 
@@ -475,6 +483,39 @@ var unsupportedFunctionAppSettings = []string{
 	"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
 	"SCM_DO_BUILD_DURING_DEPLOYMENT",
 	"ENABLE_ORYX_BUILD",
+}
+
+func validateFunctionAppBindingSettings(svc scaffold.ServiceSpec, infra *scaffold.InfraSpec) error {
+	// Match the conditional bindings in resources.bicept, including the project-wide Key Vault.
+	bindings := []struct {
+		generated bool
+		settings  []string
+	}{
+		{svc.DbCosmos != nil, []string{"AZURE_COSMOS_ENDPOINT"}},
+		{svc.DbCosmosMongo != nil, []string{"MONGODB_URL"}},
+		{svc.DbPostgres != nil, []string{
+			"POSTGRES_HOST", "POSTGRES_USERNAME", "POSTGRES_DATABASE", "POSTGRES_PORT", "POSTGRES_PASSWORD", "POSTGRES_URL",
+		}},
+		{svc.DbMySql != nil, []string{
+			"MYSQL_HOST", "MYSQL_USERNAME", "MYSQL_DATABASE", "MYSQL_PORT", "MYSQL_PASSWORD", "MYSQL_URL",
+		}},
+		{svc.DbRedis != nil, []string{"REDIS_HOST", "REDIS_PORT", "REDIS_ENDPOINT", "REDIS_PASSWORD", "REDIS_URL"}},
+		{svc.EventHubs != nil, []string{"AZURE_EVENT_HUBS_NAME", "AZURE_EVENT_HUBS_HOST"}},
+		{svc.ServiceBus != nil, []string{"AZURE_SERVICE_BUS_NAME", "AZURE_SERVICE_BUS_HOST"}},
+		{svc.StorageAccount != nil, []string{"AZURE_STORAGE_ACCOUNT_NAME", "AZURE_STORAGE_BLOB_ENDPOINT"}},
+		{infra.KeyVault != nil, []string{"AZURE_KEY_VAULT_NAME", "AZURE_KEY_VAULT_ENDPOINT"}},
+		{len(svc.AIModels) > 0, []string{"AZURE_OPENAI_ENDPOINT"}},
+		{svc.AISearch != nil, []string{"AZURE_AI_SEARCH_ENDPOINT"}},
+		{svc.AiFoundryProject != nil, []string{"AZURE_AI_PROJECT_ENDPOINT"}},
+	}
+	for _, name := range slices.Sorted(maps.Keys(svc.Env)) {
+		for _, binding := range bindings {
+			if binding.generated && slices.Contains(binding.settings, strings.ToUpper(name)) {
+				return fmt.Errorf("resources.%s.env cannot override generated binding setting %s", svc.Name, name)
+			}
+		}
+	}
+	return nil
 }
 
 func mapFunctionApp(
@@ -648,6 +689,14 @@ func mapHostUses(
 					fmt.Sprintf("%s_%s", resourceMeta.StandardVarPrefix, environment.Key(use)),
 					key)
 
+				if svcSpec.Host == scaffold.FunctionAppKind {
+					for name := range svcSpec.Env {
+						if strings.EqualFold(name, envKey) {
+							return fmt.Errorf("resources.%s.env cannot override generated binding setting %s",
+								res.Name, name)
+						}
+					}
+				}
 				if envValue, exists := svcSpec.Env[envKey]; exists {
 					panic(fmt.Sprintf(
 						"env collision: env value %s already set to %s, cannot set to %s", envKey, envValue, value))

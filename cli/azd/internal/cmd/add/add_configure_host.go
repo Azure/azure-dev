@@ -22,6 +22,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/blang/semver/v4"
 )
 
 // LanguageMap is a map of supported languages.
@@ -57,11 +59,12 @@ var ServiceLanguageMap = map[project.ServiceLanguageKind]project.AppServiceRunti
 }
 
 // App Service and Functions support different runtime versions and formats, so their defaults cannot share one map.
+// The .NET version is evaluated from the project instead of using a static default.
 var functionRuntimeByLanguage = map[project.ServiceLanguageKind]project.FunctionAppRuntime{
 	project.ServiceLanguagePython:     {Stack: "python", Version: "3.12"},
 	project.ServiceLanguageJavaScript: {Stack: "node", Version: "22"},
 	project.ServiceLanguageTypeScript: {Stack: "node", Version: "22"},
-	project.ServiceLanguageDotNet:     {Stack: "dotnet-isolated", Version: "8.0"},
+	project.ServiceLanguageDotNet:     {Stack: "dotnet-isolated"},
 	project.ServiceLanguageJava:       {Stack: "java", Version: "21"},
 	project.ServiceLanguageGo:         {Stack: "go", Version: "1.0"},
 }
@@ -90,7 +93,8 @@ func (a *AddAction) configureHost(
 		ctx,
 		console,
 		svcSpec,
-		*prj)
+		*prj,
+		a.dotnetCli)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -310,6 +314,7 @@ func addServiceAsResource(
 	console input.Console,
 	svc *project.ServiceConfig,
 	prj appdetect.Project,
+	dotnetCli *dotnet.Cli,
 ) (*project.ResourceConfig, error) {
 	resSpec := project.ResourceConfig{
 		Name: svc.Name,
@@ -318,6 +323,18 @@ func addServiceAsResource(
 		runtime, ok := functionRuntimeByLanguage[svc.Language]
 		if !ok {
 			return nil, fmt.Errorf("unsupported Function App language: %s", svc.Language)
+		}
+		if svc.Language.IsDotNet() {
+			frameworkVersion, err := dotnetCli.GetMsBuildProperty(ctx, prj.Path, "TargetFrameworkVersion",
+				"-property:Configuration=Release")
+			if err != nil {
+				return nil, fmt.Errorf("evaluating Function App target framework: %w", err)
+			}
+			version, err := semver.ParseTolerant(strings.TrimPrefix(strings.TrimSpace(frameworkVersion), "v"))
+			if err != nil {
+				return nil, fmt.Errorf("invalid Function App target framework version %q: %w", frameworkVersion, err)
+			}
+			runtime.Version = fmt.Sprintf("%d.%d", version.Major, version.Minor)
 		}
 		resSpec.Type = project.ResourceTypeHostFunctionApp
 		resSpec.Props = project.FunctionAppProps{Runtime: runtime}

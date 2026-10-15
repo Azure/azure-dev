@@ -804,6 +804,157 @@ func Test_infraSpec_FunctionAppRejectsReservedSettings(t *testing.T) {
 	}
 }
 
+func Test_infraSpec_FunctionAppBindingSettings(t *testing.T) {
+	projectPath := functionProjectDir(t)
+	bindings := []struct {
+		resourceType ResourceType
+		props        any
+		settings     []string
+	}{
+		{ResourceTypeDbCosmos, CosmosDBProps{}, []string{"AZURE_COSMOS_ENDPOINT"}},
+		{ResourceTypeDbMongo, nil, []string{"MONGODB_URL"}},
+		{ResourceTypeDbPostgres, nil, []string{
+			"POSTGRES_HOST", "POSTGRES_USERNAME", "POSTGRES_DATABASE", "POSTGRES_PORT", "POSTGRES_PASSWORD", "POSTGRES_URL",
+		}},
+		{ResourceTypeDbMySql, nil, []string{
+			"MYSQL_HOST", "MYSQL_USERNAME", "MYSQL_DATABASE", "MYSQL_PORT", "MYSQL_PASSWORD", "MYSQL_URL",
+		}},
+		{ResourceTypeDbRedis, nil, []string{"REDIS_HOST", "REDIS_PORT", "REDIS_ENDPOINT", "REDIS_PASSWORD", "REDIS_URL"}},
+		{ResourceTypeMessagingEventHubs, EventHubsProps{}, []string{"AZURE_EVENT_HUBS_NAME", "AZURE_EVENT_HUBS_HOST"}},
+		{ResourceTypeMessagingServiceBus, ServiceBusProps{}, []string{"AZURE_SERVICE_BUS_NAME", "AZURE_SERVICE_BUS_HOST"}},
+		{ResourceTypeStorage, StorageProps{}, []string{"AZURE_STORAGE_ACCOUNT_NAME", "AZURE_STORAGE_BLOB_ENDPOINT"}},
+		{ResourceTypeKeyVault, nil, []string{"AZURE_KEY_VAULT_NAME", "AZURE_KEY_VAULT_ENDPOINT"}},
+		{ResourceTypeOpenAiModel, AIModelProps{Model: AIModelPropsModel{
+			Name: "gpt-4o", Version: "2024-08-06",
+		}}, []string{"AZURE_OPENAI_ENDPOINT"}},
+		{ResourceTypeAiSearch, nil, []string{"AZURE_AI_SEARCH_ENDPOINT"}},
+		{ResourceTypeAiProject, AiFoundryModelProps{}, []string{"AZURE_AI_PROJECT_ENDPOINT"}},
+	}
+	for _, binding := range bindings {
+		for _, setting := range binding.settings {
+			for _, name := range []string{setting, strings.ToLower(setting)} {
+				t.Run(name, func(t *testing.T) {
+					cfg := &ProjectConfig{
+						Path: projectPath,
+						Resources: map[string]*ResourceConfig{
+							"api": {
+								Name: "api", Type: ResourceTypeHostFunctionApp,
+								Props: FunctionAppProps{
+									Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+									Env:     []ServiceEnvVar{{Name: name, Secret: "private-value"}},
+								},
+							},
+						},
+						Services: map[string]*ServiceConfig{
+							"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+						},
+					}
+
+					// Without a binding, even the implicit host-storage account must not reserve these names.
+					files, err := infraFs(t.Context(), cfg)
+					require.NoError(t, err)
+					content, err := fs.ReadFile(files, "resources.bicep")
+					require.NoError(t, err)
+					assert.Contains(t, string(content), "'"+name+"': 'private-value'")
+
+					cfg.Resources["dependency"] = &ResourceConfig{
+						Name: "dependency", Type: binding.resourceType, Props: binding.props,
+					}
+					if binding.resourceType != ResourceTypeKeyVault {
+						_, err = infraSpec(cfg)
+						require.NoError(t, err, "unused resources must not reserve binding settings")
+					}
+					cfg.Resources["api"].Uses = []string{"dependency"}
+					_, err = infraSpec(cfg)
+					require.ErrorContains(t, err, "resources.api.env cannot override generated binding setting "+name)
+					assert.NotContains(t, err.Error(), "private-value")
+
+					// Similar custom names are not binding collisions and must retain their original spelling.
+					props := cfg.Resources["api"].Props.(FunctionAppProps)
+					props.Env = []ServiceEnvVar{{Name: name + ".Custom-Setting", Value: "custom"}}
+					cfg.Resources["api"].Props = props
+					files, err = infraFs(t.Context(), cfg)
+					require.NoError(t, err)
+					content, err = fs.ReadFile(files, "resources.bicep")
+					require.NoError(t, err)
+					assert.Contains(t, string(content), setting+":")
+					assert.Contains(t, string(content), "'"+name+".Custom-Setting': 'custom'")
+				})
+			}
+		}
+	}
+}
+
+func Test_infraSpec_FunctionAppProjectKeyVaultSettingCollision(t *testing.T) {
+	for _, resourceType := range []ResourceType{ResourceTypeKeyVault, ResourceTypeDbRedis} {
+		t.Run(string(resourceType), func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Path: functionProjectDir(t),
+				Resources: map[string]*ResourceConfig{
+					"api": {
+						Name: "api", Type: ResourceTypeHostFunctionApp,
+						Props: FunctionAppProps{
+							Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+							Env:     []ServiceEnvVar{{Name: "azure_key_vault_endpoint", Value: "custom"}},
+						},
+					},
+					"zzz": {Name: "zzz", Type: resourceType},
+				},
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+				},
+			}
+			_, err := infraSpec(cfg)
+			require.ErrorContains(t, err, "cannot override generated binding setting azure_key_vault_endpoint")
+		})
+	}
+}
+
+func Test_infraSpec_FunctionAppExistingBindingSettingCollision(t *testing.T) {
+	for _, setting := range []string{
+		"AZURE_STORAGE_DATA_ACCOUNT_NAME",
+		"AZURE_STORAGE_DATA_BLOB_ENDPOINT",
+	} {
+		for _, name := range []string{setting, strings.ToLower(setting)} {
+			t.Run(name, func(t *testing.T) {
+				cfg := &ProjectConfig{
+					Path: functionProjectDir(t),
+					Resources: map[string]*ResourceConfig{
+						"api": {
+							Name: "api", Type: ResourceTypeHostFunctionApp, Uses: []string{"data"},
+							Props: FunctionAppProps{
+								Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"},
+								Env:     []ServiceEnvVar{{Name: name, Value: "private-value"}},
+							},
+						},
+						"data": {Name: "data", Type: ResourceTypeStorage, Existing: true},
+					},
+					Services: map[string]*ServiceConfig{
+						"api": {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+					},
+				}
+				_, err := infraSpec(cfg)
+				require.ErrorContains(t, err, "resources.api.env cannot override generated binding setting "+name)
+				assert.NotContains(t, err.Error(), "private-value")
+
+				props := cfg.Resources["api"].Props.(FunctionAppProps)
+				props.Env = []ServiceEnvVar{
+					{Name: name + ".Custom-Setting", Value: "custom"},
+					{Name: "AZURE_STORAGE_ACCOUNT_NAME", Value: "other"},
+				}
+				cfg.Resources["api"].Props = props
+				files, err := infraFs(t.Context(), cfg)
+				require.NoError(t, err)
+				content, err := fs.ReadFile(files, "resources.bicep")
+				require.NoError(t, err)
+				assert.Contains(t, string(content), "'"+name+".Custom-Setting': 'custom'")
+				assert.Contains(t, string(content), "'AZURE_STORAGE_ACCOUNT_NAME': 'other'")
+				assert.Contains(t, string(content), "'"+setting+"': existingData.")
+			})
+		}
+	}
+}
+
 func Test_infraSpec_FunctionAppRejectsUnsupportedSettings(t *testing.T) {
 	for _, setting := range []string{
 		"FUNCTIONS_EXTENSION_VERSION",

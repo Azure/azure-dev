@@ -192,9 +192,13 @@ resources:
 
 Without a storage resource in `uses`, azd uses the project's managed storage account, creating one implicitly if the project has none. Multiple Function Apps without a storage reference share this account, but each gets its own deployment container, user-assigned identity, and host ID. Referencing exactly one managed or existing `storage` resource selects that account for host state and deployment; other resources can also be referenced for application settings and access. Existing storage can be in another resource group and must be configured with its resource ID in the environment. Required Function App settings, including `AzureWebJobsStorage*` and `AzureFunctionsWebHost__hostid`, cannot be overridden through `resources.<name>.env`. Explicitly select a Flex Consumption-supported region and runtime version for your project.
 
+Custom Function App settings also cannot override generated resource-binding settings (case-insensitive), such as `AZURE_STORAGE_ACCOUNT_NAME` when a managed storage resource is in `uses`, or settings generated for an existing resource. Key Vault settings are generated whenever the project includes a managed Key Vault, including one added implicitly for a database. Names of bindings that are not generated for the Function App remain available for custom settings.
+
 Implicit backing storage does not export `AZURE_RESOURCE_STORAGE_ID`, preserving any existing storage resource ID configured in the environment when existing and implicit storage are used together.
 
 Runtime versions use numeric strings, not App Service suffixes such as `22-lts`. Examples include `"3.12"` for `python`, `"22"` for `node`, `"8.0"` for `dotnet-isolated`, `"21"` for `java`, and `"1.0"` for `go`. The runtime stack must match the service language; these examples are not a complete list of supported versions.
+
+For .NET Function Apps, `azd add` derives the runtime version from the project's evaluated Release target framework, including properties inherited from MSBuild imports, rather than using a fixed .NET version.
 
 Both `azd add` and compose infrastructure generation require a `host.json` file in the service's source directory and reject .NET source projects that reference `Microsoft.NET.Sdk.Functions`. Use the isolated worker model for Flex Consumption.
 

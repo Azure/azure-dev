@@ -495,12 +495,15 @@ func (cli *Cli) SetSecrets(ctx context.Context, secrets map[string]string, proje
 }
 
 // GetMsBuildProperty uses -getProperty to fetch a property after evaluation, without executing the build.
+// Additional arguments can select the build configuration used for evaluation.
 //
 // This only works for versions dotnet >= 8, MSBuild >= 17.8.
 // On older tool versions, this will return an error.
-func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
+func (cli *Cli) GetMsBuildProperty(
+	ctx context.Context, project string, propertyName string, additionalArgs ...string,
+) (string, error) {
 	runArgs := newDotNetRunArgs("msbuild",
-		project, "--ignore:.sln", fmt.Sprintf("--getProperty:%s", propertyName))
+		project, "--ignore:.sln", fmt.Sprintf("--getProperty:%s", propertyName)).AppendParams(additionalArgs...)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", err

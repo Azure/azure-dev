@@ -370,7 +370,7 @@ spring:
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tt.embedded, a.Embedded)
+			require.Equal(t, tt.embedded, a.Embedded != nil)
 			require.Equal(t, tt.profiles, a.Profiles)
 			if tt.kind == "" {
 				require.Empty(t, a.Requirements)

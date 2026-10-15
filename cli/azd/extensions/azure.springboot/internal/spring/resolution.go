@@ -1,0 +1,268 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package spring
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+)
+
+// DeploymentInputs contains deliberate deployment choices, never an ambient environment.
+type DeploymentInputs struct {
+	Profiles   []string
+	Properties map[string]string
+}
+
+// Resource describes a logical dependency independently of Azure server placement.
+type Resource struct {
+	ID          string
+	Kind        ResourceKind
+	Name        string
+	Disposition Disposition
+}
+
+// Disposition distinguishes provisioned resources from application-local storage.
+type Disposition string
+
+const (
+	// Provisioned requires an Azure resource provider.
+	Provisioned Disposition = "provisioned"
+	// ApplicationLocal requires no separately provisioned resource.
+	ApplicationLocal Disposition = "applicationLocal"
+)
+
+// Binding connects an application's named dependency to a logical resource.
+type Binding struct {
+	ID             string
+	ApplicationID  string
+	ResourceID     string
+	PropertyPrefix string
+	Authentication string
+	JDBCOptions    string
+	Embedded       *EmbeddedBinding
+	Evidence       []Evidence
+}
+
+// DecisionKind distinguishes missing values from evidenced alternative selections.
+type DecisionKind string
+
+const (
+	// MissingInput requires a value without guessing one from dependencies.
+	MissingInput DecisionKind = "missingInput"
+	// Ambiguous requires selecting among evidenced alternatives.
+	Ambiguous DecisionKind = "ambiguous"
+)
+
+// Decision identifies an unresolved selector and the scope it can affect.
+type Decision struct {
+	ID             string
+	Kind           DecisionKind
+	Input          string
+	Profiles       bool
+	Choices        []string
+	ApplicationIDs []string
+	BindingIDs     []string
+	Evidence       []Evidence
+}
+
+// Diagnostic describes a blocking invalid or unsupported application configuration.
+type Diagnostic struct {
+	Kind    string
+	Message string
+}
+
+func (d *Diagnostic) Error() string { return d.Message }
+
+func invalidConfiguration(message string, args ...any) error {
+	return &Diagnostic{Kind: "invalid", Message: fmt.Sprintf(message, args...)}
+}
+
+func unsupportedConfiguration(message string, args ...any) error {
+	return &Diagnostic{Kind: "unsupported", Message: fmt.Sprintf(message, args...)}
+}
+
+// Analysis separates resolved resource facts from decisions and blocking diagnostics.
+type Analysis struct {
+	Applications []Application
+	Resources    []Resource
+	Bindings     []Binding
+	Decisions    []Decision
+	Diagnostics  []Diagnostic
+}
+
+type missingInput struct {
+	name     string
+	evidence []Evidence
+	choices  []string
+}
+
+func (m *missingInput) Error() string {
+	return fmt.Sprintf("a required Spring configuration placeholder %s is unresolved", m.name)
+}
+
+// AnalyzeProject resolves supported resources using only explicit deployment inputs.
+// The detector supports one application/datasource; identities do not imply broader detection.
+func AnalyzeProject(
+	ctx context.Context, directory string, resolver ModelResolver, inputs DeploymentInputs,
+) (*Analysis, error) {
+	result := &Analysis{}
+	properties := make(map[string]string, len(inputs.Properties)+1)
+	for key, value := range inputs.Properties {
+		if !propertyName.MatchString(key) {
+			return nil, errors.New("deployment property names must be Spring property or placeholder identifiers")
+		}
+		name := canonical(key)
+		if _, exists := properties[name]; exists {
+			return nil, fmt.Errorf("deployment property %s is supplied more than once", key)
+		}
+		properties[name] = value
+	}
+	if _, exists := properties[canonical("spring.profiles.active")]; exists {
+		return nil, errors.New("use --profiles instead of --property for spring.profiles.active")
+	}
+	if inputs.Profiles != nil {
+		properties[canonical("spring.profiles.active")] = strings.Join(inputs.Profiles, ",")
+	}
+	used := map[string]bool{}
+	lookup := func(key string) (string, bool) {
+		key = canonical(key)
+		value, ok := properties[key]
+		if ok {
+			used[key] = true
+		}
+		return value, ok
+	}
+	application, err := Analyze(ctx, directory, resolver, lookup)
+	if err != nil {
+		if missing, ok := errors.AsType[*missingInput](err); ok {
+			decision := Decision{
+				ID: "property:" + missing.name, Kind: MissingInput, Input: missing.name,
+				ApplicationIDs: []string{"app"}, Evidence: deploymentEvidence(missing.evidence),
+			}
+			for _, evidence := range missing.evidence {
+				if evidence.Property == "spring.profiles.active" || evidence.Property == "spring.profiles.default" {
+					decision.ID, decision.Profiles = "profiles", true
+					decision.Choices = missing.choices
+					if len(decision.Choices) > 1 {
+						decision.Kind = Ambiguous
+					}
+				}
+				if evidence.Property == "spring.datasource.url" {
+					decision.BindingIDs = []string{"app/datasource:primary"}
+				}
+			}
+			if !decision.Profiles && !slices.ContainsFunc(missing.evidence, func(e Evidence) bool {
+				return e.Property == "spring.datasource.url" || e.Property == "server.port"
+			}) {
+				result.Diagnostics = []Diagnostic{{
+					Kind: "unsupported",
+					Message: "unresolved configuration outside datasource URL, server port, or profile selection; " +
+						"configure it in the application",
+				}}
+			} else {
+				result.Decisions = []Decision{decision}
+			}
+			return result, nil
+		}
+		if diagnostic, ok := errors.AsType[*Diagnostic](err); ok {
+			result.Diagnostics = []Diagnostic{*diagnostic}
+			return result, nil
+		}
+		return nil, err
+	}
+	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
+		if !used[canonical(key)] {
+			return nil, fmt.Errorf("--property %s cannot affect the selected configuration", key)
+		}
+	}
+	// Only these destinations have deployment-owned runtime overrides.
+	for key := range properties {
+		if key == canonical("spring.profiles.active") {
+			continue
+		}
+		if !slices.ContainsFunc(application.InputEvidence, func(e Evidence) bool {
+			return canonical(e.Property) == key
+		}) {
+			return nil, errors.New("explicit deployment properties must resolve a datasource URL or server port; " +
+				"configure other settings in the application")
+		}
+	}
+	requirements, embedded := application.Requirements, application.Embedded
+	application.Requirements, application.Embedded, application.InputEvidence = nil, nil, nil
+	result.Applications = []Application{*application}
+	for _, requirement := range requirements {
+		result.Resources = append(result.Resources, Resource{
+			ID: "datasource:primary", Kind: requirement.Kind, Name: requirement.Name, Disposition: Provisioned,
+		})
+		result.Bindings = append(result.Bindings, Binding{
+			ID: "app/datasource:primary", ApplicationID: "app", ResourceID: "datasource:primary",
+			PropertyPrefix: "spring.datasource", Authentication: requirement.Authentication,
+			JDBCOptions: requirement.JDBCOptions, Evidence: deploymentEvidence(requirement.Trace),
+		})
+	}
+	if embedded != nil {
+		result.Resources = append(result.Resources, Resource{
+			ID: "datasource:primary", Kind: ResourceKind(embedded.Engine), Disposition: ApplicationLocal,
+		})
+		result.Bindings = append(result.Bindings, Binding{
+			ID: "app/datasource:primary", ApplicationID: "app", ResourceID: "datasource:primary",
+			PropertyPrefix: "spring.datasource", Embedded: embedded, Evidence: deploymentEvidence(embedded.Evidence),
+		})
+	}
+	return result, nil
+}
+
+func deploymentEvidence(evidence []Evidence) []Evidence {
+	result := slices.Clone(evidence)
+	for i := range result {
+		if result[i].Source == "environment" {
+			result[i].Source = "deployment input"
+		}
+	}
+	return result
+}
+
+// ResolvedApplication validates the graph before adapting it to the single-app template.
+func (a *Analysis) ResolvedApplication() (*Application, error) {
+	if len(a.Decisions) != 0 || len(a.Diagnostics) != 0 {
+		return nil, errors.New("deployment configuration has unresolved decisions or blocking diagnostics")
+	}
+	if len(a.Applications) != 1 || len(a.Bindings) > 1 || len(a.Resources) != len(a.Bindings) {
+		return nil, errors.New("the deployment template supports one application and at most one datasource")
+	}
+	application := a.Applications[0]
+	application.Requirements, application.Embedded = nil, nil
+	for _, binding := range a.Bindings {
+		if binding.ApplicationID != application.ID || binding.PropertyPrefix != "spring.datasource" ||
+			binding.ID != application.ID+"/datasource:primary" || binding.ResourceID != "datasource:primary" {
+			return nil, errors.New("the datasource binding does not match the supported application")
+		}
+		resource := a.Resources[0]
+		if resource.ID != binding.ResourceID {
+			return nil, errors.New("the datasource resource reference is invalid")
+		}
+		switch resource.Disposition {
+		case ApplicationLocal:
+			if binding.Embedded == nil || resource.Kind != ResourceKind(binding.Embedded.Engine) {
+				return nil, errors.New("the embedded datasource binding is invalid")
+			}
+			application.Embedded = binding.Embedded
+		case Provisioned:
+			if binding.Embedded != nil {
+				return nil, errors.New("a provisioned datasource cannot have an embedded binding")
+			}
+			application.Requirements = []Requirement{{
+				Kind: resource.Kind, Name: resource.Name, Authentication: binding.Authentication,
+				JDBCOptions: binding.JDBCOptions, Trace: binding.Evidence,
+			}}
+		default:
+			return nil, errors.New("the datasource has no supported deployment disposition")
+		}
+	}
+	return &application, nil
+}

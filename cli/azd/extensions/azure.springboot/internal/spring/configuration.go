@@ -22,12 +22,13 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// LookupEnv provides explicit Spring activation and property overrides.
+// LookupEnv supplies property overrides from a caller-selected source.
 type LookupEnv func(string) (string, bool)
 
 type property struct {
 	text   string
 	source string
+	key    string
 }
 
 type configuration struct {
@@ -35,6 +36,8 @@ type configuration struct {
 	profiles      []string
 	lookup        LookupEnv
 	externalFiles []string
+	traces        map[string][]Evidence
+	trace         []Evidence
 }
 
 type document struct {
@@ -44,6 +47,7 @@ type document struct {
 
 var placeholder = regexp.MustCompile(`\$\{([^{}]+)\}`)
 var profileName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+var propertyName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 var configurationLocations = [][]string{
 	{"src/main/resources", "src/main/resources/config"},
 	{".", "config"},
@@ -104,6 +108,13 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	}
 	active, err := c.resolve("spring.profiles.active")
 	if err != nil {
+		if missing, ok := errors.AsType[*missingInput](err); ok {
+			missing.choices, err = profileChoices(root, allLocations, base)
+			if err != nil {
+				return nil, err
+			}
+			return nil, missing
+		}
 		return nil, err
 	}
 	includeKey := "spring.profiles.include"
@@ -127,7 +138,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	}
 	var included strings.Builder
 	for _, p := range includeSources {
-		text, err := c.expandText(p.text, map[string]bool{})
+		text, err := c.expandProperty(includeKey, p, map[string]bool{})
 		if err != nil {
 			return nil, fmt.Errorf("resolving profile includes in %s: %w", p.source, err)
 		}
@@ -138,6 +149,13 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	if len(names) == 0 {
 		defaults, err := c.resolve("spring.profiles.default")
 		if err != nil {
+			if missing, ok := errors.AsType[*missingInput](err); ok {
+				missing.choices, err = profileChoices(root, allLocations, base)
+				if err != nil {
+					return nil, err
+				}
+				return nil, missing
+			}
 			return nil, err
 		}
 		names = splitList(defaults)
@@ -156,7 +174,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 			continue
 		}
 		if len(names) >= 64 || !profileName.MatchString(name) {
-			return nil, errors.New("Spring profile activation is invalid or exceeds 64 profiles")
+			return nil, invalidConfiguration("Spring profile activation is invalid or exceeds 64 profiles")
 		}
 		names = append(names, name)
 		group, err := c.resolve("spring.profiles.group." + name)
@@ -197,7 +215,8 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	maps.Copy(c.values, jsonProperties)
 	for key := range c.values {
 		if strings.Contains(key, "[") && strings.HasPrefix(key, "spring.profiles.") {
-			return nil, errors.New("indexed profile properties require list-binding analysis not yet supported")
+			return nil, unsupportedConfiguration(
+				"indexed profile properties require list-binding analysis not yet supported")
 		}
 	}
 	for _, key := range []string{"spring.config.import", "spring.config.location",
@@ -207,7 +226,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 			return nil, err
 		}
 		if value != "" {
-			return nil, fmt.Errorf("%s requires configuration-location analysis not yet supported", key)
+			return nil, unsupportedConfiguration("%s requires configuration-location analysis not yet supported", key)
 		}
 	}
 	return c, nil
@@ -218,23 +237,23 @@ func (c *configuration) apply(doc document, selected map[string]bool, profileFil
 	if conditional {
 		match, err := matchesProfile(condition.text, selected)
 		if err != nil {
-			return fmt.Errorf("invalid profile activation in %s", condition.source)
+			return invalidConfiguration("invalid profile activation in %s", condition.source)
 		}
 		if !match {
 			return nil
 		}
 	}
 	if _, cloud := doc.values[canonical("spring.config.activate.on-cloud-platform")]; cloud {
-		return errors.New("cloud-platform configuration activation cannot yet be inferred")
+		return unsupportedConfiguration("cloud-platform configuration activation cannot yet be inferred")
 	}
 	if conditional || profileFile {
 		for _, key := range []string{"spring.profiles.active", "spring.profiles.include", "spring.profiles.default"} {
 			if _, ok := doc.values[canonical(key)]; ok {
-				return fmt.Errorf("%s cannot be declared in profile-specific configuration", key)
+				return invalidConfiguration("%s cannot be declared in profile-specific configuration", key)
 			}
 			for key := range doc.values {
 				if strings.HasPrefix(key, "spring.profiles.group.") {
-					return errors.New("spring.profiles.group cannot be declared in profile-specific configuration")
+					return invalidConfiguration("spring.profiles.group cannot be declared in profile-specific configuration")
 				}
 			}
 		}
@@ -266,18 +285,18 @@ func readDocuments(ctx context.Context, root *os.Root, profile string, locations
 				return nil, fmt.Errorf("reading configuration %s: %w", file, err)
 			}
 			if len(data) > 1024*1024 {
-				return nil, fmt.Errorf("configuration %s exceeds 1 MiB", file)
+				return nil, invalidConfiguration("configuration %s exceeds 1 MiB", file)
 			}
 			if extension == ".properties" {
 				for _, part := range splitPropertiesDocuments(string(data)) {
 					p := properties.NewProperties()
 					p.DisableExpansion = true
 					if err := p.Load([]byte(part), properties.UTF8); err != nil {
-						return nil, fmt.Errorf("invalid Java properties in %s", file)
+						return nil, invalidConfiguration("invalid Java properties in %s", file)
 					}
 					values := map[string]property{}
 					for key, value := range p.Map() {
-						values[canonical(key)] = property{text: value, source: file}
+						values[canonical(key)] = property{text: value, source: file, key: key}
 					}
 					docs = append(docs, document{values: values, file: file})
 				}
@@ -292,7 +311,7 @@ func readDocuments(ctx context.Context, root *os.Root, profile string, locations
 					break
 				}
 				if err != nil {
-					return nil, fmt.Errorf("invalid YAML configuration in %s", file)
+					return nil, invalidConfiguration("invalid YAML configuration in %s", file)
 				}
 				flat := map[string]property{}
 				if err := flatten(values, "", file, flat); err != nil {
@@ -339,19 +358,19 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 				case string:
 					items[i] = item
 				default:
-					return fmt.Errorf("non-scalar configuration list in %s", source)
+					return unsupportedConfiguration("non-scalar configuration list in %s", source)
 				}
 			}
-			result[canonical(name)] = property{text: strings.Join(items, ","), source: source}
+			result[canonical(name)] = property{text: strings.Join(items, ","), source: source, key: name}
 		case nil:
 			if source == "SPRING_APPLICATION_JSON" {
 				continue
 			}
-			result[canonical(name)] = property{source: source}
+			result[canonical(name)] = property{source: source, key: name}
 		case string, bool, int, int64, float64:
-			result[canonical(name)] = property{text: fmt.Sprint(value), source: source}
+			result[canonical(name)] = property{text: fmt.Sprint(value), source: source, key: name}
 		default:
-			return fmt.Errorf("unsupported configuration value in %s", source)
+			return unsupportedConfiguration("unsupported configuration value in %s", source)
 		}
 	}
 	return nil
@@ -377,12 +396,18 @@ func (c *configuration) raw(key string) (property, bool) {
 }
 
 func (c *configuration) resolve(key string) (string, error) {
-	return c.expand(key, map[string]bool{})
+	c.trace = nil
+	value, err := c.expand(key, map[string]bool{})
+	if c.traces == nil {
+		c.traces = map[string][]Evidence{}
+	}
+	c.traces[key] = slices.Clone(c.trace)
+	return value, err
 }
 
 func (c *configuration) expand(key string, visiting map[string]bool) (string, error) {
 	if visiting[key] || len(visiting) >= 32 {
-		return "", errors.New("Spring property substitution is circular or exceeds 32 levels")
+		return "", invalidConfiguration("Spring property substitution is circular or exceeds 32 levels")
 	}
 	visiting[key] = true
 	defer delete(visiting, key)
@@ -390,19 +415,34 @@ func (c *configuration) expand(key string, visiting map[string]bool) (string, er
 	if !ok {
 		return "", nil
 	}
-	return c.expandText(p.text, visiting)
+	return c.expandProperty(key, p, visiting)
+}
+
+func (c *configuration) expandProperty(key string, p property, visiting map[string]bool) (string, error) {
+	evidence := Evidence{Property: key, Source: p.source}
+	if !slices.Contains(c.trace, evidence) {
+		c.trace = append(c.trace, evidence)
+	}
+	value, err := c.expandText(p.text, visiting)
+	if missing, ok := errors.AsType[*missingInput](err); ok {
+		missing.evidence = append([]Evidence{evidence}, missing.evidence...)
+	}
+	return value, err
 }
 
 func (c *configuration) expandText(text string, visiting map[string]bool) (string, error) {
 	for depth := 0; depth < 32 && strings.Contains(text, "${"); depth++ {
 		matches := placeholder.FindAllStringSubmatchIndex(text, -1)
 		if len(matches) == 0 {
-			return "", errors.New("Spring configuration has a malformed property placeholder")
+			return "", invalidConfiguration("Spring configuration has a malformed property placeholder")
 		}
 		for i := len(matches) - 1; i >= 0; i-- {
 			match := matches[i]
 			inner := text[match[2]:match[3]]
 			name, fallback, hasDefault := strings.Cut(inner, ":")
+			if !propertyName.MatchString(name) {
+				return "", invalidConfiguration("Spring configuration has an invalid property placeholder name")
+			}
 			value := fallback
 			if _, exists := c.raw(name); exists {
 				var err error
@@ -411,13 +451,13 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 					return "", err
 				}
 			} else if !hasDefault {
-				return "", errors.New("a required Spring configuration placeholder is unresolved")
+				return "", &missingInput{name: name}
 			}
 			text = text[:match[0]] + value + text[match[1]:]
 		}
 	}
 	if strings.Contains(text, "${") {
-		return "", errors.New("Spring substitution exceeds 32 levels")
+		return "", invalidConfiguration("Spring substitution exceeds 32 levels")
 	}
 	return text, nil
 }
@@ -443,7 +483,7 @@ func (c *configuration) integer(key string, fallback int) (int, error) {
 	}
 	value, err := strconv.Atoi(text)
 	if err != nil {
-		return 0, fmt.Errorf("%s must be an integer", key)
+		return 0, invalidConfiguration("%s must be an integer", key)
 	}
 	return value, nil
 }

@@ -90,6 +90,20 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	settings := map[string]string{"engine": "none", "auth": "password", "database": "", "role": "azd_app"}
 	var binding strings.Builder
 	binding.WriteString("# Deployment-only overrides; application source is unchanged.\n")
+	if application.Embedded != nil {
+		if len(application.Requirements) != 0 {
+			return nil, errors.New("an embedded datasource cannot also require an external database")
+		}
+		if err := validateEmbedded(application.Embedded); err != nil {
+			return nil, err
+		}
+		if application.Embedded.URL != "" {
+			fmt.Fprintf(&binding, "spring.datasource.url=%s\n", application.Embedded.URL)
+		}
+		if application.Embedded.Driver != "" {
+			fmt.Fprintf(&binding, "spring.datasource.driver-class-name=%s\n", application.Embedded.Driver)
+		}
+	}
 	for _, requirement := range application.Requirements {
 		provider, ok := databaseProviders[requirement.Kind]
 		if !ok {

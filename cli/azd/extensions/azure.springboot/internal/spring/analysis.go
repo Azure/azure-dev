@@ -40,21 +40,24 @@ type Requirement struct {
 	Authentication string
 	Evidence       Evidence
 	JDBCOptions    string
+	Trace          []Evidence
 }
 
 // Application is the resolved, credential-free input to deployment planning.
 type Application struct {
+	ID                     string
 	Name                   string
 	JavaVersion            int
 	JarName                string
 	BuildDirectory         string
 	Port                   int
 	Profiles               []string
-	Embedded               bool
+	Embedded               *EmbeddedBinding
 	Requirements           []Requirement
 	MavenWrapper           bool
 	ExternalConfigurations []string
 	IdentityExtensions     bool
+	InputEvidence          []Evidence
 }
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -74,7 +77,8 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	}
 	defer root.Close()
 	if _, err := root.Stat("pom.xml"); err != nil {
-		return nil, errors.New("a root Maven pom.xml is required; Gradle and multi-module builds are not yet supported")
+		return nil, unsupportedConfiguration(
+			"a root Maven pom.xml is required; Gradle and multi-module builds are not yet supported")
 	}
 	if err := inspectCode(ctx, root); err != nil {
 		return nil, err
@@ -85,7 +89,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	}
 	m, java, err := parseModel(data)
 	if err != nil {
-		return nil, err
+		return nil, invalidConfiguration("%s", err)
 	}
 	projectDirectory, err := filepath.Abs(directory)
 	if err != nil {
@@ -93,7 +97,8 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	}
 	buildDirectory, err := filepath.Rel(projectDirectory, m.Build.Directory)
 	if err != nil || !filepath.IsLocal(buildDirectory) || buildDirectory == "." {
-		return nil, errors.New("Maven build.directory must be a subdirectory of the application Docker context")
+		return nil, unsupportedConfiguration(
+			"Maven build.directory must be a subdirectory of the application Docker context")
 	}
 	c, err := readConfiguration(ctx, root, lookup)
 	if err != nil {
@@ -104,17 +109,19 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, err
 	}
 	if port < 1 || port > 65535 {
-		return nil, errors.New("server.port must be between 1 and 65535")
+		return nil, invalidConfiguration("server.port must be between 1 and 65535")
 	}
 	a := &Application{
+		ID:   "app",
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",
 		BuildDirectory: filepath.ToSlash(buildDirectory),
 		Port:           port, Profiles: c.profiles,
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
+		InputEvidence:          slices.Clone(c.traces["server.port"]),
 	}
 	if a.Name == "" {
-		return nil, errors.New("artifactId must contain at least one letter or digit")
+		return nil, invalidConfiguration("artifactId must contain at least one letter or digit")
 	}
 	if _, err := root.Stat("mvnw"); err == nil {
 		a.MavenWrapper = true
@@ -127,25 +134,31 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 			return nil, err
 		}
 		if value != "" {
-			return nil, fmt.Errorf("%s identifies a resource whose provisioning is not yet supported", key)
+			return nil, unsupportedConfiguration("%s identifies a resource whose provisioning is not yet supported", key)
 		}
 	}
 	for _, starter := range []string{"spring-boot-starter-data-mongodb", "spring-boot-starter-data-mongodb-reactive",
 		"spring-boot-starter-data-redis", "spring-boot-starter-data-redis-reactive", "spring-boot-starter-data-r2dbc"} {
 		if m.hasDependency("org.springframework.boot", starter) {
-			return nil, fmt.Errorf("%s requires a resource detector not yet supported", starter)
+			return nil, unsupportedConfiguration("%s requires a resource detector not yet supported", starter)
 		}
 	}
 	for key := range c.values {
 		if strings.HasSuffix(key, ".datasource.url") && key != "spring.datasource.url" {
-			return nil, errors.New("a custom datasource property requires binding analysis not yet supported")
+			return nil, unsupportedConfiguration("a custom datasource property requires binding analysis not yet supported")
 		}
 	}
 	requirement, embedded, err := detectDatasource(m, c)
 	if err != nil {
 		return nil, err
 	}
-	a.Embedded = embedded
+	a.InputEvidence = append(a.InputEvidence, c.traces["spring.datasource.url"]...)
+	if embedded {
+		a.Embedded, err = resolveEmbedded(m, c)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if requirement != nil {
 		a.Requirements = []Requirement{*requirement}
 	}
@@ -172,10 +185,11 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 		}
 		code := javaCommentsAndLiterals.ReplaceAll(data, nil)
 		if customDatasource.Match(code) {
-			return fmt.Errorf("custom datasource construction in %s requires explicit binding analysis", file)
+			return unsupportedConfiguration("custom datasource construction in %s requires explicit binding analysis", file)
 		}
 		if runtimeActivation.Match(code) {
-			return fmt.Errorf("programmatic profile activation in %s cannot be inferred from configuration", file)
+			return unsupportedConfiguration(
+				"programmatic profile activation in %s cannot be inferred from configuration", file)
 		}
 		return nil
 	})
@@ -184,7 +198,8 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	for _, key := range []string{"spring.datasource.hikari.username", "spring.datasource.hikari.password"} {
 		if _, present := c.raw(key); present {
-			return nil, false, fmt.Errorf("%s is not supported; use spring.datasource.username/password instead", key)
+			return nil, false, unsupportedConfiguration(
+				"%s is not supported; use spring.datasource.username/password instead", key)
 		}
 	}
 	for _, key := range []string{"spring.datasource.hikari.jdbc-url", "spring.datasource.hikari.data-source-class-name",
@@ -194,7 +209,7 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 			return nil, false, err
 		}
 		if value != "" {
-			return nil, false, fmt.Errorf("%s requires custom datasource binding analysis", key)
+			return nil, false, unsupportedConfiguration("%s requires custom datasource binding analysis", key)
 		}
 	}
 	authentication := "password"
@@ -205,7 +220,7 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 			return nil, false, err
 		}
 		if value != "" && !strings.EqualFold(value, "true") && !strings.EqualFold(value, "false") {
-			return nil, false, fmt.Errorf("%s must be true or false", key)
+			return nil, false, invalidConfiguration("%s must be true or false", key)
 		}
 		if strings.EqualFold(value, "true") {
 			authentication = "managedIdentity"
@@ -221,7 +236,8 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	}
 	if strings.Contains(excluded, "DataSourceAutoConfiguration") {
 		if jdbc != "" {
-			return nil, false, errors.New("datasource auto-configuration is disabled; cannot infer its runtime binding")
+			return nil, false, invalidConfiguration(
+				"datasource auto-configuration is disabled; cannot infer its runtime binding")
 		}
 		return nil, false, nil
 	}
@@ -230,7 +246,8 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	}
 	if jdbc == "" {
 		if authentication == "managedIdentity" {
-			return nil, false, errors.New("passwordless authentication requires an active PostgreSQL datasource URL")
+			return nil, false, invalidConfiguration(
+				"passwordless authentication requires an active PostgreSQL datasource URL")
 		}
 		for _, driver := range embeddedDrivers {
 			if m.hasDependency(driver[0], driver[1]) {
@@ -238,24 +255,28 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 			}
 		}
 		if m.hasDependency("org.postgresql", "postgresql") || mysqlDriver(m) {
-			return nil, false, errors.New("external JDBC drivers are available, but no active datasource URL is resolved")
+			return nil, false, unsupportedConfiguration(
+				"external JDBC drivers are available, but no active datasource URL is resolved; " +
+					"configure spring.datasource.url or select --profiles explicitly")
 		}
 		return nil, false, nil
 	}
 	for i, engine := range []string{"h2", "derby", "hsqldb"} {
 		if strings.HasPrefix(jdbc, "jdbc:"+engine+":") {
 			if authentication == "managedIdentity" {
-				return nil, false, errors.New("passwordless authentication cannot be used with an embedded datasource")
+				return nil, false, invalidConfiguration(
+					"passwordless authentication cannot be used with an embedded datasource")
 			}
 			if !m.hasDependency(embeddedDrivers[i][0], embeddedDrivers[i][1]) {
-				return nil, false, errors.New("the active embedded datasource has no packaged JDBC driver")
+				return nil, false, invalidConfiguration("the active embedded datasource has no packaged JDBC driver")
 			}
 			memoryPrefix := "jdbc:" + engine + ":mem:"
 			if engine == "derby" {
 				memoryPrefix = "jdbc:derby:memory:"
 			}
 			if !strings.HasPrefix(jdbc, memoryPrefix) {
-				return nil, false, errors.New("non-memory embedded databases need a persistence policy not yet supported")
+				return nil, false, unsupportedConfiguration(
+					"non-memory embedded databases need a persistence policy not yet supported")
 			}
 			return nil, true, nil
 		}
@@ -265,15 +286,15 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	case strings.HasPrefix(jdbc, "jdbc:mysql://"):
 		kind = MySQL
 		if !mysqlDriver(m) {
-			return nil, false, errors.New("the active MySQL datasource has no runtime MySQL JDBC driver")
+			return nil, false, invalidConfiguration("the active MySQL datasource has no runtime MySQL JDBC driver")
 		}
 	case strings.HasPrefix(jdbc, "jdbc:postgresql://"):
 		kind = PostgreSQL
 		if !m.hasDependency("org.postgresql", "postgresql") {
-			return nil, false, errors.New("the active PostgreSQL datasource has no runtime PostgreSQL JDBC driver")
+			return nil, false, invalidConfiguration("the active PostgreSQL datasource has no runtime PostgreSQL JDBC driver")
 		}
 	default:
-		return nil, false, errors.New("the active JDBC connection type is not yet supported")
+		return nil, false, unsupportedConfiguration("the active JDBC connection type is not yet supported")
 	}
 	driverClass, err := c.resolve("spring.datasource.driver-class-name")
 	if err != nil {
@@ -282,48 +303,51 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	if driverClass != "" && (kind == MySQL &&
 		driverClass != "com.mysql.cj.jdbc.Driver" && driverClass != "com.mysql.jdbc.Driver" ||
 		kind == PostgreSQL && driverClass != "org.postgresql.Driver") {
-		return nil, false, errors.New("the configured JDBC driver does not match the supported datasource binding")
+		return nil, false, invalidConfiguration("the configured JDBC driver does not match the supported datasource binding")
 	}
 	u, err := url.Parse(strings.TrimPrefix(jdbc, "jdbc:"))
 	if err != nil || u.Hostname() == "" || strings.Contains(u.Host, ",") || u.Fragment != "" {
-		return nil, false, errors.New("a single-host JDBC URL with an explicit database name is required")
+		return nil, false, invalidConfiguration("a single-host JDBC URL with an explicit database name is required")
 	}
 	name := strings.TrimPrefix(u.Path, "/")
 	if !databaseName.MatchString(name) {
-		return nil, false, errors.New(
+		return nil, false, invalidConfiguration(
 			"database name must start with a letter and contain 1-63 letters, digits, or underscores")
 	}
 	query, err := url.ParseQuery(u.RawQuery)
 	if err != nil {
-		return nil, false, errors.New("the JDBC query string is invalid")
+		return nil, false, invalidConfiguration("the JDBC query string is invalid")
 	}
 	if plugins, present := query["authenticationPluginClassName"]; present {
 		if kind != PostgreSQL ||
 			!slices.Equal(plugins, []string{
 				"com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin",
 			}) {
-			return nil, false, errors.New("the JDBC authentication plugin is not supported")
+			return nil, false, unsupportedConfiguration("the JDBC authentication plugin is not supported")
 		}
 		authentication = "managedIdentity"
 		query.Del("authenticationPluginClassName")
 	}
 	if values, present := query["azure.managedIdentityEnabled"]; present {
 		if !slices.Equal(values, []string{"true"}) || authentication != "managedIdentity" {
-			return nil, false, errors.New("azure.managedIdentityEnabled requires the supported PostgreSQL token plugin")
+			return nil, false, invalidConfiguration(
+				"azure.managedIdentityEnabled requires the supported PostgreSQL token plugin")
 		}
 		query.Del("azure.managedIdentityEnabled")
 	}
 	if authentication == "managedIdentity" && kind == MySQL {
-		return nil, false, errors.New("MySQL managed identity is deferred pending live configuration validation")
+		return nil, false, unsupportedConfiguration(
+			"MySQL managed identity is deferred pending live configuration validation")
 	}
 	options, err := jdbcOptions(kind, query.Encode())
 	if err != nil {
-		return nil, false, err
+		return nil, false, unsupportedConfiguration("%s", err)
 	}
 	source, _ := c.raw("spring.datasource.url")
 	return &Requirement{
 		Kind: kind, Name: name, Authentication: authentication, JDBCOptions: options,
 		Evidence: Evidence{Property: "spring.datasource.url", Source: source.source},
+		Trace:    slices.Clone(c.traces["spring.datasource.url"]),
 	}, false, nil
 }
 

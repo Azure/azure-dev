@@ -392,6 +392,34 @@ func TestConnectionAddRejectsExplicitNullEnvironment(t *testing.T) {
 	}
 }
 
+func TestConnectionAddAllowsUnchangedExplicitNullEnvironment(t *testing.T) {
+	for _, envYAML := range []string{"env: null", "env:"} {
+		t.Run(envYAML, func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connection.yaml",
+				"category: Search\ntarget: https://search.example.test\n")
+			client := newConnectionAddProjectClientStub()
+			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+			var service map[string]any
+			serviceYAML := "host: azure.ai.connection\nuses: [foundry]\n$ref: ./connection.yaml\n"
+			require.NoError(t, yaml.Unmarshal([]byte(serviceYAML+envYAML+"\n"), &service))
+			client.services["search"] = service
+			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, false, "", true, nil, nil)
+			require.NoError(t, err)
+			require.Equal(t, "unchanged", plan.mutation)
+			before, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+
+			require.NoError(t, plan.apply(t.Context(), client))
+			assert.Empty(t, client.mutationCalls)
+			after, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+		})
+	}
+}
+
 func TestConnectionAddAllowsUnchangedExplicitEmptyEnvironment(t *testing.T) {
 	root := t.TempDir()
 	file := writeConnectionAddDefinition(t, root, "connection.yaml",

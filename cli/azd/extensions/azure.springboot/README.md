@@ -94,6 +94,8 @@ Stronger JDBC certificate-verification modes are preserved, using the image's
 system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.
 Memory mode needs no database inputs for non-interactive provision or deploy.
+Environment-selected embedded JDBC bindings are not yet carried into the runtime;
+configure the memory datasource directly in the application configuration instead.
 
 Passwords are created once by the preprovision hook and retained in local `.azure`
 state. Do not commit this state. No Key Vault credential copy is created.

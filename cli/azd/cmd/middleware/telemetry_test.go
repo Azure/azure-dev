@@ -355,6 +355,19 @@ func TestTelemetryMiddleware_extensionCmdInfo_ResolvesCommandAndFlags(t *testing
 		require.ElementsMatch(t, []string{"verbose", "output"}, flags)
 	})
 
+	t.Run("resolves command path after leading global flags", func(t *testing.T) {
+		m := &TelemetryMiddleware{
+			options: &Options{
+				Args: []string{"--no-prompt", "-C", "dir", "--environment=dev", "build", "--verbose"},
+			},
+			extensionManager: manager,
+		}
+
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Equal(t, events.GetCommandEventName("azd test ext build"), eventName)
+		require.ElementsMatch(t, []string{"verbose"}, flags)
+	})
+
 	t.Run("returns flags without an unknown command event", func(t *testing.T) {
 		m := &TelemetryMiddleware{
 			options: &Options{

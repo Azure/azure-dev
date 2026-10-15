@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -360,17 +359,7 @@ func (a *extensionAction) isEnvironmentIndependentCommand(extension *extensions.
 		return false
 	}
 
-	args := a.args
-	flags := CreateGlobalFlagSet()
-	flags.SetOutput(io.Discard)
-	flags.SetInterspersed(false)
-	flags.StringP("output", "o", "", "")
-	flags.BoolP("help", "h", false, "")
-	flags.Bool("docs", false, "")
-	if err := flags.Parse(args); err == nil {
-		args = flags.Args()
-	}
-	command := extensions.ResolveCommand(metadata, args)
+	command := extensions.ResolveCommand(metadata, internal.StripLeadingGlobalFlags(a.args))
 	return command != nil && command.EnvironmentIndependent
 }
 

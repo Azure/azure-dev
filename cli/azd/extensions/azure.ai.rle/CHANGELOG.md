@@ -10,6 +10,7 @@
 - Delete the temporary instance and group on exit with Ctrl+C-independent cleanup and concise terminal status.
 - Persist the environment name as `environmentName` while continuing to read legacy `name` state files.
 - Authenticate and API-version OpenEnv gateway requests on the configured Foundry project origin, wait for runtime health before reporting readiness, and route the browser playground through an authenticated local proxy.
+- Show trace enablement and service-provided trace identity for published environment versions.
 
 ## 0.3.0-preview
 

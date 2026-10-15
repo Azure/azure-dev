@@ -42,16 +42,28 @@ type v1EnvironmentRequest struct {
 }
 
 type environmentResource struct {
-	Id                        string `json:"id"`
-	ProjectId                 string `json:"projectId,omitempty"`
-	Name                      string `json:"name,omitempty"`
-	AcrImagePath              string `json:"acrImagePath,omitempty"`
-	Version                   string `json:"version,omitempty"`
-	CreatedAt                 string `json:"createdAtUtc,omitempty"`
-	UpdatedAt                 string `json:"updatedAtUtc,omitempty"`
-	VersionLabel              string `json:"versionLabel,omitempty"`
-	DiskImageConversionStatus string `json:"diskImageConversionStatus,omitempty"`
-	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
+	Id                        string                `json:"id"`
+	ProjectId                 string                `json:"projectId,omitempty"`
+	Name                      string                `json:"name,omitempty"`
+	AcrImagePath              string                `json:"acrImagePath,omitempty"`
+	Version                   string                `json:"version,omitempty"`
+	CreatedAt                 string                `json:"createdAtUtc,omitempty"`
+	UpdatedAt                 string                `json:"updatedAtUtc,omitempty"`
+	VersionLabel              string                `json:"versionLabel,omitempty"`
+	DiskImageConversionStatus string                `json:"diskImageConversionStatus,omitempty"`
+	DiskImageConversionError  string                `json:"diskImageConversionError,omitempty"`
+	Traces                    *environmentTraces    `json:"traces,omitempty"`
+	Telemetry                 *environmentTelemetry `json:"telemetry,omitempty"`
+}
+
+type environmentTraces struct {
+	Enabled bool `json:"enabled"`
+}
+
+type environmentTelemetry struct {
+	RunScope    string `json:"run_scope,omitempty"`
+	LimeRunID   string `json:"lime_run_id,omitempty"`
+	RunIDFormat string `json:"run_id_format,omitempty"`
 }
 
 type pagedEnvironmentResponse struct {
@@ -232,6 +244,19 @@ func (c *rleClient) listEnvironmentVersions(
 		return nil, err
 	}
 
+	return &result, nil
+}
+
+func (c *rleClient) getEnvironmentVersion(
+	ctx context.Context,
+	name string,
+	version string,
+) (*environmentResource, error) {
+	path := environmentCollectionPath + "/" + url.PathEscape(name) + "/versions/" + url.PathEscape(version)
+	var result environmentResource
+	if err := c.do(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
 	return &result, nil
 }
 

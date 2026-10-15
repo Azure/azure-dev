@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import traceback
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -64,6 +65,27 @@ class BootstrapTests(unittest.TestCase):
             message = str(error.exception)
             self.assertNotIn("secret", message)
             self.assertIn("azd env failed", message)
+
+    def test_password_preparation_timeout_does_not_disclose_credentials(self):
+        credential = "sensitive-timeout-value"
+        arguments = ["azd", "env", "set", "SPRING_DATABASE_PASSWORD", credential]
+        timeout = bootstrap.subprocess.TimeoutExpired(arguments, 120, output=credential, stderr=credential)
+        with patch.object(bootstrap.shutil, "which", return_value="azd"), \
+                patch.object(bootstrap.subprocess, "run", side_effect=timeout), \
+                patch.object(bootstrap.secrets, "token_urlsafe", return_value=credential), \
+                patch("builtins.print") as printer:
+            try:
+                bootstrap.prepare({"engine": "mysql", "auth": "password"}, {})
+            except RuntimeError as error:
+                message = "".join(traceback.format_exception(error))
+                self.assertNotIn(credential, message)
+                self.assertIn("set_value", message)
+                self.assertIn("azd env timed out", message)
+                self.assertTrue(error.__suppress_context__)
+                self.assertIsNone(error.__cause__)
+            else:
+                self.fail("Password preparation must fail when storing the generated credential times out")
+            printer.assert_not_called()
 
     def test_mysql_identity_is_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Unsupported"):

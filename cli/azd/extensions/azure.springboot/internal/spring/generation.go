@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -29,6 +30,8 @@ var databaseProviders = map[ResourceKind]databaseProvider{
 	MySQL:      {prefix: "MYSQL", scheme: "mysql"},
 	PostgreSQL: {prefix: "POSTGRES", scheme: "postgresql"},
 }
+
+var containerAppName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 
 //go:embed template/infra/*.bicep template/.azd-spring/database.py template/.azd-spring/requirements.txt
 var deploymentTemplate embed.FS
@@ -52,6 +55,11 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		return nil, errors.New("application name and port must be valid template inputs")
 	}
 	serviceName := application.Name + "-app"
+	if !containerAppName.MatchString(serviceName) || strings.Contains(serviceName, "--") {
+		return nil, errors.New("derived Container App name must be 2-32 lowercase letters, numbers, or hyphens, " +
+			"start with a letter, end with a letter or number, and contain no consecutive hyphens; " +
+			"choose a Maven artifactId whose normalized name fits these rules including the -app suffix")
+	}
 	hooks := map[string]any{
 		"preprovision": map[string]any{
 			"shell": "pwsh", "run": "python .azd-spring/database.py prepare", "interactive": false,
@@ -215,7 +223,7 @@ func dockerfile(a *Application) (string, error) {
 		path.Clean(a.BuildDirectory) != a.BuildDirectory || strings.ContainsAny(a.BuildDirectory, "\\*?[$\r\n") {
 		return "", errors.New("Maven build.directory must be a resolved project-local path without Docker patterns")
 	}
-	for _, component := range strings.Split(a.BuildDirectory, "/") {
+	for component := range strings.SplitSeq(a.BuildDirectory, "/") {
 		if strings.TrimSpace(component) != component {
 			return "", errors.New("Maven build.directory components cannot start or end with whitespace")
 		}

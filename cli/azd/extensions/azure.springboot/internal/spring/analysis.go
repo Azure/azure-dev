@@ -182,6 +182,11 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 }
 
 func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
+	for _, key := range []string{"spring.datasource.hikari.username", "spring.datasource.hikari.password"} {
+		if _, present := c.raw(key); present {
+			return nil, false, fmt.Errorf("%s is not supported; use spring.datasource.username/password instead", key)
+		}
+	}
 	for _, key := range []string{"spring.datasource.hikari.jdbc-url", "spring.datasource.hikari.data-source-class-name",
 		"spring.datasource.jndi-name"} {
 		value, err := c.resolve(key)

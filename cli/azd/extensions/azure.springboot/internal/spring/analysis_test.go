@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -502,7 +503,7 @@ func TestAnalyzeBuildDirectory(t *testing.T) {
 			require.Equal(t, tt.directory, application.BuildDirectory)
 			prefix := "COPY --from=build --chown=10001:10001 "
 			var copies [][]string
-			for _, line := range strings.Split(string(plan.Files[".azd-spring/Dockerfile"]), "\n") {
+			for line := range strings.SplitSeq(string(plan.Files[".azd-spring/Dockerfile"]), "\n") {
 				if strings.HasPrefix(line, prefix) {
 					var paths []string
 					require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, prefix)), &paths))
@@ -526,4 +527,113 @@ func TestAnalyzeBuildDirectoryWithRelativeProjectPath(t *testing.T) {
 		staticResolver{model: effectiveModel(t, directory, "")}, envLookup(nil))
 	require.NoError(t, err)
 	require.Equal(t, "target", application.BuildDirectory)
+}
+
+func TestAnalyzeHikariCredentialBindings(t *testing.T) {
+	const marker = "sensitive-pool-value"
+	for _, field := range []string{"username", "password"} {
+		key := "spring.datasource.hikari." + field
+		for _, tt := range []struct {
+			name   string
+			files  map[string]string
+			env    map[string]string
+			reject bool
+		}{
+			{"properties", map[string]string{"src/main/resources/application.properties": key + "=" + marker}, nil, true},
+			{"empty properties", map[string]string{"src/main/resources/application.properties": key + "="}, nil, true},
+			{"unresolved properties", map[string]string{
+				"src/main/resources/application.properties": key + "=${MISSING_POOL_VALUE}",
+			}, nil, true},
+			{"YAML", map[string]string{
+				"src/main/resources/application.yml": "spring:\n  datasource:\n    hikari:\n      " + field + ": " + marker,
+			}, nil, true},
+			{"environment", nil, map[string]string{strings.ToUpper(strings.ReplaceAll(key, ".", "_")): marker}, true},
+			{"empty environment", nil, map[string]string{strings.ToUpper(strings.ReplaceAll(key, ".", "_")): ""}, true},
+			{"JSON", nil, map[string]string{
+				"SPRING_APPLICATION_JSON": fmt.Sprintf(`{"spring":{"datasource":{"hikari":{"%s":%q}}}}`, field, marker),
+			}, true},
+			{"active profile", map[string]string{
+				"src/main/resources/application-cloud.properties": key + "=" + marker,
+			}, map[string]string{"SPRING_PROFILES_ACTIVE": "cloud"}, true},
+			{"inactive profile", map[string]string{
+				"src/main/resources/application-local.properties": key + "=" + marker,
+			}, map[string]string{"SPRING_PROFILES_ACTIVE": "cloud"}, false},
+			{"ordinary pool settings", map[string]string{
+				"src/main/resources/application.properties": "spring.datasource.hikari.maximum-pool-size=20\n" +
+					"spring.datasource." + field + "=" + marker,
+			}, nil, false},
+		} {
+			t.Run(field+"/"+tt.name, func(t *testing.T) {
+				directory := t.TempDir()
+				writeFixture(t, directory, "pom.xml", "<project/>")
+				for name, content := range tt.files {
+					writeFixture(t, directory, name, content)
+				}
+				env := map[string]string{"SPRING_DATASOURCE_URL": "jdbc:mysql://localhost/warehouse"}
+				maps.Copy(env, tt.env)
+				application, err := Analyze(t.Context(), directory,
+					staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(env))
+				if tt.reject {
+					require.ErrorContains(t, err, key)
+					require.ErrorContains(t, err, "use spring.datasource.username/password")
+					require.NotContains(t, err.Error(), marker)
+					require.Nil(t, application)
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, MySQL, application.Requirements[0].Kind)
+				}
+				entries, err := os.ReadDir(directory)
+				require.NoError(t, err)
+				for _, entry := range entries {
+					require.NotContains(t, []string{"azure.yaml", "infra", ".azd-spring"}, entry.Name())
+				}
+			})
+		}
+	}
+}
+
+func TestDerivedContainerAppNameValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name, artifact, expected string
+	}{
+		{"shortest artifact", "a", "a-app"},
+		{"normalized artifact", "Inventory.Api", "inventory-api-app"},
+		{"ending in a number", "inventory9", "inventory9-app"},
+		{"maximum length", strings.Repeat("a", 28), strings.Repeat("a", 28) + "-app"},
+		{"too long with suffix", strings.Repeat("a", 29), ""},
+		{"starts with a number", "123-api", ""},
+		{"consecutive hyphens", "inventory--api", ""},
+		{"normalized consecutive hyphens", "inventory__api", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			data := strings.Replace(string(effectiveModel(t, directory, "")),
+				"<artifactId>inventory-api</artifactId>", "<artifactId>"+tt.artifact+"</artifactId>", 1)
+			application, err := Analyze(t.Context(), directory, staticResolver{model: []byte(data)}, envLookup(nil))
+			require.NoError(t, err)
+			plan, err := Generate(t.Context(), application)
+			if tt.expected == "" {
+				require.ErrorContains(t, err, "derived Container App name")
+				require.Nil(t, plan)
+				entries, err := os.ReadDir(directory)
+				require.NoError(t, err)
+				require.Len(t, entries, 1, "invalid resource names must fail before writing deployment files")
+				return
+			}
+			require.NoError(t, err)
+			for _, module := range []string{"main", "application"} {
+				var parameters struct {
+					Parameters struct {
+						ServiceName struct {
+							Value string `json:"value"`
+						} `json:"serviceName"`
+					} `json:"parameters"`
+				}
+				require.NoError(t, json.Unmarshal(plan.Files["infra/"+module+".parameters.json"], &parameters))
+				require.Equal(t, tt.expected, parameters.Parameters.ServiceName.Value)
+				require.LessOrEqual(t, len(parameters.Parameters.ServiceName.Value), 32)
+			}
+		})
+	}
 }

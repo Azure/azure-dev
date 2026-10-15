@@ -24,10 +24,13 @@ def command(tool, *arguments):
     executable = shutil.which(tool)
     if executable is None:
         raise RuntimeError(f"Required tool is not installed: {tool}")
-    result = subprocess.run(
-        [executable, *arguments], cwd=ROOT, shell=os.name == "nt",
-        capture_output=True, text=True, timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            [executable, *arguments], cwd=ROOT, shell=os.name == "nt",
+            capture_output=True, text=True, timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{tool} {arguments[0]} timed out; diagnose the operation locally") from None
     if result.returncode:
         # Captured output can contain credentials; report the operation, not its values.
         raise RuntimeError(f"{tool} {arguments[0]} failed; diagnose the operation locally")

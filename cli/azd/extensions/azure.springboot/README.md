@@ -49,6 +49,10 @@ The resolved Maven build directory determines the JAR copy path; project-local
 custom output directories, including spaces and inherited settings, are supported.
 Missing/unresolved paths, directories outside the Docker context, and output
 directories overlapping application inputs or generated files are rejected.
+Custom Hikari username/password bindings, including empty values, are rejected;
+use `spring.datasource.username/password` instead. Ordinary Hikari pooling is supported.
+The normalized Maven artifact ID must start with a letter, contain no consecutive
+hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure naming rules.
 
 | Active datasource | Generated database |
 | --- | --- |

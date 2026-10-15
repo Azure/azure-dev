@@ -29,7 +29,8 @@ func TestGenerateInfrastructure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := &Application{
 				Name: "inventory", JavaVersion: 21, JarName: "inventory-1.0.jar", Port: 9090,
-				Profiles: []string{"release"}, MavenWrapper: true,
+				BuildDirectory: "target",
+				Profiles:       []string{"release"}, MavenWrapper: true,
 				ExternalConfigurations: []string{"config/application-release.properties"},
 			}
 			if tt.kind != "" {
@@ -108,6 +109,7 @@ func TestGenerateInfrastructure(t *testing.T) {
 func TestMemoryDatabaseParametersAreOptional(t *testing.T) {
 	plan, err := Generate(t.Context(), &Application{
 		Name: "inventory", JavaVersion: 21, JarName: "inventory.jar", Port: 9090,
+		BuildDirectory: "target",
 	})
 	require.NoError(t, err)
 	for _, tt := range []struct {
@@ -136,6 +138,7 @@ func TestMemoryDatabaseParametersAreOptional(t *testing.T) {
 func TestContainerAppStartupProtection(t *testing.T) {
 	plan, err := Generate(t.Context(), &Application{
 		Name: "inventory", JavaVersion: 21, JarName: "inventory.jar", Port: 9090,
+		BuildDirectory: "target",
 	})
 	require.NoError(t, err)
 	expected := `
@@ -197,7 +200,8 @@ func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := &Application{
 				Name: "catalog", JavaVersion: 17, Port: 8080, JarName: "catalog.jar",
-				Profiles: []string{"cloud"}, IdentityExtensions: true,
+				BuildDirectory: "target",
+				Profiles:       []string{"cloud"}, IdentityExtensions: true,
 			}
 			if tt.kind != "" {
 				a.Requirements = []Requirement{{

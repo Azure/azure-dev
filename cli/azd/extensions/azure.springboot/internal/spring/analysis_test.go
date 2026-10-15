@@ -5,6 +5,8 @@ package spring
 
 import (
 	"context"
+	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -22,14 +24,17 @@ type staticResolver struct {
 
 func (r staticResolver) Resolve(context.Context, string) ([]byte, error) { return r.model, r.err }
 
-func effectiveModel(drivers string) []byte {
+func effectiveModel(t *testing.T, directory, drivers string) []byte {
+	t.Helper()
+	var escaped strings.Builder
+	require.NoError(t, xml.EscapeText(&escaped, []byte(filepath.Join(directory, "target"))))
 	return fmt.Appendf(nil, `<project>
 <artifactId>inventory-api</artifactId><version>1.0</version><packaging>jar</packaging>
 <properties><java.version>17</java.version></properties>
-<build><finalName>inventory-api-1.0</finalName><plugins><plugin>
+<build><directory>%s</directory><finalName>inventory-api-1.0</finalName><plugins><plugin>
 <groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId>
 <executions><execution><goals><goal>repackage</goal></goals></execution></executions>
-</plugin></plugins></build><dependencies>%s</dependencies></project>`, drivers)
+</plugin></plugins></build><dependencies>%s</dependencies></project>`, escaped.String(), drivers)
 }
 
 func dependency(group, artifact, scope string) string {
@@ -250,7 +255,8 @@ spring:
 			for name, content := range tt.files {
 				writeFixture(t, directory, name, content)
 			}
-			a, err := Analyze(t.Context(), directory, staticResolver{model: effectiveModel(tt.drivers)}, envLookup(tt.env))
+			a, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, tt.drivers)}, envLookup(tt.env))
 			if tt.errorText != "" {
 				require.ErrorContains(t, err, tt.errorText)
 				return
@@ -287,7 +293,7 @@ func TestAnalyzePropertiesDocumentSeparators(t *testing.T) {
 				}, newline)
 				writeFixture(t, directory, "src/main/resources/application.properties", content)
 				a, err := Analyze(t.Context(), directory,
-					staticResolver{model: effectiveModel(allDrivers())}, envLookup(nil))
+					staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
 				require.NoError(t, err)
 				require.Equal(t, []string{"cloud"}, a.Profiles)
 				require.Len(t, a.Requirements, 1)
@@ -314,7 +320,8 @@ func TestAnalyzeRetainsActiveExternalConfiguration(t *testing.T) {
 				"server.port=9090\n#---\nspring.config.activate.on-profile=cloud\nexample.setting=deployed\n")
 			writeFixture(t, directory, inactive, "spring.datasource.url=jdbc:postgresql://localhost/ignored")
 			writeFixture(t, directory, unmatched, "spring:\n  config:\n    activate:\n      on-profile: local\n")
-			a, err := Analyze(t.Context(), directory, staticResolver{model: effectiveModel(allDrivers())}, envLookup(nil))
+			a, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
 			require.NoError(t, err)
 			require.Equal(t, []string{base, active}, a.ExternalConfigurations)
 			require.Equal(t, 9090, a.Port)
@@ -336,7 +343,7 @@ func TestAnalyzeRetainsActiveExternalConfiguration(t *testing.T) {
 func TestCredentialNonDisclosure(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")
-	resolver := staticResolver{model: effectiveModel(allDrivers())}
+	resolver := staticResolver{model: effectiveModel(t, directory, allDrivers())}
 	for _, jdbc := range []string{
 		"jdbc:mysql://sensitive-user:sensitive-password@localhost/catalog",
 		"jdbc:postgresql://sensitive-user:sensitive-password@localhost/catalog?token=sensitive-token#sensitive-fragment",
@@ -369,7 +376,7 @@ func TestEffectiveModelValidation(t *testing.T) {
 			"custom or disabled"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			data := strings.ReplaceAll(string(effectiveModel("")), tt.before, tt.after)
+			data := strings.ReplaceAll(string(effectiveModel(t, t.TempDir(), "")), tt.before, tt.after)
 			_, java, err := parseModel([]byte(data))
 			if tt.errorText != "" {
 				require.ErrorContains(t, err, tt.errorText)
@@ -415,7 +422,7 @@ func TestEffectiveModelExecutionConfiguration(t *testing.T) {
 		{"no package execution", "", execution("none", "<skip>true</skip>"), "active Spring Boot repackage execution"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			data := string(effectiveModel(""))
+			data := string(effectiveModel(t, t.TempDir(), ""))
 			start := strings.Index(data, "<executions>")
 			end := strings.Index(data, "</executions>") + len("</executions>")
 			data = data[:start] + "<configuration>" + tt.plugin + "</configuration><executions>" +
@@ -429,4 +436,94 @@ func TestEffectiveModelExecutionConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAnalyzeBuildDirectory(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		directory string
+		absolute  bool
+		omit      bool
+		errorText string
+	}{
+		{name: "default", directory: "target", absolute: true},
+		{name: "custom", directory: "build", absolute: true},
+		{name: "nested", directory: "artifacts/jars", absolute: true},
+		{name: "spaces", directory: "build output", absolute: true},
+		{name: "escaped XML", directory: "build & output", absolute: true},
+		{name: "missing", omit: true, errorText: "resolved absolute build.directory"},
+		{name: "empty", errorText: "resolved absolute build.directory"},
+		{name: "unresolved property", directory: "${output.directory}", absolute: true,
+			errorText: "resolved absolute build.directory"},
+		{name: "relative model value", directory: "build", errorText: "resolved absolute build.directory"},
+		{name: "outside context", directory: "../outside", absolute: true, errorText: "application Docker context"},
+		{name: "project root", directory: ".", absolute: true, errorText: "application Docker context"},
+		{name: "source overlap", directory: "src", absolute: true, errorText: "overlap application inputs"},
+		{name: "configuration overlap", directory: "config/build", absolute: true,
+			errorText: "overlap application inputs"},
+		{name: "generated file overlap", directory: ".azd-spring/build", absolute: true,
+			errorText: "overlap application inputs"},
+		{name: "Docker wildcard", directory: "build[1]", absolute: true, errorText: "without Docker patterns"},
+		{name: "Docker substitution", directory: "$output", absolute: true, errorText: "without Docker patterns"},
+		{name: "ignore line break", directory: "build\noutput", absolute: true, errorText: "without Docker patterns"},
+		{name: "trailing whitespace", directory: "build ", absolute: true, errorText: "end with whitespace"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			resolved := tt.directory
+			if tt.absolute {
+				resolved = filepath.Join(directory, filepath.FromSlash(resolved))
+			}
+			var escaped strings.Builder
+			require.NoError(t, xml.EscapeText(&escaped, []byte(resolved)))
+			element := "<directory>" + escaped.String() + "</directory>"
+			if tt.omit {
+				element = ""
+			}
+			data := string(effectiveModel(t, directory, ""))
+			start := strings.Index(data, "<directory>")
+			end := strings.Index(data, "</directory>") + len("</directory>")
+			data = data[:start] + element + data[end:]
+			application, err := Analyze(t.Context(), directory, staticResolver{model: []byte(data)}, envLookup(nil))
+			var plan *Plan
+			if err == nil {
+				plan, err = Generate(t.Context(), application)
+			}
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				require.Nil(t, plan)
+				entries, err := os.ReadDir(directory)
+				require.NoError(t, err)
+				require.Len(t, entries, 1, "failed analysis or generation must not write deployment files")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.directory, application.BuildDirectory)
+			prefix := "COPY --from=build --chown=10001:10001 "
+			var copies [][]string
+			for _, line := range strings.Split(string(plan.Files[".azd-spring/Dockerfile"]), "\n") {
+				if strings.HasPrefix(line, prefix) {
+					var paths []string
+					require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, prefix)), &paths))
+					copies = append(copies, paths)
+				}
+			}
+			require.Equal(t, [][]string{{
+				"/workspace/" + tt.directory + "/inventory-api-1.0.jar", "/app/application.jar",
+			}}, copies)
+			require.Contains(t, string(plan.Files[".azd-spring/Dockerfile.dockerignore"]), "\n/"+tt.directory+"\n")
+		})
+	}
+}
+
+func TestAnalyzeBuildDirectoryWithRelativeProjectPath(t *testing.T) {
+	parent := t.TempDir()
+	directory := filepath.Join(parent, "application")
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	t.Chdir(parent)
+	application, err := Analyze(t.Context(), "application",
+		staticResolver{model: effectiveModel(t, directory, "")}, envLookup(nil))
+	require.NoError(t, err)
+	require.Equal(t, "target", application.BuildDirectory)
 }

@@ -45,6 +45,10 @@ includes/groups, property placeholders, environment overrides, and
 `SPRING_APPLICATION_JSON`. Inactive database alternatives are not provisioned.
 JDBC dependencies establish available drivers, not active database requirements.
 Repackaging checks include plugin defaults and active execution configuration.
+The resolved Maven build directory determines the JAR copy path; project-local
+custom output directories, including spaces and inherited settings, are supported.
+Missing/unresolved paths, directories outside the Docker context, and output
+directories overlapping application inputs or generated files are rejected.
 
 | Active datasource | Generated database |
 | --- | --- |

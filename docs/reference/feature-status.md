@@ -78,7 +78,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
-| Spring initialization (`spring init`, unpublished development extension) | Alpha |
 
 ## Extension gRPC Contracts
 

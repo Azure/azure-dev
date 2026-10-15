@@ -20,7 +20,7 @@ func TestAnalyzePostgresIdentity(t *testing.T) {
 		writeFixture(t, directory, "pom.xml", "<project/>")
 		writeFixture(t, directory, "src/main/resources/application.properties", source)
 		application, err := Analyze(t.Context(), directory, staticResolver{model: effectiveModel(
-			allDrivers() + dependency("com.azure", "azure-identity-extensions", "runtime"))}, envLookup(nil))
+			t, directory, allDrivers()+dependency("com.azure", "azure-identity-extensions", "runtime"))}, envLookup(nil))
 		require.NoError(t, err)
 		require.Equal(t, "managedIdentity", application.Requirements[0].Authentication)
 		require.True(t, application.IdentityExtensions)
@@ -31,7 +31,7 @@ func TestAnalyzePostgresIdentity(t *testing.T) {
 
 func TestIdentityDependencyMustBePackaged(t *testing.T) {
 	for _, scope := range []string{"provided", "test"} {
-		m, _, err := parseModel(effectiveModel(dependency("com.azure", "azure-identity-extensions", scope)))
+		m, _, err := parseModel(effectiveModel(t, t.TempDir(), dependency("com.azure", "azure-identity-extensions", scope)))
 		require.NoError(t, err)
 		require.False(t, m.hasPackagedIdentityExtensions())
 	}
@@ -45,6 +45,6 @@ func TestRejectsAmbiguousAuthenticationPlugins(t *testing.T) {
 			"authenticationPluginClassName=com.azure.identity.extensions.jdbc.postgresql."+
 			"AzurePostgresqlAuthenticationPlugin&authenticationPluginClassName=other.Plugin")
 	_, err := Analyze(t.Context(), directory, staticResolver{model: effectiveModel(
-		allDrivers() + dependency("com.azure", "azure-identity-extensions", "runtime"))}, envLookup(nil))
+		t, directory, allDrivers()+dependency("com.azure", "azure-identity-extensions", "runtime"))}, envLookup(nil))
 	require.ErrorContains(t, err, "authentication plugin is not supported")
 }

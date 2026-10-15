@@ -109,6 +109,7 @@ type model struct {
 		Target      string `xml:"maven.compiler.target"`
 	} `xml:"properties"`
 	Build struct {
+		Directory string        `xml:"directory"`
 		FinalName string        `xml:"finalName"`
 		Plugins   []buildPlugin `xml:"plugins>plugin"`
 	} `xml:"build"`
@@ -123,6 +124,9 @@ func parseModel(data []byte) (*model, int, error) {
 	}
 	if len(m.Modules) != 0 || (m.Packaging != "" && m.Packaging != "jar") {
 		return nil, 0, errors.New("initialization currently requires a single-module, executable-JAR application")
+	}
+	if !filepath.IsAbs(m.Build.Directory) || strings.Contains(m.Build.Directory, "${") {
+		return nil, 0, errors.New("Maven effective model must include a resolved absolute build.directory")
 	}
 	boot := false
 	for _, plugin := range m.Build.Plugins {

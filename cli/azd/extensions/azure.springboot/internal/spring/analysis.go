@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -46,6 +47,7 @@ type Application struct {
 	Name                   string
 	JavaVersion            int
 	JarName                string
+	BuildDirectory         string
 	Port                   int
 	Profiles               []string
 	Embedded               bool
@@ -85,6 +87,14 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, err
 	}
+	projectDirectory, err := filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolving application directory: %w", err)
+	}
+	buildDirectory, err := filepath.Rel(projectDirectory, m.Build.Directory)
+	if err != nil || !filepath.IsLocal(buildDirectory) || buildDirectory == "." {
+		return nil, errors.New("Maven build.directory must be a subdirectory of the application Docker context")
+	}
 	c, err := readConfiguration(ctx, root, lookup)
 	if err != nil {
 		return nil, err
@@ -98,7 +108,8 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	}
 	a := &Application{
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",
-		Port: port, Profiles: c.profiles,
+		BuildDirectory: filepath.ToSlash(buildDirectory),
+		Port:           port, Profiles: c.profiles,
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
 	}

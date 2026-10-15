@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -185,7 +186,8 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		".azd-spring/Dockerfile":                 []byte(docker),
 		".azd-spring/application-azd.properties": []byte(binding.String()),
 		".azd-spring/Dockerfile.dockerignore": []byte(
-			".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n"),
+			".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n/" +
+				application.BuildDirectory + "\n"),
 	}
 	err = fs.WalkDir(deploymentTemplate, "template", func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -209,6 +211,27 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 }
 
 func dockerfile(a *Application) (string, error) {
+	if !filepath.IsLocal(filepath.FromSlash(a.BuildDirectory)) || a.BuildDirectory == "." ||
+		path.Clean(a.BuildDirectory) != a.BuildDirectory || strings.ContainsAny(a.BuildDirectory, "\\*?[$\r\n") {
+		return "", errors.New("Maven build.directory must be a resolved project-local path without Docker patterns")
+	}
+	for _, component := range strings.Split(a.BuildDirectory, "/") {
+		if strings.TrimSpace(component) != component {
+			return "", errors.New("Maven build.directory components cannot start or end with whitespace")
+		}
+	}
+	inputs := []string{"pom.xml", "mvnw", "mvnw.cmd", "src", "config", ".mvn", ".git", ".azure", ".azd-spring"}
+	inputs = append(inputs, a.ExternalConfigurations...)
+	for _, input := range inputs {
+		if input == a.BuildDirectory || strings.HasPrefix(input, a.BuildDirectory+"/") ||
+			strings.HasPrefix(a.BuildDirectory, input+"/") {
+			return "", errors.New("Maven build.directory must not overlap application inputs or generated files")
+		}
+	}
+	jarPaths, err := json.Marshal([]string{path.Join("/workspace", a.BuildDirectory, a.JarName), "/app/application.jar"})
+	if err != nil {
+		return "", fmt.Errorf("encoding Maven JAR paths: %w", err)
+	}
 	build := "RUN mvn -B -DskipTests package"
 	if a.MavenWrapper {
 		build = "RUN chmod +x mvnw && ./mvnw -B -DskipTests package"
@@ -228,12 +251,12 @@ COPY . .
 
 FROM eclipse-temurin:%d-jre
 WORKDIR /app
-COPY --from=build --chown=10001:10001 /workspace/target/%s /app/application.jar
+COPY --from=build --chown=10001:10001 %s
 %sCOPY --chown=10001:10001 .azd-spring/application-azd.properties /app/config/application-azd.properties
 EXPOSE %d
 USER 10001
 ENTRYPOINT ["java", "-jar", "/app/application.jar"]
-`, a.JavaVersion, build, a.JavaVersion, a.JarName, external.String(), a.Port), nil
+`, a.JavaVersion, build, a.JavaVersion, jarPaths, external.String(), a.Port), nil
 }
 
 // CheckDestination refuses existing azd/container ownership before executing a trusted build.

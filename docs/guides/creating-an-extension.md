@@ -49,10 +49,6 @@ capabilities:
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
 
-Extensions can own ordinary azd template assets and supply deployment parameters,
-as the [Spring extension](../../cli/azd/extensions/azure.springboot/README.md#generated-files-and-boundaries)
-does. Parameter substitution does not generate variable service entries in `azure.yaml`.
-
 If your Go extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
 
 Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.

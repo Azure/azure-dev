@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.11 (2026-10-15)
+
+### Bugs Fixed
+
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
 ## 1.0.0-beta.10 (2026-10-08)
 
 ### Breaking Changes

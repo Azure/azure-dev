@@ -24,13 +24,13 @@ func TestValidateInitLocation(t *testing.T) {
 	allowed := promptHarnessRegionsForInit("github_copilot_preview")
 	require.Nil(t, promptHarnessRegionsForInit(""), "plain prompt must remain unrestricted")
 	for _, location := range []string{
-		"japaneast", "swedencentral", "uksouth",
+		"eastus2", "japaneast", "swedencentral", "uksouth",
 		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
 		"canadacentral", "westus2",
 	} {
 		require.NoError(t, validateInitLocation(location, allowed))
 	}
-	for _, location := range []string{"eastus", "eastus2", "westus", ""} {
+	for _, location := range []string{"eastus", "westus", ""} {
 		err := validateInitLocation(location, allowed)
 		require.ErrorContains(t, err, "not supported for this agent setup")
 		require.NoError(t, validateInitLocation(location, nil), "plain prompt must remain unrestricted")
@@ -53,7 +53,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 		{name: "plain picker unchanged", location: "eastus"},
 		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "eastus", wantError: true},
 		{name: "explicit unknown rejected", explicitID: true, restricted: true, wantError: true},
-		{name: "explicit eastus2 rejected", explicitID: true, restricted: true, location: "eastus2", wantError: true},
+		{name: "explicit eastus2 accepted", explicitID: true, restricted: true, location: "eastus2"},
 		{name: "explicit supported accepted", explicitID: true, restricted: true, location: "japaneast"},
 		{name: "plain explicit unchanged", explicitID: true, location: "eastus"},
 	}
@@ -149,9 +149,13 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 			require.NoError(t, ensureLocationWithAllowedLocations(
 				t.Context(), client, azureContext, envName, allowed,
 			))
-			require.Equal(t, "japaneast", envServer.values[envName]["AZURE_LOCATION"])
-			require.Equal(t, "japaneast", envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
-			if location == "japaneast" {
+			expectedLocation := "japaneast"
+			if location == "japaneast" || location == "eastus2" {
+				expectedLocation = location
+			}
+			require.Equal(t, expectedLocation, envServer.values[envName]["AZURE_LOCATION"])
+			require.Equal(t, expectedLocation, envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
+			if location == "japaneast" || location == "eastus2" {
 				require.Nil(t, prompts.request)
 			} else {
 				require.NotNil(t, prompts.request)

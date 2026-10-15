@@ -47,6 +47,7 @@ type azureYamlManifestInfo struct {
 	hasPromptAgent    bool
 	hasNonPromptAgent bool
 	hasUnresolvedRefs bool
+	promptHarness     string
 }
 
 type authenticatedManifestReader func(context.Context, string) ([]byte, error)
@@ -204,6 +205,10 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			kind, _ := svcMap["kind"].(string)
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
+				harness, _ := svcMap["harness"].(map[string]any)
+				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
+					info.promptHarness = harnessType
+				}
 			} else {
 				info.hasNonPromptAgent = true
 			}
@@ -930,6 +935,7 @@ func runInitFromAzdTemplate(
 	if err != nil {
 		return err
 	}
+	recordInitProjectContent(ctx, content)
 
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
 	if err != nil {
@@ -1284,6 +1290,15 @@ func finalizeAdoptedProject(
 	// managed by Foundry and must not inherit hosted-agent region constraints.
 	filterHostedRegions := true
 	projectRoot := resolveProjectPath(ctx, azdClient)
+	manifestContent, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	if err != nil {
+		return fmt.Errorf("reading adopted agent definitions: %w", err)
+	}
+	manifestInfo, err := inspectAzureYaml(manifestContent, projectRoot)
+	if err != nil {
+		return err
+	}
+	allowedLocations := promptHarnessRegionsForInit(manifestInfo.promptHarness)
 	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
 	if err != nil {
 		return fmt.Errorf("reading environment values: %w", err)
@@ -1307,6 +1322,7 @@ func finalizeAdoptedProject(
 		skipACR,
 		filterHostedRegions && !promptOnly,
 		preserveDeferredProjectState,
+		allowedLocations,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {

@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -1081,9 +1082,16 @@ func createAgentAPIRequest(
 				metadata["authors"] = strings.Join(authorsStr, ",")
 			}
 		}
+		if tags, exists := (*agentDefinition.Metadata)["tags"]; exists {
+			value, err := agentMetadataTags(tags)
+			if err != nil {
+				return nil, err
+			}
+			metadata["tags"] = value
+		}
 		// Copy other metadata as strings
 		for key, value := range *agentDefinition.Metadata {
-			if key != "authors" {
+			if key != "authors" && key != "tags" {
 				if strValue, ok := value.(string); ok {
 					metadata[key] = strValue
 				}
@@ -1221,4 +1229,35 @@ func createAgentAPIRequest(
 	}
 
 	return request, nil
+}
+
+func agentMetadataTags(value any) (string, error) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	var tags []string
+	switch values := value.(type) {
+	case []string:
+		tags = values
+	case []any:
+		tags = make([]string, len(values))
+		for i, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+			}
+			tags[i] = text
+		}
+	default:
+		return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	// Foundry metadata values are strings; JSON preserves commas and empty list items.
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return "", fmt.Errorf("encode metadata.tags: %w", err)
+	}
+	return string(encoded), nil
 }

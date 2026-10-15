@@ -82,6 +82,7 @@ type InvokeAction struct {
 	debugLatencyExplicit  bool
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
+	invocationsTransport  http.RoundTripper
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
@@ -1023,6 +1024,14 @@ func printInvokeTiming(w io.Writer, total time.Duration) {
 	_, _ = color.New(color.FgGreen).Fprintf(w, "\nClient elapsed: %s\n", formatDuration(total))
 }
 
+func printOpenAPIProbeProgress(w io.Writer, raw, interactive bool) error {
+	if raw || !interactive {
+		return nil
+	}
+	_, err := fmt.Fprintln(w, "\nChecking optional OpenAPI metadata...")
+	return err
+}
+
 // formatDuration formats a duration for display in timing output.
 // Always uses seconds with 3 decimal places for consistency.
 func formatDuration(d time.Duration) string {
@@ -1832,7 +1841,13 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", "", true); fresh {
+		path, fresh, probeErr := fetchOpenAPISpec(
+			ctx, azdClient, a.invocationsTransport, localBaseURL, agentName, "local", "", "", "", nil, true,
+		)
+		if probeErr != nil {
+			log.Print(probeErr)
+		}
+		if fresh {
 			if !raw {
 				fmt.Printf("OpenAPI spec saved to %s\n", path)
 			}
@@ -1861,7 +1876,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		return req, nil
 	}
 
-	client := &http.Client{Timeout: a.httpTimeout()}
+	client := &http.Client{Transport: a.invocationsTransport, Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
 	resp, err := doLocalRequestWithRetry(ctx, client, newReq)
 	if err != nil {
@@ -1879,7 +1894,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		}
 	}
 
-	if err := handleInvocationResponse(ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw, nil); err != nil {
+	if err := handleInvocationResponse(
+		ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw, nil, a.invocationsTransport,
+	); err != nil {
 		// See invocationsRemote for the status-code rationale.
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
@@ -1949,13 +1966,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", rc.projectEndpoint, rc.name)
 
-	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
-	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
-	// the user is one-off targeting a remote endpoint.
-	if rc.azdClient != nil && a.endpoint == nil {
-		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
-	}
-
 	invURL := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, sid)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
@@ -1973,15 +1983,23 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		req.Header.Set("Accept-Encoding", "identity")
 	}
 
-	client := &http.Client{Timeout: a.httpTimeout()}
+	client := &http.Client{Transport: a.invocationsTransport, Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
-	defer resp.Body.Close()
+	// Handlers may replace resp.Body with an in-memory replay reader.
+	responseBody := &invocationResponseBody{ReadCloser: resp.Body}
+	resp.Body = responseBody
+	defer func() {
+		if !responseBody.closed {
+			_ = responseBody.Close()
+		}
+	}()
 
+	effectiveSessionID := captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "")
 	invocationID, err := invocationIDFromResponse(resp)
 	if err != nil {
 		return err
@@ -1999,14 +2017,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invocationID)
 	}
 
-	// Always capture session state from response headers (needed even in raw mode
-	// so subsequent invokes can reuse the session). Reads headers, not the body.
 	latency.captureResponse(resp)
-	sessionLabel := "Session:  "
-	if raw {
-		sessionLabel = ""
+	if !raw && sid == "" && effectiveSessionID != "" && rc.azdClient != nil {
+		fmt.Printf("Session:  %s (assigned by server)\n", effectiveSessionID)
 	}
-	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(
@@ -2020,6 +2034,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 		raw,
 		latency,
+		a.invocationsTransport,
 	); err != nil {
 		// Only emit failure Next: for platform HTTP failures.
 		// 200 OK with an agent-error envelope (handleInvocationSync /
@@ -2034,6 +2049,36 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 	totalDuration := time.Since(invokeStart)
+	if err := responseBody.Close(); err != nil {
+		log.Print("Invocation response cleanup failed")
+	}
+
+	// Fetch remote metadata only after the invocation establishes its session.
+	// The metadata endpoint may otherwise allocate an unrelated session.
+	if rc.azdClient != nil && a.endpoint == nil && effectiveSessionID != "" && ctx.Err() == nil {
+		if err := printOpenAPIProbeProgress(os.Stdout, raw, writerIsTerminal(os.Stdout)); err != nil {
+			log.Print("OpenAPI metadata progress output failed")
+		}
+		specRequest := &http.Request{Header: make(http.Header)}
+		applyCustomHeaders(specRequest, a.clientHeaders)
+		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
+		_, _, probeErr := fetchOpenAPISpec(
+			ctx,
+			rc.azdClient,
+			a.invocationsTransport,
+			remoteBaseURL,
+			rc.name,
+			"remote",
+			rc.bearerToken,
+			rc.apiVersion,
+			effectiveSessionID,
+			specRequest.Header,
+			false,
+		)
+		if probeErr != nil {
+			log.Print(probeErr)
+		}
+	}
 	if !raw {
 		printInvokeTiming(os.Stdout, totalDuration)
 		if err := latency.writeTo(os.Stdout); err != nil {
@@ -2068,10 +2113,13 @@ func handleInvocationResponse(
 	options *agent_api.SessionRequestOptions,
 	raw bool,
 	latency *invokeLatency,
+	transport http.RoundTripper,
 ) error {
 	if raw {
 		if resp.StatusCode == http.StatusAccepted {
-			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
+			return handleInvocationLRO(
+				ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency, transport,
+			)
 		}
 		if err := writeRawResponse(os.Stdout, resp); err != nil {
 			return err
@@ -2106,7 +2154,9 @@ func handleInvocationResponse(
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
-		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
+		return handleInvocationLRO(
+			ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency, transport,
+		)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -2229,6 +2279,7 @@ func handleInvocationLRO(
 	options *agent_api.SessionRequestOptions,
 	raw bool,
 	latency *invokeLatency,
+	transport http.RoundTripper,
 ) error {
 	latency.captureResponse(resp)
 	// Read the 202 body once -- used for both invocation ID extraction and status display.
@@ -2334,7 +2385,7 @@ func handleInvocationLRO(
 			req.Header.Set("Accept-Encoding", "identity")
 		}
 
-		client := &http.Client{Timeout: 30 * time.Second}
+		client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 		pollResp, err := client.Do(req) //nolint:gosec // G704: endpoint from azd environment
 		if err != nil {
 			return fmt.Errorf("GET %s failed: %w", pollURL, err)

@@ -80,6 +80,18 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Extensions | Alpha |
 | Spring initialization (`spring init`, unpublished development extension) | Alpha |
 
+## Extension gRPC Contracts
+
+| Capability | Contract stage | Stable since | Beta status |
+|---|---|---|---|
+| Extension usage telemetry (`TelemetryService.ReportUsage`) | Stable v1 | azd 1.36.0 | Deprecated; wire route retained |
+| Current Azure principal (`AccountService.GetCurrentPrincipal`) | Stable v1 | azd 1.36.0 | Deprecated; wire route retained |
+
+These are contract graduations, not a change to the overall Extensions feature stage
+or telemetry eligibility/privacy policy. Stable consumers must declare
+`requiredAzdVersion: ">=1.36.0"`. See
+[contract lifecycle and SDK migration](../../cli/azd/docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
+
 ---
 
 For the full feature tracking table, see [cli/azd/docs/feature-stages.md](../../cli/azd/docs/feature-stages.md).

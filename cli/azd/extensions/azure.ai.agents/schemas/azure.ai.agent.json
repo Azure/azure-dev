@@ -258,6 +258,13 @@
     "metadata": {
       "type": "object",
       "description": "Optional metadata key-value pairs for the agent.",
+      "properties": {
+        "tags": {
+          "type": ["string", "array"],
+          "items": { "type": "string" },
+          "description": "Agent tags. Lists are stored as a JSON array string in Foundry metadata.tags; string values are preserved."
+        }
+      },
       "additionalProperties": true
     },
     "protocols": {

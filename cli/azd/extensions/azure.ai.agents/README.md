@@ -1,5 +1,195 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Hosted agent deployment preview
+
+With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
+project, use the core deployment command:
+
+```bash
+azd deploy <service> --preview --no-prompt
+azd deploy <service> --preview --no-prompt --output json
+```
+
+Preview supports `host: azure.ai.agent`, `kind: hosted` definitions declared at
+service level in unified `azure.yaml`. Legacy `agent.yaml`/`agent.manifest.yaml`
+projects, whole agent-file references, deprecated nested `config`, and
+`AGENT_DEFINITION_PATH` overrides return an unsupported error with migration
+guidance. Local references to individual fields or fragments remain supported.
+Unused legacy files do not override an inline definition. Prompt, voice, and
+workflow agent definitions are outside this preview's scope. There is no
+standalone `azd ai agent deploy` or `--dry-run` command.
+
+The provider reads the latest remote agent version and compares the declared,
+in-scope properties with its configuration, using normal deployment normalization. It
+reports `create` on a missing agent, `update` for known differences, `noChange`
+when the in-scope known configuration matches, or `unknown` when it matches but
+an in-scope input or image-source choice is unresolved.
+
+Comparison and output are limited to six groups: metadata (name, description,
+and `metadata` tags), protocols, resources (CPU/memory), environment variables,
+model deployment reference, and container image/build-push intent. Code settings,
+session settings, content safety, endpoint settings, agent cards, and unavailable
+artifact contents are not compared or reported, and do not affect change counts
+or statuses. Additions show the desired value, updates show `before -> after`,
+and removals show the old value followed by `(removed)`.
+
+Absent properties and empty groups are omitted from both readable and structured
+changes. Field/fragment references retain their effective authored presence.
+Normalization-only defaults, including undeclared CPU/memory, protocols, and
+`enableVnextExperience` metadata, do not create differences. Declared zero, false,
+and empty values are not treated as absent; normal value normalization and
+credential sanitization still apply. Remote-only optional metadata/environment/image properties
+remain real removals when the new request removes them.
+
+Ordinary in-scope values are visible, including descriptions, metadata, protocol
+versions, CPU/memory, and literal service environment bindings. There is no
+blanket redaction based on a property's name or free-text type. Tags are shown
+as logical lists or scalar strings; false, zero, and empty values keep their types.
+Fields outside the six groups remain excluded.
+
+Credential protection is targeted at environment-resolution boundaries.
+Preview reads the effective authored source, including references, to distinguish
+literal environment bindings from `${VAR}` substitutions. Substituted bindings
+and remote-only bindings without authored provenance remain protected; the
+public model deployment identifier remains visible. Foundry `${{...}}`
+expressions stay unevaluated and visible. Known resolved values and protected
+previous remote binding values are also removed if embedded in descriptions,
+metadata, tags, or other displayed strings. Current source cannot recover
+historical secret provenance when a binding is now literal; it does not guess
+sensitivity from names.
+Canonical field paths, map keys, and service/agent identifiers are not subjected
+to secret-substring replacement; a short credential cannot corrupt their names.
+URL usernames/passwords, query strings, and fragments are always stripped, and
+terminal control characters are neutralized. Keep credentials in environment
+substitutions rather than inline configuration. Sanitization affects display
+only, not comparison.
+
+Agent tags belong under the service's `metadata.tags`, not project/resource
+provisioning tags. Both ordinary deployment and preview accept a string or a
+list of strings:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - customer-support
+        - responses
+```
+
+Foundry agent metadata is a string-valued dictionary. The extension stores a
+tag list as a JSON array string at `metadata.tags`, preserving commas and empty
+items; existing string values are unchanged. List additions/removals therefore
+appear as an `update: metadata.tags` change. Removing the entire `tags` property
+reports `remove: metadata.tags` if the latest remote version contains it.
+Explicit `tags: []` and `tags: ""` remain present values, not missing properties.
+Invalid tag types fail instead of silently disappearing. Preview decodes the
+known JSON string-list form for display: additions show all desired tags,
+updates show the old and new lists, and removals show the previous tags. JSON
+uses the same sanitized logical arrays or scalar strings. Explicit empty lists
+and strings remain `[]` and `""`. Comparison uses the actual values before
+sanitization, so different credentials still produce a change even when their
+display values are both redacted.
+
+Preview compares against the latest deployed version, not a previous local
+file revision. A deleted local tag that was never deployed cannot appear as a
+remote removal; a missing remote agent reports creation and only additions.
+If the remote version has no tags, preview reports `add` with the full desired
+list, not individual removals from a previous local edit.
+
+For example:
+
+```text
+  Metadata:
+    update: description: "A basic responses agent." -> "A helpful responses agent."
+    update: metadata.tags: ["retained","removed"] -> ["retained","added"]
+  Resources:
+    update: definition.cpu: "0.5" -> "2"
+  Environment variables:
+    update: definition.environment_variables.MODE: "production" -> "development"
+    add: definition.environment_variables.API_KEY: "[redacted]"
+  Container image:
+    build: true
+    push: true
+```
+
+Image passthrough compares the configured image reference, including a private
+registry connection. The Container image group and optional JSON `containerImage`
+intent are change-only: creating a container-based agent or changing its known
+image/registry configuration can include relevant build/push intent. Unchanged
+container configuration is omitted, even if normal deployment would always
+rebuild. A changed passthrough image shows its sanitized reference diff and
+`build: false` / `push: false`; a relevant container build reports true/true,
+including remote builds, without inventing a resulting tag/digest.
+
+Code-only services have no container intent or synthetic false/false section;
+code packaging and upload content remain excluded. Switching from a deployed
+container definition to code can still report removal of the old image reference.
+If a normal interactive deployment would ask whether to build or use a configured
+image that differs from the deployed reference, the image choice and build/push
+intent remain unknown even when there are no other differences. An unchanged
+configured reference still omits container intent. With `--no-prompt`, the normal default is
+build. The legacy `AZD_AGENT_SKIP_ACR=true` marker selects a configured pre-built
+image.
+
+Equal image tags do not prove their mutable content is unchanged. Unset `${VAR}`
+inputs in service `env` or a selected passthrough `image` remain unknown rather
+than empty-value changes; explicit empty values and `${VAR:-default}` retain
+their ordinary meanings. Foundry `${{...}}` expressions are preserved, not
+evaluated or resolved to credentials.
+
+The existing host JSON envelope contains `timestamp` and `services`. Provider
+results are at `services.<service>.data`, with `service`, `agent`, `status`,
+`changes` (each has `group`, `path`, `operation` and the applicable sanitized
+`before`/`after` values), `unknown`, and `notes`. Optional `containerImage` has
+boolean `build`/`push` intent for relevant container changes (null when a relevant
+image-source choice is unresolved); it is absent for code-only and unchanged
+container configurations. JSON
+uses the same sanitized values as readable output.
+Create, update, no-change, and unknown previews succeed; configuration,
+authentication, permission, connectivity, and malformed-response errors fail.
+`noChange` describes only the declared, in-scope configuration and actual optional
+removals, not normalization-only defaults or artifact content equivalence:
+ordinary deploy still creates a new agent version.
+
+### Read-only boundary and inherited host limitations
+
+The provider runs on a fresh instance without `Initialize`, uses only project,
+environment, and tenant reads plus the Foundry agent GET, and returns output to
+the host. Before credential creation or remote calls, it requires an HTTPS project
+endpoint whose parsed hostname is exactly `ai.azure.com` or a subdomain ending in
+`.ai.azure.com`; suffix lookalikes and other domains are rejected without echoing
+the endpoint. It never calls deployment writes, prompts, builds, uploads, provisioning,
+or extension-owned state persistence. Normal deployment remains on the stable
+service-target lifecycle. Sensitive provider values are redacted and
+credential-bearing URLs are sanitized; provider errors do not echo raw API bodies
+or authored values.
+
+The `azure.ai.project` provider returns a silent deployment no-op preview, so a
+project dependency does not produce an unsupported-preview warning. The host
+still displays its per-service progress line; project JSON explicitly marks
+deployment as a no-op, not an infrastructure comparison.
+
+The unchanged azd host skips package/publish/deploy and deployment hooks, but its
+ordinary project/environment-loading path still runs. Environment selection or
+loading can prompt, download remote environment state, or save host-managed
+environment defaults before the provider is called. This is not a host-wide
+no-filesystem-writes guarantee; use an already initialized, selected local
+environment with `--no-prompt`. Services filtered out by conditions are not
+previewed. Hosts without a preview provider skip that service with a warning;
+skipped services are absent from JSON results. Preview does not evaluate
+infrastructure/dependency changes or deployment readiness, and compares the latest
+version, not necessarily the version receiving endpoint traffic. The host rejects
+`--timeout` and non-empty `--from-package` with `--preview`.
+
+Offline regression coverage includes an
+[integration runner against the unchanged main host](tests/host-preview/README.md).
+The optional [live preview scenario](tests/cli-interactive-tester-scenarios/tier2/2.17a-deploy-preview.yaml)
+is driven through `foundry-extension-scenario-orchestrator`; its setup incurs Azure
+cost and is not run automatically.
+
 ## Extension telemetry API
 
 Extension code reports best-effort usage events through the shared
@@ -158,8 +348,10 @@ lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 
 **Breaking change:** the dependency type now precedes the verb:
 `azd ai agent <toolbox|connection> add <service> --agent <agent>`.
-The previous `azd ai agent add <type> ...` command order is no longer supported;
-only the command hierarchy changes, not the dependency mutation or JSON output.
+The previous `azd ai agent add <type> ...` form is no longer supported for
+dependency attachment. The root `azd ai agent add <service> --file <path>`
+command adds or updates one Agent service. Attach dependencies with the
+Toolbox or Connection commands above.
 
 If a toolbox is declared inline on an agent, move its definition to an
 independent `azure.ai.toolbox` service before deployment. If the new service key
@@ -182,10 +374,20 @@ Run `azd deploy --all` to reconcile these dependencies before their agents;
 declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
+Unlike the service-key references in `toolboxes`, singular `toolbox.name`
+retains the Foundry resource name. Local dependency wiring and deployment
+resolve its service key using the existing authoring convention: trim
+surrounding whitespace and remove ASCII spaces (`My Tools` becomes `MyTools`).
+The original resource name remains unchanged in the definition.
+
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
-sibling `azure.ai.connection` service names. These are references, not resource
-definitions: the siblings must be in `uses` and deployed to the same project
-before the prompt agent. Connection objects remain unsupported on any agent.
+local `azure.ai.connection` service keys or effective resource names. An
+effective name comes from the service's `name` after resolving local `$ref`
+files; absent or blank names fall back to the service key. An exact service-key
+match takes precedence over a resource-name match. These are references, not
+resource definitions: the matching service key must be in `uses` and deployed
+to the same project before the prompt agent. Connection objects remain
+unsupported on any agent.
 
 ## Deploying Agents
 
@@ -385,6 +587,32 @@ definition in an `agent.yaml`/`agent.yml` file, an AgentManifest file, or under
 the service's `config:` block. Runtime commands reject those implicit and nested
 sources with migration guidance.
 
+For an existing azd project, `azd ai agent add <name> --file <path>`
+validates a direct definition and adds or updates only that Agent service.
+The positional service key is not the Foundry Agent identity in the definition.
+The command does not adopt another project, authenticate to Azure, create
+resources, copy source files, or deploy. For full sample or project adoption,
+use the `azd ai agent init --template <path>` workflow.
+
+The definition may be YAML or JSON and must use a supported direct Agent kind:
+`prompt`, `hosted` (including code deployment), `voice`, or the `prompt-voice`
+compatibility name. The service stores a root `$ref` relative to the directory
+containing `azure.yaml`; nested references resolve relative to the file that
+declares them. The project must declare exactly one `azure.ai.project` service
+before the command writes. `--project` can confirm that service key, and
+`--source` overrides the Agent service's project directory with an existing
+directory inside the current project.
+
+When adding or updating a service, the command rejects numeric scalar tokens
+that cannot survive the project API's double-precision representation without
+changing their value. Quote YAML dates and timestamps, such as
+`apiVersion: "2025-01-01"`,
+to keep them as strings. Scalar token checks cover the entire project document,
+including top-level extension fields and dependency service properties, because
+the project API saves the whole file. Validation failures and unchanged
+declarations leave the project tree untouched; the shared Agent authoring lock
+lives in the user cache.
+
 Move a direct agent definition to service-level properties in `azure.yaml`:
 
 ```yaml
@@ -398,11 +626,22 @@ services:
 ```
 
 Alternatively, keep a direct definition in a separate file and reference it
-explicitly from the service with a root `$ref`. The basename can be anything,
-including a legacy-looking name such as `agent.yaml`, but prompt-agent references
-must use a `.yaml` or `.yml` extension. The file content must be a supported
-direct agent definition. An `agent.manifest.yaml` template wrapper must first be
-converted or extracted.
+explicitly from the service with a root `$ref`, for example
+`$ref: ./definitions/agent.json`. Prompt, hosted (including code deploy), voice,
+and prompt-voice agents support YAML or JSON definitions. The basename can be
+anything, including a legacy-looking name such as `agent.yaml`; prompt-agent
+references accept `.yaml`, `.yml`, and `.json` extensions. The file content must
+be a supported direct agent definition. An `agent.manifest.yaml` template wrapper
+must first be converted or extracted.
+
+Prompt-agent root references must stay within the project directory and resolve
+relative to the directory holding `azure.yaml`, not the service's `project`
+directory. Prompt `skills/` and `vector-assets/` convention folders remain next
+to the referenced definition. Nested `$ref` includes and relative instructions
+paths inside a definition resolve relative to that file. Hosted code packaging
+still uses the service's `project` directory. Keep core service fields such as
+`project`, `language`, `image`, `docker`, and `env` in `azure.yaml`, not in the
+root reference target.
 
 ### Environment variables under `config:`
 
@@ -431,6 +670,10 @@ underscore and contain only letters, digits, or underscores. For example,
 before contacting Foundry Agent Service.
 
 ## GitHub Copilot harness built-in tools
+
+The `github_copilot_preview` harness currently requires a Foundry project in one of
+these regions: `eastus2`, `japaneast`, `swedencentral`, `uksouth`, `australiaeast`, `westeurope`,
+`germanywestcentral`, `canadacentral`, or `westus2`.
 
 The harness block selects the managed runtime and contains only its type.
 Configure built-in tools through the prompt agent's top-level `tools` list:
@@ -876,6 +1119,41 @@ The target must be active, declare `invocations_ws/1.0.0`, and include
 `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
 instructions, tools, and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
+
+## Invocations metadata discovery
+
+For project-backed remote `azd ai agent invoke --protocol invocations` calls,
+azd optionally caches `/invocations/docs/openapi.json` **after** the invocation
+response has been handled successfully. For SSE and long-running invocations,
+discovery follows stream completion or terminal success, respectively. The GET
+uses the invocation's effective `agent_session_id`, including a server-assigned
+ID from a fresh invocation. If no session ID is available, azd skips discovery
+rather than sending a request without one. Explicit `--agent-endpoint` calls
+do not use project metadata discovery.
+
+Metadata failures do not replace a completed invocation's result.
+Remote metadata redirects are not followed: 3xx responses are optional discovery
+failures, so redirects cannot forward caller headers or drop the session binding.
+Failure categories appear only with `--debug`. Interactive, non-raw invocations
+show `Checking optional OpenAPI metadata...` during discovery; timing and `Next:`
+guidance follow discovery. Redirected and raw output contain no metadata progress.
+Raw response handling remains unchanged, including its
+existing treatment of agent-error bodies.
+
+Remote discovery has separate 10-second bounds for configuration RPCs and the
+HTTP request; those waits can total up to 20 seconds after the agent's response.
+An earlier caller deadline or cancellation takes precedence. Synchronous
+filesystem operations are not covered by those network/RPC bounds. Invocation
+timing excludes discovery.
+
+Successful metadata is cached as `.azure/<env>/openapi-<agent>-remote.json`.
+A cache hit avoids another metadata request. Missing or failed metadata is not
+cached, so a 404 can be probed again on a later invocation. This does not remove
+sessions created by earlier azd versions.
+
+Local discovery keeps its existing behavior: a GET without a session ID before the POST,
+refreshed on every call, with no new identity or custom headers on the GET.
+The local POST still carries its own session and configured headers.
 
 ## Session idle timeout
 

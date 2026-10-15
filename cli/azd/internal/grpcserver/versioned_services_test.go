@@ -53,7 +53,9 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 
 	const telemetryService = "azd.extensions.v1beta.TelemetryService"
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
-	require.IsType(t, v1beta.UnimplementedTelemetryServiceServer{}, registrar.implementations[telemetryService])
+	require.IsType(t, &betaTelemetryServiceAdapter{}, registrar.implementations[telemetryService])
+	//nolint:staticcheck // The adapter must still implement the deprecated beta server interface.
+	require.Implements(t, (*v1beta.TelemetryServiceServer)(nil), registrar.implementations[telemetryService])
 
 	const commandResultService = "azd.extensions.v1beta.CommandResultService"
 	require.Same(t, &v1beta.CommandResultService_ServiceDesc, registrar.services[commandResultService])
@@ -123,9 +125,9 @@ func TestRegisterBetaServicesRejectsInvalidOverrides(t *testing.T) {
 		{
 			name: "beta-only service",
 			overrides: map[BetaService]any{
-				BetaTelemetryService: betaAccountOverride{},
+				BetaComposeService: betaAccountOverride{},
 			},
-			want: "beta-only service TelemetryService uses its native implementation",
+			want: "beta-only service ComposeService uses its native implementation",
 		},
 		{
 			name: "chain wrong service method",
@@ -381,7 +383,7 @@ func stableServiceImplementations() map[BetaService]any {
 		BetaPromptService:        v1.UnimplementedPromptServiceServer{},
 		BetaProvisioningService:  v1.UnimplementedProvisioningServiceServer{},
 		BetaServiceTargetService: v1.UnimplementedServiceTargetServiceServer{},
-		BetaTelemetryService:     v1beta.UnimplementedTelemetryServiceServer{},
+		BetaTelemetryService:     v1.UnimplementedTelemetryServiceServer{},
 		BetaUserConfigService:    v1.UnimplementedUserConfigServiceServer{},
 		BetaValidationService:    v1.UnimplementedValidationServiceServer{},
 		BetaWorkflowService:      v1.UnimplementedWorkflowServiceServer{},

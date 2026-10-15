@@ -138,9 +138,9 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 		t.Run(summary.Name, func(t *testing.T) {
 			require.NotNil(t, schemas[summary.Name],
 				"the shipping lookup did not resolve %s", summary.Name)
-			// Give the builder a dataset carrying every column the evaluator
-			// accepts, so a rejection means the request shape is wrong rather
-			// than the data being genuinely absent.
+			// This tests definition acceptance, not row execution. Declare the
+			// fixture columns and explicitly bind required nonstandard inputs;
+			// production must not infer them from catalog properties.
 			columns := map[string]bool{"query": true}
 			if ds := summary.DataSchema(); ds != nil {
 				for _, name := range ds.PropertyNames() {
@@ -160,6 +160,7 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 				Evaluators: []evalcore.EvaluatorRef{{
 					Evaluator:                summary.Name,
 					InitializationParameters: map[string]any{"deployment_name": judge},
+					DataMapping:              requiredFixtureMappings(t, &summary, columns),
 				}},
 				EvaluationLevel: level,
 			}
@@ -179,10 +180,9 @@ func TestLiveBuildAcceptedForEveryBuiltin(t *testing.T) {
 	}
 }
 
-// TestLiveBuildRejectsMissingColumnsLocally proves the pre-flight check fires
-// before the network call, so a user sees which column is missing instead of a
-// service error naming an internal field path.
-func TestLiveBuildRejectsMissingColumnsLocally(t *testing.T) {
+// TestLiveBuildRejectsUnmappedRequiredInputsLocally keeps the negative mapping
+// check even when the fixture declares every accepted column.
+func TestLiveBuildRejectsUnmappedRequiredInputsLocally(t *testing.T) {
 	client, judge := liveEvalClient(t)
 	ctx := context.Background()
 
@@ -203,13 +203,18 @@ func TestLiveBuildRejectsMissingColumnsLocally(t *testing.T) {
 		Dataset: "inline",
 		Target:  &project.Target{Type: "agent", Name: "probe-agent"},
 		Evaluators: []evalcore.EvaluatorRef{{
-			Name:                     "builtin.ifeval",
+			Evaluator:                "builtin.ifeval",
 			InitializationParameters: map[string]any{"deployment_name": judge},
 		}},
 	}
 
-	// A dataset with only `query` cannot satisfy ifeval.
-	_, err = buildEvalRequest(group, schemas, map[string]bool{"query": true})
+	// Supplying columns without explicit mappings must still fail. This is the
+	// negative counterpart to the positive fixture, not permission to infer.
+	columns := map[string]bool{"query": true}
+	for _, field := range target.DataSchema().PropertyNames() {
+		columns[field] = true
+	}
+	_, err = buildEvalRequest(group, schemas, columns)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "instruction_id_list")
 	t.Logf("pre-flight error: %v", err)

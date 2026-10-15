@@ -45,7 +45,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
-		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
+		WithBetaServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -80,7 +80,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -259,15 +259,6 @@ func updateLegacyProjectDeployments(
 	)
 }
 
-// developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
-// process lifetime. Service-level predeploy handlers fire per-service, but the
-// RBAC pre-flight check is project-scoped and idempotent — running it once is
-// sufficient and avoids duplicate ARM/Graph calls and noisy output.
-var (
-	developerRBACOnce sync.Once
-	developerRBACErr  error
-)
-
 // duplicateAgentNameWarnOnce ensures the duplicate agent-name warning is emitted
 // at most once per extension process lifetime. Service-level predeploy handlers
 // fire per-service, but the check is project-scoped — a single pass over every
@@ -278,7 +269,7 @@ var duplicateAgentNameWarnOnce sync.Once
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
 
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
 
@@ -318,20 +309,13 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// Capture the current session so it can be resumed on the newly deployed
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
-	if isHostedAgentService(svc, args.Project) {
+	hosted := isHostedAgentService(svc, args.Project)
+	if hosted {
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	// Run developer RBAC pre-flight checks only for hosted agent deployments.
-	// Guarded by sync.Once since this handler fires per-service but the check
-	// is project-scoped.
-	if isHostedAgentService(svc, args.Project) {
-		developerRBACOnce.Do(func() {
-			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
-		})
-		if developerRBACErr != nil {
-			return developerRBACErr
-		}
+	if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
+		return err
 	}
 
 	return nil
@@ -405,7 +389,7 @@ func findDuplicateAgentNames(proj *azdext.ProjectConfig) []duplicateAgentNameGro
 // It is advisory: deploy continues.
 func warnDuplicateAgentNames(proj *azdext.ProjectConfig) {
 	for _, group := range findDuplicateAgentNames(proj) {
-		fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		_, _ = fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
 			"WARNING: agent name %q is used by multiple services (%s). Foundry identifies an agent "+
 				"by its name, so these services deploy to the same agent and overwrite each other. "+
 				"Give each agent a unique name in azure.yaml.\n",
@@ -591,7 +575,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 	if len(found) == 0 {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+	_, _ = fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
 		"WARNING: digital worker service %q still has legacy simple-agent Teams artifacts in %q (%s). "+
 			"This transition can leave stale appPackage.zip and TEAMS_APP_SETUP.md files behind. "+
 			"review and remove them manually before retrying the Teams setup flow.\n",
@@ -629,7 +613,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
+func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment bool) error {
 	serviceNames := make([]string, 0, len(proj.GetServices()))
 	for name := range proj.GetServices() {
 		serviceNames = append(serviceNames, name)
@@ -641,7 +625,14 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 		if svc.GetHost() != AiAgentHost {
 			continue
 		}
-		if _, err := project.ValidateAgentServiceDefinition(svc, proj.GetPath()); err != nil {
+		var err error
+		if validateDeployment {
+			_, err = project.ValidateAgentServiceDefinition(svc, proj.GetPath())
+		} else {
+			// Down requires safe runtime sources, not deployable instructions or skills.
+			_, _, _, err = project.LoadHostedAgentDefinition(svc, proj.GetPath())
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -656,7 +647,7 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
 //
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := validateRuntimeAgentServices(args.Project); err != nil {
+	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
 		return err
 	}
 
@@ -1085,7 +1076,8 @@ func enrichToolboxFromConnections(
 		}
 		conn, ok := connByName[connID]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "warning: tool references connection %q but no matching connection was found\n", connID)
+			_, _ = fmt.Fprintf(os.Stderr,
+				"warning: tool references connection %q but no matching connection was found\n", connID)
 			continue
 		}
 		if _, has := tool["server_url"]; !has && conn.Target != "" {
@@ -1179,7 +1171,7 @@ func resolveEnvValue(value string, azdEnv map[string]string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr,
+		_, _ = fmt.Fprintf(os.Stderr,
 			"Warning: failed to resolve env references in %q: %s\n", value, err)
 		return value
 	}

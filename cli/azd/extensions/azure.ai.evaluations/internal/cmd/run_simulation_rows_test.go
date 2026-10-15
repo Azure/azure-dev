@@ -89,9 +89,9 @@ func TestSimulationRunRejectsMixedTurnSeedRows(t *testing.T) {
 	}
 }
 
-func TestSimulationRunHonorsPerRowTurnOverride(t *testing.T) {
+func TestSimulationRunLeavesUnspecifiedTurnCapToService(t *testing.T) {
 	ec := simulationRowClient(t, `{"test_case_description":"A longer scenario.",`+
-		`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`)
+		`"simulation_configuration":{"max_num_turns":21,"desired_num_turns":21}}`)
 	group := runnableSimulation()
 	group.Simulation.MaxTurns = 0
 	source, _, err := ec.buildRunDataSource(t.Context(), group, "", 0)

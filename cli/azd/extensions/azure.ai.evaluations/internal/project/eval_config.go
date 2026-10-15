@@ -6,6 +6,7 @@
 package project
 
 import (
+	"slices"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -24,6 +25,21 @@ type EvalConfig struct {
 	Datasets   []DatasetDecl   `yaml:"datasets,omitempty"   json:"datasets,omitempty"`
 	Evaluators []EvaluatorDecl `yaml:"evaluators,omitempty" json:"evaluators,omitempty"`
 	Evals      []Eval          `yaml:"evals,omitempty"      json:"evals,omitempty"`
+}
+
+// WithCatalogEvaluatorPins copies an eval and resolves only authored catalog pins.
+// Explicit reference pins win; service-resolved latest versions are not edits.
+func (c *EvalConfig) WithCatalogEvaluatorPins(group Eval) Eval {
+	group.Evaluators = slices.Clone(group.Evaluators)
+	for i := range group.Evaluators {
+		ref := &group.Evaluators[i]
+		if ref.Version == "" {
+			if decl, ok := c.EvaluatorDeclaration(ref.Evaluator); ok {
+				ref.Version = decl.Version
+			}
+		}
+	}
+	return group
 }
 
 // DatasetDecl is a catalog entry. A local File is uploaded on deploy; without
@@ -98,9 +114,30 @@ type Eval struct {
 	Simulation *Simulation `yaml:"simulation,omitempty" json:"simulation,omitempty"`
 }
 
+// UnmarshalYAML preserves source/dataset exclusivity even for an explicitly empty dataset key.
+func (e *Eval) UnmarshalYAML(unmarshal func(any) error) error {
+	type evalYAML Eval
+	var decoded evalYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	if decoded.Source != nil {
+		var declared map[string]any
+		if err := unmarshal(&declared); err != nil {
+			return err
+		}
+		if _, present := declared["dataset"]; present && decoded.Dataset == "" {
+			return messages.DatasetAndSourceDeclareTheSameThing()
+		}
+	}
+	*e = Eval(decoded)
+	return nil
+}
+
 // SourceDecl says where an eval's rows come from when they are not a dataset.
 type SourceDecl struct {
 	Type          string   `yaml:"type,omitempty"            json:"type,omitempty"`
+	File          string   `yaml:"file,omitempty"            json:"file,omitempty"`
 	LookbackHours int      `yaml:"lookbackHours,omitempty"  json:"lookback_hours,omitempty"`
 	MaxTraces     int      `yaml:"maxTraces,omitempty"      json:"max_traces,omitempty"`
 	AgentName     string   `yaml:"agentName,omitempty"      json:"agent_name,omitempty"`
@@ -121,7 +158,47 @@ type SourceDecl struct {
 const (
 	SourceTypeTraces    = "traces"
 	SourceTypeResponses = "responses"
+	SourceTypeLocal     = "local"
 )
+
+// IsLocalSource reports an explicit local-byte source, never inferred registry absence.
+func (e *Eval) IsLocalSource() bool {
+	return e != nil && e.Source != nil && e.Source.Type == SourceTypeLocal
+}
+
+// LocalSourcePath resolves an explicit local source against its configuration base.
+func (e *Eval) LocalSourcePath(baseDir string) string {
+	if !e.IsLocalSource() {
+		return ""
+	}
+	return ResolveSource(baseDir, e.Source.File)
+}
+
+// UnmarshalYAML rejects fields that a local source cannot honor, including explicit zero values.
+func (s *SourceDecl) UnmarshalYAML(unmarshal func(any) error) error {
+	type sourceYAML SourceDecl
+	var decoded sourceYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	var declared map[string]any
+	if err := unmarshal(&declared); err != nil {
+		return err
+	}
+	var inert []string
+	for key := range declared {
+		if (decoded.Type == SourceTypeLocal && key != "type" && key != "file") ||
+			(decoded.Type != SourceTypeLocal && key == "file") {
+			inert = append(inert, key)
+		}
+	}
+	if len(inert) > 0 {
+		slices.Sort(inert)
+		return messages.SourceFieldsNotRead(decoded.Type, inert)
+	}
+	*s = SourceDecl(decoded)
+	return nil
+}
 
 // DefaultScaffoldMaxTraces is the cap init writes on a trace-backed eval, so a
 // first run is bounded rather than taking the service's own default of 1000.

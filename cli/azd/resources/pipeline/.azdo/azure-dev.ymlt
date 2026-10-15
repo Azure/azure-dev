@@ -20,6 +20,17 @@ steps:
   #     targetType: 'inline'
   #     script: |
   #       curl -fsSL https://aka.ms/install-azd.sh | bash
+{{- if .RequiredExtensions }}
+  - task: Bash@3
+    displayName: Install required azd extensions
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -e
+{{- range $extension := .RequiredExtensions }}
+        azd extension install "{{ $extension.Id }}"{{ if $extension.Version }} --version "{{ $extension.Version }}" --force{{ end }} --no-prompt
+{{- end }}
+{{ end }}
 {{ if .IsTerraform }}
   # Install task from https://marketplace.visualstudio.com/acquisition?itemName=ms-devlabs.custom-terraform-tasks
   - task: TerraformInstaller@1

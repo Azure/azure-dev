@@ -13,9 +13,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -67,6 +67,8 @@ func projectCommandSupportsExtensionAutoInstall(cmd *cobra.Command) bool {
 		return true
 	case "env":
 		return len(path) > 1 && path[1] == "refresh"
+	case "pipeline":
+		return len(path) > 1 && path[1] == "config"
 	default:
 		return false
 	}
@@ -424,21 +426,6 @@ func extensionProvidesProvider(
 	)
 }
 
-// providerIsBuiltIn reports whether azd itself implements the named provider. Core registers these
-// unconditionally, so no extension is ever required to supply them and the registry need not be
-// consulted, which would otherwise let an unreachable source fail an ordinary project. Matching is
-// case sensitive because the runtime resolves providers by their exact name.
-func providerIsBuiltIn(capability extensions.CapabilityType, provider string) bool {
-	switch capability {
-	case extensions.ServiceTargetProviderCapability:
-		return slices.Contains(project.BuiltInServiceTargetKinds(), project.ServiceTargetKind(provider))
-	case extensions.ProvisioningProviderCapability:
-		return slices.Contains(provisioning.BuiltInProviderKinds(), provisioning.ProviderKind(provider))
-	default:
-		return false
-	}
-}
-
 func extensionVersionProvidesProvider(
 	version *extensions.ExtensionVersion,
 	capability extensions.CapabilityType,
@@ -574,7 +561,7 @@ func missingProjectExtensions(
 	}
 
 	addProvider := func(capability extensions.CapabilityType, provider string) error {
-		if provider == "" || providerIsBuiltIn(capability, provider) {
+		if provider == "" || middleware.ProviderIsBuiltIn(capability, provider) {
 			return nil
 		}
 		// Reusing an inferred provider does not make it an explicitly requested installation.

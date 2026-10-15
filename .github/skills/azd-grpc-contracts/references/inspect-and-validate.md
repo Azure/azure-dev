@@ -12,7 +12,7 @@ Run commands from `cli/azd`.
    ```
 
 2. Identify beta-only files and services. Today, `ComposeService`,
-   `CopilotService`, and `TelemetryService` are beta-only. Verify the repository
+   `CopilotService`, and `CommandResultService` are beta-only. Verify the repository
    rather than assuming this list remains current.
 
 3. For shared files, compare messages, fields, enum values, services, methods,

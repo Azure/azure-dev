@@ -118,29 +118,37 @@ func TestInitAcceptsABuiltinTheCatalogueOffers(t *testing.T) {
 	}
 }
 
-// The lookup authenticates and can wait out its own timeout, so `init` must not
-// make it when there is nothing for the catalogue to answer about. This is the
-// orchestration half of the gate; hasBuiltinRef's own tests cover the predicate.
-func TestInitDoesNotAskTheCatalogueWithoutABuiltinReference(t *testing.T) {
+// ADO 5653254: implicit defaults bypassed the catalogue gate, so adding a
+// default that had not reached a project yet produced a scaffold that failed
+// only at create time.
+func TestInitRefusesAnUnavailableDefaultBeforeWritingAnything(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"no --evaluator at all", "only custom references"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+	catalogue, asked := answeringCatalogue("builtin.output_quality")
+	dir := filepath.Join(t.TempDir(), "evals")
+	action, _ := initIn(t, dir, catalogue)
 
-			catalogue, asked := answeringCatalogue("builtin.coherence")
+	err := action.Run()
 
-			var refs []string
-			if name == "only custom references" {
-				refs = []string{"support-quality", "tone-check"}
-			}
-			action, _ := initIn(t, filepath.Join(t.TempDir(), "evals"), catalogue, refs...)
-			_ = action.Run()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "builtin.task_completion")
+	assert.Equal(t, 1, *asked, "the default set is checked against the catalogue once")
+	assert.False(t, scaffoldedAnything(t, dir))
+}
 
-			assert.Zero(t, *asked,
-				"init opened a connection that could not have validated anything")
-		})
-	}
+// An explicit custom-only set replaces the built-in defaults, so the built-in
+// catalogue has nothing to validate and must not be opened.
+func TestInitDoesNotAskTheCatalogueForOnlyCustomReferences(t *testing.T) {
+	t.Parallel()
+
+	catalogue, asked := answeringCatalogue("builtin.output_quality")
+	action, _ := initIn(t, filepath.Join(t.TempDir(), "evals"),
+		catalogue, "support-quality", "tone-check")
+
+	_ = action.Run()
+
+	assert.Zero(t, *asked,
+		"init opened a connection that could not have validated anything")
 }
 
 func TestInitCatalogueCriteriaReachTheAuthoredConfig(t *testing.T) {
@@ -153,9 +161,13 @@ func TestInitCatalogueCriteriaReachTheAuthoredConfig(t *testing.T) {
 		{"authoritative unknown", []string{"builtin.coherence"}, "builtin.does_not_exist", true},
 		{"offered built-in", []string{"builtin.coherence"}, "builtin.coherence", false},
 		{"outside picker", []string{"builtin.relevance"}, "builtin.relevance", false},
+		{"explicit output composite", []string{"builtin.output_quality"}, "builtin.output_quality", false},
+		{"explicit tool composite", []string{"tool_use_quality"}, "builtin.tool_use_quality", false},
+		{"offline output composite", nil, "builtin.output_quality", false},
+		{"offline tool composite", nil, "builtin.tool_use_quality", false},
 		{"bare catalog spelling", []string{"relevance"}, "builtin.relevance", false},
 		{"unavailable catalog", nil, "builtin.unverified", false},
-		{"empty catalog", []string{}, "builtin.unverified", false},
+		{"empty catalog", []string{}, "builtin.unverified", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newInitHarness(t, nil)
@@ -182,6 +194,48 @@ func TestInitCatalogueCriteriaReachTheAuthoredConfig(t *testing.T) {
 			require.Len(t, cfg.Evals[0].Evaluators, 1)
 			assert.Equal(t, tc.ref, cfg.Evals[0].Evaluators[0].Evaluator)
 			assert.Equal(t, 1, h.project.wiringAttempts())
+		})
+	}
+}
+
+func TestInitOfflineDefaultAndExplicitEvaluatorSets(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		refs []string
+		want []string
+	}{
+		{"default", nil, []string{"builtin.task_completion"}},
+		{"explicit composites", []string{"builtin.output_quality", "builtin.tool_use_quality"},
+			[]string{"builtin.output_quality", "builtin.tool_use_quality"}},
+		{"explicit composite and constituent", []string{"builtin.output_quality", "builtin.coherence"},
+			[]string{"builtin.output_quality", "builtin.coherence"}},
+		{"custom only", []string{"custom-quality"}, []string{"custom-quality"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			catalogue, asked := answeringCatalogue()
+			path := filepath.Join(h.dir, "evals", "quality.yml")
+			if tc.name == "custom only" {
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+				require.NoError(t, os.WriteFile(path, []byte("evaluators:\n  - name: custom-quality\n"), 0o600))
+			}
+			action, _ := initIn(t, path, catalogue, tc.refs...)
+			action.flags.judgeModel = "judge"
+			require.NoError(t, action.Run())
+			if tc.name == "custom only" {
+				assert.Zero(t, *asked)
+			} else {
+				assert.Equal(t, 1, *asked, "the existing best-effort lookup is not required to succeed")
+			}
+			cfg, err := project.OpenEvalConfig(path)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evals, 1)
+			var refs []string
+			for _, ref := range cfg.Evals[0].Evaluators {
+				refs = append(refs, ref.Evaluator)
+				assert.Equal(t, "judge", ref.InitializationParameters["model"])
+			}
+			assert.Equal(t, tc.want, refs)
 		})
 	}
 }

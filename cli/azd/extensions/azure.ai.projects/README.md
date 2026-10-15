@@ -65,15 +65,24 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
-### Provisioning identity
+### Deployment preview
 
-For a new Foundry project, the provider asks the azd host for the current principal's object ID and type in the selected subscription's resource tenant when `AZURE_PRINCIPAL_ID` is absent. Explicit principal IDs are read from layer inputs first, then the active azd environment, then the host process environment. `AZURE_PRINCIPAL_TYPE` defaults to `User` for an explicit ID; set it to `ServicePrincipal` when supplying a service principal's object ID.
+`azd deploy --preview` performs no work for an `azure.ai.project` service, just
+like its normal package/publish/deploy lifecycle. The provider returns no readable
+message and does not emit an unsupported-preview warning. It does not read Azure
+resources, initialize deployment state, or perform provisioning.
 
-To disable the developer role assignment, persist an empty value with `azd env set AZURE_PRINCIPAL_ID ""` or supply an empty layer input. These values take precedence over a process-level value and skip principal lookup.
+The host still displays its own per-service progress line, for example
+`Done: Previewing service ai-project`. The provider message is empty and omitted
+from host JSON; `data` contains `status: "noOp"`, `scope: "deployment"`, and
+`infrastructurePreviewed: false`. This is not a comparison of project resources,
+model deployments, networking, or RBAC; those remain provisioning-owned.
 
-When principal resolution changes the identity, cached on-disk parameters are reloaded with the resolved `AZURE_PRINCIPAL_ID` and `AZURE_PRINCIPAL_TYPE`. Literal values in JSON and Bicep parameter files still override provider defaults.
+### Developer access
 
-If an on-disk parameter file supplies a different `principalId` without `principalType`, the template's type default applies instead of the deploying identity's type. Supply both parameters when the target identity differs from that default.
+The built-in provisioning template does not assign a role to the developer. Before deploying a prompt, hosted, or voice agent, the agent extension checks project access and attempts to grant Foundry User when needed. If that grant is denied, it warns and deployment continues; an administrator may need to assign the role.
+
+User-authored on-disk Bicep templates can still declare their own role assignments. Supply any required `principalId` and `principalType` values in the template's parameter file; the provider does not generate them.
 
 ### Infrastructure layers
 

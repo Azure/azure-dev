@@ -97,7 +97,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		if err := validateEmbedded(application.Embedded); err != nil {
 			return nil, err
 		}
-		if application.Embedded.URL != "" {
+		if application.Embedded.URL != "" || application.Embedded.URLConfigured {
 			fmt.Fprintf(&binding, "spring.datasource.url=%s\n", application.Embedded.URL)
 		}
 		if application.Embedded.Driver != "" {

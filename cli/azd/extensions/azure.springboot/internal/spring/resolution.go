@@ -110,7 +110,7 @@ func (m *missingInput) Error() string {
 func AnalyzeProject(
 	ctx context.Context, directory string, resolver ModelResolver, inputs DeploymentInputs,
 ) (*Analysis, error) {
-	result := &Analysis{}
+	result := &Analysis{Applications: []Application{{ID: "app"}}}
 	properties := make(map[string]string, len(inputs.Properties)+1)
 	for key, value := range inputs.Properties {
 		if !propertyName.MatchString(key) {
@@ -126,6 +126,14 @@ func AnalyzeProject(
 		return nil, errors.New("use --profiles instead of --property for spring.profiles.active")
 	}
 	if inputs.Profiles != nil {
+		if len(inputs.Profiles) == 0 || len(inputs.Profiles) > 64 {
+			return nil, errors.New("--profiles requires 1-64 valid profile names")
+		}
+		for _, profile := range inputs.Profiles {
+			if !profileName.MatchString(profile) {
+				return nil, errors.New("--profiles requires valid, nonempty profile names")
+			}
+		}
 		properties[canonical("spring.profiles.active")] = strings.Join(inputs.Profiles, ",")
 	}
 	used := map[string]bool{}
@@ -154,6 +162,10 @@ func AnalyzeProject(
 				}
 				if evidence.Property == "spring.datasource.url" {
 					decision.BindingIDs = []string{"app/datasource:primary"}
+					result.Bindings = []Binding{{
+						ID: "app/datasource:primary", ApplicationID: "app",
+						PropertyPrefix: "spring.datasource", Evidence: decision.Evidence,
+					}}
 				}
 			}
 			if !decision.Profiles && !slices.ContainsFunc(missing.evidence, func(e Evidence) bool {

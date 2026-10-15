@@ -89,7 +89,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	if text, ok := lookup("SPRING_APPLICATION_JSON"); ok && text != "" {
 		var values map[string]any
 		if err := json.Unmarshal([]byte(text), &values); err != nil {
-			return nil, errors.New("SPRING_APPLICATION_JSON must contain a valid JSON object")
+			return nil, invalidConfiguration("SPRING_APPLICATION_JSON must contain a valid JSON object")
 		}
 		flat := map[string]property{}
 		if err := flatten(values, "", "SPRING_APPLICATION_JSON", flat); err != nil {

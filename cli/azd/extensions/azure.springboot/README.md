@@ -29,8 +29,15 @@ Without it, initialization asks for trust before Maven inspection and confirms
 the inferred resources/files before writing. `init` itself does not create an azd
 environment, provision resources, or deploy the application.
 
-Use Spring's normal configuration to activate alternatives, for example
-`SPRING_PROFILES_ACTIVE`. There is no extension-specific profile selector.
+Application configuration supplies deployment defaults. Use `--profiles postgres`
+to select alternatives explicitly. Ambient variables such as `SPRING_PROFILES_ACTIVE`,
+`SPRING_DATASOURCE_URL`, and `SPRING_APPLICATION_JSON` do not influence analysis.
+Unresolved profile selectors prompt with discovered profile choices; required
+datasource URL/port placeholders prompt for values. Resolved defaults need no extra questions.
+Use repeatable `--property NAME=VALUE` for explicit datasource URL/port properties
+or their placeholders. Other unresolved configuration requires application changes.
+With `--no-prompt`, missing decisions fail with the required flag; `--yes` accepts
+confirmations, not missing choices. Interactive prompts use the azd host channel.
 
 Use `--database-auth managedIdentity` to select PostgreSQL token authentication
 explicitly, or let initialization infer supported passwordless Spring properties
@@ -43,8 +50,8 @@ external datasource. MySQL managed identity is deferred.
 Single-module Maven applications using Spring Boot executable JAR packaging and
 Java 17 or newer. Analysis reads effective Maven metadata, conventional
 `application*.properties`/YAML configuration, active/default profiles,
-includes/groups, property placeholders, environment overrides, and
-`SPRING_APPLICATION_JSON`. Inactive database alternatives are not provisioned.
+includes/groups, property placeholders, and explicit deployment inputs.
+Inactive database alternatives are not provisioned.
 Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
@@ -96,8 +103,10 @@ Stronger JDBC certificate-verification modes are preserved, using the image's
 system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.
 Memory mode needs no database inputs for non-interactive provision or deploy.
-Environment-selected embedded JDBC bindings are not yet carried into the runtime;
-configure the memory datasource directly in the application configuration instead.
+Resolved explicit in-memory URLs are retained in deployment-only configuration.
+Embedded driver conflicts and unsupported URL options are rejected. Supported
+options are H2 `DB_CLOSE_DELAY=-1/0`, `DB_CLOSE_ON_EXIT=true/false`, and Derby
+`create=true`; URL credentials and initialization commands are not supported.
 
 Passwords are created once by the preprovision hook and retained in local `.azure`
 state. Do not commit this state. No Key Vault credential copy is created.
@@ -176,6 +185,9 @@ go build
 python internal/spring/database_bootstrap_test.py
 ```
 
+Documented decision fixtures are in
+[`internal/spring/testdata/resolution`](internal/spring/testdata/resolution/README.md).
+
 The extension imports a published azd Go module for the SDK/Maven tooling, but
 does not call core project serialization or infrastructure composition APIs.
 It does not require core changes or a local module replacement. Infrastructure
@@ -185,7 +197,7 @@ compilation, application packaging, and live Azure deployment are distinct stage
 
 Use upstream [Spring Petclinic](https://github.com/spring-projects/spring-petclinic/tree/500158f732419217507c7656904b8e6aa1bcc0d6),
 pinned to `500158f732419217507c7656904b8e6aa1bcc0d6`, in a fresh checkout per case:
-default H2, `SPRING_PROFILES_ACTIVE=mysql`, and `SPRING_PROFILES_ACTIVE=postgres`.
+default H2, `--profiles mysql`, and `--profiles postgres`.
 The application is not vendored; generic regression fixtures live in the Go tests.
 
 The prior core-generated milestone passed all three cases through initialization,

@@ -6,7 +6,6 @@ package spring
 import (
 	"context"
 	"encoding/xml"
-	"errors"
 	"io"
 	"path/filepath"
 	"regexp"
@@ -120,13 +119,14 @@ var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 func parseModel(data []byte) (*model, int, error) {
 	var m model
 	if err := xml.Unmarshal(data, &m); err != nil {
-		return nil, 0, errors.New("Maven returned an invalid effective model")
+		return nil, 0, invalidConfiguration("Maven returned an invalid effective model")
 	}
 	if len(m.Modules) != 0 || (m.Packaging != "" && m.Packaging != "jar") {
-		return nil, 0, errors.New("initialization currently requires a single-module, executable-JAR application")
+		return nil, 0, unsupportedConfiguration(
+			"initialization currently requires a single-module, executable-JAR application")
 	}
 	if !filepath.IsAbs(m.Build.Directory) || strings.Contains(m.Build.Directory, "${") {
-		return nil, 0, errors.New("Maven effective model must include a resolved absolute build.directory")
+		return nil, 0, invalidConfiguration("Maven effective model must include a resolved absolute build.directory")
 	}
 	boot := false
 	for _, plugin := range m.Build.Plugins {
@@ -137,23 +137,25 @@ func parseModel(data []byte) (*model, int, error) {
 			if (execution.Phase == "" || execution.Phase == "package") && slices.Contains(execution.Goals, "repackage") {
 				config := execution.Configuration.withDefaults(plugin.Configuration)
 				if config.Skip != "" && config.Skip != "false" || config.Classifier != "" || config.Layout == "NONE" {
-					return nil, 0, errors.New("custom or disabled Spring Boot JAR repackaging is not yet supported")
+					return nil, 0, unsupportedConfiguration(
+						"custom or disabled Spring Boot JAR repackaging is not yet supported")
 				}
 				boot = true
 			}
 		}
 	}
 	if !boot {
-		return nil, 0, errors.New("an active Spring Boot repackage execution in the Maven package phase is required")
+		return nil, 0, unsupportedConfiguration(
+			"an active Spring Boot repackage execution in the Maven package phase is required")
 	}
 	if !safeName.MatchString(m.Artifact) {
-		return nil, 0, errors.New("Maven artifactId must be a safe file name")
+		return nil, 0, invalidConfiguration("Maven artifactId must be a safe file name")
 	}
 	if m.Build.FinalName == "" {
 		m.Build.FinalName = m.Artifact + "-" + m.Version
 	}
 	if !safeName.MatchString(m.Build.FinalName) {
-		return nil, 0, errors.New("Maven finalName must be a safe file name")
+		return nil, 0, invalidConfiguration("Maven finalName must be a safe file name")
 	}
 	version := m.Properties.Release
 	if version == "" {
@@ -164,7 +166,8 @@ func parseModel(data []byte) (*model, int, error) {
 	}
 	java, err := strconv.Atoi(version)
 	if err != nil || java < 17 {
-		return nil, 0, errors.New("a Java release of 17 or newer must be specified in the effective Maven model")
+		return nil, 0, unsupportedConfiguration(
+			"a Java release of 17 or newer must be specified in the effective Maven model")
 	}
 	return &m, java, nil
 }

@@ -89,7 +89,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	}
 	m, java, err := parseModel(data)
 	if err != nil {
-		return nil, invalidConfiguration("%s", err)
+		return nil, err
 	}
 	projectDirectory, err := filepath.Abs(directory)
 	if err != nil {
@@ -341,7 +341,7 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	}
 	options, err := jdbcOptions(kind, query.Encode())
 	if err != nil {
-		return nil, false, unsupportedConfiguration("%s", err)
+		return nil, false, err
 	}
 	source, _ := c.raw("spring.datasource.url")
 	return &Requirement{
@@ -389,7 +389,7 @@ func mysqlDriver(m *model) bool {
 func jdbcOptions(kind ResourceKind, query string) (string, error) {
 	values, err := url.ParseQuery(query)
 	if err != nil {
-		return "", errors.New("the JDBC query string is invalid")
+		return "", invalidConfiguration("the JDBC query string is invalid")
 	}
 	allowed := map[string]bool{
 		"sslmode": true, "sslMode": true, "useSSL": true, "requireSSL": true, "verifyServerCertificate": true,
@@ -398,10 +398,11 @@ func jdbcOptions(kind ResourceKind, query string) (string, error) {
 	}
 	for key := range values {
 		if !allowed[key] {
-			return "", errors.New("the JDBC URL contains an option whose deployment binding is not yet supported")
+			return "", unsupportedConfiguration(
+				"the JDBC URL contains an option whose deployment binding is not yet supported")
 		}
 		if (key == "sslmode" || key == "sslMode" || key == "verifyServerCertificate") && len(values[key]) != 1 {
-			return "", fmt.Errorf("%s must be specified once", key)
+			return "", invalidConfiguration("%s must be specified once", key)
 		}
 	}
 	if kind == PostgreSQL {
@@ -412,7 +413,7 @@ func jdbcOptions(kind ResourceKind, query string) (string, error) {
 		case "verify-ca", "verify-full":
 			values.Set("sslrootcert", "/etc/ssl/certs/ca-certificates.crt")
 		default:
-			return "", errors.New("sslmode is not supported")
+			return "", invalidConfiguration("sslmode is not supported")
 		}
 		values.Set("sslmode", mode)
 	} else {
@@ -425,7 +426,7 @@ func jdbcOptions(kind ResourceKind, query string) (string, error) {
 					mode = "VERIFY_CA"
 				case "false", "no":
 				default:
-					return "", errors.New("verifyServerCertificate must be true, false, yes, or no")
+					return "", invalidConfiguration("verifyServerCertificate must be true, false, yes, or no")
 				}
 			}
 		}
@@ -434,7 +435,7 @@ func jdbcOptions(kind ResourceKind, query string) (string, error) {
 			mode = "REQUIRED"
 		case "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY":
 		default:
-			return "", errors.New("sslMode is not supported")
+			return "", invalidConfiguration("sslMode is not supported")
 		}
 		values.Set("sslMode", mode)
 		// Keep encryption and certificate verification enabled for legacy drivers.

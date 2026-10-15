@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -22,15 +21,25 @@ import (
 )
 
 func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	return newInitCommandWithServices(extCtx, spring.NewModelResolver(io.Discard), newHostPrompter)
+}
+
+func newInitCommandWithServices(
+	extCtx *azdext.ExtensionContext, resolver spring.ModelResolver, openPrompts func() (initPrompter, error),
+) *cobra.Command {
 	var yes bool
 	var databaseAuth string
+	var profiles, properties []string
 	command := &cobra.Command{
 		Use:   "init",
 		Short: "Infer active Spring dependencies and generate an azd project",
 		Long: `Inspect a trusted single-module Spring Boot Maven application and generate
 azure.yaml, Container Apps Bicep, and deployment-only container/configuration files.
-Use standard Spring configuration, including SPRING_PROFILES_ACTIVE, to activate
-database alternatives. Embedded databases do not create a cloud database.
+Application configuration supplies defaults. Use --profiles to select deployment
+profiles and --property NAME=VALUE for missing datasource URL or server port inputs.
+Ambient Spring environment variables are not deployment inputs. Questions are
+asked only for unresolved decisions; --yes does not supply missing choices.
+Embedded databases do not create a cloud database.
 
 Maven inspection executes project-controlled code. Generated SQL infrastructure
 uses an extension-owned template. Password authentication retains broad development
@@ -49,6 +58,10 @@ Existing deployment files are not overwritten.`,
 			if extCtx.NoPrompt && !yes {
 				return errors.New("--no-prompt requires --yes to trust Maven inspection and accept the generated plan")
 			}
+			inputs, err := deploymentInputs(profiles, properties, cmd.Flags().Changed("profiles"))
+			if err != nil {
+				return err
+			}
 			directory, err := os.Getwd()
 			if err != nil {
 				return err
@@ -56,10 +69,26 @@ Existing deployment files are not overwritten.`,
 			if err := spring.CheckDestination(directory); err != nil {
 				return err
 			}
-			reader := bufio.NewReader(cmd.InOrStdin())
+			var prompts initPrompter
+			defer func() {
+				if prompts != nil {
+					prompts.Close()
+				}
+			}()
+			getPrompts := func() (initPrompter, error) {
+				if prompts == nil {
+					var err error
+					prompts, err = openPrompts()
+					if err != nil {
+						return nil, fmt.Errorf("interactive prompts unavailable; "+
+							"use --yes and explicit --profiles/--property with --no-prompt: %w", err)
+					}
+				}
+				return prompts, nil
+			}
 			if !yes {
 				question := "Trust this project's Maven wrapper and build extensions?"
-				if err := confirm(cmd.OutOrStdout(), reader, question); err != nil {
+				if err := confirm(cmd.Context(), getPrompts, question); err != nil {
 					return err
 				}
 			}
@@ -67,8 +96,8 @@ Existing deployment files are not overwritten.`,
 			previous := log.Writer()
 			log.SetOutput(io.Discard)
 			defer log.SetOutput(previous)
-			application, err := spring.Analyze(
-				cmd.Context(), directory, spring.NewModelResolver(io.Discard), os.LookupEnv)
+			application, err := resolveDeployment(
+				cmd.Context(), directory, resolver, inputs, extCtx.NoPrompt, getPrompts)
 			if err != nil {
 				return err
 			}
@@ -102,7 +131,7 @@ Existing deployment files are not overwritten.`,
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", name)
 			}
 			if !yes {
-				if err := confirm(cmd.OutOrStdout(), reader, "Create these deployment files?"); err != nil {
+				if err := confirm(cmd.Context(), getPrompts, "Create these deployment files?"); err != nil {
 					return err
 				}
 			}
@@ -116,19 +145,11 @@ Existing deployment files are not overwritten.`,
 	command.Flags().BoolVar(&yes, "yes", false, "Trust Maven inspection and accept generation without prompting")
 	command.Flags().StringVar(&databaseAuth, "database-auth", "",
 		"Database authentication: password or managedIdentity (PostgreSQL only); otherwise infer from Spring configuration")
+	command.Flags().StringSliceVar(&profiles, "profiles", nil,
+		"Spring deployment profiles (comma-separated); otherwise use application defaults")
+	command.Flags().StringArrayVar(&properties, "property", nil,
+		"Explicit datasource URL or server port property/placeholder input NAME=VALUE (repeatable)")
 	return command
-}
-
-func confirm(writer io.Writer, reader *bufio.Reader, question string) error {
-	fmt.Fprintf(writer, "? %s [y/N]: ", question)
-	text, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("reading confirmation: %w", err)
-	}
-	if !slices.Contains([]string{"y", "yes"}, strings.ToLower(strings.TrimSpace(text))) {
-		return errors.New("initialization cancelled; no deployment files were written")
-	}
-	return nil
 }
 
 func sortedFiles(plan *spring.Plan) []string {

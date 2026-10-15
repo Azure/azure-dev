@@ -11,10 +11,11 @@ import (
 
 // EmbeddedBinding is a reproducible, credential-free in-memory datasource binding.
 type EmbeddedBinding struct {
-	Engine   string
-	URL      string
-	Driver   string
-	Evidence []Evidence
+	Engine        string
+	URL           string
+	URLConfigured bool
+	Driver        string
+	Evidence      []Evidence
 }
 
 var memoryDatabaseName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -61,9 +62,14 @@ func resolveEmbedded(m *model, c *configuration) (*EmbeddedBinding, error) {
 		}
 		if jdbc == "" {
 			// Let Spring retain its default database name and credentials.
-			return &EmbeddedBinding{Engine: engine.name, Driver: driver}, nil
+			_, configured := c.raw("spring.datasource.url")
+			return &EmbeddedBinding{
+				Engine: engine.name, URLConfigured: configured, Driver: driver, Evidence: trace,
+			}, nil
 		}
-		binding := &EmbeddedBinding{Engine: engine.name, URL: jdbc, Driver: driver, Evidence: trace}
+		binding := &EmbeddedBinding{
+			Engine: engine.name, URL: jdbc, URLConfigured: true, Driver: driver, Evidence: trace,
+		}
 		if err := validateEmbedded(binding); err != nil {
 			return nil, err
 		}

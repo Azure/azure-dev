@@ -25,7 +25,7 @@ graph LR
 - **Evidence:** source/property, activation context, and placeholder dependencies;
   no credential values.
 - **Decision:** stable ID, missing selector/input, evidence, affected identities,
-  answer constraints, and prerequisite decisions.
+  and answer constraints. Discover dependent decisions by re-analysis.
 
 One application can bind multiple resources; multiple applications can explicitly
 share one resource. Never infer sharing from matching names or engines.
@@ -58,8 +58,10 @@ flowchart TD
 - Use deliberate deployment inputs, not ambient shell overrides. Distinguish
   unspecified profiles from explicit selection; never silently capture local secrets.
 - Answers re-run analysis: a profile choice may affect several resources together.
-  Explicit inputs win. Noninteractive execution reports unresolved decisions;
+  Explicit inputs win. Non-interactive execution reports unresolved decisions;
   `--yes` accepts confirmations, not missing configuration choices.
+- Pin analyzed profiles at runtime; disable runtime defaults so unused default
+  selectors are not evaluated again.
 - Use azd host prompt APIs. Keep prompting outside analysis; retain operational
   failures as errors. Never print credentials in evidence, choices, or diagnostics.
 

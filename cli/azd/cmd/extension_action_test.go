@@ -112,12 +112,6 @@ func newExtensionActionTestServer() *grpcserver.Server {
 }
 
 func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
-	originalArgs := os.Args
-	os.Args = []string{"azd", "--output=json"}
-	t.Cleanup(func() {
-		os.Args = originalArgs
-	})
-
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
@@ -153,6 +147,7 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 			NoPrompt:           true,
 			Cwd:                "work",
 			EnvironmentName:    "test",
+			PreParsedOutput:    "json",
 		},
 		cmd: &cobra.Command{
 			Annotations: map[string]string{"extension.id": extension.Id},

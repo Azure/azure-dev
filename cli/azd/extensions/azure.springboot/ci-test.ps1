@@ -21,5 +21,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
+Write-Host "Running database bootstrap tests..."
+python (Join-Path $PSScriptRoot "internal/spring/database_bootstrap_test.py")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Database bootstrap tests failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+Write-Host ""
 Write-Host "All tests passed!" -ForegroundColor Green
 exit 0

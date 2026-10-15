@@ -8,6 +8,10 @@ Architecture of the gRPC-based extension system in azd.
 
 Extensions are external processes that communicate with azd via gRPC. They allow third parties and first-party teams to add new capabilities — languages, hosting targets, event handlers, and more — without modifying the core CLI.
 
+The unpublished Spring extension configures its own parameterized azd template
+for single-app SQL deployments; it does not depend on core scaffold composition.
+See its [template and authentication boundaries](../../cli/azd/extensions/azure.springboot/README.md#generated-files-and-boundaries).
+
 ## Architecture
 
 ```text

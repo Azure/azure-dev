@@ -23,6 +23,7 @@ import (
 
 func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	var yes bool
+	var databaseAuth string
 	command := &cobra.Command{
 		Use:   "init",
 		Short: "Infer active Spring dependencies and generate an azd project",
@@ -32,7 +33,9 @@ Use standard Spring configuration, including SPRING_PROFILES_ACTIVE, to activate
 database alternatives. Embedded databases do not create a cloud database.
 
 Maven inspection executes project-controlled code. Generated SQL infrastructure
-uses password authentication and broad public firewall rules intended for development.
+uses an extension-owned template. Password authentication retains broad development
+firewall rules. PostgreSQL managed identity requires Azure Identity Extensions in
+the app and an explicit administrator-run schema/grant script before provisioning.
 This command does not provision Azure resources or create an azd environment.
 Existing deployment files are not overwritten.`,
 		Args: cobra.NoArgs,
@@ -69,6 +72,11 @@ Existing deployment files are not overwritten.`,
 			if err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("database-auth") {
+				if err := spring.SetAuthentication(application, databaseAuth); err != nil {
+					return err
+				}
+			}
 			plan, err := spring.Generate(cmd.Context(), application)
 			if err != nil {
 				return err
@@ -80,9 +88,14 @@ Existing deployment files are not overwritten.`,
 				fmt.Fprintln(cmd.OutOrStdout(), "Database: no cloud database.")
 			}
 			for _, requirement := range application.Requirements {
-				fmt.Fprintf(cmd.OutOrStdout(), "Database: %s server and %s database (password authentication).\n",
-					requirement.Kind, requirement.Name)
-				fmt.Fprintln(cmd.OutOrStdout(), "Warning: generated database firewall allows all public IP addresses.")
+				fmt.Fprintf(cmd.OutOrStdout(), "Database: %s server and %s database (%s authentication).\n",
+					requirement.Kind, requirement.Name, requirement.Authentication)
+				if requirement.Authentication == "password" {
+					fmt.Fprintln(cmd.OutOrStdout(), "Warning: generated database firewall allows all public IP addresses.")
+				} else {
+					fmt.Fprintln(cmd.OutOrStdout(),
+						"Required: Entra administrator, bootstrap IPv4, and reviewed SQL schema/grant script.")
+				}
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Files:")
 			for _, name := range sortedFiles(plan) {
@@ -101,6 +114,8 @@ Existing deployment files are not overwritten.`,
 		},
 	}
 	command.Flags().BoolVar(&yes, "yes", false, "Trust Maven inspection and accept generation without prompting")
+	command.Flags().StringVar(&databaseAuth, "database-auth", "",
+		"Database authentication: password or managedIdentity (PostgreSQL only); otherwise infer from Spring configuration")
 	return command
 }
 

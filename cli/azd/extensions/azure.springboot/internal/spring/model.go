@@ -155,6 +155,16 @@ func (m *model) hasDependency(group, artifact string) bool {
 	return false
 }
 
+func (m *model) hasPackagedIdentityExtensions() bool {
+	for _, d := range m.Dependencies {
+		if d.Group == "com.azure" && d.Artifact == "azure-identity-extensions" &&
+			(d.Scope == "" || d.Scope == "compile" || d.Scope == "runtime") {
+			return true
+		}
+	}
+	return false
+}
+
 func projectName(artifact string) string {
 	var b strings.Builder
 	for _, c := range strings.ToLower(artifact) {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -51,6 +52,7 @@ type Application struct {
 	Requirements           []Requirement
 	MavenWrapper           bool
 	ExternalConfigurations []string
+	IdentityExtensions     bool
 }
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -98,6 +100,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",
 		Port: port, Profiles: c.profiles,
 		ExternalConfigurations: c.externalFiles,
+		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
 	}
 	if a.Name == "" {
 		return nil, errors.New("artifactId must contain at least one letter or digit")
@@ -178,6 +181,7 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 			return nil, false, fmt.Errorf("%s requires custom datasource binding analysis", key)
 		}
 	}
+	authentication := "password"
 	for _, key := range []string{"spring.datasource.azure.passwordless-enabled",
 		"spring.cloud.azure.jdbc.passwordless-enabled"} {
 		value, err := c.resolve(key)
@@ -188,7 +192,7 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 			return nil, false, fmt.Errorf("%s must be true or false", key)
 		}
 		if strings.EqualFold(value, "true") {
-			return nil, false, errors.New("passwordless database authentication is desirable but not yet supported")
+			authentication = "managedIdentity"
 		}
 	}
 	jdbc, err := c.resolve("spring.datasource.url")
@@ -209,6 +213,9 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 		{"com.h2database", "h2"}, {"org.apache.derby", "derby"}, {"org.hsqldb", "hsqldb"},
 	}
 	if jdbc == "" {
+		if authentication == "managedIdentity" {
+			return nil, false, errors.New("passwordless authentication requires an active PostgreSQL datasource URL")
+		}
 		for _, driver := range embeddedDrivers {
 			if m.hasDependency(driver[0], driver[1]) {
 				return nil, true, nil
@@ -221,6 +228,9 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	}
 	for i, engine := range []string{"h2", "derby", "hsqldb"} {
 		if strings.HasPrefix(jdbc, "jdbc:"+engine+":") {
+			if authentication == "managedIdentity" {
+				return nil, false, errors.New("passwordless authentication cannot be used with an embedded datasource")
+			}
 			if !m.hasDependency(embeddedDrivers[i][0], embeddedDrivers[i][1]) {
 				return nil, false, errors.New("the active embedded datasource has no packaged JDBC driver")
 			}
@@ -267,15 +277,69 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 		return nil, false, errors.New(
 			"database name must start with a letter and contain 1-63 letters, digits, or underscores")
 	}
-	options, err := jdbcOptions(kind, u.RawQuery)
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return nil, false, errors.New("the JDBC query string is invalid")
+	}
+	if plugins, present := query["authenticationPluginClassName"]; present {
+		if kind != PostgreSQL ||
+			!slices.Equal(plugins, []string{
+				"com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin",
+			}) {
+			return nil, false, errors.New("the JDBC authentication plugin is not supported")
+		}
+		authentication = "managedIdentity"
+		query.Del("authenticationPluginClassName")
+	}
+	if values, present := query["azure.managedIdentityEnabled"]; present {
+		if !slices.Equal(values, []string{"true"}) || authentication != "managedIdentity" {
+			return nil, false, errors.New("azure.managedIdentityEnabled requires the supported PostgreSQL token plugin")
+		}
+		query.Del("azure.managedIdentityEnabled")
+	}
+	if authentication == "managedIdentity" && kind == MySQL {
+		return nil, false, errors.New("MySQL managed identity is deferred pending live configuration validation")
+	}
+	options, err := jdbcOptions(kind, query.Encode())
 	if err != nil {
 		return nil, false, err
 	}
 	source, _ := c.raw("spring.datasource.url")
 	return &Requirement{
-		Kind: kind, Name: name, Authentication: "password", JDBCOptions: options,
+		Kind: kind, Name: name, Authentication: authentication, JDBCOptions: options,
 		Evidence: Evidence{Property: "spring.datasource.url", Source: source.source},
 	}, false, nil
+}
+
+func managedIdentityOptions(options string) (string, error) {
+	values, err := url.ParseQuery(options)
+	if err != nil {
+		return "", errors.New("the JDBC query string is invalid")
+	}
+	values.Set("sslmode", "verify-full")
+	values.Set("authenticationPluginClassName",
+		"com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin")
+	values.Set("azure.managedIdentityEnabled", "true")
+	return values.Encode(), nil
+}
+
+// SetAuthentication applies an explicit deployment choice without downgrading inferred token authentication.
+func SetAuthentication(application *Application, authentication string) error {
+	if authentication != "password" && authentication != "managedIdentity" {
+		return errors.New("--database-auth must be password or managedIdentity")
+	}
+	if len(application.Requirements) != 1 {
+		return errors.New("--database-auth requires an active external datasource")
+	}
+	requirement := &application.Requirements[0]
+	if requirement.Authentication == "managedIdentity" && authentication == "password" {
+		return errors.New("--database-auth=password conflicts with the application's passwordless configuration")
+	}
+	if requirement.Kind == MySQL && authentication == "managedIdentity" {
+		return errors.New("MySQL managed identity is deferred pending live configuration validation")
+	}
+	requirement.Authentication = authentication
+	return nil
 }
 
 func mysqlDriver(m *model) bool {

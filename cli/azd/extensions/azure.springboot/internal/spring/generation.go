@@ -5,6 +5,7 @@ package spring
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,25 +13,24 @@ import (
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"go.yaml.in/yaml/v3"
 )
 
 type databaseProvider struct {
-	resource project.ResourceType
-	prefix   string
-	scheme   string
+	prefix string
+	scheme string
 }
 
 var databaseProviders = map[ResourceKind]databaseProvider{
-	MySQL:      {resource: project.ResourceTypeDbMySql, prefix: "MYSQL", scheme: "mysql"},
-	PostgreSQL: {resource: project.ResourceTypeDbPostgres, prefix: "POSTGRES", scheme: "postgresql"},
+	MySQL:      {prefix: "MYSQL", scheme: "mysql"},
+	PostgreSQL: {prefix: "POSTGRES", scheme: "postgresql"},
 }
+
+//go:embed template/infra/*.bicep template/.azd-spring/database.py template/.azd-spring/requirements.txt
+var deploymentTemplate embed.FS
 
 // Plan holds generated assets ready for a no-overwrite project write.
 type Plan struct {
@@ -38,79 +38,139 @@ type Plan struct {
 	Files       map[string][]byte
 }
 
-// Generate reuses azd's project serializer and resource-based infrastructure generator.
-func Generate(ctx context.Context, application *Application) (_ *Plan, resultErr error) {
+// Generate configures the extension-owned azd template without core scaffold APIs.
+func Generate(ctx context.Context, application *Application) (*Plan, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(application.Requirements) > 1 {
 		return nil, errors.New("multiple datasource bindings are not yet supported")
 	}
-	stage, err := os.MkdirTemp("", "azd-spring-generation-")
-	if err != nil {
-		return nil, fmt.Errorf("creating generation staging directory: %w", err)
+	if application.Name == "" || !safeName.MatchString(application.Name) ||
+		application.Port < 1 || application.Port > 65535 {
+		return nil, errors.New("application name and port must be valid template inputs")
 	}
-	defer func() {
-		if err := os.RemoveAll(stage); err != nil {
-			resultErr = errors.Join(resultErr, fmt.Errorf("removing generation staging directory: %w", err))
-		}
-	}()
 	serviceName := application.Name + "-app"
-	config := &project.ProjectConfig{
-		Name:      application.Name,
-		Infra:     provisioning.Options{Provider: provisioning.Bicep, Path: "infra", Module: "main"},
-		Services:  map[string]*project.ServiceConfig{},
-		Resources: map[string]*project.ResourceConfig{},
+	hooks := map[string]any{
+		"preprovision": map[string]any{
+			"shell": "pwsh", "run": "python .azd-spring/database.py prepare", "interactive": false,
+		},
 	}
-	service := &project.ServiceConfig{
-		Project: config, Name: serviceName, RelativePath: ".", Host: project.ContainerAppTarget,
-		Language: project.ServiceLanguageDocker,
-		Docker:   project.DockerProjectOptions{Path: ".azd-spring/Dockerfile", Context: ".", Platform: "linux/amd64"},
+	config := map[string]any{
+		"name":  application.Name,
+		"infra": map[string]string{"provider": "bicep", "path": "infra", "module": "main"},
+		"services": map[string]any{serviceName: map[string]any{
+			"project": ".", "host": "containerapp", "language": "docker", "module": "application",
+			"docker": map[string]string{
+				"path": ".azd-spring/Dockerfile", "context": ".", "platform": "linux/amd64",
+			},
+		}},
+		"hooks": hooks,
 	}
-	config.Services[serviceName] = service
-	env := []project.ServiceEnvVar{
-		{Name: "SPRING_PROFILES_ACTIVE", Value: strings.Join(application.Profiles, ",")},
-		{Name: "SPRING_CONFIG_ADDITIONAL_LOCATION", Value: "file:/app/config/application-azd.properties"},
-		{Name: "SERVER_PORT", Value: strconv.Itoa(application.Port)},
+	parameters := map[string]any{}
+	for key, value := range map[string]any{
+		"environmentName": "${AZURE_ENV_NAME}", "location": "${AZURE_LOCATION}",
+		"serviceName": serviceName, "port": application.Port, "profiles": append([]string{}, application.Profiles...),
+		"databaseEngine": "none", "databaseName": "", "databaseAuth": "password",
+		"databasePassword":      "${SPRING_DATABASE_PASSWORD=}",
+		"administratorObjectId": "${SPRING_DATABASE_ADMIN_OID=}",
+		"administratorName":     "${SPRING_DATABASE_ADMIN_NAME=}",
+		"bootstrapIp":           "${SPRING_DATABASE_BOOTSTRAP_IP=}",
+		"appImage": "${SERVICE_" + strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_")) +
+			"_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}",
+	} {
+		parameters[key] = map[string]any{"value": value}
 	}
+	settings := map[string]string{"engine": "none", "auth": "password", "database": "", "role": "azd_app"}
 	var binding strings.Builder
-	binding.WriteString("# Deployment-only overrides. Credentials are supplied through Container Apps secrets.\n")
+	binding.WriteString("# Deployment-only overrides; application source is unchanged.\n")
 	for _, requirement := range application.Requirements {
 		provider, ok := databaseProviders[requirement.Kind]
 		if !ok {
 			return nil, fmt.Errorf("no Azure provider is registered for resource kind %q", requirement.Kind)
 		}
-		if requirement.Authentication != "password" {
-			return nil, errors.New("the database provider currently supports password authentication only")
+		if !databaseName.MatchString(requirement.Name) {
+			return nil, errors.New("database name is invalid")
 		}
-		if _, duplicate := config.Resources[requirement.Name]; duplicate || requirement.Name == serviceName {
-			return nil, errors.New("resource names must be unique across the generated deployment")
+		if requirement.Authentication != "password" && requirement.Authentication != "managedIdentity" {
+			return nil, errors.New("database authentication must be password or managedIdentity")
 		}
-		config.Resources[requirement.Name] = &project.ResourceConfig{Type: provider.resource, Name: requirement.Name}
-		service.Uses = append(service.Uses, requirement.Name)
+		if requirement.Authentication == "managedIdentity" {
+			if requirement.Kind != PostgreSQL {
+				return nil, errors.New("MySQL managed identity is deferred pending live configuration validation")
+			}
+			if !application.IdentityExtensions {
+				return nil, errors.New("managed identity requires com.azure:azure-identity-extensions " +
+					"as an application compile/runtime dependency; initialization does not modify the POM")
+			}
+			hooks["postprovision"] = map[string]any{
+				"shell": "pwsh", "run": "python .azd-spring/database.py bootstrap", "interactive": false,
+			}
+		}
+		parameters["databaseEngine"] = map[string]any{"value": string(requirement.Kind)}
+		parameters["databaseName"] = map[string]any{"value": requirement.Name}
+		parameters["databaseAuth"] = map[string]any{"value": requirement.Authentication}
+		settings["engine"], settings["auth"], settings["database"] =
+			string(requirement.Kind), requirement.Authentication, requirement.Name
 		p := provider.prefix
+		options := requirement.JDBCOptions
+		if requirement.Authentication == "managedIdentity" {
+			var err error
+			options, err = managedIdentityOptions(options)
+			if err != nil {
+				return nil, err
+			}
+		}
 		fmt.Fprintf(&binding, "spring.datasource.url=jdbc:%s://${%s_HOST}:${%s_PORT}/${%s_DATABASE}?%s\n",
-			provider.scheme, p, p, p, requirement.JDBCOptions)
-		fmt.Fprintf(&binding, "spring.datasource.username=${%s_USERNAME}\nspring.datasource.password=${%s_PASSWORD}\n", p, p)
+			provider.scheme, p, p, p, options)
+		fmt.Fprintf(&binding, "spring.datasource.username=${%s_USERNAME}\n", p)
+		if requirement.Authentication == "managedIdentity" {
+			binding.WriteString("spring.datasource.password=\n" +
+				"spring.datasource.hikari.data-source-properties.sslrootcert=/etc/ssl/certs/ca-certificates.crt\n" +
+				"spring.sql.init.mode=never\nspring.jpa.hibernate.ddl-auto=none\n")
+		} else {
+			fmt.Fprintf(&binding, "spring.datasource.password=${%s_PASSWORD}\n", p)
+		}
 	}
-	config.Resources[serviceName] = &project.ResourceConfig{
-		Type: project.ResourceTypeHostContainerApp, Name: serviceName, Uses: service.Uses,
-		Props: project.ContainerAppProps{Port: application.Port, Env: env},
-	}
-	file := filepath.Join(stage, "azure.yaml")
-	if err := project.Save(ctx, config, file); err != nil {
+	data, err := yaml.Marshal(config)
+	if err != nil {
 		return nil, fmt.Errorf("serializing azd project: %w", err)
 	}
-	data, err := fs.ReadFile(os.DirFS(stage), "azure.yaml")
+	parameterData, err := json.MarshalIndent(map[string]any{
+		"$schema":        "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+		"contentVersion": "1.0.0.0", "parameters": parameters,
+	}, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("reading staged azd project: %w", err)
+		return nil, fmt.Errorf("serializing template parameters: %w", err)
 	}
-	// Parsing initializes the same runtime resource/service relationships as azd.
-	normalized, err := project.Parse(ctx, string(data))
-	if err != nil {
-		return nil, fmt.Errorf("validating serialized azd project: %w", err)
+	applicationParameters := map[string]any{}
+	for _, key := range []string{"location", "serviceName", "port", "profiles", "appImage", "databaseName"} {
+		applicationParameters[key] = parameters[key]
 	}
-	normalized.Path = stage
-	infrastructure, err := project.NewImportManager(nil).GenerateAllInfrastructure(ctx, normalized)
+	applicationParameters["engine"] = parameters["databaseEngine"]
+	applicationParameters["authentication"] = parameters["databaseAuth"]
+	applicationParameters["password"] = parameters["databasePassword"]
+	username := "azdadmin"
+	if settings["auth"] == "managedIdentity" {
+		username = "azd_app"
+	}
+	for key, value := range map[string]string{
+		"environmentId":    "${SPRING_CONTAINER_APP_ENVIRONMENT_ID}",
+		"registryEndpoint": "${AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+		"host":             "${SPRING_DATABASE_HOST=}", "username": username,
+	} {
+		applicationParameters[key] = map[string]any{"value": value}
+	}
+	applicationParameterData, err := json.MarshalIndent(map[string]any{
+		"$schema":        "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+		"contentVersion": "1.0.0.0", "parameters": applicationParameters,
+	}, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("generating azd infrastructure: %w", err)
+		return nil, fmt.Errorf("serializing application deployment parameters: %w", err)
+	}
+	settingsData, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("serializing bootstrap settings: %w", err)
 	}
 	docker, err := dockerfile(application)
 	if err != nil {
@@ -118,23 +178,23 @@ func Generate(ctx context.Context, application *Application) (_ *Plan, resultErr
 	}
 	files := map[string][]byte{
 		"azure.yaml":                             data,
+		"infra/main.parameters.json":             parameterData,
+		"infra/application.parameters.json":      applicationParameterData,
+		".azd-spring/database.json":              settingsData,
 		".azd-spring/Dockerfile":                 []byte(docker),
 		".azd-spring/application-azd.properties": []byte(binding.String()),
 		".azd-spring/Dockerfile.dockerignore": []byte(
 			".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n"),
 	}
-	err = fs.WalkDir(infrastructure, ".", func(file string, entry fs.DirEntry, err error) error {
+	err = fs.WalkDir(deploymentTemplate, "template", func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		normalizedPath := filepath.ToSlash(file)
-		if !fs.ValidPath(normalizedPath) || !strings.HasPrefix(normalizedPath, "infra/") {
-			return fmt.Errorf("azd generator returned an unexpected infrastructure path %q", file)
-		}
-		content, err := fs.ReadFile(infrastructure, file)
+		normalizedPath := strings.TrimPrefix(file, "template/")
+		content, err := fs.ReadFile(deploymentTemplate, file)
 		if err != nil {
 			return err
 		}
@@ -142,7 +202,7 @@ func Generate(ctx context.Context, application *Application) (_ *Plan, resultErr
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("reading generated infrastructure: %w", err)
+		return nil, fmt.Errorf("reading deployment template: %w", err)
 	}
 	return &Plan{Application: application, Files: files}, nil
 }

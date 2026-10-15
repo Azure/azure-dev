@@ -1,5 +1,22 @@
 # Release History
 
+## 1.0.0-beta.14 (2026-10-15)
+
+### Breaking Changes
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Require azd `>=1.36.0` for Foundry pipeline configuration support.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Remove generated developer-role assignments and `principalId`/`principalType` parameters from Foundry provisioning; custom templates requiring those parameters must supply their own values.
+
+### Features Added
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Add Foundry provisioning inputs for `azd pipeline config` so generated pipelines retain project, subscription, resource group, and location context.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Add an explicit deployment no-op result for Project services in `azd deploy --preview` without an unsupported-provider warning. Thanks @Siglud for the contribution!
+
+### Bugs Fixed
+
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix Foundry provisioning failing for contributors without permission to assign developer roles while preserving project-identity container registry access.
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
 ## 1.0.0-beta.13 (2026-09-30)
 
 ### Breaking Changes

@@ -6,11 +6,11 @@ param port int
 param profiles array
 param appImage string
 param engine string
-param databaseName string
-param host string
+param databaseName string = ''
+param host string = ''
 param username string
 @secure()
-param password string
+param password string = ''
 param authentication string
 
 var prefix = engine == 'mysql' ? 'MYSQL' : 'POSTGRES'
@@ -46,13 +46,31 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', value: 'file:/app/config/application-azd.properties' }
           { name: 'SERVER_PORT', value: string(port) }
         ], databaseEnv)
-        probes: placeholder ? [] : [{
-          type: 'Readiness'
-          tcpSocket: { port: port }
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          failureThreshold: 20
-        }]
+        probes: placeholder ? [] : [
+          {
+            type: 'Startup'
+            tcpSocket: { port: port }
+            initialDelaySeconds: 1
+            periodSeconds: 1
+            timeoutSeconds: 3
+            failureThreshold: 240
+          }
+          {
+            type: 'Liveness'
+            tcpSocket: { port: port }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          }
+          {
+            type: 'Readiness'
+            tcpSocket: { port: port }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 20
+          }
+        ]
       }]
       scale: { minReplicas: 1, maxReplicas: 1 }
     }

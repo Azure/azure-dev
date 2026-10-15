@@ -79,6 +79,7 @@ or overwritten. Development Compose files are left alone.
 credentials and the template's firewall rules allow all public IP addresses.
 JDBC connections require TLS. This is not a restrictive production network policy.
 Embedded databases are not a durable Azure storage solution.
+Memory mode needs no database inputs for non-interactive provision or deploy.
 
 Passwords are created once by the preprovision hook and retained in local `.azure`
 state. Do not commit this state. No Key Vault credential copy is created.
@@ -88,6 +89,9 @@ grant registry-scoped `AcrPull`, and configure registry access. The bootstrap
 uses `@onlyIfNotExists()` to avoid resetting later deployments.
 The placeholder keeps port 80. Standard azd service-module deployment applies
 the built image, inferred Spring port, and database bindings.
+Runtime containers use explicit TCP Startup, Liveness, and Readiness probes on
+that port. Startup provides approximately four minutes of initialization allowance
+before liveness checks take effect; no Actuator endpoint is required.
 
 Generated projects require PowerShell, Python, and Bicep 0.38.3+.
 PostgreSQL managed identity also requires Azure CLI and the Python packages below.
@@ -172,7 +176,8 @@ a subscription region restriction. Test resource groups were deleted, and the
 PostgreSQL test vault was purged.
 That milestone's MySQL provisioning was blocked by the core scaffold's AVM 0.6.1
 `dummyVault/dummyKey` reference. The owned template no longer uses that scaffold.
-The migrated template has local matrix/compilation coverage; its four-mode
-end-to-end live acceptance matrix has not yet been run. Standalone PostgreSQL
+The migrated PostgreSQL/password configuration passed live deployment, form
+write/read, and independent SQL verification with explicit startup protection.
+The full four-mode live acceptance matrix remains incomplete. Standalone PostgreSQL
 managed-identity and Bicep-only registry-staging experiments passed separately
 and are evidence for the mechanisms, not proof of the integrated generator.

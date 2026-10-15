@@ -7,7 +7,7 @@ param port int
 param profiles array
 @allowed(['none', 'mysql', 'postgresql'])
 param databaseEngine string
-param databaseName string
+param databaseName string = ''
 @allowed(['password', 'managedIdentity'])
 param databaseAuth string
 @secure()

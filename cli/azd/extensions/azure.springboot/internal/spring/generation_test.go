@@ -105,6 +105,70 @@ func TestGenerateInfrastructure(t *testing.T) {
 	}
 }
 
+func TestMemoryDatabaseParametersAreOptional(t *testing.T) {
+	plan, err := Generate(t.Context(), &Application{
+		Name: "inventory", JavaVersion: 21, JarName: "inventory.jar", Port: 9090,
+	})
+	require.NoError(t, err)
+	for _, tt := range []struct {
+		module     string
+		parameters []string
+	}{
+		{"main", []string{"databaseName", "databasePassword"}},
+		{"application", []string{"databaseName", "host", "password"}},
+	} {
+		t.Run(tt.module, func(t *testing.T) {
+			template := string(plan.Files["infra/"+tt.module+".bicep"])
+			for _, parameter := range tt.parameters {
+				require.Contains(t, template, "param "+parameter+" string = ''")
+			}
+			var parameters struct {
+				Parameters map[string]struct {
+					Value any `json:"value"`
+				} `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(plan.Files["infra/"+tt.module+".parameters.json"], &parameters))
+			require.Empty(t, parameters.Parameters["databaseName"].Value)
+		})
+	}
+}
+
+func TestContainerAppStartupProtection(t *testing.T) {
+	plan, err := Generate(t.Context(), &Application{
+		Name: "inventory", JavaVersion: 21, JarName: "inventory.jar", Port: 9090,
+	})
+	require.NoError(t, err)
+	expected := `
+probes: placeholder ? [] : [
+  {
+    type: 'Startup'
+    tcpSocket: { port: port }
+    initialDelaySeconds: 1
+    periodSeconds: 1
+    timeoutSeconds: 3
+    failureThreshold: 240
+  }
+  {
+    type: 'Liveness'
+    tcpSocket: { port: port }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 1
+    failureThreshold: 3
+  }
+  {
+    type: 'Readiness'
+    tcpSocket: { port: port }
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 20
+  }
+]
+`
+	template := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, strings.Join(strings.Fields(template), " "), strings.Join(strings.Fields(expected), " "))
+}
+
 func TestDestinationOwnership(t *testing.T) {
 	for _, name := range []string{"azure.yaml", "infra", ".azd-spring", "Dockerfile"} {
 		t.Run(name, func(t *testing.T) {

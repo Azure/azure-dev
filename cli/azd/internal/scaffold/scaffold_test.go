@@ -25,6 +25,20 @@ func TestExecInfra(t *testing.T) {
 	template, err := Load()
 	require.NoError(t, err)
 
+	functionHelperCollisionSpec := InfraSpec{
+		StorageAccount: &StorageAccount{Implicit: true},
+	}
+	for _, name := range []string{
+		"api", "api-plan", "api-function-storage", "api-insights", "api-insights-metrics-publisher",
+	} {
+		functionHelperCollisionSpec.Services = append(functionHelperCollisionSpec.Services, ServiceSpec{
+			Name:            name,
+			Host:            FunctionAppKind,
+			Runtime:         &RuntimeInfo{Type: "python", Version: "3.12"},
+			FunctionStorage: &FunctionStorage{},
+		})
+	}
+
 	tests := []struct {
 		name string
 		spec InfraSpec
@@ -85,6 +99,10 @@ func TestExecInfra(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			"Function Apps with helper symbol collisions",
+			functionHelperCollisionSpec,
 		},
 		{
 			"Function App with implicit storage",
@@ -345,6 +363,24 @@ func TestExecInfra(t *testing.T) {
 				tt.spec,
 				dir)
 			require.NoError(t, err)
+			if tt.name == "Function Apps with helper symbol collisions" {
+				bicep, err := os.ReadFile(filepath.Join(dir, "resources.bicep"))
+				require.NoError(t, err)
+				source := string(bicep)
+				for _, service := range tt.spec.Services {
+					symbol := BicepName(service.Name)
+					for _, helper := range []string{"Plan", "Storage", "Insights", "InsightsMetricsPublisher"} {
+						assert.Contains(t, source, "_function"+helper+"_"+symbol+" '")
+					}
+					assert.Contains(t, source, "module "+symbol+" 'br/public:avm/res/web/site:0.24.0'")
+					assert.Contains(t, source, "name: '"+symbol+"-plan'")
+					assert.Contains(t, source, "name: '"+symbol+"-function-storage'")
+					assert.Contains(t, source, "name: 'function-app-"+symbol+"'")
+					assert.Contains(t, source, "name: '${abbrs.webSitesFunctions}"+service.Name+"-${resourceToken}'")
+					assert.Contains(t, source,
+						"output AZURE_RESOURCE_"+AlphaSnakeUpper(service.Name)+"_ID string = "+symbol+".outputs.resourceId")
+				}
+			}
 			if tt.name == "Go Function App and mixed hosts with dependencies" {
 				bicep, err := os.ReadFile(filepath.Join(dir, "resources.bicep"))
 				require.NoError(t, err)

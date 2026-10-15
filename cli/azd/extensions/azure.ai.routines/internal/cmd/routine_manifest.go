@@ -12,8 +12,6 @@ import (
 
 	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
-
-	"gopkg.in/yaml.v3"
 )
 
 // readRoutineManifest reads and parses a routine manifest from a YAML or JSON file.
@@ -35,25 +33,16 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 		)
 	}
 
-	var r routines.Routine
 	ext := strings.ToLower(filepath.Ext(path))
+	var routine *routines.Routine
+	var parseErr error
+	syntax := "JSON"
 	switch ext {
 	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, &r); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidRoutineManifest,
-				fmt.Sprintf("failed to parse routine manifest %s: %v", path, err),
-				"ensure the file is valid YAML and matches the routine schema",
-			)
-		}
+		syntax = "YAML"
+		routine, parseErr = routines.ParseAuthoringYAML(data)
 	case ".json", "":
-		if err := json.Unmarshal(data, &r); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidRoutineManifest,
-				fmt.Sprintf("failed to parse routine manifest %s: %v", path, err),
-				"ensure the file is valid JSON and matches the routine schema",
-			)
-		}
+		routine, parseErr = routines.ParseAuthoringJSON(data)
 	default:
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidRoutineManifest,
@@ -61,8 +50,76 @@ func readRoutineManifest(path string) (*routines.Routine, error) {
 			"use a .yaml, .yml, or .json file",
 		)
 	}
+	if parseErr != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidRoutineManifest,
+			fmt.Sprintf("failed to parse routine manifest %s: %v", path, parseErr),
+			fmt.Sprintf("ensure the file is valid %s and matches the routine schema", syntax),
+		)
+	}
+	if err := validateRoutineAuthorization(routine.Authorization); err != nil {
+		return nil, err
+	}
+	return routine, nil
+}
 
-	return &r, nil
+func validateRoutineAuthorization(authorization *routines.RoutineAuthorization) error {
+	if authorization == nil || isSupportedRoutineDispatchIdentity(authorization.Identity) {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInvalidRoutineManifest,
+		fmt.Sprintf("unsupported authorization.identity value %q", authorization.Identity),
+		"set authorization.identity to agent or creator, or omit authorization",
+	)
+}
+
+func isSupportedRoutineDispatchIdentity(identity string) bool {
+	switch identity {
+	case routines.RoutineDispatchIdentityAgent, routines.RoutineDispatchIdentityCreator:
+		return true
+	default:
+		return false
+	}
+}
+
+func routineAuthorizationForUpsert(
+	name string,
+	existing *routines.Routine,
+	requested *routines.RoutineAuthorization,
+) (*routines.RoutineAuthorization, error) {
+	if existing == nil {
+		return requested, nil
+	}
+
+	currentIdentity := routines.RoutineDispatchIdentityAgent
+	existingAuthorization := existing.Authorization
+	if existingAuthorization != nil && existingAuthorization.Identity != "" {
+		currentIdentity = existingAuthorization.Identity
+	} else {
+		existingAuthorization = nil
+	}
+
+	if requested != nil && requested.Identity != currentIdentity {
+		return nil, exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf(
+				"dispatch identity for routine %q cannot be changed from %q to %q",
+				name,
+				currentIdentity,
+				requested.Identity,
+			),
+			fmt.Sprintf(
+				"run 'azd ai routine delete' with this routine's name, then recreate it with "+
+					"--dispatch-identity %s or authorization.identity: %s",
+				requested.Identity,
+				requested.Identity,
+			),
+		)
+	}
+
+	return existingAuthorization, nil
 }
 
 // mergeRoutineFromFile copies non-zero fields from file into body only when the
@@ -76,6 +133,9 @@ func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 	if file.Enabled != nil && body.Enabled == nil {
 		body.Enabled = file.Enabled
 	}
+	if file.Authorization != nil && body.Authorization == nil {
+		body.Authorization = file.Authorization
+	}
 	if len(file.Triggers) > 0 && len(body.Triggers) == 0 {
 		body.Triggers = file.Triggers
 	}
@@ -84,10 +144,10 @@ func mergeRoutineFromFile(body *routines.Routine, file *routines.Routine) {
 	}
 }
 
-// overwriteRoutineFromFile copies non-zero fields from file onto existing,
-// overwriting whatever the fetched routine had (update-mode: manifest wins).
-// Name is not touched; the caller preserves the positional <name> argument.
-// Returns the count of fields overwritten.
+// overwriteRoutineFromFile copies mutable fields onto existing.
+// Authorization is handled separately because dispatch identity
+// is create-only. Name is preserved.
+// The return value counts fields copied.
 func overwriteRoutineFromFile(existing *routines.Routine, file *routines.Routine) int {
 	changed := 0
 	if file.Description != "" {

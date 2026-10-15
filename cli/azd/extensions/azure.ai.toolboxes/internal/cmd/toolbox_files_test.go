@@ -181,17 +181,17 @@ func TestParseToolboxFile_RejectsMissingFile(t *testing.T) {
 	requireLocalError(t, err, exterrors.CodeInvalidParameter)
 }
 
-// `policies.rai_config` is accepted by `toolbox create` and the wire-shaped
-// `rai_policy_name` field round-trips through the file struct.
+// `policies.raiConfig` is accepted by `toolbox create` and maps to the
+// service-owned wire policy shape later in request construction.
 func TestParseToolboxFile_AcceptsPolicies(t *testing.T) {
-	t.Run("yaml with rai_policy_name", func(t *testing.T) {
+	t.Run("yaml with raiPolicyName", func(t *testing.T) {
 		path := writeTempFile(t, ".yaml", `
 description: with policy
 connections:
   - name: my-mcp
 policies:
-  rai_config:
-    rai_policy_name: Microsoft.Default
+  raiConfig:
+    raiPolicyName: Microsoft.Default
 `)
 		var out toolboxCreateFile
 		require.NoError(t, parseToolboxFile(path, &out))
@@ -208,7 +208,7 @@ description: with policy
 connections:
   - name: my-mcp
 policies:
-  rai_config:
+  raiConfig:
     name: Microsoft.Default
 `)
 		var out toolboxCreateFile
@@ -220,8 +220,8 @@ policies:
 		assert.Equal(t, "Microsoft.Default", out.Policies.RaiConfig.ResolvedPolicyName())
 	})
 
-	// rai_policy_name wins over name when both are set.
-	t.Run("rai_policy_name wins over name alias", func(t *testing.T) {
+	// raiPolicyName wins over name when both are set.
+	t.Run("raiPolicyName wins over name alias", func(t *testing.T) {
 		spec := &toolboxRaiConfigSpec{RaiPolicyName: "wire", Name: "alias"}
 		assert.Equal(t, "wire", spec.ResolvedPolicyName())
 	})
@@ -231,4 +231,69 @@ policies:
 		spec := &toolboxRaiConfigSpec{RaiPolicyName: "  "}
 		assert.Equal(t, "", spec.ResolvedPolicyName())
 	})
+}
+
+func TestParseToolboxFile_RejectsLegacySnakeCaseFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		ext         string
+		content     string
+		legacyKey   string
+		replacement string
+	}{
+		{
+			name:        "YAML connection instance",
+			ext:         ".yaml",
+			content:     "connections:\n  - name: search\n    instance_name: docs-config\n",
+			legacyKey:   "instance_name",
+			replacement: "instanceName",
+		},
+		{
+			name:        "JSON connection instance",
+			ext:         ".json",
+			content:     `{"connections":[{"name":"search","instance_name":"docs-config"}]}`,
+			legacyKey:   "instance_name",
+			replacement: "instanceName",
+		},
+		{
+			name:        "YAML RAI config",
+			ext:         ".yaml",
+			content:     "policies:\n  rai_config:\n    raiPolicyName: default\n",
+			legacyKey:   "rai_config",
+			replacement: "raiConfig",
+		},
+		{
+			name:        "JSON RAI config",
+			ext:         ".json",
+			content:     `{"policies":{"rai_config":{"raiPolicyName":"default"}}}`,
+			legacyKey:   "rai_config",
+			replacement: "raiConfig",
+		},
+		{
+			name:        "YAML RAI policy name",
+			ext:         ".yaml",
+			content:     "policies:\n  raiConfig:\n    rai_policy_name: default\n",
+			legacyKey:   "rai_policy_name",
+			replacement: "raiPolicyName",
+		},
+		{
+			name:        "JSON RAI policy name",
+			ext:         ".json",
+			content:     `{"policies":{"raiConfig":{"rai_policy_name":"default"}}}`,
+			legacyKey:   "rai_policy_name",
+			replacement: "raiPolicyName",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeTempFile(t, test.ext, test.content)
+			var out toolboxCreateFile
+
+			err := parseToolboxFile(path, &out)
+			localErr := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+			assert.Contains(t, localErr.Message, test.legacyKey)
+			assert.Contains(t, localErr.Suggestion, test.replacement)
+		})
+	}
 }

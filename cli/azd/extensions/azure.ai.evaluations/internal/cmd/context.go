@@ -487,7 +487,7 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 // read "unowned", both choose the unqualified key, and the second overwrite the
 // first's id while the ownership marker still named the first. One service then
 // had no mapping, and its next deploy made a second eval.
-func (ec *evalContext) setPrivateScoped(ctx context.Context, base, scope, value string) error {
+func (ec *evalContext) setPrivateScoped(ctx context.Context, base, ownerBase, scope, value string) error {
 	if ec.azdClient == nil {
 		return messages.NoAzdEnvironmentToWrite(base)
 	}
@@ -509,7 +509,11 @@ func (ec *evalContext) setPrivateScoped(ctx context.Context, base, scope, value 
 
 	owner := base + project.EvalScopeSuffix
 	key := base
-	if scope != "" && merged[owner] != "" && merged[owner] != scope {
+	current := merged[owner]
+	if current == "" && ownerBase != "" {
+		current = merged[ownerBase+project.EvalScopeSuffix]
+	}
+	if scope != "" && current != "" && current != scope {
 		key = base + "_" + project.EvalScopeTag(scope)
 	}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -43,8 +44,8 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 // lockPath returns the path to the OS-level file lock used to serialize
 // concurrent Reload/Save operations across processes (e.g. parallel
 // `azd env set` subprocesses spawned from service hooks).
-func (fs *LocalFileDataStore) lockPath(env *Environment) string {
-	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName+".lock")
+func (fs *LocalFileDataStore) lockPath(env *Environment) (string, error) {
+	return fs.azdContext.EnvironmentFilePath(env.name, DotEnvFileName+".lock")
 }
 
 // newEnvLock returns an OS-level file lock on the .env file for `env`. The
@@ -52,9 +53,23 @@ func (fs *LocalFileDataStore) lockPath(env *Environment) string {
 // concurrent holders can always discover it — flock semantics coordinate
 // via the underlying inode, not via file presence.
 func (fs *LocalFileDataStore) newEnvLock(env *Environment) (*flock.Flock, error) {
-	path := fs.lockPath(env)
+	// Resolve both state paths to validate them before creating directories or acquiring the lock.
+	if _, err := fs.EnvPath(env); err != nil {
+		return nil, err
+	}
+	if _, err := fs.ConfigPath(env); err != nil {
+		return nil, err
+	}
+	path, err := fs.lockPath(env)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
 		return nil, fmt.Errorf("creating env dir for lock: %w", err)
+	}
+	path, err = fs.lockPath(env)
+	if err != nil {
+		return nil, err
 	}
 	return flock.New(path), nil
 }
@@ -89,14 +104,14 @@ func releaseEnvLock(fl *flock.Flock) {
 	}
 }
 
-// Path returns the path to the .env file for the given environment
-func (fs *LocalFileDataStore) EnvPath(env *Environment) string {
-	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName)
+// EnvPath returns the path to the .env file for the given environment.
+func (fs *LocalFileDataStore) EnvPath(env *Environment) (string, error) {
+	return fs.azdContext.EnvironmentFilePath(env.name, DotEnvFileName)
 }
 
 // ConfigPath returns the path to the config.json file for the given environment
-func (fs *LocalFileDataStore) ConfigPath(env *Environment) string {
-	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), ConfigFileName)
+func (fs *LocalFileDataStore) ConfigPath(env *Environment) (string, error) {
+	return fs.azdContext.EnvironmentFilePath(env.name, ConfigFileName)
 }
 
 // List returns a list of all environments within the data store
@@ -106,7 +121,11 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 		return nil, err
 	}
 
-	environments, err := os.ReadDir(fs.azdContext.EnvironmentDirectory())
+	directory, err := fs.azdContext.EnvironmentDirectoryPath()
+	if err != nil {
+		return nil, err
+	}
+	environments, err := os.ReadDir(directory)
 	if errors.Is(err, os.ErrNotExist) {
 		return []*contracts.EnvListEnvironment{}, nil
 	}
@@ -117,13 +136,34 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 	// prefer empty array over `nil` since this is a contracted return value,
 	// where empty array is preferred for "NotFound" semantics.
 	envs := []*contracts.EnvListEnvironment{}
+environmentEntries:
 	for _, ent := range environments {
-		if ent.IsDir() {
+		if ent.IsDir() || ent.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			if !azdcontext.IsValidEnvironmentName(ent.Name()) {
+				log.Printf("skipping environment entry %q: %v", ent.Name(), InvalidEnvironmentNameError(ent.Name()))
+				continue
+			}
 			ev := &contracts.EnvListEnvironment{
-				Name:       ent.Name(),
-				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), DotEnvFileName),
-				ConfigPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), ConfigFileName),
+				Name:      ent.Name(),
+				IsDefault: ent.Name() == defaultEnv,
+			}
+			for _, name := range []string{
+				DotEnvFileName, ConfigFileName, DotEnvFileName + ".lock", state.StateCacheFileName,
+			} {
+				path, err := fs.azdContext.EnvironmentFilePath(ent.Name(), name)
+				if errors.Is(err, azdcontext.ErrUnsafeEnvironmentPath) {
+					log.Printf("skipping environment entry %q: %v", ent.Name(), err)
+					continue environmentEntries
+				}
+				if err != nil {
+					return nil, err
+				}
+				switch name {
+				case DotEnvFileName:
+					ev.DotEnvPath = path
+				case ConfigFileName:
+					ev.ConfigPath = path
+				}
 			}
 			envs = append(envs, ev)
 		}
@@ -138,8 +178,11 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 
 // Get returns the environment instance for the specified environment name
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
-	root := fs.azdContext.EnvironmentRoot(name)
-	_, err := os.Stat(root)
+	root, err := fs.azdContext.EnvironmentRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	_, err = os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("'%s': %w", name, ErrNotFound)
 	} else if err != nil {
@@ -171,9 +214,18 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 // reloadLocked performs the actual reload work. Caller MUST hold the env
 // file lock.
 func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment) error {
+	envPath, err := fs.EnvPath(env)
+	if err != nil {
+		return err
+	}
+	configPath, err := fs.ConfigPath(env)
+	if err != nil {
+		return err
+	}
+
 	// Reload env values
 	var newDotenv map[string]string
-	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
+	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
 		newDotenv = make(map[string]string)
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
@@ -181,7 +233,7 @@ func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment
 		newDotenv = envMap
 	}
 	// Load both files before changing the live environment.
-	cfg, err := fs.configManager.Load(fs.ConfigPath(env))
+	cfg, err := fs.configManager.Load(configPath)
 	if errors.Is(err, os.ErrNotExist) {
 		cfg = config.NewEmptyConfig()
 	} else if err != nil {
@@ -225,9 +277,18 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	}
 	defer releaseEnvLock(fl)
 
+	envPath, err := fs.EnvPath(env)
+	if err != nil {
+		return err
+	}
+	configPath, err := fs.ConfigPath(env)
+	if err != nil {
+		return err
+	}
+
 	// Update configuration (under the lock so concurrent readers never
 	// observe a half-written config.json).
-	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
+	if err := fs.configManager.Save(env.Config, configPath); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -262,8 +323,6 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	// over the destination. Rename is atomic on POSIX and on Windows
 	// (MoveFileEx w/ REPLACE_EXISTING), so readers never see a
 	// half-truncated file.
-	envPath := fs.EnvPath(env)
-
 	// Best-effort sweep of stale tmp files (>1h old) left behind by prior
 	// crashed/SIGKILL'd writers. Safe under the flock — no concurrent
 	// in-flight tmp files possible.
@@ -308,8 +367,11 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 }
 
 func (fs *LocalFileDataStore) Delete(ctx context.Context, name string) error {
-	envRoot := fs.azdContext.EnvironmentRoot(name)
-	_, err := os.Stat(envRoot)
+	envRoot, err := fs.azdContext.EnvironmentRoot(name)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stat(envRoot)
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("'%s': %w", name, ErrNotFound)
 	} else if err != nil {

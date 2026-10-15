@@ -380,7 +380,7 @@ func promptAgentTemplate(
 			exterrors.CodePromptFailed,
 			"template selection requires interactive mode",
 			"run 'azd ai agent sample list --output json' to discover available templates, "+
-				"then rerun 'azd ai agent init -m <manifestUrl>' (or 'azd init -t <repoUrl>' for full template repos)",
+				"then rerun 'azd ai agent init -t <templateUrl>' (or 'azd init -t <repoUrl>' for full template repos)",
 		)
 	}
 

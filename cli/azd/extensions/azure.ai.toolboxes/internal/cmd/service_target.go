@@ -356,7 +356,11 @@ func parseToolboxServiceConfig(svc *azdext.ServiceConfig) (*toolboxServiceConfig
 	if props == nil {
 		return cfg, nil
 	}
-	b, err := json.Marshal(props.AsMap())
+	values := props.AsMap()
+	if err := rejectLegacyToolboxServiceKeys(svc.GetName(), values); err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encoding toolbox service %q config: %w", svc.GetName(), err)
 	}
@@ -364,6 +368,52 @@ func parseToolboxServiceConfig(svc *azdext.ServiceConfig) (*toolboxServiceConfig
 		return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.GetName(), err)
 	}
 	return cfg, nil
+}
+
+func rejectLegacyToolboxServiceKeys(serviceName string, values map[string]any) error {
+	if connections, ok := values["connections"].([]any); ok {
+		for i, raw := range connections {
+			connection, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, found := connection["instance_name"]; found {
+				return legacyToolboxServiceKeyError(
+					serviceName,
+					fmt.Sprintf("connections[%d].instance_name", i),
+					fmt.Sprintf("connections[%d].instanceName", i),
+				)
+			}
+		}
+	}
+
+	policies, ok := values["policies"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	if _, found := policies["rai_config"]; found {
+		return legacyToolboxServiceKeyError(serviceName, "policies.rai_config", "policies.raiConfig")
+	}
+	raiConfig, ok := policies["raiConfig"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	if _, found := raiConfig["rai_policy_name"]; found {
+		return legacyToolboxServiceKeyError(
+			serviceName,
+			"policies.raiConfig.rai_policy_name",
+			"policies.raiConfig.raiPolicyName",
+		)
+	}
+	return nil
+}
+
+func legacyToolboxServiceKeyError(serviceName, legacyPath, canonicalPath string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("toolbox service %q uses unsupported property %q", serviceName, legacyPath),
+		fmt.Sprintf("replace %q with %q", legacyPath, canonicalPath),
+	)
 }
 
 // serviceConfigReader is the slice of azdext.ProjectServiceClient

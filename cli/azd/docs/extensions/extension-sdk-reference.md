@@ -11,6 +11,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
+  - [Structured deploy messages (beta)](#structured-deploy-messages-beta)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
@@ -89,6 +90,56 @@ func main() {
     azdext.Run(rootCmd)
 }
 ```
+
+### Structured deploy messages (beta)
+
+Service-level `predeploy` and `postdeploy` handlers can return structured,
+non-blocking info and warning messages. These are beta-only fields on
+`ServiceHandlerStatus.messages`; each message can include text, a suggestion,
+and links. The stable event API and default language scaffolds are unchanged.
+
+Register a beta handler on the extension host:
+
+```go
+host.WithBetaServiceEventHandler(
+    "postdeploy",
+    func(_ context.Context, args *azdext.ServiceEventArgs) (
+        *azdext.BetaServiceEventResponse, error,
+    ) {
+        return &azdext.BetaServiceEventResponse{
+            Messages: []azdext.BetaServiceEventMessage{{
+                Kind:       azdext.BetaServiceEventMessageWarning,
+                Message:    "Review the service access policy.",
+                Suggestion: "Update the policy before the next deployment.",
+            }},
+        }, nil
+    },
+    nil,
+)
+```
+
+Extensions that adopt this API must set `requiredAzdVersion` in their
+extension manifest to require at least the first azd release that supports
+both subscription acknowledgements and `ServiceHandlerStatus.messages`.
+Set the minimum to that release once its version is known; do not publish
+an adopting extension with an older minimum. Older hosts can time out
+during registration or acknowledge the subscription but ignore returned
+messages. An acknowledgement alone does not establish message support.
+
+The beta event stream must begin with a subscription that includes a
+`request_id` and waits for its acknowledgement. A service status that contains
+messages must echo the invocation's request ID. Legacy beta streams without
+request IDs retain their previous behavior but cannot send structured
+messages.
+
+The host displays returned messages after the deployment table and includes
+them in the `messages` array of deploy/up JSON results. Messages returned
+alongside a handler error are retained, while the error still fails the
+deployment. Use the existing stable `WithServiceEventHandler` for other
+service lifecycle events; do not register both handler APIs for the same
+event.
+See the [extension framework guide](extension-framework.md#event-service)
+for the host behavior and the demo implementation.
 
 ### RunOption / WithPreExecute
 
@@ -632,6 +683,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | Accessor | Returns |
 |----------|---------|
 | `Project()` | `ProjectServiceClient` |
+| `ProjectBeta()` | `v1beta.ProjectServiceClient` (preview) |
 | `Environment()` | `EnvironmentServiceClient` |
 | `UserConfig()` | `UserConfigServiceClient` |
 | `Prompt()` | `PromptServiceClient` |
@@ -646,29 +698,44 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Container()` | `ContainerServiceClient` |
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
-| `AccountBeta()` | `v1beta.AccountServiceClient` (preview) |
+| `AccountBeta()` | `v1beta.AccountServiceClient` (deprecated; use `Account()`) |
 | `Ai()` | `AiModelServiceClient` |
 | `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
-| `Telemetry()` | `v1beta.TelemetryServiceClient` (preview) |
+| `Telemetry()` | `TelemetryServiceClient` (stable since azd 1.36.0) |
 
 Always call `defer client.Close()` after creation.
 
-`AccountBeta()`, `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`,
-and `Telemetry()` are preview accessors. Import
+`CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
+are preview accessors. Import
 `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
 request, response, and enum types. Beta-only methods and types are not
-exposed through the stable `azdext` contract facade. `Account()` still
-provides the existing stable account methods.
+exposed through the stable `azdext` contract facade.
+
+#### Graduated contract status
+
+| Capability | Stable API | Stable since | Beta status | Minimum `requiredAzdVersion` |
+|---|---|---|---|---|
+| Extension usage telemetry | `Telemetry().ReportUsage`, `azdext.ReportUsageRequest/Response` | 1.36.0 | Service, method, and messages deprecated; route retained | `>=1.36.0` |
+| Current Azure principal | `Account().GetCurrentPrincipal`, `azdext.GetCurrentPrincipalRequest/Response`, `azdext.PrincipalType` | 1.36.0 | Method, messages, enum, and `AccountBeta()` deprecated; route retained | `>=1.36.0` |
+
+Upgrading to the 1.36.0 SDK intentionally changes `Telemetry()` from a beta to
+a stable return type; replace `v1beta.ReportUsageRequest/Response` with
+`azdext.ReportUsageRequest/Response` (or `contracts/v1` types), including mocks
+implementing the shared Foundry telemetry `Client` interface. There is no
+`TelemetryBeta()` accessor. Already-built beta extensions continue working
+with new hosts, and extensions pinned to older SDKs are unaffected until they
+upgrade. See [contract versioning](contract-versioning.md#october-2026-graduation-azd-1360)
+for deprecated route retention and direct beta client construction.
 
 #### AccountService
 
-`AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for these preview types. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed. The stable `Account()` client remains unchanged and does not expose this method.
+`Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Use stable types from `azdext` or `contracts/v1`. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed. Require azd 1.36.0 or later; the equivalent beta method and `AccountBeta()` accessor are deprecated.
 
 See [GetCurrentPrincipal](extension-framework.md#getcurrentprincipal) for the enum mapping, guest-user behavior, and host compatibility requirements.
 
 #### TelemetryService
 
-`Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`
+`Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName: "deploy.completed", Attributes: attributes})`
 lets an authenticated extension report a named usage event. The runtime request
 contains a bounded `map[string]string` of attributes and does not carry
 classification, purpose, or endpoint metadata. Telemetry is available to
@@ -699,7 +766,7 @@ so the same code path runs during local development and in production. Run
 `azd --debug` to see which applied.
 
 ```go
-resp, err := client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
+resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
     EventName:  "deploy.completed",
     Attributes: map[string]string{"deploy.mode": "container"},
 })
@@ -718,12 +785,12 @@ the extension author's responsibility. See
 process.
 
 For a published extension version that depends on this service, set
-`requiredAzdVersion` to the first azd release that includes `TelemetryService`.
+`requiredAzdVersion` to the first azd release that includes the stable `TelemetryService`.
 This is the normal compatibility mechanism used when resolving installs and
 updates:
 
 ```yaml
-requiredAzdVersion: ">=1.33.0"
+requiredAzdVersion: ">=1.36.0"
 ```
 
 The call remains best-effort for already-installed extensions and extensions

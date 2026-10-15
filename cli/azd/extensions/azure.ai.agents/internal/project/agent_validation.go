@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -29,6 +30,23 @@ type AgentDefinitionValidation struct {
 func ValidateAgentServiceDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
+) (AgentDefinitionValidation, error) {
+	return validateAgentServiceDefinition(svc, projectRoot, true)
+}
+
+// ValidateAgentServiceDefinitionContent validates agent fields without
+// resolving local Connection references.
+func ValidateAgentServiceDefinitionContent(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (AgentDefinitionValidation, error) {
+	return validateAgentServiceDefinition(svc, projectRoot, false)
+}
+
+func validateAgentServiceDefinition(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+	validateConnections bool,
 ) (AgentDefinitionValidation, error) {
 	if err := validateRuntimeAgentSources(svc); err != nil {
 		return AgentDefinitionValidation{}, err
@@ -61,7 +79,11 @@ func ValidateAgentServiceDefinition(
 			return AgentDefinitionValidation{}, err
 		}
 	case agent_yaml.AgentKindPrompt:
-		if err := validatePromptAgentServiceDefinition(svc, projectRoot); err != nil {
+		if err := validatePromptAgentServiceDefinition(
+			svc,
+			projectRoot,
+			validateConnections,
+		); err != nil {
 			return AgentDefinitionValidation{}, err
 		}
 		if result.Name == "" {
@@ -146,6 +168,7 @@ func validateHostedAgentServiceDefinition(
 func validatePromptAgentServiceDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
+	validateConnections bool,
 ) error {
 	prompt, found, err := PromptAgentFromResolvedService(svc, projectRoot)
 	if err != nil {
@@ -156,6 +179,9 @@ func validatePromptAgentServiceDefinition(
 	}
 	if err := applyPromptAgentServiceName(&prompt, svc.GetName()); err != nil {
 		return err
+	}
+	if !validateConnections {
+		prompt.Connections = nil
 	}
 
 	agentDir, err := promptAgentValidationDir(svc, projectRoot)
@@ -215,9 +241,9 @@ func validateAgentActivitySettings(
 	resolved *structpb.Struct,
 	hosted agent_yaml.ContainerAgent,
 ) error {
-	effectiveService := *svc
+	effectiveService := proto.Clone(svc).(*azdext.ServiceConfig)
 	effectiveService.AdditionalProperties = resolved
-	settings, err := LoadServiceTargetAgentConfig(&effectiveService)
+	settings, err := LoadServiceTargetAgentConfig(effectiveService)
 	if err != nil {
 		return invalidAgentDefinitionError(svc, err)
 	}

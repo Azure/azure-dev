@@ -166,6 +166,28 @@ func TestTheScopeIsTheSameOnBothSidesOfThePath(t *testing.T) {
 	assert.Empty(t, project.EvalScope(root, ""), "nothing to identify")
 }
 
+// A relative `--path`/`--from-file` is taken as typed, not resolved against
+// the project root first -- so the path handed to EvalScope can be relative
+// while the root (normally reported absolute by azd) is not. filepath.Rel
+// refuses to mix an absolute base with a relative target and used to fall
+// through to the raw, uncanonicalized path: the same configuration then
+// scoped differently depending on whether it was named by a bare config name
+// (resolved to an absolute path upstream) or an explicit relative flag,
+// stranding ids recorded under one spelling from lookups under the other.
+func TestEvalScopeCanonicalizesARelativeConfigPathAgainstAnAbsoluteRoot(t *testing.T) {
+	root := t.TempDir()
+	absoluteConfig := filepath.Join(root, "evals", "azure.eval.yaml")
+
+	t.Chdir(root)
+	relativeConfig := filepath.Join("evals", "azure.eval.yaml")
+
+	require.Equal(t,
+		project.EvalScope(root, absoluteConfig),
+		project.EvalScope(root, relativeConfig),
+		"the same file must scope the same whether named absolutely or relatively")
+	assert.Equal(t, "evals/azure.eval.yaml", project.EvalScope(root, relativeConfig))
+}
+
 // Case is the filesystem's business. Folding it everywhere made two files on
 // Linux -- `evals/A/...` and `evals/a/...` -- one scope, so each would read and
 // overwrite the other's recorded ids: the collision this whole mechanism exists
@@ -184,4 +206,56 @@ func TestCaseIsFoldedOnlyWhereTheFilesystemFoldsIt(t *testing.T) {
 	}
 	assert.NotEqual(t, lower, upper,
 		"two files are two configurations, and must not share recorded ids")
+}
+
+// A fingerprint recorded before it was scoped has no owner marker. Every
+// configuration wrote the same key, so it holds whichever wrote last: here
+// B's definition, while the id beside it is owned by A. Neither configuration
+// may compare against it; both record a fresh baseline, and A's goes where the
+// unqualified key was while B's goes beside it.
+func TestAnUnmarkedFingerprintIsUnknownWhenOnlyTheIDHasAnOwner(t *testing.T) {
+	fingerprint := project.FingerprintKey("eval", "quality")
+	id := idKey("eval", "quality")
+	env := &testEnvServer{state: map[string]string{
+		fingerprint:                  "v2:last-written-by-b",
+		id:                           "evalgroup_a",
+		id + project.EvalScopeSuffix: scopeA,
+	}}
+	ctx := t.Context()
+
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA),
+		"the unqualified value may be B's last write, not A's baseline")
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+	assert.False(t, substanceChanged(reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA),
+		"v2:definition-a", "digest-a"), "an unknown baseline is recorded, not read as an edit")
+
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeA, "v2:baseline-a")
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:baseline-b")
+
+	after := reader(t, env)
+	assert.Equal(t, "v2:baseline-a", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeA))
+	assert.Equal(t, "v2:baseline-b", after.scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+}
+
+// The non-owning scope's own baseline must stay readable: B deploys twice
+// before A has ever deployed, and its second deploy compares against what its
+// first recorded.
+func TestANonOwnerReadsItsOwnBaselineBeforeTheOwnerDeploys(t *testing.T) {
+	fingerprint := project.FingerprintKey("eval", "quality")
+	id := idKey("eval", "quality")
+	env := &testEnvServer{state: map[string]string{
+		fingerprint:                  "v2:last-written-by-b",
+		id:                           "evalgroup_a",
+		id + project.EvalScopeSuffix: scopeA,
+	}}
+	ctx := t.Context()
+
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:baseline-b")
+	assert.Equal(t, "v2:baseline-b", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB),
+		"B's second deploy reads the baseline its first recorded")
+	reader(t, env).rememberScopedOwnedBy(ctx, fingerprint, id, scopeB, "v2:edited-b")
+	assert.Equal(t, "v2:edited-b", reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeB))
+	assert.Empty(t, reader(t, env).scopedValueOwnedBy(ctx, fingerprint, id, scopeA),
+		"A still has no trustworthy baseline: the unqualified value is B's legacy write")
 }

@@ -93,8 +93,7 @@ func resolveInstruction(inline, path string) (string, error) {
 	if path == "" {
 		return inline, nil
 	}
-	// #nosec G304 -- path is the file the caller named on the command line.
-	raw, err := os.ReadFile(path)
+	raw, err := project.ReadFileNoBOM(path)
 	if err != nil {
 		return "", messages.ReadingInstructionFile(path, err)
 	}
@@ -192,15 +191,13 @@ func (ec *evalContext) resolveGenerationInstruction(
 	// service marked input_quality, so this is asked rather than shrugged at:
 	// the caller knows what the agent is for, and one sentence is the whole
 	// difference between a usable rubric and a billed job that grades noise.
-	fmt.Fprint(out, messages.InstructionsNotDetected())
+	if !quiet {
+		fmt.Fprint(out, messages.InstructionsNotDetected())
+	}
 	if noPrompt(cmd) {
 		return "", "", messages.InstructionsRequired()
 	}
-	typed, err := promptAgentInstruction(cmd)
-	if err != nil {
-		return "", "", err
-	}
-	return typed, messages.InstructionSourceTyped(), nil
+	return promptAgentInstruction(cmd)
 }
 
 // agentInstructionsFromProject reads the agent's instructions out of the azd
@@ -345,11 +342,9 @@ func (ec *evalContext) collectRubric(
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
 	ref := &project.ArtifactRef{
-		Name:    name,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Recovered declarations need the same metadata even when the rubric
-		// was already collected and must be preserved for local edits.
+		Name:                      name,
+		Source:                    relativeSource(baseDir, path),
+		Version:                   version,
 		DisplayName:               completed.ResultString("display_name"),
 		Categories:                completed.ResultStringList("categories"),
 		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),

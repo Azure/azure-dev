@@ -47,6 +47,7 @@ type azureYamlManifestInfo struct {
 	hasPromptAgent    bool
 	hasNonPromptAgent bool
 	hasUnresolvedRefs bool
+	promptHarness     string
 }
 
 type authenticatedManifestReader func(context.Context, string) ([]byte, error)
@@ -204,6 +205,10 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			kind, _ := svcMap["kind"].(string)
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
+				harness, _ := svcMap["harness"].(map[string]any)
+				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
+					info.promptHarness = harnessType
+				}
 			} else {
 				info.hasNonPromptAgent = true
 			}
@@ -233,13 +238,13 @@ func hasAzureYamlFileRef(value any) bool {
 	return false
 }
 
-func missingAgentServiceError(manifestPointer string) error {
-	manifestPointer = safeInitSourceDisplay(manifestPointer)
+func missingAgentServiceError(templatePointer string) error {
+	templatePointer = safeInitSourceDisplay(templatePointer)
 	return exterrors.Validation(
 		exterrors.CodeInvalidManifestPointer,
 		fmt.Sprintf(
-			"manifest %q is a unified azure.yaml but does not declare an agent service",
-			manifestPointer,
+			"manifest %q is an azure.yaml project document but does not declare an agent service",
+			templatePointer,
 		),
 		fmt.Sprintf(
 			"add a service with host: %s directly in azure.yaml, or use a root $ref from that service",
@@ -254,13 +259,13 @@ func loadExplicitAzureYaml(
 	flags *initFlags,
 	httpClient *http.Client,
 ) ([]byte, error) {
-	if err := checkNotDirectory(flags.manifestPointer); err != nil {
+	if err := checkNotDirectory(flags.templatePointer); err != nil {
 		return nil, err
 	}
 
 	content, err := readExplicitManifestContent(
 		ctx,
-		flags.manifestPointer,
+		flags.templatePointer,
 		httpClient,
 		func(ctx context.Context, pointer string) ([]byte, error) {
 			return readAuthenticatedManifestContent(ctx, azdClient, pointer)
@@ -270,14 +275,14 @@ func loadExplicitAzureYaml(
 		return nil, err
 	}
 
-	return validateExplicitAzureYamlContent(flags.manifestPointer, content)
+	return validateExplicitAzureYamlContent(flags.templatePointer, content)
 }
 
-func validateExplicitAzureYamlContent(manifestPointer string, content []byte) ([]byte, error) {
-	display := safeInitSourceDisplay(manifestPointer)
+func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([]byte, error) {
+	display := safeInitSourceDisplay(templatePointer)
 	projectRoot := ""
-	if isLocalFilePath(manifestPointer) {
-		projectRoot = filepath.Dir(manifestPointer)
+	if isLocalFilePath(templatePointer) {
+		projectRoot = filepath.Dir(templatePointer)
 	}
 	info, err := inspectAzureYaml(content, projectRoot)
 	if err != nil {
@@ -285,7 +290,7 @@ func validateExplicitAzureYamlContent(manifestPointer string, content []byte) ([
 	}
 	if info.hasServices {
 		if !info.hasAgentService && !info.hasUnresolvedRefs {
-			return nil, missingAgentServiceError(manifestPointer)
+			return nil, missingAgentServiceError(templatePointer)
 		}
 		return content, nil
 	}
@@ -294,7 +299,7 @@ func validateExplicitAzureYamlContent(manifestPointer string, content []byte) ([
 	if err := yaml.Unmarshal(content, &document); err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("parsing unified azure.yaml from %q: %s", display, err),
+			fmt.Sprintf("parsing azure.yaml project document from %q: %s", display, err),
 			"Provide a valid azure.yaml project document with an azure.ai.agent service.",
 		)
 	}
@@ -318,36 +323,36 @@ func validateExplicitAzureYamlContent(manifestPointer string, content []byte) ([
 
 	return nil, exterrors.Validation(
 		exterrors.CodeInvalidAgentManifest,
-		fmt.Sprintf("%q is not a unified azure.yaml project document", display),
+		fmt.Sprintf("%q is not an azure.yaml project document", display),
 		"Provide an azure.yaml document with a services mapping and at least one azure.ai.agent service.",
 	)
 }
 
-func validateLocalExplicitAzureYaml(manifestPointer string) ([]byte, bool, error) {
-	kind, err := classifyInitSource(manifestPointer)
+func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error) {
+	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, false, err
 	}
 	if kind == initSourceHTTP {
 		return nil, false, nil
 	}
-	if err := checkNotDirectory(manifestPointer); err != nil {
+	if err := checkNotDirectory(templatePointer); err != nil {
 		return nil, false, err
 	}
 	//nolint:gosec // the path is an explicit user-provided init source
-	content, err := os.ReadFile(manifestPointer)
+	content, err := os.ReadFile(templatePointer)
 	if err != nil {
 		return nil, false, exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
 			fmt.Sprintf(
-				"could not read unified azure.yaml from %q: %s",
-				safeInitSourceDisplay(manifestPointer),
+				"could not read azure.yaml project document from %q: %s",
+				safeInitSourceDisplay(templatePointer),
 				err,
 			),
 			"Provide an existing local azure.yaml path.",
 		)
 	}
-	content, err = validateExplicitAzureYamlContent(manifestPointer, content)
+	content, err = validateExplicitAzureYamlContent(templatePointer, content)
 	if err != nil {
 		return nil, false, err
 	}
@@ -356,51 +361,51 @@ func validateLocalExplicitAzureYaml(manifestPointer string) ([]byte, bool, error
 
 func readExplicitManifestContent(
 	ctx context.Context,
-	manifestPointer string,
+	templatePointer string,
 	httpClient *http.Client,
 	readAuthenticated authenticatedManifestReader,
 ) ([]byte, error) {
-	display := safeInitSourceDisplay(manifestPointer)
-	kind, err := classifyInitSource(manifestPointer)
+	display := safeInitSourceDisplay(templatePointer)
+	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, err
 	}
 	if kind == initSourceLocal {
 		//nolint:gosec // the path is an explicit user-provided init source
-		content, err := os.ReadFile(manifestPointer)
+		content, err := os.ReadFile(templatePointer)
 		if err != nil {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidManifestPointer,
-				fmt.Sprintf("could not read unified azure.yaml from %q: %s", display, err),
+				fmt.Sprintf("could not read azure.yaml project document from %q: %s", display, err),
 				"Provide an existing local azure.yaml path.",
 			)
 		}
 		return content, nil
 	}
 
-	if content, cached := readCachedTemplateManifest(manifestPointer); cached {
+	if content, cached := readCachedTemplateManifest(templatePointer); cached {
 		return content, nil
 	}
 
-	if content, recognized, err := readPublicGitHubManifest(ctx, manifestPointer, httpClient); recognized && err == nil {
+	if content, recognized, err := readPublicGitHubManifest(ctx, templatePointer, httpClient); recognized && err == nil {
 		return content, nil
 	} else if exterrors.IsCancellation(err) {
-		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+		return nil, exterrors.Cancelled("reading the azure.yaml project document was cancelled")
 	}
 
 	if readAuthenticated == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
-			fmt.Sprintf("could not download unified azure.yaml from %q", display),
+			fmt.Sprintf("could not download azure.yaml project document from %q", display),
 			"Verify the URL and authenticate with `gh auth login` if the repository is private.",
 		)
 	}
-	content, err := readAuthenticated(ctx, manifestPointer)
+	content, err := readAuthenticated(ctx, templatePointer)
 	if err == nil {
 		return content, nil
 	}
 	if exterrors.IsCancellation(err) {
-		return nil, exterrors.Cancelled("reading the unified azure.yaml was cancelled")
+		return nil, exterrors.Cancelled("reading the azure.yaml project document was cancelled")
 	}
 	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return nil, localErr
@@ -408,9 +413,9 @@ func readExplicitManifestContent(
 	return nil, exterrors.Dependency(
 		exterrors.CodeGitHubDownloadFailed,
 		fmt.Sprintf(
-			"could not download unified azure.yaml from %q: %s",
+			"could not download azure.yaml project document from %q: %s",
 			display,
-			safeInitSourceError(err, manifestPointer),
+			safeInitSourceError(err, templatePointer),
 		),
 		"Verify the URL, repository access, and GitHub CLI authentication with `gh auth status`.",
 	)
@@ -418,10 +423,10 @@ func readExplicitManifestContent(
 
 func readPublicGitHubManifest(
 	ctx context.Context,
-	manifestPointer string,
+	templatePointer string,
 	httpClient *http.Client,
 ) ([]byte, bool, error) {
-	urlInfo := parseGitHubUrlNaive(manifestPointer)
+	urlInfo := parseGitHubUrlNaive(templatePointer)
 	if urlInfo == nil {
 		return nil, false, nil
 	}
@@ -455,7 +460,7 @@ func readPublicGitHubManifest(
 func readAuthenticatedManifestContent(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	manifestPointer string,
+	templatePointer string,
 ) ([]byte, error) {
 	if azdClient == nil {
 		return nil, exterrors.Dependency(
@@ -464,7 +469,7 @@ func readAuthenticatedManifestContent(
 			"Run this command through azd and authenticate with `gh auth login`.",
 		)
 	}
-	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
+	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, templatePointer)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +510,7 @@ func readAuthenticatedManifestContent(
 			exterrors.CodeGitHubDownloadFailed,
 			fmt.Sprintf(
 				"GitHub could not download the requested azure.yaml: %s",
-				safeInitSourceError(err, manifestPointer),
+				safeInitSourceError(err, templatePointer),
 			),
 			"Verify repository access and GitHub CLI authentication with `gh auth status`.",
 		)
@@ -513,7 +518,7 @@ func readAuthenticatedManifestContent(
 	return []byte(content), nil
 }
 
-func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
+func validateStagedAzureYaml(stagingDir, templatePointer string) error {
 	manifestPath := filepath.Join(stagingDir, "azure.yaml")
 	//nolint:gosec // stagingDir is created or selected by the init flow
 	content, err := os.ReadFile(manifestPath)
@@ -526,7 +531,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 		return err
 	}
 	if !info.hasServices || (!info.hasAgentService && !info.hasUnresolvedRefs) {
-		return missingAgentServiceError(manifestPointer)
+		return missingAgentServiceError(templatePointer)
 	}
 
 	var document struct {
@@ -592,7 +597,7 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 		}
 	}
 	if !hasResolvedAgentService {
-		return missingAgentServiceError(manifestPointer)
+		return missingAgentServiceError(templatePointer)
 	}
 
 	return nil
@@ -829,7 +834,7 @@ func runInitFromAzureYaml(
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf("a project azure.yaml already exists in %q, so the sample's "+
-				"unified azure.yaml cannot be adopted there", targetDir),
+				"azure.yaml project document cannot be adopted there", targetDir),
 			"run this command in an empty directory (or pass a new target directory) to "+
 				"adopt the sample, or add the agent service directly to this project's azure.yaml",
 		)
@@ -842,7 +847,7 @@ func runInitFromAzureYaml(
 	}
 	defer cleanup()
 
-	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
+	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
 	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
@@ -930,6 +935,7 @@ func runInitFromAzdTemplate(
 	if err != nil {
 		return err
 	}
+	recordInitProjectContent(ctx, content)
 
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
 	if err != nil {
@@ -1040,7 +1046,7 @@ func stageAzdTemplateRepository(
 		return "", noop, exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
 			fmt.Sprintf("%q points to a file, not a full repository template", safeInitSourceDisplay(templateSource)),
-			"Use -m for a unified azure.yaml file, or choose a full repository template source.",
+			"Use -t for an azure.yaml project document, or choose a full repository template source.",
 		)
 	}
 
@@ -1284,6 +1290,15 @@ func finalizeAdoptedProject(
 	// managed by Foundry and must not inherit hosted-agent region constraints.
 	filterHostedRegions := true
 	projectRoot := resolveProjectPath(ctx, azdClient)
+	manifestContent, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	if err != nil {
+		return fmt.Errorf("reading adopted agent definitions: %w", err)
+	}
+	manifestInfo, err := inspectAzureYaml(manifestContent, projectRoot)
+	if err != nil {
+		return err
+	}
+	allowedLocations := promptHarnessRegionsForInit(manifestInfo.promptHarness)
 	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
 	if err != nil {
 		return fmt.Errorf("reading environment values: %w", err)
@@ -1307,6 +1322,7 @@ func finalizeAdoptedProject(
 		skipACR,
 		filterHostedRegions && !promptOnly,
 		preserveDeferredProjectState,
+		allowedLocations,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1729,7 +1745,7 @@ func stageAzureYamlTemplate(
 	httpClient *http.Client,
 ) (string, func(), error) {
 	noop := func() {}
-	pointer := flags.manifestPointer
+	pointer := flags.templatePointer
 
 	if isLocalFilePath(pointer) {
 		dir := filepath.Dir(pointer)
@@ -2351,7 +2367,7 @@ func applyDeployModeToService(
 		)
 	}
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
-	// The final argument is true because -m supplied unified project input.
+	// The final argument is true because -t supplied unified project input.
 	deployMode, err := promptDeployMode(
 		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
 	)

@@ -25,8 +25,7 @@ func TestScanJSONL(t *testing.T) {
 	assert.Equal(t, "c", all[2]["query"], "surrounding whitespace is not part of the row")
 }
 
-// The limit is what makes --max-samples mean the same thing for a published
-// dataset as for a local file.
+// Local, unregistered datasets can be capped without reading the remaining rows.
 func TestScanJSONL_StopsAtTheLimit(t *testing.T) {
 	content := []byte("{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n")
 

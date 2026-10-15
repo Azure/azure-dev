@@ -1147,12 +1147,12 @@ Extensions can declare the following capabilities in their manifest:
 Telemetry is not a capability. Internal telemetry is currently available to
 Microsoft-built extensions in this repository after a privacy review and
 publication to the official `azd` registry. Those extensions can call the
-preview telemetry gRPC service using request and response types from
-`pkg/azdext/contracts/v1beta`, and events are recorded when the configured source
+stable telemetry gRPC service using request and response types from
+`pkg/azdext` or `pkg/azdext/contracts/v1`, and events are recorded when the configured source
 matches the verified official `azd` registry name, type, and normalized URL —
 see [Extension Telemetry](./extension-telemetry.md). Published versions that
-depend on the service should set `requiredAzdVersion` to the first `azd`
-release that includes it.
+depend on the stable service should set `requiredAzdVersion: ">=1.36.0"`
+and consume the published azd SDK v1.36.0 or later.
 
 #### Complete Extension Manifest Example
 
@@ -2509,6 +2509,32 @@ used with the beta
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+- **ServiceEventMessage**
+  Carries a non-blocking info or warning returned by a service deploy hook.
+
+  Contains:
+  - `kind`: Whether the message is informational or a warning.
+  - `message`: The text displayed by azd.
+  - `suggestion`: Optional next-step guidance.
+  - `links`: Optional references with titles and URLs.
+
+Structured messages are available only on the beta
+`ServiceHandlerStatus.messages` field and only for service `predeploy` and
+`postdeploy` handlers. Go extensions opt in with
+`ExtensionHost.WithBetaServiceEventHandler`; the stable event API and default
+language scaffolds remain unchanged.
+
+The beta event stream must begin with a subscription containing a
+`request_id`, and service statuses carrying messages must echo the invocation
+ID. Statuses without messages retain service/event correlation. Legacy beta
+streams whose first subscription has no request ID keep their existing
+behavior but cannot send structured messages. Returned messages are displayed
+after the deploy table and included in deploy/up JSON results, including when
+the handler also returns an error.
+
+See [contract versioning](contract-versioning.md#host-registration-and-adaptation)
+for the stream routing rules and the [SDK reference](extension-sdk-reference.md#structured-deploy-messages-beta)
+for registration details.
 
 #### ServiceContext and Service Event Arguments
 
@@ -3144,7 +3170,7 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 
 #### GetCurrentPrincipal
 
-This preview method resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
+This stable method (since azd 1.36.0) resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
 
 | Field | Description |
 |---|---|
@@ -3155,8 +3181,8 @@ This preview method resolves the current identity for role assignments in a spec
 The host reuses its principal lookup, including the ARM token `oid` claim and Graph fallback. Service-principal logins and both system-assigned and user-assigned managed identities return `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`. Access tokens are neither accepted nor returned by this RPC. An empty subscription ID returns `InvalidArgument`; authentication, subscription, and principal lookup failures return errors rather than an empty identity.
 
 ```go
-// Import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta".
-principal, err := azdClient.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
+// Import "github.com/azure/azure-dev/cli/azd/pkg/azdext".
+principal, err := azdClient.Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{
     SubscriptionId: subscriptionId,
 })
 if err != nil {
@@ -3165,9 +3191,9 @@ if err != nil {
 
 var principalType string
 switch principal.PrincipalType {
-case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
     principalType = "User"
-case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
     principalType = "ServicePrincipal"
 default:
     return fmt.Errorf("unsupported principal type: %v", principal.PrincipalType)
@@ -3175,7 +3201,7 @@ default:
 // Pass principal.ObjectId and principalType to the role assignment.
 ```
 
-This method and its request, response, and enum types are available only in [`v1beta`](../../grpc/proto/azd/extensions/v1beta/account.proto). `Account()` remains the unchanged stable client; use `AccountBeta()` for principal lookup. Older azd hosts return `Unimplemented`. Extensions must consume an SDK release containing the method and require a host release that supports it before removing their existing principal lookup.
+This method and its request, response, and enum types are available in [`v1`](../../grpc/proto/azd/extensions/v1/account.proto). Use `Account()` with stable types from `azdext` or `contracts/v1`, pin the published SDK to v1.36.0 or later, and set `requiredAzdVersion: ">=1.36.0"`. Older hosts return `Unimplemented` on the stable route. The equivalent beta symbols and `AccountBeta()` are deprecated, but released beta binaries remain supported. See [contract graduation](contract-versioning.md#october-2026-graduation-azd-1360).
 
 ---
 

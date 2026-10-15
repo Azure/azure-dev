@@ -130,9 +130,19 @@ This `listen` command is required when your extension leverages `LifecycleEvents
 
 This command is invoked by `azd` to allow your extension to subscribe to lifecycle events within the current `azd` project and services.
 
+The demo uses beta service handlers for `predeploy` and `postdeploy`. They
+return structured info and warning messages that azd displays after the
+deployment table and includes in deploy/up JSON results. Other demo lifecycle
+handlers continue to use the stable extension host.
+
 ### `telemetry`
 
 The `telemetry` command demonstrates the telemetry service, which lets an extension report its own usage events into `azd`'s telemetry pipeline.
+
+The demo uses stable `Telemetry().ReportUsage` and `azdext.ReportUsageRequest`.
+It requires azd 1.36.0 or later. It shares the core Go module rather than
+pinning a separate SDK dependency; other extensions should pin the published
+azd SDK to v1.36.0 or later when adopting this stable API.
 
 #### Usage: `azd demo telemetry`
 

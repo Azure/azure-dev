@@ -43,9 +43,9 @@ Only `select` changes the active store. Its name is saved in extension-owned sta
 protocol. Two local projects targeting the same remote agent share this selection. Item values, ETags, and
 credentials are not saved as selection state.
 
-Previously saved selections in azd UserConfig are not read or migrated. After upgrading, run
-`azd ai agent state-stores select <store-name>` again or supply `--store` explicitly. Existing remote stores
-and old configuration values are not deleted.
+When an agent's new record is missing, its previously saved selection is imported once from azd UserConfig.
+Existing new records take precedence. Old configuration values are left unchanged, and deleted local state
+is not imported again. Existing remote stores are not deleted by this migration.
 
 A missing selection or inaccessible store produces an error; azd never automatically creates or switches stores.
 

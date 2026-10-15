@@ -787,7 +787,12 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 		log.Printf("cleanupAgentState: invalid State Store target for service %q: %v", serviceName, err)
 		return false
 	}
-	if err := deleteContextValue(ctx, azdClient, stateStoreConfigField, target.agentKey); err != nil {
+	store, err := newAgentStateStoreForClient(azdClient)
+	if err != nil {
+		log.Printf("cleanupAgentState: failed to open agent state: %v", err)
+		return false
+	}
+	if err := store.delete(ctx, target.agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", target.agentKey, err)
 		return false
 	}
@@ -795,21 +800,15 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 }
 
 func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, agentKey string) bool {
+	agentKey = normalizeEndpoint(agentKey)
+	store, err := newAgentStateStoreForClient(azdClient)
+	if err != nil {
+		log.Printf("cleanupAgentState: failed to open agent state: %v", err)
+		return false
+	}
 	var failed bool
-	if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean sessions for %s: %v", agentKey, err)
-		failed = true
-	}
-	if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean conversations for %s: %v", agentKey, err)
-		failed = true
-	}
-	if err := newResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean current Response for %s: %v", agentKey, err)
-		failed = true
-	}
-	if err := newInvocationStateStore(azdClient).Delete(ctx, agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean current Invocation for %s: %v", agentKey, err)
+	if err := store.delete(ctx, agentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean state for %s: %v", agentKey, err)
 		failed = true
 	}
 	// Session keys include the version and /remote suffix. Store selection is
@@ -817,7 +816,7 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 	if versionIndex := strings.LastIndex(agentKey, "/versions/"); versionIndex >= 0 &&
 		strings.HasSuffix(agentKey, "/remote") {
 		selectionKey := agentKey[:versionIndex]
-		if err := deleteContextValue(ctx, azdClient, stateStoreConfigField, selectionKey); err != nil {
+		if err := store.delete(ctx, selectionKey); err != nil {
 			log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", selectionKey, err)
 			failed = true
 		}

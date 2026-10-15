@@ -66,9 +66,22 @@ func newInvokeTestAzdClient(
 	t *testing.T, userConfigServer azdext.UserConfigServiceServer, environmentServers ...azdext.EnvironmentServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
+	return newInvokeTestAzdClientWithProject(t, userConfigServer, nil, environmentServers...)
+}
+
+func newInvokeTestAzdClientWithProject(
+	t *testing.T,
+	userConfigServer azdext.UserConfigServiceServer,
+	projectServer azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+	if projectServer != nil {
+		azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	}
 	if len(environmentServers) > 0 {
 		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
 	}

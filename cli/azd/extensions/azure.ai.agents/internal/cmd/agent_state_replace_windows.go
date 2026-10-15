@@ -3,6 +3,8 @@
 
 //go:build windows
 
+// cspell:ignore MOVEFILE
+
 package cmd
 
 import (

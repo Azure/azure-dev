@@ -101,6 +101,9 @@ func (a *InvokeAction) runInvocationsProtocolOperation(
 
 // classifyInvocationStateReadError adds guidance to saved-state failures.
 func classifyInvocationStateReadError(cause error) error {
+	if exterrors.IsCancellation(cause) {
+		return exterrors.Cancelled("reading current Invocation state cancelled")
+	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidInvocationState,
 		fmt.Sprintf("saved Invocation state could not be read: %v", cause),

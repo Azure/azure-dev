@@ -135,6 +135,9 @@ func (a *InvokeAction) runResponseOperation(
 
 // classifyResponseStateReadError adds guidance to saved-state failures.
 func classifyResponseStateReadError(cause error) error {
+	if exterrors.IsCancellation(cause) {
+		return exterrors.Cancelled("reading current Response state cancelled")
+	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidResponseState,
 		fmt.Sprintf("saved Response state could not be read: %v", cause),

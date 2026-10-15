@@ -35,6 +35,7 @@ func saveAgentStateForTest(t *testing.T, client *azdext.AzdClient, agentKey stri
 	t.Helper()
 	store, err := newAgentStateStoreForClient(client)
 	require.NoError(t, err)
+	store.client = nil
 	record.Version = agentStateSchemaVersion
 	record.AgentKey = agentKey
 	require.NoError(t, store.mutate(t.Context(), agentKey, func(current *agentStateRecord) {

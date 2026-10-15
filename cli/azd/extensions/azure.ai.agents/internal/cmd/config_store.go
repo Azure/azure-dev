@@ -131,20 +131,23 @@ func deleteContextValue(
 // --- Agent Key Construction ---
 
 // normalizeEndpoint canonicalizes an endpoint string for use in agent keys.
-// Removes trailing slashes and lowercases the host portion.
+// Removes URL credentials, query, fragment, and trailing slashes, and lowercases the host.
 func normalizeEndpoint(endpoint string) string {
-	endpoint = strings.TrimRight(endpoint, "/")
+	endpoint, _, _ = strings.Cut(endpoint, "?")
+	endpoint, _, _ = strings.Cut(endpoint, "#")
 	// Strip the scheme (https://, http://) — it's unnecessary noise in the key.
 	if idx := strings.Index(endpoint, "://"); idx != -1 {
 		endpoint = endpoint[idx+3:]
 	}
-	// Lowercase the host portion (before the first path segment).
-	if hostEnd := strings.Index(endpoint, "/"); hostEnd == -1 {
-		endpoint = strings.ToLower(endpoint)
-	} else {
-		endpoint = strings.ToLower(endpoint[:hostEnd]) + endpoint[hostEnd:]
+	host, path, hasPath := strings.Cut(endpoint, "/")
+	if userEnd := strings.LastIndex(host, "@"); userEnd != -1 {
+		host = host[userEnd+1:]
 	}
-	return endpoint
+	host = strings.ToLower(host)
+	if !hasPath {
+		return host
+	}
+	return strings.TrimRight(host+"/"+path, "/")
 }
 
 // buildAgentKey constructs the structured agent key used in extension-owned state.
@@ -205,6 +208,7 @@ func setContextValueSafe(
 		return
 	}
 	if err := setAgentSpecificContextValue(ctx, azdClient, storeField, agentKey, value); err != nil {
-		log.Printf("setContextValueSafe: failed to persist %s for key %q: %v", storeField, agentKey, err)
+		log.Printf("setContextValueSafe: failed to persist %s for key %q: %v",
+			storeField, normalizeEndpoint(agentKey), err)
 	}
 }

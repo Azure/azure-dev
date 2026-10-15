@@ -47,6 +47,7 @@ func (r *agentStateRecord) empty() bool {
 type agentStateStore struct {
 	agentsDir string
 	locksDir  string
+	client    *azdext.AzdClient
 }
 
 var agentStateStoreRootOverrides sync.Map
@@ -60,10 +61,18 @@ func newAgentStateStore() (*agentStateStore, error) {
 }
 
 func newAgentStateStoreForClient(client *azdext.AzdClient) (*agentStateStore, error) {
+	var store *agentStateStore
+	var err error
 	if configDir, ok := agentStateStoreRootOverrides.Load(client); ok {
-		return newAgentStateStoreAt(configDir.(string))
+		store, err = newAgentStateStoreAt(configDir.(string))
+	} else {
+		store, err = newAgentStateStore()
 	}
-	return newAgentStateStore()
+	if err != nil {
+		return nil, err
+	}
+	store.client = client
+	return store, nil
 }
 
 func newAgentStateStoreAt(configDir string) (*agentStateStore, error) {
@@ -73,6 +82,7 @@ func newAgentStateStoreAt(configDir string) (*agentStateStore, error) {
 		locksDir:  filepath.Join(rootDir, "locks"),
 	}
 	for _, dir := range []string{store.agentsDir, store.locksDir} {
+		//nolint:gosec // G703: directories are rooted in the configured azd user-state directory.
 		if err := os.MkdirAll(dir, osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return nil, fmt.Errorf("create agent state directory %q: %w", dir, err)
 		}
@@ -81,7 +91,7 @@ func newAgentStateStoreAt(configDir string) (*agentStateStore, error) {
 }
 
 func agentStateKeyHash(agentKey string) string {
-	sum := sha256.Sum256([]byte(agentKey))
+	sum := sha256.Sum256([]byte(normalizeEndpoint(agentKey)))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -98,6 +108,7 @@ func (s *agentStateStore) withLock(
 	agentKey string,
 	action func(string) error,
 ) error {
+	agentKey = normalizeEndpoint(agentKey)
 	if agentKey == "" {
 		return errors.New("agent state key must not be empty")
 	}
@@ -153,7 +164,7 @@ func validateAgentStateLockFile(path string) error {
 func (s *agentStateStore) load(path, agentKey string) (*agentStateRecord, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return &agentStateRecord{Version: agentStateSchemaVersion, AgentKey: agentKey}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("inspect agent state %q: %w", path, err)
@@ -180,10 +191,11 @@ func (s *agentStateStore) load(path, agentKey string) (*agentStateRecord, error)
 }
 
 func (s *agentStateStore) get(ctx context.Context, agentKey string) (*agentStateRecord, error) {
+	agentKey = normalizeEndpoint(agentKey)
 	var record *agentStateRecord
 	err := s.withLock(ctx, agentKey, func(path string) error {
 		var err error
-		record, err = s.load(path, agentKey)
+		record, err = s.loadOrMigrate(ctx, path, agentKey)
 		return err
 	})
 	if err != nil {
@@ -200,20 +212,36 @@ func (s *agentStateStore) mutate(
 	agentKey string,
 	mutation func(*agentStateRecord),
 ) error {
+	agentKey = normalizeEndpoint(agentKey)
 	return s.withLock(ctx, agentKey, func(path string) error {
-		record, err := s.load(path, agentKey)
+		record, err := s.loadOrMigrate(ctx, path, agentKey)
 		if err != nil {
 			return err
 		}
 		mutation(record)
+		record.AgentKey = agentKey
 		if record.empty() {
-			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("remove empty agent state %q: %w", path, err)
-			}
-			return nil
+			return s.remove(path, agentKey)
 		}
 		return writeAgentState(path, record)
 	})
+}
+
+func (s *agentStateStore) delete(ctx context.Context, agentKey string) error {
+	agentKey = normalizeEndpoint(agentKey)
+	return s.withLock(ctx, agentKey, func(path string) error {
+		return s.remove(path, agentKey)
+	})
+}
+
+func (s *agentStateStore) remove(path, agentKey string) error {
+	if err := s.markLegacyChecked(agentKey); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove agent state %q: %w", path, err)
+	}
+	return nil
 }
 
 func writeAgentState(path string, record *agentStateRecord) error {

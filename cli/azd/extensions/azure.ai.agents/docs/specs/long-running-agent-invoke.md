@@ -118,11 +118,16 @@ Current IDs are stored in extension-owned state under
 }
 ```
 
-This is a breaking change: runtime state previously saved in azd UserConfig or `.foundry-agent.json` is not
-read, migrated, or deleted. Previously saved session, conversation, Response, and Invocation IDs are not
-resumed automatically; supply explicit IDs to access existing remote work. No lifecycle status or event
-cursor is stored. Session and conversation IDs may share the same per-agent record but remain independent
-create-time context. Deployment metadata remains in environment configuration.
+When a record is missing, the extension imports matching runtime state from azd UserConfig, then fills missing
+values from the current project's `.foundry-agent.json`, if available. Existing new records always take
+precedence. Legacy data is left unchanged; a per-key marker prevents repeated imports after local state is
+deleted. Subsequent reads and writes use extension-owned state, not UserConfig.
+
+Agent keys omit URL credentials, query strings, and fragments, so credential changes do not change the lookup
+key or copy credentials into state files. Each record update and record deletion holds a cross-process lock.
+Deletion does not decode the record and can remove corrupt JSON. No lifecycle status or event cursor is stored.
+Session and conversation IDs may share the same per-agent record but remain independent create-time context.
+Deployment metadata remains in environment configuration.
 
 Explicit `--id` with `--agent-endpoint` works without project-backed state. Lifecycle commands must not create sessions or conversations. The current caller must provide the correct authentication and `--user-identity` when required.
 

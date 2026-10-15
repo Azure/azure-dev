@@ -1588,4 +1588,4 @@ dependency requires that registry entry to resolve. Local installation uses
 Release execution requires a registered Azure DevOps pipeline under
 `azure-dev/extensions` with access to the shared release infrastructure;
 a YAML file alone does not register a pipeline.
-The `ext-azure.ai.evaluations` issue label routes extension issues.
+The `ext-evals` issue label routes extension issues.

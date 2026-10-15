@@ -20,20 +20,14 @@ with patch.object(sys, "dont_write_bytecode", True):
 
 
 class BootstrapTests(unittest.TestCase):
-    def test_embedded_does_not_prepare_credentials(self):
-        with patch.object(bootstrap, "set_value") as setter:
-            bootstrap.prepare({"engine": "none"}, {})
-            setter.assert_not_called()
-
-    def test_password_is_created_once(self):
-        settings = {"engine": "mysql", "auth": "password"}
-        with patch.object(bootstrap, "set_value") as setter, patch("builtins.print"):
-            bootstrap.prepare(settings, {})
-            self.assertEqual(setter.call_args.args[0], "SPRING_DATABASE_PASSWORD")
-            self.assertGreaterEqual(len(setter.call_args.args[1]), 32)
-            setter.reset_mock()
-            bootstrap.prepare(settings, {"SPRING_DATABASE_PASSWORD": "existing"})
-            setter.assert_not_called()
+    def test_other_database_modes_are_rejected(self):
+        for engine, auth in (("none", "password"), ("mysql", "password"), ("postgresql", "password")):
+            with self.subTest(engine=engine, auth=auth), patch.object(bootstrap, "set_value") as setter:
+                with self.assertRaisesRegex(RuntimeError, "Unsupported"):
+                    bootstrap.prepare({"engine": engine, "auth": auth}, {})
+                with self.assertRaisesRegex(RuntimeError, "requires PostgreSQL managed identity"):
+                    bootstrap.bootstrap({"engine": engine, "auth": auth}, {})
+                setter.assert_not_called()
 
     def test_identity_prerequisites_and_conflicts(self):
         with tempfile.TemporaryDirectory() as root:
@@ -66,16 +60,15 @@ class BootstrapTests(unittest.TestCase):
             self.assertNotIn("secret", message)
             self.assertIn("azd env failed", message)
 
-    def test_password_preparation_timeout_does_not_disclose_credentials(self):
+    def test_command_timeout_does_not_disclose_credentials(self):
         credential = "sensitive-timeout-value"
         arguments = ["azd", "env", "set", "SPRING_DATABASE_PASSWORD", credential]
         timeout = bootstrap.subprocess.TimeoutExpired(arguments, 120, output=credential, stderr=credential)
         with patch.object(bootstrap.shutil, "which", return_value="azd"), \
                 patch.object(bootstrap.subprocess, "run", side_effect=timeout), \
-                patch.object(bootstrap.secrets, "token_urlsafe", return_value=credential), \
                 patch("builtins.print") as printer:
             try:
-                bootstrap.prepare({"engine": "mysql", "auth": "password"}, {})
+                bootstrap.set_value("SPRING_DATABASE_BOOTSTRAP_DIGEST", credential)
             except RuntimeError as error:
                 message = "".join(traceback.format_exception(error))
                 self.assertNotIn(credential, message)
@@ -84,7 +77,7 @@ class BootstrapTests(unittest.TestCase):
                 self.assertTrue(error.__suppress_context__)
                 self.assertIsNone(error.__cause__)
             else:
-                self.fail("Password preparation must fail when storing the generated credential times out")
+                self.fail("Command execution must fail when storing an environment value times out")
             printer.assert_not_called()
 
     def test_mysql_identity_is_rejected(self):

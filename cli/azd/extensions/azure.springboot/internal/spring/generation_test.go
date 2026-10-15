@@ -86,7 +86,17 @@ func TestGenerateInfrastructure(t *testing.T) {
 			require.Contains(t, bicep.String(), "@onlyIfNotExists()")
 			require.NotContains(t, bicep.String(), "br/public:")
 			require.NotContains(t, bicep.String(), "Microsoft.KeyVault")
-			require.Contains(t, string(plan.Files[".azd-spring/database.py"]), "def prepare")
+			require.NotContains(t, plan.Files, ".azd-spring/database.py")
+			require.NotContains(t, plan.Files, ".azd-spring/database.json")
+			require.NotContains(t, plan.Files, ".azd-spring/requirements.txt")
+			if tt.kind == "" {
+				require.NotContains(t, plan.Files, ".azd-spring/database.ps1")
+				require.NotContains(t, string(plan.Files["azure.yaml"]), "hooks:")
+			} else {
+				require.Contains(t, plan.Files, ".azd-spring/database.ps1")
+				require.Contains(t, string(plan.Files["azure.yaml"]), "run: .azd-spring/database.ps1")
+				require.NotContains(t, string(plan.Files["azure.yaml"]), "python")
+			}
 			docker := string(plan.Files[".azd-spring/Dockerfile"])
 			require.Contains(t, docker, "eclipse-temurin:21-jre")
 			require.Contains(t, docker, "target/inventory-1.0.jar")
@@ -227,6 +237,17 @@ func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
 			require.Contains(t, config.Services, "catalog-app")
 			binding := string(plan.Files[".azd-spring/application-azd.properties"])
 			if tt.auth == "managedIdentity" {
+				require.Contains(t, plan.Files, ".azd-spring/database.py")
+				require.Contains(t, plan.Files, ".azd-spring/database.json")
+				require.Contains(t, plan.Files, ".azd-spring/requirements.txt")
+				require.NotContains(t, plan.Files, ".azd-spring/database.ps1")
+				var settings map[string]string
+				require.NoError(t, json.Unmarshal(plan.Files[".azd-spring/database.json"], &settings))
+				require.Equal(t, "postgresql", settings["engine"])
+				require.Equal(t, "managedIdentity", settings["auth"])
+				require.Equal(t, "catalog", settings["database"])
+				require.Contains(t, string(plan.Files["azure.yaml"]), "python .azd-spring/database.py prepare")
+				require.Contains(t, string(plan.Files["azure.yaml"]), "python .azd-spring/database.py bootstrap")
 				require.Contains(t, binding, "azure.managedIdentityEnabled=true")
 				require.Contains(t, binding, "sslmode=verify-full")
 				require.Contains(t, binding, "spring.datasource.password=\n")

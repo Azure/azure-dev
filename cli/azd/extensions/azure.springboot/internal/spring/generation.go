@@ -33,7 +33,8 @@ var databaseProviders = map[ResourceKind]databaseProvider{
 
 var containerAppName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 
-//go:embed template/infra/*.bicep template/.azd-spring/database.py template/.azd-spring/requirements.txt
+//go:embed template/infra/*.bicep template/.azd-spring/database.ps1
+//go:embed template/.azd-spring/database.py template/.azd-spring/requirements.txt
 var deploymentTemplate embed.FS
 
 // Plan holds generated assets ready for a no-overwrite project write.
@@ -60,11 +61,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 			"start with a letter, end with a letter or number, and contain no consecutive hyphens; " +
 			"choose a Maven artifactId whose normalized name fits these rules including the -app suffix")
 	}
-	hooks := map[string]any{
-		"preprovision": map[string]any{
-			"shell": "pwsh", "run": "python .azd-spring/database.py prepare", "interactive": false,
-		},
-	}
+	hooks := map[string]any{}
 	config := map[string]any{
 		"name":  application.Name,
 		"infra": map[string]string{"provider": "bicep", "path": "infra", "module": "main"},
@@ -74,7 +71,6 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 				"path": ".azd-spring/Dockerfile", "context": ".", "platform": "linux/amd64",
 			},
 		}},
-		"hooks": hooks,
 	}
 	parameters := map[string]any{}
 	// #nosec G101 -- databasePassword is an azd environment substitution, not a hardcoded credential.
@@ -113,8 +109,15 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 				return nil, errors.New("managed identity requires com.azure:azure-identity-extensions " +
 					"as an application compile/runtime dependency; initialization does not modify the POM")
 			}
+			hooks["preprovision"] = map[string]any{
+				"shell": "pwsh", "run": "python .azd-spring/database.py prepare", "interactive": false,
+			}
 			hooks["postprovision"] = map[string]any{
 				"shell": "pwsh", "run": "python .azd-spring/database.py bootstrap", "interactive": false,
+			}
+		} else {
+			hooks["preprovision"] = map[string]any{
+				"shell": "pwsh", "run": ".azd-spring/database.ps1", "interactive": false,
 			}
 		}
 		parameters["databaseEngine"] = map[string]any{"value": string(requirement.Kind)}
@@ -141,6 +144,9 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		} else {
 			fmt.Fprintf(&binding, "spring.datasource.password=${%s_PASSWORD}\n", p)
 		}
+	}
+	if len(hooks) > 0 {
+		config["hooks"] = hooks
 	}
 	data, err := yaml.Marshal(config)
 	if err != nil {
@@ -178,10 +184,6 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("serializing application deployment parameters: %w", err)
 	}
-	settingsData, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("serializing bootstrap settings: %w", err)
-	}
 	docker, err := dockerfile(application)
 	if err != nil {
 		return nil, err
@@ -190,12 +192,18 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"azure.yaml":                             data,
 		"infra/main.parameters.json":             parameterData,
 		"infra/application.parameters.json":      applicationParameterData,
-		".azd-spring/database.json":              settingsData,
 		".azd-spring/Dockerfile":                 []byte(docker),
 		".azd-spring/application-azd.properties": []byte(binding.String()),
 		".azd-spring/Dockerfile.dockerignore": []byte(
 			".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n/" +
 				application.BuildDirectory + "\n"),
+	}
+	if settings["auth"] == "managedIdentity" {
+		settingsData, err := json.MarshalIndent(settings, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("serializing bootstrap settings: %w", err)
+		}
+		files[".azd-spring/database.json"] = settingsData
 	}
 	err = fs.WalkDir(deploymentTemplate, "template", func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -205,6 +213,13 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 			return nil
 		}
 		normalizedPath := strings.TrimPrefix(file, "template/")
+		if normalizedPath == ".azd-spring/database.ps1" {
+			if settings["engine"] == "none" || settings["auth"] != "password" {
+				return nil
+			}
+		} else if strings.HasPrefix(normalizedPath, ".azd-spring/") && settings["auth"] != "managedIdentity" {
+			return nil
+		}
 		content, err := fs.ReadFile(deploymentTemplate, file)
 		if err != nil {
 			return err

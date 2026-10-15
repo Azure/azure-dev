@@ -68,7 +68,7 @@ File-based embedded databases require a persistence policy and are not adopted.
 
 ## Generated files and boundaries
 
-- `azure.yaml`, with one explicitly authored service and standard azd hooks.
+- `azure.yaml`, with one explicitly authored service and database hooks only when needed.
 - `infra/`, copied from one extension-owned, parameterized Bicep template for
   embedded, MySQL/password, PostgreSQL/password, and PostgreSQL/managed identity.
 - `.azd-spring/`, containing a Java-version-aware Dockerfile, Dockerfile-specific
@@ -103,8 +103,13 @@ Runtime containers use explicit TCP Startup, Liveness, and Readiness probes on
 that port. Startup provides approximately four minutes of initialization allowance
 before liveness checks take effect; no Actuator endpoint is required.
 
-Generated projects require PowerShell, Python, and Bicep 0.38.3+.
-PostgreSQL managed identity also requires Azure CLI and the Python packages below.
+Generated projects require Bicep 0.38.3+. Memory mode generates no database hooks
+and needs neither PowerShell nor Python. Password mode uses a PowerShell 7
+preprovision hook; Python is not required.
+Only PostgreSQL managed identity generates the Python prerequisite/bootstrap
+scripts and dependency file; it requires PowerShell 7, Python, Azure CLI, and
+the Python packages below. These hooks run locally or on the CI runner, not
+inside the deployed Spring application.
 
 ### PostgreSQL managed-identity prerequisites
 

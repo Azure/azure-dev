@@ -21,6 +21,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
+Write-Host "Running database password preparation tests..."
+& (Join-Path $PSScriptRoot "internal/spring/database_password_test.ps1")
+if (-not $?) {
+    exit 1
+}
+
+Write-Host ""
 Write-Host "Running database bootstrap tests..."
 python (Join-Path $PSScriptRoot "internal/spring/database_bootstrap_test.py")
 if ($LASTEXITCODE -ne 0) {

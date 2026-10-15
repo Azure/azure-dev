@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
-"""Explicit local preprovision and PostgreSQL data-plane bootstrap."""
+"""Local prerequisites and SQL bootstrap for PostgreSQL managed identity."""
 
 import argparse
 import hashlib
@@ -10,7 +10,6 @@ import ipaddress
 import json
 import os
 from pathlib import Path
-import secrets
 import shutil
 import subprocess
 import uuid
@@ -63,13 +62,6 @@ def bootstrap_sql(env):
 
 
 def prepare(settings, env):
-    if settings["engine"] == "none":
-        return
-    if settings["auth"] == "password":
-        if not env.get("SPRING_DATABASE_PASSWORD"):
-            set_value("SPRING_DATABASE_PASSWORD", secrets.token_urlsafe(32))
-        print("Password prepared in local azd state; do not commit .azure files.")
-        return
     if settings["engine"] != "postgresql" or settings["auth"] != "managedIdentity":
         raise RuntimeError("Unsupported database/authentication combination")
     uuid.UUID(required(env, "SPRING_DATABASE_ADMIN_OID"))

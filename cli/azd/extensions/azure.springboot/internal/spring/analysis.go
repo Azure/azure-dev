@@ -63,7 +63,9 @@ type Application struct {
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 var customDatasource = regexp.MustCompile(
-	`(?s)@Bean.{0,512}\b(?:DataSource|ConnectionFactory)\b|new\s+(?:HikariDataSource|DriverManagerDataSource)\s*\(`)
+	`(?s)@(?:org\.springframework\.context\.annotation\.)?Bean\b(?:\s*\([^()]*\))?` +
+		`(?:[^{};@]|@[\w.$]+(?:\s*\([^()]*\))?)*?\b(?:DataSource|ConnectionFactory)\s+[\w$]+\s*\(` +
+		`|new\s+(?:[\w$]+\.)*(?:HikariDataSource|DriverManagerDataSource)\s*\(`)
 var runtimeActivation = regexp.MustCompile(`\.(?:setAdditionalProfiles|setActiveProfiles|setDefaultProfiles)\s*\(`)
 var javaCommentsAndLiterals = regexp.MustCompile(`(?s)/\*.*?\*/|//[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'`)
 

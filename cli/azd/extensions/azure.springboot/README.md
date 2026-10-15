@@ -75,9 +75,10 @@ hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure nam
 | PostgreSQL JDBC URL | Azure Database for PostgreSQL server and the inferred database |
 
 Hosting uses Azure Container Apps, a container registry, and Log Analytics.
-Gradle, multi-module/custom packaging, custom datasource beans, programmatic
+Gradle, multi-module/custom packaging, custom datasource-producing beans, programmatic
 profile activation, custom configuration locations/imports, and other resource
 types require further analysis and are explicitly rejected when detected.
+Ordinary beans consuming an injected datasource or connection factory are supported.
 File-based embedded databases require a persistence policy and are not adopted.
 
 ## Generated files and boundaries

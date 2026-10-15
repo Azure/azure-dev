@@ -412,6 +412,68 @@ func TestAnalyzePropertiesDocumentSeparators(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDatasourceBeanDeclarations(t *testing.T) {
+	for _, tt := range []struct {
+		name, code string
+		reject     bool
+	}{
+		{name: "injected datasource consumer",
+			code: "@Bean JdbcTemplate template(DataSource source) { return new JdbcTemplate(source); }"},
+		{name: "qualified injected datasource consumer",
+			code: "@Bean JdbcTemplate template(javax.sql.DataSource source) { return new JdbcTemplate(source); }"},
+		{name: "injected connection factory consumer",
+			code: "@Bean DatabaseClient client(ConnectionFactory factory) { return DatabaseClient.create(factory); }"},
+		{name: "annotated consumer", code: `@Bean(name = {"client"})
+@DependsOn({"database", "metrics"})
+JdbcTemplate template(@Qualifier("primary") DataSource source) { return new JdbcTemplate(source); }`},
+		{name: "unrelated datasource reference in body",
+			code: "@Bean Object marker() { Class<?> type = DataSource.class; return type; }"},
+		{name: "unrelated datasource method after bean", code: `@Bean Object marker() { return null; }
+DataSource other() { return externalFactory(); }`},
+		{name: "datasource return type", reject: true,
+			code: "@Bean public DataSource source() { return externalFactory(); }"},
+		{name: "qualified datasource return type", reject: true,
+			code: "@Bean public javax.sql.DataSource source() { return externalFactory(); }"},
+		{name: "connection factory return type", reject: true,
+			code: "@Bean ConnectionFactory factory() { return externalFactory(); }"},
+		{name: "qualified bean annotation", reject: true,
+			code: "@org.springframework.context.annotation.Bean DataSource source() { return externalFactory(); }"},
+		{name: "annotated datasource producer", reject: true, code: `@Bean(name = {"primary", "database"})
+@DependsOn({"metrics"})
+public DataSource source() { return externalFactory(); }`},
+		{name: "consumer followed by datasource producer", reject: true, code: `@Bean
+JdbcTemplate template(DataSource source) { return new JdbcTemplate(source); }
+@Bean DataSource source() { return externalFactory(); }`},
+		{name: "Hikari construction", reject: true, code: "DataSource source = new HikariDataSource();"},
+		{name: "qualified Hikari construction", reject: true,
+			code: "DataSource source = new com.zaxxer.hikari.HikariDataSource();"},
+		{name: "driver manager construction", reject: true,
+			code: "DataSource source = new DriverManagerDataSource();"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/java/example/Config.java", tt.code)
+			analysis, err := AnalyzeProject(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, DeploymentInputs{})
+			require.NoError(t, err)
+			if tt.reject {
+				require.Len(t, analysis.Diagnostics, 1)
+				require.Contains(t, analysis.Diagnostics[0].Message, "custom datasource construction")
+				_, err := analysis.ResolvedApplication()
+				require.Error(t, err)
+				return
+			}
+			require.Empty(t, analysis.Decisions)
+			require.Empty(t, analysis.Diagnostics)
+			application, err := analysis.ResolvedApplication()
+			require.NoError(t, err)
+			_, err = Generate(t.Context(), application)
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestProfileGroupActivationLimits(t *testing.T) {
 	for _, count := range []int{64, 65} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {

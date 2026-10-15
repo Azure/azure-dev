@@ -22,7 +22,6 @@ import (
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
-	"azureaieval/internal/urlsafe"
 
 	"github.com/spf13/cobra"
 )
@@ -45,13 +44,23 @@ var terminalRunStates = map[string]bool{
 // before the gate because the gate's exit code means "the evaluation
 // regressed", and a run that never produced results has not regressed — it did
 // not run. Distinguishing those two is what the separate code is for.
-func runCompleted(run *eval_api.OpenAIEvalRun) error {
+func runCompleted(run *eval_api.OpenAIEvalRun, rows *runOutputSummary) error {
 	if run == nil {
 		return nil
 	}
 	switch strings.ToLower(run.Status) {
 	case "completed", "":
 		return nil
+	}
+	// The line a pipeline logs is often the only one it keeps, so it carries the
+	// reason when the run has one, and the details that name what was rejected.
+	if reason := failureText(runFailureMessage(run)); reason != "" {
+		return messages.RunFinishedWithReason(run.ID, run.Status, failureReasonLine(reason, run.Error))
+	}
+	if rows != nil {
+		if reason := rowFailureReasonLine(rows.rowErrors); reason != "" {
+			return messages.RunFinishedWithReason(run.ID, run.Status, reason)
+		}
 	}
 	return messages.RunFinishedWithStatus(run.ID, run.Status)
 }
@@ -350,12 +359,18 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	final = ec.withPortalLink(ctx, evalID, final)
 	display := runForDisplay(final, evalID, run.ID)
 
+	var summary *runOutputSummary
 	if isJSON(a.cmd) {
-		if err := emitJSON(out, runForJSON(final)); err != nil {
+		projected, err := runForJSON(final)
+		if err != nil {
+			return err
+		}
+		if err := emitJSON(out, projected); err != nil {
 			return err
 		}
 	} else {
-		if err := renderRun(out, display, ec.runOutputSummary(ctx, evalID, display)); err != nil {
+		summary = ec.runOutputSummary(ctx, evalID, display)
+		if err := renderRun(out, display, summary); err != nil {
 			return err
 		}
 	}
@@ -363,7 +378,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	// Last, so that the results are reported whether or not the gate
 	// holds: a pipeline that only learns it failed is worse off than
 	// one that can see by how much.
-	if err := runCompleted(display); err != nil {
+	if err := runCompleted(display, summary); err != nil {
 		return err
 	}
 	return applyGate(a.cmd, threshold, display)
@@ -1369,6 +1384,8 @@ func timestampString(value any) string {
 type runOutputSummary struct {
 	means         map[string]float64
 	conversations *conversationOutputSummary
+	// rowErrors are the distinct reasons evaluators gave for scoring no verdict.
+	rowErrors []rowErrorGroup
 }
 
 // runOutputSummary uses a complete row listing for mean scores and observed
@@ -1395,7 +1412,7 @@ func (ec *evalContext) runOutputSummary(
 		}
 		return nil
 	}
-	summary := &runOutputSummary{means: criteriaMeans(items.Data)}
+	summary := &runOutputSummary{means: criteriaMeans(items.Data), rowErrors: summarizeRowErrors(items.Data)}
 	if isSimulationRun(run) {
 		summary.conversations = summarizeConversationOutput(items.Data)
 	}
@@ -1461,6 +1478,9 @@ func renderRun(
 			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
 			passRateText(rate, available)))
 	}
+	if rows != nil {
+		renderRowErrors(out, rows.rowErrors)
+	}
 
 	var means map[string]float64
 	if rows != nil {
@@ -1498,8 +1518,11 @@ func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
 }
 
 func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
-	if why := runFailureMessage(run); why != "" {
-		fmt.Fprintf(out, "\n%s\n", urlsafe.Text(why))
+	// The same one-line, bounded text every other path prints: a service reason
+	// can carry newlines or an arbitrarily long body.
+	if why := failureText(runFailureMessage(run)); why != "" {
+		fmt.Fprintf(out, "\n%s\n", why)
+		renderFailureDetails(out, run.Error)
 	}
 }
 

@@ -4525,7 +4525,7 @@ func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	// Expansion syntax and embedded quotes are not literal across the supported shells.
+	// Expansion syntax and embedded quotes, including PowerShell smart quotes, are not portable literals.
 	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
@@ -4550,7 +4550,8 @@ func ShellArg(v string) string {
 
 // CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
 func CanInlineShellArg(v string) bool {
-	return !strings.ContainsAny(v, "$`\"%!\\^") && strings.IndexFunc(v, unicode.IsControl) == -1
+	return !strings.ContainsAny(v, "$`\"%!\\^\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") &&
+		strings.IndexFunc(v, unicode.IsControl) == -1
 }
 
 // terminalValue preserves ordinary display text and escapes embedded terminal controls.

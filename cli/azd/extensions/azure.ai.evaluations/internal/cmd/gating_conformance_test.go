@@ -37,12 +37,12 @@ func TestGateBreachUsesItsOwnExitCode(t *testing.T) {
 // that errored rather than completed is an operational failure.
 func TestRunCompletedSeparatesRegressionFromFailureToRun(t *testing.T) {
 	for _, status := range []string{"completed", "Completed", ""} {
-		assert.NoErrorf(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r", Status: status}),
+		assert.NoErrorf(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r", Status: status}, nil),
 			"%q is a run that produced results, so its score decides the outcome", status)
 	}
 
 	for _, status := range []string{"failed", "errored", "canceled"} {
-		err := runCompleted(&eval_api.OpenAIEvalRun{ID: "r1", Status: status})
+		err := runCompleted(&eval_api.OpenAIEvalRun{ID: "r1", Status: status}, nil)
 		require.Errorf(t, err, "%q never produced results, so it did not regress", status)
 		assert.Contains(t, err.Error(), status)
 		assert.Contains(t, err.Error(), "r1")
@@ -129,14 +129,14 @@ func TestAFailedRunIsNotReportedAsAQualityBreach(t *testing.T) {
 		ResultCounts: &eval_api.EvalRunResultCounts{},
 	}
 
-	err := runCompleted(failed)
+	err := runCompleted(failed, nil)
 	require.Error(t, err, "an operational failure has to be reported on its own terms")
 	assert.Contains(t, err.Error(), "failed")
 	assert.NotContains(t, strings.ToLower(err.Error()), "pass rate",
 		"the run never scored anything, so a rate says nothing about it")
 
 	// And the run that did finish is left to the gate, which is what judges it.
-	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "evalrun_2", Status: "completed"}))
+	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "evalrun_2", Status: "completed"}, nil))
 }
 
 // The status check is part of a gate, whether or not the caller waited.

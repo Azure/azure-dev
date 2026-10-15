@@ -324,6 +324,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	if endpoint != "" && !onDisk {
+		if err := p.resolveEnvName(ctx); err != nil {
+			return err
+		}
 		existingResult, synthErr := synthesis.SynthesizeExistingProject(synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
@@ -335,12 +338,17 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if synthErr != nil {
 			return foundrySynthesisError(svcName, synthErr)
 		}
+		if deployments, present, err := p.projectDeployments(ctx); err != nil {
+			return err
+		} else if present {
+			existingResult.Parameters["deployments"] = deployments
+		}
 		if !existingProjectHasMutations(existingResult) {
 			p.brownfieldEndpoint = endpoint
 			p.existingProjectReuseOnly = true
 			p.synthResult = existingResult
 			p.foundryName = projectNameFromEndpoint(endpoint)
-			return p.resolveEnvName(ctx)
+			return nil
 		}
 	}
 	// Resolve the project environment before synthesizing infrastructure inputs.
@@ -1327,11 +1335,26 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 		)
 	}
 
+	parameters := p.armParameters()
+	if deployments, present, err := p.projectDeployments(ctx); err != nil {
+		return nil, err
+	} else if present {
+		parameters["deployments"] = map[string]any{"value": deployments}
+	}
 	return &templateSource{
 		mode:        templateModeEmbedded,
 		armTemplate: p.armTemplate,
-		parameters:  p.armParameters(),
+		parameters:  parameters,
 	}, nil
+}
+
+func (p *FoundryProvisioningProvider) projectDeployments(
+	ctx context.Context,
+) ([]synthesis.Deployment, bool, error) {
+	if p.azdClient == nil {
+		return DecodeProjectDeployments(p.virtualEnv[ProjectDeploymentsEnvKey])
+	}
+	return ReadProjectDeployments(ctx, p.azdClient, p.envName)
 }
 
 // bicepCli lazily constructs a *bicep.Cli using azd-core's download-on-demand

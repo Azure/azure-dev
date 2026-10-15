@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -25,6 +26,125 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type legacyDeploymentPromptServer struct {
+	recordingPromptAiModelServer
+	deployments []*azdext.PromptAiDeploymentRequest
+	failAt      int
+}
+
+func (s *legacyDeploymentPromptServer) PromptAiDeployment(
+	_ context.Context, request *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	s.deployments = append(s.deployments, request)
+	if s.failAt == len(s.deployments) {
+		return nil, errors.New("deployment selection cancelled")
+	}
+	return &azdext.PromptAiDeploymentResponse{Deployment: &azdext.AiModelDeployment{
+		ModelName: request.ModelName, Format: "OpenAI", Version: "env-version",
+		Sku: &azdext.AiModelSku{Name: "Standard"}, Capacity: 2,
+	}}, nil
+}
+
+func TestUpdateLegacyProjectDeploymentsPrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name, value          string
+		noPrompt, wantPrompt bool
+		failAt               int
+	}{
+		{name: "interactive missing", wantPrompt: true},
+		{name: "interactive blank", value: " \t", wantPrompt: true},
+		{name: "no-prompt YAML", noPrompt: true},
+		{name: "set preserves override", value: `[{\"name\":\"env-b\"}]`},
+		{name: "empty skips prompts", value: "[]"},
+		{name: "no-prompt preserves override", noPrompt: true, value: "[]"},
+		{name: "legacy leaves malformed for provider validation", value: "{"},
+		{name: "selection failure is atomic", wantPrompt: true, failAt: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", strconv.FormatBool(test.noPrompt))
+			t.Setenv("AI_PROJECT_DEPLOYMENTS", `[{"name":"process-must-not-win"}]`)
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "env-b"},
+				values: map[string]map[string]string{"env-b": {
+					"AI_PROJECT_DEPLOYMENTS": test.value,
+					"AZURE_SUBSCRIPTION_ID":  "sub-b",
+					"AZURE_LOCATION":         "westus",
+				}},
+			}
+			prompt := &legacyDeploymentPromptServer{failAt: test.failAt}
+			client := newTestAzdClient(t, env, nil, prompt)
+			declarations := []project.Deployment{
+				{Name: "chat", Model: project.DeploymentModel{Name: "yaml-model", Version: "yaml-version"},
+					Sku: project.DeploymentSku{Name: "YamlSku", Capacity: 100}},
+				{Name: "embedding", Model: project.DeploymentModel{Name: "yaml-embedding"}},
+			}
+			service := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{Deployments: declarations})
+			service.Name, service.Host = "agent", AiAgentHost
+			service.AdditionalProperties, service.Config = service.Config, nil
+			services := map[string]*azdext.ServiceConfig{"agent": service}
+			err := updateLegacyProjectDeployments(t.Context(), client, services, "")
+			if test.failAt > 0 {
+				require.Error(t, err)
+				assert.Empty(t, env.setKeys, "do not persist a partial selection")
+				assert.Equal(t, test.value, env.values["env-b"]["AI_PROJECT_DEPLOYMENTS"])
+				return
+			}
+			require.NoError(t, err)
+			if test.wantPrompt {
+				require.Len(t, prompt.requests, 2)
+				require.Len(t, prompt.deployments, 2)
+				assert.Equal(t, "yaml-model", prompt.requests[0].DefaultValue)
+				assert.Equal(t, "yaml-embedding", prompt.requests[1].DefaultValue)
+				for _, request := range prompt.requests {
+					assert.Equal(t, "sub-b", request.AzureContext.Scope.SubscriptionId)
+					assert.Equal(t, "westus", request.AzureContext.Scope.Location)
+					assert.Equal(t, []string{"westus"}, request.Filter.Locations)
+					assert.Empty(t, request.Filter.Capabilities, "do not exclude non-agent models such as embeddings")
+					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
+				}
+				for _, request := range prompt.deployments {
+					assert.Equal(t, []string{"westus"}, request.Options.Locations)
+					assert.Empty(t, request.Options.Versions)
+					assert.Empty(t, request.Options.Skus)
+					assert.Nil(t, request.Options.Capacity)
+					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
+				}
+				value := env.values["env-b"]["AI_PROJECT_DEPLOYMENTS"]
+				assert.Contains(t, value, `\"name\":\"chat\"`)
+				assert.Contains(t, value, `\"name\":\"embedding\"`)
+				assert.Contains(t, value, `\"version\":\"env-version\"`)
+				require.NoError(t, updateLegacyProjectDeployments(t.Context(), client, services, ""))
+				assert.Len(t, prompt.requests, 2)
+			} else if test.value == "" {
+				assert.Empty(t, prompt.requests)
+				expected, err := json.Marshal(declarations)
+				require.NoError(t, err)
+				escaped := strings.ReplaceAll(string(expected), "\\", "\\\\")
+				escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+				assert.Equal(t, escaped, env.values["env-b"]["AI_PROJECT_DEPLOYMENTS"])
+			} else {
+				assert.Empty(t, prompt.requests)
+				assert.Empty(t, env.setKeys)
+				assert.Equal(t, test.value, env.values["env-b"]["AI_PROJECT_DEPLOYMENTS"])
+			}
+		})
+	}
+}
+
+func TestUpdateLegacyProjectDeploymentsSplitNoOp(t *testing.T) {
+	t.Parallel()
+	services := map[string]*azdext.ServiceConfig{
+		"project": {Host: AiProjectHost},
+		"agent": {
+			Host: AiAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"deployments": []any{map[string]any{"name": "ignored"}},
+			}),
+		},
+	}
+	require.NoError(t, updateLegacyProjectDeployments(t.Context(), nil, services, ""))
+}
 
 func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 	t.Parallel()

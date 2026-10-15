@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -17,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-const projectDeploymentsEnvKey = "AI_PROJECT_DEPLOYMENTS"
+const projectDeploymentsEnvKey = provisioning.ProjectDeploymentsEnvKey
 
 type projectServiceConfig struct {
 	Endpoint    string                 `json:"endpoint,omitempty"`
@@ -68,6 +69,34 @@ func projectLifecycleHandler(
 		return fmt.Errorf("current azd environment has no name")
 	}
 
+	envName := current.GetEnvironment().GetName()
+	values, err := currentProjectEnvironment(ctx, azdClient, envName)
+	if err != nil {
+		return err
+	}
+	if _, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey]); err != nil {
+		return err
+	} else if present {
+		return nil
+	}
+	if len(cfg.Deployments) > 0 && !azdext.DetectInteractive().NoPrompt {
+		ejected, err := findEjectedFoundryProjectInfrastructure(args.Project)
+		if err != nil {
+			return err
+		}
+		if ejected == nil {
+			cfg.Deployments, err = provisioning.PromptProjectDeployments(ctx, azdClient, &azdext.AzureContext{
+				Scope: &azdext.AzureScope{
+					SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+					TenantId:       values["AZURE_TENANT_ID"],
+					Location:       values["AZURE_LOCATION"],
+				},
+			}, cfg.Deployments)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	value, err := encodeProjectDeployments(cfg.Deployments)
 	if err != nil {
 		return err
@@ -75,7 +104,7 @@ func projectLifecycleHandler(
 	if _, err := azdClient.Environment().SetValue(
 		ctx,
 		&azdext.SetEnvRequest{
-			EnvName: current.GetEnvironment().GetName(),
+			EnvName: envName,
 			Key:     projectDeploymentsEnvKey,
 			Value:   value,
 		},
@@ -164,14 +193,5 @@ func projectServiceProperties(
 func encodeProjectDeployments(
 	deployments []synthesis.Deployment,
 ) (string, error) {
-	if deployments == nil {
-		deployments = []synthesis.Deployment{}
-	}
-	data, err := json.Marshal(deployments)
-	if err != nil {
-		return "", fmt.Errorf("encoding project deployments: %w", err)
-	}
-
-	escaped := strings.ReplaceAll(string(data), "\\", "\\\\")
-	return strings.ReplaceAll(escaped, "\"", "\\\""), nil
+	return provisioning.EncodeProjectDeployments(deployments)
 }

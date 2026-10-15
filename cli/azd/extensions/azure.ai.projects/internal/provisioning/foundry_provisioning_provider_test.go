@@ -179,6 +179,124 @@ services:
 	}
 }
 
+func TestResolveTemplateEnvironmentDeploymentOverlay(t *testing.T) {
+	yamlDeployment := synthesis.Deployment{Name: "yaml-a"}
+	envDeployment := synthesis.Deployment{
+		Name:  "env-b",
+		Model: synthesis.DeploymentModel{Name: "model-b", Version: "v-b", Format: "OpenAI"},
+		Sku:   synthesis.DeploymentSku{Name: "Standard", Capacity: 5},
+	}
+	encoded, err := EncodeProjectDeployments([]synthesis.Deployment{envDeployment})
+	require.NoError(t, err)
+	for _, test := range []struct {
+		name, value       string
+		onDisk, wantError bool
+		want              []synthesis.Deployment
+	}{
+		{name: "env B wins", value: encoded, want: []synthesis.Deployment{envDeployment}},
+		{name: "raw JSON", value: `[{"name":"env-b"}]`, want: []synthesis.Deployment{{Name: "env-b"}}},
+		{name: "missing keeps YAML", want: []synthesis.Deployment{yamlDeployment}},
+		{name: "blank keeps YAML", value: " \t", want: []synthesis.Deployment{yamlDeployment}},
+		{name: "empty overrides YAML", value: "[]", want: []synthesis.Deployment{}},
+		{name: "malformed fails", value: "{", wantError: true},
+		{name: "non-array fails", value: "null", wantError: true},
+		{name: "on disk user wins", value: encoded, onDisk: true, want: []synthesis.Deployment{{Name: "user"}}},
+		{name: "on disk ignores overlay", value: "{", onDisk: true, want: []synthesis.Deployment{{Name: "user"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(ProjectDeploymentsEnvKey, encoded)
+			env := &scopedProjectDeploymentsEnvServer{
+				resolveEnvStubEnvServer: resolveEnvStubEnvServer{envName: "env-a", get: map[string]string{}},
+				expectedName:            "env-b",
+			}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p := &FoundryProvisioningProvider{
+				azdClient: client, envName: "env-b", armTemplate: map[string]any{},
+				synthResult: &synthesis.Result{Parameters: map[string]any{
+					"deployments": []synthesis.Deployment{yamlDeployment},
+				}},
+			}
+			// The value arrives after synthesis, as when switching environments.
+			env.get[ProjectDeploymentsEnvKey] = test.value
+			if test.onDisk {
+				p.onDiskSource = &templateSource{
+					armTemplate: map[string]any{"parameters": map[string]any{"deployments": map[string]any{}}},
+					parameters:  map[string]any{"deployments": map[string]any{"value": test.want}},
+				}
+			}
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			if test.wantError {
+				require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+				return
+			}
+			require.NoError(t, err)
+			envelope, ok := source.parameters["deployments"].(map[string]any)
+			require.True(t, ok)
+			deployments, ok := envelope["value"].([]synthesis.Deployment)
+			require.True(t, ok)
+			assert.Equal(t, test.want, deployments)
+			assert.Equal(t, []synthesis.Deployment{yamlDeployment}, p.synthResult.Parameters["deployments"])
+		})
+	}
+}
+
+func TestInitializeExistingProjectEffectiveDeployments(t *testing.T) {
+	for _, test := range []struct {
+		name, value                           string
+		yamlDeployments, wantReuse, wantError bool
+	}{
+		{name: "missing without declarations reuses", wantReuse: true},
+		{name: "env deployments prevent reuse", value: `[{"name":"env-b"}]`},
+		{name: "empty env suppresses YAML mutations", value: "[]", yamlDeployments: true, wantReuse: true},
+		{name: "missing retains YAML mutations", yamlDeployments: true},
+		{name: "malformed fails before reuse", value: "{", wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			raw := "services:\n  project:\n    host: azure.ai.project\n    endpoint: " + endpoint + "\n"
+			if test.yamlDeployments {
+				raw += "    deployments:\n      - name: yaml-a\n" +
+					"        model: {name: gpt-4.1, format: OpenAI, version: '2025-04-14'}\n" +
+					"        sku: {name: GlobalStandard, capacity: 1}\n"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0600))
+			env := &resolveEnvStubEnvServer{envName: "env-b", get: map[string]string{
+				ProjectDeploymentsEnvKey: test.value,
+				envKeySubscriptionID:     "00000000-0000-0000-0000-000000000001",
+				envKeyLocation:           "westus",
+				envKeyFoundryRG:          "rg",
+				"AZURE_AI_PROJECT_ID": "/subscriptions/00000000-0000-0000-0000-000000000001/" +
+					"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+				"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+			}}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			provider := &FoundryProvisioningProvider{azdClient: client}
+			err := provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
+			if test.wantError {
+				require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.wantReuse, provider.existingProjectReuseOnly)
+			if !test.wantReuse {
+				source, err := provider.resolveTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				envelope, ok := source.parameters["deployments"].(map[string]any)
+				require.True(t, ok)
+				deployments, ok := envelope["value"].([]synthesis.Deployment)
+				require.True(t, ok)
+				require.Len(t, deployments, 1)
+				if test.value != "" {
+					assert.Equal(t, "env-b", deployments[0].Name)
+				} else {
+					assert.Equal(t, "yaml-a", deployments[0].Name)
+				}
+			}
+		})
+	}
+}
+
 func TestSanitizeFoundryName(t *testing.T) {
 	tests := []struct {
 		in   string

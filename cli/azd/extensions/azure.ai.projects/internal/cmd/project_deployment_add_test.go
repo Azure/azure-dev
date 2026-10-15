@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -148,6 +150,7 @@ type selfInitializingEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	current string
 	values  map[string]string
+	failKey string
 }
 
 func (s *selfInitializingEnvironmentServer) GetCurrent(
@@ -186,6 +189,10 @@ func (s *selfInitializingEnvironmentServer) SetValue(
 	request *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.values[request.GetKey()] = request.GetValue()
+	if s.failKey == request.GetKey() {
+		s.failKey = ""
+		return nil, errors.New("environment write failed after mutation")
+	}
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -341,6 +348,90 @@ func TestEnsureProjectInitializesEmptyDirectory(t *testing.T) {
 		},
 		workflowServer.args[0],
 	)
+}
+
+func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
+	selected := synthesis.Deployment{
+		Name:  "chat",
+		Model: synthesis.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "2025-04-14"},
+		Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+	}
+	other := selected
+	other.Name = "other"
+	existing := selected
+	existing.Model.Name = "env-old"
+	for _, test := range []struct {
+		name          string
+		initial       []synthesis.Deployment
+		yamlUnchanged bool
+		failKey       string
+		malformed     bool
+	}{
+		{name: "seed complete YAML"},
+		{name: "seed unchanged", yamlUnchanged: true},
+		{name: "upsert preserves others", initial: []synthesis.Deployment{other, existing}},
+		{name: "upsert unchanged", initial: []synthesis.Deployment{other, existing}, yamlUnchanged: true},
+		{name: "explicit empty", initial: []synthesis.Deployment{}},
+		{name: "rollback failed overlay write", initial: []synthesis.Deployment{other}, failKey: projectDeploymentsEnvKey},
+		{name: "rollback later failure", initial: []synthesis.Deployment{other}, failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+		{name: "rollback seed", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+		{name: "reject malformed before mutation", malformed: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600))
+			client, projectServer, envServer, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+			projectServer.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+			items := []any{deploymentMap(other)}
+			if test.yamlUnchanged {
+				items = append(items, deploymentMap(selected))
+			}
+			projectServer.services["project"] = map[string]any{"deployments": items}
+			beforeYAML := mustProjectProperties(t, projectServer.services["project"]).AsMap()
+			aiServer.deployment = &azdext.AiModelDeployment{
+				ModelName: selected.Model.Name, Format: selected.Model.Format, Version: selected.Model.Version,
+				Sku: &azdext.AiModelSku{Name: selected.Sku.Name}, Capacity: int32(selected.Sku.Capacity),
+			}
+			if test.initial != nil {
+				encoded, err := provisioning.EncodeProjectDeployments(test.initial)
+				require.NoError(t, err)
+				envServer.values[projectDeploymentsEnvKey] = encoded
+			}
+			if test.malformed {
+				envServer.values[projectDeploymentsEnvKey] = "{"
+			}
+			beforeEnv := maps.Clone(envServer.values)
+			envServer.failKey = test.failKey
+			action := &ProjectDeploymentAddAction{
+				client: client,
+				flags:  &projectDeploymentFlags{model: selected.Model.Name, name: selected.Name, output: "none"},
+				extCtx: &azdext.ExtensionContext{Environment: "test", NoPrompt: true},
+			}
+			err := action.Run(t.Context())
+			if test.failKey != "" || test.malformed {
+				require.Error(t, err)
+				assert.Equal(t, beforeYAML, mustProjectProperties(t, projectServer.services["project"]).AsMap())
+				for key, value := range envServer.values {
+					assert.Equal(t, beforeEnv[key], value, "restore %s", key)
+				}
+				if test.malformed {
+					assert.Zero(t, aiServer.calls)
+				}
+				return
+			}
+			require.NoError(t, err)
+			deployments, present, err := provisioning.DecodeProjectDeployments(envServer.values[projectDeploymentsEnvKey])
+			require.NoError(t, err)
+			require.True(t, present)
+			if test.initial != nil && len(test.initial) == 0 {
+				assert.Equal(t, []synthesis.Deployment{selected}, deployments)
+			} else {
+				assert.Equal(t, []synthesis.Deployment{other, selected}, deployments)
+			}
+		})
+	}
 }
 
 func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {

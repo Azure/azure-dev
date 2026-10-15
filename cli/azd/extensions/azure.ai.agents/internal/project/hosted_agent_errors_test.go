@@ -349,6 +349,7 @@ func (hostedResourceErrorCredential) GetToken(context.Context, policy.TokenReque
 }
 
 func TestHostedAgentResourceErrorsAcrossDeploymentModes(t *testing.T) {
+	t.Setenv("AZURE_LOCATION", "")
 	for _, mode := range []string{"container create", "container update", "code create", "code update"} {
 		t.Run(mode, func(t *testing.T) {
 			body := resourceValidationBody(t, resourceTierErrorMessage, "definition")
@@ -375,8 +376,11 @@ func TestHostedAgentResourceErrorsAcrossDeploymentModes(t *testing.T) {
 					Request:    request,
 				}, nil
 			})
-			provider := &AgentServiceTargetProvider{credential: hostedResourceErrorCredential{}}
 			env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+			provider := &AgentServiceTargetProvider{
+				credential:    hostedResourceErrorCredential{},
+				dependencyEnv: env,
+			}
 			var deployErr error
 			if strings.HasPrefix(mode, "container") {
 				_, deployErr = provider.createAgent(t.Context(), "my-service", hostedResourceRequest("4", "4Gi"), env)
@@ -402,7 +406,7 @@ func TestHostedAgentResourceErrorsAcrossDeploymentModes(t *testing.T) {
 				)
 			}
 			require.Error(t, deployErr)
-			require.Equal(t, 1, writeRequests)
+			require.Equal(t, 1, writeRequests, "deployment returned before sending the expected request: %v", deployErr)
 			require.Contains(t, azdext.ErrorMessage(deployErr), `service "my-service"`)
 			require.Contains(t, azdext.ErrorMessage(deployErr), `CPU="4", memory="4Gi"`)
 			require.Contains(t, azdext.ErrorMessage(deployErr), resourceTierErrorMessage)

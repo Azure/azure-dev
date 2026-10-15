@@ -688,8 +688,71 @@ type TelephonyRepeatabilityOptions struct {
 
 // TelephonyTransferDestination identifies a transfer destination.
 type TelephonyTransferDestination struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
+	Kind     string          `json:"kind"`
+	Value    string          `json:"-"`
+	RawValue json.RawMessage `json:"-"`
+	HasValue bool            `json:"-"`
+}
+
+// UnmarshalJSON decodes known destination values as strings while preserving
+// the unconstrained value of future destination kinds.
+func (d *TelephonyTransferDestination) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Kind  string          `json:"kind"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	d.Kind = wire.Kind
+	d.Value = ""
+	d.RawValue = nil
+	d.HasValue = len(wire.Value) != 0
+	if !d.HasValue {
+		return nil
+	}
+	if isKnownTelephonyTransferDestinationKind(wire.Kind) {
+		if string(wire.Value) == "null" {
+			return fmt.Errorf("known telephony transfer destination value must be a string")
+		}
+		if err := json.Unmarshal(wire.Value, &d.Value); err != nil {
+			return fmt.Errorf("known telephony transfer destination value must be a string: %w", err)
+		}
+		return nil
+	}
+	d.RawValue = append(d.RawValue, wire.Value...)
+	if wire.Value[0] == '"' {
+		_ = json.Unmarshal(wire.Value, &d.Value)
+	}
+	return nil
+}
+
+// MarshalJSON emits typed string values for known kinds and preserves the raw
+// value for future kinds.
+func (d TelephonyTransferDestination) MarshalJSON() ([]byte, error) {
+	value := d.RawValue
+	if isKnownTelephonyTransferDestinationKind(d.Kind) || len(value) == 0 {
+		if !isKnownTelephonyTransferDestinationKind(d.Kind) && !d.HasValue && d.Value == "" {
+			return json.Marshal(struct {
+				Kind string `json:"kind"`
+			}{Kind: d.Kind})
+		}
+		if !isKnownTelephonyTransferDestinationKind(d.Kind) && d.HasValue && len(value) == 0 {
+			value = json.RawMessage("null")
+		} else {
+			value, _ = json.Marshal(d.Value)
+		}
+	}
+	return json.Marshal(struct {
+		Kind  string          `json:"kind"`
+		Value json.RawMessage `json:"value"`
+	}{Kind: d.Kind, Value: value})
+}
+
+func isKnownTelephonyTransferDestinationKind(kind string) bool {
+	return kind == TelephonyTransferDestinationPSTN ||
+		kind == TelephonyTransferDestinationTeams ||
+		kind == TelephonyTransferDestinationSIP
 }
 
 const (

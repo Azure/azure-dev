@@ -6,6 +6,7 @@ package agent_api
 import (
 	"azureaiagent/internal/pkg/recordproxy"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -915,6 +916,81 @@ func TestGetTelephonyTransferTargets_AllowsUnknownKindWithoutValue(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, "future_kind", targets.TransferTargets[0].Destination.Kind)
 	require.Empty(t, targets.TransferTargets[0].Destination.Value)
+}
+
+func TestGetTelephonyTransferTargets_PreservesUnknownStructuredValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "string", value: `"future-value"`},
+		{name: "object", value: `{"agent_name":"transfer-agent"}`},
+		{name: "array", value: `["one",{"two":2}]`},
+		{name: "null", value: `null`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := fmt.Sprintf(`{
+				"transfer_targets":[{
+					"name":"future","description":"Future destination",
+					"destination":{"kind":"future_kind","value":%s}
+				}]}`, tt.value)
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				return telephonyResponse(req, http.StatusOK, response,
+					http.Header{"ETag": {`"etag"`}}), nil
+			})
+
+			targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+			require.NoError(t, err)
+			require.JSONEq(t, tt.value, string(targets.TransferTargets[0].Destination.RawValue))
+			roundTrip, err := json.Marshal(targets.TransferTargets[0].Destination)
+			require.NoError(t, err)
+			require.JSONEq(t,
+				fmt.Sprintf(`{"kind":"future_kind","value":%s}`, tt.value), string(roundTrip))
+		})
+	}
+}
+
+func TestUnknownTransferDestination_PreservesOmittedValue(t *testing.T) {
+	var destination TelephonyTransferDestination
+	require.NoError(t, json.Unmarshal([]byte(`{"kind":"future_kind"}`), &destination))
+	require.False(t, destination.HasValue)
+	encoded, err := json.Marshal(destination)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"kind":"future_kind"}`, string(encoded))
+}
+
+func TestKnownTransferDestinationRejectsStructuredValue(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[{
+				"name":"pstn","description":"PSTN",
+				"destination":{"kind":"pstn","value":{"phone":"+14255550123"}}
+			}]}`, http.Header{"ETag": {`"etag"`}}), nil
+	})
+	_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+	require.ErrorContains(t, err, "must be a string")
+}
+
+func TestKnownTransferDestinationRejectsNullValue(t *testing.T) {
+	var destination TelephonyTransferDestination
+	err := json.Unmarshal([]byte(`{"kind":"sip","value":null}`), &destination)
+	require.ErrorContains(t, err, "must be a string")
+}
+
+func TestTransferDestinationRepeatedUnmarshalClearsPreviousValue(t *testing.T) {
+	var destination TelephonyTransferDestination
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"kind":"future_kind","value":{"agent_name":"transfer-agent"}}`),
+		&destination,
+	))
+	require.NotEmpty(t, destination.RawValue)
+	require.True(t, destination.HasValue)
+
+	require.NoError(t, json.Unmarshal([]byte(`{"kind":"future_kind"}`), &destination))
+	require.Empty(t, destination.RawValue)
+	require.Empty(t, destination.Value)
+	require.False(t, destination.HasValue)
 }
 
 func TestTelephonyTransferTargets_RequireDestinationKindInResponses(t *testing.T) {

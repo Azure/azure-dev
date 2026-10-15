@@ -447,6 +447,59 @@ func TestUpdateGATelephonyBinding_ExplicitNullClearsNullableFields(t *testing.T)
 	require.NoError(t, err)
 }
 
+func TestUpdateGATelephonyBinding_AllowsEmptyPhoneNumber(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		requireJSONBody(t, req, `{"phone_number":""}`)
+		return telephonyResponse(req, http.StatusOK, `{
+			"id":"binding","provider":"teams_phone_extensibility","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call",
+			"resource_account_object_id":"00000000-0000-0000-0000-000000000001"}`,
+			http.Header{"ETag": {`"new-etag"`}}), nil
+	})
+
+	_, err := client.UpdateGATelephonyBinding(t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{
+		PhoneNumber: NewNullableString(""),
+	}, `"old-etag"`)
+	require.NoError(t, err)
+}
+
+func TestTelephonyBindingLabelsEnforceMaxLength(t *testing.T) {
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		t.Fatal("unexpected HTTP request")
+		return nil, nil
+	})
+	label := strings.Repeat("界", 129)
+	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "+14255550123", Label: label,
+	}, testRepeatability)
+	require.ErrorContains(t, err, "128")
+	_, err = client.UpdateGATelephonyBinding(t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{
+		Label: NewNullableString(label),
+	}, `"etag"`)
+	require.ErrorContains(t, err, "128")
+	require.Zero(t, transport.requests)
+}
+
+func TestTelephonyBindingSchemaBoundaries(t *testing.T) {
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusCreated, `{
+			"id":"binding","provider":"twilio","connection_name":"conn","status":"active",
+			"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`,
+			http.Header{"ETag": {`"etag"`}}), nil
+	})
+
+	_, err := client.CreateGATelephonyBinding(t.Context(), "agent", &CreateTwilioTelephonyBindingRequest{
+		ConnectionName: "conn", PhoneNumber: "+14255550123", Label: strings.Repeat("界", 128),
+	}, testRepeatability)
+	require.NoError(t, err)
+
+	_, err = client.UpdateGATelephonyBinding(t.Context(), "agent", "binding", UpdateTelephonyBindingRequest{
+		PhoneNumber: NewNullableString(strings.Repeat("界", 65)),
+	}, `"etag"`)
+	require.ErrorContains(t, err, "64")
+	require.Equal(t, 1, transport.requests)
+}
+
 func TestDeleteGATelephonyBinding_Requires204AndSendsIfMatch(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
@@ -670,7 +723,7 @@ func TestReplaceTelephonyTransferTargets_AcceptsStandardURIFormatValues(t *testi
 		"sip:example.test",
 		"sip:user@[2001:db8::1];maddr=[2001:db8::2]",
 		"sip:user@example.test:+5060",
-		"https://example.test/transfer#target",
+		"sips:user@example.test",
 	}
 	for _, value := range values {
 		t.Run(value, func(t *testing.T) {
@@ -694,6 +747,20 @@ func TestReplaceTelephonyTransferTargets_AcceptsStandardURIFormatValues(t *testi
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestGetTelephonyTransferTargets_PreservesUnknownDestinationKind(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[{
+				"name":"future","description":"Future destination",
+				"destination":{"kind":"future_kind","value":"future-value"}
+			}]}`, http.Header{"ETag": {`"etag"`}}), nil
+	})
+
+	targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+	require.NoError(t, err)
+	require.Equal(t, "future_kind", targets.TransferTargets[0].Destination.Kind)
 }
 
 func TestTelephonyStringLimitsCountUnicodeCodePoints(t *testing.T) {
@@ -811,11 +878,6 @@ func TestGATelephonyOperations_RejectInvalidSemanticInputs(t *testing.T) {
 		ConnectionName: &empty,
 	}, `"etag"`)
 	require.ErrorContains(t, err, "connection name")
-	_, err = client.UpdateGATelephonyBinding(ctx, "agent", "binding", UpdateTelephonyBindingRequest{
-		PhoneNumber: NewNullableString(""),
-	}, `"etag"`)
-	require.ErrorContains(t, err, "phone number")
-
 	base := TelephonyTransferTarget{
 		Name: "support", Description: "Support desk",
 		Destination: TelephonyTransferDestination{
@@ -831,6 +893,28 @@ func TestGATelephonyOperations_RejectInvalidSemanticInputs(t *testing.T) {
 		"relative URI": {{
 			Name: "sip", Description: "SIP",
 			Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationSIP, Value: "relative/path"},
+		}},
+		"SIP with space": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user name@example.test",
+			},
+		}},
+		"SIP with malformed escape": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user%zz@example.test",
+			},
+		}},
+		"SIP with truncated escape": {{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user%@example.test",
+			},
+		}},
+		"unknown write kind": {{
+			Name: "future", Description: "Future",
+			Destination: TelephonyTransferDestination{Kind: "future_kind", Value: "future-value"},
 		}},
 		"invalid UTF-8 Teams": {{
 			Name: "teams", Description: "Teams",
@@ -979,8 +1063,9 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 				"incoming_call_url":"https://example.test/call","phone_number":"+14255550123","etag":"\"etag\""}],
 				"has_more":false}`, nil), nil
 		})
-		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
-		require.ErrorContains(t, err, "invalid status")
+		page, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "inactive", page.Data[0].Status)
 	})
 
 	t.Run("missing status rejected outside list", func(t *testing.T) {
@@ -1000,8 +1085,9 @@ func TestGATelephonyOperations_ResponseFailures(t *testing.T) {
 				"data":[{"id":"binding","provider":"sip","connection_name":"conn","status":"active",
 				"incoming_call_url":"https://example.test/call","etag":"\"etag\""}],"has_more":false}`, nil), nil
 		})
-		_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
-		require.ErrorContains(t, err, "unsupported provider")
+		page, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "sip", page.Data[0].Provider)
 	})
 
 	for name, body := range map[string]string{
@@ -1054,7 +1140,7 @@ func TestTelephonyWrites_UnknownOutcomeAfterSuccessfulStatus(t *testing.T) {
 			"incoming_call_url":"https://example.test/call","phone_number":"+14255550123"}`},
 		{name: "invalid response", body: `{
 			"id":"binding","provider":"sip","connection_name":"conn","status":"active",
-			"incoming_call_url":"https://example.test/call"}`, etag: `"etag"`},
+			"incoming_call_url":"not-a-url"}`, etag: `"etag"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

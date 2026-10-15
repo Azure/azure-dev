@@ -152,8 +152,8 @@ func (c *AgentClient) CreateGATelephonyBinding(
 		if !telephonyPhoneNumberPattern.MatchString(typed.PhoneNumber) {
 			return nil, fmt.Errorf("Twilio phone number must be a valid E.164 number")
 		}
-		if !utf8.ValidString(typed.Label) {
-			return nil, fmt.Errorf("label must be valid UTF-8")
+		if err := validateTelephonyLabel(typed.Label); err != nil {
+			return nil, err
 		}
 	case *CreateTeamsPhoneTelephonyBindingRequest:
 		if typed.ConnectionName == "" || typed.ResourceAccountObjectID == "" {
@@ -168,8 +168,11 @@ func (c *AgentClient) CreateGATelephonyBinding(
 		if utf8.RuneCountInString(typed.PhoneNumber) > 64 {
 			return nil, fmt.Errorf("Teams display phone number cannot exceed 64 characters")
 		}
-		if !utf8.ValidString(typed.PhoneNumber) || !utf8.ValidString(typed.Label) {
-			return nil, fmt.Errorf("Teams phone number and label must be valid UTF-8")
+		if !utf8.ValidString(typed.PhoneNumber) {
+			return nil, fmt.Errorf("Teams phone number must be valid UTF-8")
+		}
+		if err := validateTelephonyLabel(typed.Label); err != nil {
+			return nil, err
 		}
 	}
 	if repeatability.RequestID == "" {
@@ -225,16 +228,18 @@ func (c *AgentClient) UpdateGATelephonyBinding(
 			return nil, err
 		}
 	}
-	if request.Label != nil && request.Label.Value != nil && !utf8.ValidString(*request.Label.Value) {
-		return nil, fmt.Errorf("label must be valid UTF-8")
+	if request.Label != nil && request.Label.Value != nil {
+		if err := validateTelephonyLabel(*request.Label.Value); err != nil {
+			return nil, err
+		}
 	}
 	if request.PhoneNumber != nil && request.PhoneNumber.Value != nil {
 		value := *request.PhoneNumber.Value
 		if !utf8.ValidString(value) {
 			return nil, fmt.Errorf("phone number must be valid UTF-8")
 		}
-		if value == "" || utf8.RuneCountInString(value) > 64 {
-			return nil, fmt.Errorf("phone number must be between 1 and 64 characters")
+		if utf8.RuneCountInString(value) > 64 {
+			return nil, fmt.Errorf("phone number cannot exceed 64 characters")
 		}
 	}
 	var binding GATelephonyBinding
@@ -291,7 +296,7 @@ func (c *AgentClient) GetTelephonyTransferTargets(
 	if targets.ETag == "" {
 		return nil, fmt.Errorf("telephony response is missing required ETag")
 	}
-	if err := validateTelephonyTransferTargets(&targets, "response"); err != nil {
+	if err := validateTelephonyTransferTargets(&targets, "response", false); err != nil {
 		return nil, err
 	}
 	return &targets, nil
@@ -307,7 +312,7 @@ func (c *AgentClient) ReplaceTelephonyTransferTargets(
 	if ifMatch == "" {
 		return nil, fmt.Errorf("If-Match is required")
 	}
-	if err := validateTelephonyTransferTargets(&request, "request"); err != nil {
+	if err := validateTelephonyTransferTargets(&request, "request", true); err != nil {
 		return nil, err
 	}
 	request.ETag = ""
@@ -322,7 +327,7 @@ func (c *AgentClient) ReplaceTelephonyTransferTargets(
 	if targets.ETag == "" {
 		return nil, telephonyWriteOutcomeUnknown(fmt.Errorf("telephony response is missing required ETag"))
 	}
-	if err := validateTelephonyTransferTargets(&targets, "response"); err != nil {
+	if err := validateTelephonyTransferTargets(&targets, "response", false); err != nil {
 		return nil, telephonyWriteOutcomeUnknown(err)
 	}
 	return &targets, nil
@@ -550,11 +555,6 @@ func validateTelephonyBinding(binding *GATelephonyBinding, requireETag bool) err
 	if binding.Status == "" {
 		return fmt.Errorf("telephony response is missing required status")
 	}
-	if binding.Status != "" &&
-		binding.Status != TelephonyBindingStatusActive &&
-		binding.Status != TelephonyBindingStatusSuspended {
-		return fmt.Errorf("telephony response contains an invalid status")
-	}
 	if !isHTTPURL(binding.IncomingCallURL) {
 		return fmt.Errorf("telephony response contains invalid incoming_call_url")
 	}
@@ -573,8 +573,6 @@ func validateTelephonyBinding(binding *GATelephonyBinding, requireETag bool) err
 		if _, err := uuid.Parse(binding.ResourceAccountObjectID); err != nil {
 			return fmt.Errorf("Teams telephony response contains invalid resource_account_object_id")
 		}
-	default:
-		return fmt.Errorf("telephony response contains an unsupported provider")
 	}
 	return nil
 }
@@ -583,7 +581,11 @@ func telephonyWriteOutcomeUnknown(err error) error {
 	return &TelephonyWriteOutcomeUnknownError{Err: err}
 }
 
-func validateTelephonyTransferTargets(targets *TelephonyTransferTargets, source string) error {
+func validateTelephonyTransferTargets(
+	targets *TelephonyTransferTargets,
+	source string,
+	strictKinds bool,
+) error {
 	if targets.TransferTargets == nil {
 		return fmt.Errorf("telephony %s is missing required transfer_targets", source)
 	}
@@ -622,11 +624,17 @@ func validateTelephonyTransferTargets(targets *TelephonyTransferTargets, source 
 				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is too long", source, i)
 			}
 		case TelephonyTransferDestinationSIP:
-			if !isURI(target.Destination.Value) {
-				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid URI", source, i)
+			if !isSIPUri(target.Destination.Value) {
+				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid SIP URI", source, i)
 			}
 		default:
-			return fmt.Errorf("invalid telephony %s transfer target at index %d: unsupported destination kind", source, i)
+			if strictKinds {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: unsupported destination kind",
+					source,
+					i,
+				)
+			}
 		}
 	}
 	return nil
@@ -642,6 +650,16 @@ func validateConnectionName(value string) error {
 	return nil
 }
 
+func validateTelephonyLabel(value string) error {
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("label must be valid UTF-8")
+	}
+	if utf8.RuneCountInString(value) > 128 {
+		return fmt.Errorf("label cannot exceed 128 characters")
+	}
+	return nil
+}
+
 func isHTTPURL(value string) bool {
 	parsed, err := url.ParseRequestURI(value)
 	return err == nil &&
@@ -649,12 +667,38 @@ func isHTTPURL(value string) bool {
 		parsed.Host != ""
 }
 
-func isURI(value string) bool {
+func isSIPUri(value string) bool {
 	if !utf8.ValidString(value) {
 		return false
 	}
+	if strings.ContainsAny(value, " \t\r\n") || hasMalformedPercentEscape(value) {
+		return false
+	}
 	parsed, err := url.ParseRequestURI(value)
-	return err == nil && parsed.Scheme != ""
+	if err != nil || parsed == nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return scheme == "sip" || scheme == "sips"
+}
+
+func hasMalformedPercentEscape(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] != '%' {
+			continue
+		}
+		if i+2 >= len(value) || !isHex(value[i+1]) || !isHex(value[i+2]) {
+			return true
+		}
+		i += 2
+	}
+	return false
+}
+
+func isHex(value byte) bool {
+	return value >= '0' && value <= '9' ||
+		value >= 'a' && value <= 'f' ||
+		value >= 'A' && value <= 'F'
 }
 
 func isUnknownWriteStatus(status int) bool {

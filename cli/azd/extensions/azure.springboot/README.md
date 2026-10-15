@@ -94,8 +94,10 @@ bindings use template-owned Container Apps secret references; literal credential
 are not copied from source URLs.
 Existing configuration files and packaged resources may still contain credentials;
 review them before building or publishing an image.
-Existing `azure.yaml`, `infra/`, `.azd-spring/`, or root Dockerfiles are not adopted
-or overwritten. Development Compose files are left alone.
+Existing `azure.yaml`, `infra/`, `.azd-spring/`, root Dockerfiles, or `.dockerignore`
+files are not adopted or overwritten. Dockerfile-specific ignore rules would replace
+root exclusions, so initialization rejects them before Maven inspection.
+Development Compose files are left alone.
 
 **Development defaults:** SQL authentication uses generated administrator
 credentials and the template's firewall rules allow all public IP addresses.

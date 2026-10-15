@@ -185,11 +185,17 @@ probes: placeholder ? [] : [
 }
 
 func TestDestinationOwnership(t *testing.T) {
-	for _, name := range []string{"azure.yaml", "infra", ".azd-spring", "Dockerfile"} {
+	for _, name := range []string{"azure.yaml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
 		t.Run(name, func(t *testing.T) {
 			directory := t.TempDir()
 			writeFixture(t, directory, name, "user-owned")
 			require.ErrorContains(t, CheckDestination(directory), "already exists")
+			plan := &Plan{Files: map[string][]byte{"azure.yaml": []byte("generated")}}
+			require.ErrorContains(t, plan.Write(t.Context(), directory), "already exists")
+			if name != "azure.yaml" {
+				_, err := os.Stat(filepath.Join(directory, "azure.yaml"))
+				require.ErrorIs(t, err, fs.ErrNotExist)
+			}
 			data, err := fs.ReadFile(os.DirFS(directory), name)
 			require.NoError(t, err)
 			require.Equal(t, "user-owned", string(data))

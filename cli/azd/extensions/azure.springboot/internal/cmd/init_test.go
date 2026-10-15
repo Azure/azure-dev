@@ -219,6 +219,23 @@ func TestInitDeclinesTrustBeforeMaven(t *testing.T) {
 	require.True(t, prompts.closed)
 }
 
+func TestInitRejectsExistingDockerIgnoreBeforeMaven(t *testing.T) {
+	command, resolver, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("existing deployment files must be rejected before trust prompts")
+		return nil, errors.New("unavailable")
+	})
+	const content = "private-config/\n"
+	require.NoError(t, os.WriteFile(".dockerignore", []byte(content), 0o600))
+	command.SetArgs([]string{"init"})
+	require.ErrorContains(t, command.ExecuteContext(t.Context()), ".dockerignore already exists")
+	require.Zero(t, resolver.calls)
+	data, err := os.ReadFile(".dockerignore")
+	require.NoError(t, err)
+	require.Equal(t, content, string(data))
+	_, err = os.Stat("azure.yaml")
+	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
 func TestInitDecisionCancellation(t *testing.T) {
 	prompts := &fakePrompter{err: context.Canceled}
 	command, _, _ := fixtureCommand(t, "profile-choice", func() (initPrompter, error) {

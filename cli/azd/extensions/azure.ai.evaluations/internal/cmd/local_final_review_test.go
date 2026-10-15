@@ -274,6 +274,11 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 	assert.False(t, changed)
 	assert.Equal(t, first, second)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
+		[]byte("{\"query\":\"second\",\"extra\":\"unmapped column\"}\n"), 0o600))
+	unmapped, changed := run(1)
+	assert.False(t, changed, "unmapped extra columns do not change the immutable request")
+	assert.Equal(t, first, unmapped)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "local rows.jsonl"),
 		[]byte("{\"query\":\"second\",\"response\":\"now available\"}\n"), 0o600))
 	third, changed := run(1)
 	assert.True(t, changed)
@@ -300,7 +305,7 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 // next deploy, forking that eval's run history.
 func TestLocalRequestBaselineIsScopedAcrossConfigurations(t *testing.T) {
 	dirA := localSourceConfig(t, "{\"query\":\"first\"}\n", 1)
-	dirB := localSourceConfig(t, "{\"query\":\"second\",\"extra\":\"now available\"}\n", 1)
+	dirB := localSourceConfig(t, "{\"query\":\"second\",\"response\":\"now available\"}\n", 1)
 	cfgA, err := project.OpenEvalConfig(dirA)
 	require.NoError(t, err)
 	cfgA.Evals[0].Evaluators[0].DataMapping = nil
@@ -358,7 +363,7 @@ func TestLocalRequestBaselineIsScopedAcrossConfigurations(t *testing.T) {
 			Name: "builtin.relevance", Definition: &eval_api.EvaluatorContract{DataSchema: &eval_api.JSONSchema{
 				Type: "object", Required: []string{"query"},
 				Properties: map[string]any{
-					"query": map[string]any{"type": "string"}, "extra": map[string]any{"type": "string"},
+					"query": map[string]any{"type": "string"}, "response": map[string]any{"type": "string"},
 				},
 			}},
 		}}

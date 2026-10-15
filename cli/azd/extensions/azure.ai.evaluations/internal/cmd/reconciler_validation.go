@@ -219,7 +219,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				}
 			}
 			key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
-			if schemas[key] != nil {
+			if readableContract(schemas[key]) {
 				continue
 			}
 			if group.IsLocalSource() {

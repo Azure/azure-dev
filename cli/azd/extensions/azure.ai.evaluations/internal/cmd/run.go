@@ -242,16 +242,15 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	if err != nil {
 		return err
 	}
-
 	if ref.Declared() {
 		if err := ec.checkDatasetRegistered(ctx, ref.Config, group, configPath); err != nil {
 			return err
 		}
 	}
-
 	var dataSource *eval_api.EvalRunDataSource
 	var datasetVersion string
-	// A bare-ID rerun retains its source attribution as well as its level.
+	// A bare-ID rerun repeats both the source and the attribution needed to
+	// validate it on subsequent reruns.
 	metadata := map[string]string{}
 	switch {
 	case group == nil:
@@ -259,15 +258,25 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	case group.IsLocalSource():
 		dataSource, err = ec.localRunDataSource(ctx, group, configPath, maxSamples, evalID)
 	default:
-		dataSource, datasetVersion, err = ec.buildRunDataSource(
-			ctx, group, configPath, maxSamples)
+		dataSource, datasetVersion, err = ec.buildRunDataSource(ctx, group, configPath, maxSamples)
 	}
 	if err != nil {
 		return err
 	}
 
-	if err := ec.validateResponsesRun(ctx, evalID, dataSource, ref.Declared()); err != nil {
-		return err
+	if ref.Eval == nil || !ref.Eval.IsLocalSource() {
+		// A bare-ID rerun carries no declaration of its own, so the remote
+		// eval's actual schema is the only contract available. A declared
+		// eval is checked too: its id can come from the service or from
+		// state recorded before scoping, so a plain dataset declaration may
+		// resolve to an existing responses or traces eval, and submitting a
+		// dataset source to it would be rejected late or score the wrong
+		// thing. The check reads the declaration, not the data source a
+		// dataset override may have reconstructed. A local Source already got
+		// a full item_schema check from localRunValidator's own GetOpenAIEval.
+		if err := ec.validateResponsesRun(ctx, evalID, dataSource, ref.Declared()); err != nil {
+			return err
+		}
 	}
 
 	// Local, so a default name is derived per invocation rather than

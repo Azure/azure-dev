@@ -426,7 +426,10 @@ Run metadata records that same resolved version.
 
 Registered versions cannot be sampled by this run API. A positive `maxSamples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
-rows. Remove the cap, or publish and select a smaller dataset.
+rows. Remove the cap, pass `--max-samples 0` to override a configured cap on an
+ordinary dataset eval, or publish and select a smaller dataset. The CLI does not
+publish temporary subset datasets automatically. A simulation declaration must
+not contain a positive `maxSamples:` cap, even when the flag is zero.
 
 For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
 clears its configured cap. Trace/response sources and reruns selected by a bare
@@ -435,10 +438,28 @@ silently ignoring it. Omit the flag to repeat a previous run's source; use
 `source.maxTraces` to limit a declared trace source. Simulation declarations
 with a positive configured cap remain invalid even when the flag is zero.
 
-A local dataset file with no registered version runs inline and supports a cap,
-once a complete empty version listing (or a not-found response) and not-found
-first-version probes confirm that no version exists. Permissions, transient
-failures, and malformed listings fail the run instead of selecting local data.
+Genuinely unregistered local files still run inline and support a cap, but only
+after a typed not-found version-list response and not-found first-version probes
+confirm absence. A successful empty listing remains indeterminate when those
+probes find nothing: later registered versions may exist even if early versions
+were deleted. The run fails instead of selecting local data; retry after the
+registry catches up or declare a known dataset version. Permissions, transient
+failures, and malformed listings also fail the run without a local fallback.
+
+Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
+`--max-samples` flags; use `source.maxTraces` for trace limits or select
+`source.responseIds` explicitly. Reruns selected by eval ID also reject an
+explicit `--max-samples`, including zero, because they repeat the previous source.
+
+Reruns repeat the stored registered `file_id`. If the stored source contains inline
+rows attributed to a registered dataset, start the declared eval by name instead:
+replacing those possibly capped rows with a whole version would change what gets
+scored.
+
+The JSON handoff from `run start --no-wait -o json` retains the submitted dataset
+name and registered version even when the create response omits that metadata.
+Local unregistered runs do not invent a version, and anonymous reruns remain
+unattributed.
 
 Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
 `--max-samples` flags; use `source.maxTraces` for trace limits or select
@@ -937,6 +958,9 @@ that the evaluator is absent. Missing or malformed list data and failed
 continuation pages remain errors. Unrelated invalid evals do not block this targeted
 command; `azd up` validates the entire evaluation service before publishing any
 of its dependencies. Validation does not write private reconciliation state.
+Creating or resolving a declared eval also stops if the project-root lookup fails,
+rather than using unqualified identity keys that may belong to another configuration.
+Standalone invocations with no project remain supported.
 The target-input check for a local dataset invoking an agent or model requires
 `query` in at least one row, using the union of row fields. This is separate from
 required evaluator inputs and explicit item bindings, whose columns must occur

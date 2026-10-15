@@ -177,10 +177,13 @@ func TestExplicitLocalRunInheritsCatalogPin(t *testing.T) {
 	_, err = startLocalSource(t, ec, dir, "local-quality", nil)
 	require.NoError(t, err)
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 4)
+	require.Len(t, recorded, 3, "localRunValidator already reads the stored schema")
 	assert.Equal(t, "/evaluators/custom.valid/versions/7", recorded[0].path)
-	assert.Equal(t, http.MethodPost, recorded[3].method)
-	assert.Contains(t, string(recorded[3].body), `"count":9007199254740993`)
+	assert.Equal(t, http.MethodGet, recorded[1].method)
+	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[1].path)
+	assert.Equal(t, http.MethodPost, recorded[2].method)
+	assert.Equal(t, "/openai/v1/evals/eval_local/runs", recorded[2].path)
+	assert.Contains(t, string(recorded[2].body), `"count":9007199254740993`)
 }
 
 func TestExplicitLocalCatalogPinPreflightUsesSelectedContract(t *testing.T) {

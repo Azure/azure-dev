@@ -48,11 +48,8 @@ func (b *countingResponseBody) Read(buffer []byte) (int, error) {
 	if b.remaining == 0 {
 		return 0, io.EOF
 	}
-	count := int64(len(buffer))
-	if count > b.remaining {
-		count = b.remaining
-	}
-	for i := int64(0); i < count; i++ {
+	count := min(int64(len(buffer)), b.remaining)
+	for i := range count {
 		buffer[i] = 'x'
 	}
 	b.remaining -= count

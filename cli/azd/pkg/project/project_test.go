@@ -1558,8 +1558,17 @@ func Test_HooksFromInfraModule_InvalidYaml(t *testing.T) {
 func TestNormalizeConfigPathsToleratesMissingRawLayers(t *testing.T) {
 	parsed := &ProjectConfig{
 		Layers: LayerConfigs{
-			{Name: "first", Infra: []provisioning.Options{{Path: filepath.Join("infra", "first")}, {Path: filepath.Join("infra", "extra")}}},
-			{Name: "second", Infra: []provisioning.Options{{Path: filepath.Join("infra", "second")}}},
+			{
+				Name: "first",
+				Infra: []provisioning.Options{
+					{Path: filepath.Join("infra", "first")},
+					{Path: filepath.Join("infra", "extra")},
+				},
+			},
+			{
+				Name:  "second",
+				Infra: []provisioning.Options{{Path: filepath.Join("infra", "second")}},
+			},
 		},
 	}
 	raw := map[string]any{

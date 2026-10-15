@@ -225,6 +225,49 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a file-backed Agent service to the current azd project.',
+							options: [
+								{
+									name: ['--file'],
+									description: 'Path to a direct Agent definition file.',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['default', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project'],
+									description: 'Service key for the sole azure.ai.project service.',
+									args: [
+										{
+											name: 'project',
+										},
+									],
+								},
+								{
+									name: ['--source'],
+									description: 'Override the Agent service\'s project directory.',
+									args: [
+										{
+											name: 'source',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['code'],
 							description: 'Manage agent source code. (Preview)',
 							subcommands: [

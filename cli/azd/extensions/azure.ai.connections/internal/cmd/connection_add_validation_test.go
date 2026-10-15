@@ -386,7 +386,7 @@ func TestValidateConnectionDefinitionForAuthoringDoesNotExposeMapKeys(t *testing
 	}
 }
 
-func TestValidateConnectionDefinitionForAuthoringRejectsNonblankTemplates(t *testing.T) {
+func TestValidateConnectionDefinitionForAuthoringRejectsNonBlankTemplates(t *testing.T) {
 	tests := []struct {
 		name  string
 		input func() *definition.Definition

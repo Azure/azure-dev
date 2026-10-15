@@ -23,7 +23,7 @@ type EnvReferenceAnalysis struct {
 	RequiredVariables   []string
 	ReferencedVariables []string
 	HasClientTemplate   bool
-	// HasLiteralText reports nonblank text outside client templates, so
+	// HasLiteralText reports non-blank text outside client templates, so
 	// expansion can never produce a blank value.
 	HasLiteralText bool
 }

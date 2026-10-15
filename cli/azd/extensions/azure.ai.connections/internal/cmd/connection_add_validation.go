@@ -18,7 +18,7 @@ type connectionTemplateAnalysis struct {
 	required   map[string]struct{}
 	referenced map[string]struct{}
 	// mayBeEmpty marks fields whose client templates can expand to a blank
-	// value; literal text around a template makes the field nonblank.
+	// value; literal text around a template makes the field non-blank.
 	mayBeEmpty map[string]bool
 }
 

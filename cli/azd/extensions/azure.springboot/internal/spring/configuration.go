@@ -79,9 +79,6 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		}
 		if _, activated := doc.values[canonical("spring.config.activate.on-profile")]; !activated {
 			maps.Copy(c.values, doc.values)
-			if !strings.HasPrefix(doc.file, "src/main/resources/") && !slices.Contains(c.externalFiles, doc.file) {
-				c.externalFiles = append(c.externalFiles, doc.file)
-			}
 		}
 	}
 	var jsonProperties map[string]property
@@ -215,6 +212,9 @@ func (c *configuration) apply(doc document, selected map[string]bool, profileFil
 		}
 	}
 	maps.Copy(c.values, doc.values)
+	if !strings.HasPrefix(doc.file, "src/main/resources/") && !slices.Contains(c.externalFiles, doc.file) {
+		c.externalFiles = append(c.externalFiles, doc.file)
+	}
 	return nil
 }
 
@@ -281,6 +281,7 @@ func splitPropertiesDocuments(data string) []string {
 	var result []string
 	var current strings.Builder
 	for line := range strings.SplitSeq(data, "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if line == "#---" || line == "!---" {
 			result = append(result, current.String())
 			current.Reset()

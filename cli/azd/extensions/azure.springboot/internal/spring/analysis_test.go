@@ -270,6 +270,69 @@ spring:
 	}
 }
 
+func TestAnalyzePropertiesDocumentSeparators(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		for _, separator := range []string{"#---", "!---"} {
+			t.Run(fmt.Sprintf("%q/%s", newline, separator), func(t *testing.T) {
+				directory := t.TempDir()
+				writeFixture(t, directory, "pom.xml", "<project/>")
+				content := strings.Join([]string{
+					"spring.profiles.active=cloud",
+					separator,
+					"spring.config.activate.on-profile=cloud",
+					"spring.datasource.url=jdbc:mysql://localhost/warehouse",
+					separator,
+					"spring.config.activate.on-profile=local",
+					"spring.datasource.url=jdbc:postgresql://localhost/ignored",
+				}, newline)
+				writeFixture(t, directory, "src/main/resources/application.properties", content)
+				a, err := Analyze(t.Context(), directory,
+					staticResolver{model: effectiveModel(allDrivers())}, envLookup(nil))
+				require.NoError(t, err)
+				require.Equal(t, []string{"cloud"}, a.Profiles)
+				require.Len(t, a.Requirements, 1)
+				require.Equal(t, MySQL, a.Requirements[0].Kind)
+				require.Equal(t, "warehouse", a.Requirements[0].Name)
+			})
+		}
+	}
+}
+
+func TestAnalyzeRetainsActiveExternalConfiguration(t *testing.T) {
+	for _, location := range []string{"", "config/", "config/deployment/"} {
+		t.Run(location, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties", "spring.profiles.active=cloud")
+			writeFixture(t, directory, "src/main/resources/application-cloud.properties", "server.port=9999")
+			base := location + "application.properties"
+			active := location + "application-cloud.properties"
+			inactive := location + "application-local.properties"
+			unmatched := location + "application-cloud.yml"
+			writeFixture(t, directory, base, "example.setting=base")
+			writeFixture(t, directory, active, "spring.datasource.url=jdbc:mysql://localhost/warehouse\n"+
+				"server.port=9090\n#---\nspring.config.activate.on-profile=cloud\nexample.setting=deployed\n")
+			writeFixture(t, directory, inactive, "spring.datasource.url=jdbc:postgresql://localhost/ignored")
+			writeFixture(t, directory, unmatched, "spring:\n  config:\n    activate:\n      on-profile: local\n")
+			a, err := Analyze(t.Context(), directory, staticResolver{model: effectiveModel(allDrivers())}, envLookup(nil))
+			require.NoError(t, err)
+			require.Equal(t, []string{base, active}, a.ExternalConfigurations)
+			require.Equal(t, 9090, a.Port)
+			require.Len(t, a.Requirements, 1)
+			require.Equal(t, MySQL, a.Requirements[0].Kind)
+			plan, err := Generate(t.Context(), a)
+			require.NoError(t, err)
+			docker := string(plan.Files[".azd-spring/Dockerfile"])
+			for _, file := range []string{base, active} {
+				require.Contains(t, docker, fmt.Sprintf(`["/workspace/%s","/app/%s"]`, file, file))
+			}
+			for _, file := range []string{inactive, unmatched, "src/main/resources/application-cloud.properties"} {
+				require.NotContains(t, docker, "/workspace/"+file)
+			}
+		})
+	}
+}
+
 func TestCredentialNonDisclosure(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")
@@ -313,6 +376,56 @@ func TestEffectiveModelValidation(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, 21, java)
+			}
+		})
+	}
+}
+
+func TestEffectiveModelExecutionConfiguration(t *testing.T) {
+	execution := func(phase, configuration string) string {
+		return "<execution><phase>" + phase + "</phase><goals><goal>repackage</goal></goals>" +
+			"<configuration>" + configuration + "</configuration></execution>"
+	}
+	valid := execution("", "")
+	for _, tt := range []struct {
+		name, plugin, executions, errorText string
+	}{
+		{"default execution", "", valid, ""},
+		{"explicit package phase", "", execution("package", ""), ""},
+		{"execution skip", "", execution("", "<skip>true</skip>"), "custom or disabled"},
+		{"execution classifier", "", execution("", "<classifier>exec</classifier>"), "custom or disabled"},
+		{"execution layout", "", execution("", "<layout>NONE</layout>"), "custom or disabled"},
+		{"inherited skip", "<skip>true</skip>", valid, "custom or disabled"},
+		{"inherited classifier", "<classifier>exec</classifier>", valid, "custom or disabled"},
+		{"inherited layout", "<layout>NONE</layout>", valid, "custom or disabled"},
+		{"override skip", "<skip>true</skip>", execution("", "<skip>false</skip>"), ""},
+		{"override layout", "<layout>NONE</layout>", execution("", "<layout>JAR</layout>"), ""},
+		{"retain inherited classifier", "<classifier>exec</classifier>",
+			execution("", "<skip>false</skip>"), "custom or disabled"},
+		{"empty classifier inherits", "<classifier>exec</classifier>",
+			execution("", "<classifier/>"), "custom or disabled"},
+		{"override configuration", "<skip>true</skip><classifier>exec</classifier><layout>NONE</layout>",
+			strings.Replace(valid, "<configuration>", `<configuration combine.self="override">`, 1), ""},
+		{"multiple valid executions", "", valid + execution("package", "<skip>false</skip>"), ""},
+		{"invalid later execution", "", valid + execution("package", "<skip>true</skip>"), "custom or disabled"},
+		{"invalid earlier execution", "", execution("package", "<classifier>exec</classifier>") + valid,
+			"custom or disabled"},
+		{"inactive execution", "", valid + execution("none", "<skip>true</skip>"), ""},
+		{"unrelated goal", "", valid + strings.Replace(execution("", "<skip>true</skip>"), "repackage", "run", 1), ""},
+		{"no package execution", "", execution("none", "<skip>true</skip>"), "active Spring Boot repackage execution"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := string(effectiveModel(""))
+			start := strings.Index(data, "<executions>")
+			end := strings.Index(data, "</executions>") + len("</executions>")
+			data = data[:start] + "<configuration>" + tt.plugin + "</configuration><executions>" +
+				tt.executions + "</executions>" + data[end:]
+			_, java, err := parseModel([]byte(data))
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, 17, java)
 			}
 		})
 	}

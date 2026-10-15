@@ -67,14 +67,34 @@ type buildPlugin struct {
 	Group      string `xml:"groupId"`
 	Artifact   string `xml:"artifactId"`
 	Executions []struct {
-		Phase string   `xml:"phase"`
-		Goals []string `xml:"goals>goal"`
+		Phase         string                 `xml:"phase"`
+		Goals         []string               `xml:"goals>goal"`
+		Configuration repackageConfiguration `xml:"configuration"`
 	} `xml:"executions>execution"`
-	Configuration struct {
-		Skip       string `xml:"skip"`
-		Classifier string `xml:"classifier"`
-		Layout     string `xml:"layout"`
-	} `xml:"configuration"`
+	Configuration repackageConfiguration `xml:"configuration"`
+}
+
+type repackageConfiguration struct {
+	Skip        string `xml:"skip"`
+	Classifier  string `xml:"classifier"`
+	Layout      string `xml:"layout"`
+	CombineSelf string `xml:"combine.self,attr"`
+}
+
+func (c repackageConfiguration) withDefaults(parent repackageConfiguration) repackageConfiguration {
+	if c.CombineSelf == "override" {
+		return c
+	}
+	if c.Skip == "" {
+		c.Skip = parent.Skip
+	}
+	if c.Classifier == "" {
+		c.Classifier = parent.Classifier
+	}
+	if c.Layout == "" {
+		c.Layout = parent.Layout
+	}
+	return c
 }
 
 type model struct {
@@ -109,12 +129,12 @@ func parseModel(data []byte) (*model, int, error) {
 		if plugin.Group != "org.springframework.boot" || plugin.Artifact != "spring-boot-maven-plugin" {
 			continue
 		}
-		if plugin.Configuration.Skip != "" && plugin.Configuration.Skip != "false" ||
-			plugin.Configuration.Classifier != "" || plugin.Configuration.Layout == "NONE" {
-			return nil, 0, errors.New("custom or disabled Spring Boot JAR repackaging is not yet supported")
-		}
 		for _, execution := range plugin.Executions {
 			if (execution.Phase == "" || execution.Phase == "package") && slices.Contains(execution.Goals, "repackage") {
+				config := execution.Configuration.withDefaults(plugin.Configuration)
+				if config.Skip != "" && config.Skip != "false" || config.Classifier != "" || config.Layout == "NONE" {
+					return nil, 0, errors.New("custom or disabled Spring Boot JAR repackaging is not yet supported")
+				}
 				boot = true
 			}
 		}

@@ -44,6 +44,7 @@ Java 17 or newer. Analysis reads effective Maven metadata, conventional
 includes/groups, property placeholders, environment overrides, and
 `SPRING_APPLICATION_JSON`. Inactive database alternatives are not provisioned.
 JDBC dependencies establish available drivers, not active database requirements.
+Repackaging checks include plugin defaults and active execution configuration.
 
 | Active datasource | Generated database |
 | --- | --- |
@@ -67,9 +68,10 @@ File-based embedded databases require a persistence policy and are not adopted.
 
 The application source remains unchanged. The container builds through Maven
 (using the wrapper when present), and loads the generated properties through
-`SPRING_CONFIG_ADDITIONAL_LOCATION`. Active conventional external configuration
-files are also retained in the runtime image. Password bindings use template-owned
-Container Apps secret references; literal credentials are not copied from source URLs.
+`SPRING_CONFIG_ADDITIONAL_LOCATION`. Active conventional external configuration,
+including profile-specific files, is retained in the runtime image. Password
+bindings use template-owned Container Apps secret references; literal credentials
+are not copied from source URLs.
 Existing configuration files and packaged resources may still contain credentials;
 review them before building or publishing an image.
 Existing `azure.yaml`, `infra/`, `.azd-spring/`, or root Dockerfiles are not adopted
@@ -178,6 +180,9 @@ That milestone's MySQL provisioning was blocked by the core scaffold's AVM 0.6.1
 `dummyVault/dummyKey` reference. The owned template no longer uses that scaffold.
 The migrated PostgreSQL/password configuration passed live deployment, form
 write/read, and independent SQL verification with explicit startup protection.
+Fresh H2 (`westus3`) and MySQL/password (`westus2`) runs also passed health,
+form write/update/read, and restart checks using the shared template. H2 data
+reset; MySQL data persisted and matched independent verified-TLS SQL reads.
 The full four-mode live acceptance matrix remains incomplete. Standalone PostgreSQL
 managed-identity and Bicep-only registry-staging experiments passed separately
 and are evidence for the mechanisms, not proof of the integrated generator.

@@ -180,6 +180,8 @@ dictionaries:
 overrides:
   - filename: extensions/azure.springboot/**
     words:
+      - azdadmin
+      - azuredocs
       - Hikari
       - hsqldb
       - jndi
@@ -188,6 +190,7 @@ overrides:
       - Petclinic
       - springboot
       - sslmode
+      - sslrootcert
       - temurin
   - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:

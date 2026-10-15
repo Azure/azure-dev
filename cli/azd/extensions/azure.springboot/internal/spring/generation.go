@@ -68,6 +68,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"hooks": hooks,
 	}
 	parameters := map[string]any{}
+	// #nosec G101 -- databasePassword is an azd environment substitution, not a hardcoded credential.
 	for key, value := range map[string]any{
 		"environmentName": "${AZURE_ENV_NAME}", "location": "${AZURE_LOCATION}",
 		"serviceName": serviceName, "port": application.Port, "profiles": append([]string{}, application.Profiles...),

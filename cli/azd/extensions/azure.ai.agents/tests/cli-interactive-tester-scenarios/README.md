@@ -338,6 +338,13 @@ in any order, any time.
 | `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
 | `tier0/0.22-state-stores-help-validation.yaml` | State Store command discovery, forward-pagination help, input-size guidance, and offline validation |
 | `tier0/0.23-init-deprecated-manifest-alias.yaml` | Deprecated `init --manifest/-m` compatibility alias warning and local missing-file failure |
+| `tier0/0.24-agent-add-new-idempotent.yaml` | `agent add` new-service JSON result and repeated no-op |
+| `tier0/0.25-agent-add-update-preserves-core-fields.yaml` | `agent add` updates a file-backed service and preserves core fields |
+| `tier0/0.26-agent-add-missing-connection.yaml` | `agent add` rejects a missing local Connection reference |
+| `tier0/0.27-agent-add-ambiguous-connection.yaml` | `agent add` rejects an ambiguous local Connection name |
+| `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
+| `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
+| `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -764,6 +771,17 @@ contains no environment substitutions, and these scenarios clear inherited `AZUR
 They assume the development core and Agents extension are already installed; setup, extension
 installation, credentials, and remote-state configuration are not part of these offline flows.
 Telemetry and update checks are disabled in the scenario environment.
+
+### Offline Agent add fixtures
+
+`fixtures/agent-add/` contains local project variants and direct prompt
+definitions for the `0.24`–`0.30` Tier 0 scenarios. Each scenario copies only
+its project YAML and required definitions into its own `{instance}` directory.
+The fixtures exercise a new Agent service, an update with existing azd-owned
+fields, missing or ambiguous local Connection references, multiple Project
+services, a target service key owned by a non-Agent host, and out-of-project
+paths. They contain no credentials, deployable source, or live endpoint; no
+fixture is fetched or deployed.
 
 `0.19-standalone-deploy-migration` isolates the negative migration flow from both happy paths.
 It rejects standalone Agent deploy and both old add-order commands, verifies no project mutation

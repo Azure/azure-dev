@@ -160,6 +160,7 @@ func TestProjectAddServiceRejectsInterveningInvalidFile(t *testing.T) {
 func TestServerE2E_ExistingServiceRPCsPreserveRawConfiguration(t *testing.T) {
 	server, service := newProjectE2EServer(t)
 	client, ctx := dialProjectSDK(t, server)
+	projectClient := client.Project()
 	azdContext, err := service.lazyAzdContext.GetValue()
 	require.NoError(t, err)
 	path := azdContext.ProjectPath()
@@ -169,7 +170,7 @@ func TestServerE2E_ExistingServiceRPCsPreserveRawConfiguration(t *testing.T) {
 	results := make(chan error, 2)
 	for _, name := range []string{"first.api", "second.api"} {
 		go func() {
-			_, err := client.Project().AddService(ctx, &azdext.AddServiceRequest{
+			_, err := projectClient.AddService(ctx, &azdext.AddServiceRequest{
 				Service: &azdext.ServiceConfig{Name: name, Host: "azure.ai.connection"},
 			})
 			results <- err
@@ -181,7 +182,7 @@ func TestServerE2E_ExistingServiceRPCsPreserveRawConfiguration(t *testing.T) {
 	for _, fields := range []map[string]any{{"KEY": "${API_KEY}"}, {}} {
 		section, err := structpb.NewStruct(fields)
 		require.NoError(t, err)
-		_, err = client.Project().SetServiceConfigSection(ctx, &azdext.SetServiceConfigSectionRequest{
+		_, err = projectClient.SetServiceConfigSection(ctx, &azdext.SetServiceConfigSectionRequest{
 			ServiceName: "first.api", Path: "env", Section: section,
 		})
 		require.NoError(t, err)

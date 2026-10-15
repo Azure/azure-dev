@@ -13,6 +13,7 @@ applyTo:
   (for example `ext-routines` for `azure.ai.routines`).
 
 - This is a backstop only. The `Foundry Docs Tracker` workflow
-  (`.github/workflows/foundry-docs-tracker.md`) opens and maintains that tracking issue automatically across the
-  PR's lifecycle, so do not open a second issue by hand - just make sure the doc-worthy change is visible in
-  review.
+  (`.github/workflows/foundry-docs-tracker.md`) opens and maintains that tracking issue across the PR's lifecycle
+  on events triggered by actors with repository `write`, `maintainer`, or `admin` access. External actors do not
+  start the AI or issue-write jobs. Do not open a second issue by hand - just make sure the doc-worthy change is
+  visible in review.

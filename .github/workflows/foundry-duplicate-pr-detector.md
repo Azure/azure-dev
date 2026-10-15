@@ -2,10 +2,38 @@
 name: Foundry Duplicate PR Detector
 description: Flags azure.ai.* extension PRs that may duplicate an open or recently-merged PR.
 on:
+  # Match the Extension PR Labeler: external actors may run only the permission check.
+  roles: [admin, maintainer, write]
   pull_request_target:
     types: [opened, reopened]
     paths:
       - "cli/azd/extensions/azure.ai.*/**"
+  permissions:
+    actions: read
+  steps:
+    - name: Calculate merged PR lookback
+      id: lookback
+      if: steps.check_membership.outputs.is_team_member == 'true'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        script: |
+          const { data: run } = await github.rest.actions.getWorkflowRun({
+            ...context.repo,
+            run_id: context.runId,
+          });
+          const executionTime = new Date(run.run_started_at);
+          if (typeof run.run_started_at !== 'string' || Number.isNaN(executionTime.getTime())) {
+            throw new Error('Workflow run has no valid start time.');
+          }
+          const cutoff = new Date(executionTime);
+          cutoff.setUTCDate(cutoff.getUTCDate() - 14);
+          core.setOutput('run_date', executionTime.toISOString().slice(0, 10));
+          core.setOutput('cutoff_date', cutoff.toISOString().slice(0, 10));
+jobs:
+  pre-activation:
+    outputs:
+      run_date: ${{ steps.lookback.outputs.run_date }}
+      cutoff_date: ${{ steps.lookback.outputs.cutoff_date }}
 permissions:
   contents: read
   copilot-requests: write
@@ -61,8 +89,11 @@ linked issues.
 ## 2. Gather candidates
 
 Build a candidate set of other PRs that might overlap. Never include PR
-#${{ github.event.pull_request.number }} itself. Read this PR's metadata (including its creation date) with the
-GitHub tools; treat that creation date as "now" and "the last 14 days" as the 14 days before it.
+#${{ github.event.pull_request.number }} itself. Use the trusted workflow execution date
+`${{ needs.pre_activation.outputs.run_date }}` as "now" and
+`${{ needs.pre_activation.outputs.cutoff_date }}` as the inclusive UTC cutoff for "the last 14 days".
+These dates are computed from this workflow run's start time, not the PR creation date, so reopened PRs use
+the current lookback window.
 
 - **Linked issues**: read this PR's body for closing keywords (`Fixes #N`, `Closes #N`, `Resolves #N`) and
   bare `#N` references. Any other open or recently-merged PR that references the same issue number is a strong
@@ -72,7 +103,8 @@ GitHub tools; treat that creation date as "now" and "the last 14 days" as the 14
   whose changed files overlap.
 - **Same extension, merged recently**: find PRs merged on or after the 14-day cutoff that touch the same
   `azure.ai.*` extension(s). A query such as
-  `repo:${{ github.repository }} is:pr is:merged merged:>=<cutoff-date> label:ext-<id>` works well.
+  `repo:${{ github.repository }} is:pr is:merged merged:>=${{ needs.pre_activation.outputs.cutoff_date }} label:ext-<id>`
+  works well.
 
 Cap the investigation at roughly the 20 most promising candidates.
 
@@ -105,6 +137,10 @@ Do not add labels, do not modify the PR, and do not comment when there is no cre
 
 ## Usage
 
-Runs automatically when an `azure.ai.*` extension PR is opened or reopened (draft PRs included, since `opened`
-fires for drafts too). Re-runs replace the previous heads-up comment (`hide-older-comments`). To change the merged-PR lookback window, edit the
-"last 14 days" references above and recompile with `gh aw compile foundry-duplicate-pr-detector`.
+Runs automatically when an `azure.ai.*` extension PR is opened or reopened by an actor with repository `write`,
+`maintainer`, or `admin` access, matching the Extension PR Labeler. External actors run only the permission-check
+job, not the AI or output jobs. Draft PRs are included, since `opened` fires for drafts too.
+
+Re-runs replace the previous heads-up comment (`hide-older-comments`). The merged-PR lookback uses the workflow
+run's start date, including on reopen. To change the window, update the calculation in `on.steps` and the
+"last 14 days" references above, then recompile with `gh aw compile foundry-duplicate-pr-detector`.

@@ -16,6 +16,20 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: .github/workflows/foundry-docs-tracker.md
+      words:
+          - toolsets
+          - rescope
+          - rescoped
+    - filename: .github/workflows/foundry-duplicate-pr-detector.md
+      words:
+          - toolsets
+          - lookback
+    - filename: .github/scripts/test/foundry-pr-governance.test.js
+      words:
+          - rescope
+          - appservice
+          - lookback
     - filename: ./SECURITY.md
       words:
           - MSRC

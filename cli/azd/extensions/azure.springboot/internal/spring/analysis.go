@@ -50,6 +50,7 @@ type Application struct {
 	JavaVersion            int
 	JarName                string
 	BuildDirectory         string
+	JarDirectory           string
 	Port                   int
 	Profiles               []string
 	Embedded               *EmbeddedBinding
@@ -100,6 +101,24 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, unsupportedConfiguration(
 			"Maven build.directory must be a subdirectory of the application Docker context")
 	}
+	jarDirectory := buildDirectory
+	for i, output := range m.RepackageDirectories {
+		if strings.Contains(output, "${") {
+			return nil, unsupportedConfiguration("Spring Boot repackage outputDirectory must be resolved")
+		}
+		if !filepath.IsAbs(output) {
+			output = filepath.Join(projectDirectory, output)
+		}
+		relative, err := filepath.Rel(projectDirectory, output)
+		if err != nil || !filepath.IsLocal(relative) || relative == "." {
+			return nil, unsupportedConfiguration(
+				"Spring Boot repackage outputDirectory must be a subdirectory of the application Docker context")
+		}
+		if i > 0 && relative != jarDirectory {
+			return nil, unsupportedConfiguration("active Spring Boot repackage executions have different output directories")
+		}
+		jarDirectory = relative
+	}
 	c, err := readConfiguration(ctx, root, lookup)
 	if err != nil {
 		return nil, err
@@ -115,6 +134,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		ID:   "app",
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",
 		BuildDirectory: filepath.ToSlash(buildDirectory),
+		JarDirectory:   filepath.ToSlash(jarDirectory),
 		Port:           port, Profiles: c.profiles,
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),

@@ -672,6 +672,103 @@ func TestAnalyzeBuildDirectoryWithRelativeProjectPath(t *testing.T) {
 	require.Equal(t, "target", application.BuildDirectory)
 }
 
+func TestAnalyzeRepackageOutputDirectory(t *testing.T) {
+	for _, tt := range []struct {
+		name, plugin, execution, additional, want, errorText string
+		override                                             bool
+	}{
+		{name: "default", want: "target"},
+		{name: "plugin relative output", plugin: "<outputDirectory>boot</outputDirectory>", want: "boot"},
+		{name: "execution absolute output", execution: "<outputDirectory>@absolute@</outputDirectory>", want: "boot jars"},
+		{name: "execution relative output", execution: "<outputDirectory>boot jars</outputDirectory>", want: "boot jars"},
+		{name: "inherited output", plugin: "<outputDirectory>boot</outputDirectory>",
+			execution: "<skip>false</skip>", want: "boot"},
+		{name: "empty output inherits", plugin: "<outputDirectory>boot</outputDirectory>",
+			execution: "<outputDirectory/>", want: "boot"},
+		{name: "execution overrides plugin", plugin: "<outputDirectory>ignored</outputDirectory>",
+			execution: "<outputDirectory>boot</outputDirectory>", want: "boot"},
+		{name: "override drops plugin output", plugin: "<outputDirectory>ignored</outputDirectory>",
+			override: true, want: "target"},
+		{name: "equivalent execution outputs", additional: `<execution><goals><goal>repackage</goal></goals>
+<configuration><outputDirectory>@build@</outputDirectory></configuration></execution>`, want: "target"},
+		{name: "conflicting execution outputs", additional: `<execution><goals><goal>repackage</goal></goals>
+<configuration><outputDirectory>boot</outputDirectory></configuration></execution>`,
+			errorText: "different output directories"},
+		{name: "inactive output ignored", additional: `<execution><phase>none</phase><goals><goal>repackage</goal></goals>
+<configuration><outputDirectory>ignored</outputDirectory></configuration></execution>`, want: "target"},
+		{name: "unrelated goal ignored", additional: `<execution><goals><goal>run</goal></goals>
+<configuration><outputDirectory>ignored</outputDirectory></configuration></execution>`, want: "target"},
+		{name: "unresolved output", execution: "<outputDirectory>${repackage.directory}</outputDirectory>",
+			errorText: "outputDirectory must be resolved"},
+		{name: "outside context", execution: "<outputDirectory>../outside</outputDirectory>",
+			errorText: "application Docker context"},
+		{name: "project root", execution: "<outputDirectory>.</outputDirectory>",
+			errorText: "application Docker context"},
+		{name: "source overlap", execution: "<outputDirectory>src/boot</outputDirectory>",
+			errorText: "overlap application inputs"},
+		{name: "configuration overlap", execution: "<outputDirectory>config/boot</outputDirectory>",
+			errorText: "overlap application inputs"},
+		{name: "generated file overlap", execution: "<outputDirectory>.azd-spring/boot</outputDirectory>",
+			errorText: "overlap application inputs"},
+		{name: "Docker wildcard", execution: "<outputDirectory>boot[1]</outputDirectory>",
+			errorText: "without Docker patterns"},
+		{name: "ignore line break", execution: "<outputDirectory>boot\noutput</outputDirectory>",
+			errorText: "without Docker patterns"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			data := string(effectiveModel(t, directory, ""))
+			configuration := "<configuration>"
+			if tt.override {
+				configuration = `<configuration combine.self="override">`
+			}
+			data = strings.Replace(data, "<executions>",
+				"<configuration>"+tt.plugin+"</configuration><executions>", 1)
+			data = strings.Replace(data, "</goals></execution>",
+				"</goals>"+configuration+tt.execution+"</configuration></execution>"+tt.additional, 1)
+			for marker, path := range map[string]string{
+				"@absolute@": filepath.Join(directory, "boot jars"),
+				"@build@":    filepath.Join(directory, "target"),
+			} {
+				var escaped strings.Builder
+				require.NoError(t, xml.EscapeText(&escaped, []byte(path)))
+				data = strings.ReplaceAll(data, marker, escaped.String())
+			}
+			analysis, err := AnalyzeProject(t.Context(), directory,
+				staticResolver{model: []byte(data)}, DeploymentInputs{})
+			require.NoError(t, err)
+			application, err := analysis.ResolvedApplication()
+			var plan *Plan
+			if err == nil {
+				plan, err = Generate(t.Context(), application)
+			}
+			if tt.errorText != "" {
+				if len(analysis.Diagnostics) != 0 {
+					require.Contains(t, analysis.Diagnostics[0].Message, tt.errorText)
+				} else {
+					require.ErrorContains(t, err, tt.errorText)
+				}
+				require.Nil(t, plan)
+				entries, err := os.ReadDir(directory)
+				require.NoError(t, err)
+				require.Len(t, entries, 1)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "target", application.BuildDirectory)
+			require.Equal(t, tt.want, application.JarDirectory)
+			paths, err := json.Marshal([]string{"/workspace/" + tt.want + "/inventory-api-1.0.jar", "/app/application.jar"})
+			require.NoError(t, err)
+			require.Contains(t, string(plan.Files[".azd-spring/Dockerfile"]),
+				"COPY --from=build --chown=10001:10001 "+string(paths))
+			ignore := string(plan.Files[".azd-spring/Dockerfile.dockerignore"])
+			require.Contains(t, ignore, "\n/target\n")
+			require.Contains(t, ignore, "\n/"+tt.want+"\n")
+		})
+	}
+}
+
 func TestAnalyzeHikariCredentialBindings(t *testing.T) {
 	const marker = "sensitive-pool-value"
 	for _, field := range []string{"username", "password"} {

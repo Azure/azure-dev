@@ -57,8 +57,10 @@ Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
 Repackaging checks include plugin defaults and active execution configuration.
-The resolved Maven build directory determines the JAR copy path; project-local
-custom output directories, including spaces and inherited settings, are supported.
+The resolved Maven build directory and Boot `repackage.outputDirectory` determine
+the JAR copy path; project-local custom output directories, including spaces and
+inherited settings, are supported. Relative repackage paths use the project root.
+Active repackage executions must agree on one executable-JAR output directory.
 Missing/unresolved paths, directories outside the Docker context, and output
 directories overlapping application inputs or generated files are rejected.
 Custom Hikari username/password bindings, including empty values, are rejected;

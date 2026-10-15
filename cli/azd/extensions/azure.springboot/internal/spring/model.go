@@ -74,10 +74,11 @@ type buildPlugin struct {
 }
 
 type repackageConfiguration struct {
-	Skip        string `xml:"skip"`
-	Classifier  string `xml:"classifier"`
-	Layout      string `xml:"layout"`
-	CombineSelf string `xml:"combine.self,attr"`
+	Skip            string `xml:"skip"`
+	Classifier      string `xml:"classifier"`
+	Layout          string `xml:"layout"`
+	OutputDirectory string `xml:"outputDirectory"`
+	CombineSelf     string `xml:"combine.self,attr"`
 }
 
 func (c repackageConfiguration) withDefaults(parent repackageConfiguration) repackageConfiguration {
@@ -93,16 +94,20 @@ func (c repackageConfiguration) withDefaults(parent repackageConfiguration) repa
 	if c.Layout == "" {
 		c.Layout = parent.Layout
 	}
+	if c.OutputDirectory == "" {
+		c.OutputDirectory = parent.OutputDirectory
+	}
 	return c
 }
 
 type model struct {
-	Artifact     string       `xml:"artifactId"`
-	Version      string       `xml:"version"`
-	Packaging    string       `xml:"packaging"`
-	Modules      []string     `xml:"modules>module"`
-	Dependencies []coordinate `xml:"dependencies>dependency"`
-	Properties   struct {
+	RepackageDirectories []string     `xml:"-"`
+	Artifact             string       `xml:"artifactId"`
+	Version              string       `xml:"version"`
+	Packaging            string       `xml:"packaging"`
+	Modules              []string     `xml:"modules>module"`
+	Dependencies         []coordinate `xml:"dependencies>dependency"`
+	Properties           struct {
 		JavaVersion string `xml:"java.version"`
 		Release     string `xml:"maven.compiler.release"`
 		Target      string `xml:"maven.compiler.target"`
@@ -140,6 +145,11 @@ func parseModel(data []byte) (*model, int, error) {
 					return nil, 0, unsupportedConfiguration(
 						"custom or disabled Spring Boot JAR repackaging is not yet supported")
 				}
+				output := config.OutputDirectory
+				if output == "" {
+					output = m.Build.Directory
+				}
+				m.RepackageDirectories = append(m.RepackageDirectories, output)
 				boot = true
 			}
 		}

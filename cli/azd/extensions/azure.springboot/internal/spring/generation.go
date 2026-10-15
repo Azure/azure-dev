@@ -202,15 +202,18 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	ignore := ".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n/" +
+		application.BuildDirectory + "\n"
+	if application.JarDirectory != "" && application.JarDirectory != application.BuildDirectory {
+		ignore += "/" + application.JarDirectory + "\n"
+	}
 	files := map[string][]byte{
 		"azure.yaml":                             data,
 		"infra/main.parameters.json":             parameterData,
 		"infra/application.parameters.json":      applicationParameterData,
 		".azd-spring/Dockerfile":                 []byte(docker),
 		".azd-spring/application-azd.properties": []byte(binding.String()),
-		".azd-spring/Dockerfile.dockerignore": []byte(
-			".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n/" +
-				application.BuildDirectory + "\n"),
+		".azd-spring/Dockerfile.dockerignore":    []byte(ignore),
 	}
 	if settings["auth"] == "managedIdentity" {
 		settingsData, err := json.MarshalIndent(settings, "", "  ")
@@ -247,25 +250,40 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	return &Plan{Application: application, Files: files}, nil
 }
 
-func dockerfile(a *Application) (string, error) {
-	if !filepath.IsLocal(filepath.FromSlash(a.BuildDirectory)) || a.BuildDirectory == "." ||
-		path.Clean(a.BuildDirectory) != a.BuildDirectory || strings.ContainsAny(a.BuildDirectory, "\\*?[$\r\n") {
-		return "", errors.New("Maven build.directory must be a resolved project-local path without Docker patterns")
+func validateOutputDirectory(directory, setting string, externalConfigurations []string) error {
+	if !filepath.IsLocal(filepath.FromSlash(directory)) || directory == "." ||
+		path.Clean(directory) != directory || strings.ContainsAny(directory, "\\*?[$\r\n") {
+		return fmt.Errorf("%s must be a resolved project-local path without Docker patterns", setting)
 	}
-	for component := range strings.SplitSeq(a.BuildDirectory, "/") {
+	for component := range strings.SplitSeq(directory, "/") {
 		if strings.TrimSpace(component) != component {
-			return "", errors.New("Maven build.directory components cannot start or end with whitespace")
+			return fmt.Errorf("%s components cannot start or end with whitespace", setting)
 		}
 	}
 	inputs := []string{"pom.xml", "mvnw", "mvnw.cmd", "src", "config", ".mvn", ".git", ".azure", ".azd-spring"}
-	inputs = append(inputs, a.ExternalConfigurations...)
+	inputs = append(inputs, externalConfigurations...)
 	for _, input := range inputs {
-		if input == a.BuildDirectory || strings.HasPrefix(input, a.BuildDirectory+"/") ||
-			strings.HasPrefix(a.BuildDirectory, input+"/") {
-			return "", errors.New("Maven build.directory must not overlap application inputs or generated files")
+		if input == directory || strings.HasPrefix(input, directory+"/") ||
+			strings.HasPrefix(directory, input+"/") {
+			return fmt.Errorf("%s must not overlap application inputs or generated files", setting)
 		}
 	}
-	jarPaths, err := json.Marshal([]string{path.Join("/workspace", a.BuildDirectory, a.JarName), "/app/application.jar"})
+	return nil
+}
+
+func dockerfile(a *Application) (string, error) {
+	if err := validateOutputDirectory(a.BuildDirectory, "Maven build.directory", a.ExternalConfigurations); err != nil {
+		return "", err
+	}
+	jarDirectory := a.JarDirectory
+	if jarDirectory == "" {
+		jarDirectory = a.BuildDirectory
+	}
+	if err := validateOutputDirectory(jarDirectory,
+		"Spring Boot repackage outputDirectory", a.ExternalConfigurations); err != nil {
+		return "", err
+	}
+	jarPaths, err := json.Marshal([]string{path.Join("/workspace", jarDirectory, a.JarName), "/app/application.jar"})
 	if err != nil {
 		return "", fmt.Errorf("encoding Maven JAR paths: %w", err)
 	}

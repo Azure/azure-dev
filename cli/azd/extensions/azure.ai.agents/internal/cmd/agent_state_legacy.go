@@ -108,6 +108,9 @@ func (s *agentStateStore) readLegacyProjectState(ctx context.Context, record *ag
 	}
 	env, err := s.client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		if isDefaultEnvironmentMissing(err) {
+			return nil
+		}
 		return fmt.Errorf("locate legacy agent environment: %w", err)
 	}
 	if env.GetEnvironment() == nil || env.Environment.Name == "" {

@@ -151,34 +151,6 @@ func TestExtensionShowItem_Display(t *testing.T) {
 	})
 }
 
-func TestIsJsonOutputFromArgs(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		args     []string
-		expected bool
-	}{
-		{name: "empty", args: []string{}, expected: false},
-		{name: "no_output_flag", args: []string{"run"}, expected: false},
-		{name: "output_json_space", args: []string{"--output", "json"}, expected: true},
-		{name: "output_table", args: []string{"--output", "table"}, expected: false},
-		{name: "short_output_json", args: []string{"-o", "json"}, expected: true},
-		{name: "output_json_equals", args: []string{"--output=json"}, expected: true},
-		{name: "short_output_json_equals", args: []string{"-o=json"}, expected: true},
-		{name: "output_flag_at_end", args: []string{"run", "--output"}, expected: false},
-		{name: "mixed_args", args: []string{"run", "--all", "--output", "json"}, expected: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			result := isJsonOutputFromArgs(tt.args)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestShouldWarnNewerIncompatible(t *testing.T) {
 	t.Parallel()
 

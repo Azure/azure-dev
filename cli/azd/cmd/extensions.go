@@ -21,26 +21,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	kv "github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	pkgux "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
-
-// isJsonOutputFromArgs checks if --output json or -o json was passed in args
-func isJsonOutputFromArgs(args []string) bool {
-	for i, arg := range args {
-		if arg == "--output" || arg == "-o" {
-			if i+1 < len(args) && args[i+1] == "json" {
-				return true
-			}
-		}
-		if arg == "--output=json" || arg == "-o=json" {
-			return true
-		}
-	}
-	return false
-}
 
 // stripCwdFlag removes --cwd/-C and its value from an argument list.
 // Core azd already processes -C (creates the directory, changes CWD, sets AZD_CWD
@@ -198,7 +184,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	// Start update check in background while extension runs
 	// By the time extension finishes, we'll have the result ready
-	showUpdateWarning := !isJsonOutputFromArgs(os.Args)
+	showUpdateWarning := a.globalOptions.PreParsedOutput != string(output.JsonFormat)
 	if showUpdateWarning {
 		updateResultChan := make(chan *updateCheckOutcome, 1)
 		// Create a minimal copy with only the fields needed for update checking.

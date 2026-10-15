@@ -959,7 +959,7 @@ func executeWithAutoInstallCommand(
 // output format changes. Without this, our default root input.Console would write out inconsistent output (ie, plain text
 // when the user requested JSON, for instance).
 func newChildCommandConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
-	formatter, err := output.GetCommandFormatter(foundCmd)
+	formatter, err := getCommandFormatter(globalOpts, foundCmd)
 	if err != nil {
 		return nil, fmt.Errorf("resolving output format for %s: %w", foundCmd.CommandPath(), err)
 	}
@@ -1052,6 +1052,10 @@ func parseGlobalFlags(
 	// Bind parsed values to the options struct
 	if strVal, err := globalFlagSet.GetString("cwd"); err == nil {
 		opts.Cwd = strVal
+	}
+
+	if strVal, err := globalFlagSet.GetString("output"); err == nil {
+		opts.PreParsedOutput = strings.ToLower(strings.TrimSpace(strVal))
 	}
 
 	if boolVal, err := globalFlagSet.GetBool("debug"); err == nil {

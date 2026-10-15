@@ -634,8 +634,7 @@ func validateTelephonyTransferTargets(
 		if !utf8.ValidString(target.Name) || !utf8.ValidString(target.Description) {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: strings must be valid UTF-8", source, i)
 		}
-		if target.Name == "" || target.Description == "" ||
-			target.Destination.Kind == "" || target.Destination.Value == "" {
+		if target.Name == "" || target.Description == "" || target.Destination.Kind == "" {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: required fields are missing", source, i)
 		}
 		if !telephonyTargetNamePattern.MatchString(target.Name) {
@@ -650,10 +649,24 @@ func validateTelephonyTransferTargets(
 		}
 		switch target.Destination.Kind {
 		case TelephonyTransferDestinationPSTN:
+			if target.Destination.Value == "" {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: required fields are missing",
+					source,
+					i,
+				)
+			}
 			if !telephonyPhoneNumberPattern.MatchString(target.Destination.Value) {
 				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid PSTN number", source, i)
 			}
 		case TelephonyTransferDestinationTeams:
+			if target.Destination.Value == "" {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: required fields are missing",
+					source,
+					i,
+				)
+			}
 			if !utf8.ValidString(target.Destination.Value) {
 				return fmt.Errorf(
 					"invalid telephony %s transfer target at index %d: Teams value is not valid UTF-8",
@@ -665,6 +678,13 @@ func validateTelephonyTransferTargets(
 				return fmt.Errorf("invalid telephony %s transfer target at index %d: Teams value is too long", source, i)
 			}
 		case TelephonyTransferDestinationSIP:
+			if target.Destination.Value == "" {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: required fields are missing",
+					source,
+					i,
+				)
+			}
 			if !isSIPUri(target.Destination.Value) {
 				return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid SIP URI", source, i)
 			}

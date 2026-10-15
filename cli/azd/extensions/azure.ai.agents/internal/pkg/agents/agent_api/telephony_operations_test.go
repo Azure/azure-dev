@@ -902,6 +902,21 @@ func TestGetTelephonyTransferTargets_PreservesUnknownDestinationKind(t *testing.
 	require.Equal(t, "future_kind", targets.TransferTargets[0].Destination.Kind)
 }
 
+func TestGetTelephonyTransferTargets_AllowsUnknownKindWithoutValue(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[{
+				"name":"future","description":"Future destination",
+				"destination":{"kind":"future_kind"}
+			}]}`, http.Header{"ETag": {`"etag"`}}), nil
+	})
+
+	targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+	require.NoError(t, err)
+	require.Equal(t, "future_kind", targets.TransferTargets[0].Destination.Kind)
+	require.Empty(t, targets.TransferTargets[0].Destination.Value)
+}
+
 func TestTelephonyTransferTargets_RequireDestinationKindInResponses(t *testing.T) {
 	response := `{
 		"transfer_targets":[{
@@ -933,6 +948,28 @@ func TestTelephonyTransferTargets_RequireDestinationKindInResponses(t *testing.T
 		var unknown *TelephonyWriteOutcomeUnknownError
 		require.ErrorAs(t, err, &unknown)
 	})
+}
+
+func TestReplaceTelephonyTransferTargets_AllowsUnknownResponseKindWithoutValue(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[{
+				"name":"future","description":"Future destination",
+				"destination":{"kind":"future_kind"}
+			}]}`, http.Header{"ETag": {`"new"`}}), nil
+	})
+
+	targets, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+		TransferTargets: []TelephonyTransferTarget{{
+			Name: "sip", Description: "SIP",
+			Destination: TelephonyTransferDestination{
+				Kind: TelephonyTransferDestinationSIP, Value: "sip:user@example.test",
+			},
+		}},
+	}, `"old"`)
+	require.NoError(t, err)
+	require.Equal(t, "future_kind", targets.TransferTargets[0].Destination.Kind)
+	require.Empty(t, targets.TransferTargets[0].Destination.Value)
 }
 
 func TestTelephonyTransferTargets_RejectNullDestinationKind(t *testing.T) {
@@ -1098,7 +1135,11 @@ func TestGATelephonyOperations_RejectInvalidSemanticInputs(t *testing.T) {
 		}},
 		"unknown write kind": {{
 			Name: "future", Description: "Future",
-			Destination: TelephonyTransferDestination{Kind: "future_kind", Value: "future-value"},
+			Destination: TelephonyTransferDestination{Kind: "future_kind"},
+		}},
+		"known kind missing value": {{
+			Name: "pstn", Description: "PSTN",
+			Destination: TelephonyTransferDestination{Kind: TelephonyTransferDestinationPSTN},
 		}},
 		"invalid UTF-8 Teams": {{
 			Name: "teams", Description: "Teams",

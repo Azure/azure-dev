@@ -21,9 +21,45 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestGetCommandFormatter_CoreIgnoresPreParsedOutput(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		preParsed string
+		parsed    string
+		want      output.Format
+	}{
+		{"text", "json", "none", output.NoneFormat},
+		{"json", "none", "json", output.JsonFormat},
+		{"unsupported", "json", "yaml", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{Use: "core"}
+			output.AddOutputParam(cmd, []output.Format{output.NoneFormat, output.JsonFormat}, output.NoneFormat)
+			require.NoError(t, cmd.Flags().Set("output", tc.parsed))
+			formatter, err := getCommandFormatter(&internal.GlobalCommandOptions{
+				PreParsedOutput: tc.preParsed,
+			}, cmd)
+			if tc.want == "" {
+				require.ErrorContains(t, err, "unsupported format 'yaml' for --output")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, formatter.Kind())
+		})
+	}
+
+	cmd := &cobra.Command{Use: "core"}
+	formatter, err := getCommandFormatter(&internal.GlobalCommandOptions{PreParsedOutput: "json"}, cmd)
+	require.NoError(t, err)
+	require.Equal(t, output.NoneFormat, formatter.Kind())
+}
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	t.Parallel()

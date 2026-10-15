@@ -71,6 +71,13 @@ type connectionAddPlan struct {
 	serviceSection       map[string]any
 	addRequest           *azdext.AddServiceRequest
 	changes              []connectionServiceChange
+
+	// baseline holds the project services the plan was built from. apply
+	// re-reads the manifest through planClient and refuses to write when the
+	// state the plan depends on differs from it.
+	baseline    map[string]any
+	planClient  connectionAddProjectClient
+	projectRoot string
 }
 
 type connectionServiceChange struct {
@@ -267,6 +274,9 @@ func planConnectionAdd(
 	}
 
 	plan := &connectionAddPlan{
+		baseline:             snapshot.services,
+		planClient:           client,
+		projectRoot:          projectRoot,
 		serviceName:          serviceName,
 		ref:                  ref,
 		projectKey:           projectKey,
@@ -899,7 +909,113 @@ func (plan *connectionAddPlan) prepareWrites(
 	return nil
 }
 
+// verifyUnchanged re-reads the project manifest right before writing and
+// compares the state the plan depends on with the snapshot it was built from:
+// the planned service's host, uses, env, config (when it existed), and
+// Connection definition fields, plus the presence and host of the selected
+// Project service and every service in uses. It returns a conflict error,
+// asking the user to rerun, when any of that changed after planning.
+// Changes to unrelated services or to fields this plan never reads or writes
+// are left alone, so they do not cause a conflict.
+//
+// This narrows the race window between planning and applying but does not
+// eliminate it: the AddService, SetServiceConfigValue, and UnsetServiceConfig
+// RPCs have no compare-and-swap, so a change another process makes after this
+// check and before the writes finish can still be overwritten.
+func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
+	if plan.baseline == nil || plan.planClient == nil {
+		return nil
+	}
+	current, err := loadConnectionProjectSnapshot(ctx, plan.planClient, plan.projectRoot)
+	if err != nil {
+		return fmt.Errorf("re-reading the project manifest before writing: %w", err)
+	}
+
+	changed := !reflect.DeepEqual(
+		plan.plannedServiceState(plan.baseline),
+		plan.plannedServiceState(current.services),
+	)
+	for _, key := range plan.dependencyKeys() {
+		if !reflect.DeepEqual(
+			connectionDependencyState(plan.baseline, key),
+			connectionDependencyState(current.services, key),
+		) {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeProjectChanged,
+		fmt.Sprintf(
+			"the project manifest changed after Connection service %q was planned; "+
+				"no changes were written. Rerun the command to plan against the current manifest.",
+			plan.serviceName,
+		),
+		"Another process changed azure.yaml while this command ran. Rerun the command.",
+	)
+}
+
+// plannedServiceState projects the planned service entry onto the fields the
+// plan reads or writes. The field set is derived from the baseline so a field
+// added after planning that the plan never touches does not count as a change.
+func (plan *connectionAddPlan) plannedServiceState(services map[string]any) map[string]any {
+	raw, exists := services[plan.serviceName]
+	state := map[string]any{"exists": exists}
+	service, ok := raw.(map[string]any)
+	if !ok {
+		state["value"] = raw
+		return state
+	}
+	baseline, _ := plan.baseline[plan.serviceName].(map[string]any)
+	fields := []string{"host", "uses", "env"}
+	fields = append(fields, slices.Sorted(maps.Keys(connectionDefinitionFields))...)
+	if _, hadConfig := baseline["config"]; hadConfig {
+		fields = append(fields, "config")
+	}
+	for _, field := range fields {
+		if value, found := service[field]; found {
+			state[field] = value
+		}
+	}
+	return state
+}
+
+func (plan *connectionAddPlan) dependencyKeys() []string {
+	keys := []string{}
+	if plan.projectKey != "" {
+		keys = append(keys, plan.projectKey)
+	}
+	switch uses := plan.serviceSection["uses"].(type) {
+	case []string:
+		keys = append(keys, uses...)
+	case []any:
+		for _, use := range uses {
+			if key, ok := use.(string); ok {
+				keys = append(keys, key)
+			}
+		}
+	}
+	slices.Sort(keys)
+	return slices.Compact(keys)
+}
+
+func connectionDependencyState(services map[string]any, key string) map[string]any {
+	raw, exists := services[key]
+	state := map[string]any{"exists": exists}
+	if service, ok := raw.(map[string]any); ok {
+		state["host"] = service["host"]
+	}
+	return state
+}
+
 func (plan *connectionAddPlan) apply(ctx context.Context, client connectionAddProjectClient) error {
+	if plan.mutation != "unchanged" {
+		if err := plan.verifyUnchanged(ctx); err != nil {
+			return err
+		}
+	}
 	switch plan.mutation {
 	case "added":
 		if _, err := client.AddService(ctx, plan.addRequest); err != nil {

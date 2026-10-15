@@ -245,3 +245,81 @@ func TestConnectionAddLeavesExplicitEmptyEnvironmentUntouched(t *testing.T) {
 	assert.True(t, found)
 	assert.Equal(t, map[string]any{}, env)
 }
+
+func TestConnectionAddRejectsProjectChangedAfterPlanning(t *testing.T) {
+	tests := map[string]func(*connectionAddProjectClientStub){
+		"same key added": func(c *connectionAddProjectClientStub) {
+			c.services["search"] = map[string]any{"host": "containerapp", "language": "js"}
+		},
+		"project host changed": func(c *connectionAddProjectClientStub) {
+			c.services["foundry"] = map[string]any{"host": "containerapp"}
+		},
+		"project removed": func(c *connectionAddProjectClientStub) {
+			delete(c.services, "foundry")
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connection.yaml",
+				"category: Search\ntarget: https://search.example.test\n")
+			client := newConnectionAddProjectClientStub()
+			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, false, "", true, nil, nil)
+			require.NoError(t, err)
+
+			mutate(client)
+			before, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+
+			err = plan.apply(t.Context(), client)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "project manifest changed after")
+			assert.Contains(t, err.Error(), "Rerun the command")
+			assert.Empty(t, client.mutationCalls)
+			after, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+		})
+	}
+}
+
+func TestConnectionAddRejectsExistingServiceChangedAfterPlanning(t *testing.T) {
+	root := t.TempDir()
+	file := writeConnectionAddDefinition(t, root, "connection.yaml",
+		"category: Search\ntarget: https://search.example.test\n")
+	client := newConnectionAddProjectClientStub()
+	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+	client.services["search"] = map[string]any{
+		"host": aiConnectionHost, "uses": []any{"foundry"}, "category": "Search", "target": "old",
+	}
+	plan, err := planConnectionAdd(t.Context(), client, root, "search",
+		file, false, "", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "updated", plan.mutation)
+
+	client.services["search"] = map[string]any{"host": "containerapp", "language": "js"}
+	err = plan.apply(t.Context(), client)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Rerun the command")
+	assert.Contains(t, err.Error(), "no changes were written")
+	assert.Empty(t, client.mutationCalls)
+	assert.Equal(t, map[string]any{"host": "containerapp", "language": "js"}, client.services["search"])
+}
+
+func TestConnectionAddAllowsUnrelatedFieldChangesAfterPlanning(t *testing.T) {
+	root := t.TempDir()
+	file := writeConnectionAddDefinition(t, root, "connection.yaml",
+		"category: Search\ntarget: https://search.example.test\n")
+	client := newConnectionAddProjectClientStub()
+	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+	plan, err := planConnectionAdd(t.Context(), client, root, "search",
+		file, false, "", true, nil, nil)
+	require.NoError(t, err)
+
+	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost, "config": map[string]any{"a": "b"}}
+	client.services["worker"] = map[string]any{"host": "containerapp"}
+	require.NoError(t, plan.apply(t.Context(), client))
+	assert.Equal(t, []string{"add"}, client.mutationCalls)
+}

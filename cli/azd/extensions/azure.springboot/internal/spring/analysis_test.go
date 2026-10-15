@@ -133,6 +133,52 @@ spring:
 			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"cloud"},
 		},
 		{
+			name: "groups expand before the next explicit profile",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=release,local\n" +
+					"spring.profiles.group.release=sql",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-local.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"release", "sql", "local"},
+		},
+		{
+			name: "nested groups expand depth first",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=release,local\n" +
+					"spring.profiles.group.release=sql,shared\nspring.profiles.group.sql=database",
+				"src/main/resources/application-database.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-local.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: MySQL, database: "warehouse",
+			profiles: []string{"release", "sql", "database", "shared", "local"},
+		},
+		{
+			name: "cyclic groups retain first activation and explicit precedence",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=release,sql,local\n" +
+					"spring.profiles.group.release=sql\nspring.profiles.group.sql=release",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-local.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"release", "sql", "local"},
+		},
+		{
+			name: "default profile groups preserve activation order",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.default=release,local\n" +
+					"spring.profiles.group.release=sql",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-local.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"release", "sql", "local"},
+		},
+		{
 			name: "environment wins over profile and nested placeholders",
 			files: map[string]string{
 				"src/main/resources/application.properties": "spring.datasource.url=jdbc:postgresql://localhost/catalog",
@@ -303,6 +349,42 @@ func TestAnalyzePropertiesDocumentSeparators(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestProfileGroupActivationLimits(t *testing.T) {
+	for _, count := range []int{64, 65} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			var configuration strings.Builder
+			configuration.WriteString("spring.profiles.active=group0\n")
+			for i := range count {
+				fmt.Fprintf(&configuration, "spring.profiles.group.group%d=group%d\n", i, (i+1)%count)
+			}
+			writeFixture(t, directory, "src/main/resources/application.properties", configuration.String())
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			if count > 64 {
+				require.ErrorContains(t, err, "exceeds 64 profiles")
+				require.Nil(t, application)
+			} else {
+				require.NoError(t, err)
+				require.Len(t, application.Profiles, count)
+				require.Equal(t, "group0", application.Profiles[0])
+				require.Equal(t, "group63", application.Profiles[count-1])
+			}
+		})
+	}
+	t.Run("invalid member", func(t *testing.T) {
+		directory := t.TempDir()
+		writeFixture(t, directory, "pom.xml", "<project/>")
+		writeFixture(t, directory, "src/main/resources/application.properties",
+			"spring.profiles.active=release\nspring.profiles.group.release=invalid profile")
+		application, err := Analyze(t.Context(), directory,
+			staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+		require.ErrorContains(t, err, "profile activation is invalid")
+		require.Nil(t, application)
+	})
 }
 
 func TestAnalyzeRetainsActiveExternalConfiguration(t *testing.T) {

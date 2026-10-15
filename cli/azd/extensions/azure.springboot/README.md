@@ -43,6 +43,7 @@ Java 17 or newer. Analysis reads effective Maven metadata, conventional
 `application*.properties`/YAML configuration, active/default profiles,
 includes/groups, property placeholders, environment overrides, and
 `SPRING_APPLICATION_JSON`. Inactive database alternatives are not provisioned.
+Profile groups expand depth-first in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
 Repackaging checks include plugin defaults and active execution configuration.
 The resolved Maven build directory determines the JAR copy path; project-local

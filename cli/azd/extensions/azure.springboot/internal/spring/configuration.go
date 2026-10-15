@@ -123,19 +123,23 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 			names = nil
 		}
 	}
-	for i := 0; i < len(names); i++ {
-		if len(names) > 64 || !profileName.MatchString(names[i]) {
+	pending := names
+	names = nil
+	for len(pending) > 0 {
+		name := pending[0]
+		pending = pending[1:]
+		if slices.Contains(names, name) {
+			continue
+		}
+		if len(names) >= 64 || !profileName.MatchString(name) {
 			return nil, errors.New("Spring profile activation is invalid or exceeds 64 profiles")
 		}
-		group, err := c.resolve("spring.profiles.group." + names[i])
+		names = append(names, name)
+		group, err := c.resolve("spring.profiles.group." + name)
 		if err != nil {
 			return nil, err
 		}
-		for _, member := range splitList(group) {
-			if !slices.Contains(names, member) {
-				names = append(names, member)
-			}
-		}
+		pending = append(splitList(group), pending...)
 	}
 	c.profiles = names
 	selected := make(map[string]bool, len(names))

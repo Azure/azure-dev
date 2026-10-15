@@ -881,7 +881,12 @@ func makeConnectionServiceSection(
 	candidate["$ref"] = ref
 	candidate["uses"] = stringsToAny(uses)
 	if includeEnv {
-		candidate["env"] = env
+		if env == nil {
+			// Keep explicit null env equal to the existing section so unchanged reruns are detected.
+			candidate["env"] = nil
+		} else {
+			candidate["env"] = env
+		}
 	} else {
 		delete(candidate, "env")
 	}

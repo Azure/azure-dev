@@ -1554,3 +1554,27 @@ func Test_HooksFromInfraModule_InvalidYaml(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed unmarshalling hooks")
 }
+
+func TestNormalizeConfigPathsToleratesMissingRawLayers(t *testing.T) {
+	parsed := &ProjectConfig{
+		Layers: LayerConfigs{
+			{Name: "first", Infra: []provisioning.Options{{Path: filepath.Join("infra", "first")}, {Path: filepath.Join("infra", "extra")}}},
+			{Name: "second", Infra: []provisioning.Options{{Path: filepath.Join("infra", "second")}}},
+		},
+	}
+	raw := map[string]any{
+		"layers": []any{
+			map[string]any{"name": "first", "infra": []any{map[string]any{"path": filepath.Join("infra", "first")}}},
+		},
+	}
+
+	require.NotPanics(t, func() { normalizeConfigPaths(raw, parsed) })
+
+	layers := raw["layers"].([]any)
+	require.Len(t, layers, 1)
+	infra := layers[0].(map[string]any)["infra"].([]any)
+	require.Len(t, infra, 1)
+	require.Equal(t, "infra/first", infra[0].(map[string]any)["path"])
+
+	require.NotPanics(t, func() { normalizeConfigPaths(map[string]any{}, parsed) })
+}

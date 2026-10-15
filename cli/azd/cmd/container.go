@@ -1013,8 +1013,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		globalOptions *internal.GlobalCommandOptions,
 		console input.Console,
 	) azdext.PromptServiceServer {
+		writer := console.Handles().Stderr
+		if os.Getenv("NO_COLOR") != "" {
+			writer = colorable.NewNonColorable(writer)
+		}
+
 		return grpcserver.NewPromptService(
-			prompter, resourceService, aiModelService, globalOptions, console.Handles().Stderr,
+			prompter, resourceService, aiModelService, globalOptions, writer,
 		)
 	})
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)

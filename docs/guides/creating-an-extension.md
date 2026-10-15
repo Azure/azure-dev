@@ -150,7 +150,7 @@ Commands that do not need the selected azd environment can emit
 `"environmentIndependent": true` on their command metadata. The property is
 per-command, not inherited; it skips host environment loading and Key Vault
 resolution, but does not restrict explicit Environment RPC calls. Require
-azd 1.36.0-beta.1 or later when relying on this behavior. See
+azd 1.36.0 or later when relying on this behavior. See
 [environment-independent commands](../../cli/azd/docs/extensions/extension-sdk-reference.md#environment-independent-commands).
 
 Use `Project().AddService` for complete service creation or replacement.

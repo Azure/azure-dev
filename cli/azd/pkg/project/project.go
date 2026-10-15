@@ -329,6 +329,9 @@ func normalizeConfigPaths(raw map[string]any, parsed *ProjectConfig) {
 	normalizeServices(raw, parsed.Services)
 	layers, _ := raw["layers"].([]any)
 	for i, layer := range parsed.Layers {
+		if i >= len(layers) {
+			break
+		}
 		rawLayer, ok := layers[i].(map[string]any)
 		if !ok {
 			continue
@@ -336,6 +339,9 @@ func normalizeConfigPaths(raw map[string]any, parsed *ProjectConfig) {
 		normalizeServices(rawLayer, layer.Services)
 		infra, _ := rawLayer["infra"].([]any)
 		for j, options := range layer.Infra {
+			if j >= len(infra) {
+				break
+			}
 			if object, ok := infra[j].(map[string]any); ok {
 				normalizePath(object, "path", options.Path)
 			}

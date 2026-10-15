@@ -13825,6 +13825,77 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "1.0.0-beta.2",
+          "requiredAzdVersion": ">=1.33.0",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai dataset <command> [options]",
+          "examples": [
+            {
+              "name": "create",
+              "description": "Register a dataset from a local file.",
+              "usage": "azd ai dataset create support-regression --from-file ./data/golden.jsonl"
+            },
+            {
+              "name": "versions list",
+              "description": "List the versions of a dataset.",
+              "usage": "azd ai dataset versions list support-regression"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6dcaade68fa6961982c137657e918f26167e3adb8a996297f1c8e3297c8dc59a"
+              },
+              "entryPoint": "azure-ai-dataset-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.2/azure-ai-dataset-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "47677d719db5e3a8d900cbfa0353fbe9734659e6f0f9d31fc3dec10f28d99252"
+              },
+              "entryPoint": "azure-ai-dataset-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.2/azure-ai-dataset-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9598cd1fd376168e38a58cb661c3a42c9462799a10537a14c2138e09360c1d0b"
+              },
+              "entryPoint": "azure-ai-dataset-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.2/azure-ai-dataset-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "72be3914a9dbdeabfb6f590341968ebe0e71cbabd2f415e2afcf1e56fbaa3624"
+              },
+              "entryPoint": "azure-ai-dataset-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.2/azure-ai-dataset-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "acc11d72e26071cd8725804650867b72f1f5ce3c62f58dc4c4e018dd967f2de6"
+              },
+              "entryPoint": "azure-ai-dataset-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.2/azure-ai-dataset-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "77ccdb8a6d73afbbda9f951996287f8e1cb9ec1736b130f5f4ad0234b918e193"
+              },
+              "entryPoint": "azure-ai-dataset-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.2/azure-ai-dataset-windows-arm64.zip"
+            }
+          }
         }
       ],
       "tags": [

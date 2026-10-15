@@ -61,7 +61,7 @@ func TestRunStartDatasetOverridePreservesAttributionAndExplicitZero(t *testing.T
 	require.NoError(t, action.start(t.Context(), ec, gate{}))
 
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 5, "absence lookup, schema check and one run submission; no publication")
+	require.Len(t, recorded, 5, "only absence/schema lookup and one submission; no publication or original dataset lookup")
 	for index, path := range []string{
 		"/datasets/golden/versions", "/datasets/golden/versions/1.0", "/datasets/golden/versions/1",
 	} {

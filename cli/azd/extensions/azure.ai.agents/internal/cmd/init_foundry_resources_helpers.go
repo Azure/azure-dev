@@ -1880,6 +1880,7 @@ func selectFoundryProject(
 	skipACR bool,
 	filterHostedRegions bool,
 	bicepless bool,
+	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
@@ -1916,6 +1917,15 @@ func selectFoundryProject(
 		}
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
+
+	if projectResourceId != "" && len(projects) > 0 {
+		if err := validateInitLocation(projects[0].Location, allowedLocations); err != nil {
+			return nil, err
+		}
+	}
+	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+		return !locationAllowed(p.Location, allowedLocations)
+	})
 
 	// Hosted agents (code deploy or a pre-built --image) must run in a region that
 	// supports hosted agents, so restrict the project list to those regions. This

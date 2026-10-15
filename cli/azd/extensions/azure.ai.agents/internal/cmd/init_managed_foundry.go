@@ -18,24 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// Temporary GitHub Copilot harness availability restriction; remove when all regions are supported.
-var promptHarnessRegions = []string{
-	"japaneast", "swedencentral", "uksouth",
-	"australiaeast", "westeurope", "germanywestcentral",
-	"canadacentral", "westus2",
-}
-
-func validatePromptHarnessLocation(location string, allowedLocations []string) error {
-	if locationAllowed(location, allowedLocations) {
-		return nil
-	}
-	return exterrors.Validation(
-		exterrors.CodeLocationMismatch,
-		fmt.Sprintf("location %q is not supported for the GitHub Copilot harness", location),
-		"select a Foundry project or create one in a supported region: "+strings.Join(allowedLocations, ", "),
-	)
-}
-
 // resolvePromptHarnessTarget drives the guided Foundry resolution for a prompt
 // agent, mirroring the hosted agent experience: subscription -> Foundry project
 // (select existing or create new) -> model deployment (version, SKU, capacity,
@@ -64,10 +46,7 @@ func resolvePromptHarnessTarget(
 	settings *project.PromptAgentSettings,
 	harness string,
 ) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
-	var allowedLocations []string
-	if harness == "github_copilot_preview" {
-		allowedLocations = promptHarnessRegions
-	}
+	allowedLocations := promptHarnessRegionsForInit(harness)
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
 		return nil, false, nil, nil, err
@@ -158,7 +137,7 @@ func resolvePromptHarnessTarget(
 		// the provisioned environment at deploy time.
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
 		if err == nil {
-			err = validatePromptHarnessLocation(azureContext.Scope.Location, allowedLocations)
+			err = validateInitLocation(azureContext.Scope.Location, allowedLocations)
 		}
 		return deployment, true, nil, cred, err
 	}
@@ -203,7 +182,7 @@ func resolvePromptHarnessTarget(
 		ctx, azdClient, cred, azureContext, env, flags, proj,
 	)
 	if err == nil {
-		err = validatePromptHarnessLocation(azureContext.Scope.Location, allowedLocations)
+		err = validateInitLocation(azureContext.Scope.Location, allowedLocations)
 	}
 	return deployment, provision, proj, cred, err
 }
@@ -238,7 +217,7 @@ func selectPromptFoundryProject(
 		if err != nil {
 			return nil, err
 		}
-		if err := validatePromptHarnessLocation(proj.Location, allowedLocations); err != nil {
+		if err := validateInitLocation(proj.Location, allowedLocations); err != nil {
 			return nil, err
 		}
 		return proj, nil

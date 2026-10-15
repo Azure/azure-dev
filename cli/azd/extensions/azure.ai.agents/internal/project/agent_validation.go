@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -240,9 +241,9 @@ func validateAgentActivitySettings(
 	resolved *structpb.Struct,
 	hosted agent_yaml.ContainerAgent,
 ) error {
-	effectiveService := *svc
+	effectiveService := proto.Clone(svc).(*azdext.ServiceConfig)
 	effectiveService.AdditionalProperties = resolved
-	settings, err := LoadServiceTargetAgentConfig(&effectiveService)
+	settings, err := LoadServiceTargetAgentConfig(effectiveService)
 	if err != nil {
 		return invalidAgentDefinitionError(svc, err)
 	}

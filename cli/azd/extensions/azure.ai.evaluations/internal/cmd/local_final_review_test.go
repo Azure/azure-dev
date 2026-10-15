@@ -246,7 +246,7 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 	t.Cleanup(server.Close)
-	run := func(cap int) (string, bool) {
+	newContext := func() *evalContext {
 		ec := evalContextFor(server)
 		ec.azdClient = newTestAzdClient(t, state)
 		ec.envName, ec.rootKnown = "test", true
@@ -258,6 +258,10 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 				},
 			}},
 		}}
+		return ec
+	}
+	run := func(cap int) (string, bool) {
+		ec := newContext()
 		group := cfg.Evals[0]
 		group.MaxSamples = cap
 		id, changed, err := (&evalReconciler{ec: ec}).EnsureEval(t.Context(), group, group.LocalSourcePath(dir))
@@ -283,6 +287,13 @@ func TestLocalImmutableRequestChangeRecreatesButCapDoesNot(t *testing.T) {
 	fourth, changed := run(5)
 	assert.False(t, changed)
 	assert.Equal(t, third, fourth)
+	assert.Equal(t, 2, count)
+
+	selected := cfg.Evals[0]
+	selected.ID = first
+	_, _, err = (&evalReconciler{ec: newContext()}).EnsureEval(
+		t.Context(), selected, selected.LocalSourcePath(dir))
+	require.ErrorContains(t, err, "different immutable local source contract")
 	assert.Equal(t, 2, count)
 }
 

@@ -225,6 +225,49 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a file-backed Agent service to the current azd project.',
+							options: [
+								{
+									name: ['--file'],
+									description: 'Path to a direct Agent definition file.',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['default', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project'],
+									description: 'Service key for the sole azure.ai.project service.',
+									args: [
+										{
+											name: 'project',
+										},
+									],
+								},
+								{
+									name: ['--source'],
+									description: 'Override the Agent service\'s project directory.',
+									args: [
+										{
+											name: 'source',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['code'],
 							description: 'Manage agent source code. (Preview)',
 							subcommands: [
@@ -6346,6 +6389,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
+										},
+									],
+								},
+								{
 									name: ['--timeout'],
 									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
@@ -6366,6 +6418,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
 										},
 									],
 								},
@@ -6453,6 +6514,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'description',
+										},
+									],
+								},
+								{
+									name: ['--dispatch-identity'],
+									description: 'Dispatch identity: agent (default) or creator',
+									args: [
+										{
+											name: 'dispatch-identity',
 										},
 									],
 								},
@@ -6557,6 +6627,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
+										},
+									],
+								},
+								{
 									name: ['--time-zone'],
 									description: 'Time zone for the recurring trigger (e.g. \'America/New_York\')',
 									args: [
@@ -6614,6 +6693,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
+										},
+									],
+								},
+								{
 									name: ['--timeout'],
 									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
@@ -6644,6 +6732,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
 										},
 									],
 								},
@@ -6695,6 +6792,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
+										},
+									],
+								},
+								{
 									name: ['--timeout'],
 									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
@@ -6729,6 +6835,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
+										},
+									],
+								},
+								{
 									name: ['--timeout'],
 									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 									args: [
@@ -6759,6 +6874,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
 										},
 									],
 								},
@@ -6810,6 +6934,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--tenant-id'],
+											description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+											args: [
+												{
+													name: 'tenant-id',
+												},
+											],
+										},
+										{
 											name: ['--timeout'],
 											description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes. Not supported by add, context, or version.',
 											args: [
@@ -6837,6 +6970,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
 										},
 									],
 								},
@@ -6871,6 +7013,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
 										},
 									],
 								},
@@ -7044,6 +7195,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
+										},
+									],
+								},
+								{
 									name: ['--time-zone'],
 									description: 'New time zone (recurring trigger only)',
 									args: [
@@ -7083,6 +7243,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tenant-id'],
+									description: 'Tenant ID for Azure authentication on remote routine commands (overrides azd context)',
+									args: [
+										{
+											name: 'tenant-id',
 										},
 									],
 								},

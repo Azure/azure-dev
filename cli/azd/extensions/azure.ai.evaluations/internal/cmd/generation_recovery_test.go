@@ -285,8 +285,11 @@ func TestGenerationPartialJSONRedactsJobFailureMessage(t *testing.T) {
 			t.Cleanup(func() { exitProcess = priorExit })
 			reportFailuresAsJSON(cmd)
 			err := cmd.RunE(cmd, nil)
-			require.ErrorContains(t, err, tc.message, "the returned error remains unmodified")
-			assert.Equal(t, tc.message, failedJob.Error.Message)
+			require.ErrorContains(t, err, tc.safeMessage, "the returned error carries the redacted reason")
+			for _, sensitive := range []string{"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment"} {
+				assert.NotContains(t, err.Error(), sensitive, "a human-readable failure is redacted too")
+			}
+			assert.Equal(t, tc.message, failedJob.Error.Message, "the service's own record is not rewritten")
 			assert.Equal(t, 1, exitCode)
 
 			var result map[string]generationResult

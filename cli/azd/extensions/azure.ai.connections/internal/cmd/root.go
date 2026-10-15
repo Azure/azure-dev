@@ -48,9 +48,10 @@ func NewRootCommand() *cobra.Command {
 	}))
 
 	// Register -p / --project-endpoint as a persistent flag inherited by
-	// connection CRUD subcommands (list, show, create, update, delete).
+	// remote connection CRUD subcommands (list, show, create, update, delete).
+	// Other commands, including local authoring with add, reject it.
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
-		"Foundry project endpoint URL for connection operations only (not context or version)")
+		"Foundry project endpoint URL for remote list, show, create, update, and delete only")
 
 	// Local authoring and remote Connection CRUD subcommands.
 	rootCmd.AddCommand(newConnectionAddCommand(extCtx))

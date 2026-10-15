@@ -672,7 +672,7 @@ before contacting Foundry Agent Service.
 ## GitHub Copilot harness built-in tools
 
 The `github_copilot_preview` harness currently requires a Foundry project in one of
-these regions: `japaneast`, `swedencentral`, `uksouth`, `australiaeast`, `westeurope`,
+these regions: `eastus2`, `japaneast`, `swedencentral`, `uksouth`, `australiaeast`, `westeurope`,
 `germanywestcentral`, `canadacentral`, or `westus2`.
 
 The harness block selects the managed runtime and contains only its type.

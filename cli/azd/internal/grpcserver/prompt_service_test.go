@@ -364,7 +364,13 @@ func Test_PromptService_PromptResourceGroup_NilOptions(t *testing.T) {
 	}
 
 	mockPrompter.
-		On("PromptResourceGroup", mock.Anything, mock.Anything, (*prompt.ResourceGroupOptions)(nil)).
+		On("PromptResourceGroup", mock.Anything, mock.Anything,
+			mock.MatchedBy(func(options *prompt.ResourceGroupOptions) bool {
+				// Nil request options still route the picker to the injected writer.
+				return options != nil && options.SelectorOptions != nil &&
+					options.SelectorOptions.Writer == io.Discard &&
+					options.SelectorOptions.Message == ""
+			})).
 		Return(expectedRg, nil)
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
@@ -552,7 +558,7 @@ func Test_CreateResourceGroupOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := createResourceGroupOptions(tt.input)
+			result := createResourceGroupOptions(tt.input, nil)
 
 			if tt.expected == nil {
 				require.Nil(t, result)
@@ -608,7 +614,7 @@ func Test_CreateResourceOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := createResourceOptions(tt.input)
+			result := createResourceOptions(tt.input, nil)
 
 			if tt.input == nil {
 				require.Equal(t, prompt.ResourceOptions{}, result)
@@ -1867,7 +1873,7 @@ func TestCreateAzureContext_InvalidResourceID(t *testing.T) {
 
 func TestCreateResourceOptions_Nil(t *testing.T) {
 	t.Parallel()
-	opts := createResourceOptions(nil)
+	opts := createResourceOptions(nil, nil)
 	require.Nil(t, opts.ResourceType)
 }
 
@@ -1881,7 +1887,7 @@ func TestCreateResourceOptions_WithValues(t *testing.T) {
 			Message:     "Select a web app",
 			HelpMessage: "Choose one",
 		},
-	})
+	}, nil)
 	require.NotNil(t, opts.ResourceType)
 	require.Equal(t, []string{"web"}, opts.Kinds)
 	require.Equal(t, "Web App", opts.ResourceTypeDisplayName)
@@ -1893,12 +1899,12 @@ func TestCreateResourceOptions_WithValues(t *testing.T) {
 
 func TestCreateResourceGroupOptions_Nil(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, createResourceGroupOptions(nil))
+	require.Nil(t, createResourceGroupOptions(nil, nil))
 }
 
 func TestCreateResourceGroupOptions_NilSelectOptions(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, createResourceGroupOptions(&azdext.PromptResourceGroupOptions{}))
+	require.Nil(t, createResourceGroupOptions(&azdext.PromptResourceGroupOptions{}, nil))
 }
 
 func TestCreateResourceGroupOptions_WithValues(t *testing.T) {
@@ -1910,13 +1916,52 @@ func TestCreateResourceGroupOptions_WithValues(t *testing.T) {
 			AllowNewResource: &allowNew,
 			DisplayCount:     10,
 		},
-	})
+	}, nil)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SelectorOptions)
 	require.Equal(t, "Select RG", result.SelectorOptions.Message)
 	require.NotNil(t, result.SelectorOptions.AllowNewResource)
 	require.True(t, *result.SelectorOptions.AllowNewResource)
 	require.Equal(t, 10, result.SelectorOptions.DisplayCount)
+}
+
+func TestCreateResourceOptionsRouteToInjectedWriter(t *testing.T) {
+	t.Parallel()
+	var writer bytes.Buffer
+
+	opts := createResourceOptions(nil, &writer)
+	require.NotNil(t, opts.SelectorOptions)
+	assert.Same(t, &writer, opts.SelectorOptions.Writer)
+
+	opts = createResourceOptions(&azdext.PromptResourceOptions{ResourceType: "Microsoft.Web/sites"}, &writer)
+	require.NotNil(t, opts.SelectorOptions)
+	assert.Same(t, &writer, opts.SelectorOptions.Writer)
+
+	opts = createResourceOptions(&azdext.PromptResourceOptions{
+		SelectOptions: &azdext.PromptResourceSelectOptions{Message: "Select a web app"},
+	}, &writer)
+	assert.Same(t, &writer, opts.SelectorOptions.Writer)
+	assert.Equal(t, "Select a web app", opts.SelectorOptions.Message)
+
+	for _, input := range []*azdext.PromptResourceGroupOptions{
+		nil,
+		{},
+		{SelectOptions: &azdext.PromptResourceSelectOptions{Message: "Select RG"}},
+	} {
+		result := createResourceGroupOptions(input, &writer)
+		require.NotNil(t, result)
+		require.NotNil(t, result.SelectorOptions)
+		assert.Same(t, &writer, result.SelectorOptions.Writer)
+	}
+}
+
+func TestNewMultiSelectOptionsUsesInjectedWriter(t *testing.T) {
+	t.Parallel()
+	var writer bytes.Buffer
+	options := newMultiSelectOptions(&azdext.MultiSelectOptions{
+		Choices: []*azdext.MultiSelectChoice{{Value: "a", Label: "A"}},
+	}, &writer)
+	assert.Same(t, &writer, options.Writer)
 }
 
 // --- promptLock tests ---
@@ -2161,7 +2206,7 @@ func TestNewMultiSelectOptions(t *testing.T) {
 					{Value: "a", Label: "A"},
 				},
 				AllowEmptySelection: test.allowEmptySelection,
-			})
+			}, nil)
 
 			require.Equal(t, test.allowEmptySelection, options.AllowEmptySelection)
 		})

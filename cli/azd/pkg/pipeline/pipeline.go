@@ -110,6 +110,14 @@ type configurePipelineOptions struct {
 	// This is useful for fully-managed scenarios like Aspire, where user is not manually defining the variables and secrets
 	// in the azure.yaml file. The provider can provide the parameters and values required in CI.
 	providerParameters []provisioning.Parameter
+	// requiredExtensions are installed in CI before any azd project commands run.
+	requiredExtensions []RequiredExtension
+}
+
+// RequiredExtension identifies an azd extension version that generated pipelines must install.
+type RequiredExtension struct {
+	Id      string
+	Version string
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.
@@ -342,31 +350,22 @@ func toCiProviderType(provider string) (ciProviderType, error) {
 	return "", fmt.Errorf("invalid ci provider type %s", provider)
 }
 
-type infraProviderType string
-
-const (
-	infraProviderBicep     infraProviderType = "bicep"
-	infraProviderTerraform infraProviderType = "terraform"
-	infraProviderUndefined infraProviderType = ""
-)
-
-func toInfraProviderType(provider string) (infraProviderType, error) {
-	result := infraProviderType(provider)
-	if result == infraProviderBicep || result == infraProviderTerraform || result == infraProviderUndefined {
-		return result, nil
-	}
-	return "", fmt.Errorf("invalid infra provider type %s", provider)
+func usesTerraform(options provisioning.Options) bool {
+	return slices.ContainsFunc(options.GetLayers(), func(layer provisioning.Options) bool {
+		return layer.Provider == provisioning.Terraform
+	})
 }
 
 type projectProperties struct {
 	CiProvider            ciProviderType
-	InfraProvider         infraProviderType
+	IsTerraform           bool
 	RepoRoot              string
 	HasAppHost            bool
 	BranchName            string
 	AuthType              PipelineAuthType
 	Variables             []string
 	Secrets               []string
+	RequiredExtensions    []RequiredExtension
 	RequiredAlphaFeatures []string
 	providerParameters    []provisioning.Parameter
 }

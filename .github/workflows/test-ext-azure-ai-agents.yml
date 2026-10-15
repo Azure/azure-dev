@@ -7,6 +7,7 @@ on:
       - "cli/azd/extensions/azure.ai.inspector/**"
       - "cli/azd/extensions/azure.ai.projects/**"
       - "cli/azd/extensions/scripts/ci-build.ps1"
+      - "cli/azd/pkg/ai/**"
       - "cli/azd/test/functional/ai_agents/**"
       - ".github/workflows/test-ext-azure-ai-agents.yml"
     branches: [main]

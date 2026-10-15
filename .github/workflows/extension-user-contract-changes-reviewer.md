@@ -1,16 +1,13 @@
 ---
 # cspell:ignore evals gopls toolsets
-name: user-contract-changes-reviewer
+name: extension-user-contract-changes-reviewer
 description: Review pull requests with installed expert skills
-intent: Ensure pull requests that change azd commands, parameters, configuration, schemas, or extension contracts receive one consolidated review and an approved experiences spec reference before merge.
+intent: Ensure pull requests that change first-party azd extension commands, parameters, configuration, or schemas receive one consolidated review and an approved experiences spec reference before merge.
 on:
   pull_request:
     types: [ready_for_review, synchronize]
     paths:
-      - "cli/azd/**"
-      - "docs/reference/**"
-      - "docs/guides/adding-a-new-command.md"
-      - "docs/architecture/extension-framework.md"
+      - "cli/azd/extensions/**"
     forks: ["*"]
   roles: all
 permissions:
@@ -25,7 +22,6 @@ engine:
   args: ["--effort", "medium"]
 skills:
   - Azure/azure-dev/.github/skills/azd-code-reviewer@f94124ba3dd65e7bf2db762cdd743e60807e58eb
-  - Azure/azure-dev/.github/skills/azd-grpc-contracts@f94124ba3dd65e7bf2db762cdd743e60807e58eb
 strict: true
 network:
   allowed: [defaults, github, go]
@@ -64,12 +60,12 @@ evals:
     question: When the agent output identifies a previously supplied experiences spec PR link, does the comment avoid asking for that link again?
 ---
 
-# User Contract Changes Reviewer
+# Extension User Contract Changes Reviewer
 
 Review pull request #${{ github.event.pull_request.number }} in `${{ github.repository }}` for user-visible contract
 changes introduced by the diff.
 
-**Operational value:** Every high-confidence azd command, parameter, configuration shape, schema, or extension contract
+**Operational value:** Every high-confidence first-party extension command, parameter, configuration shape, or schema
 change is consolidated into one review comment, with an approved experiences spec PR requested only until one is
 provided.
 
@@ -83,8 +79,6 @@ the pull request. Use only read-only repository and GitHub access for investigat
    complete pull request conversation and review history.
 2. Select installed expert skills by change type:
    - Apply `azd-code-reviewer` to all in-scope changes.
-   - Apply `azd-grpc-contracts` only when the diff changes protobuf sources, generated contract surfaces, gRPC
-     registration or adapters, stable `v1`, preview `v1beta`, or SDK contract exposure.
    - Do not install or fetch additional skills at run time.
 3. Review changed lines only, while reading the minimum surrounding code and documentation needed to establish
    behavior. For changed Go files under `cli/azd/extensions/**`, use Go LSP capabilities first to find definitions,
@@ -97,13 +91,14 @@ the pull request. Use only read-only repository and GitHub access for investigat
    - machine-readable output fields, names, types, omission rules, and compatibility
    - `azure.yaml`, environment variables, extension manifests, JSON schemas, decoding, request mapping, defaults, and
      runtime validation, including consistency between inline and `$ref` definitions
-   - extension protobuf compatibility, stable versus preview channel placement, generated artifacts, adapters,
-     runtime registration, SDK exposure, and `requiredAzdVersion`
+   - extension manifests, extension-specific service contracts, host-version requirements, and compatibility with
+     persisted extension state
    - missing contract tests, command snapshots, help updates, schema updates, or reference documentation when their
      absence creates a concrete user-visible mismatch
 5. Report only high-confidence contract changes introduced by the pull request. Do not report style preferences,
    speculative risks, praise, or generic requests for more tests. Prefer silence over low-signal feedback.
 6. Identify prior comments created by this workflow using the marker
+   `<!-- extension-user-contract-changes-reviewer -->`. For compatibility with earlier runs, also recognize
    `<!-- user-contract-changes-reviewer -->`. After each such comment, inspect later comments from the pull request
    author or a repository member, owner, or collaborator. Treat an explicit GitHub pull request link supplied as the
    approved experiences spec PR as satisfying the request for this pull request. Preserve the most recent qualifying
@@ -118,7 +113,7 @@ Create exactly one `add_comment` output when one or more contract changes remain
 or multiple comments. Use this structure:
 
 ```markdown
-<!-- user-contract-changes-reviewer -->
+<!-- extension-user-contract-changes-reviewer -->
 ## User contract changes
 
 This review found the following user-visible contract changes:

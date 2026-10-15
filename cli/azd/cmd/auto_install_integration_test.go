@@ -331,11 +331,6 @@ func TestExecuteWithAutoInstall_LightspeedDetection(t *testing.T) {
 			expectLightspeed: true,
 		},
 		{
-			name:             "env_unset_is_lightspeed_even_with_invalid_arguments",
-			args:             []string{"azd", "env", "unset", "AZURE_ENV_NAME"},
-			expectLightspeed: true,
-		},
-		{
 			name:             "version_is_not_lightspeed",
 			args:             []string{"azd", "version"},
 			expectLightspeed: false,

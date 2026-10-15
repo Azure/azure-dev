@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -12,6 +13,50 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+type projectSetupAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *projectSetupAccountServer) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "tenant"}, nil
+}
+
+func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
+	for _, location := range []string{"eastus", "japaneast", ""} {
+		t.Run(location, func(t *testing.T) {
+			values := map[string]string{
+				"AZURE_SUBSCRIPTION_ID":         "sub",
+				"AZURE_LOCATION":                location,
+				"AZURE_AI_DEPLOYMENTS_LOCATION": "westus2",
+			}
+			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{"test": values}}
+			address := newInvokeRemoteContextTestAzdServer(
+				t, &helpersProjectServer{}, envServer, &projectSetupAccountServer{},
+			)
+			client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+			azureContext, err := loadAzureContext(t.Context(), client, "test")
+			require.NoError(t, err)
+			_, err = configureFoundryProject(t.Context(), client, azureContext, "test", "", "",
+				true, true, false, false, promptHarnessRegionsForInit("github_copilot_preview"))
+			if location == "eastus" {
+				require.ErrorContains(t, err, "configured AZURE_LOCATION")
+				require.Equal(t, location, values["AZURE_LOCATION"])
+			} else {
+				require.NoError(t, err)
+				if location == "" {
+					location = "westus2"
+				}
+				require.Equal(t, location, values["AZURE_LOCATION"])
+			}
+			require.Equal(t, "westus2", values["AZURE_AI_DEPLOYMENTS_LOCATION"])
+		})
+	}
+}
 
 func TestValidateAcrConnectionInput(t *testing.T) {
 	t.Parallel()

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"azureaiagent/internal/exterrors"
 
@@ -74,15 +75,24 @@ func configureFoundryProject(
 		if len(allowedLocations) == 0 {
 			return ensureLocation(ctx, azdClient, azureContext, envName)
 		}
+		location, err := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION")
+		if err != nil {
+			return err
+		}
+		if location != "" && !locationAllowed(location, allowedLocations) {
+			return exterrors.Validation(
+				exterrors.CodeLocationMismatch,
+				fmt.Sprintf("configured AZURE_LOCATION %q is not supported for this agent setup", location),
+				"set AZURE_LOCATION to a supported region before retrying init: "+
+					strings.Join(allowedLocations, ", "),
+			)
+		}
 		if noPrompt {
 			if err := validateInitLocation(azureContext.Scope.Location, allowedLocations); err != nil {
 				return err
 			}
 		}
-		if err := ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations); err != nil {
-			return err
-		}
-		return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+		return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
 	}
 	if err := validateAcrConnectionInput(
 		acrConnection,

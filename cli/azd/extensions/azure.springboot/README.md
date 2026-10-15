@@ -4,6 +4,8 @@ Development extension for `azd spring init`. It infers a Spring Boot application
 active database and generates an azd project without requiring an existing `azure.yaml`.
 It is not yet published to the extension registry.
 
+See [DESIGN.md](DESIGN.md) for the resource model and configuration-resolution contract.
+
 ## Try it locally
 
 From this extension directory, build and register a local bundle:

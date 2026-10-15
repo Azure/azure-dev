@@ -38,6 +38,33 @@ func (b *cancelingResponseBody) Read([]byte) (int, error) {
 
 func (*cancelingResponseBody) Close() error { return nil }
 
+type countingResponseBody struct {
+	remaining int64
+	read      int64
+	closed    bool
+}
+
+func (b *countingResponseBody) Read(buffer []byte) (int, error) {
+	if b.remaining == 0 {
+		return 0, io.EOF
+	}
+	count := int64(len(buffer))
+	if count > b.remaining {
+		count = b.remaining
+	}
+	for i := int64(0); i < count; i++ {
+		buffer[i] = 'x'
+	}
+	b.remaining -= count
+	b.read += count
+	return int(count), nil
+}
+
+func (b *countingResponseBody) Close() error {
+	b.closed = true
+	return nil
+}
+
 func (t *telephonyContractTransport) Do(req *http.Request) (*http.Response, error) {
 	t.requests++
 	return t.do(req)
@@ -127,6 +154,78 @@ func TestListTelephonyBindings_DoesNotRetryTransientResponse(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, 1, requests)
 	require.NotContains(t, err.Error(), "xxxxx")
+}
+
+func TestTelephonyPipelineLimitsTransportReadsBeforeBodyDownload(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		maxRead int64
+		call    func(*AgentClient) error
+	}{
+		{
+			name: "success", status: http.StatusOK, maxRead: maxTelephonyResponseSize + 1,
+			call: func(client *AgentClient) error {
+				_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+				return err
+			},
+		},
+		{
+			name: "error", status: http.StatusBadRequest, maxRead: maxTelephonyErrorResponseSize + 1,
+			call: func(client *AgentClient) error {
+				_, err := client.ListTelephonyBindings(t.Context(), "agent", TelephonyBindingListOptions{})
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := &countingResponseBody{remaining: 8 * 1024 * 1024}
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: tt.status,
+					Status:     http.StatusText(tt.status),
+					Header:     http.Header{},
+					Body:       body,
+					Request:    req,
+				}, nil
+			})
+			require.Error(t, tt.call(client))
+			require.Equal(t, tt.maxRead, body.read)
+			require.True(t, body.closed)
+		})
+	}
+}
+
+func TestTelephonyResponseLimitTransport_BypassesNoncanonicalAndHandlesNil(t *testing.T) {
+	t.Run("noncanonical path", func(t *testing.T) {
+		body := &countingResponseBody{remaining: 1024}
+		transport := &telephonyResponseLimitTransport{next: &telephonyContractTransport{
+			do: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: body, Request: req}, nil
+			},
+		}}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://example.test/telephony/bindings-evil", nil)
+		require.NoError(t, err)
+		resp, err := transport.Do(req)
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, int64(1024), body.read)
+	})
+
+	t.Run("nil response", func(t *testing.T) {
+		transport := &telephonyResponseLimitTransport{next: &telephonyContractTransport{
+			do: func(req *http.Request) (*http.Response, error) { return nil, nil },
+		}}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://example.test/telephony/bindings", nil)
+		require.NoError(t, err)
+		resp, err := transport.Do(req)
+		require.NoError(t, err)
+		require.Nil(t, resp)
+	})
 }
 
 func TestListTelephonyBindings_RejectsMissingStatus(t *testing.T) {
@@ -761,6 +860,51 @@ func TestGetTelephonyTransferTargets_PreservesUnknownDestinationKind(t *testing.
 	targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
 	require.NoError(t, err)
 	require.Equal(t, "future_kind", targets.TransferTargets[0].Destination.Kind)
+}
+
+func TestTelephonyTransferTargets_RequireDestinationKindInResponses(t *testing.T) {
+	response := `{
+		"transfer_targets":[{
+			"name":"missing","description":"Missing kind","destination":{"value":"value"}
+		}]}`
+
+	t.Run("get", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK, response,
+				http.Header{"ETag": {`"etag"`}}), nil
+		})
+		_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+		require.ErrorContains(t, err, "required fields")
+	})
+
+	t.Run("put", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK, response,
+				http.Header{"ETag": {`"etag"`}}), nil
+		})
+		_, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+			TransferTargets: []TelephonyTransferTarget{{
+				Name: "sip", Description: "SIP",
+				Destination: TelephonyTransferDestination{
+					Kind: TelephonyTransferDestinationSIP, Value: "sip:user@example.test",
+				},
+			}},
+		}, `"old"`)
+		var unknown *TelephonyWriteOutcomeUnknownError
+		require.ErrorAs(t, err, &unknown)
+	})
+}
+
+func TestTelephonyTransferTargets_RejectNullDestinationKind(t *testing.T) {
+	client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		return telephonyResponse(req, http.StatusOK, `{
+			"transfer_targets":[{
+				"name":"missing","description":"Null kind",
+				"destination":{"kind":null,"value":"value"}
+			}]}`, http.Header{"ETag": {`"etag"`}}), nil
+	})
+	_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+	require.ErrorContains(t, err, "required fields")
 }
 
 func TestTelephonyStringLimitsCountUnicodeCodePoints(t *testing.T) {

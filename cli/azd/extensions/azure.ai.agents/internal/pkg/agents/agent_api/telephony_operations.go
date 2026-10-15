@@ -30,7 +30,45 @@ const (
 	TelephonyProviderTwilio                  = "twilio"
 	telephonyAPIVersion                      = "v1"
 	maxTelephonyResponseSize                 = 4 * 1024 * 1024
+	maxTelephonyErrorResponseSize            = 64 * 1024
 )
+
+type telephonyResponseLimitTransport struct {
+	next policy.Transporter
+}
+
+func (t *telephonyResponseLimitTransport) Do(req *http.Request) (*http.Response, error) {
+	resp, err := t.next.Do(req)
+	if err != nil || resp == nil || resp.Body == nil || !isCanonicalTelephonyPath(req.URL.Path) {
+		return resp, err
+	}
+	limit := int64(maxTelephonyResponseSize + 1)
+	if resp.StatusCode >= http.StatusBadRequest {
+		limit = int64(maxTelephonyErrorResponseSize + 1)
+	}
+	resp.Body = &limitedResponseBody{Reader: io.LimitReader(resp.Body, limit), closer: resp.Body}
+	return resp, nil
+}
+
+type limitedResponseBody struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (b *limitedResponseBody) Close() error {
+	return b.closer.Close()
+}
+
+func isCanonicalTelephonyPath(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	for i := 0; i+1 < len(segments); i++ {
+		if segments[i] != "telephony" {
+			continue
+		}
+		return segments[i+1] == "bindings" || segments[i+1] == "transfer_targets"
+	}
+	return false
+}
 
 // TelephonyWriteOutcomeUnknownError indicates that a write request may have
 // committed even though the client could not confirm the final service result.
@@ -432,7 +470,7 @@ func (c *AgentClient) gaTelephonyRequest(
 		}
 	}
 
-	resp, err := c.pipeline.Do(req)
+	resp, err := c.telephonyPipeline.Do(req)
 	if err != nil {
 		if method != http.MethodGet {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -453,7 +491,7 @@ func (c *AgentClient) gaTelephonyRequest(
 		expected = http.StatusNoContent
 	}
 	if resp.StatusCode != expected {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		_, _ = io.Copy(io.Discard, resp.Body)
 		err := &azcore.ResponseError{
 			StatusCode: resp.StatusCode,
 			RawResponse: &http.Response{
@@ -594,7 +632,8 @@ func validateTelephonyTransferTargets(
 		if !utf8.ValidString(target.Name) || !utf8.ValidString(target.Description) {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: strings must be valid UTF-8", source, i)
 		}
-		if target.Name == "" || target.Description == "" || target.Destination.Value == "" {
+		if target.Name == "" || target.Description == "" ||
+			target.Destination.Kind == "" || target.Destination.Value == "" {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: required fields are missing", source, i)
 		}
 		if !telephonyTargetNamePattern.MatchString(target.Name) {

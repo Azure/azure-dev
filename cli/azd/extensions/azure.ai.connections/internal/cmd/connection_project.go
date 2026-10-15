@@ -269,8 +269,21 @@ func planConnectionAdd(
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := validateConnectionDefinitionForAuthoring(candidateInput); err != nil {
+	candidateVariables, candidateBindings, err := validateConnectionDefinitionForAuthoring(candidateInput)
+	if err != nil {
 		return nil, err
+	}
+	if !reflect.DeepEqual(input, candidateInput) ||
+		!slices.Equal(environmentVariables, candidateVariables) ||
+		!slices.Equal(environmentBindings, candidateBindings) {
+		return nil, exterrors.Validation(
+			exterrors.CodeProjectChanged,
+			fmt.Sprintf(
+				"the Connection definition changed while service %q was being planned; no changes were written.",
+				serviceName,
+			),
+			"Rerun the command to plan against the current definition.",
+		)
 	}
 	if err := validateConnectionProjectCandidate(ctx, snapshot, serviceName, candidate); err != nil {
 		return nil, err
@@ -962,11 +975,13 @@ func (plan *connectionAddPlan) prepareWrites(
 // compares the state the plan depends on with the snapshot it was built from:
 // the planned service's host, uses, env, config (when it existed), and
 // Connection definition fields, plus the presence and host of the selected
-// Project service and every service in uses. It returns a conflict error,
-// asking the user to rerun, when any of that changed after planning.
+// Project service and every service in uses. It also validates uses against
+// the current services and resources. It returns a conflict error, asking the
+// user to rerun, when service state changed after planning.
 // Changes to unrelated services or to fields this plan never reads or writes
 // are left alone, so they do not cause a conflict. Explicit empty service env
-// maps are refused because the host would drop them when saving the manifest.
+// maps and null env values are refused because the host would drop them when
+// saving the manifest.
 //
 // This narrows the race window between planning and applying but does not
 // eliminate it: the AddService, SetServiceConfigValue, and UnsetServiceConfig
@@ -983,14 +998,17 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 
 	// azd hosts up to at least v1.34.0 (and current main) re-serialize the whole typed manifest on
 	// AddService/SetServiceConfigValue/UnsetServiceConfig. ServiceConfig.Environment is yaml:"env,omitempty",
-	// dropping env: {}. For Connection services, missing env inherits all azd/process values instead of none.
+	// dropping env: {} and env: null. For Connection services, missing env inherits all azd/process
+	// values instead of none.
 	// Remove this guard once requiredAzdVersion includes Azure/azure-dev#10479.
 	for _, key := range slices.Sorted(maps.Keys(current.services)) {
 		service, ok := current.services[key].(map[string]any)
 		if !ok {
 			continue
 		}
-		if env, ok := service["env"].(map[string]any); ok && len(env) == 0 {
+		rawEnv, found := service["env"]
+		env, isMap := rawEnv.(map[string]any)
+		if found && (rawEnv == nil || (isMap && len(env) == 0)) {
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				fmt.Sprintf(
@@ -1023,7 +1041,12 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 		}
 	}
 	if !changed {
-		return nil
+		uses, err := parseConnectionUses(plan.serviceSection)
+		if err != nil {
+			return err
+		}
+		_, err = validateConnectionDependencies(uses, current)
+		return err
 	}
 	return exterrors.Validation(
 		exterrors.CodeProjectChanged,

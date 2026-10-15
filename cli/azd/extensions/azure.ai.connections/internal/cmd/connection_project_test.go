@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/foundry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -218,6 +219,49 @@ func TestConnectionAddPreservesUnrelatedChangesAfterPlanning(t *testing.T) {
 	require.NoError(t, plan.apply(t.Context(), client))
 	require.Len(t, client.addRequests, 1)
 	assert.Contains(t, client.services, "new-worker")
+}
+
+func TestPlanConnectionAddRejectsDefinitionChangedDuringProjectSelection(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		before string
+		after  string
+	}{
+		{"definition", "https://old.example.test", "https://new.example.test"},
+		{"required environment reference", "${OLD_KEY}", "${NEW_KEY}"},
+		{"optional environment reference", "${OLD_KEY:-fallback}", "${NEW_KEY:-fallback}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connection.yaml",
+				"category: Search\ntarget: "+test.before+"\n")
+			client := newConnectionAddProjectClientStub()
+			client.services["first"] = map[string]any{"host": aiProjectServiceHost}
+			client.services["second"] = map[string]any{"host": aiProjectServiceHost}
+			before, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+			selected := false
+			selectProject := func(_ context.Context, keys []string) (string, error) {
+				selected = true
+				require.Equal(t, []string{"first", "second"}, keys)
+				writeConnectionAddDefinition(t, root, "connection.yaml",
+					"category: Search\ntarget: "+test.after+"\n")
+				return "first", nil
+			}
+
+			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, false, "", false, selectProject, nil)
+			require.True(t, selected)
+			localErr := requireConnectionValidationError(t, err, exterrors.CodeProjectChanged, "definition changed")
+			assert.Contains(t, localErr.Message, "no changes were written")
+			assert.Contains(t, localErr.Suggestion, "Rerun the command")
+			assert.Nil(t, plan)
+			assert.Empty(t, client.mutationCalls)
+			after, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+		})
+	}
 }
 
 func TestConnectionAuthoringLocalSnapshotPreservesLargeIntegers(t *testing.T) {

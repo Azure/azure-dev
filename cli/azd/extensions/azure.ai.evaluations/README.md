@@ -274,7 +274,9 @@ init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique
 filename to add the new file, or the existing dataset's name or file path to
 reuse it. Equivalent paths to the same file are accepted, preserving references,
-version pins, and other authored metadata.
+version pins, and other authored metadata. Version-pinned local reuse also
+recognizes pins inherited through `$ref` entries and their authored overrides,
+without resolving unrelated declarations.
 When `--path` names a configuration file, dataset lookup uses that exact file,
 while artifact paths remain relative to its directory.
 The configuration destination must not be the selected local dataset itself,
@@ -700,10 +702,11 @@ When the effective turn cap is too low, init names a valid `--max-turns` value
 to use on a new invocation, or asks you to lower the row's desired turns.
 Correcting the dataset never silently changes the selected cap.
 Local files derive their dataset name from the filename without its extension.
-For a new declaration, that name must use only letters, digits, dashes, and
-underscores, up to 255 bytes. Reusing an existing authored or registered
-dataset keeps the broader lookup-name rules: the name must be non-empty, cannot
-be `.` or `..`, and cannot contain path separators or control characters.
+For a new declaration or an unpinned local declaration that init may publish,
+that name must use only letters, digits, dashes, and underscores, up to 255
+bytes. Reusing a version-pinned authored dataset or a registered remote dataset
+keeps the broader lookup-name rules: the name must be non-empty, cannot be `.`
+or `..`, and cannot contain path separators or control characters.
 If that name is already declared for a different file (or has no local file),
 init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique

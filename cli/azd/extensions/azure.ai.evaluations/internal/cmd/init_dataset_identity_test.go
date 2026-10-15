@@ -156,12 +156,16 @@ func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
 	assert.Equal(t, []int{0}, prompts.selectCounts, "correct the name before confirmation")
 }
 
-func TestInitDatasetDerivedNameUsesLookupAndAssetRules(t *testing.T) {
+func TestInitDatasetDerivedNameUsesCreateRules(t *testing.T) {
 	for _, name := range []string{"", ".", "..", "control\n", "control\u0085", "control\u009b",
-		strings.Repeat("a", assetNameMaxLength+1)} {
+		strings.Repeat("a", assetNameMaxLength+1), strings.Repeat("\u00e9", 128)} {
 		t.Run("invalid lookup/"+name, func(t *testing.T) {
 			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
 			require.ErrorContains(t, err, "invalid catalog name")
+			validation, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+			assert.Contains(t, validation.Suggestion, "255 bytes")
 		})
 	}
 	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
@@ -182,6 +186,68 @@ func TestInitDatasetDerivedNameUsesLookupAndAssetRules(t *testing.T) {
 			assert.Equal(t, name, plan.datasetName)
 		})
 	}
+}
+
+func TestInitDatasetRegisteredNameUsesLookupRules(t *testing.T) {
+	for _, name := range []string{".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+		t.Run(name, func(t *testing.T) {
+			in := localDatasetScaffold(t, name)
+			plan, err := planScaffold(in)
+			require.NoError(t, err)
+			assert.Equal(t, name, plan.datasetName)
+		})
+	}
+}
+
+func TestInitDatasetExistingLocalNameUsesCreateRules(t *testing.T) {
+	t.Run("unpinned local declaration", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "seed data.jsonl")
+		require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+		cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
+			Name: "seed data",
+			File: path,
+		}}}
+
+		_, err := resolveInitLocalDataset(dir, path, cfg)
+		require.ErrorContains(t, err, "invalid catalog name")
+		validation, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+	})
+
+	t.Run("pinned local declaration", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "seed data.jsonl")
+		require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, project.EvalConfigBase), []byte(
+			"datasets:\n  - name: seed data\n    file: seed data.jsonl\n    version: '7'\n"), 0o600))
+		cfg, err := project.OpenEvalConfig(dir)
+		require.NoError(t, err)
+		in := localDatasetScaffold(t, path)
+		in.cfg = cfg
+		in.evalDir = dir
+
+		plan, err := planScaffold(in)
+		require.NoError(t, err)
+		assert.Equal(t, "seed data", plan.datasetName)
+		assert.Equal(t, "7", cfg.Datasets[0].Version)
+		assert.Equal(t, "seed data.jsonl", cfg.Datasets[0].File)
+	})
+
+	t.Run("registered declaration", func(t *testing.T) {
+		cfg := &project.EvalConfig{Datasets: []project.DatasetDecl{{
+			Name:    "seed data",
+			Version: "7",
+		}}}
+		in := localDatasetScaffold(t, "seed data")
+		in.cfg = cfg
+
+		plan, err := planScaffold(in)
+		require.NoError(t, err)
+		assert.Equal(t, "seed data", plan.datasetName)
+		assert.Equal(t, []project.DatasetDecl{{Name: "seed data", Version: "7"}}, cfg.Datasets)
+	})
 }
 
 func TestInitDatasetCollisionCorrection(t *testing.T) {
@@ -304,6 +370,79 @@ func TestInitDatasetNameReusesRefOnlyDeclaration(t *testing.T) {
 					[]byte(after[filepath.Join("evals", "parts", "inner", "dataset.yaml")]), &retained))
 				assert.Equal(t, "7", retained.Version)
 			})
+		}
+	}
+}
+
+func TestInitDatasetReusesPinnedAuthoredLookupName(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		declaration string
+		version     string
+	}{
+		{"inline", initIdentityDeclarations["local"], "7"},
+		{"numeric inline", strings.ReplaceAll(initIdentityDeclarations["local"], "'7'", "1.0"), "1.0"},
+		{"named ref", initIdentityDeclarations["nested ref"], "7"},
+		{"ref only", initIdentityDeclarations["ref only"], "7"},
+		{"overlay", strings.ReplaceAll(initIdentityDeclarations["nested ref"], "'7'", "'8'"), "8"},
+	} {
+		for _, mode := range []string{"simulation", "static", "turn"} {
+			for _, output := range []string{"human", "json"} {
+				t.Run(tc.name+"/"+mode+"/"+output, func(t *testing.T) {
+					h := initIdentityFixture(t, strings.ReplaceAll(tc.declaration, "seeds", "seed data"),
+						&seedCorrectionPromptServer{})
+					path := filepath.Join("original", "seed data.jsonl")
+					require.NoError(t, os.Rename(filepath.Join("original", "seeds.jsonl"), path))
+					require.NoError(t, os.WriteFile(path, []byte(`{"test_case_description":"help",`+
+						`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`), 0o600))
+					if mode == "static" {
+						require.NoError(t, os.WriteFile(path, []byte(sameFileConversationRows), 0o600))
+					}
+					included := filepath.Join("evals", "parts", "inner", "dataset.yaml")
+					body, err := os.ReadFile(included)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(included,
+						[]byte(strings.ReplaceAll(string(body), "seeds", "seed data")), 0o600))
+					before := initFileSnapshot(t, h.dir)
+					args := simulationInitArgs("./original/seed data.jsonl")
+					if mode != "simulation" {
+						args = []string{"--name", "quality", "--dataset", "./original/seed data.jsonl",
+							"--judge-model", "judge"}
+						if mode == "static" {
+							args = append(args, "--conversation-mode", "static")
+						} else {
+							args = append(args, "--target", "agent")
+						}
+					}
+					if output == "human" {
+						args = append(args, "--no-prompt")
+					} else {
+						args = append(args, "--output", "json")
+					}
+					text, err := executeConversationInit(t, args...)
+					require.NoError(t, err)
+					if output == "json" {
+						assert.True(t, json.Valid([]byte(text)))
+					}
+					after := initFileSnapshot(t, h.dir)
+					config := filepath.Join("evals", project.EvalConfigBase)
+					assert.Contains(t, after[config], before[config], "retain pins, references and unknown metadata")
+					for path, body := range before {
+						if path != config && path != "azure.yaml" {
+							assert.Equal(t, body, after[path], path)
+						}
+					}
+					var cfg project.EvalConfig
+					require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+					require.Len(t, cfg.Evals, 1)
+					assert.Equal(t, "seed data", cfg.Evals[0].Dataset)
+					assert.Len(t, cfg.Datasets, 2, "do not duplicate a ref-only declaration")
+					selected, err := project.ReadAuthoredDataset(config, "seed data")
+					require.NoError(t, err)
+					require.NotNil(t, selected)
+					assert.Equal(t, tc.version, selected.Version)
+				})
+			}
 		}
 	}
 }

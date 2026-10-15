@@ -49,12 +49,19 @@ func TestReadAuthoredDatasetResolvesOnlyItsLocalDeclaration(t *testing.T) {
 		name        string
 		declaration string
 		want        string
+		version     string
 	}{
-		{"inline", "name: seeds\n    file: ./rows.jsonl", "rows.jsonl"},
-		{"nested", "name: seeds\n    $ref: ./parts/dataset.yaml", filepath.Join("parts", "rows.jsonl")},
-		{"overlay", "name: seeds\n    $ref: ./parts/dataset.yaml\n    file: ./override.jsonl", "override.jsonl"},
-		{"ref only", "$ref: ./parts/dataset.yaml", filepath.Join("parts", "rows.jsonl")},
-		{"registered only", "name: seeds\n    version: '1.0'", ""},
+		{"inline", "name: seeds\n    file: ./rows.jsonl\n    version: '7'", "rows.jsonl", "7"},
+		{"numeric inline", "name: seeds\n    file: ./rows.jsonl\n    version: 1.0", "rows.jsonl", "1.0"},
+		{"unpinned", "name: seeds\n    file: ./rows.jsonl", "rows.jsonl", ""},
+		{"nested", "name: seeds\n    $ref: ./parts/dataset.yaml", filepath.Join("parts", "rows.jsonl"), "1.0"},
+		{"overlay", "name: seeds\n    $ref: ./parts/dataset.yaml\n    file: ./override.jsonl", "override.jsonl", "1.0"},
+		{"version overlay", "name: seeds\n    $ref: ./parts/dataset.yaml\n    version: 2.0",
+			filepath.Join("parts", "rows.jsonl"), "2.0"},
+		{"cleared version", "name: seeds\n    $ref: ./parts/dataset.yaml\n    version: ''",
+			filepath.Join("parts", "rows.jsonl"), ""},
+		{"ref only", "$ref: ./parts/dataset.yaml", filepath.Join("parts", "rows.jsonl"), "1.0"},
+		{"registered only", "name: seeds\n    version: '1.0'", "", "1.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -62,7 +69,7 @@ func TestReadAuthoredDatasetResolvesOnlyItsLocalDeclaration(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "dataset.yaml"),
 				[]byte("$ref: ./inner/dataset.yaml\nfuture_metadata: keep\n"), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "inner", "dataset.yaml"),
-				[]byte("name: seeds\nfile: ../rows.jsonl\n"), 0o600))
+				[]byte("name: seeds\nfile: ../rows.jsonl\nversion: '1.0'\n"), 0o600))
 			path := filepath.Join(dir, EvalConfigBase)
 			body := "# Keep this\nfuture_setting: keep\ndatasets:\n  - " + tc.declaration + "\n" +
 				"  - name: unrelated\n    $ref: ./missing.yaml\n" +
@@ -77,6 +84,7 @@ func TestReadAuthoredDatasetResolvesOnlyItsLocalDeclaration(t *testing.T) {
 				want = filepath.Join(dir, want)
 			}
 			assert.Equal(t, want, decl.File)
+			assert.Equal(t, tc.version, decl.Version)
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, body, string(after))
@@ -131,6 +139,7 @@ func TestReadAuthoredDatasetAbsentOrInvalid(t *testing.T) {
 		{"unrelated ref-only", "datasets:\n  - $ref: ./missing.yaml\n  - name: seeds\n", ""},
 		{"missing include", "datasets:\n  - name: seeds\n    $ref: ./missing.yaml\n", "cannot read $ref"},
 		{"wrong file type", "datasets:\n  - name: seeds\n    file: [rows.jsonl]\n", "file must be a string"},
+		{"wrong version type", "datasets:\n  - name: seeds\n    version: [7]\n", "dataset \"seeds\" version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

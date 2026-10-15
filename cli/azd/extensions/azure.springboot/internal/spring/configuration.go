@@ -355,8 +355,8 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 			items := make([]string, len(value))
 			for i, item := range value {
 				switch item := item.(type) {
-				case string:
-					items[i] = item
+				case string, bool, int, int64, float64:
+					items[i] = fmt.Sprint(item)
 				default:
 					return unsupportedConfiguration("non-scalar configuration list in %s", source)
 				}

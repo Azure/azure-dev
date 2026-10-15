@@ -198,6 +198,26 @@ spring:
 			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"default"},
 		},
 		{
+			name: "unrelated YAML scalar lists do not block datasource analysis",
+			files: map[string]string{"src/main/resources/application.yml": `spring:
+  datasource:
+    url: jdbc:postgresql://localhost/catalog
+app:
+  ports: [8080, 9090]
+  flags: [true, false]
+  weights: [0.5, 1.5]
+`},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"default"},
+		},
+		{
+			name: "JSON scalar lists use the same flattening rules",
+			env: map[string]string{
+				"SPRING_APPLICATION_JSON": `{"spring":{"datasource":{"url":"jdbc:postgresql://localhost/catalog"}},
+"app":{"ports":[8080,9090],"flags":[true,false],"weights":[0.5,1.5]}}`,
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"default"},
+		},
+		{
 			name: "default external wildcard configuration",
 			files: map[string]string{
 				"config/deployment/application.properties": "spring.datasource.url=jdbc:mysql://localhost/warehouse",

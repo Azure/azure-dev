@@ -52,6 +52,7 @@ Single-module Maven applications using Spring Boot executable JAR packaging and
 Java 17 or newer. Analysis reads effective Maven metadata, conventional
 `application*.properties`/YAML configuration, active/default profiles,
 includes/groups, property placeholders, and explicit deployment inputs.
+Configuration lists support strings, numbers, and booleans; complex elements remain unsupported.
 Inactive database alternatives are not provisioned.
 Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.

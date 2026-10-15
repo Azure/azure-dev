@@ -90,6 +90,8 @@ or overwritten. Development Compose files are left alone.
 **Development defaults:** SQL authentication uses generated administrator
 credentials and the template's firewall rules allow all public IP addresses.
 JDBC connections require TLS. This is not a restrictive production network policy.
+Stronger JDBC certificate-verification modes are preserved, using the image's
+system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.
 Memory mode needs no database inputs for non-interactive provision or deploy.
 

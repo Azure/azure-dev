@@ -376,14 +376,51 @@ func jdbcOptions(kind ResourceKind, query string) (string, error) {
 		if !allowed[key] {
 			return "", errors.New("the JDBC URL contains an option whose deployment binding is not yet supported")
 		}
+		if (key == "sslmode" || key == "sslMode" || key == "verifyServerCertificate") && len(values[key]) != 1 {
+			return "", fmt.Errorf("%s must be specified once", key)
+		}
 	}
 	if kind == PostgreSQL {
-		values.Set("sslmode", "require")
+		mode := strings.ToLower(values.Get("sslmode"))
+		switch mode {
+		case "", "disable", "allow", "prefer", "require":
+			mode = "require"
+		case "verify-ca", "verify-full":
+			values.Set("sslrootcert", "/etc/ssl/certs/ca-certificates.crt")
+		default:
+			return "", errors.New("sslmode is not supported")
+		}
+		values.Set("sslmode", mode)
 	} else {
-		values.Del("useSSL")
-		values.Del("requireSSL")
-		values.Del("verifyServerCertificate")
-		values.Set("sslMode", "REQUIRED")
+		mode := strings.ToUpper(values.Get("sslMode"))
+		if mode == "" {
+			mode = "REQUIRED"
+			if verification, present := values["verifyServerCertificate"]; present {
+				switch strings.ToLower(verification[0]) {
+				case "true", "yes":
+					mode = "VERIFY_CA"
+				case "false", "no":
+				default:
+					return "", errors.New("verifyServerCertificate must be true, false, yes, or no")
+				}
+			}
+		}
+		switch mode {
+		case "DISABLED", "PREFERRED":
+			mode = "REQUIRED"
+		case "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY":
+		default:
+			return "", errors.New("sslMode is not supported")
+		}
+		values.Set("sslMode", mode)
+		// Keep encryption and certificate verification enabled for legacy drivers.
+		values.Set("useSSL", "true")
+		values.Set("requireSSL", "true")
+		verification := "false"
+		if mode == "VERIFY_CA" || mode == "VERIFY_IDENTITY" {
+			verification = "true"
+		}
+		values.Set("verifyServerCertificate", verification)
 	}
 	return values.Encode(), nil
 }

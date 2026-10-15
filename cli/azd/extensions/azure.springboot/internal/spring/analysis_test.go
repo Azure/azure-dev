@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -776,6 +777,93 @@ func TestDerivedContainerAppNameValidation(t *testing.T) {
 				require.Equal(t, tt.expected, parameters.Parameters.ServiceName.Value)
 				require.LessOrEqual(t, len(parameters.Parameters.ServiceName.Value), 32)
 			}
+		})
+	}
+}
+
+func TestJDBCTLSVerification(t *testing.T) {
+	for _, tt := range []struct {
+		name, query, mode, errorText string
+		kind                         ResourceKind
+	}{
+		{"postgres default", "", "require", "", PostgreSQL},
+		{"postgres disabled is encrypted", "sslmode=disable", "require", "", PostgreSQL},
+		{"postgres certificate verification", "sslmode=verify-ca", "verify-ca", "", PostgreSQL},
+		{"postgres identity verification", "sslmode=verify-full&connectTimeout=10", "verify-full", "", PostgreSQL},
+		{"postgres invalid mode", "sslmode=invalid", "", "sslmode is not supported", PostgreSQL},
+		{"postgres conflicting modes", "sslmode=verify-full&sslmode=require", "", "must be specified once", PostgreSQL},
+		{"mysql default", "", "REQUIRED", "", MySQL},
+		{"mysql preferred is encrypted", "sslMode=PREFERRED", "REQUIRED", "", MySQL},
+		{"mysql certificate verification", "sslMode=VERIFY_CA", "VERIFY_CA", "", MySQL},
+		{"mysql identity verification", "sslMode=VERIFY_IDENTITY&connectTimeout=10", "VERIFY_IDENTITY", "", MySQL},
+		{"mysql legacy verification", "useSSL=true&verifyServerCertificate=true", "VERIFY_CA", "", MySQL},
+		{"mysql legacy yes verification", "requireSSL=true&verifyServerCertificate=yes", "VERIFY_CA", "", MySQL},
+		{"mysql legacy no verification", "useSSL=true&verifyServerCertificate=false", "REQUIRED", "", MySQL},
+		{"mysql explicit mode wins legacy", "sslMode=VERIFY_IDENTITY&verifyServerCertificate=false",
+			"VERIFY_IDENTITY", "", MySQL},
+		{"mysql invalid mode", "sslMode=invalid", "", "sslMode is not supported", MySQL},
+		{"mysql invalid legacy verification", "verifyServerCertificate=invalid", "",
+			"verifyServerCertificate must be true, false, yes, or no", MySQL},
+		{"mysql conflicting modes", "sslMode=VERIFY_IDENTITY&sslMode=REQUIRED", "", "must be specified once", MySQL},
+		{"mysql conflicting legacy verification", "verifyServerCertificate=true&verifyServerCertificate=false", "",
+			"must be specified once", MySQL},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			options, err := jdbcOptions(tt.kind, tt.query)
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				return
+			}
+			require.NoError(t, err)
+			values, err := url.ParseQuery(options)
+			require.NoError(t, err)
+			if tt.kind == PostgreSQL {
+				require.Equal(t, tt.mode, values.Get("sslmode"))
+				if strings.HasPrefix(tt.mode, "verify-") {
+					require.Equal(t, "/etc/ssl/certs/ca-certificates.crt", values.Get("sslrootcert"))
+				}
+			} else {
+				require.Equal(t, tt.mode, values.Get("sslMode"))
+				require.Equal(t, "true", values.Get("useSSL"))
+				require.Equal(t, "true", values.Get("requireSSL"))
+				verification := "false"
+				if tt.mode == "VERIFY_CA" || tt.mode == "VERIFY_IDENTITY" {
+					verification = "true"
+				}
+				require.Equal(t, verification, values.Get("verifyServerCertificate"))
+			}
+			if strings.Contains(tt.query, "connectTimeout") {
+				require.Equal(t, "10", values.Get("connectTimeout"))
+			}
+		})
+	}
+}
+
+func TestGeneratePreservesVerifiedPasswordBindings(t *testing.T) {
+	for _, tt := range []struct {
+		kind ResourceKind
+		mode string
+	}{
+		{PostgreSQL, "sslmode=verify-full"},
+		{MySQL, "sslMode=VERIFY_IDENTITY"},
+	} {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				fmt.Sprintf("spring.datasource.url=jdbc:%s://localhost/catalog?%s", tt.kind, tt.mode))
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			require.NoError(t, err)
+			plan, err := Generate(t.Context(), application)
+			require.NoError(t, err)
+			binding := string(plan.Files[".azd-spring/application-azd.properties"])
+			require.Contains(t, binding, tt.mode)
+			if tt.kind == PostgreSQL {
+				require.Contains(t, binding, "sslrootcert="+url.QueryEscape("/etc/ssl/certs/ca-certificates.crt"))
+			}
+			require.Contains(t, plan.Files, ".azd-spring/database.ps1")
+			require.NotContains(t, plan.Files, ".azd-spring/database.py")
 		})
 	}
 }

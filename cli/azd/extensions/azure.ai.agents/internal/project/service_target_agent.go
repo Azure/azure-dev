@@ -4014,6 +4014,9 @@ func hostedAgentCreateError(err error, serviceName string, request *agent_api.Cr
 	if requestID == "" {
 		requestID = responseErr.RawResponse.Header.Get("x-ms-request-id")
 	}
+	if requestID == "" {
+		requestID = responseErr.RawResponse.Header.Get("apim-request-id")
+	}
 	if requestID != "" {
 		serviceErr.Message += fmt.Sprintf("\nRequest ID: %s", requestID)
 	}

@@ -298,18 +298,40 @@ func TestHostedAgentCreateErrorServiceCodeAvailability(t *testing.T) {
 
 func TestHostedAgentCreateErrorRequestIDHeaders(t *testing.T) {
 	t.Parallel()
-	for _, header := range []string{"x-request-id", "x-ms-request-id"} {
-		t.Run(header, func(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		headers   map[string]string
+		requestID string
+	}{
+		{"x-request-id", map[string]string{"x-request-id": "request-id"}, "request-id"},
+		{"x-ms-request-id", map[string]string{"x-ms-request-id": "azure-request-id"}, "azure-request-id"},
+		{"apim-request-id", map[string]string{"apim-request-id": "apim-id"}, "apim-id"},
+		{"prefer x-request-id", map[string]string{
+			"x-request-id": "request-id", "x-ms-request-id": "azure-request-id", "apim-request-id": "apim-id",
+		}, "request-id"},
+		{"prefer x-ms-request-id over APIM", map[string]string{
+			"x-ms-request-id": "azure-request-id", "apim-request-id": "apim-id",
+		}, "azure-request-id"},
+		{"no request ID", nil, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			original := resourceHTTPError(
 				t, http.StatusBadRequest, resourceValidationBody(t, resourceTierErrorMessage, "definition"),
 			)
 			responseErr, ok := errors.AsType[*azcore.ResponseError](original)
 			require.True(t, ok)
-			responseErr.RawResponse.Header.Del("x-request-id")
-			responseErr.RawResponse.Header.Set(header, "request-for-"+header)
+			responseErr.RawResponse.Header = make(http.Header)
+			for header, value := range tt.headers {
+				responseErr.RawResponse.Header.Set(header, value)
+			}
 			result := hostedAgentCreateError(original, "my-service", hostedResourceRequest("4", "4Gi"))
-			require.Contains(t, azdext.ErrorMessage(result), "Request ID: request-for-"+header)
+			relayed := azdext.UnwrapError(azdext.WrapError(result))
+			if tt.requestID == "" {
+				require.NotContains(t, azdext.ErrorMessage(relayed), "Request ID:")
+			} else {
+				require.Contains(t, strings.Split(azdext.ErrorMessage(relayed), "\n"), "Request ID: "+tt.requestID)
+			}
 		})
 	}
 }

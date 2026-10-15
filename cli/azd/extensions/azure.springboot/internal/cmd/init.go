@@ -29,14 +29,14 @@ func newInitCommandWithServices(
 ) *cobra.Command {
 	var yes bool
 	var databaseAuth string
-	var profiles, properties []string
+	var profiles []string
 	command := &cobra.Command{
 		Use:   "init",
 		Short: "Infer active Spring dependencies and generate an azd project",
 		Long: `Inspect a trusted single-module Spring Boot Maven application and generate
 azure.yaml, Container Apps Bicep, and deployment-only container/configuration files.
 Application configuration supplies defaults. Use --profiles to select deployment
-profiles and --property NAME=VALUE for missing datasource URL or server port inputs.
+profiles. Missing datasource URL or server port inputs use targeted prompts.
 Ambient Spring environment variables are not deployment inputs. Questions are
 asked only for unresolved decisions; --yes does not supply missing choices.
 Embedded databases do not create a cloud database.
@@ -58,9 +58,12 @@ Existing deployment files are not overwritten.`,
 			if extCtx.NoPrompt && !yes {
 				return errors.New("--no-prompt requires --yes to trust Maven inspection and accept the generated plan")
 			}
-			inputs, err := deploymentInputs(profiles, properties, cmd.Flags().Changed("profiles"))
-			if err != nil {
-				return err
+			inputs := spring.DeploymentInputs{}
+			if cmd.Flags().Changed("profiles") {
+				if len(profiles) == 0 {
+					return errors.New("--profiles requires at least one profile name")
+				}
+				inputs.Profiles = profiles
 			}
 			directory, err := os.Getwd()
 			if err != nil {
@@ -81,7 +84,8 @@ Existing deployment files are not overwritten.`,
 					prompts, err = openPrompts()
 					if err != nil {
 						return nil, fmt.Errorf("interactive prompts unavailable; "+
-							"use --yes and explicit --profiles/--property with --no-prompt: %w", err)
+							"use --yes --no-prompt with resolved application configuration "+
+							"and --profiles if needed: %w", err)
 					}
 				}
 				return prompts, nil
@@ -147,8 +151,6 @@ Existing deployment files are not overwritten.`,
 		"Database authentication: password or managedIdentity (PostgreSQL only); otherwise infer from Spring configuration")
 	command.Flags().StringSliceVar(&profiles, "profiles", nil,
 		"Spring deployment profiles (comma-separated); otherwise use application defaults")
-	command.Flags().StringArrayVar(&properties, "property", nil,
-		"Explicit datasource URL or server port property/placeholder input NAME=VALUE (repeatable)")
 	return command
 }
 

@@ -111,27 +111,6 @@ func confirm(
 	return nil
 }
 
-func deploymentInputs(profiles, properties []string, profilesChanged bool) (spring.DeploymentInputs, error) {
-	inputs := spring.DeploymentInputs{Properties: map[string]string{}}
-	if profilesChanged {
-		if len(profiles) == 0 {
-			return inputs, errors.New("--profiles requires at least one profile name")
-		}
-		inputs.Profiles = profiles
-	}
-	for _, property := range properties {
-		key, value, ok := strings.Cut(property, "=")
-		if !ok || key == "" {
-			return inputs, errors.New("--property requires NAME=VALUE")
-		}
-		if _, exists := inputs.Properties[key]; exists {
-			return inputs, fmt.Errorf("--property %s is supplied more than once", key)
-		}
-		inputs.Properties[key] = value
-	}
-	return inputs, nil
-}
-
 type cachedResolver struct {
 	source spring.ModelResolver
 	model  []byte
@@ -170,16 +149,20 @@ func resolveDeployment(
 			return analysis.ResolvedApplication()
 		}
 		decision := analysis.Decisions[0]
-		hint := "--property " + decision.Input + "=<value>"
+		hint := "configure " + decision.Input + " in the application's Spring configuration"
+		if len(decision.Evidence) != 0 {
+			evidence := decision.Evidence[0]
+			hint += fmt.Sprintf(" (referenced by %s in %s)", evidence.Property, evidence.Source)
+		}
 		if decision.Profiles {
-			hint = "--profiles <names>"
+			hint = "supply --profiles <names>"
 		}
 		if noPrompt || answered[decision.ID] {
-			return nil, fmt.Errorf("deployment decision %s is unresolved; supply %s", decision.ID, hint)
+			return nil, fmt.Errorf("deployment decision %s is unresolved; %s", decision.ID, hint)
 		}
 		prompts, err := getPrompts()
 		if err != nil {
-			return nil, fmt.Errorf("deployment decision %s needs %s: %w", decision.ID, hint, err)
+			return nil, fmt.Errorf("deployment decision %s is unresolved; %s: %w", decision.ID, hint, err)
 		}
 		answer, err := prompts.Decide(ctx, decision)
 		if err != nil {

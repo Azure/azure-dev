@@ -123,7 +123,7 @@ func AnalyzeProject(
 		properties[name] = value
 	}
 	if _, exists := properties[canonical("spring.profiles.active")]; exists {
-		return nil, errors.New("use --profiles instead of --property for spring.profiles.active")
+		return nil, errors.New("use --profiles for spring.profiles.active")
 	}
 	if inputs.Profiles != nil {
 		if len(inputs.Profiles) == 0 || len(inputs.Profiles) > 64 {
@@ -189,7 +189,7 @@ func AnalyzeProject(
 	}
 	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
 		if !used[canonical(key)] {
-			return nil, fmt.Errorf("--property %s cannot affect the selected configuration", key)
+			return nil, fmt.Errorf("deployment input %s cannot affect the selected configuration", key)
 		}
 	}
 	// Only these destinations have deployment-owned runtime overrides.

@@ -153,10 +153,8 @@ func TestInitResolutionFixtures(t *testing.T) {
 		{"default profile selector", "default-profile-choice", []string{"--yes"}, "h2", 1, 0, ""},
 		{"missing URL", "missing-url", []string{"--yes"}, "jdbc:h2:mem:catalog", 1, 0, ""},
 		{"missing port", "missing-port", []string{"--yes"}, "9090", 1, 0, ""},
-		{"explicit URL", "missing-url", []string{"--yes", "--no-prompt",
-			"--property", "DEPLOYMENT_JDBC_URL=jdbc:postgresql://localhost/catalog"}, "", 0, 0, ""},
 		{"unanswered profile", "profile-choice", []string{"--yes", "--no-prompt"}, "", 0, 0, "--profiles"},
-		{"unanswered URL", "missing-url", []string{"--yes", "--no-prompt"}, "", 0, 0, "--property DEPLOYMENT_JDBC_URL"},
+		{"unanswered URL", "missing-url", []string{"--yes", "--no-prompt"}, "", 0, 0, "configure DEPLOYMENT_JDBC_URL"},
 		{"conflict is not a question", "driver-conflict", []string{"--yes"}, "", 0, 0, "invalid configuration"},
 		{"unsupported is not a question", "file-storage", []string{"--yes"}, "", 0, 0, "unsupported configuration"},
 	} {
@@ -173,6 +171,11 @@ func TestInitResolutionFixtures(t *testing.T) {
 			require.Equal(t, 1, resolver.calls, "answers must not rerun project-controlled Maven code")
 			if tt.errorText != "" {
 				require.ErrorContains(t, err, tt.errorText)
+				if tt.fixture == "missing-url" {
+					require.Contains(t, err.Error(), "spring.datasource.url")
+					require.Contains(t, err.Error(), "application.properties")
+					require.NotContains(t, err.Error(), "--property")
+				}
 				_, statErr := os.Stat("azure.yaml")
 				require.ErrorIs(t, statErr, fs.ErrNotExist)
 				return
@@ -200,7 +203,7 @@ func TestInitMissingPromptChannel(t *testing.T) {
 		return nil, errors.New("unavailable")
 	})
 	command.SetArgs([]string{"init", "--yes"})
-	require.ErrorContains(t, command.ExecuteContext(t.Context()), "needs --profiles")
+	require.ErrorContains(t, command.ExecuteContext(t.Context()), "supply --profiles")
 	_, err := os.Stat("azure.yaml")
 	require.ErrorIs(t, err, fs.ErrNotExist)
 }
@@ -256,4 +259,39 @@ func TestInitDeclinesPlanWithoutWriting(t *testing.T) {
 	require.Len(t, prompts.confirmations, 2)
 	_, err := os.Stat("azure.yaml")
 	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
+func TestInitRejectsGenericPropertyOption(t *testing.T) {
+	command, resolver, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("unknown flags must not open prompts")
+		return nil, errors.New("unavailable")
+	})
+	initCommand, _, err := command.Find([]string{"init"})
+	require.NoError(t, err)
+	require.NotNil(t, initCommand.Flags().Lookup("profiles"))
+	require.Nil(t, initCommand.Flags().Lookup("property"))
+	command.SetArgs([]string{"init", "--yes", "--no-prompt", "--property", "server.port=9090"})
+	require.ErrorContains(t, command.ExecuteContext(t.Context()), "unknown flag: --property")
+	require.Zero(t, resolver.calls)
+}
+
+func TestInitConfiguredPlaceholderNeedsNoPrompt(t *testing.T) {
+	command, _, _ := fixtureCommand(t, "missing-url", func() (initPrompter, error) {
+		t.Fatal("project configuration resolves the datasource without prompts")
+		return nil, errors.New("unavailable")
+	})
+	require.NoError(t, os.WriteFile(filepath.Join("src", "main", "resources", "application.properties"),
+		[]byte("spring.datasource.url=${DEPLOYMENT_JDBC_URL}\nDEPLOYMENT_JDBC_URL=jdbc:h2:mem:catalog"), 0o600))
+	command.SetArgs([]string{"init", "--yes", "--no-prompt"})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+}
+
+func TestInitRejectsEmptyProfileSelection(t *testing.T) {
+	command, resolver, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("invalid profile flags must not open prompts")
+		return nil, errors.New("unavailable")
+	})
+	command.SetArgs([]string{"init", "--yes", "--no-prompt", "--profiles="})
+	require.ErrorContains(t, command.ExecuteContext(t.Context()), "--profiles requires")
+	require.Zero(t, resolver.calls)
 }

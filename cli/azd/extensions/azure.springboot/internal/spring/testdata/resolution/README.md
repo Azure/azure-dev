@@ -20,4 +20,6 @@ runtime drivers; no Maven execution or Azure access is required.
 Tests also verify ambient Spring variables are ignored, explicit answers re-run
 analysis, pending decisions block generation, and embedded URLs survive generation.
 Command tests use fake host prompts to check interactive/non-interactive behavior.
+Non-interactive missing values must be resolved in project configuration; only
+profile selection has a CLI override.
 Multi-application/custom-datasource detection is intentionally outside this suite.

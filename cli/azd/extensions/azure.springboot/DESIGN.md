@@ -57,6 +57,8 @@ flowchart TD
   configuration blocks generation rather than becoming an arbitrary choice.
 - Use deliberate deployment inputs, not ambient shell overrides. Distinguish
   unspecified profiles from explicit selection; never silently capture local secrets.
+  Expose profile selection, not a generic property-override flag; other answers
+  come from targeted prompts or application configuration.
 - Answers re-run analysis: a profile choice may affect several resources together.
   Explicit inputs win. Non-interactive execution reports unresolved decisions;
   `--yes` accepts confirmations, not missing configuration choices.

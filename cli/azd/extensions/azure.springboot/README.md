@@ -34,9 +34,10 @@ to select alternatives explicitly. Ambient variables such as `SPRING_PROFILES_AC
 `SPRING_DATASOURCE_URL`, and `SPRING_APPLICATION_JSON` do not influence analysis.
 Unresolved profile selectors prompt with discovered profile choices; required
 datasource URL/port placeholders prompt for values. Resolved defaults need no extra questions.
-Use repeatable `--property NAME=VALUE` for explicit datasource URL/port properties
-or their placeholders. Other unresolved configuration requires application changes.
-With `--no-prompt`, missing decisions fail with the required flag; `--yes` accepts
+With `--no-prompt`, select profiles through `--profiles` and resolve required
+placeholder values in application configuration. Errors identify missing inputs
+and their sources; there is no generic property-override option.
+Other unresolved configuration requires application changes. `--yes` accepts
 confirmations, not missing choices. Interactive prompts use the azd host channel.
 
 Use `--database-auth managedIdentity` to select PostgreSQL token authentication

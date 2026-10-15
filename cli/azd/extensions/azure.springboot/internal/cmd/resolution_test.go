@@ -85,22 +85,3 @@ func TestHostDatasourceInputIsHidden(t *testing.T) {
 	require.Contains(t, service.promptRequest.Options.HelpMessage, "spring.datasource.url")
 	require.NotContains(t, service.promptRequest.Options.Message, service.text)
 }
-
-func TestDeploymentFlagParsing(t *testing.T) {
-	for _, tt := range []struct {
-		properties []string
-		profiles   bool
-	}{
-		{properties: []string{"missing-value"}},
-		{properties: []string{"=value"}},
-		{properties: []string{"name=first", "name=second"}},
-		{profiles: true},
-	} {
-		_, err := deploymentInputs(nil, tt.properties, tt.profiles)
-		require.Error(t, err)
-	}
-	inputs, err := deploymentInputs([]string{"postgres"}, []string{"URL=jdbc:h2:mem:catalog;DB_CLOSE_DELAY=-1"}, true)
-	require.NoError(t, err)
-	require.Equal(t, []string{"postgres"}, inputs.Profiles)
-	require.Equal(t, "jdbc:h2:mem:catalog;DB_CLOSE_DELAY=-1", inputs.Properties["URL"])
-}

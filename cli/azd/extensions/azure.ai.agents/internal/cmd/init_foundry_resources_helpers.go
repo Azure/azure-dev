@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/azure"
 	"context"
 	"fmt"
@@ -65,7 +66,10 @@ func listFoundryProjectConnections(
 	credential azcore.TokenCredential,
 	accountName string,
 	projectName string,
-) ([]azure.Connection, error) {
+) (timingResult0 []azure.Connection, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectConnectionDiscovery, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	client, err := azure.NewFoundryProjectsClient(accountName, projectName, credential)
 	if err != nil {
 		return nil, fmt.Errorf("creating Foundry projects client: %w", err)
@@ -186,7 +190,7 @@ func ensureNewFoundryProjectName(
 	}
 
 	for {
-		response, err := azdClient.Prompt().Prompt(ctx, request)
+		response, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.FoundryProjectNameInput).Prompt(ctx, request)
 		if err != nil {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("Foundry project name prompt was cancelled")
@@ -194,7 +198,9 @@ func ensureNewFoundryProjectName(
 			return exterrors.FromPrompt(err, "failed to prompt for Foundry project name")
 		}
 
-		if err := validateNewFoundryProjectName(response.Value); err == nil {
+		if err := inittelemetry.MeasureError(ctx, inittelemetry.InputValidation, inittelemetry.Execution, inittelemetry.User,
+			func() error { return validateNewFoundryProjectName(response.Value) },
+		); err == nil {
 			return setEnvValue(
 				ctx,
 				azdClient,
@@ -306,7 +312,10 @@ func listFoundryProjects(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId string,
-) ([]FoundryProjectInfo, error) {
+) (timingResult0 []FoundryProjectInfo, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.FoundryProjectDiscovery, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	resourcesClient, err := armresources.NewClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resources client: %w", err)
@@ -409,7 +418,10 @@ func listProjectDeployments(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId, resourceGroup, accountName string,
-) ([]FoundryDeploymentInfo, error) {
+) (timingResult0 []FoundryDeploymentInfo, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.ModelDeploymentDiscovery, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create deployments client: %w", err)
@@ -915,7 +927,7 @@ func configureAcrConnectionWithRegistryLoader(
 			return nil
 		}
 
-		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AcrConnectionInput).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Enter your ACR login server (e.g., myregistry.azurecr.io), or leave blank to create a new one",
 				IgnoreHintKeys: true,
@@ -1012,7 +1024,7 @@ func configureAcrConnectionWithRegistryLoader(
 		}
 
 		defaultIndex := int32(0)
-		selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		selectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AcrConnectionSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select a container registry connection to use for this agent",
 				Choices:       choices,
@@ -1173,7 +1185,7 @@ func configureAppInsightsConnection(
 				"  • Or create a new one during 'azd up'\n\n" +
 				"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
-		resourceIdResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		resourceIdResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AppInsightsResourceInput).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Enter your Application Insights resource ID, or leave blank to create a new one",
 				IgnoreHintKeys: true,
@@ -1188,7 +1200,7 @@ func configureAppInsightsConnection(
 				return err
 			}
 
-			connStrResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			connStrResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AppInsightsConnectionInput).Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
 					Message:        "Enter your Application Insights connection string",
 					IgnoreHintKeys: true,
@@ -1231,7 +1243,7 @@ func configureAppInsightsConnection(
 		}
 
 		defaultIndex := int32(0)
-		selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		selectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AppInsightsConnectionSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select an Application Insights connection to use for this agent",
 				Choices:       choices,
@@ -1269,7 +1281,10 @@ func createNewEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
-) (*azdext.Environment, error) {
+) (timingResult0 *azdext.Environment, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.EnvironmentConfiguration, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	if envName != "" {
 		if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
 			return existingEnv, nil
@@ -1489,7 +1504,7 @@ func ensureSubscription(
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Println(promptMessage)
 
-		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+		subscriptionResponse, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.SubscriptionSelection).PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("subscription selection was cancelled")
@@ -1517,9 +1532,13 @@ func ensureSubscription(
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
 		azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 	} else {
-		tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-			SubscriptionId: azureContext.Scope.SubscriptionId,
-		})
+		tenantResponse, err := inittelemetry.Measure(ctx, inittelemetry.TenantLookup, inittelemetry.External, "",
+			func() (*azdext.LookupTenantResponse, error) {
+				return azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+					SubscriptionId: azureContext.Scope.SubscriptionId,
+				})
+			},
+		)
 		if err != nil {
 			return nil, exterrors.Auth(
 				exterrors.CodeTenantLookupFailed,
@@ -1646,7 +1665,7 @@ func promptLocationForInit(
 	azureContext *azdext.AzureContext,
 	allowedLocations []string,
 ) (string, error) {
-	locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
+	locationResponse, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.LocationSelection).PromptLocation(ctx, &azdext.PromptLocationRequest{
 		AzureContext:     azureContext,
 		AllowedLocations: allowedLocations,
 	})
@@ -1711,7 +1730,7 @@ func selectNewModel(
 		DefaultValue: defaultModel,
 	}
 
-	modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
+	modelResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelSelection).PromptAiModel(ctx, promptReq)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
 			return nil, exterrors.Cancelled("model selection was cancelled")
@@ -1739,7 +1758,10 @@ func resolveModelDeployments(
 	azureContext *azdext.AzureContext,
 	model *azdext.AiModel,
 	location string,
-) ([]*azdext.AiModelDeployment, error) {
+) (timingResult0 []*azdext.AiModelDeployment, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.ModelDeploymentResolution, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	resolveResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    model.Name,
@@ -1956,7 +1978,7 @@ func selectFoundryProject(
 			Value: "__create_new__",
 		})
 
-		projectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		projectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.FoundryProjectSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message: "Select a Foundry project",
 				Choices: projectChoices,
@@ -2093,7 +2115,7 @@ func selectModelDeployment(
 		Value: "__create_new__",
 	})
 
-	deployResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	deployResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelDeploymentSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a model deployment",
 			Choices: deployChoices,

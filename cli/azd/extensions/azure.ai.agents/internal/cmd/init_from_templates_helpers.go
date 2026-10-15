@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -224,7 +225,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 
 	defaultIndex := int32(0)
 
-	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.InitModeSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "How do you want to initialize your agent?",
 			Choices:       choices,
@@ -269,7 +270,10 @@ func fetchAgentTemplatesFromURL(
 	ctx context.Context,
 	httpClient *http.Client,
 	url string,
-) ([]AgentTemplate, error) {
+) (timingResult0 []AgentTemplate, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.TemplateCatalogLoading, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	displayURL := catalogURLForDisplay(url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -402,7 +406,7 @@ func promptAgentTemplate(
 		{Label: "C#", Value: "dotnetCsharp"},
 	}
 
-	langResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	langResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.TemplateLanguageSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a language",
 			Choices: languageChoices,
@@ -540,7 +544,7 @@ func promptSelectTemplate(
 		opts.SelectedIndex = defaultIdx
 	}
 
-	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.TemplateSelection).Select(ctx, &azdext.SelectRequest{
 		Options: opts,
 	})
 	if err != nil {

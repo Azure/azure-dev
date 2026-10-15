@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -60,10 +61,12 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
   # Apply the project's managed infrastructure
   azd provision`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
+			ctx, timing := inittelemetry.NewContext(cmd.Context(), inittelemetry.ProjectDeploymentAdd, extCtx.NoPrompt)
+			defer func() { timing.Report(ctx, runErr) }()
 			flags.output = extCtx.OutputFormat
 			action := &ProjectDeploymentAddAction{flags: flags, extCtx: extCtx}
-			return action.Run(cmd.Context())
+			return action.Run(ctx)
 		},
 	}
 	cmd.Flags().StringVar(&flags.model, "model", "", "Model name or publisher/model")
@@ -82,7 +85,9 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	return cmd
 }
 
-func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
+func (a *ProjectDeploymentAddAction) Run(ctx context.Context) (runErr error) {
+	endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation, inittelemetry.Execution, "")
+	defer func() { endValidation(runErr) }()
 	if a.flags == nil {
 		a.flags = &projectDeploymentFlags{}
 	}
@@ -109,8 +114,9 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		defer client.Close()
 	}
 	a.client = client
+	endValidation(nil)
 	if strings.TrimSpace(a.flags.model) == "" {
-		response, promptErr := client.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		response, promptErr := inittelemetry.Prompts(client.Prompt(), inittelemetry.ModelSelection).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Model name",
 				IgnoreHintKeys: true,
@@ -480,7 +486,7 @@ func resolveDeploymentAzureContext(
 		if noPrompt {
 			return nil, missingDeploymentLocationError()
 		}
-		response, promptErr := client.Prompt().PromptLocation(
+		response, promptErr := inittelemetry.Prompts(client.Prompt(), inittelemetry.ModelLocationSelection).PromptLocation(
 			ctx,
 			&azdext.PromptLocationRequest{AzureContext: azureContext},
 		)

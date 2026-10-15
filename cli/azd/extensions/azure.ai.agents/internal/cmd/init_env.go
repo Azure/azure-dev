@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -165,7 +166,7 @@ func configureAzureYamlEnvironmentVariables(
 	fmt.Println()
 
 	for _, reference := range missing {
-		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		promptResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.EnvironmentValueInput).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:         fmt.Sprintf("Enter a value for %s", reference.Name),
 				Required:        true,

@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
@@ -484,7 +485,9 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 			return err
 		}
 	}
-	return ejectInfra(projectRoot, provider, env)
+	return inittelemetry.MeasureError(ctx, inittelemetry.InfraGeneration, inittelemetry.Execution, "",
+		func() error { return ejectInfra(projectRoot, provider, env) },
+	)
 }
 
 // ejectInfra synthesizes infrastructure templates from azure.yaml. A project

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -289,7 +290,14 @@ func runProjectWorkflow(
 	projectRoot string,
 	operation string,
 	errorCode string,
-) error {
+) (timingErr error) {
+	step := inittelemetry.ProjectAuthoring
+	if errorCode == exterrors.CodeDeploymentAuthoringFailed {
+		step = inittelemetry.ModelDeploymentAuthoring
+	}
+	endTiming := inittelemetry.Start(ctx, step, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	projectRoot, err := filepath.Abs(projectRoot)
 	if err != nil {
 		return exterrors.Dependency(
@@ -305,10 +313,12 @@ func runProjectWorkflow(
 			{Command: &azdext.WorkflowCommand{Args: args}},
 		},
 	}
-	if _, err := azdClient.Workflow().Run(
+	_, err = azdClient.Workflow().Run(
 		ctx,
 		&azdext.RunWorkflowRequest{Workflow: workflow},
-	); err != nil {
+	)
+	endTiming(err)
+	if err != nil {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled(operation + " was cancelled")
 		}

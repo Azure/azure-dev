@@ -11,6 +11,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -366,9 +368,10 @@ func TestFailedInitReportsIntentWithoutChangingFailure(t *testing.T) {
 			require.ErrorContains(t, err, "new prompt voice agents cannot use these init inputs")
 			capture.mu.Lock()
 			defer capture.mu.Unlock()
-			require.Len(t, capture.events, 1)
-			require.Equal(t, "agent.operation.v1.init.voice_managed.none", capture.events[0].EventName)
-			require.Empty(t, capture.events[0].Attributes)
+			markers := operationMarkerRequests(capture.events)
+			require.Len(t, markers, 1)
+			require.Equal(t, "agent.operation.v1.init.voice_managed.none", markers[0].EventName)
+			require.Empty(t, markers[0].Attributes)
 			require.NotContains(t, output.String(), "sensitive transport text")
 		})
 	}
@@ -443,9 +446,10 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 			}
 			capture.mu.Lock()
 			defer capture.mu.Unlock()
-			require.Len(t, capture.events, 1)
-			require.Equal(t, "agent.operation.v1.init."+tt.category+"."+phone, capture.events[0].EventName)
-			require.Empty(t, capture.events[0].Attributes)
+			markers := operationMarkerRequests(capture.events)
+			require.Len(t, markers, 1)
+			require.Equal(t, "agent.operation.v1.init."+tt.category+"."+phone, markers[0].EventName)
+			require.Empty(t, markers[0].Attributes)
 			content, err := os.ReadFile(filepath.Join("app", "main.py"))
 			require.NoError(t, err)
 			require.Equal(t, code, string(content))
@@ -457,6 +461,13 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 			require.Len(t, entries, 2, "telemetry must not scaffold or create the missing source directory")
 		})
 	}
+
+}
+
+func operationMarkerRequests(events []*contracts.ReportUsageRequest) []*contracts.ReportUsageRequest {
+	return slices.DeleteFunc(slices.Clone(events), func(event *contracts.ReportUsageRequest) bool {
+		return !strings.HasPrefix(event.EventName, "agent.operation.v1.")
+	})
 }
 
 func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T) {

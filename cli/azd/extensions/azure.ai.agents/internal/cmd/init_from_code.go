@@ -6,6 +6,7 @@ package cmd
 import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
@@ -147,7 +148,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
 		if strings.TrimSpace(localDefinition.Image) == "" {
-			if err := a.writeAgentIgnoreToSrcDir(srcDir); err != nil {
+			if err := inittelemetry.MeasureError(ctx, inittelemetry.FileGeneration, inittelemetry.Execution, "",
+				func() error { return a.writeAgentIgnoreToSrcDir(srcDir) },
+			); err != nil {
 				return fmt.Errorf("failed to write .agentignore: %w", err)
 			}
 		}
@@ -159,7 +162,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 
 		// Run post-init validations (advisory warnings only)
+		endValidation := inittelemetry.Start(ctx, inittelemetry.PostInitValidation, inittelemetry.Execution, "")
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
+		endValidation(nil)
 
 		fmt.Println("\nYou can customize environment variables and other settings " +
 			"in the agent service entry in azure.yaml.")
@@ -226,9 +231,11 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 				{Command: &azdext.WorkflowCommand{Args: initArgs}},
 			},
 		}
-		if _, err := a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-			Workflow: workflow,
-		}); err != nil {
+		if _, err := inittelemetry.Measure(ctx, inittelemetry.ProjectScaffolding, inittelemetry.External, "",
+			func() (*azdext.EmptyResponse, error) {
+				return a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{Workflow: workflow})
+			},
+		); err != nil {
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("project initialization was cancelled")
 			}
@@ -435,7 +442,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 
 		defaultIdx := int32(0)
-		projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		projectResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ProjectModeSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
 				Choices:       projectChoices,
@@ -555,7 +562,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	} else {
 		defaultIndex := int32(0)
-		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		modelConfigResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelStrategySelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "How would you like to configure model(s) for your agent?",
 				Choices:       modelConfigChoices,
@@ -977,7 +984,9 @@ func (a *InitFromCodeAction) addToProject(
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
-	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
+	if _, err := inittelemetry.Measure(ctx, inittelemetry.ProjectConfigurationUpdate, inittelemetry.External, "",
+		func() (*azdext.EmptyResponse, error) { return a.azdClient.Project().AddService(ctx, req) },
+	); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 	if err := setServiceEnvironment(
@@ -1097,7 +1106,7 @@ func promptProtocols(
 		})
 	}
 
-	resp, err := promptClient.MultiSelect(ctx, &azdext.MultiSelectRequest{
+	resp, err := inittelemetry.Prompts(promptClient, inittelemetry.ProtocolSelection).MultiSelect(ctx, &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
 			Message:     "Which protocols does your agent support?",
 			Choices:     choices,
@@ -1227,7 +1236,7 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	}
 
 	defaultIdx := int32(0) // Code deploy is the default
-	deployModeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	deployModeResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.DeployModeSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "How would you like to deploy your agent?",
 			Choices:       deployModeChoices,
@@ -1345,7 +1354,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		log.Printf("Auto-detected runtime: %s", runtime)
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list
-		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		runtimeResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.RuntimeSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select the runtime for your agent",
 				Choices:       runtimeChoices,
@@ -1371,7 +1380,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		entryPoint = defaultEntryPoint
 		log.Printf("Auto-detected entry point: %s", entryPoint)
 	} else {
-		entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		entryPointResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.EntryPointInput).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:      "Enter the file path for the entry point of the agent",
 				DefaultValue: defaultEntryPoint,
@@ -1400,7 +1409,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		log.Printf("Defaulted dependency resolution to remote_build")
 	} else {
 		depDefaultIdx := int32(0)
-		depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		depResResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.DependencyResolutionSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "How should dependencies be resolved?",
 				Choices:       depResChoices,

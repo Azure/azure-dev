@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -160,7 +161,9 @@ func runInitManaged(
 
 	// cwd is now the project root. Create the service directory when nested.
 	if serviceRelPath != "." {
-		if err := os.MkdirAll(serviceSourceDir, osutil.PermissionDirectory); err != nil {
+		if err := inittelemetry.MeasureError(ctx, inittelemetry.FileGeneration, inittelemetry.Execution, "",
+			func() error { return os.MkdirAll(serviceSourceDir, osutil.PermissionDirectory) },
+		); err != nil {
 			return fmt.Errorf("creating service folder %q: %w", serviceSourceDir, err)
 		}
 	}
@@ -297,7 +300,10 @@ func addPromptAgentService(
 	azdClient *azdext.AzdClient,
 	agentName, serviceRelPath string,
 	promptAgent *agent_yaml.PromptAgent,
-) error {
+) (timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectConfigurationUpdate, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	agentProps, err := project.PromptAgentDefinitionToServiceProperties(*promptAgent)
 	if err != nil {
 		return err
@@ -381,7 +387,9 @@ func promptManagedAgentName(
 	harness string,
 ) (string, error) {
 	if strings.TrimSpace(flags.agentName) != "" {
-		return validateInitAgentName(flags.agentName)
+		return inittelemetry.Measure(ctx, inittelemetry.AgentNameInput, inittelemetry.Execution, inittelemetry.Flag,
+			func() (string, error) { return validateInitAgentName(flags.agentName) },
+		)
 	}
 	if flags.noPrompt {
 		return "", exterrors.Validation(
@@ -392,7 +400,7 @@ func promptManagedAgentName(
 	}
 	defaultName := defaultPromptAgentName(harness)
 
-	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AgentNameInput).Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:      "Enter a name for your agent",
 			DefaultValue: defaultName,
@@ -428,7 +436,7 @@ func promptManagedAgentDescription(
 		return "", nil
 	}
 
-	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AgentDescriptionInput).Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:        "Enter a description for your agent (optional)",
 			DefaultValue:   "",
@@ -495,7 +503,7 @@ func promptManagedAgentModel(
 	choices = append(choices, &azdext.SelectChoice{Label: customLabel, Value: customLabel})
 
 	defaultIndex := int32(0)
-	selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	selectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelDeploymentSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Select the model deployment your agent will call",
 			Choices:       choices,
@@ -517,7 +525,7 @@ func promptManagedAgentModel(
 	}
 
 	// Custom path: free-text deployment name.
-	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelSelection).Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:      "Enter the model deployment name",
 			DefaultValue: "gpt-4.1-mini",
@@ -557,7 +565,7 @@ func promptManagedAgentInstructions(
 		return "You are a helpful AI assistant. Replace these instructions before deploying.", nil
 	}
 
-	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AgentInstructionsInput).Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:      "Enter system instructions for your agent",
 			DefaultValue: "You are a helpful AI assistant.",

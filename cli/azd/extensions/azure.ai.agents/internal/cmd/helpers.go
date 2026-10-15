@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -842,7 +843,7 @@ func promptForAgentService(
 	}
 
 	defaultIndex := int32(0)
-	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ServiceSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Select an agent service",
 			Choices:       choices,
@@ -1599,7 +1600,7 @@ func resolveStartupCommandForInit(
 		return "", nil
 	}
 
-	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.StartupCommandInput).Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:        "Enter the command to start your agent (e.g., python main.py), or leave blank to skip",
 			IgnoreHintKeys: true,

@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -159,7 +160,10 @@ const agentsV2ModelCapability = "agentsV2"
 
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.
-func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) error {
+func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) (timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.AiServiceCapabilityCheck, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	_, err := azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{})
 	if err == nil {
 		return nil
@@ -229,7 +233,10 @@ func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Cont
 
 // authStatusFromCLI runs `azd auth status --output json --no-prompt` as a subprocess
 // and returns the raw stdout bytes.
-func authStatusFromCLI(ctx context.Context) ([]byte, error) {
+func authStatusFromCLI(ctx context.Context) (timingResult0 []byte, timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.Authentication, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	return osExec.CommandContext(ctx, "azd", "auth", "status", "--output", "json", "--no-prompt").Output()
 }
 
@@ -254,7 +261,13 @@ func resolveInitAgentName(
 	defaultName string,
 ) (string, error) {
 	if flags.agentName != "" {
-		return validateInitAgentName(flags.agentName)
+		source := inittelemetry.Source("")
+		if flags.agentNameExplicit {
+			source = inittelemetry.Flag
+		}
+		return inittelemetry.Measure(ctx, inittelemetry.AgentNameInput, inittelemetry.Execution, source,
+			func() (string, error) { return validateInitAgentName(flags.agentName) },
+		)
 	}
 
 	defaultName, err := validateInitAgentName(defaultName)
@@ -267,7 +280,7 @@ func resolveInitAgentName(
 	}
 
 	for {
-		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		promptResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AgentNameInput).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:      "Enter a name for your agent",
 				DefaultValue: defaultName,
@@ -287,7 +300,9 @@ func resolveInitAgentName(
 			agentName = defaultName
 		}
 
-		validName, err := validateInitAgentName(agentName)
+		validName, err := inittelemetry.Measure(ctx, inittelemetry.InputValidation, inittelemetry.Execution, inittelemetry.User,
+			func() (string, error) { return validateInitAgentName(agentName) },
+		)
 		if err != nil {
 			writeValidationRetryError(err)
 			continue
@@ -559,7 +574,7 @@ func resolveExistingAgentNameConflictWithChecker(
 			return agentName, nil
 		}
 
-		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		confirmResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AgentNameConflictConfirmation).Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message:      "Continue with this existing agent name?",
 				DefaultValue: new(false),
@@ -582,7 +597,7 @@ func resolveExistingAgentNameConflictWithChecker(
 
 func promptForReplacementAgentName(ctx context.Context, azdClient *azdext.AzdClient, agentName string) (string, error) {
 	for {
-		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		promptResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AgentNameConflictResolution).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:      "Enter a different name for your agent",
 				DefaultValue: nextAgentNameSuggestion(agentName),
@@ -763,12 +778,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), "", false)
+			ctx, timing := inittelemetry.NewContext(ctx, inittelemetry.AgentInit, extCtx.NoPrompt)
+			defer func() { timing.Report(ctx, runErr) }()
 			cmd.SetContext(ctx)
 			defer func() {
 				if runErr != nil {
 					reportInitOperation(ctx)
 				}
 			}()
+			endInputValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation, inittelemetry.Execution, "")
+			defer func() { endInputValidation(runErr) }()
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment
@@ -835,11 +854,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if err := validateDeployMode(flags.deployMode); err != nil {
 				return err
 			}
+			endInputValidation(nil)
 			printBanner(cmd.OutOrStdout())
 
 			var cachedExplicitAzureYaml []byte
 			if userProvidedTemplate {
+				endManifestValidation := inittelemetry.Start(
+					ctx, inittelemetry.ManifestValidation, inittelemetry.Execution, inittelemetry.Config,
+				)
 				content, cached, err := validateLocalExplicitAzureYaml(flags.templatePointer)
+				endManifestValidation(err)
 				if err != nil {
 					return err
 				}
@@ -894,7 +918,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err != nil {
 						return err
 					}
-					return ejectInfra(gate.projectRoot, infraProvider, env)
+					return inittelemetry.MeasureError(ctx, inittelemetry.InfraGeneration, inittelemetry.Execution, "",
+						func() error { return ejectInfra(gate.projectRoot, infraProvider, env) },
+					)
 				}
 			}
 
@@ -1075,7 +1101,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					) {
 					useExisting := flags.noPrompt
 					if !flags.noPrompt {
-						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+						confirmResp, promptErr := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ProjectReuseConfirmation).Confirm(ctx, &azdext.ConfirmRequest{
 							Options: &azdext.ConfirmOptions{
 								Message: fmt.Sprintf(
 									"This project already configures %s. Use it?",
@@ -1661,9 +1687,11 @@ func scaffoldProject(
 		},
 	}
 
-	if _, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-		Workflow: workflow,
-	}); err != nil {
+	if _, err := inittelemetry.Measure(ctx, inittelemetry.ProjectScaffolding, inittelemetry.External, "",
+		func() (*azdext.EmptyResponse, error) {
+			return azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{Workflow: workflow})
+		},
+	); err != nil {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled("project initialization was cancelled")
 		}
@@ -1923,7 +1951,10 @@ func printAgentAddedMessage(agentName string) {
 // are still emitted so provision wires the endpoint.
 func (a *InitAction) addVoiceAgentToProject(
 	ctx context.Context, targetDir string, voiceDef *agent_yaml.VoiceAgent,
-) error {
+) (timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectConfigurationUpdate, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	if targetDir == "." {
 		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
 			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
@@ -2196,7 +2227,7 @@ func (a *InitAction) resolveCollisionsInternal(
 	}
 
 	defaultIdx := int32(1)
-	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	resp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ResourceCollisionSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       collisionMsg,
 			Choices:       choices,
@@ -2219,7 +2250,7 @@ func (a *InitAction) resolveCollisionsInternal(
 	}
 
 	// Prompt for a new name — default to the next available suffix.
-	nameResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	nameResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ResourceNameInput).Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:        "Enter a new service name for this agent",
 			DefaultValue:   suggestion,
@@ -2373,7 +2404,9 @@ func downloadGithubManifest(
 func downloadDirectoryContents(
 	ctx context.Context, hostname string, repoSlug string, dirPath string, rootDirPath string, branch string,
 	localPath string, ghCli githubContentAPI, console input.Console,
-) error {
+) (timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.TemplateDownload, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
 
 	// Get directory contents using GitHub API
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
@@ -2585,7 +2618,10 @@ func verifyRegistryConnectionOnProject(
 	credential azcore.TokenCredential,
 	foundryProject FoundryProjectInfo,
 	connectionRef string,
-) error {
+) (timingErr error) {
+	endTiming := inittelemetry.Start(ctx, inittelemetry.RegistryConnectionValidation, inittelemetry.External, "")
+	defer func() { endTiming(timingErr) }()
+
 	if err := verifyFoundryProjectConnection(
 		ctx,
 		credential,

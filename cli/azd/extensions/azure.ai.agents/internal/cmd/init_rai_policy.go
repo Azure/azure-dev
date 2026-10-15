@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
@@ -141,11 +142,15 @@ func promptForRaiPolicy(
 ) (raiPolicySelection, error) {
 	var existing []azure.RaiPolicyInfo
 	if foundryProject != nil && credential != nil {
-		policies, err := azure.ListRaiPolicies(
-			ctx, credential,
-			foundryProject.SubscriptionId,
-			foundryProject.ResourceGroupName,
-			foundryProject.AccountName,
+		policies, err := inittelemetry.Measure(ctx, inittelemetry.RaiPolicyDiscovery, inittelemetry.External, "",
+			func() ([]azure.RaiPolicyInfo, error) {
+				return azure.ListRaiPolicies(
+					ctx, credential,
+					foundryProject.SubscriptionId,
+					foundryProject.ResourceGroupName,
+					foundryProject.AccountName,
+				)
+			},
 		)
 		if err != nil {
 			fmt.Println(color.HiBlackString(
@@ -177,7 +182,7 @@ func promptForRaiPolicy(
 		choices = append(choices, &azdext.SelectChoice{Label: label, Value: policy.ResourceID})
 	}
 
-	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.RaiPolicySelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a Responsible AI policy for this agent",
 			Choices: choices,

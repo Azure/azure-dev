@@ -13,6 +13,7 @@ import (
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/inittelemetry"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -180,7 +181,7 @@ func reconcileAdoptedDeployments(
 					Label: "Skip this model",
 				},
 			)
-			prompt, promptErr := client.Prompt().Select(ctx,
+			prompt, promptErr := inittelemetry.Prompts(client.Prompt(), inittelemetry.ModelDeploymentSelection).Select(ctx,
 				&azdext.SelectRequest{Options: &azdext.SelectOptions{
 					Message: fmt.Sprintf(
 						"How would you like to proceed with deployment %q "+

@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -162,7 +163,7 @@ func configureFoundryProject(
 		}
 
 		defaultIdx := int32(0)
-		projectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		projectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ProjectModeSelection).Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
 				Choices:       projectChoices,

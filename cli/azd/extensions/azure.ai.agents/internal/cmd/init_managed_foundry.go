@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -196,7 +197,7 @@ func selectPromptFoundryProject(
 		{Label: "Create a new Foundry project", Value: "new"},
 	}
 	defaultIndex := int32(0)
-	projectResponse, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
+	projectResponse, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ProjectModeSelection).Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
 		Message:       "Select a Foundry project to host your agent and model",
 		Choices:       projectChoices,
 		SelectedIndex: &defaultIndex,
@@ -230,7 +231,7 @@ func selectPromptFoundryProject(
 			Value: fmt.Sprintf("%d", i),
 		})
 	}
-	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.FoundryProjectSelection).Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a Foundry project to host your agent and model",
 			Choices: choices,
@@ -342,7 +343,7 @@ func resolvePromptModelForExistingProject(
 			})
 
 			defaultIndex := int32(0)
-			resp, selErr := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			resp, selErr := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelDeploymentSelection).Select(ctx, &azdext.SelectRequest{
 				Options: &azdext.SelectOptions{
 					Message:       "Select the model deployment your agent will call",
 					Choices:       choices,
@@ -456,7 +457,7 @@ func resolvePromptModelDeployment(
 	// Deployment name (defaults to the model name), matching hosted.
 	deploymentName := modelDetails.ModelName
 	if !flags.noPrompt {
-		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		resp, promptErr := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelDeploymentNameInput).Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message: fmt.Sprintf(
 					"Enter model deployment name for model '%s' (defaults to model name)",

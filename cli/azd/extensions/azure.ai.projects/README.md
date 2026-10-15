@@ -17,9 +17,11 @@ reporter.Report(ctx, telemetry.Event{
 })
 ```
 
-The example is illustrative; this extension does not currently emit a product
-usage event through this interface. Existing provisioning span attributes are
-unchanged by this adapter. Add an event only after its product question, bounded
+The example is illustrative. Project add and deployment add report command-scoped
+step timings and prompt summaries, including when delegated to by agent Init.
+See [Init step timing telemetry](../azure.ai.agents/docs/init-telemetry.md) for
+their schema, timing boundaries, queries, and reporting limits. Existing
+provisioning span attributes are unchanged. Add an event only after its product question, bounded
 values, documentation, and privacy review are agreed. Before emitting, declare each
 `ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
 declaration only when its meaning, allowed values, classification, and purpose are

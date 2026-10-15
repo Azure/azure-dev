@@ -20,6 +20,119 @@ import (
 )
 
 var (
+	// InitFlowVersion identifies the fixed setup timing schema version.
+	InitFlowVersion = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.flow.version"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitFlowScope identifies the command owning the timing sequence and summary.
+	InitFlowScope = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.flow.scope"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitFlowOutcome records success, error, canceled, or timeout for setup.
+	InitFlowOutcome = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.flow.outcome"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepID identifies a fixed setup business step.
+	InitStepID = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.id"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepCategory distinguishes prompt, execution, and external setup work.
+	InitStepCategory = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.category"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepSequence records the step start order within one extension command.
+	InitStepSequence = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.sequence"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepOutcome records success, error, canceled, or timeout for one attempt.
+	InitStepOutcome = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.outcome"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepInputSource records user, flag, config, environment, or default when known.
+	InitStepInputSource = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.input_source"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepTimingScope distinguishes operations, prompt RPCs, and composite prompt RPCs.
+	InitStepTimingScope = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.timing_scope"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepDurationMs records monotonic elapsed milliseconds, encoded as a string by the extension API.
+	InitStepDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.duration_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitPromptCount counts simple interactive prompt RPC attempts, including cancellations.
+	InitPromptCount = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.prompt.count"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitPromptTotalDurationMs records the sum of simple interactive prompt RPC durations.
+	InitPromptTotalDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.prompt.total_duration_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitPromptLongestID identifies the longest simple prompt, or none if there were no prompts.
+	InitPromptLongestID = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.prompt.longest.id"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitPromptLongestDurationMs records the longest simple interactive prompt RPC duration.
+	InitPromptLongestDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.prompt.longest_duration_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepCount counts all timing attempts started in one extension command.
+	InitStepCount = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.count"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// InitStepDroppedCount counts completed steps exceeding the local timing buffer.
+	InitStepDroppedCount = fields.AttributeKey{
+		Key:            attribute.Key("ext.init.step.dropped_count"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+
 	// DemoMode records the fixed mode used by the demo extension telemetry example.
 	DemoMode = fields.AttributeKey{
 		Key:            attribute.Key("ext.demo.mode"),

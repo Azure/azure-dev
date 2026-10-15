@@ -65,7 +65,9 @@ func isCanonicalTelephonyPath(path string) bool {
 		if segments[i] != "telephony" {
 			continue
 		}
-		return segments[i+1] == "bindings" || segments[i+1] == "transfer_targets"
+		if segments[i+1] == "bindings" || segments[i+1] == "transfer_targets" {
+			return true
+		}
 	}
 	return false
 }

@@ -90,7 +90,18 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	telephonyOptions := *clientOptions
 	transport := telephonyOptions.Transport
 	if transport == nil {
-		transport = &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+		transport = &http.Client{
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+	} else if client, ok := transport.(*http.Client); ok {
+		clone := *client
+		clone.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		transport = &clone
 	}
 	telephonyOptions.Transport = &telephonyResponseLimitTransport{next: transport}
 	telephonyPipeline := runtime.NewPipeline(

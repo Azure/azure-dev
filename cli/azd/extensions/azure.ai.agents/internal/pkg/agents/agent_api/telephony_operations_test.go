@@ -4,11 +4,13 @@
 package agent_api
 
 import (
+	"azureaiagent/internal/pkg/recordproxy"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -223,6 +225,47 @@ func TestTelephonyResponseLimitTransport_BypassesNoncanonicalAndHandlesNil(t *te
 		require.NoError(t, err)
 		require.Nil(t, resp)
 	})
+}
+
+func TestCanonicalTelephonyPath_ScansPastNamesContainingTelephony(t *testing.T) {
+	for _, path := range []string{
+		"/api/projects/telephony/agents/telephony/telephony/bindings",
+		"/api/projects/telephony/agents/telephony/telephony/transfer_targets",
+	} {
+		require.True(t, isCanonicalTelephonyPath(path), path)
+	}
+	require.False(t, isCanonicalTelephonyPath("/api/projects/telephony/agents/telephony"))
+	require.False(t, isCanonicalTelephonyPath("/telephony/bindings-evil"))
+}
+
+func TestCanonicalTelephonyClient_DoesNotFollowRedirects(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			requests := 0
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				requests++
+				if req.URL.Path == "/redirected" {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				w.Header().Set("Location", serverURL(req)+"/redirected")
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
+
+			originalTransport := recordproxy.Transport
+			recordproxy.Transport = server.Client().Transport
+			t.Cleanup(func() { recordproxy.Transport = originalTransport })
+			client := NewAgentClient(server.URL+"/api/projects/proj", fakeCredential{})
+			err := client.DeleteGATelephonyBinding(t.Context(), "agent", "binding", `"etag"`)
+			require.Error(t, err)
+			require.Equal(t, 1, requests)
+		})
+	}
+}
+
+func serverURL(req *http.Request) string {
+	return "http://" + req.Host
 }
 
 func TestListTelephonyBindings_RejectsMissingStatus(t *testing.T) {

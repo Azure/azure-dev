@@ -1175,7 +1175,7 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${m
 {{- if .DbCosmos }}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = '${cosmos.outputs.resourceId}/sqlDatabases/{{.DbCosmos.DatabaseName}}'
 {{- end}}
-{{- if .StorageAccount }}
+{{- if and .StorageAccount (not .StorageAccount.Implicit) }}
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
 {{- end}}
 {{- if .EventHubs}}

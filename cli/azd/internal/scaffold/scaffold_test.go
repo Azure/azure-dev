@@ -89,7 +89,7 @@ func TestExecInfra(t *testing.T) {
 		{
 			"Function App with implicit storage",
 			InfraSpec{
-				StorageAccount: &StorageAccount{},
+				StorageAccount: &StorageAccount{Implicit: true},
 				Services: []ServiceSpec{{
 					Name: "api",
 					Host: FunctionAppKind,
@@ -133,6 +133,30 @@ func TestExecInfra(t *testing.T) {
 					},
 					FunctionStorage: &FunctionStorage{ExistingName: "existingStorage"},
 				}},
+			},
+		},
+		{
+			"Function Apps with existing and implicit storage",
+			InfraSpec{
+				StorageAccount: &StorageAccount{Implicit: true},
+				Existing: []ExistingResource{{
+					Name:             "existingStorage",
+					ResourceType:     "Microsoft.Storage/storageAccounts",
+					ApiVersion:       "2023-05-01",
+					ResourceIdEnvVar: "AZURE_RESOURCE_STORAGE_ID",
+				}},
+				Services: []ServiceSpec{
+					{
+						Name: "api", Host: FunctionAppKind,
+						Runtime:         &RuntimeInfo{Type: "python", Version: "3.12"},
+						FunctionStorage: &FunctionStorage{ExistingName: "existingStorage"},
+					},
+					{
+						Name: "worker", Host: FunctionAppKind,
+						Runtime:         &RuntimeInfo{Type: "node", Version: "22"},
+						FunctionStorage: &FunctionStorage{},
+					},
+				},
 			},
 		},
 		{

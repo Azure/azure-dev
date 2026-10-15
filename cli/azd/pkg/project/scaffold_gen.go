@@ -376,7 +376,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		return svc.Host == scaffold.FunctionAppKind && svc.FunctionStorage != nil &&
 			svc.FunctionStorage.ExistingName == ""
 	}) {
-		infraSpec.StorageAccount = &scaffold.StorageAccount{}
+		infraSpec.StorageAccount = &scaffold.StorageAccount{Implicit: true}
 	}
 
 	return &infraSpec, nil

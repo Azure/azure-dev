@@ -125,6 +125,8 @@ type KeyVault struct {
 
 type StorageAccount struct {
 	Containers []string
+	// Implicit accounts have no compose resource ID output, which could overwrite an existing resource's input.
+	Implicit bool
 }
 
 type ServiceSpec struct {

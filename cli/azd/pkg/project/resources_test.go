@@ -485,8 +485,71 @@ func Test_infraSpec_FunctionAppStorage(t *testing.T) {
 				assert.Contains(t, bicep, "dependsOn: [\n    storageAccount\n  ]")
 				assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
 			}
+			for _, name := range []string{"resources.bicep", "main.bicep"} {
+				content, err := fs.ReadFile(files, name)
+				require.NoError(t, err)
+				if tt.storage != nil && !tt.storage.Existing {
+					assert.Contains(t, string(content), "output AZURE_RESOURCE_STORAGE_ID string =")
+				} else {
+					assert.NotContains(t, string(content), "output AZURE_RESOURCE_STORAGE_ID string =")
+				}
+			}
 		})
 	}
+}
+
+func Test_infraSpec_FunctionAppsMixedExistingAndImplicitStorage(t *testing.T) {
+	cfg := &ProjectConfig{
+		Path: functionProjectDir(t),
+		Resources: map[string]*ResourceConfig{
+			"api": {
+				Name: "api", Type: ResourceTypeHostFunctionApp, Uses: []string{"storage"},
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+			"worker": {
+				Name: "worker", Type: ResourceTypeHostFunctionApp,
+				Props: FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}},
+			},
+			"storage": {
+				Name: "storage", Type: ResourceTypeStorage, Existing: true, Props: StorageProps{},
+			},
+		},
+		Services: map[string]*ServiceConfig{
+			"api":    {Name: "api", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+			"worker": {Name: "worker", Host: AzureFunctionTarget, Language: ServiceLanguagePython},
+		},
+	}
+	spec, err := infraSpec(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, spec.StorageAccount)
+	assert.True(t, spec.StorageAccount.Implicit)
+	require.Len(t, spec.Existing, 1)
+	assert.Equal(t, "AZURE_RESOURCE_STORAGE_ID", spec.Existing[0].ResourceIdEnvVar)
+	require.Len(t, spec.Services, 2)
+	assert.Equal(t, "existingStorage", spec.Services[0].FunctionStorage.ExistingName)
+	assert.Empty(t, spec.Services[1].FunctionStorage.ExistingName)
+
+	files, err := infraFs(t.Context(), cfg)
+	require.NoError(t, err)
+	params, err := fs.ReadFile(files, "main.parameters.json")
+	require.NoError(t, err)
+	assert.Contains(t, string(params), `"existingStorageId": {`)
+	assert.Contains(t, string(params), `"value": "${AZURE_RESOURCE_STORAGE_ID}"`)
+	for _, name := range []string{"resources.bicep", "main.bicep"} {
+		content, err := fs.ReadFile(files, name)
+		require.NoError(t, err)
+		assert.NotContains(t, string(content), "output AZURE_RESOURCE_STORAGE_ID ",
+			"provision outputs must not overwrite the existing storage ID needed by the next provision")
+	}
+	content, err := fs.ReadFile(files, "resources.bicep")
+	require.NoError(t, err)
+	bicep := string(content)
+	assert.Equal(t, 1, strings.Count(bicep, "module storageAccount "))
+	assert.Contains(t, bicep, "storageAccountName: existingStorage.name")
+	assert.Contains(t, bicep, "storageAccountName: storageAccountName")
+	assert.Contains(t, bicep, "scope: resourceGroup(existingStorageIdSegments[2], existingStorageIdSegments[4])")
+	assert.Contains(t, bicep, "value: apiFunctionStorage.outputs.containerUri")
+	assert.Contains(t, bicep, "value: workerFunctionStorage.outputs.containerUri")
 }
 
 func Test_infraSpec_FunctionAppRuntimeByLanguage(t *testing.T) {

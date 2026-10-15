@@ -236,7 +236,7 @@ func TestConnectionAuthoringLocalSnapshotPreservesLargeIntegers(t *testing.T) {
 				"config": map[string]any{"number": uint64(9007199254740993)},
 			}
 			if existing {
-				client.services["search.api"] = map[string]any{
+				client.services["search-api"] = map[string]any{
 					"host": aiConnectionHost, "uses": []any{"foundry"},
 					"category": "Search", "target": "old",
 					"config": map[string]any{"number": uint64(9007199254740993)},
@@ -250,7 +250,7 @@ func TestConnectionAuthoringLocalSnapshotPreservesLargeIntegers(t *testing.T) {
 			// Hide the stub-only seam to exercise the
 			// contained disk reader.
 			diskClient := struct{ connectionAddProjectClient }{client}
-			plan, err := planConnectionAdd(t.Context(), diskClient, root, "search.api", file,
+			plan, err := planConnectionAdd(t.Context(), diskClient, root, "search-api", file,
 				false, "", true, nil, nil)
 			require.NoError(t, err)
 			encoded, err := yaml.Marshal(plan.serviceSection)
@@ -260,7 +260,7 @@ func TestConnectionAuthoringLocalSnapshotPreservesLargeIntegers(t *testing.T) {
 			}
 			assert.NotContains(t, string(encoded), "9007199254740992")
 			require.NoError(t, plan.apply(t.Context(), client))
-			service, ok := client.services["search.api"].(map[string]any)
+			service, ok := client.services["search-api"].(map[string]any)
 			require.True(t, ok)
 			env, ok := service["env"].(map[string]any)
 			require.True(t, ok)
@@ -520,7 +520,7 @@ func TestPlanConnectionAddReplacesLegacyConfigDefinition(t *testing.T) {
 	assert.Equal(t, "./definitions/search.json", candidate["$ref"])
 	assert.Equal(t, []any{"foundry"}, candidate["uses"])
 	require.NoError(t, plan.apply(t.Context(), client))
-	assert.Equal(t, []string{"set:$ref", "unset:config"}, client.mutationCalls)
+	assert.Equal(t, []string{"unset:config", "set:$ref"}, client.mutationCalls)
 	assert.Equal(t, candidate, client.services["search"])
 }
 

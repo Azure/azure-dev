@@ -106,11 +106,35 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	if err != nil {
 		return nil, err
 	}
-	included, err := c.resolve("spring.profiles.include")
-	if err != nil {
-		return nil, err
+	includeKey := "spring.profiles.include"
+	var includeSources []property
+	if p, ok := jsonProperties[canonical(includeKey)]; ok {
+		includeSources = append(includeSources, p)
 	}
-	names := splitList(included + "," + active)
+	if p, ok := lookupEnvProperty(lookup, includeKey); ok {
+		includeSources = append(includeSources, p)
+	}
+	for _, doc := range slices.Backward(base) {
+		if _, cloud := doc.values[canonical("spring.config.activate.on-cloud-platform")]; cloud {
+			continue
+		}
+		if _, activated := doc.values[canonical("spring.config.activate.on-profile")]; activated {
+			continue
+		}
+		if p, ok := doc.values[canonical(includeKey)]; ok {
+			includeSources = append(includeSources, p)
+		}
+	}
+	var included strings.Builder
+	for _, p := range includeSources {
+		text, err := c.expandText(p.text, map[string]bool{})
+		if err != nil {
+			return nil, fmt.Errorf("resolving profile includes in %s: %w", p.source, err)
+		}
+		included.WriteString(text)
+		included.WriteByte(',')
+	}
+	names := splitList(included.String() + active)
 	if len(names) == 0 {
 		defaults, err := c.resolve("spring.profiles.default")
 		if err != nil {
@@ -333,13 +357,20 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 	return nil
 }
 
-func (c *configuration) raw(key string) (property, bool) {
+func lookupEnvProperty(lookup LookupEnv, key string) (property, bool) {
 	for _, name := range []string{key,
 		strings.ToUpper(strings.NewReplacer(".", "_", "-", "").Replace(key)),
 		strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(key))} {
-		if text, ok := c.lookup(name); ok {
+		if text, ok := lookup(name); ok {
 			return property{text: text, source: "environment"}, true
 		}
+	}
+	return property{}, false
+}
+
+func (c *configuration) raw(key string) (property, bool) {
+	if p, ok := lookupEnvProperty(c.lookup, key); ok {
+		return p, true
 	}
 	p, ok := c.values[canonical(key)]
 	return p, ok
@@ -359,7 +390,10 @@ func (c *configuration) expand(key string, visiting map[string]bool) (string, er
 	if !ok {
 		return "", nil
 	}
-	text := p.text
+	return c.expandText(p.text, visiting)
+}
+
+func (c *configuration) expandText(text string, visiting map[string]bool) (string, error) {
 	for depth := 0; depth < 32 && strings.Contains(text, "${"); depth++ {
 		matches := placeholder.FindAllStringSubmatchIndex(text, -1)
 		if len(matches) == 0 {

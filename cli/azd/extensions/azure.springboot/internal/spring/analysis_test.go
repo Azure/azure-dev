@@ -233,6 +233,66 @@ spring:
 			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"shared", "cloud"},
 		},
 		{
+			name: "includes accumulate across packaged and external sources",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=sql",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"application.properties": "spring.profiles.include=cloud",
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"cloud", "sql"},
+		},
+		{
+			name: "includes retain high to low source ordering",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=sql",
+				"config/application.properties":             "spring.profiles.include=cloud",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-cloud.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/ignored",
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"cloud", "sql"},
+		},
+		{
+			name: "includes accumulate across property documents",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=sql\n" +
+					"#---\nspring.profiles.include=cloud\nspring.profiles.active=release",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"cloud", "sql", "release"},
+		},
+		{
+			name: "JSON and environment includes retain file includes and explicit precedence",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=${FILE_PROFILE:sql}",
+				"config/application.properties":             "spring.profiles.include=cloud",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/ignored",
+				"src/main/resources/application-local.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			env: map[string]string{
+				"SPRING_PROFILES_INCLUDE": "shared,cloud",
+				"SPRING_PROFILES_ACTIVE":  "local",
+				"SPRING_APPLICATION_JSON": `{"spring":{"profiles":{"include":"json,shared"}}}`,
+			},
+			drivers: allDrivers(), kind: MySQL, database: "warehouse",
+			profiles: []string{"json", "shared", "cloud", "sql", "local"},
+		},
+		{
+			name: "empty higher precedence include does not clear other sources",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=sql",
+				"src/main/resources/application-sql.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+			},
+			env:     map[string]string{"SPRING_PROFILES_INCLUDE": ""},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"sql"},
+		},
+		{
 			name: "comments are not custom datasource evidence",
 			files: map[string]string{
 				"src/main/java/example/Comment.java": "// @Bean DataSource create()\n" +

@@ -8872,7 +8872,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['unset'],
-					description: 'Remove one or more keys from an environment.',
+					description: 'Remove one or more keys from an environment. (Beta)',
 					options: [
 						{
 							name: ['--force'],

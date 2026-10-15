@@ -36,6 +36,22 @@ introduced by this follow-up.
 |---------------|----------------|------------------|
 | `extension.event` on failed service-target `cmd.*` spans | SystemMetadata | Limited to the fixed service-target operation label; extension identity remains the extension ID and version already covered by the existing admission path |
 
+## Environment-Key Removal Telemetry Review Scope (#9431)
+
+`cmd.env.unset` reuses the existing command span and adds only the following fields:
+
+| Field | Classification / purpose | Proposed handling |
+|-------|--------------------------|-------------------|
+| `env.unset.outcome` | SystemMetadata / FeatureInsight | Fixed enum: `success`, `no_change`, `user_declined`, `failed`; not hashed |
+| `env.unset.removed_count` | SystemMetadata / FeatureInsight | Numeric measurement of distinct keys removed by a fully successful save; not hashed |
+| `env.unset.missing_count` | SystemMetadata / FeatureInsight | Numeric measurement of distinct requested keys observed missing; not hashed |
+
+No key names, stored values, or raw environment identifiers are added to telemetry.
+The fields are attached directly to the command span rather than the process-global usage bag.
+Existing global command metadata and telemetry opt-out behavior are unchanged.
+Help and flag-parser failures do not execute the action; action-level validation failures record `failed` with zero counts.
+The new fields require the normal privacy review before rollout; this records the proposed scope, not completed approval.
+
 ## When to Trigger a Privacy Review
 
 ### Agent operation markers (#10072)

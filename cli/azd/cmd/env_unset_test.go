@@ -13,14 +13,20 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/joho/godotenv"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestEnvUnsetCmd(t *testing.T) {
@@ -64,20 +70,25 @@ func TestEnvUnsetCmd(t *testing.T) {
 			t.Parallel()
 			cmd := newEnvUnsetCmd()
 			require.Equal(t, "unset <key...>", cmd.Use)
-			require.Equal(t, "Remove one or more keys from an environment.", cmd.Short)
+			require.Contains(t, cmd.Short, "Remove one or more keys from an environment.")
+			require.Contains(t, cmd.Short, "(Beta)")
 			require.NotEmpty(t, cmd.Example)
+			require.Contains(t, getCmdEnvUnsetHelpDescription(cmd), "(Beta)")
 			require.Contains(t, getCmdEnvUnsetHelpDescription(cmd), "config.json")
 			require.Contains(t, getCmdEnvUnsetHelpDescription(cmd), "does not delete the secret")
 			require.Contains(t, cmd.Long, "ignored with a warning")
 			require.Contains(t, cmd.Long, "AZURE_ENV_NAME identifies the environment and cannot be unset.")
 			require.NotContains(t, cmd.Long, "managed by azd")
+			require.Contains(t, cmd.Long, "confirm removal (defaults to Yes)")
 			require.Contains(t, cmd.Long, "--force")
 			require.Contains(t, cmd.Long, "restore the previous values")
 			require.Contains(t, cmd.Long, "With --force, restoration is attempted automatically without prompting.")
 			require.NotContains(t, cmd.Long, "Process environment variables")
 			require.NotContains(t, cmd.Long, "Managed values")
 
-			err := cmd.Args(cmd, tt.args)
+			require.Equal(t, output.WithErrorFormat("ERROR:"), cmd.ErrPrefix())
+			require.NoError(t, cmd.Args(cmd, tt.args))
+			err := validateEnvUnsetKeys(tt.args)
 			if tt.errorContains != "" {
 				require.ErrorContains(t, err, tt.errorContains)
 			} else {
@@ -217,7 +228,8 @@ func TestEnvUnsetAction(t *testing.T) {
 			console := mockinput.NewMockConsole()
 
 			result, err := newEnvUnsetAction(
-				lazy.From(env), manager, console, &envUnsetFlags{force: true}, tt.args).Run(t.Context())
+				lazy.From(env), lazy.From[environment.Manager](manager), console, &envUnsetFlags{force: true},
+				tt.args).Run(t.Context())
 			require.NoError(t, err)
 			require.Nil(t, result)
 			require.Equal(t, tt.want, env.Dotenv())
@@ -272,7 +284,8 @@ func TestEnvUnsetActionRejectsManagedKey(t *testing.T) {
 					console := mockinput.NewMockConsole()
 
 					result, err := newEnvUnsetAction(
-						lazyEnv, manager, console, &envUnsetFlags{force: mode.force}, tt.args).Run(t.Context())
+						lazyEnv, lazy.From[environment.Manager](manager), console, &envUnsetFlags{force: mode.force},
+						tt.args).Run(t.Context())
 					require.Nil(t, result)
 					require.ErrorContains(t, err,
 						"cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name")
@@ -310,7 +323,8 @@ func TestEnvUnsetActionLoadingErrors(t *testing.T) {
 			}
 
 			result, err := newEnvUnsetAction(
-				lazyEnv, manager, mockinput.NewMockConsole(), &envUnsetFlags{force: true}, []string{"KEY"}).Run(t.Context())
+				lazyEnv, lazy.From[environment.Manager](manager), mockinput.NewMockConsole(), &envUnsetFlags{force: true},
+				[]string{"KEY"}).Run(t.Context())
 			require.Nil(t, result)
 			if tt.loadErr != nil {
 				require.ErrorIs(t, err, tt.loadErr)
@@ -367,7 +381,7 @@ func TestEnvUnsetActionPersistsDeletion(t *testing.T) {
 	require.NoError(t, godotenv.Write(diskValues, envPath))
 
 	action := newEnvUnsetAction(
-		lazy.From(env), manager, mockinput.NewMockConsole(), &envUnsetFlags{force: true},
+		lazy.From(env), lazy.From[environment.Manager](manager), mockinput.NewMockConsole(), &envUnsetFlags{force: true},
 		[]string{"MY_KEY", "MY_KEY", "EMPTY", "SECRET", "LD_TEST_UNSET", "LATE_REMOVE", "MISSING"})
 	for range 2 {
 		result, err := action.Run(t.Context())
@@ -421,7 +435,8 @@ func TestEnvUnsetActionPreservesConcurrentWrites(t *testing.T) {
 	}).Return(nil).Once()
 
 	result, err := newEnvUnsetAction(
-		lazy.From(env), manager, mockinput.NewMockConsole(), &envUnsetFlags{force: true}, []string{"KEY"}).Run(t.Context())
+		lazy.From(env), lazy.From[environment.Manager](manager), mockinput.NewMockConsole(), &envUnsetFlags{force: true},
+		[]string{"KEY"}).Run(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, result)
 	values, err := godotenv.Read(envPath)
@@ -493,7 +508,7 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 			if tt.wantPrompt {
 				console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).
 					RespondFn(func(options input.ConsoleOptions) (any, error) {
-						require.Equal(t, false, options.DefaultValue)
+						require.Equal(t, true, options.DefaultValue)
 						require.Contains(t, options.Message, `environment "dev"`)
 						require.Contains(t, options.Message, `"KEY"`)
 						require.Equal(t, 1, strings.Count(options.Message, `"KEY"`))
@@ -514,7 +529,8 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 			}
 
 			result, err := newEnvUnsetAction(
-				lazy.From(env), manager, console, &envUnsetFlags{force: tt.force}, tt.args).Run(t.Context())
+				lazy.From(env), lazy.From[environment.Manager](manager), console, &envUnsetFlags{force: tt.force},
+				tt.args).Run(t.Context())
 			require.Nil(t, result)
 			if tt.errorText != "" {
 				require.ErrorContains(t, err, tt.errorText)
@@ -554,7 +570,8 @@ func TestEnvUnsetActionProcessOnlyKey(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	console.SetNoPromptMode(true)
 	result, err := newEnvUnsetAction(
-		lazy.From(env), manager, console, &envUnsetFlags{}, []string{"PROCESS_ONLY", "PROCESS_ONLY"}).Run(t.Context())
+		lazy.From(env), lazy.From[environment.Manager](manager), console, &envUnsetFlags{},
+		[]string{"PROCESS_ONLY", "PROCESS_ONLY"}).Run(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, result)
 	require.Len(t, console.Output(), 1)
@@ -750,6 +767,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 				console.WhenConfirm(func(options input.ConsoleOptions) bool {
 					return strings.Contains(options.Message, "will be removed from environment")
 				}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+					require.Equal(t, true, options.DefaultValue)
 					if tt.updateDuringConfirm {
 						updated := maps.Clone(before)
 						updated["KEY"] = "fresh-private-value"
@@ -774,7 +792,8 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			}
 
 			result, err := newEnvUnsetAction(
-				lazy.From(env), manager, envUnsetContextAwareConsole{Console: console}, &envUnsetFlags{force: tt.force},
+				lazy.From(env), lazy.From[environment.Manager](manager), envUnsetContextAwareConsole{Console: console},
+				&envUnsetFlags{force: tt.force},
 				[]string{"KEY", "EMPTY", "LD_TEST_UNSET"}).Run(runCtx)
 			require.Nil(t, result)
 			require.ErrorIs(t, err, initialErr)
@@ -823,6 +842,136 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			require.NotContains(t, messages, "original-private-value")
 			require.NotContains(t, messages, "fresh-private-value")
 			require.NotContains(t, messages, "filtered-private-value")
+			manager.AssertExpectations(t)
+		})
+	}
+}
+
+func TestEnvUnsetActionTelemetry(t *testing.T) {
+	loadErr := errors.New("environment loading failed")
+	saveErr := errors.New("saving failed before a local write")
+	tests := []struct {
+		name        string
+		args        []string
+		force       bool
+		confirmed   bool
+		disappeared bool
+		noPrompt    bool
+		loadErr     error
+		saveErr     error
+		outcome     string
+		removed     int
+		missing     int
+	}{
+		{
+			name: "Success", args: []string{"PRIVATE_KEY", "PRIVATE_KEY", "MISSING", "MISSING"},
+			force: true, outcome: "success", removed: 1, missing: 1,
+		},
+		{
+			name: "MissingOnly", args: []string{"MISSING", "MISSING"},
+			noPrompt: true, outcome: "no_change", missing: 1,
+		},
+		{
+			name: "UserDeclined", args: []string{"PRIVATE_KEY", "MISSING"},
+			outcome: "user_declined", missing: 1,
+		},
+		{
+			name: "Confirmed", args: []string{"PRIVATE_KEY", "MISSING"},
+			confirmed: true, outcome: "success", removed: 1, missing: 1,
+		},
+		{
+			name: "DisappearedDuringConfirmation", args: []string{"PRIVATE_KEY", "MISSING"},
+			confirmed: true, disappeared: true, outcome: "no_change", missing: 2,
+		},
+		{
+			name: "ConfirmationRequired", args: []string{"PRIVATE_KEY", "MISSING"},
+			noPrompt: true, outcome: "failed", missing: 1,
+		},
+		{name: "NoKeys", outcome: "failed"},
+		{name: "EmptyKey", args: []string{"PRIVATE_KEY", ""}, outcome: "failed"},
+		{name: "ProtectedKey", args: []string{"PRIVATE_KEY", environment.EnvNameEnvVarName}, outcome: "failed"},
+		{name: "LoadingFailure", args: []string{"PRIVATE_KEY"}, loadErr: loadErr, outcome: "failed"},
+		{
+			name: "SaveFailure", args: []string{"PRIVATE_KEY", "MISSING"},
+			force: true, saveErr: saveErr, outcome: "failed", missing: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := tracetest.NewSpanRecorder()
+			provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+			defer func() {
+				require.NoError(t, provider.Shutdown(context.Background()))
+			}()
+			ctx, span := provider.Tracer("test").Start(t.Context(), "cmd.env.unset")
+			defer span.End()
+			env := environment.NewWithValues("private-environment", map[string]string{
+				"PRIVATE_KEY": "private-stored-value",
+				"KEEP":        "unchanged",
+			})
+			manager := newTestEnvManager()
+			valid := validateEnvUnsetKeys(tt.args) == nil
+			lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+				require.True(t, valid, "invalid arguments must not load an environment")
+				return env, tt.loadErr
+			})
+			lazyManager := lazy.NewLazy(func() (environment.Manager, error) {
+				require.True(t, valid, "invalid arguments must not resolve the environment manager")
+				return manager, nil
+			})
+			console := mockinput.NewMockConsole()
+			console.SetNoPromptMode(tt.noPrompt)
+			if valid && tt.loadErr == nil {
+				reloads := 1
+				if !tt.force && tt.confirmed && !tt.noPrompt {
+					reloads++
+				}
+				manager.On("Reload", ctx, env).Return(nil).Times(reloads)
+				if !tt.force && !tt.noPrompt && slices.Contains(tt.args, "PRIVATE_KEY") {
+					console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).
+						RespondFn(func(input.ConsoleOptions) (any, error) {
+							if tt.disappeared {
+								env.DotenvDelete("PRIVATE_KEY")
+							}
+							return tt.confirmed, nil
+						})
+				}
+				if tt.outcome == "success" || tt.saveErr != nil {
+					manager.On("SaveWithOptions", ctx, env,
+						&environment.SaveOptions{DotenvKeys: []string{"PRIVATE_KEY"}}).Return(tt.saveErr).Once()
+				}
+				if tt.saveErr != nil {
+					manager.On("Reload", mock.Anything, env).Run(func(mock.Arguments) {
+						env.DotenvSet("PRIVATE_KEY", "private-stored-value")
+					}).Return(nil).Once()
+				}
+			}
+
+			_, err := newEnvUnsetAction(lazyEnv, lazyManager, console,
+				&envUnsetFlags{force: tt.force}, tt.args).Run(ctx)
+			if tt.outcome == "failed" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			span.End()
+			ended := recorder.Ended()
+			require.Len(t, ended, 1)
+			attributes := ended[0].Attributes()
+			require.ElementsMatch(t, []attribute.KeyValue{
+				fields.EnvUnsetOutcomeKey.String(tt.outcome),
+				fields.EnvUnsetRemovedCountKey.Int(tt.removed),
+				fields.EnvUnsetMissingCountKey.Int(tt.missing),
+			}, attributes)
+			for _, attr := range attributes {
+				require.NotContains(t, attr.Value.String(), "private-environment")
+				require.NotContains(t, attr.Value.String(), "PRIVATE_KEY")
+				require.NotContains(t, attr.Value.String(), "private-stored-value")
+			}
+			for _, attr := range tracing.GetUsageAttributes() {
+				require.False(t, strings.HasPrefix(string(attr.Key), "env.unset."),
+					"unset attributes must not leak into other command spans")
+			}
 			manager.AssertExpectations(t)
 		})
 	}

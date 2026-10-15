@@ -34,6 +34,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 		processEnvironment string
 		targetEnvironment  string
 		errorContains      string
+		validationError    bool
 		removedKeys        []string
 		withoutForce       bool
 		stdin              string
@@ -119,12 +120,14 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			outputContains:     []string{"No environment values were removed."},
 		},
 		{
-			name:               "ConfirmationDefaultsToNo",
+			name:               "ConfirmationDefaultsToYes",
 			args:               []string{"foo", "-e", "ricardo"},
 			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
 			withoutForce:       true,
 			stdin:              "\n",
-			outputContains:     []string{"No environment values were removed."},
+			outputContains:     []string{`Environment value "foo"`, `environment "ricardo"`, "Do you want to continue?"},
 		},
 		{
 			name:               "NoPromptRequiresForce",
@@ -153,20 +156,35 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			errorContains: environment.ErrNameNotSpecified.Error(),
 		},
 		{
-			name:          "NoKeys",
-			errorContains: "requires at least 1 arg(s)",
+			name:            "NoKeys",
+			errorContains:   "requires at least 1 arg(s), only received 0",
+			validationError: true,
+		},
+		{
+			name:               "UnknownFlag",
+			args:               []string{"KEY1", "--not-a-real-flag"},
+			defaultEnvironment: "env1",
+			errorContains:      "unknown flag: --not-a-real-flag",
+		},
+		{
+			name:               "InvalidForceFlag",
+			args:               []string{"KEY1", "--force=not-a-bool"},
+			defaultEnvironment: "env1",
+			errorContains:      `invalid argument "not-a-bool" for "--force" flag`,
 		},
 		{
 			name:               "EmptyKeyAfterValidKey",
 			args:               []string{"KEY1", ""},
 			defaultEnvironment: "env1",
-			errorContains:      "key must not be empty",
+			errorContains:      "environment variable key must not be empty",
+			validationError:    true,
 		},
 		{
 			name:               "ManagedKeyWithForce",
 			args:               []string{environment.EnvNameEnvVarName, "-e", "env2"},
 			defaultEnvironment: "env1",
 			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+			validationError:    true,
 		},
 		{
 			name:               "ManagedKeyWithoutForce",
@@ -175,23 +193,27 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			withoutForce:       true,
 			stdin:              "y\n",
 			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+			validationError:    true,
 		},
 		{
 			name:               "ManagedKeyAfterValidKey",
 			args:               []string{"KEY1", environment.EnvNameEnvVarName, "-e", "env2"},
 			defaultEnvironment: "env1",
 			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+			validationError:    true,
 		},
 		{
 			name:               "RepeatedManagedKeyBeforeValidKey",
 			args:               []string{environment.EnvNameEnvVarName, environment.EnvNameEnvVarName, "KEY1"},
 			defaultEnvironment: "env1",
 			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+			validationError:    true,
 		},
 		{
-			name:          "ManagedKeyWithoutEnvironment",
-			args:          []string{environment.EnvNameEnvVarName},
-			errorContains: "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+			name:            "ManagedKeyWithoutEnvironment",
+			args:            []string{environment.EnvNameEnvVarName},
+			errorContains:   "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
+			validationError: true,
 		},
 		{
 			name:               "ManagedKeyDifferentCase",
@@ -260,6 +282,13 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			if tt.errorContains != "" {
 				require.Error(t, err)
 				require.Contains(t, result.Stdout+result.Stderr, tt.errorContains)
+				require.Equal(t, 1, strings.Count(result.Stdout+result.Stderr, "ERROR:"))
+				require.NotContains(t, result.Stdout+result.Stderr, "Error:")
+				if tt.validationError {
+					expected := fmt.Sprintf("ERROR: %s\n\nSuggestion: %s",
+						tt.errorContains, "Run azd env unset --help to see usage and examples.")
+					require.Equal(t, expected, strings.TrimSpace(result.Stdout+result.Stderr))
+				}
 			} else {
 				require.NoError(t, err)
 				if tt.stdin == "" && len(tt.outputContains) == 0 {

@@ -13,6 +13,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -22,32 +24,33 @@ import (
 )
 
 func newEnvUnsetCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "unset <key...>",
-		Short: "Remove one or more keys from an environment.",
-		Long: "Remove one or more keys from the selected environment's .env file.\n\n" +
+		Short: fmt.Sprintf("Remove one or more keys from an environment. %s", output.WithWarningFormat("(Beta)")),
+		Long: fmt.Sprintf("Remove one or more keys from the selected environment's .env file. %s\n\n",
+			output.WithWarningFormat("(Beta)")) +
 			"Keys are case-sensitive. Missing keys are ignored with a warning.\n" +
 			environment.EnvNameEnvVarName + " identifies the environment and cannot be unset.\n" +
-			"You are prompted to confirm removal. Use --force to skip this confirmation.\n" +
+			"You are prompted to confirm removal (defaults to Yes). Use --force to skip this confirmation.\n" +
 			"If saving fails after local values change, you can choose to restore the previous values.\n" +
 			"With --force, restoration is attempted automatically without prompting.\n" +
 			"Removing a Key Vault secret reference does not delete the secret.\n" +
 			"Configuration values in config.json are not removed.",
 		Example: "$ azd env unset MY_KEY\n$ azd env unset KEY1 KEY2 --environment dev\n" +
 			"$ azd env unset MY_KEY --force",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if err := cobra.MinimumNArgs(1)(cmd, args); err != nil {
-				return err
-			}
-			return validateEnvUnsetKeys(args)
-		},
+		Args: cobra.ArbitraryArgs,
 		Annotations: map[string]string{
 			"azdtest.use": "unset key",
 		},
 	}
+	cmd.SetErrPrefix(output.WithErrorFormat("ERROR:"))
+	return cmd
 }
 
 func validateEnvUnsetKeys(args []string) error {
+	if len(args) == 0 {
+		return errors.New("requires at least 1 arg(s), only received 0")
+	}
 	if slices.Contains(args, "") {
 		return errors.New("environment variable key must not be empty")
 	}
@@ -100,7 +103,7 @@ func (f *envUnsetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 
 type envUnsetAction struct {
 	env        *lazy.Lazy[*environment.Environment]
-	envManager environment.Manager
+	envManager *lazy.Lazy[environment.Manager]
 	console    input.Console
 	flags      *envUnsetFlags
 	args       []string
@@ -108,7 +111,7 @@ type envUnsetAction struct {
 
 func newEnvUnsetAction(
 	env *lazy.Lazy[*environment.Environment],
-	envManager environment.Manager,
+	envManager *lazy.Lazy[environment.Manager],
 	console input.Console,
 	flags *envUnsetFlags,
 	args []string,
@@ -123,8 +126,21 @@ func newEnvUnsetAction(
 }
 
 func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	outcome := "failed"
+	removedCount, missingCount := 0, 0
+	defer func() {
+		tracing.SetAttributesInContext(ctx,
+			fields.EnvUnsetOutcomeKey.String(outcome),
+			fields.EnvUnsetRemovedCountKey.Int(removedCount),
+			fields.EnvUnsetMissingCountKey.Int(missingCount),
+		)
+	}()
+
 	if err := validateEnvUnsetKeys(a.args); err != nil {
-		return nil, err
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        err,
+			Suggestion: "Run azd env unset --help to see usage and examples.",
+		}
 	}
 
 	env, err := a.env.GetValue()
@@ -132,11 +148,16 @@ func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := a.envManager.Reload(ctx, env); err != nil {
+	envManager, err := a.envManager.GetValue()
+	if err != nil {
+		return nil, fmt.Errorf("loading environment manager: %w", err)
+	}
+	if err := envManager.Reload(ctx, env); err != nil {
 		return nil, fmt.Errorf("reloading environment before removal: %w", err)
 	}
-	keys, previousValues := a.valuesToRemove(ctx, env, a.args)
+	keys, previousValues, missingCount := a.valuesToRemove(ctx, env, a.args)
 	if len(keys) == 0 {
+		outcome = "no_change"
 		return nil, nil
 	}
 
@@ -157,22 +178,26 @@ func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			Message: fmt.Sprintf(
 				"%s %s will be removed from environment %q. Do you want to continue?",
 				valueLabel, formatEnvUnsetKeys(keys), env.Name()),
-			DefaultValue: false,
+			DefaultValue: true,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("confirming environment value removal: %w", err)
 		}
 		if !confirmed {
+			outcome = "user_declined"
 			a.console.Message(ctx, "No environment values were removed.")
 			return nil, nil
 		}
 
 		// Refresh after the prompt so the snapshot and save do not replay stale values from before confirmation.
-		if err := a.envManager.Reload(ctx, env); err != nil {
+		if err := envManager.Reload(ctx, env); err != nil {
 			return nil, fmt.Errorf("reloading environment after confirmation: %w", err)
 		}
-		keys, previousValues = a.valuesToRemove(ctx, env, keys)
+		var disappeared int
+		keys, previousValues, disappeared = a.valuesToRemove(ctx, env, keys)
+		missingCount += disappeared
 		if len(keys) == 0 {
+			outcome = "no_change"
 			return nil, nil
 		}
 	}
@@ -181,16 +206,18 @@ func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		env.DotenvDelete(key)
 	}
 
-	if err := a.envManager.SaveWithOptions(ctx, env, &environment.SaveOptions{DotenvKeys: keys}); err != nil {
-		return nil, a.handleSaveError(ctx, env, keys, previousValues, err)
+	if err := envManager.SaveWithOptions(ctx, env, &environment.SaveOptions{DotenvKeys: keys}); err != nil {
+		return nil, a.handleSaveError(ctx, env, envManager, keys, previousValues, err)
 	}
 
+	removedCount = len(keys)
+	outcome = "success"
 	return nil, nil
 }
 
 func (a *envUnsetAction) valuesToRemove(
 	ctx context.Context, env *environment.Environment, args []string,
-) ([]string, map[string]string) {
+) ([]string, map[string]string, int) {
 	keys := make([]string, 0, len(args))
 	values := make(map[string]string, len(args))
 	seen := make(map[string]struct{}, len(args))
@@ -208,19 +235,20 @@ func (a *envUnsetAction) valuesToRemove(
 		keys = append(keys, key)
 		values[key] = value
 	}
-	return keys, values
+	return keys, values, len(seen) - len(keys)
 }
 
 func (a *envUnsetAction) handleSaveError(
 	ctx context.Context,
 	env *environment.Environment,
+	envManager environment.Manager,
 	keys []string,
 	previousValues map[string]string,
 	saveErr error,
 ) error {
 	saveErr = fmt.Errorf("saving environment %q: %w", env.Name(), saveErr)
 	inspectionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	err := a.envManager.Reload(inspectionCtx, env)
+	err := envManager.Reload(inspectionCtx, env)
 	cancel()
 	if err != nil {
 		return errors.Join(saveErr, fmt.Errorf(
@@ -261,14 +289,14 @@ func (a *envUnsetAction) handleSaveError(
 	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	// Preserve unrelated updates made while the user was deciding whether to restore.
-	if err := a.envManager.Reload(restoreCtx, env); err != nil {
+	if err := envManager.Reload(restoreCtx, env); err != nil {
 		return errors.Join(saveErr, fmt.Errorf(
 			"local .env values changed and were not restored; reloading before restoration: %w", err))
 	}
 	for key, value := range previousValues {
 		env.DotenvSet(key, value)
 	}
-	if err := a.envManager.SaveWithOptions(restoreCtx, env, &environment.SaveOptions{DotenvKeys: keys}); err != nil {
+	if err := envManager.SaveWithOptions(restoreCtx, env, &environment.SaveOptions{DotenvKeys: keys}); err != nil {
 		return errors.Join(saveErr, fmt.Errorf("restoring previous environment values failed: %w", err))
 	}
 	return fmt.Errorf("%w; the previous local .env values were restored", saveErr)

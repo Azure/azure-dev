@@ -78,6 +78,9 @@ type connectionAddPlan struct {
 	baseline    map[string]any
 	planClient  connectionAddProjectClient
 	projectRoot string
+	// definition is the decoded candidate Connection definition, used to
+	// re-check effective-name uniqueness against the re-read services.
+	definition *definition.Definition
 }
 
 type connectionServiceChange struct {
@@ -282,6 +285,7 @@ func planConnectionAdd(
 		projectKey:           projectKey,
 		environmentVariables: slices.Clone(environmentVariables),
 		serviceSection:       candidate,
+		definition:           candidateInput,
 	}
 	if !existing {
 		plan.mutation = "added"
@@ -293,7 +297,39 @@ func planConnectionAdd(
 	if err := plan.prepareWrites(rawExisting, reconciledUses, env); err != nil {
 		return nil, err
 	}
+	if err := plan.rejectUnsupportedDottedUnset(); err != nil {
+		return nil, err
+	}
 	return plan, nil
+}
+
+// rejectUnsupportedDottedUnset refuses, before any write, to update a service
+// whose key contains a dot when the update must remove fields. azd hosts up to
+// at least v1.34.0 build the UnsetServiceConfig path as
+// "services.<name>.<path>" and split it on every dot, so for a key such as
+// "search.api" the removal silently does nothing and stale inline fields
+// (including credentials) would override the new $ref. SetServiceConfigValue
+// and AddService address the service key literally on those hosts, so adds
+// and set-only updates are not affected.
+func (plan *connectionAddPlan) rejectUnsupportedDottedUnset() error {
+	if plan.mutation != "updated" || !strings.Contains(plan.serviceName, ".") {
+		return nil
+	}
+	for _, change := range plan.changes {
+		if change.value != nil {
+			continue
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"cannot update Connection service %q: its key contains a dot, and updating it requires "+
+					"removing field %q, which azd cannot do reliably for dotted service keys; no changes were written.",
+				plan.serviceName, change.path,
+			),
+			"Edit the service in azure.yaml manually, or use a service key without dots.",
+		)
+	}
+	return nil
 }
 
 func loadConnectionProjectSnapshot(
@@ -881,6 +917,16 @@ func (plan *connectionAddPlan) prepareWrites(
 		}
 		return nil
 	}
+	// Remove a legacy config definition before writing $ref. If the run stops
+	// between these steps, a rerun sees a service with no definition and
+	// writes $ref, instead of mistaking $ref for the definition and keeping
+	// the stale legacy config and its credentials. config is only removed
+	// when it holds the legacy definition; unrelated config is preserved.
+	if _, preserved := plan.serviceSection["config"]; !preserved {
+		if _, existed := existing["config"]; existed {
+			plan.changes = append(plan.changes, connectionServiceChange{path: "config"})
+		}
+	}
 	for _, field := range []string{"$ref", "uses", "env"} {
 		value, found := plan.serviceSection[field]
 		old, existed := existing[field]
@@ -897,11 +943,14 @@ func (plan *connectionAddPlan) prepareWrites(
 		}
 		plan.changes = append(plan.changes, connectionServiceChange{path: field, value: encoded})
 	}
+	// Inline definition fields are removed after $ref is written. If the run
+	// stops in between, a rerun still sees the remaining inline fields next to
+	// $ref and removes them.
 	for _, field := range slices.Sorted(maps.Keys(existing)) {
 		if _, preserved := plan.serviceSection[field]; preserved {
 			continue
 		}
-		if _, owned := connectionDefinitionFields[field]; !owned && field != "config" {
+		if _, owned := connectionDefinitionFields[field]; !owned {
 			continue
 		}
 		plan.changes = append(plan.changes, connectionServiceChange{path: field})
@@ -935,6 +984,13 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 		plan.plannedServiceState(plan.baseline),
 		plan.plannedServiceState(current.services),
 	)
+	if plan.definition != nil {
+		if err := validateUniqueConnectionServiceNames(
+			current.services, plan.serviceName, plan.definition, plan.projectRoot,
+		); err != nil {
+			return err
+		}
+	}
 	for _, key := range plan.dependencyKeys() {
 		if !reflect.DeepEqual(
 			connectionDependencyState(plan.baseline, key),

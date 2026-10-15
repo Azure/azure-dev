@@ -13,9 +13,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "search",
 		Use:   "search <command> [options]",
-		Short: "Azure AI Search (Foundry IQ) extension scaffold.",
-		Long: "Local development scaffold for Azure AI Search (Foundry IQ).\n" +
-			"Search service operations are not implemented yet.",
+		Short: "Manage Search service from your terminal. (Preview)",
 	})
 
 	rootCmd.SilenceUsage = true

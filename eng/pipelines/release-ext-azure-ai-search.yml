@@ -6,6 +6,7 @@ trigger:
   paths:
     include:
       - cli/azd/extensions/azure.ai.search
+      - cli/azd/extensions/scripts/ci-build.ps1
       - /eng/pipelines/templates/stages/release-azd-extension.yml
       - /eng/pipelines/templates/stages/publish-extension-pr.yml
       - /eng/pipelines/templates/jobs/build-azd-extension.yml
@@ -17,6 +18,7 @@ pr:
   paths:
     include:
       - cli/azd/extensions/azure.ai.search
+      - cli/azd/extensions/scripts/ci-build.ps1
       - eng/pipelines/release-ext-azure-ai-search.yml
       - /eng/pipelines/templates/stages/release-azd-extension.yml
       - /eng/pipelines/templates/stages/publish-extension-pr.yml
@@ -31,7 +33,7 @@ parameters:
     type: string
     # Scheduled (nightly) runs override this in the shared templates; the runtime
     # parameter default must be a literal because it renders before variables exist.
-    default: stable
+    default: dev
     values:
       - stable
       - dev

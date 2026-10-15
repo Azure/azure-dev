@@ -1,22 +1,16 @@
-# Azure AI Search (Foundry IQ)
+# Azure AI Search (Preview)
 
-An azd extension scaffold for Azure AI Search. Currently provides help, version,
-and hidden host metadata only; Search operations are not implemented yet.
+Development scaffold for `azure.ai.search`.
 
 ## Development
 
-Requires the Go version in `go.mod`, an azd version satisfying `requiredAzdVersion`
-in `extension.yaml`, and the `microsoft.azd.extensions` authoring extension.
-
-From this directory, run:
-
 ```powershell
 azd x build
+azd x pack --bundle --output .\bin\azure-ai-search.zip
+azd ext install .\bin\azure-ai-search.zip
 azd ai search --help
 azd ai search version --output json
 go test ./... -short
 ```
-
-`azd x build` builds and installs the extension locally.
 
 Learn more in the [azd extension framework](https://github.com/Azure/azure-dev/blob/main/cli/azd/docs/extensions/extension-framework.md).

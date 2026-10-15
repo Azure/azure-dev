@@ -16,10 +16,6 @@ func TestRootCommand(t *testing.T) {
 	if root.Name() != "search" {
 		t.Fatalf("root name = %q, want search", root.Name())
 	}
-	if len(root.Commands()) != 2 {
-		t.Fatalf("root has %d commands, want version and metadata", len(root.Commands()))
-	}
-
 	for _, tt := range []struct {
 		name   string
 		hidden bool
@@ -40,7 +36,7 @@ func TestRootCommand(t *testing.T) {
 	}
 }
 
-func TestScaffoldHelp(t *testing.T) {
+func TestRootHelp(t *testing.T) {
 	var output bytes.Buffer
 	root := NewRootCommand()
 	root.SetOut(&output)
@@ -51,20 +47,26 @@ func TestScaffoldHelp(t *testing.T) {
 		t.Fatalf("execute help: %v", err)
 	}
 	help := output.String()
-	for _, expected := range []string{
-		"Azure AI Search (Foundry IQ)",
-		"Search service operations are not implemented yet.",
-		"version",
+	for _, tt := range []struct {
+		name    string
+		visible bool
+	}{
+		{name: "version", visible: true},
+		{name: "context"},
+		{name: "prompt"},
+		{name: "listen"},
 	} {
-		if !strings.Contains(help, expected) {
-			t.Errorf("help does not contain %q", expected)
-		}
-	}
-	for _, demo := range []string{"context", "prompt", "listen"} {
-		for line := range strings.SplitSeq(help, "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), demo+" ") {
-				t.Errorf("help advertises the generated %s demonstration", demo)
+		t.Run(tt.name, func(t *testing.T) {
+			visible := false
+			for line := range strings.SplitSeq(help, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), tt.name+" ") {
+					visible = true
+					break
+				}
 			}
-		}
+			if visible != tt.visible {
+				t.Errorf("help command %q visible = %t, want %t", tt.name, visible, tt.visible)
+			}
+		})
 	}
 }

@@ -23,6 +23,9 @@ type EnvReferenceAnalysis struct {
 	RequiredVariables   []string
 	ReferencedVariables []string
 	HasClientTemplate   bool
+	// HasLiteralText reports nonblank text outside client templates, so
+	// expansion can never produce a blank value.
+	HasLiteralText bool
 }
 
 // AnalyzeEnvReferences finds names without resolving their values.
@@ -37,6 +40,7 @@ func AnalyzeEnvReferences(value string) (EnvReferenceAnalysis, error) {
 	referenced := map[string]struct{}{}
 	analysis := EnvReferenceAnalysis{}
 	collectEnvReferences(tree.Root, required, referenced, &analysis.HasClientTemplate)
+	analysis.HasLiteralText = hasLiteralText(tree.Root)
 	analysis.RequiredVariables = slices.Sorted(maps.Keys(required))
 	analysis.ReferencedVariables = slices.Sorted(maps.Keys(referenced))
 	return analysis, nil
@@ -62,6 +66,17 @@ func collectEnvReferences(
 		for _, child := range typed.Nodes {
 			collectEnvReferences(child, required, referenced, hasTemplate)
 		}
+	}
+}
+
+func hasLiteralText(node parse.Node) bool {
+	switch typed := node.(type) {
+	case *parse.TextNode:
+		return strings.TrimSpace(typed.Value) != ""
+	case *parse.ListNode:
+		return slices.ContainsFunc(typed.Nodes, hasLiteralText)
+	default:
+		return false
 	}
 }
 

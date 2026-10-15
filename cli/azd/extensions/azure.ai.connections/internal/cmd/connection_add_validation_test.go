@@ -365,3 +365,82 @@ func TestValidateConnectionDefinitionForAuthoringSeparatesOptionalReferences(t *
 	assert.Empty(t, required)
 	assert.Equal(t, []string{"OPTIONAL_TARGET"}, referenced)
 }
+
+func TestValidateConnectionDefinitionForAuthoringDoesNotExposeMapKeys(t *testing.T) {
+	credentials := validConnectionAuthoringDefinition("CustomKeys")
+	credentials.Credentials = map[string]any{"PRIVATE_MARKER": "${BROKEN"}
+	metadata := validConnectionAuthoringDefinition("None")
+	metadata.Metadata = map[string]string{"PRIVATE_MARKER": "${BROKEN"}
+
+	for name, input := range map[string]*definition.Definition{
+		"credentials": credentials,
+		"metadata":    metadata,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := validateConnectionDefinitionForAuthoring(input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), `"`+name+`"`)
+			assert.NotContains(t, err.Error(), "PRIVATE_MARKER")
+			assert.NotContains(t, err.Error(), "BROKEN")
+		})
+	}
+}
+
+func TestValidateConnectionDefinitionForAuthoringRejectsNonblankTemplates(t *testing.T) {
+	tests := []struct {
+		name  string
+		input func() *definition.Definition
+	}{
+		{
+			name: "audience with literal prefix requires identity auth",
+			input: func() *definition.Definition {
+				input := validConnectionAuthoringDefinition("None")
+				input.Audience = "https://example.test/${TENANT}"
+				return input
+			},
+		},
+		{
+			name: "OAuth2 URL with literal prefix requires OAuth2 auth",
+			input: func() *definition.Definition {
+				input := validConnectionAuthoringDefinition("None")
+				input.TokenURL = "https://login.example.test/${TENANT}/token"
+				return input
+			},
+		},
+		{
+			name: "connectorName with literal prefix conflicts with BYO fields",
+			input: func() *definition.Definition {
+				input := validConnectionAuthoringDefinition("OAuth2")
+				input.ConnectorName = "connector-${SUFFIX}"
+				input.Scopes = []string{"read"}
+				return input
+			},
+		},
+		{
+			name: "templated connectorName with literal URL prefix needs BYO fields",
+			input: func() *definition.Definition {
+				input := validConnectionAuthoringDefinition("OAuth2")
+				input.ConnectorName = "${CONNECTOR}"
+				input.TokenURL = "https://login.example.test/${TENANT}/token"
+				return input
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, err := validateConnectionDefinitionForAuthoring(test.input())
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestValidateConnectionDefinitionForAuthoringDefersBlankableTemplates(t *testing.T) {
+	input := validConnectionAuthoringDefinition("None")
+	input.Audience = " ${AUDIENCE} "
+	input.TokenURL = "${TOKEN_URL:-}"
+
+	required, _, err := validateConnectionDefinitionForAuthoring(input)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AUDIENCE"}, required)
+}

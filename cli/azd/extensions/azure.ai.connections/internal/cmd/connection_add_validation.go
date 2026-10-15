@@ -17,7 +17,9 @@ import (
 type connectionTemplateAnalysis struct {
 	required   map[string]struct{}
 	referenced map[string]struct{}
-	fields     map[string]bool
+	// mayBeEmpty marks fields whose client templates can expand to a blank
+	// value; literal text around a template makes the field nonblank.
+	mayBeEmpty map[string]bool
 }
 
 func validateConnectionDefinitionForAuthoring(
@@ -41,12 +43,12 @@ func validateConnectionDefinitionForAuthoring(
 	analysis := connectionTemplateAnalysis{
 		required:   map[string]struct{}{},
 		referenced: map[string]struct{}{},
-		fields:     map[string]bool{},
+		mayBeEmpty: map[string]bool{},
 	}
 	if err := analysis.add("target", input.Target); err != nil {
 		return nil, nil, err
 	}
-	if !analysis.fields["target"] && strings.TrimSpace(input.Target) == "" {
+	if !analysis.mayBeEmpty["target"] && strings.TrimSpace(input.Target) == "" {
 		return nil, nil, exterrors.Validation(
 			exterrors.CodeMissingConnectionField,
 			"Connection field target must be a non-blank string.",
@@ -120,11 +122,14 @@ func (a *connectionTemplateAnalysis) add(path, value string) error {
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("Connection field %q contains an invalid environment template.", path),
+			fmt.Sprintf(
+				"Connection field %q contains an invalid environment template.",
+				topLevelConnectionField(path),
+			),
 			"Correct the environment template syntax and retry.",
 		)
 	}
-	a.fields[path] = parsed.HasClientTemplate
+	a.mayBeEmpty[path] = parsed.HasClientTemplate && !parsed.HasLiteralText
 	for _, variable := range parsed.RequiredVariables {
 		a.required[variable] = struct{}{}
 	}
@@ -132,6 +137,15 @@ func (a *connectionTemplateAnalysis) add(path, value string) error {
 		a.referenced[variable] = struct{}{}
 	}
 	return nil
+}
+
+// topLevelConnectionField omits map keys and indexes, which can contain
+// user-controlled or sensitive text, from diagnostics.
+func topLevelConnectionField(path string) string {
+	if index := strings.IndexAny(path, ".["); index >= 0 {
+		return path[:index]
+	}
+	return path
 }
 
 func analyzeConnectionCredentialTemplates(
@@ -199,7 +213,7 @@ func validateConnectionAudienceForAuthoring(
 	authType string,
 	analysis connectionTemplateAnalysis,
 ) error {
-	if input.Audience == "" || analysis.fields["audience"] {
+	if input.Audience == "" || analysis.mayBeEmpty["audience"] {
 		return nil
 	}
 	switch authType {
@@ -230,7 +244,7 @@ func validateConnectionAuthForAuthoring(
 	}
 	if authType != "OAuth2" {
 		for _, field := range oauthFields {
-			if field.value != "" && !analysis.fields[field.name] {
+			if field.value != "" && !analysis.mayBeEmpty[field.name] {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
 					"authorizationUrl, tokenUrl, refreshUrl, scopes, and connectorName are only valid with OAuth2 authType.",
@@ -272,7 +286,7 @@ func validateConnectionAPIKeyForAuthoring(
 		)
 	}
 	text, ok := value.(string)
-	if !ok || (!analysis.fields["credentials.key"] && strings.TrimSpace(text) == "") {
+	if !ok || (!analysis.mayBeEmpty["credentials.key"] && strings.TrimSpace(text) == "") {
 		return exterrors.Validation(
 			exterrors.CodeMissingConnectionField,
 			"ApiKey auth requires a non-blank string credentials.key.",
@@ -327,7 +341,7 @@ func connectionCustomCredentialMapIsValid(
 	for key, value := range values {
 		text, ok := value.(string)
 		if !ok || strings.TrimSpace(key) == "" ||
-			(!analysis.fields[path+"."+key] && strings.TrimSpace(text) == "") {
+			(!analysis.mayBeEmpty[path+"."+key] && strings.TrimSpace(text) == "") {
 			return false
 		}
 	}
@@ -344,7 +358,7 @@ func connectionCustomStringMapIsValid(
 	}
 	for key, value := range values {
 		if strings.TrimSpace(key) == "" ||
-			(!analysis.fields[path+"."+key] && strings.TrimSpace(value) == "") {
+			(!analysis.mayBeEmpty[path+"."+key] && strings.TrimSpace(value) == "") {
 			return false
 		}
 	}
@@ -356,7 +370,7 @@ func validateConnectionOAuthForAuthoring(
 	analysis connectionTemplateAnalysis,
 ) error {
 	credentials := input.Credentials
-	connectorHasTemplate := analysis.fields["connectorName"]
+	connectorHasTemplate := analysis.mayBeEmpty["connectorName"]
 	connectorIsSet := input.ConnectorName != ""
 	if connectorIsSet && !connectorHasTemplate && strings.TrimSpace(input.ConnectorName) == "" {
 		return exterrors.Validation(
@@ -376,7 +390,7 @@ func validateConnectionOAuthForAuthoring(
 	}
 	hasLiteralURL := false
 	for _, field := range urlFields {
-		if field.value != "" && !analysis.fields[field.name] {
+		if field.value != "" && !analysis.mayBeEmpty[field.name] {
 			hasLiteralURL = true
 		}
 	}
@@ -423,7 +437,7 @@ func oauthBYOFieldsPossible(
 		if !ok {
 			return false
 		}
-		if !analysis.fields[field.name] && strings.TrimSpace(text) == "" {
+		if !analysis.mayBeEmpty[field.name] && strings.TrimSpace(text) == "" {
 			return false
 		}
 	}

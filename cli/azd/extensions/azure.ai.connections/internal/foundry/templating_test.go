@@ -114,6 +114,26 @@ func TestAnalyzeEnvReferences(t *testing.T) {
 	}
 }
 
+func TestAnalyzeEnvReferencesReportsLiteralText(t *testing.T) {
+	for input, want := range map[string]bool{
+		"":                          false,
+		"   ":                       false,
+		"${A}":                      false,
+		" ${A} ${B:-} ":             false,
+		"plain":                     true,
+		"https://example.test/${A}": true,
+		"${A}-suffix":               true,
+		"$${ESCAPED}":               true,
+		"${{event.body}}":           true,
+	} {
+		t.Run(input, func(t *testing.T) {
+			got, err := AnalyzeEnvReferences(input)
+			require.NoError(t, err)
+			assert.Equal(t, want, got.HasLiteralText)
+		})
+	}
+}
+
 func TestAnalyzeEnvReferencesMatchesSDKExpansionParser(t *testing.T) {
 	for _, input := range []string{
 		"plain value",

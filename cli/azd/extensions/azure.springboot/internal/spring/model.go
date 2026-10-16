@@ -66,22 +66,25 @@ type buildPlugin struct {
 	Group      string `xml:"groupId"`
 	Artifact   string `xml:"artifactId"`
 	Executions []struct {
-		Phase         string                 `xml:"phase"`
-		Goals         []string               `xml:"goals>goal"`
-		Configuration repackageConfiguration `xml:"configuration"`
+		Phase         string              `xml:"phase"`
+		Goals         []string            `xml:"goals>goal"`
+		Configuration pluginConfiguration `xml:"configuration"`
 	} `xml:"executions>execution"`
-	Configuration repackageConfiguration `xml:"configuration"`
+	Configuration pluginConfiguration `xml:"configuration"`
 }
 
-type repackageConfiguration struct {
+type pluginConfiguration struct {
 	Skip            string `xml:"skip"`
 	Classifier      string `xml:"classifier"`
 	Layout          string `xml:"layout"`
 	OutputDirectory string `xml:"outputDirectory"`
+	Release         string `xml:"release"`
+	Source          string `xml:"source"`
+	Target          string `xml:"target"`
 	CombineSelf     string `xml:"combine.self,attr"`
 }
 
-func (c repackageConfiguration) withDefaults(parent repackageConfiguration) repackageConfiguration {
+func (c pluginConfiguration) withDefaults(parent pluginConfiguration) pluginConfiguration {
 	if c.CombineSelf == "override" {
 		return c
 	}
@@ -97,6 +100,15 @@ func (c repackageConfiguration) withDefaults(parent repackageConfiguration) repa
 	if c.OutputDirectory == "" {
 		c.OutputDirectory = parent.OutputDirectory
 	}
+	if c.Release == "" {
+		c.Release = parent.Release
+	}
+	if c.Source == "" {
+		c.Source = parent.Source
+	}
+	if c.Target == "" {
+		c.Target = parent.Target
+	}
 	return c
 }
 
@@ -110,6 +122,7 @@ type model struct {
 	Properties           struct {
 		JavaVersion string `xml:"java.version"`
 		Release     string `xml:"maven.compiler.release"`
+		Source      string `xml:"maven.compiler.source"`
 		Target      string `xml:"maven.compiler.target"`
 	} `xml:"properties"`
 	Build struct {
@@ -167,19 +180,132 @@ func parseModel(data []byte) (*model, int, error) {
 	if !safeName.MatchString(m.Build.FinalName) {
 		return nil, 0, invalidConfiguration("Maven finalName must be a safe file name")
 	}
-	version := m.Properties.Release
-	if version == "" {
-		version = m.Properties.JavaVersion
-	}
-	if version == "" {
-		version = m.Properties.Target
-	}
-	java, err := strconv.Atoi(version)
-	if err != nil || java < 17 {
-		return nil, 0, unsupportedConfiguration(
-			"a Java release of 17 or newer must be specified in the effective Maven model")
+	java, err := effectiveJavaVersion(&m)
+	if err != nil {
+		return nil, 0, err
 	}
 	return &m, java, nil
+}
+
+func effectiveJavaVersion(m *model) (int, error) {
+	propertyVersion := func() (int, error) {
+		if m.Properties.Release != "" {
+			return parseJavaVersion(m.Properties.Release, "maven.compiler.release")
+		}
+		if m.Properties.Source != "" || m.Properties.Target != "" {
+			return compilerSourceTargetVersion(m.Properties.Source, m.Properties.Target)
+		}
+		return parseJavaVersion(m.Properties.JavaVersion, "java.version")
+	}
+	var versions []int
+	for _, plugin := range m.Build.Plugins {
+		if plugin.Artifact != "maven-compiler-plugin" ||
+			plugin.Group != "" && plugin.Group != "org.apache.maven.plugins" {
+			continue
+		}
+		active := false
+		for _, execution := range plugin.Executions {
+			if !compilerExecutionRunsDuringPackage(execution.Phase, execution.Goals) {
+				continue
+			}
+			active = true
+			version, configured, err := compilerConfigurationVersion(
+				execution.Configuration.withDefaults(plugin.Configuration))
+			if err != nil {
+				return 0, err
+			}
+			if !configured {
+				version, err = propertyVersion()
+				if err != nil {
+					return 0, err
+				}
+			}
+			versions = append(versions, version)
+		}
+		if active {
+			continue
+		}
+		version, configured, err := compilerConfigurationVersion(plugin.Configuration)
+		if err != nil {
+			return 0, err
+		}
+		if !configured {
+			version, err = propertyVersion()
+			if err != nil {
+				return 0, err
+			}
+		}
+		versions = append(versions, version)
+	}
+	if len(versions) == 0 {
+		version, err := propertyVersion()
+		if err != nil {
+			return 0, err
+		}
+		versions = append(versions, version)
+	}
+	java := slices.Max(versions)
+	if java < 17 {
+		return 0, unsupportedConfiguration(
+			"a Java release of 17 or newer must be specified in the effective Maven model")
+	}
+	return java, nil
+}
+
+func compilerConfigurationVersion(config pluginConfiguration) (int, bool, error) {
+	if config.Release != "" {
+		version, err := parseJavaVersion(config.Release, "maven-compiler-plugin release")
+		return version, true, err
+	}
+	if config.Source == "" && config.Target == "" {
+		return 0, false, nil
+	}
+	version, err := compilerSourceTargetVersion(config.Source, config.Target)
+	return version, true, err
+}
+
+func compilerSourceTargetVersion(source, target string) (int, error) {
+	var sourceVersion, targetVersion int
+	var err error
+	if source != "" {
+		sourceVersion, err = parseJavaVersion(source, "Java compiler source")
+		if err != nil {
+			return 0, err
+		}
+	}
+	if target != "" {
+		targetVersion, err = parseJavaVersion(target, "Java compiler target")
+		if err != nil {
+			return 0, err
+		}
+	}
+	if sourceVersion > 0 && targetVersion > 0 && sourceVersion > targetVersion {
+		return 0, unsupportedConfiguration("Java compiler source must not exceed its target release")
+	}
+	return max(sourceVersion, targetVersion), nil
+}
+
+func parseJavaVersion(value, setting string) (int, error) {
+	version, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, unsupportedConfiguration("%s must specify a resolved Java release", setting)
+	}
+	return version, nil
+}
+
+func compilerExecutionRunsDuringPackage(phase string, goals []string) bool {
+	if !slices.Contains(goals, "compile") && !slices.Contains(goals, "testCompile") {
+		return false
+	}
+	if phase == "" {
+		return true
+	}
+	return slices.Contains([]string{
+		"validate", "initialize", "generate-sources", "process-sources", "generate-resources",
+		"process-resources", "compile", "process-classes", "generate-test-sources", "process-test-sources",
+		"generate-test-resources", "process-test-resources", "test-compile", "process-test-classes",
+		"test", "prepare-package", "package",
+	}, phase)
 }
 
 func (m *model) hasDependency(group, artifact string) bool {

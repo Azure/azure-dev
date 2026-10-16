@@ -700,6 +700,71 @@ func TestEffectiveModelValidation(t *testing.T) {
 	}
 }
 
+func TestEffectiveModelCompilerConfiguration(t *testing.T) {
+	execution := func(phase, goal, configuration string) string {
+		return "<execution><phase>" + phase + "</phase><goals><goal>" + goal + "</goal></goals>" +
+			"<configuration>" + configuration + "</configuration></execution>"
+	}
+	for _, tt := range []struct {
+		name, plugin, executions, properties, errorText string
+		want                                            int
+	}{
+		{name: "plugin release", plugin: "<release>21</release>", want: 21},
+		{name: "execution release", plugin: "<release>17</release>",
+			executions: execution("compile", "compile", "<release>21</release>"), want: 21},
+		{name: "execution override", plugin: "<release>21</release>",
+			executions: strings.Replace(execution("compile", "compile", "<release>17</release>"),
+				"<configuration>", `<configuration combine.self="override">`, 1), want: 17},
+		{name: "multiple executions", executions: execution("compile", "compile", "<release>17</release>") +
+			execution("test-compile", "testCompile", "<release>21</release>"), want: 21},
+		{name: "target", plugin: "<target>21</target>", want: 21},
+		{name: "inactive execution",
+			executions: execution("verify", "compile", "<release>21</release>"), want: 17},
+		{name: "plugin release without Java property", plugin: "<release>21</release>",
+			properties: "<java.version>17</java.version>", want: 21},
+		{name: "unresolved release", plugin: "<release>${compiler.release}</release>",
+			errorText: "resolved Java release"},
+		{name: "source exceeds target", plugin: "<source>21</source><target>17</target>",
+			errorText: "must not exceed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := string(effectiveModel(t, t.TempDir(), ""))
+			if tt.properties != "" {
+				data = strings.Replace(data, tt.properties, "", 1)
+			}
+			compiler := "<plugin><groupId>org.apache.maven.plugins</groupId>" +
+				"<artifactId>maven-compiler-plugin</artifactId><configuration>" + tt.plugin +
+				"</configuration><executions>" + tt.executions + "</executions></plugin>"
+			data = strings.Replace(data, "</plugins>", compiler+"</plugins>", 1)
+			_, java, err := parseModel([]byte(data))
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, java)
+		})
+	}
+}
+
+func TestAnalyzeUsesCompilerPluginReleaseForGeneratedContainer(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	data := string(effectiveModel(t, directory, ""))
+	compiler := "<plugin><groupId>org.apache.maven.plugins</groupId>" +
+		"<artifactId>maven-compiler-plugin</artifactId><configuration><release>21</release></configuration></plugin>"
+	data = strings.Replace(data, "</plugins>", compiler+"</plugins>", 1)
+	application, err := Analyze(t.Context(), directory, staticResolver{model: []byte(data)}, envLookup(nil))
+	require.NoError(t, err)
+	require.Equal(t, 21, application.JavaVersion)
+
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	dockerfile := string(plan.Files[".azd-spring/Dockerfile"])
+	require.Contains(t, dockerfile, "maven:3.9-eclipse-temurin-21")
+	require.Contains(t, dockerfile, "eclipse-temurin:21-jre")
+}
+
 func TestEffectiveModelExecutionConfiguration(t *testing.T) {
 	execution := func(phase, configuration string) string {
 		return "<execution><phase>" + phase + "</phase><goals><goal>repackage</goal></goals>" +

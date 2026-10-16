@@ -3368,7 +3368,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--path'],
-									description: 'Directory holding the evaluation configuration. Defaults to the directory init scaffolded, otherwise ./evals.',
+									description: 'Configuration file or directory to read from. New .yaml or .yml paths are files; existing directories remain directories. Defaults to the directory init scaffolded, otherwise ./evals.',
 									args: [
 										{
 											name: 'path',
@@ -3709,7 +3709,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['download'],
-									description: 'Download a registered evaluator version\'s definition.',
+									description: 'Download an editable evaluator rubric.',
 									options: [
 										{
 											name: ['--force'],
@@ -3885,7 +3885,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--agent-instruction'],
-									description: 'What the agent does and what to test.',
+									description: 'What the agent does and what to test. Skips instruction detection and selection.',
 									args: [
 										{
 											name: 'agent-instruction',
@@ -3894,7 +3894,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--agent-instruction-file'],
-									description: 'Read the agent instruction from this file. Mutually exclusive with --agent-instruction.',
+									description: 'Read instructions from a local text file. Mutually exclusive with --agent-instruction; skips instruction detection and selection.',
 									args: [
 										{
 											name: 'agent-instruction-file',
@@ -3907,7 +3907,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--dataset-name'],
-									description: 'Name for the generated dataset. Defaults to <target>-turn-tests or <target>-conversation-tests, following --evaluation-level.',
+									description: 'Name for the generated dataset (at most 50 characters). Defaults to <deployed-agent>-turn-tests or <deployed-agent>-conversation-tests. Long default prefixes are shortened consistently; explicit names are not.',
 									args: [
 										{
 											name: 'dataset-name',
@@ -3929,7 +3929,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--evaluator-name'],
-									description: 'Name for the generated evaluator. Defaults to <target>-evaluator.',
+									description: 'Name for the generated evaluator. Defaults to <deployed-agent>-evaluator.',
 									args: [
 										{
 											name: 'evaluator-name',
@@ -4030,8 +4030,17 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['init'],
-							description: 'Scaffold evaluation config for an agent. Makes no service calls.',
+							description: 'Scaffold evaluation config for an agent or completed conversations.',
 							options: [
+								{
+									name: ['--conversation-mode'],
+									description: 'Conversation dataset mode: static scores completed messages without a target; simulation uses scenario seeds and an agent target. Prompts for conversation datasets; defaults to static without prompts.',
+									args: [
+										{
+											name: 'conversation-mode',
+										},
+									],
+								},
 								{
 									name: ['--dataset'],
 									description: 'Path to a local .jsonl, or the name of a registered dataset.',
@@ -4052,7 +4061,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--evaluator'],
-									description: 'Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a built-in. Passing this replaces the defaults, so it also opts out of rubric generation.',
+									description: 'Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a built-in, or a declared custom evaluator compatible with the selected level. Defaults to builtin.task_completion. Replaces the defaults; an explicitly empty selection is invalid.',
 									isRepeatable: true,
 									args: [
 										{
@@ -4062,7 +4071,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--judge-model'],
-									description: 'Model deployment the graders judge with. Detected from the project when omitted.',
+									description: 'Model deployment the graders judge with. Detected locally when omitted; prompts if unavailable.',
 									args: [
 										{
 											name: 'judge-model',
@@ -4071,7 +4080,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--max-traces'],
-									description: 'Cap on traces read by a --source traces eval. Delete max_traces from the file to take the service default instead.',
+									description: 'Cap on traces read by a --source traces eval. Delete maxTraces from the file to take the service default instead.',
 									args: [
 										{
 											name: 'max-traces',
@@ -4079,8 +4088,17 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--max-turns'],
+									description: 'Maximum turns per simulated conversation (1-20). Omit for the service default.',
+									args: [
+										{
+											name: 'max-turns',
+										},
+									],
+								},
+								{
 									name: ['--name'],
-									description: 'Name of the eval. Defaults to <target>-dataset-eval, or <target>-trace-eval under --source traces, numbered when that name is taken.',
+									description: 'Name of the eval. Defaults to <agent>-<source-or-mode>-<level>-eval, using trace, dataset, static or simulation and turn or conversation. Static mode uses the sole local agent as a naming hint, or omits the prefix when ambiguous or absent. Numbered only when that descriptive name is taken.',
 									args: [
 										{
 											name: 'name',
@@ -4088,11 +4106,38 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--num-conversations'],
+									description: 'Conversations per seed in simulation mode (1-5).',
+									args: [
+										{
+											name: 'num-conversations',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'Output format: default (human-readable) or json.',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
 									name: ['--path'],
-									description: 'Directory to write the configuration into. Used verbatim, never re-rooted. Defaults to the directory an earlier init scaffolded, otherwise ./evals.',
+									description: 'Configuration file or directory to write into. Used verbatim, never re-rooted. New .yaml or .yml paths are files; existing directories remain directories. Selected symbolic links are rejected; select the target directly. Defaults to the directory an earlier init scaffolded, otherwise ./evals.',
 									args: [
 										{
 											name: 'path',
+										},
+									],
+								},
+								{
+									name: ['--simulation-model'],
+									description: 'Model name or connection-name/model-deployment for the simulated user. Plain names need no connection lookup; qualified references use eligible Azure OpenAI project connections. No whitespace or control characters. Independent of generation and judge models.',
+									args: [
+										{
+											name: 'simulation-model',
 										},
 									],
 								},
@@ -4107,7 +4152,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--target'],
-									description: 'Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.',
+									description: 'Agent to invoke for turn datasets or simulation, or filter for traces. Not allowed in static mode. Detected when the project has one agent; prompts when it has several.',
 									args: [
 										{
 											name: 'target',
@@ -4116,7 +4161,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--trace-days'],
-									description: 'How far back a --source traces eval reads: 1, 7, or 30 days. Set lookback_hours in the file for any other window.',
+									description: 'How far back a --source traces eval reads: 1, 7, or 30 days. Set lookbackHours in the file for any other window.',
 									args: [
 										{
 											name: 'trace-days',
@@ -4239,7 +4284,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--force'],
-											description: 'Replace an artifact a previous collection already wrote.',
+											description: 'Replace a collected artifact and, for evaluators, refresh its catalog metadata.',
 											isDangerous: true,
 										},
 										{
@@ -4672,7 +4717,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--fail-on'],
-											description: 'Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. pass-rate is measured over the rows that were scored, so rows nothing could grade are outside it; any-failure counts them against the run. Exits 1.',
+											description: 'Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. pass-rate is passed test cases divided by total test cases, so failed, errored, skipped, and otherwise unpassed rows count against the run. Exits 1.',
 											args: [
 												{
 													name: 'fail-on',
@@ -4718,7 +4763,7 @@ const completionSpec: Fig.Spec = {
 									options: [
 										{
 											name: ['--dataset'],
-											description: 'Catalog dataset to read instead of the one the eval declares. Must satisfy the eval\'s column schema.',
+											description: 'Name of a dataset declared in the eval configuration, to read instead of the one the eval uses. It must satisfy the eval\'s column schema. Not supported with source.type: local.',
 											args: [
 												{
 													name: 'dataset',
@@ -4736,7 +4781,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--fail-on'],
-											description: 'Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. pass-rate is measured over the rows that were scored, so rows nothing could grade are outside it; any-failure counts them against the run. Exits 1.',
+											description: 'Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. pass-rate is passed test cases divided by total test cases, so failed, errored, skipped, and otherwise unpassed rows count against the run. Exits 1.',
 											args: [
 												{
 													name: 'fail-on',
@@ -4745,7 +4790,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--max-samples'],
-											description: 'Cap the rows sent from the dataset.',
+											description: 'Cap explicit local-source or unregistered dataset rows. On ordinary dataset and local-source evals, 0 disables a configured cap; positive caps are rejected for registered datasets. Any explicit value is rejected for trace/response sources and reruns by eval ID.',
 											args: [
 												{
 													name: 'max-samples',

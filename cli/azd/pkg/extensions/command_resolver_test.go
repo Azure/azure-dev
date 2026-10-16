@@ -190,6 +190,37 @@ func TestResolveCommandPathEdgeCases(t *testing.T) {
 	}
 }
 
+func TestResolveCommandFlagsReservedShorthand(t *testing.T) {
+	for _, flagType := range []string{"bool", "string", "int", "intarray", "stringarray", "unknown"} {
+		for _, shorthand := range []string{"e", "C", "o", "h"} {
+			t.Run(flagType+"/"+shorthand, func(t *testing.T) {
+				flag := Flag{Name: "project-endpoint", Shorthand: shorthand, Type: flagType}
+				metadata := &ExtensionCommandMetadata{
+					Commands: []Command{{Name: []string{"deploy"}, Flags: []Flag{flag}}},
+				}
+				args := []string{"deploy"}
+				require.NotPanics(t, func() {
+					require.Nil(t, ResolveCommandFlags(metadata, args))
+				})
+				require.Equal(t, []string{"deploy"}, args)
+
+				value := "endpoint"
+				switch flagType {
+				case "bool":
+					value = "true"
+				case "int", "intarray":
+					value = "42"
+				}
+				args = []string{"deploy", "--project-endpoint=" + value}
+				original := slices.Clone(args)
+				require.Equal(t, []string{"project-endpoint"}, ResolveCommandFlags(metadata, args))
+				require.Equal(t, original, args)
+				require.Equal(t, flag, metadata.Commands[0].Flags[0])
+			})
+		}
+	}
+}
+
 func TestResolveCommandLaunch(t *testing.T) {
 	t.Parallel()
 

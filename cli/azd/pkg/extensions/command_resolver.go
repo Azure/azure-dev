@@ -122,6 +122,10 @@ func parseFlags(args []string, flags []Flag) []string {
 		if fs.Lookup(f.Name) != nil {
 			continue
 		}
+		// Legacy shorthands may overlap globals; keep their long names.
+		if f.Shorthand != "" && fs.ShorthandLookup(f.Shorthand) != nil {
+			f.Shorthand = ""
+		}
 		flagType := strings.ToLower(f.Type)
 		switch flagType {
 		case "bool":
